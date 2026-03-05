@@ -1,0 +1,43 @@
+paynet-gen/
+├── main.py
+├── pyproject.toml
+├── .python-version
+├── .gitignore
+│
+├── common/
+│   ├── __init__.py
+│   ├── config.py         # defaults + dataclass config you can tweak in code
+│   ├── ids.py            # customer/account/device/ip generators
+│   ├── rng.py            # RNG setup + weighted choice helpers
+│   ├── schema.py         # CSV filenames + headers (single source of truth)
+│   └── timeutil.py       # dt_str(), date windows, month iteration
+│
+├── math_models/
+│   ├── __init__.py
+│   ├── counts.py         # Gamma–Poisson overdispersion (NegBin-like)
+│   └── amounts.py        # lognormal/gamma amount generators
+│
+├── entities/
+│   ├── __init__.py
+│   ├── people.py         # person vertices + fraud/mule/victim flags
+│   ├── accounts.py       # account vertices + HAS_ACCOUNT edges
+│   └── pii.py            # phone/email vertices + HAS_PHONE/HAS_EMAIL edges
+│
+├── infra/
+│   ├── __init__.py
+│   ├── devices.py        # device vertices + HAS_USED edges (+ shared ring device)
+│   └── ipaddrs.py        # ip vertices + HAS_IP edges (+ shared ring IP)
+│
+├── transfers/
+│   ├── __init__.py
+│   ├── legit.py          # salary/bills/p2p baseline txns
+│   ├── fraud.py          # rings/mules/cycles/burst windows
+│   └── aggregate.py      # raw ledger -> HAS_PAID aggregation
+│
+├── emit/
+│   ├── __init__.py
+│   └── tg_csv.py         # CSV writing + TigerGraph DATETIME formatting
+│
+└── pipeline/
+    ├── __init__.py
+    └── generate_all.py   # calls everything and writes all CSVs
