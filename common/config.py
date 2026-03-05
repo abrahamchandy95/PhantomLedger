@@ -2,6 +2,14 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from common.validate import (
+    require_float_between,
+    require_float_ge,
+    require_float_gt,
+    require_int_ge,
+    require_int_gt,
+)
+
 
 @dataclass(frozen=True, slots=True)
 class OutputConfig:
@@ -18,8 +26,7 @@ class WindowConfig:
         return datetime.strptime(self.start, "%Y-%m-%d")
 
     def validate(self) -> None:
-        if self.days <= 0:
-            raise ValueError("days must be > 0")
+        require_int_gt("days", self.days, 0)
         # basic format check
         _ = self.start_date()
 
@@ -30,8 +37,7 @@ class PopulationConfig:
     persons: int = 500_000
 
     def validate(self) -> None:
-        if self.persons <= 0:
-            raise ValueError("persons must be > 0")
+        require_int_gt("persons", self.persons, 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,8 +45,7 @@ class AccountsConfig:
     max_accounts_per_person: int = 3
 
     def validate(self) -> None:
-        if self.max_accounts_per_person <= 0:
-            raise ValueError("max_accounts_per_person must be > 0")
+        require_int_gt("max_accounts_per_person", self.max_accounts_per_person, 0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,8 +53,7 @@ class HubsConfig:
     hub_fraction: float = 0.01
 
     def validate(self) -> None:
-        if not (0.0 <= self.hub_fraction <= 0.5):
-            raise ValueError("hub_fraction must be between 0.0 and 0.5")
+        require_float_between("hub_fraction", self.hub_fraction, 0.0, 0.5)
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,40 +66,37 @@ class FraudConfig:
     target_illicit_ratio: float = 0.00009
 
     def fraudsters_per_ring(self) -> int:
-        # ensure at least 1 fraudster per ring
-        return max(1, self.ring_size - self.mules_per_ring)
+        return max(1, int(self.ring_size) - int(self.mules_per_ring))
 
     def expected_fraudsters(self) -> int:
-        return self.fraud_rings * self.fraudsters_per_ring()
+        return int(self.fraud_rings) * self.fraudsters_per_ring()
 
     def expected_mules(self) -> int:
-        # mules won't exceed ring_size - 1 (at least 1 fraudster)
-        return self.fraud_rings * min(self.mules_per_ring, max(0, self.ring_size - 1))
+        rings = int(self.fraud_rings)
+        ring_size = int(self.ring_size)
+        mules = int(self.mules_per_ring)
+        return rings * min(mules, max(0, ring_size - 1))
 
     def validate(self, *, persons: int) -> None:
-        if self.fraud_rings < 0:
-            raise ValueError("fraud_rings must be >= 0")
-
-        if not (0.0 <= self.target_illicit_ratio <= 0.5):
-            raise ValueError("target_illicit_ratio must be between 0.0 and 0.5")
+        require_int_ge("fraud_rings", self.fraud_rings, 0)
+        require_float_between(
+            "target_illicit_ratio", self.target_illicit_ratio, 0.0, 0.5
+        )
 
         if self.fraud_rings == 0:
             return
 
-        if self.ring_size < 3:
-            raise ValueError("ring_size must be >= 3 when fraud_rings > 0")
-        if self.mules_per_ring < 0:
-            raise ValueError("mules_per_ring must be >= 0")
-        if self.victims_per_ring < 0:
-            raise ValueError("victims_per_ring must be >= 0")
+        require_int_ge("ring_size", self.ring_size, 3)
+        require_int_ge("mules_per_ring", self.mules_per_ring, 0)
+        require_int_ge("victims_per_ring", self.victims_per_ring, 0)
 
-        ring_people = self.fraud_rings * self.ring_size
-        if ring_people >= persons:
+        ring_people = int(self.fraud_rings) * int(self.ring_size)
+        if ring_people >= int(persons):
             raise ValueError(
                 "fraud ring participants exceed/consume the population size"
             )
 
-        if self.victims_per_ring >= persons - self.ring_size:
+        if int(self.victims_per_ring) >= int(persons) - int(self.ring_size):
             raise ValueError("victims_per_ring too large for the population size")
 
 
@@ -126,37 +127,34 @@ class RecurringConfig:
     rent_real_raise_floor: float = 0.00
 
     def validate(self) -> None:
-        sf = float(self.salary_fraction)
-        rf = float(self.rent_fraction)
+        require_float_between("salary_fraction", self.salary_fraction, 0.0, 1.0)
+        require_float_between("rent_fraction", self.rent_fraction, 0.0, 1.0)
 
-        if not (0.0 <= sf <= 1.0):
-            raise ValueError("salary_fraction must be between 0.0 and 1.0")
-        if not (0.0 <= rf <= 1.0):
-            raise ValueError("rent_fraction must be between 0.0 and 1.0")
-
-        if self.employer_tenure_years_min <= 0:
-            raise ValueError("employer_tenure_years_min must be > 0")
-        if self.employer_tenure_years_max < self.employer_tenure_years_min:
+        require_float_gt(
+            "employer_tenure_years_min", self.employer_tenure_years_min, 0.0
+        )
+        if float(self.employer_tenure_years_max) < float(
+            self.employer_tenure_years_min
+        ):
             raise ValueError(
                 "employer_tenure_years_max must be >= employer_tenure_years_min"
             )
 
-        if self.landlord_tenure_years_min <= 0:
-            raise ValueError("landlord_tenure_years_min must be > 0")
-        if self.landlord_tenure_years_max < self.landlord_tenure_years_min:
+        require_float_gt(
+            "landlord_tenure_years_min", self.landlord_tenure_years_min, 0.0
+        )
+        if float(self.landlord_tenure_years_max) < float(
+            self.landlord_tenure_years_min
+        ):
             raise ValueError(
                 "landlord_tenure_years_max must be >= landlord_tenure_years_min"
             )
 
-        if self.annual_inflation_rate < 0.0:
-            raise ValueError("annual_inflation_rate must be >= 0")
+        require_float_ge("annual_inflation_rate", self.annual_inflation_rate, 0.0)
 
-        if self.salary_real_raise_sigma < 0.0:
-            raise ValueError("salary_real_raise_sigma must be >= 0")
-        if self.job_switch_bump_sigma < 0.0:
-            raise ValueError("job_switch_bump_sigma must be >= 0")
-        if self.rent_real_raise_sigma < 0.0:
-            raise ValueError("rent_real_raise_sigma must be >= 0")
+        require_float_ge("salary_real_raise_sigma", self.salary_real_raise_sigma, 0.0)
+        require_float_ge("job_switch_bump_sigma", self.job_switch_bump_sigma, 0.0)
+        require_float_ge("rent_real_raise_sigma", self.rent_real_raise_sigma, 0.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -170,15 +168,15 @@ class PersonasConfig:
 
     def validate(self) -> None:
         fracs = [
-            self.persona_student_frac,
-            self.persona_retired_frac,
-            self.persona_freelancer_frac,
-            self.persona_smallbiz_frac,
-            self.persona_hnw_frac,
+            float(self.persona_student_frac),
+            float(self.persona_retired_frac),
+            float(self.persona_freelancer_frac),
+            float(self.persona_smallbiz_frac),
+            float(self.persona_hnw_frac),
         ]
         for i, v in enumerate(fracs):
-            if not (0.0 <= float(v) <= 1.0):
-                raise ValueError(f"persona frac #{i} must be between 0.0 and 1.0")
+            require_float_between(f"persona frac #{i}", v, 0.0, 1.0)
+
         if float(sum(fracs)) > 1.0:
             raise ValueError("sum of persona_*_frac must be <= 1.0")
 
@@ -192,16 +190,17 @@ class GraphConfig:
     graph_edge_weight_gamma_shape: float = 1.0
 
     def validate(self) -> None:
-        if self.graph_k_neighbors <= 0:
-            raise ValueError("graph_k_neighbors must be > 0")
-        if not (0.0 <= self.graph_intra_household_p <= 1.0):
-            raise ValueError("graph_intra_household_p must be between 0.0 and 1.0")
-        if self.graph_hub_weight_boost <= 0.0:
-            raise ValueError("graph_hub_weight_boost must be > 0")
-        if self.graph_attractiveness_sigma <= 0.0:
-            raise ValueError("graph_attractiveness_sigma must be > 0")
-        if self.graph_edge_weight_gamma_shape <= 0.0:
-            raise ValueError("graph_edge_weight_gamma_shape must be > 0")
+        require_int_gt("graph_k_neighbors", self.graph_k_neighbors, 0)
+        require_float_between(
+            "graph_intra_household_p", self.graph_intra_household_p, 0.0, 1.0
+        )
+        require_float_gt("graph_hub_weight_boost", self.graph_hub_weight_boost, 0.0)
+        require_float_gt(
+            "graph_attractiveness_sigma", self.graph_attractiveness_sigma, 0.0
+        )
+        require_float_gt(
+            "graph_edge_weight_gamma_shape", self.graph_edge_weight_gamma_shape, 0.0
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -216,16 +215,13 @@ class EventsConfig:
     prefer_billers_p: float = 0.55
 
     def validate(self) -> None:
-        if self.clearing_accounts_n < 0:
-            raise ValueError("clearing_accounts_n must be >= 0")
-        if not (0.0 <= self.unknown_outflow_p <= 1.0):
-            raise ValueError("unknown_outflow_p must be between 0.0 and 1.0")
-        if self.day_multiplier_gamma_shape <= 0.0:
-            raise ValueError("day_multiplier_gamma_shape must be > 0")
-        if self.max_events_per_day < 0:
-            raise ValueError("max_events_per_day must be >= 0")
-        if not (0.0 <= self.prefer_billers_p <= 1.0):
-            raise ValueError("prefer_billers_p must be between 0.0 and 1.0")
+        require_int_ge("clearing_accounts_n", self.clearing_accounts_n, 0)
+        require_float_between("unknown_outflow_p", self.unknown_outflow_p, 0.0, 1.0)
+        require_float_gt(
+            "day_multiplier_gamma_shape", self.day_multiplier_gamma_shape, 0.0
+        )
+        require_int_ge("max_events_per_day", self.max_events_per_day, 0)
+        require_float_between("prefer_billers_p", self.prefer_billers_p, 0.0, 1.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,8 +229,7 @@ class InfraConfig:
     infra_switch_p: float = 0.05
 
     def validate(self) -> None:
-        if not (0.0 <= self.infra_switch_p <= 1.0):
-            raise ValueError("infra_switch_p must be between 0.0 and 1.0")
+        require_float_between("infra_switch_p", self.infra_switch_p, 0.0, 1.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,19 +250,10 @@ class BalancesConfig:
     init_bal_sigma: float = 1.0
 
     def validate(self) -> None:
-        if not (0.0 <= self.overdraft_frac <= 1.0):
-            raise ValueError("overdraft_frac must be between 0.0 and 1.0")
-        if self.overdraft_limit_median < 0.0:
-            raise ValueError("overdraft_limit_median must be >= 0")
-        if self.overdraft_limit_sigma < 0.0:
-            raise ValueError("overdraft_limit_sigma must be >= 0")
-        if self.init_bal_sigma < 0.0:
-            raise ValueError("init_bal_sigma must be >= 0")
-
-
-# -----------------------------
-# Root config (composition)
-# -----------------------------
+        require_float_between("overdraft_frac", self.overdraft_frac, 0.0, 1.0)
+        require_float_ge("overdraft_limit_median", self.overdraft_limit_median, 0.0)
+        require_float_ge("overdraft_limit_sigma", self.overdraft_limit_sigma, 0.0)
+        require_float_ge("init_bal_sigma", self.init_bal_sigma, 0.0)
 
 
 @dataclass(frozen=True, slots=True)
