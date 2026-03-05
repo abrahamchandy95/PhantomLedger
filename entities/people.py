@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.config import FraudConfig, PopulationConfig
@@ -73,7 +74,7 @@ def generate_people(
         mule_set = set(mule_list)
 
         fraud_list = [p for p in ring_people if p not in mule_set]
-        if len(fraud_list) == 0:
+        if not fraud_list:
             # Move one mule to fraud coordinator role.
             moved = mule_list.pop()
             fraud_list.append(moved)
@@ -109,12 +110,11 @@ def generate_people(
     )
 
 
-def build_person_rows(data: PeopleData) -> list[CsvRow]:
+def iter_person_rows(data: PeopleData) -> Iterator[CsvRow]:
     """
-    Build rows for person.csv:
+    person.csv rows:
       customer_id, mule, fraud, victim
     """
-    rows: list[CsvRow] = []
     for p in data.people:
         row: list[CsvCell] = [
             p,
@@ -122,5 +122,4 @@ def build_person_rows(data: PeopleData) -> list[CsvRow]:
             1 if p in data.fraud_people else 0,
             1 if p in data.victim_people else 0,
         ]
-        rows.append(row)
-    return rows
+        yield row

@@ -1,15 +1,9 @@
 import csv
 from collections.abc import Iterable, Sequence
-from datetime import datetime
 from pathlib import Path
 
 CsvCell = str | int | float | bool | None
 CsvRow = Sequence[CsvCell]
-
-
-def dt_str(dt: datetime) -> str:
-    """TigerGraph loader-friendly datetime string."""
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def ensure_dir(path: str | Path) -> None:

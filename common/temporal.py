@@ -2,6 +2,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from common.rng import Rng
+
 
 TG_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -12,14 +14,12 @@ def dt_str(dt: datetime) -> str:
 
 
 def day_start(start_date: datetime, day_index: int) -> datetime:
-    """Start datetime for a given day index (0-based) in the simulation window."""
     if day_index < 0:
         raise ValueError("day_index must be >= 0")
     return start_date + timedelta(days=day_index)
 
 
 def iter_days(start_date: datetime, days: int) -> Iterator[datetime]:
-    """Yield each day start in the simulation window."""
     if days < 0:
         raise ValueError("days must be >= 0")
     for d in range(days):
@@ -27,10 +27,6 @@ def iter_days(start_date: datetime, days: int) -> Iterator[datetime]:
 
 
 def iter_month_starts(start_date: datetime, days: int) -> list[datetime]:
-    """
-    Return month-start datetimes within [start_date, start_date + days).
-    Mirrors your original month_iter() logic.
-    """
     if days < 0:
         raise ValueError("days must be >= 0")
 
@@ -40,12 +36,29 @@ def iter_month_starts(start_date: datetime, days: int) -> list[datetime]:
     out: list[datetime] = []
     while d < end:
         out.append(d)
-        if d.month == 12:
-            d = datetime(d.year + 1, 1, 1)
-        else:
-            d = datetime(d.year, d.month + 1, 1)
+        d = datetime(d.year + (d.month == 12), 1 if d.month == 12 else d.month + 1, 1)
 
     return out
+
+
+def sample_seen_window(
+    rng: Rng, start_date: datetime, days: int
+) -> tuple[datetime, datetime]:
+    """
+    Sample (first_seen, last_seen) within the simulation window.
+
+    Mirrors your original logic:
+      fs = start + rand_day
+      ls = fs + rand(0..remaining_days)
+    """
+    if days <= 0:
+        raise ValueError("days must be > 0")
+
+    fs = start_date + timedelta(days=rng.int(0, days))
+    remaining = days - (fs - start_date).days
+    span = max(1, remaining)
+    ls = fs + timedelta(days=rng.int(0, span))
+    return fs, ls
 
 
 @dataclass(frozen=True, slots=True)

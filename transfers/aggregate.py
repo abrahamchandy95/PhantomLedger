@@ -3,7 +3,7 @@ from datetime import datetime
 from pathlib import Path
 
 from common.schema import HAS_PAID, RAW_LEDGER
-from common.timeutil import dt_str
+from common.temporal import dt_str
 from common.types import Txn
 from emit.tg_csv import CsvCell, CsvRow, write_csv
 

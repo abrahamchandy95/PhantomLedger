@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.rng import Rng
@@ -39,37 +40,29 @@ def generate_pii(people: list[str], rng: Rng) -> PiiData:
     return PiiData(person_phone=person_phone, person_email=person_email)
 
 
-def build_phone_rows(pii: PiiData) -> list[CsvRow]:
+def iter_phone_rows(pii: PiiData) -> Iterator[CsvRow]:
     """phone.csv rows: phone_id"""
-    rows: list[CsvRow] = []
     for phone in pii.person_phone.values():
         row: list[CsvCell] = [phone]
-        rows.append(row)
-    return rows
+        yield row
 
 
-def build_email_rows(pii: PiiData) -> list[CsvRow]:
+def iter_email_rows(pii: PiiData) -> Iterator[CsvRow]:
     """email.csv rows: email_id"""
-    rows: list[CsvRow] = []
     for email in pii.person_email.values():
         row: list[CsvCell] = [email]
-        rows.append(row)
-    return rows
+        yield row
 
 
-def build_has_phone_rows(people: list[str], pii: PiiData) -> list[CsvRow]:
+def iter_has_phone_rows(people: list[str], pii: PiiData) -> Iterator[CsvRow]:
     """HAS_PHONE.csv rows: FROM, TO"""
-    rows: list[CsvRow] = []
     for p in people:
         row: list[CsvCell] = [p, pii.person_phone[p]]
-        rows.append(row)
-    return rows
+        yield row
 
 
-def build_has_email_rows(people: list[str], pii: PiiData) -> list[CsvRow]:
+def iter_has_email_rows(people: list[str], pii: PiiData) -> Iterator[CsvRow]:
     """HAS_EMAIL.csv rows: FROM, TO"""
-    rows: list[CsvRow] = []
     for p in people:
         row: list[CsvCell] = [p, pii.person_email[p]]
-        rows.append(row)
-    return rows
+        yield row

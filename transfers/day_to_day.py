@@ -9,21 +9,22 @@ from common.rng import Rng
 from common.types import Txn
 from entities.personas import PERSONAS
 from infra.txn_infra import TxnInfraAssigner
+from math_models.amounts import p2p_amount
+from math_models.counts import DEFAULT_COUNT_MODELS, weekday_multiplier
 from math_models.graph import NeighborGraph
 from math_models.timing import (
     TimingProfiles,
     default_timing_profiles,
     sample_offsets_seconds,
 )
-from math_models.amounts import p2p_amount
-from math_models.counts import weekday_multiplier, DEFAULT_COUNT_MODELS
+from transfers.txns import TxnFactory, TxnSpec
 
 
-type _NumScalar = float | int | np.floating | np.integer
+type NumScalar = float | int | np.floating | np.integer
 
 
 def _as_float(x: object) -> float:
-    return float(cast(_NumScalar, x))
+    return float(cast(NumScalar, x))
 
 
 def _as_int(x: object) -> int:
@@ -36,25 +37,10 @@ class DayToDayContext:
     acct_index: dict[str, int]
     hub_set_idx: set[int]
     biller_set_idx: set[int]
-    clearing_set_idx: set[int]  # subset of billers/hubs used as "unknown outflow" sinks
+    clearing_set_idx: set[int]
     persona_for_acct: np.ndarray  # (n_accounts,) dtype=int8
     persona_names: list[str]
     timing: TimingProfiles
-
-
-def _supports_txn_fields() -> tuple[bool, bool, bool]:
-    """
-    Returns (supports_device_id, supports_ip_address, supports_channel).
-    Typed so kwargs can be built without using object-typed values.
-    """
-    fields_obj: object = getattr(Txn, "__dataclass_fields__", {})
-    if isinstance(fields_obj, dict):
-        fields = cast(dict[str, object], fields_obj)
-        return ("device_id" in fields, "ip_address" in fields, "channel" in fields)
-    return (False, False, False)
-
-
-_SUPPORTS_DEVICE, _SUPPORTS_IP, _SUPPORTS_CHANNEL = _supports_txn_fields()
 
 
 def _sample_day_multiplier(ecfg: EventsConfig, rng: Rng) -> float:
@@ -95,43 +81,6 @@ def _sample_dst_indices(
     return np.asarray(dst_obj, dtype=np.int32)
 
 
-def _make_txn(
-    src: str,
-    dst: str,
-    amt: float,
-    ts: datetime,
-    *,
-    is_fraud: int,
-    ring_id: int,
-    device_id: str | None,
-    ip_address: str | None,
-    channel: str | None,
-) -> Txn:
-    """
-    Construct a Txn while only passing optional fields if the Txn type supports them.
-    Avoids passing object-typed kwargs (which triggers basedpyright errors).
-    """
-    if _SUPPORTS_DEVICE or _SUPPORTS_IP or _SUPPORTS_CHANNEL:
-        if _SUPPORTS_DEVICE and _SUPPORTS_IP and _SUPPORTS_CHANNEL:
-            return Txn(
-                src, dst, amt, ts, is_fraud, ring_id, device_id, ip_address, channel
-            )
-        if _SUPPORTS_DEVICE and _SUPPORTS_IP:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, device_id, ip_address)
-        if _SUPPORTS_DEVICE and _SUPPORTS_CHANNEL:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, device_id, None, channel)
-        if _SUPPORTS_IP and _SUPPORTS_CHANNEL:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, None, ip_address, channel)
-        if _SUPPORTS_DEVICE:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, device_id)
-        if _SUPPORTS_IP:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, None, ip_address)
-        if _SUPPORTS_CHANNEL:
-            return Txn(src, dst, amt, ts, is_fraud, ring_id, None, None, channel)
-
-    return Txn(src, dst, amt, ts, is_fraud, ring_id)
-
-
 def generate_day_to_day_superposition(
     ecfg: EventsConfig,
     rng: Rng,
@@ -148,6 +97,8 @@ def generate_day_to_day_superposition(
     n = len(ctx.accounts)
     if n == 0 or days <= 0:
         return []
+
+    txf = TxnFactory(rng=rng, infra=infra)
 
     rates_obj: object = cast(
         object, rng.gen.lognormal(mean=base_mu, sigma=base_sigma, size=n)
@@ -257,21 +208,15 @@ def generate_day_to_day_superposition(
             )
 
         for i in range(n_events):
-            si_obj: object = cast(object, src_idx[i])
-            di_obj: object = cast(object, dst_idx[i])
-            oi_obj: object = cast(object, offsets[i])
-
-            si = _as_int(si_obj)
-            di = _as_int(di_obj)
-            off = _as_int(oi_obj)
+            si = _as_int(cast(object, src_idx[i]))
+            di = _as_int(cast(object, dst_idx[i]))
+            off = _as_int(cast(object, offsets[i]))
 
             src = ctx.accounts[si]
             dst = ctx.accounts[di]
             ts = day_start + timedelta(seconds=off)
 
-            p_id_obj: object = cast(object, ev_persona[i])
-            p_id = _as_int(p_id_obj)
-
+            p_id = _as_int(cast(object, ev_persona[i]))
             pname = ctx.persona_names[p_id]
             mult = float(PERSONAS[pname].amount_mult)
 
@@ -279,11 +224,8 @@ def generate_day_to_day_superposition(
             amt = _as_float(amt_obj) * mult
             amt = round(max(1.0, amt), 2)
 
-            out_i_obj: object = cast(object, out_mask[i])
-            bill_i_obj: object = cast(object, bill_mask[i])
-
-            out_i = bool(np.bool_(out_i_obj))
-            bill_i = bool(np.bool_(bill_i_obj))
+            out_i = bool(np.bool_(cast(object, out_mask[i])))
+            bill_i = bool(np.bool_(cast(object, bill_mask[i])))
 
             if out_i:
                 channel = "external_unknown"
@@ -292,22 +234,17 @@ def generate_day_to_day_superposition(
             else:
                 channel = "p2p"
 
-            device_id: str | None = None
-            ip_address: str | None = None
-            if infra is not None:
-                device_id, ip_address = infra.pick_for_src(rng, src)
-
             txns.append(
-                _make_txn(
-                    src,
-                    dst,
-                    amt,
-                    ts,
-                    is_fraud=0,
-                    ring_id=-1,
-                    device_id=device_id,
-                    ip_address=ip_address,
-                    channel=channel,
+                txf.make(
+                    TxnSpec(
+                        src=src,
+                        dst=dst,
+                        amt=amt,
+                        ts=ts,
+                        channel=channel,
+                        is_fraud=0,
+                        ring_id=-1,
+                    )
                 )
             )
 
@@ -324,12 +261,6 @@ def build_day_to_day_context(
     acct_owner: dict[str, str],
     persona_names_override: list[str] | None = None,
 ) -> DayToDayContext:
-    """
-    Build the day-to-day context from accounts + persona assignments.
-
-    Depends only on EventsConfig (for clearing_accounts_n) and an optional
-    persona_names_override (so we don't need to reach into a global config object).
-    """
     acct_index = {a: i for i, a in enumerate(accounts)}
 
     hub_set_idx = {acct_index[a] for a in hub_accounts if a in acct_index}
@@ -347,7 +278,6 @@ def build_day_to_day_context(
         "hnw",
         "salaried",
     ]
-
     persona_id_for_name = {n: i for i, n in enumerate(persona_names)}
 
     persona_for_acct = np.empty(len(accounts), dtype=np.int8)

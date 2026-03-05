@@ -1,10 +1,11 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from common.config import FraudConfig, WindowConfig
 from common.ids import device_id_for_person, shared_ring_device_id
 from common.rng import Rng
-from common.timeutil import dt_str
+from common.temporal import dt_str, sample_seen_window
 from emit.tg_csv import CsvCell, CsvRow
 
 from entities.people import PeopleData
@@ -21,26 +22,6 @@ class DevicesData:
     has_used_rows: list[CsvRow]
     # person_id -> list of device_ids (used later to stamp txns)
     person_devices: dict[str, list[str]]
-
-
-def _sample_seen_window(
-    rng: Rng, start_date: datetime, days: int
-) -> tuple[datetime, datetime]:
-    """
-    Sample first_seen and last_seen within the simulation window.
-
-    Mirrors original logic:
-      fs = start + rand_day
-      ls = fs + rand(0..remaining_days)
-    """
-    if days <= 0:
-        raise ValueError("days must be > 0")
-
-    fs = start_date + timedelta(days=rng.int(0, days))
-    remaining = days - (fs - start_date).days
-    span = max(1, remaining)
-    ls = fs + timedelta(days=rng.int(0, span))
-    return fs, ls
 
 
 def generate_devices(
@@ -67,7 +48,7 @@ def generate_devices(
             devices[did] = (dtype, flagged)
             person_devices[p].append(did)
 
-            fs, ls = _sample_seen_window(rng, start_date, days)
+            fs, ls = sample_seen_window(rng, start_date, days)
             used_row: list[CsvCell] = [p, did, dt_str(fs), dt_str(ls)]
             has_used_rows.append(used_row)
 
@@ -93,14 +74,12 @@ def generate_devices(
     )
 
 
-def build_device_rows(data: DevicesData) -> list[CsvRow]:
+def iter_device_rows(data: DevicesData) -> Iterator[CsvRow]:
     """
-    Build rows for device.csv:
+    device.csv rows:
       device_id, device_type, flagged_device
     """
-    rows: list[CsvRow] = []
-    for device_id in sorted(data.devices.keys()):
+    for device_id in sorted(data.devices):
         dtype, flagged = data.devices[device_id]
         row: list[CsvCell] = [device_id, dtype, int(flagged)]
-        rows.append(row)
-    return rows
+        yield row
