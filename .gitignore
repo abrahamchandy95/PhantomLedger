@@ -1,0 +1,35 @@
+.venv/
+venv/
+env/
+# python bytecode / caches
+__pycache__/
+*.py[cod]
+*.pyd
+
+# build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# outputs (generated data)
+out/
+out_*/
+*.csv
+
+# logs
+*.log
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

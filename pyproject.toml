@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "MockTnxs"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+  "numpy==2.4.2",
+]
+
+[project.optional-dependencies]
+dev = [
+  "basedpyright==1.38.0",
+]
+
+[tool.basedpyright]
+pythonVersion = "3.14"
