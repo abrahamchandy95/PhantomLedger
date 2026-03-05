@@ -11,6 +11,13 @@ from common.validate import (
 )
 
 
+def _parse_ymd(name: str, s: str) -> datetime:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d")
+    except ValueError as e:
+        raise ValueError(f"{name} must be YYYY-MM-DD, got {s!r}") from e
+
+
 @dataclass(frozen=True, slots=True)
 class OutputConfig:
     out_dir: Path = Path("out_bank_data")
@@ -23,11 +30,10 @@ class WindowConfig:
     days: int = 180
 
     def start_date(self) -> datetime:
-        return datetime.strptime(self.start, "%Y-%m-%d")
+        return _parse_ymd("start", self.start)
 
     def validate(self) -> None:
         require_int_gt("days", self.days, 0)
-        # basic format check
         _ = self.start_date()
 
 
@@ -66,7 +72,9 @@ class FraudConfig:
     target_illicit_ratio: float = 0.00009
 
     def fraudsters_per_ring(self) -> int:
-        return max(1, int(self.ring_size) - int(self.mules_per_ring))
+        ring_size = int(self.ring_size)
+        mules = int(self.mules_per_ring)
+        return max(1, ring_size - mules)
 
     def expected_fraudsters(self) -> int:
         return int(self.fraud_rings) * self.fraudsters_per_ring()
@@ -102,9 +110,7 @@ class FraudConfig:
 
 @dataclass(frozen=True, slots=True)
 class RecurringConfig:
-    # share of persons who receive salary monthly
     salary_fraction: float = 0.65
-    # share of (non-hub) primary accts who pay rent monthly
     rent_fraction: float = 0.55
 
     employer_tenure_years_min: float = 2.0
@@ -164,20 +170,20 @@ class PersonasConfig:
     persona_freelancer_frac: float = 0.10
     persona_smallbiz_frac: float = 0.06
     persona_hnw_frac: float = 0.02
-    # remainder -> salaried
 
     def validate(self) -> None:
-        fracs = [
-            float(self.persona_student_frac),
-            float(self.persona_retired_frac),
-            float(self.persona_freelancer_frac),
-            float(self.persona_smallbiz_frac),
-            float(self.persona_hnw_frac),
-        ]
-        for i, v in enumerate(fracs):
-            require_float_between(f"persona frac #{i}", v, 0.0, 1.0)
+        items = {
+            "persona_student_frac": self.persona_student_frac,
+            "persona_retired_frac": self.persona_retired_frac,
+            "persona_freelancer_frac": self.persona_freelancer_frac,
+            "persona_smallbiz_frac": self.persona_smallbiz_frac,
+            "persona_hnw_frac": self.persona_hnw_frac,
+        }
 
-        if float(sum(fracs)) > 1.0:
+        for name, v in items.items():
+            require_float_between(name, v, 0.0, 1.0)
+
+        if float(sum(map(float, items.values()))) > 1.0:
             raise ValueError("sum of persona_*_frac must be <= 1.0")
 
 
@@ -205,13 +211,11 @@ class GraphConfig:
 
 @dataclass(frozen=True, slots=True)
 class EventsConfig:
-    # unknown outflow sinks
     clearing_accounts_n: int = 3
     unknown_outflow_p: float = 0.45
 
-    # superposition model
     day_multiplier_gamma_shape: float = 1.3
-    max_events_per_day: int = 0  # 0 = no cap
+    max_events_per_day: int = 0
     prefer_billers_p: float = 0.55
 
     def validate(self) -> None:
@@ -240,7 +244,6 @@ class BalancesConfig:
     overdraft_limit_median: float = 300.0
     overdraft_limit_sigma: float = 0.6
 
-    # initial balances (median per persona)
     init_bal_student: float = 200.0
     init_bal_salaried: float = 1200.0
     init_bal_retired: float = 1500.0
@@ -272,17 +275,21 @@ class GenerationConfig:
     balances: BalancesConfig = field(default_factory=BalancesConfig)
 
     def validate(self) -> None:
-        self.window.validate()
-        self.population.validate()
-        self.accounts.validate()
-        self.hubs.validate()
-        self.fraud.validate(persons=self.population.persons)
-        self.recurring.validate()
-        self.personas.validate()
-        self.graph.validate()
-        self.events.validate()
-        self.infra.validate()
-        self.balances.validate()
+        validate_all(self)
+
+
+def validate_all(cfg: GenerationConfig) -> None:
+    cfg.window.validate()
+    cfg.population.validate()
+    cfg.accounts.validate()
+    cfg.hubs.validate()
+    cfg.fraud.validate(persons=cfg.population.persons)
+    cfg.recurring.validate()
+    cfg.personas.validate()
+    cfg.graph.validate()
+    cfg.events.validate()
+    cfg.infra.validate()
+    cfg.balances.validate()
 
 
 def default_config() -> GenerationConfig:
