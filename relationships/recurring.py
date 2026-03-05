@@ -6,7 +6,7 @@ import numpy as np
 
 from common.config import RecurringConfig
 from common.rng import Rng
-from common.seedutil import derived_seed
+from common.seeding import derived_seed
 
 
 type SalarySampler = Callable[[], float]

@@ -1,6 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import cast
+from datetime import timedelta
 
 from common.config import (
     BalancesConfig,
@@ -13,7 +12,7 @@ from common.config import (
     WindowConfig,
 )
 from common.rng import Rng
-from common.timeutil import iter_month_starts
+from common.temporal import iter_month_starts
 from common.types import Txn
 from entities.accounts import AccountsData
 from entities.personas import assign_personas
@@ -35,6 +34,7 @@ from transfers.day_to_day import (
     build_day_to_day_context,
     generate_day_to_day_superposition,
 )
+from transfers.txns import TxnFactory, TxnSpec
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,126 +50,15 @@ def _select_hub_accounts(
     rng: Rng,
     accounts: AccountsData,
 ) -> list[str]:
-    """
-    Pick hub accounts (employers/billers/high-volume entities).
-    """
     persons = list(accounts.person_accounts.keys())
     if not persons:
         return []
 
     n_hubs = int(pop.persons * hubs.hub_fraction)
-    if n_hubs < 1:
-        n_hubs = 1
-    if n_hubs > len(persons):
-        n_hubs = len(persons)
+    n_hubs = max(1, min(n_hubs, len(persons)))
 
     hub_people = rng.choice_k(persons, n_hubs, replace=False)
     return [accounts.person_accounts[p][0] for p in hub_people]
-
-
-def _supports_txn_fields() -> tuple[bool, bool, bool]:
-    """
-    Returns (supports_device_id, supports_ip_address, supports_channel).
-    """
-    fields_obj: object = getattr(Txn, "__dataclass_fields__", {})
-    if isinstance(fields_obj, dict):
-        fields = cast(dict[str, object], fields_obj)
-        return ("device_id" in fields, "ip_address" in fields, "channel" in fields)
-    return (False, False, False)
-
-
-_SUPPORTS_DEVICE, _SUPPORTS_IP, _SUPPORTS_CHANNEL = _supports_txn_fields()
-
-
-def _make_txn(
-    rng: Rng,
-    infra: TxnInfraAssigner | None,
-    *,
-    src: str,
-    dst: str,
-    amt: float,
-    ts: datetime,
-    is_fraud: int,
-    ring_id: int,
-    channel: str,
-) -> Txn:
-    """
-    Create Txn and optionally stamp device/ip/channel if supported by Txn.
-    Uses positional args to keep basedpyright happy.
-    """
-    device_id: str | None = None
-    ip_address: str | None = None
-    if infra is not None:
-        device_id, ip_address = infra.pick_for_src(rng, src)
-
-    if _SUPPORTS_DEVICE or _SUPPORTS_IP or _SUPPORTS_CHANNEL:
-        if _SUPPORTS_DEVICE and _SUPPORTS_IP and _SUPPORTS_CHANNEL:
-            return Txn(
-                src,
-                dst,
-                float(amt),
-                ts,
-                int(is_fraud),
-                int(ring_id),
-                device_id,
-                ip_address,
-                channel,
-            )
-        if _SUPPORTS_DEVICE and _SUPPORTS_IP:
-            return Txn(
-                src,
-                dst,
-                float(amt),
-                ts,
-                int(is_fraud),
-                int(ring_id),
-                device_id,
-                ip_address,
-            )
-        if _SUPPORTS_DEVICE and _SUPPORTS_CHANNEL:
-            return Txn(
-                src,
-                dst,
-                float(amt),
-                ts,
-                int(is_fraud),
-                int(ring_id),
-                device_id,
-                None,
-                channel,
-            )
-        if _SUPPORTS_IP and _SUPPORTS_CHANNEL:
-            return Txn(
-                src,
-                dst,
-                float(amt),
-                ts,
-                int(is_fraud),
-                int(ring_id),
-                None,
-                ip_address,
-                channel,
-            )
-        if _SUPPORTS_DEVICE:
-            return Txn(src, dst, float(amt), ts, int(is_fraud), int(ring_id), device_id)
-        if _SUPPORTS_IP:
-            return Txn(
-                src, dst, float(amt), ts, int(is_fraud), int(ring_id), None, ip_address
-            )
-        if _SUPPORTS_CHANNEL:
-            return Txn(
-                src,
-                dst,
-                float(amt),
-                ts,
-                int(is_fraud),
-                int(ring_id),
-                None,
-                None,
-                channel,
-            )
-
-    return Txn(src, dst, float(amt), ts, int(is_fraud), int(ring_id))
 
 
 def generate_legit_transfers(
@@ -187,9 +76,6 @@ def generate_legit_transfers(
     infra: TxnInfraAssigner | None = None,
     persona_names_override: list[str] | None = None,
 ) -> LegitTransfers:
-    """
-    Legitimate ledger generation.
-    """
     start_date = window.start_date()
     days = int(window.days)
     seed = int(pop.seed)
@@ -197,6 +83,8 @@ def generate_legit_transfers(
     all_accounts = accounts.accounts
     if not all_accounts:
         return LegitTransfers(txns=[], hub_accounts=[], biller_accounts=[])
+
+    txf = TxnFactory(rng=rng, infra=infra)
 
     # -----------------------------
     # Hubs / billers / employers
@@ -277,8 +165,7 @@ def generate_legit_transfers(
     ]
 
     salary_people_n = int(salary_fraction * len(salary_candidates))
-    if salary_people_n > len(salary_candidates):
-        salary_people_n = len(salary_candidates)
+    salary_people_n = min(salary_people_n, len(salary_candidates))
 
     salary_people = (
         rng.choice_k(salary_candidates, salary_people_n, replace=False)
@@ -323,16 +210,16 @@ def generate_legit_transfers(
             amt = salary_at(recurring, seed, person_id=p, state=st, pay_date=pd)
 
             _append_txn(
-                _make_txn(
-                    rng,
-                    infra,
-                    src=src_acct,
-                    dst=dst_acct,
-                    amt=amt,
-                    ts=ts,
-                    is_fraud=0,
-                    ring_id=-1,
-                    channel="salary",
+                txf.make(
+                    TxnSpec(
+                        src=src_acct,
+                        dst=dst_acct,
+                        amt=amt,
+                        ts=ts,
+                        channel="salary",
+                        is_fraud=0,
+                        ring_id=-1,
+                    )
                 )
             )
 
@@ -343,8 +230,7 @@ def generate_legit_transfers(
 
     rent_payers = [a for a in primary_acct_for_person.values() if a not in hub_set]
     rent_n = int(rent_fraction * len(rent_payers))
-    if rent_n > len(rent_payers):
-        rent_n = len(rent_payers)
+    rent_n = min(rent_n, len(rent_payers))
 
     rent_active = rng.choice_k(rent_payers, rent_n, replace=False) if rent_n > 0 else []
 
@@ -387,16 +273,16 @@ def generate_legit_transfers(
             amt = rent_at(recurring, seed, payer_acct=a, state=st, pay_date=pd)
 
             _append_txn(
-                _make_txn(
-                    rng,
-                    infra,
-                    src=a,
-                    dst=landlord,
-                    amt=amt,
-                    ts=ts,
-                    is_fraud=0,
-                    ring_id=-1,
-                    channel="rent",
+                txf.make(
+                    TxnSpec(
+                        src=a,
+                        dst=landlord,
+                        amt=amt,
+                        ts=ts,
+                        channel="rent",
+                        is_fraud=0,
+                        ring_id=-1,
+                    )
                 )
             )
 

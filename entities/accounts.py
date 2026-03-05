@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.config import AccountsConfig
@@ -30,7 +31,6 @@ def _account_count_per_person(acfg: AccountsConfig, rng: Rng, n: int) -> list[in
     under strict basedpyright settings.
     """
     max_per = int(acfg.max_accounts_per_person)
-
     if max_per <= 1:
         return [1] * n
 
@@ -41,11 +41,10 @@ def _account_count_per_person(acfg: AccountsConfig, rng: Rng, n: int) -> list[in
     out: list[int] = []
     for _ in range(n):
         extra = 0
-        for _t in range(trials):
-            if rng.coin(p):
-                extra += 1
-        k = 1 + extra
+        for _ in range(trials):
+            extra += 1 if rng.coin(p) else 0
 
+        k = 1 + extra
         if k < 1:
             k = 1
         elif k > max_k:
@@ -63,7 +62,7 @@ def generate_accounts(
     Generate account IDs and mappings.
 
     Flags:
-      - We mirror the original approach: each flagged person has at least their primary account flagged.
+      - Each flagged person has at least their primary account flagged.
       - If a person has >1 accounts, you can later decide to spread flags across multiple accounts,
         but we keep it simple and consistent with your original code.
     """
@@ -83,17 +82,17 @@ def generate_accounts(
 
     cursor = 0
     for pid, k in zip(persons, counts):
-        person_accounts[pid] = []
+        accts: list[str] = []
         for _ in range(k):
             aid = account_ids[cursor]
             cursor += 1
-
             accounts.append(aid)
-            person_accounts[pid].append(aid)
+            accts.append(aid)
             acct_owner[aid] = pid
 
-        # Primary account = first account
-        primary = person_accounts[pid][0]
+        person_accounts[pid] = accts
+
+        primary = accts[0]
         if pid in people.fraud_people:
             fraud_accounts.add(primary)
         if pid in people.mule_people:
@@ -111,12 +110,11 @@ def generate_accounts(
     )
 
 
-def build_account_rows(data: AccountsData) -> list[CsvRow]:
+def iter_account_rows(data: AccountsData) -> Iterator[CsvRow]:
     """
-    Build rows for accountnumber.csv:
+    accountnumber.csv rows:
       account_number, mule, fraud, victim
     """
-    rows: list[CsvRow] = []
     for a in data.accounts:
         row: list[CsvCell] = [
             a,
@@ -124,18 +122,15 @@ def build_account_rows(data: AccountsData) -> list[CsvRow]:
             1 if a in data.fraud_accounts else 0,
             1 if a in data.victim_accounts else 0,
         ]
-        rows.append(row)
-    return rows
+        yield row
 
 
-def build_has_account_rows(data: AccountsData) -> list[CsvRow]:
+def iter_has_account_rows(data: AccountsData) -> Iterator[CsvRow]:
     """
-    Build rows for HAS_ACCOUNT.csv:
+    HAS_ACCOUNT.csv rows:
       FROM, TO
     """
-    rows: list[CsvRow] = []
     for p, accts in data.person_accounts.items():
         for a in accts:
             row: list[CsvCell] = [p, a]
-            rows.append(row)
-    return rows
+            yield row
