@@ -3,24 +3,36 @@ from datetime import datetime, timedelta
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 
-from common.config import EventsConfig
+from common.config import EventsConfig, MerchantsConfig
 from common.rng import Rng
+from common.seeding import derived_seed
 from common.types import Txn
+from entities.merchants import MerchantData
 from entities.personas import PERSONAS
 from infra.txn_infra import TxnInfraAssigner
-from math_models.amounts import p2p_amount
-from math_models.counts import DEFAULT_COUNT_MODELS, weekday_multiplier
-from math_models.graph import NeighborGraph
+from math_models.amounts import bill_amount, p2p_amount
+from math_models.counts import (
+    DEFAULT_COUNT_MODELS,
+    gamma_poisson_out_count,
+    weekday_multiplier,
+)
 from math_models.timing import (
     TimingProfiles,
     default_timing_profiles,
     sample_offsets_seconds,
 )
+from relationships.social import SocialGraph
 from transfers.txns import TxnFactory, TxnSpec
 
-
+# Python 3.12+ (and therefore 3.14) typing syntax (PEP 695)
 type NumScalar = float | int | np.floating | np.integer
+type ArrF64 = npt.NDArray[np.float64]
+type ArrI32 = npt.NDArray[np.int32]
+type ArrI16 = npt.NDArray[np.int16]
+type ArrF32 = npt.NDArray[np.float32]
+type ArrBool = npt.NDArray[np.bool_]
 
 
 def _as_float(x: object) -> float:
@@ -31,272 +43,408 @@ def _as_int(x: object) -> int:
     return int(cast(int | np.integer, x))
 
 
+def _build_cdf(weights: ArrF64) -> ArrF64:
+    """
+    Normalize weights into a CDF. Last element is exactly 1.0.
+    """
+    w = np.asarray(weights, dtype=np.float64)
+
+    s_obj: object = cast(object, np.sum(w, dtype=np.float64))
+    s = _as_float(s_obj)
+
+    if not np.isfinite(s) or s <= 0.0:
+        w[:] = 1.0
+        s = float(w.size)
+
+    cdf_obj: object = cast(object, np.cumsum(w / s, dtype=np.float64))
+    cdf = np.asarray(cdf_obj, dtype=np.float64)
+    cdf[-1] = 1.0
+    return cdf
+
+
+def _cdf_pick_u(cdf: ArrF64, u: float) -> int:
+    j_obj: object = cast(object, np.searchsorted(cdf, u, side="right"))
+    j = _as_int(j_obj)
+    if j >= int(cdf.size):
+        j = int(cdf.size) - 1
+    return j
+
+
+def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list[int]:
+    """
+    Pick k unique indices using a CDF sampler. k is small (<= ~30).
+    """
+    out: list[int] = []
+    seen: set[int] = set()
+    tries = 0
+    max_tries = 250
+
+    while len(out) < k and tries < max_tries:
+        u = float(gen.random())
+        j = _cdf_pick_u(cdf, u)
+        tries += 1
+        if j in seen:
+            continue
+        seen.add(j)
+        out.append(j)
+
+    if not out:
+        out.append(0)
+    return out
+
+
+def _row_contains(arr_row: ArrI32, k: int, v: int) -> bool:
+    for i in range(k):
+        # Avoid numpy-stub Any leakage from arr_row[i]
+        if _as_int(cast(object, arr_row[i])) == v:
+            return True
+    return False
+
+
 @dataclass(frozen=True, slots=True)
 class DayToDayContext:
-    accounts: list[str]
-    acct_index: dict[str, int]
-    hub_set_idx: set[int]
-    biller_set_idx: set[int]
-    clearing_set_idx: set[int]
-    persona_for_acct: np.ndarray  # (n_accounts,) dtype=int8
-    persona_names: list[str]
+    persons: list[str]
+    people_index: dict[str, int]
+
+    primary_acct_for_person: dict[str, str]
+    persona_for_person: dict[str, str]
+
     timing: TimingProfiles
 
+    merchants: MerchantData
+    merch_cdf: ArrF64
 
-def _sample_day_multiplier(ecfg: EventsConfig, rng: Rng) -> float:
-    k = float(ecfg.day_multiplier_gamma_shape)
-    if k <= 0.0:
-        raise ValueError("day_multiplier_gamma_shape must be > 0")
-    g_obj: object = cast(object, rng.gen.gamma(shape=k, scale=1.0 / k))
-    return _as_float(g_obj)
+    social: SocialGraph
+
+    fav_merchants_idx: ArrI32  # (n_persons, fav_max)
+    fav_k: ArrI16  # (n_persons,)
+
+    billers_idx: ArrI32  # (n_persons, bill_max)
+    bill_k: ArrI16  # (n_persons,)
+
+    explore_propensity: ArrF32  # (n_persons,)
+    burst_start_day: ArrI32  # (n_persons,)
+    burst_len: ArrI16  # (n_persons,)
 
 
-def _build_src_probs(base_rates: np.ndarray) -> np.ndarray:
-    s = _as_float(np.sum(base_rates, dtype=np.float64))
-    if s <= 0.0 or not np.isfinite(s):
-        raise ValueError("sum of rates must be > 0 and finite")
-    return (base_rates / s).astype(np.float64)
+def build_day_to_day_context(
+    ecfg: EventsConfig,
+    mcfg: MerchantsConfig,
+    rng: Rng,
+    *,
+    start_date: datetime,
+    days: int,
+    persons: list[str],
+    primary_acct_for_person: dict[str, str],
+    persona_for_person: dict[str, str],
+    merchants: MerchantData,
+    social: SocialGraph,
+    base_seed: int,
+) -> DayToDayContext:
+    # Touch these so strict linters don't complain; no semantic effect.
+    _ = (float(ecfg.prefer_billers_p), start_date.year)
 
+    timing = default_timing_profiles()
 
-def _sample_dst_indices(
-    rng: Rng, src_idx: np.ndarray, graph: NeighborGraph
-) -> np.ndarray:
-    n_events = int(src_idx.size)
-    if n_events == 0:
-        return np.zeros(0, dtype=np.int32)
+    merch_w: ArrF64 = np.asarray(merchants.weight, dtype=np.float64)
+    merch_cdf: ArrF64 = _build_cdf(merch_w)
 
-    u_obj: object = cast(object, rng.gen.random(size=n_events))
-    u = np.asarray(u_obj, dtype=np.float32)
+    # Build biller-only weights (utilities/telco/insurance/education), fallback to global
+    biller_cats: set[str] = {"utilities", "telecom", "insurance", "education"}
+    mask_list: list[bool] = [c in biller_cats for c in merchants.category]
+    mask: ArrBool = np.asarray(mask_list, dtype=np.bool_)
 
-    cdf_rows_obj: object = cast(object, graph.cdf[src_idx])
-    cdf_rows = np.asarray(cdf_rows_obj, dtype=np.float32)
+    biller_w: ArrF64 = merch_w * mask.astype(np.float64)
 
-    cmp_obj: object = cast(object, cdf_rows < u[:, None])
-    cmp = np.asarray(cmp_obj, dtype=np.bool_)
+    biller_sum_obj: object = cast(object, np.sum(biller_w, dtype=np.float64))
+    biller_sum = _as_float(biller_sum_obj)
+    biller_cdf: ArrF64 = _build_cdf(biller_w) if biller_sum > 0.0 else merch_cdf
 
-    j_obj: object = cast(object, np.count_nonzero(cmp, axis=1))
-    j = np.asarray(j_obj, dtype=np.int32)
+    n = len(persons)
+    people_index = {p: i for i, p in enumerate(persons)}
 
-    dst_obj: object = cast(object, graph.neighbors[src_idx, j])
-    return np.asarray(dst_obj, dtype=np.int32)
+    fav_max = int(mcfg.fav_merchants_max)
+    bill_max = int(mcfg.billers_max)
+
+    fav_idx: ArrI32 = np.empty((n, fav_max), dtype=np.int32)
+    fav_k: ArrI16 = np.empty(n, dtype=np.int16)
+
+    bill_idx: ArrI32 = np.empty((n, bill_max), dtype=np.int32)
+    bill_k: ArrI16 = np.empty(n, dtype=np.int16)
+
+    explore_prop: ArrF32 = np.empty(n, dtype=np.float32)
+    burst_start: ArrI32 = np.full(n, -1, dtype=np.int32)
+    burst_len: ArrI16 = np.zeros(n, dtype=np.int16)
+
+    burst_p = 0.08
+    burst_len_min = 3
+    burst_len_max = 9
+
+    for i, p in enumerate(persons):
+        g = np.random.default_rng(derived_seed(base_seed, "payees", p))
+
+        fk = int(
+            g.integers(int(mcfg.fav_merchants_min), int(mcfg.fav_merchants_max) + 1)
+        )
+        bk = int(g.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1))
+
+        fav = _pick_unique_weighted(g, merch_cdf, fk)
+        bill = _pick_unique_weighted(g, biller_cdf, bk)
+
+        fav_k[i] = fk
+        bill_k[i] = bk
+
+        fav_idx[i, :] = int(fav[0])
+        fav_idx[i, : len(fav)] = np.asarray(fav, dtype=np.int32)
+
+        bill_idx[i, :] = int(bill[0])
+        bill_idx[i, : len(bill)] = np.asarray(bill, dtype=np.int32)
+
+        # Heterogeneous exploration propensity (many low, few higher)
+        alpha = 1.6
+        beta = 9.5
+        explore_prop[i] = np.float32(float(g.beta(alpha, beta)))
+
+        # Optional novelty burst window
+        if days > 0 and float(g.random()) < burst_p:
+            bs = int(g.integers(0, max(1, days)))
+            bl = int(g.integers(burst_len_min, burst_len_max + 1))
+            burst_start[i] = bs
+            burst_len[i] = np.int16(bl)
+
+    _ = rng.float()
+
+    return DayToDayContext(
+        persons=persons,
+        people_index=people_index,
+        primary_acct_for_person=primary_acct_for_person,
+        persona_for_person=persona_for_person,
+        timing=timing,
+        merchants=merchants,
+        merch_cdf=merch_cdf,
+        social=social,
+        fav_merchants_idx=fav_idx,
+        fav_k=fav_k,
+        billers_idx=bill_idx,
+        bill_k=bill_k,
+        explore_propensity=explore_prop,
+        burst_start_day=burst_start,
+        burst_len=burst_len,
+    )
 
 
 def generate_day_to_day_superposition(
     ecfg: EventsConfig,
+    mcfg: MerchantsConfig,
     rng: Rng,
     *,
     start_date: datetime,
     days: int,
     ctx: DayToDayContext,
-    graph: NeighborGraph,
     infra: TxnInfraAssigner | None = None,
-    base_mu: float = -2.0,
-    base_sigma: float = 1.0,
-    hub_activity_boost: float = 30.0,
 ) -> list[Txn]:
-    n = len(ctx.accounts)
-    if n == 0 or days <= 0:
+    if days <= 0:
         return []
 
     txf = TxnFactory(rng=rng, infra=infra)
 
-    rates_obj: object = cast(
-        object, rng.gen.lognormal(mean=base_mu, sigma=base_sigma, size=n)
+    shares: ArrF64 = np.array(
+        [
+            float(mcfg.share_merchant),
+            float(mcfg.share_bills),
+            float(mcfg.share_p2p),
+            float(mcfg.share_external_unknown),
+        ],
+        dtype=np.float64,
     )
-    rates = np.asarray(rates_obj, dtype=np.float64)
+    sum_shares_obj: object = cast(object, np.sum(shares, dtype=np.float64))
+    sum_shares = _as_float(sum_shares_obj)
+    shares = shares / (sum_shares if sum_shares > 0.0 else 1.0)
 
-    for i in ctx.hub_set_idx:
-        rates[i] *= float(hub_activity_boost)
+    cdf_chan_obj: object = cast(object, np.cumsum(shares, dtype=np.float64))
+    cdf_chan: ArrF64 = np.asarray(cdf_chan_obj, dtype=np.float64)
+    cdf_chan[-1] = 1.0
 
-    persona_arr_obj: object = cast(object, ctx.persona_for_acct)
-    persona_arr = np.asarray(persona_arr_obj, dtype=np.int64)
+    base_per_day = float(mcfg.target_payments_per_person_per_month) / 30.0
 
-    for pid, pname in enumerate(ctx.persona_names):
-        spec = PERSONAS[pname]
-        mask_obj: object = cast(object, persona_arr == int(pid))
-        mask = np.asarray(mask_obj, dtype=np.bool_)
-        if int(np.count_nonzero(mask)) > 0:
-            rates[mask] *= float(spec.rate_mult)
+    explore_base = float(mcfg.explore_p)
+    weekend_explore_mult = 1.25
+    burst_explore_mult = 3.25
 
-    src_probs = _build_src_probs(rates)
     txns: list[Txn] = []
 
-    prefer_billers_p = float(ecfg.prefer_billers_p)
-    unknown_outflow_p = float(ecfg.unknown_outflow_p)
+    persons = ctx.persons
+    n_persons = len(persons)
 
-    biller_list = np.fromiter(ctx.biller_set_idx, dtype=np.int32)
-    has_billers = bool(biller_list.size > 0)
-
-    clearing_list = np.fromiter(ctx.clearing_set_idx, dtype=np.int32)
-    has_clearing = bool(clearing_list.size > 0)
-
-    sum_rates = _as_float(np.sum(rates, dtype=np.float64))
+    day_cap = int(ecfg.max_events_per_day)
 
     for day in range(days):
         day_start = start_date + timedelta(days=day)
+
         wd_mult = float(weekday_multiplier(day_start, DEFAULT_COUNT_MODELS))
-        m = _sample_day_multiplier(ecfg, rng) * wd_mult
+        is_weekend = day_start.weekday() >= 5
 
-        lam = m * sum_rates
-        if lam <= 0.0 or not np.isfinite(lam):
-            continue
+        produced_today = 0
 
-        pe_obj: object = cast(object, rng.gen.poisson(lam=lam))
-        n_events = _as_int(pe_obj)
+        for pi in range(n_persons):
+            if day_cap > 0 and produced_today >= day_cap:
+                break
 
-        cap = int(ecfg.max_events_per_day)
-        if cap > 0 and n_events > cap:
-            n_events = cap
-        if n_events <= 0:
-            continue
-
-        src_obj: object = cast(
-            object, rng.gen.choice(n, size=n_events, replace=True, p=src_probs)
-        )
-        src_idx = np.asarray(src_obj, dtype=np.int32)
-
-        dst_idx = _sample_dst_indices(rng, src_idx, graph)
-
-        bill_mask = np.zeros(n_events, dtype=np.bool_)
-        out_mask = np.zeros(n_events, dtype=np.bool_)
-
-        if has_billers and prefer_billers_p > 0.0:
-            bm_obj: object = cast(object, rng.gen.random(size=n_events))
-            bm_u = np.asarray(bm_obj, dtype=np.float32)
-            bill_mask = bm_u < float(prefer_billers_p)
-
-            bill_cnt = int(np.count_nonzero(bill_mask))
-            if bill_cnt > 0:
-                chosen_obj: object = cast(
-                    object, rng.gen.choice(biller_list, size=bill_cnt, replace=True)
-                )
-                chosen = np.asarray(chosen_obj, dtype=np.int32)
-                dst_idx[bill_mask] = chosen
-
-        if has_clearing and unknown_outflow_p > 0.0:
-            uo_obj: object = cast(object, rng.gen.random(size=n_events))
-            uo_u = np.asarray(uo_obj, dtype=np.float32)
-            out_mask = uo_u < float(unknown_outflow_p)
-
-            out_cnt = int(np.count_nonzero(out_mask))
-            if out_cnt > 0:
-                chosen_obj2: object = cast(
-                    object, rng.gen.choice(clearing_list, size=out_cnt, replace=True)
-                )
-                chosen2 = np.asarray(chosen_obj2, dtype=np.int32)
-                dst_idx[out_mask] = chosen2
-
-        same_obj: object = cast(object, dst_idx == src_idx)
-        same = np.asarray(same_obj, dtype=np.bool_)
-        if int(np.count_nonzero(same)) > 0:
-            dst_idx[same] = (dst_idx[same] + 1) % n
-
-        offsets = np.empty(n_events, dtype=np.int32)
-
-        ev_persona_obj: object = cast(object, persona_arr[src_idx])
-        ev_persona = np.asarray(ev_persona_obj, dtype=np.int64)
-
-        for pid, pname in enumerate(ctx.persona_names):
-            spec = PERSONAS[pname]
-            pm_obj: object = cast(object, ev_persona == int(pid))
-            pmask = np.asarray(pm_obj, dtype=np.bool_)
-            cnt = int(np.count_nonzero(pmask))
-            if cnt <= 0:
+            p = persons[pi]
+            src = ctx.primary_acct_for_person.get(p)
+            if src is None:
                 continue
-            offsets[pmask] = sample_offsets_seconds(
-                rng, spec.timing_profile, cnt, ctx.timing
+
+            pname = ctx.persona_for_person.get(p, "salaried")
+            persona = PERSONAS.get(pname, PERSONAS["salaried"])
+
+            rate = base_per_day * float(persona.rate_mult) * wd_mult
+
+            n_out_obj: object = cast(
+                object,
+                gamma_poisson_out_count(
+                    rng, base_rate=rate, models=DEFAULT_COUNT_MODELS
+                ),
             )
+            n_out = _as_int(n_out_obj)
+            if n_out <= 0:
+                continue
 
-        for i in range(n_events):
-            si = _as_int(cast(object, src_idx[i]))
-            di = _as_int(cast(object, dst_idx[i]))
-            off = _as_int(cast(object, offsets[i]))
+            if day_cap > 0:
+                n_out = min(n_out, max(0, day_cap - produced_today))
+                if n_out <= 0:
+                    break
 
-            src = ctx.accounts[si]
-            dst = ctx.accounts[di]
-            ts = day_start + timedelta(seconds=off)
+            offsets_obj: object = cast(
+                object,
+                sample_offsets_seconds(rng, persona.timing_profile, n_out, ctx.timing),
+            )
+            offsets: ArrI32 = np.asarray(offsets_obj, dtype=np.int32)
 
-            p_id = _as_int(cast(object, ev_persona[i]))
-            pname = ctx.persona_names[p_id]
-            mult = float(PERSONAS[pname].amount_mult)
+            # --- FIX: avoid float()/int() directly on numpy scalars (Any leakage) ---
+            ep = _as_float(cast(object, ctx.explore_propensity[pi]))
+            bs = _as_int(cast(object, ctx.burst_start_day[pi]))
+            bl = _as_int(cast(object, ctx.burst_len[pi]))
+            fk = _as_int(cast(object, ctx.fav_k[pi]))
+            bk = _as_int(cast(object, ctx.bill_k[pi]))
 
-            amt_obj: object = cast(object, p2p_amount(rng))
-            amt = _as_float(amt_obj) * mult
-            amt = round(max(1.0, amt), 2)
+            p_explore = explore_base * (0.25 + 0.75 * ep)
+            if is_weekend:
+                p_explore *= weekend_explore_mult
+            if bs >= 0 and bl > 0 and (bs <= day < bs + bl):
+                p_explore *= burst_explore_mult
 
-            out_i = bool(np.bool_(cast(object, out_mask[i])))
-            bill_i = bool(np.bool_(cast(object, bill_mask[i])))
+            p_explore = min(0.50, max(0.0, p_explore))
 
-            if out_i:
-                channel = "external_unknown"
-            elif bill_i:
-                channel = "merchant"
-            else:
-                channel = "p2p"
+            for i in range(n_out):
+                off = _as_int(cast(object, offsets[i]))
+                ts = day_start + timedelta(seconds=off)
 
-            txns.append(
-                txf.make(
-                    TxnSpec(
-                        src=src,
-                        dst=dst,
-                        amt=amt,
-                        ts=ts,
-                        channel=channel,
-                        is_fraud=0,
-                        ring_id=-1,
-                    )
+                u = float(rng.float())
+                ch_obj: object = cast(
+                    object, np.searchsorted(cdf_chan, u, side="right")
                 )
-            )
+                ch = _as_int(ch_obj)
+
+                if ch == 2:
+                    cidx_obj: object = cast(
+                        object,
+                        ctx.social.contacts[pi, rng.int(0, ctx.social.k_contacts)],
+                    )
+                    cidx = _as_int(cidx_obj)
+
+                    if 0 <= cidx < n_persons:
+                        dst_person = persons[cidx]
+                        dst = ctx.primary_acct_for_person.get(dst_person)
+                        if dst is None or dst == src:
+                            continue
+
+                        amt = _as_float(cast(object, p2p_amount(rng))) * float(
+                            persona.amount_mult
+                        )
+                        amt = round(max(1.0, amt), 2)
+
+                        txns.append(
+                            txf.make(
+                                TxnSpec(src=src, dst=dst, amt=amt, ts=ts, channel="p2p")
+                            )
+                        )
+                        produced_today += 1
+
+                elif ch == 1:
+                    j_obj: object = cast(
+                        object, ctx.billers_idx[pi, rng.int(0, max(1, bk))]
+                    )
+                    j = _as_int(j_obj)
+                    dst = ctx.merchants.counterparty_acct[j]
+
+                    amt = _as_float(cast(object, bill_amount(rng)))
+                    txns.append(
+                        txf.make(
+                            TxnSpec(src=src, dst=dst, amt=amt, ts=ts, channel="bill")
+                        )
+                    )
+                    produced_today += 1
+
+                elif ch == 3:
+                    if ctx.merchants.external_accounts:
+                        dst = rng.choice(ctx.merchants.external_accounts)
+                    else:
+                        dst = "X0000000001"
+
+                    amt = _as_float(cast(object, p2p_amount(rng)))
+                    amt = round(max(1.0, amt), 2)
+
+                    txns.append(
+                        txf.make(
+                            TxnSpec(
+                                src=src,
+                                dst=dst,
+                                amt=amt,
+                                ts=ts,
+                                channel="external_unknown",
+                            )
+                        )
+                    )
+                    produced_today += 1
+
+                else:
+                    exploring = rng.coin(p_explore)
+
+                    if (not exploring) and fk > 0:
+                        j_obj2: object = cast(
+                            object, ctx.fav_merchants_idx[pi, rng.int(0, fk)]
+                        )
+                        j = _as_int(j_obj2)
+                    else:
+                        # exploration: sample global merchant distribution, try to avoid favorites
+                        tries = 0
+                        j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
+
+                        row_obj: object = cast(object, ctx.fav_merchants_idx[pi, :])
+                        row: ArrI32 = np.asarray(row_obj, dtype=np.int32)
+
+                        while fk > 0 and _row_contains(row, fk, j) and tries < 6:
+                            j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
+                            tries += 1
+
+                    dst = ctx.merchants.counterparty_acct[j]
+
+                    amt = _as_float(cast(object, p2p_amount(rng))) * float(
+                        persona.amount_mult
+                    )
+                    amt = round(max(1.0, amt), 2)
+
+                    txns.append(
+                        txf.make(
+                            TxnSpec(
+                                src=src, dst=dst, amt=amt, ts=ts, channel="merchant"
+                            )
+                        )
+                    )
+                    produced_today += 1
+
+                if day_cap > 0 and produced_today >= day_cap:
+                    break
 
     return txns
-
-
-def build_day_to_day_context(
-    ecfg: EventsConfig,
-    *,
-    accounts: list[str],
-    hub_accounts: list[str],
-    biller_accounts: list[str],
-    persona_for_person: dict[str, str],
-    acct_owner: dict[str, str],
-    persona_names_override: list[str] | None = None,
-) -> DayToDayContext:
-    acct_index = {a: i for i, a in enumerate(accounts)}
-
-    hub_set_idx = {acct_index[a] for a in hub_accounts if a in acct_index}
-    biller_set_idx = {acct_index[a] for a in biller_accounts if a in acct_index}
-
-    clearing_n = int(ecfg.clearing_accounts_n)
-    clearing_accounts = biller_accounts[: max(0, min(clearing_n, len(biller_accounts)))]
-    clearing_set_idx = {acct_index[a] for a in clearing_accounts if a in acct_index}
-
-    persona_names = persona_names_override or [
-        "student",
-        "retired",
-        "freelancer",
-        "smallbiz",
-        "hnw",
-        "salaried",
-    ]
-    persona_id_for_name = {n: i for i, n in enumerate(persona_names)}
-
-    persona_for_acct = np.empty(len(accounts), dtype=np.int8)
-    for i, a in enumerate(accounts):
-        p = acct_owner.get(a)
-        pname = persona_for_person.get(p, "salaried") if p is not None else "salaried"
-        persona_for_acct[i] = int(
-            persona_id_for_name.get(pname, persona_id_for_name["salaried"])
-        )
-
-    timing = default_timing_profiles()
-
-    return DayToDayContext(
-        accounts=accounts,
-        acct_index=acct_index,
-        hub_set_idx=hub_set_idx,
-        biller_set_idx=biller_set_idx,
-        clearing_set_idx=clearing_set_idx,
-        persona_for_acct=persona_for_acct,
-        persona_names=persona_names,
-        timing=timing,
-    )

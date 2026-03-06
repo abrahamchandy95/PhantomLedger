@@ -5,6 +5,7 @@ from pathlib import Path
 from common.schema import HAS_PAID, RAW_LEDGER
 from common.temporal import dt_str
 from common.types import Txn
+from common.ids import is_external_account
 from emit.tg_csv import CsvCell, CsvRow, write_csv
 
 
@@ -89,15 +90,28 @@ def build_raw_ledger_rows(txns: list[Txn]) -> list[CsvRow]:
 def emit_transfer_outputs(out_dir: Path, txns: list[Txn], emit_raw_ledger: bool) -> int:
     """
     Writes:
-      - HAS_PAID.csv (always)
-      - transactions_raw.csv (optional)
+      - HAS_PAID.csv        : internal->internal only (TigerGraph schema-safe)
+      - HAS_PAID_full.csv   : all edges including external (generic ledger use)
+      - transactions_raw.csv: optional raw ledger of all txns
 
-    Returns: number of unique HAS_PAID edges written.
+    Returns: number of unique HAS_PAID edges written (internal-only).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    has_paid_rows = build_has_paid_rows(txns)
+    internal_txns = [
+        t
+        for t in txns
+        if (not is_external_account(t.src_acct))
+        and (not is_external_account(t.dst_acct))
+    ]
+
+    # TG-safe
+    has_paid_rows = build_has_paid_rows(internal_txns)
     write_csv(out_dir / HAS_PAID.filename, HAS_PAID.header, has_paid_rows)
+
+    # Full (generic ledger)
+    has_paid_full_rows = build_has_paid_rows(txns)
+    write_csv(out_dir / "HAS_PAID_full.csv", HAS_PAID.header, has_paid_full_rows)
 
     if emit_raw_ledger:
         ledger_rows = build_raw_ledger_rows(txns)

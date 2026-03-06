@@ -16,6 +16,7 @@ from entities.accounts import (
     generate_accounts,
     iter_account_rows,
     iter_has_account_rows,
+    with_extra_accounts,
 )
 from entities.people import generate_people, iter_person_rows
 from entities.pii import (
@@ -24,6 +25,11 @@ from entities.pii import (
     iter_has_email_rows,
     iter_has_phone_rows,
     iter_phone_rows,
+)
+from entities.merchants import (
+    generate_merchants,
+    iter_merchants_rows,
+    iter_external_accounts_rows,
 )
 from infra.devices import generate_devices, iter_device_rows
 from infra.ipaddrs import generate_ipaddrs, iter_ip_rows
@@ -41,6 +47,13 @@ def build_entities(st: GenerationState) -> None:
     st.people = generate_people(cfg.population, cfg.fraud, rng)
     st.accounts = generate_accounts(cfg.accounts, rng, st.people)
     st.pii = generate_pii(st.people.people, rng)
+
+    # NEW: merchant ecosystem
+    st.merchants = generate_merchants(cfg.merchants, cfg.population, rng)
+
+    # Add in-bank merchants (M...) into internal account universe
+    if st.merchants.in_bank_accounts:
+        st.accounts = with_extra_accounts(st.accounts, st.merchants.in_bank_accounts)
 
 
 def build_infra(st: GenerationState) -> None:
@@ -68,6 +81,7 @@ def build_transfers(st: GenerationState) -> None:
 
     assert st.people is not None
     assert st.accounts is not None
+    assert st.merchants is not None
 
     st.legit = generate_legit_transfers(
         cfg.window,
@@ -78,8 +92,10 @@ def build_transfers(st: GenerationState) -> None:
         cfg.events,
         cfg.recurring,
         cfg.balances,
+        cfg.merchants,  # NEW
         rng,
         st.accounts,
+        merchants=st.merchants,  # NEW
         infra=st.infra,
     )
     st.base_txns = st.legit.txns
@@ -92,6 +108,8 @@ def build_transfers(st: GenerationState) -> None:
         st.people,
         st.accounts,
         st.base_txns,
+        biller_accounts=st.legit.biller_accounts,  # NEW
+        employers=st.legit.employers,  # NEW
         infra=st.infra,
     )
     st.all_txns = st.fraud.txns
@@ -113,7 +131,7 @@ def emit_outputs(st: GenerationState) -> None:
         out_dir, st.all_txns, cfg.output.emit_raw_ledger
     )
 
-    # Non-transfer CSVs (declarative table list)
+    # Non-transfer CSVs (TigerGraph-ready core)
     tables = [
         (PERSON, iter_person_rows(st.people)),
         (ACCOUNTNUMBER, iter_account_rows(st.accounts)),
@@ -130,6 +148,19 @@ def emit_outputs(st: GenerationState) -> None:
 
     for spec, rows in tables:
         write_csv(out_dir / spec.filename, spec.header, rows)
+
+    # NEW: export merchant + external metadata (generic ledger extras)
+    if st.merchants is not None:
+        write_csv(
+            out_dir / "merchants.csv",
+            ("merchant_id", "counterparty_acct", "category", "weight", "in_bank"),
+            iter_merchants_rows(st.merchants),
+        )
+        write_csv(
+            out_dir / "external_accounts.csv",
+            ("account_id", "kind", "category"),
+            iter_external_accounts_rows(st.merchants),
+        )
 
 
 def print_summary(st: GenerationState) -> None:

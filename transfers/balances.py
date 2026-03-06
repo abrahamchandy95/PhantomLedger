@@ -6,12 +6,13 @@ import numpy as np
 
 from common.config import BalancesConfig
 from common.rng import Rng
+from common.ids import is_external_account
 
 
 @dataclass(slots=True)
 class BalanceBook:
-    balances: np.ndarray  # float64
-    overdraft_limit: np.ndarray  # float64 (0 if no overdraft)
+    balances: np.ndarray
+    overdraft_limit: np.ndarray
     acct_index: dict[str, int]
     hub_set_idx: set[int]
 
@@ -117,34 +118,77 @@ def init_balances(
 
 def try_transfer(book: BalanceBook, src: str, dst: str, amount: float) -> bool:
     """
-    Apply a transfer if balance permits (optionally with overdraft).
-    Returns True if applied, False if declined/skipped.
+    Apply a transfer with support for external counterparties.
+
+    Rules:
+      - internal->internal: debit src, credit dst
+      - internal->external (dst startswith X): debit src only
+      - external->internal (src startswith X): credit dst only
+      - external->external: ignored (returns False)
     """
+    amt = float(amount)
+    if amt <= 0.0 or not np.isfinite(amt):
+        return False
+
+    src_ext = is_external_account(src)
+    dst_ext = is_external_account(dst)
+
+    balances = book.balances
+    overdraft = book.overdraft_limit
+
+    # external -> external: ignore
+    if src_ext and dst_ext:
+        return False
+
+    # external -> internal: credit only
+    if src_ext and not dst_ext:
+        di = book.acct_index.get(dst)
+        if di is None:
+            return False
+        di_val_obj: object = cast(object, balances[di])
+        balances[di] = _as_float(di_val_obj) + amt
+        return True
+
+    # internal -> external: debit only (respect overdraft unless hub)
+    if not src_ext and dst_ext:
+        si = book.acct_index.get(src)
+        if si is None:
+            return False
+
+        # hubs effectively infinite
+        if si in book.hub_set_idx:
+            return True
+
+        si_val_obj: object = cast(object, balances[si])
+        od_val_obj: object = cast(object, overdraft[si])
+        bal = _as_float(si_val_obj)
+        limit = _as_float(od_val_obj)
+
+        if bal + limit < amt:
+            return False
+        balances[si] = bal - amt
+        return True
+
+    # internal -> internal (original behavior)
     si = book.acct_index.get(src)
     di = book.acct_index.get(dst)
     if si is None or di is None:
         return False
 
-    balances = book.balances
-    overdraft = book.overdraft_limit
-    amt = float(amount)
-
-    # hubs always allowed (treat as infinite)
     if si in book.hub_set_idx:
-        di_val_obj: object = cast(object, balances[di])
-        balances[di] = _as_float(di_val_obj) + amt
+        di_val_obj2: object = cast(object, balances[di])
+        balances[di] = _as_float(di_val_obj2) + amt
         return True
 
-    si_val_obj: object = cast(object, balances[si])
-    od_val_obj: object = cast(object, overdraft[si])
-    bal = _as_float(si_val_obj)
-    limit = _as_float(od_val_obj)
+    si_val_obj2: object = cast(object, balances[si])
+    od_val_obj2: object = cast(object, overdraft[si])
+    bal2 = _as_float(si_val_obj2)
+    limit2 = _as_float(od_val_obj2)
 
-    if bal + limit < amt:
+    if bal2 + limit2 < amt:
         return False
 
-    balances[si] = bal - amt
-
-    di_val_obj2: object = cast(object, balances[di])
-    balances[di] = _as_float(di_val_obj2) + amt
+    balances[si] = bal2 - amt
+    di_val_obj3: object = cast(object, balances[di])
+    balances[di] = _as_float(di_val_obj3) + amt
     return True

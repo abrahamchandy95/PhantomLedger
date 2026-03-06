@@ -1,11 +1,14 @@
 from dataclasses import dataclass
 from datetime import timedelta
 
+import numpy as np
+
 from common.config import (
     BalancesConfig,
     EventsConfig,
     GraphConfig,
     HubsConfig,
+    MerchantsConfig,
     PersonasConfig,
     PopulationConfig,
     RecurringConfig,
@@ -15,10 +18,10 @@ from common.rng import Rng
 from common.temporal import iter_month_starts
 from common.types import Txn
 from entities.accounts import AccountsData
+from entities.merchants import MerchantData
 from entities.personas import assign_personas
 from infra.txn_infra import TxnInfraAssigner
 from math_models.amounts import bill_amount, salary_amount
-from math_models.graph import build_neighbor_graph
 from relationships.recurring import (
     EmploymentState,
     LeaseState,
@@ -29,6 +32,7 @@ from relationships.recurring import (
     rent_at,
     salary_at,
 )
+from relationships.social import build_social_graph
 from transfers.balances import init_balances, try_transfer
 from transfers.day_to_day import (
     build_day_to_day_context,
@@ -42,6 +46,7 @@ class LegitTransfers:
     txns: list[Txn]
     hub_accounts: list[str]
     biller_accounts: list[str]
+    employers: list[str]
 
 
 def _select_hub_accounts(
@@ -61,18 +66,43 @@ def _select_hub_accounts(
     return [accounts.person_accounts[p][0] for p in hub_people]
 
 
+def _persona_for_acct_array(
+    *,
+    accounts_list: list[str],
+    acct_owner: dict[str, str],
+    persona_for_person: dict[str, str],
+    persona_names: list[str],
+) -> np.ndarray:
+    """
+    Build persona_for_acct array aligned to accounts_list, defaulting to salaried.
+
+    This replaces the old day_to_day context helper that based balances init on.
+    """
+    persona_id_for_name = {n: i for i, n in enumerate(persona_names)}
+    salaried_id = int(persona_id_for_name.get("salaried", 0))
+
+    out = np.empty(len(accounts_list), dtype=np.int8)
+    for i, a in enumerate(accounts_list):
+        p = acct_owner.get(a)
+        pname = persona_for_person.get(p, "salaried") if p is not None else "salaried"
+        out[i] = int(persona_id_for_name.get(pname, salaried_id))
+    return out
+
+
 def generate_legit_transfers(
     window: WindowConfig,
     pop: PopulationConfig,
     hubs: HubsConfig,
     personas: PersonasConfig,
-    graph_cfg: GraphConfig,
+    graph_cfg: GraphConfig,  # used to influence social structure knobs
     events: EventsConfig,
     recurring: RecurringConfig,
     balances_cfg: BalancesConfig,
+    merchants_cfg: MerchantsConfig,
     rng: Rng,
     accounts: AccountsData,
     *,
+    merchants: MerchantData,
     infra: TxnInfraAssigner | None = None,
     persona_names_override: list[str] | None = None,
 ) -> LegitTransfers:
@@ -82,7 +112,9 @@ def generate_legit_transfers(
 
     all_accounts = accounts.accounts
     if not all_accounts:
-        return LegitTransfers(txns=[], hub_accounts=[], biller_accounts=[])
+        return LegitTransfers(
+            txns=[], hub_accounts=[], biller_accounts=[], employers=[]
+        )
 
     txf = TxnFactory(rng=rng, infra=infra)
 
@@ -112,41 +144,42 @@ def generate_legit_transfers(
     txns: list[Txn] = []
 
     # -----------------------------
-    # Personas + graph + day-to-day context
+    # Personas
     # -----------------------------
     persona_for_person_map = assign_personas(personas, rng, persons)
 
-    graph = build_neighbor_graph(
-        graph_cfg,
-        rng,
-        accounts=all_accounts,
-        acct_owner=accounts.acct_owner,
-        hub_accounts=set(hub_accounts),
-    )
-
-    ctx = build_day_to_day_context(
-        events,
-        accounts=all_accounts,
-        hub_accounts=hub_accounts,
-        biller_accounts=biller_accounts,
-        persona_for_person=persona_for_person_map,
-        acct_owner=accounts.acct_owner,
-        persona_names_override=persona_names_override,
-    )
+    persona_names = persona_names_override or [
+        "student",
+        "retired",
+        "freelancer",
+        "smallbiz",
+        "hnw",
+        "salaried",
+    ]
 
     # -----------------------------
     # Optional balance constraints
     # -----------------------------
     book = None
     if balances_cfg.enable_balance_constraints:
+        acct_index = {a: i for i, a in enumerate(all_accounts)}
+        hub_set_idx = {acct_index[a] for a in hub_accounts if a in acct_index}
+
+        persona_for_acct = _persona_for_acct_array(
+            accounts_list=all_accounts,
+            acct_owner=accounts.acct_owner,
+            persona_for_person=persona_for_person_map,
+            persona_names=persona_names,
+        )
+
         book = init_balances(
             balances_cfg,
             rng,
             accounts=all_accounts,
-            acct_index=ctx.acct_index,
-            hub_set_idx=ctx.hub_set_idx,
-            persona_for_acct=ctx.persona_for_acct,
-            persona_names=ctx.persona_names,
+            acct_index=acct_index,
+            hub_set_idx=hub_set_idx,
+            persona_for_acct=persona_for_acct,
+            persona_names=persona_names,
         )
 
     def _append_txn(t: Txn) -> None:
@@ -227,11 +260,10 @@ def generate_legit_transfers(
     # Rent
     # -----------------------------
     rent_fraction = float(recurring.rent_fraction)
-
     rent_payers = [a for a in primary_acct_for_person.values() if a not in hub_set]
+
     rent_n = int(rent_fraction * len(rent_payers))
     rent_n = min(rent_n, len(rent_payers))
-
     rent_active = rng.choice_k(rent_payers, rent_n, replace=False) if rent_n > 0 else []
 
     leases: dict[str, LeaseState] = {}
@@ -287,20 +319,52 @@ def generate_legit_transfers(
             )
 
     # -----------------------------
-    # Day-to-day
+    # Day-to-day (sticky + exploratory)
     # -----------------------------
+    # Use GraphConfig to lightly parameterize social graph (so graph_cfg isn't unused)
+    k_contacts = max(3, min(16, int(graph_cfg.graph_k_neighbors // 2)))
+    cross_p = max(0.01, min(0.10, 1.0 / float(graph_cfg.graph_hub_weight_boost)))
+
+    social = build_social_graph(
+        rng,
+        seed=seed,
+        people=persons,
+        k_contacts=k_contacts,
+        community_min=80,
+        community_max=450,
+        cross_community_p=cross_p,
+    )
+
+    ctx = build_day_to_day_context(
+        events,
+        merchants_cfg,
+        rng,
+        start_date=start_date,
+        days=days,
+        persons=persons,
+        primary_acct_for_person=primary_acct_for_person,
+        persona_for_person=persona_for_person_map,
+        merchants=merchants,
+        social=social,
+        base_seed=seed,
+    )
+
     day_txns = generate_day_to_day_superposition(
         events,
+        merchants_cfg,
         rng,
         start_date=start_date,
         days=days,
         ctx=ctx,
-        graph=graph,
         infra=infra,
     )
+
     for t in day_txns:
         _append_txn(t)
 
     return LegitTransfers(
-        txns=txns, hub_accounts=hub_accounts, biller_accounts=biller_accounts
+        txns=txns,
+        hub_accounts=hub_accounts,
+        biller_accounts=biller_accounts,
+        employers=employers,
     )

@@ -14,6 +14,8 @@ class IdFormat:
 
 PERSON_ID = IdFormat(prefix="C", width=7)
 ACCOUNT_ID = IdFormat(prefix="A", width=9)
+MERCHANT_ACCOUNT_ID = IdFormat(prefix="M", width=9)
+EXTERNAL_ACCOUNT_ID = IdFormat(prefix="X", width=10)
 
 
 def person_id(n: int) -> str:
@@ -76,3 +78,21 @@ def rand_ipv4(rng: np.random.Generator) -> str:
     c = int(rng.integers(0, 256))
     d = int(rng.integers(1, 255))
     return f"{a}.{b}.{c}.{d}"
+
+
+def merchant_account_id(n: int) -> str:
+    """1-based merchant account id."""
+    if n <= 0:
+        raise ValueError("merchant_account_id expects n >= 1")
+    return MERCHANT_ACCOUNT_ID.format(n)
+
+
+def external_account_id(n: int) -> str:
+    """1-based external counterparty id."""
+    if n <= 0:
+        raise ValueError("external_account_id expects n >= 1")
+    return EXTERNAL_ACCOUNT_ID.format(n)
+
+
+def is_external_account(acct: str) -> bool:
+    return acct.startswith("X")

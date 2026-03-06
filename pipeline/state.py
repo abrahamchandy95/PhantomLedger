@@ -7,6 +7,7 @@ from common.types import Txn
 from entities.accounts import AccountsData
 from entities.people import PeopleData
 from entities.pii import PiiData
+from entities.merchants import MerchantData
 from infra.devices import DevicesData
 from infra.ipaddrs import IpData
 from infra.txn_infra import TxnInfraAssigner
@@ -23,6 +24,7 @@ class GenerationState:
     people: PeopleData | None = None
     accounts: AccountsData | None = None
     pii: PiiData | None = None
+    merchants: MerchantData | None = None
 
     devices: DevicesData | None = None
     ipdata: IpData | None = None

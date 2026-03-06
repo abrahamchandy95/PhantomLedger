@@ -134,3 +134,30 @@ def iter_has_account_rows(data: AccountsData) -> Iterator[CsvRow]:
         for a in accts:
             row: list[CsvCell] = [p, a]
             yield row
+
+
+def with_extra_accounts(data: AccountsData, extra_accounts: list[str]) -> AccountsData:
+    """
+    Return a new AccountsData with extra accounts appended to .accounts.
+
+    Does NOT assign owners (acct_owner unchanged).
+    Keeps all flag sets unchanged.
+    """
+    if not extra_accounts:
+        return data
+
+    existing = set(data.accounts)
+    new_list = list(data.accounts)
+    for a in extra_accounts:
+        if a not in existing:
+            new_list.append(a)
+            existing.add(a)
+
+    return AccountsData(
+        accounts=new_list,
+        person_accounts=data.person_accounts,
+        acct_owner=data.acct_owner,
+        fraud_accounts=data.fraud_accounts,
+        mule_accounts=data.mule_accounts,
+        victim_accounts=data.victim_accounts,
+    )
