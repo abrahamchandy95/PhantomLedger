@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 from common.config import CreditConfig, EventsConfig, MerchantsConfig
+from common.probability import as_float, as_int, build_cdf, cdf_pick
 from common.rng import Rng
 from common.seeding import derived_seed
 from common.types import Txn
@@ -26,43 +27,13 @@ from math_models.timing import (
 from relationships.social import SocialGraph
 from transfers.txns import TxnFactory, TxnSpec
 
+
 type NumScalar = float | int | np.floating | np.integer
 type ArrF64 = npt.NDArray[np.float64]
 type ArrI32 = npt.NDArray[np.int32]
 type ArrI16 = npt.NDArray[np.int16]
 type ArrF32 = npt.NDArray[np.float32]
 type ArrBool = npt.NDArray[np.bool_]
-
-
-def _as_float(x: object) -> float:
-    return float(cast(NumScalar, x))
-
-
-def _as_int(x: object) -> int:
-    return int(cast(int | np.integer, x))
-
-
-def _build_cdf(weights: ArrF64) -> ArrF64:
-    w = np.asarray(weights, dtype=np.float64)
-    s_obj: object = cast(object, np.sum(w, dtype=np.float64))
-    s = _as_float(s_obj)
-
-    if not np.isfinite(s) or s <= 0.0:
-        w[:] = 1.0
-        s = float(w.size)
-
-    cdf_obj: object = cast(object, np.cumsum(w / s, dtype=np.float64))
-    cdf = np.asarray(cdf_obj, dtype=np.float64)
-    cdf[-1] = 1.0
-    return cdf
-
-
-def _cdf_pick_u(cdf: ArrF64, u: float) -> int:
-    j_obj: object = cast(object, np.searchsorted(cdf, u, side="right"))
-    j = _as_int(j_obj)
-    if j >= int(cdf.size):
-        j = int(cdf.size) - 1
-    return j
 
 
 def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list[int]:
@@ -72,8 +43,7 @@ def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list
     max_tries = 250
 
     while len(out) < k and tries < max_tries:
-        u = float(gen.random())
-        j = _cdf_pick_u(cdf, u)
+        j = cdf_pick(cdf, float(gen.random()))
         tries += 1
         if j in seen:
             continue
@@ -87,7 +57,7 @@ def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list
 
 def _row_contains(arr_row: ArrI32, k: int, v: int) -> bool:
     for i in range(k):
-        if _as_int(cast(object, arr_row[i])) == v:
+        if as_int(cast(int | np.integer, arr_row[i])) == v:
             return True
     return False
 
@@ -100,8 +70,9 @@ def _build_channel_cdf(ecfg: EventsConfig, mcfg: MerchantsConfig) -> ArrF64:
       - p2p
       - external_unknown
 
-    unknown_outflow_p is treated as the final probability of the external_unknown
-    channel. The other three shares are renormalized to fill the remaining mass.
+    unknown_outflow_p is treated as the final probability of the
+    external_unknown channel. The other three shares are renormalized to
+    fill the remaining mass.
     """
     unknown_p = min(1.0, max(0.0, float(ecfg.unknown_outflow_p)))
 
@@ -114,9 +85,7 @@ def _build_channel_cdf(ecfg: EventsConfig, mcfg: MerchantsConfig) -> ArrF64:
         dtype=np.float64,
     )
 
-    core_sum_obj: object = cast(object, np.sum(core, dtype=np.float64))
-    core_sum = _as_float(core_sum_obj)
-
+    core_sum = as_float(cast(NumScalar, np.sum(core, dtype=np.float64)))
     if not np.isfinite(core_sum) or core_sum <= 0.0:
         core[:] = 1.0
         core_sum = float(core.size)
@@ -133,10 +102,7 @@ def _build_channel_cdf(ecfg: EventsConfig, mcfg: MerchantsConfig) -> ArrF64:
         dtype=np.float64,
     )
 
-    cdf_obj: object = cast(object, np.cumsum(shares, dtype=np.float64))
-    cdf = np.asarray(cdf_obj, dtype=np.float64)
-    cdf[-1] = 1.0
-    return cdf
+    return build_cdf(shares)
 
 
 @dataclass(frozen=True, slots=True)
@@ -184,16 +150,15 @@ def build_day_to_day_context(
     timing = default_timing_profiles()
 
     merch_w: ArrF64 = np.asarray(merchants.weight, dtype=np.float64)
-    merch_cdf: ArrF64 = _build_cdf(merch_w)
+    merch_cdf = build_cdf(merch_w)
 
     biller_cats: set[str] = {"utilities", "telecom", "insurance", "education"}
     mask_list: list[bool] = [c in biller_cats for c in merchants.category]
     mask: ArrBool = np.asarray(mask_list, dtype=np.bool_)
 
     biller_w: ArrF64 = merch_w * mask.astype(np.float64)
-    biller_sum_obj: object = cast(object, np.sum(biller_w, dtype=np.float64))
-    biller_sum = _as_float(biller_sum_obj)
-    global_biller_cdf: ArrF64 = _build_cdf(biller_w) if biller_sum > 0.0 else merch_cdf
+    biller_sum = as_float(cast(NumScalar, np.sum(biller_w, dtype=np.float64)))
+    global_biller_cdf = build_cdf(biller_w) if biller_sum > 0.0 else merch_cdf
 
     n = len(persons)
     people_index = {p: i for i, p in enumerate(persons)}
@@ -218,16 +183,26 @@ def build_day_to_day_context(
     for i, p in enumerate(persons):
         g = np.random.default_rng(derived_seed(base_seed, "payees", p))
 
-        fk = int(
-            g.integers(int(mcfg.fav_merchants_min), int(mcfg.fav_merchants_max) + 1)
+        fk = as_int(
+            cast(
+                int | np.integer,
+                g.integers(
+                    int(mcfg.fav_merchants_min), int(mcfg.fav_merchants_max) + 1
+                ),
+            )
         )
-        bk = int(g.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1))
+        bk = as_int(
+            cast(
+                int | np.integer,
+                g.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1),
+            )
+        )
 
         fav = _pick_unique_weighted(g, merch_cdf, fk)
         bill = _pick_unique_weighted(g, global_biller_cdf, bk)
 
-        fav_k[i] = fk
-        bill_k[i] = bk
+        fav_k[i] = np.int16(fk)
+        bill_k[i] = np.int16(bk)
 
         fav_idx[i, :] = int(fav[0])
         fav_idx[i, : len(fav)] = np.asarray(fav, dtype=np.int32)
@@ -240,8 +215,13 @@ def build_day_to_day_context(
         explore_prop[i] = np.float32(float(g.beta(alpha, beta)))
 
         if days > 0 and float(g.random()) < burst_p:
-            bs = int(g.integers(0, max(1, days)))
-            bl = int(g.integers(burst_len_min, burst_len_max + 1))
+            bs = as_int(cast(int | np.integer, g.integers(0, max(1, days))))
+            bl = as_int(
+                cast(
+                    int | np.integer,
+                    g.integers(burst_len_min, burst_len_max + 1),
+                )
+            )
             burst_start[i] = bs
             burst_len[i] = np.int16(bl)
 
@@ -332,13 +312,11 @@ def generate_day_to_day_superposition(
 
             rate = base_per_day * float(persona.rate_mult) * wd_mult * day_shock
 
-            n_out_obj: object = cast(
-                object,
-                gamma_poisson_out_count(
-                    rng, base_rate=rate, models=DEFAULT_COUNT_MODELS
-                ),
+            n_out = gamma_poisson_out_count(
+                rng,
+                base_rate=rate,
+                models=DEFAULT_COUNT_MODELS,
             )
-            n_out = _as_int(n_out_obj)
             if n_out <= 0:
                 continue
 
@@ -347,17 +325,16 @@ def generate_day_to_day_superposition(
                 if n_out <= 0:
                     break
 
-            offsets_obj: object = cast(
-                object,
+            offsets: ArrI32 = np.asarray(
                 sample_offsets_seconds(rng, persona.timing_profile, n_out, ctx.timing),
+                dtype=np.int32,
             )
-            offsets: ArrI32 = np.asarray(offsets_obj, dtype=np.int32)
 
-            ep = _as_float(cast(object, ctx.explore_propensity[pi]))
-            bs = _as_int(cast(object, ctx.burst_start_day[pi]))
-            bl = _as_int(cast(object, ctx.burst_len[pi]))
-            fk = _as_int(cast(object, ctx.fav_k[pi]))
-            bk = _as_int(cast(object, ctx.bill_k[pi]))
+            ep = as_float(cast(NumScalar, ctx.explore_propensity[pi]))
+            bs = as_int(cast(int | np.integer, ctx.burst_start_day[pi]))
+            bl = as_int(cast(int | np.integer, ctx.burst_len[pi]))
+            fk = as_int(cast(int | np.integer, ctx.fav_k[pi]))
+            bk = as_int(cast(int | np.integer, ctx.bill_k[pi]))
 
             p_explore = explore_base * (0.25 + 0.75 * ep)
             if is_weekend:
@@ -367,31 +344,25 @@ def generate_day_to_day_superposition(
             p_explore = min(0.50, max(0.0, p_explore))
 
             for i in range(n_out):
-                off = _as_int(cast(object, offsets[i]))
+                off = as_int(cast(int | np.integer, offsets[i]))
                 ts = day_start + timedelta(seconds=off)
 
-                u = float(rng.float())
-                ch_obj: object = cast(
-                    object, np.searchsorted(cdf_chan, u, side="right")
-                )
-                ch = _as_int(ch_obj)
+                ch = cdf_pick(cdf_chan, rng.float())
 
-                # P2P
                 if ch == 2:
-                    cidx_obj: object = cast(
-                        object,
-                        ctx.social.contacts[pi, rng.int(0, ctx.social.k_contacts)],
+                    cidx = as_int(
+                        cast(
+                            int | np.integer,
+                            ctx.social.contacts[pi, rng.int(0, ctx.social.k_contacts)],
+                        )
                     )
-                    cidx = _as_int(cidx_obj)
                     if 0 <= cidx < n_persons:
                         dst_person = persons[cidx]
                         dst = ctx.primary_acct_for_person.get(dst_person)
                         if dst is None or dst == dep_acct:
                             continue
 
-                        amt = _as_float(cast(object, p2p_amount(rng))) * float(
-                            persona.amount_mult
-                        )
+                        amt = float(p2p_amount(rng)) * float(persona.amount_mult)
                         amt = round(max(1.0, amt), 2)
 
                         txns.append(
@@ -407,18 +378,19 @@ def generate_day_to_day_superposition(
                         )
                         produced_today += 1
 
-                # Bills
                 elif ch == 1:
                     if bk > 0 and rng.coin(prefer_billers_p):
-                        j_obj: object = cast(
-                            object, ctx.billers_idx[pi, rng.int(0, max(1, bk))]
+                        j = as_int(
+                            cast(
+                                int | np.integer,
+                                ctx.billers_idx[pi, rng.int(0, max(1, bk))],
+                            )
                         )
-                        j = _as_int(j_obj)
                     else:
-                        j = _cdf_pick_u(ctx.global_biller_cdf, float(rng.float()))
+                        j = cdf_pick(ctx.global_biller_cdf, rng.float())
 
                     dst = ctx.merchants.counterparty_acct[j]
-                    amt = _as_float(cast(object, bill_amount(rng)))
+                    amt = float(bill_amount(rng))
 
                     txns.append(
                         txf.make(
@@ -433,14 +405,13 @@ def generate_day_to_day_superposition(
                     )
                     produced_today += 1
 
-                # External unknown
                 elif ch == 3:
                     if ctx.merchants.external_accounts:
                         dst = rng.choice(ctx.merchants.external_accounts)
                     else:
                         dst = "X0000000001"
 
-                    amt = _as_float(cast(object, p2p_amount(rng)))
+                    amt = float(p2p_amount(rng))
                     amt = round(max(1.0, amt), 2)
 
                     txns.append(
@@ -456,29 +427,30 @@ def generate_day_to_day_superposition(
                     )
                     produced_today += 1
 
-                # Merchant purchase
                 else:
                     exploring = rng.coin(p_explore)
 
                     if (not exploring) and fk > 0:
-                        j_obj2: object = cast(
-                            object, ctx.fav_merchants_idx[pi, rng.int(0, fk)]
+                        j = as_int(
+                            cast(
+                                int | np.integer,
+                                ctx.fav_merchants_idx[pi, rng.int(0, fk)],
+                            )
                         )
-                        j = _as_int(j_obj2)
                     else:
                         tries = 0
-                        j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
-                        row_obj: object = cast(object, ctx.fav_merchants_idx[pi, :])
-                        row: ArrI32 = np.asarray(row_obj, dtype=np.int32)
+                        j = cdf_pick(ctx.merch_cdf, rng.float())
+                        row: ArrI32 = np.asarray(
+                            ctx.fav_merchants_idx[pi, :],
+                            dtype=np.int32,
+                        )
                         while fk > 0 and _row_contains(row, fk, j) and tries < 6:
-                            j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
+                            j = cdf_pick(ctx.merch_cdf, rng.float())
                             tries += 1
 
                     dst = ctx.merchants.counterparty_acct[j]
 
-                    amt = _as_float(cast(object, p2p_amount(rng))) * float(
-                        persona.amount_mult
-                    )
+                    amt = float(p2p_amount(rng)) * float(persona.amount_mult)
                     amt = round(max(1.0, amt), 2)
 
                     src_acct = dep_acct

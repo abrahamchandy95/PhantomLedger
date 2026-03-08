@@ -1,6 +1,6 @@
 from dataclasses import dataclass
-from math import log
 
+from common.probability import lognormal_by_median
 from common.rng import Rng
 
 
@@ -42,12 +42,13 @@ DEFAULT_AMOUNT_MODELS = AmountModels()
 
 
 def _lognormal_amount(rng: Rng, *, median: float, sigma: float, floor: float) -> float:
-    """
-    Lognormal parameterization by median:
-      median = exp(mu)  =>  mu = log(median)
-    """
-    mu = log(max(1e-12, median))
-    amt = float(rng.gen.lognormal(mean=mu, sigma=sigma))
+    amt = float(
+        lognormal_by_median(
+            rng.gen,
+            median=median,
+            sigma=sigma,
+        )
+    )
     return round(max(floor, amt), 2)
 
 

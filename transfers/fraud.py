@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Literal
 
 from common.config import FraudConfig, WindowConfig
 from common.rng import Rng
@@ -18,7 +19,7 @@ from math_models.amounts import (
 from transfers.txns import TxnFactory, TxnSpec
 
 
-type Typology = str
+type Typology = Literal["classic", "layering", "funnel", "structuring", "invoice"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +102,8 @@ def _primary_account(accounts: AccountsData, person_id: str) -> str:
 
 
 def _ring_accounts(
-    ring: RingPeople, accounts: AccountsData
+    ring: RingPeople,
+    accounts: AccountsData,
 ) -> tuple[list[str], list[str], list[str]]:
     fraud_accts = [_primary_account(accounts, p) for p in ring.fraud_people]
     mule_accts = [_primary_account(accounts, p) for p in ring.mule_people]
@@ -129,10 +131,35 @@ def _choose_typology(knobs: FraudInjectionKnobs, rng: Rng) -> Typology:
     return rng.weighted_choice(items, weights)
 
 
-def _append_budgeted(out: list[Txn], txn: Txn, budget: int) -> bool:
+def _append_txn(
+    out: list[Txn],
+    txf: TxnFactory,
+    *,
+    budget: int,
+    src: str,
+    dst: str,
+    amt: float,
+    ts: datetime,
+    ring_id: int,
+    channel: str,
+    is_fraud: int,
+) -> bool:
     if len(out) >= budget:
         return False
-    out.append(txn)
+
+    out.append(
+        txf.make(
+            TxnSpec(
+                src=src,
+                dst=dst,
+                amt=amt,
+                ts=ts,
+                is_fraud=is_fraud,
+                ring_id=ring_id,
+                channel=channel,
+            )
+        )
+    )
     return True
 
 
@@ -154,6 +181,39 @@ def _target_illicit_count(
     return max(0, int(round((float(target_ratio) * float(legit_count)) / denom)))
 
 
+def _month_starts_in_window(start_date: datetime, days: int) -> list[datetime]:
+    return [d for d in iter_month_starts(start_date, days) if d >= start_date]
+
+
+def _sample_burst_window(
+    rng: Rng,
+    *,
+    start_date: datetime,
+    days: int,
+    base_tail_days: int,
+    burst_min: int,
+    burst_max_exclusive: int,
+) -> tuple[datetime, int]:
+    base = start_date + timedelta(days=rng.int(0, max(1, days - base_tail_days)))
+    burst_days = rng.int(burst_min, burst_max_exclusive)
+    return base, burst_days
+
+
+def _random_ts(
+    rng: Rng,
+    *,
+    base: datetime,
+    day_hi_exclusive: int,
+    hour_lo: int,
+    hour_hi_exclusive: int,
+) -> datetime:
+    return base + timedelta(
+        days=rng.int(0, max(1, day_hi_exclusive)),
+        hours=rng.int(hour_lo, hour_hi_exclusive),
+        minutes=rng.int(0, 60),
+    )
+
+
 def _inject_classic(
     txf: TxnFactory,
     *,
@@ -170,66 +230,72 @@ def _inject_classic(
 
     rng = txf.rng
     out: list[Txn] = []
-    base = start_date + timedelta(days=rng.int(0, max(1, days - 7)))
-    burst_days = rng.int(2, 6)
+    base, burst_days = _sample_burst_window(
+        rng,
+        start_date=start_date,
+        days=days,
+        base_tail_days=7,
+        burst_min=2,
+        burst_max_exclusive=6,
+    )
 
-    for va in victim_accts:
+    for victim_acct in victim_accts:
         if len(out) >= budget:
             break
         if mule_accts and rng.coin(0.75):
             mule = rng.choice(mule_accts)
-            ts = base + timedelta(
-                days=rng.int(0, burst_days),
-                hours=rng.int(8, 22),
-                minutes=rng.int(0, 60),
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=burst_days,
+                hour_lo=8,
+                hour_hi_exclusive=22,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=va,
-                        dst=mule,
-                        amt=fraud_amount(rng),
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_classic",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=victim_acct,
+                dst=mule,
+                amt=fraud_amount(rng),
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_classic",
+                is_fraud=1,
             ):
                 break
 
-    for ma in mule_accts:
+    for mule_acct in mule_accts:
         if len(out) >= budget:
             break
         if not fraud_accts:
             continue
+
         forwards = rng.int(2, 6)
         span = min(3, burst_days)
+
         for _ in range(forwards):
             if len(out) >= budget:
                 break
-            fa = rng.choice(fraud_accts)
-            ts = base + timedelta(
-                days=rng.int(0, max(1, span)),
-                hours=rng.int(0, 24),
-                minutes=rng.int(0, 60),
+            fraud_acct = rng.choice(fraud_accts)
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=span,
+                hour_lo=0,
+                hour_hi_exclusive=24,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=ma,
-                        dst=fa,
-                        amt=fraud_amount(rng),
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_classic",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=mule_acct,
+                dst=fraud_acct,
+                amt=fraud_amount(rng),
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_classic",
+                is_fraud=1,
             ):
                 break
 
@@ -246,25 +312,24 @@ def _inject_classic(
                 if len(out) >= budget:
                     break
                 dst = cycle_nodes[(i + 1) % len(cycle_nodes)]
-                ts = base + timedelta(
-                    days=rng.int(0, burst_days),
-                    hours=rng.int(0, 24),
-                    minutes=rng.int(0, 60),
+                ts = _random_ts(
+                    rng,
+                    base=base,
+                    day_hi_exclusive=burst_days,
+                    hour_lo=0,
+                    hour_hi_exclusive=24,
                 )
-                if not _append_budgeted(
+                if not _append_txn(
                     out,
-                    txf.make(
-                        TxnSpec(
-                            src=src,
-                            dst=dst,
-                            amt=cycle_amount(rng),
-                            ts=ts,
-                            is_fraud=1,
-                            ring_id=ring_id,
-                            channel="fraud_cycle",
-                        )
-                    ),
-                    budget,
+                    txf,
+                    budget=budget,
+                    src=src,
+                    dst=dst,
+                    amt=cycle_amount(rng),
+                    ts=ts,
+                    ring_id=ring_id,
+                    channel="fraud_cycle",
+                    is_fraud=1,
                 ):
                     break
 
@@ -287,8 +352,14 @@ def _inject_layering_chain(
         return []
 
     rng = txf.rng
-    base = start_date + timedelta(days=rng.int(0, max(1, days - 10)))
-    burst_days = rng.int(3, 7)
+    base, burst_days = _sample_burst_window(
+        rng,
+        start_date=start_date,
+        days=days,
+        base_tail_days=10,
+        burst_min=3,
+        burst_max_exclusive=7,
+    )
 
     nodes = mule_accts + fraud_accts
     if len(nodes) < 3 or not victim_accts:
@@ -316,79 +387,79 @@ def _inject_layering_chain(
 
     out: list[Txn] = []
 
-    for va in victim_accts:
+    for victim_acct in victim_accts:
         if len(out) >= budget:
             break
         if rng.coin(0.60):
-            ts = base + timedelta(
-                days=rng.int(0, burst_days),
-                hours=rng.int(8, 22),
-                minutes=rng.int(0, 60),
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=burst_days,
+                hour_lo=8,
+                hour_hi_exclusive=22,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=va,
-                        dst=entry,
-                        amt=fraud_amount(rng),
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_layering_in",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=victim_acct,
+                dst=entry,
+                amt=fraud_amount(rng),
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_layering_in",
+                is_fraud=1,
             ):
                 break
 
     for src, dst in zip(chain[:-1], chain[1:]):
         if len(out) >= budget:
             break
+
         for _ in range(rng.int(1, 4)):
             if len(out) >= budget:
                 break
-            ts = base + timedelta(
-                days=rng.int(0, burst_days),
-                hours=rng.int(0, 24),
-                minutes=rng.int(0, 60),
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=burst_days,
+                hour_lo=0,
+                hour_hi_exclusive=24,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=src,
-                        dst=dst,
-                        amt=cycle_amount(rng),
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_layering_hop",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=src,
+                dst=dst,
+                amt=cycle_amount(rng),
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_layering_hop",
+                is_fraud=1,
             ):
                 break
 
     if len(out) < budget:
         cash = rng.choice(fraud_accts) if fraud_accts else rng.choice(nodes)
-        ts = base + timedelta(
-            days=rng.int(0, burst_days),
-            hours=rng.int(0, 24),
-            minutes=rng.int(0, 60),
+        ts = _random_ts(
+            rng,
+            base=base,
+            day_hi_exclusive=burst_days,
+            hour_lo=0,
+            hour_hi_exclusive=24,
         )
-        out.append(
-            txf.make(
-                TxnSpec(
-                    src=exit_,
-                    dst=cash,
-                    amt=fraud_amount(rng),
-                    ts=ts,
-                    is_fraud=1,
-                    ring_id=ring_id,
-                    channel="fraud_layering_out",
-                )
-            )
+        _ = _append_txn(
+            out,
+            txf,
+            budget=budget,
+            src=exit_,
+            dst=cash,
+            amt=fraud_amount(rng),
+            ts=ts,
+            ring_id=ring_id,
+            channel="fraud_layering_out",
+            is_fraud=1,
         )
 
     return out
@@ -409,8 +480,14 @@ def _inject_funnel(
         return []
 
     rng = txf.rng
-    base = start_date + timedelta(days=rng.int(0, max(1, days - 10)))
-    burst_days = rng.int(2, 6)
+    base, burst_days = _sample_burst_window(
+        rng,
+        start_date=start_date,
+        days=days,
+        base_tail_days=10,
+        burst_min=2,
+        burst_max_exclusive=6,
+    )
 
     pool = fraud_accts + mule_accts
     if len(pool) < 2:
@@ -428,34 +505,33 @@ def _inject_funnel(
     collector = rng.choice(pool)
     cashouts = rng.choice_k(pool, min(4, len(pool)), replace=False)
     if collector in cashouts and len(cashouts) > 1:
-        cashouts = [a for a in cashouts if a != collector]
+        cashouts = [acct for acct in cashouts if acct != collector]
 
     out: list[Txn] = []
-
     sources = victim_accts + mule_accts
-    for s in sources:
+
+    for src in sources:
         if len(out) >= budget:
             break
         if rng.coin(0.55):
-            ts = base + timedelta(
-                days=rng.int(0, burst_days),
-                hours=rng.int(8, 22),
-                minutes=rng.int(0, 60),
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=burst_days,
+                hour_lo=8,
+                hour_hi_exclusive=22,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=s,
-                        dst=collector,
-                        amt=fraud_amount(rng),
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_funnel_in",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=src,
+                dst=collector,
+                amt=fraud_amount(rng),
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_funnel_in",
+                is_fraud=1,
             ):
                 break
 
@@ -463,25 +539,24 @@ def _inject_funnel(
         if len(out) >= budget:
             break
         dst = rng.choice(cashouts) if cashouts else collector
-        ts = base + timedelta(
-            days=rng.int(0, burst_days),
-            hours=rng.int(0, 24),
-            minutes=rng.int(0, 60),
+        ts = _random_ts(
+            rng,
+            base=base,
+            day_hi_exclusive=burst_days,
+            hour_lo=0,
+            hour_hi_exclusive=24,
         )
-        if not _append_budgeted(
+        if not _append_txn(
             out,
-            txf.make(
-                TxnSpec(
-                    src=collector,
-                    dst=dst,
-                    amt=cycle_amount(rng),
-                    ts=ts,
-                    is_fraud=1,
-                    ring_id=ring_id,
-                    channel="fraud_funnel_out",
-                )
-            ),
-            budget,
+            txf,
+            budget=budget,
+            src=collector,
+            dst=dst,
+            amt=cycle_amount(rng),
+            ts=ts,
+            ring_id=ring_id,
+            channel="fraud_funnel_out",
+            is_fraud=1,
         ):
             break
 
@@ -504,15 +579,21 @@ def _inject_structuring(
         return []
 
     rng = txf.rng
-    base = start_date + timedelta(days=rng.int(0, max(1, days - 10)))
-    burst_days = rng.int(3, 8)
+    base, burst_days = _sample_burst_window(
+        rng,
+        start_date=start_date,
+        days=days,
+        base_tail_days=10,
+        burst_min=3,
+        burst_max_exclusive=8,
+    )
 
     if not mule_accts and not fraud_accts:
         return []
 
     target = rng.choice(mule_accts) if mule_accts else rng.choice(fraud_accts)
 
-    thr = float(knobs.structuring_threshold)
+    threshold = float(knobs.structuring_threshold)
     eps_min = float(knobs.structuring_epsilon_min)
     eps_max = float(knobs.structuring_epsilon_max)
 
@@ -521,7 +602,7 @@ def _inject_structuring(
 
     out: list[Txn] = []
 
-    for va in victim_accts:
+    for victim_acct in victim_accts:
         if len(out) >= budget:
             break
         if not rng.coin(0.55):
@@ -532,26 +613,25 @@ def _inject_structuring(
             if len(out) >= budget:
                 break
             eps = eps_min + (eps_max - eps_min) * rng.float()
-            amt = max(50.0, thr - eps)
-            ts = base + timedelta(
-                days=rng.int(0, burst_days),
-                hours=rng.int(8, 22),
-                minutes=rng.int(0, 60),
+            amt = max(50.0, threshold - eps)
+            ts = _random_ts(
+                rng,
+                base=base,
+                day_hi_exclusive=burst_days,
+                hour_lo=8,
+                hour_hi_exclusive=22,
             )
-            if not _append_budgeted(
+            if not _append_txn(
                 out,
-                txf.make(
-                    TxnSpec(
-                        src=va,
-                        dst=target,
-                        amt=amt,
-                        ts=ts,
-                        is_fraud=1,
-                        ring_id=ring_id,
-                        channel="fraud_structuring",
-                    )
-                ),
-                budget,
+                txf,
+                budget=budget,
+                src=victim_acct,
+                dst=target,
+                amt=amt,
+                ts=ts,
+                ring_id=ring_id,
+                channel="fraud_structuring",
+                is_fraud=1,
             ):
                 break
 
@@ -594,20 +674,17 @@ def _inject_invoice_like(
             hours=rng.int(9, 18),
             minutes=rng.int(0, 60),
         )
-        if not _append_budgeted(
+        if not _append_txn(
             out,
-            txf.make(
-                TxnSpec(
-                    src=src,
-                    dst=dst,
-                    amt=amt,
-                    ts=ts,
-                    is_fraud=1,
-                    ring_id=ring_id,
-                    channel="fraud_invoice",
-                )
-            ),
-            budget,
+            txf,
+            budget=budget,
+            src=src,
+            dst=dst,
+            amt=amt,
+            ts=ts,
+            ring_id=ring_id,
+            channel="fraud_invoice",
+            is_fraud=1,
         ):
             break
 
@@ -637,12 +714,11 @@ def _inject_camouflage(
     out: list[Txn] = []
 
     if biller_accounts and p_bill > 0.0:
-        paydays = [d for d in iter_month_starts(start_date, days) if d >= start_date]
-        for pd in paydays:
-            for a in ring_accounts:
+        for pay_day in _month_starts_in_window(start_date, days):
+            for acct in ring_accounts:
                 if rng.coin(p_bill):
                     dst = rng.choice(biller_accounts)
-                    ts = pd + timedelta(
+                    ts = pay_day + timedelta(
                         days=rng.int(0, 5),
                         hours=rng.int(7, 22),
                         minutes=rng.int(0, 60),
@@ -650,7 +726,7 @@ def _inject_camouflage(
                     out.append(
                         txf.make(
                             TxnSpec(
-                                src=a,
+                                src=acct,
                                 dst=dst,
                                 amt=bill_amount(rng),
                                 ts=ts,
@@ -663,10 +739,10 @@ def _inject_camouflage(
 
     for day in range(days):
         day_start = start_date + timedelta(days=day)
-        for a in ring_accounts:
+        for acct in ring_accounts:
             if rng.coin(p_small):
                 dst = rng.choice(all_accounts)
-                if dst == a:
+                if dst == acct:
                     continue
                 ts = day_start + timedelta(
                     hours=rng.int(0, 24),
@@ -675,7 +751,7 @@ def _inject_camouflage(
                 out.append(
                     txf.make(
                         TxnSpec(
-                            src=a,
+                            src=acct,
                             dst=dst,
                             amt=p2p_amount(rng),
                             ts=ts,
@@ -687,7 +763,7 @@ def _inject_camouflage(
                 )
 
     if employers and p_salary_in > 0.0:
-        for a in ring_accounts:
+        for acct in ring_accounts:
             if rng.coin(p_salary_in):
                 src = rng.choice(employers)
                 ts = start_date + timedelta(
@@ -699,7 +775,7 @@ def _inject_camouflage(
                     txf.make(
                         TxnSpec(
                             src=src,
-                            dst=a,
+                            dst=acct,
                             amt=salary_amount(rng),
                             ts=ts,
                             is_fraud=0,
@@ -737,8 +813,6 @@ def inject_fraud_transfers(
     emps = employers or []
     txf = TxnFactory(rng=rng, infra=infra)
 
-    # First generate camouflage (legitimate-looking) transactions so the
-    # illicit budget can target the final denominator more accurately.
     camouflage: list[Txn] = []
     ring_acct_cache: dict[int, tuple[list[str], list[str], list[str]]] = {}
 
@@ -844,17 +918,6 @@ def inject_fraud_transfers(
                     days=days,
                     fraud_accts=fraud_accts,
                     biller_accounts=billers,
-                )
-            case _:
-                ring_illicit = _inject_classic(
-                    txf,
-                    budget=ring_budget,
-                    ring_id=ring.ring_id,
-                    start_date=start_date,
-                    days=days,
-                    fraud_accts=fraud_accts,
-                    mule_accts=mule_accts,
-                    victim_accts=victim_accts,
                 )
 
         illicit.extend(ring_illicit)

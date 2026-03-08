@@ -2,10 +2,16 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 
 from common.config import FamilyConfig
+from common.probability import build_cdf, cdf_pick
 from common.rng import Rng
 from common.seeding import derived_seed
+
+
+type ArrF64 = npt.NDArray[np.float64]
+type ArrI64 = npt.NDArray[np.int64]
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,43 +30,35 @@ class FamilyData:
     adult_children_of: dict[str, list[str]]  # retired parent -> adult child(ren)
 
 
-def _as_int(x: object) -> int:
-    return int(cast(int | np.integer, x))
-
-
-def _zipf_cdf(alpha: float, max_size: int) -> np.ndarray:
-    sizes = np.arange(2, max_size + 1, dtype=np.float64)
-    w = sizes ** (-float(alpha))
-    s = float(np.sum(w))
-    if not np.isfinite(s) or s <= 0.0:
-        w[:] = 1.0
-        s = float(w.size)
-    cdf = np.cumsum(w / s)
-    cdf[-1] = 1.0
-    return cdf
+def _zipf_cdf(alpha: float, max_size: int) -> ArrF64:
+    sizes: ArrF64 = np.arange(2, max_size + 1, dtype=np.float64)
+    weights: ArrF64 = sizes ** (-float(alpha))
+    return build_cdf(weights)
 
 
 def _sample_household_size(
-    cfg: FamilyConfig, g: np.random.Generator, cdf_2plus: np.ndarray
+    cfg: FamilyConfig,
+    gen: np.random.Generator,
+    cdf_2plus: ArrF64,
 ) -> int:
-    if float(g.random()) < float(cfg.single_household_frac):
+    if float(gen.random()) < float(cfg.single_household_frac):
         return 1
-    u = float(g.random())
-    j = _as_int(cast(object, np.searchsorted(cdf_2plus, u, side="right")))
-    s = 2 + j
-    return min(int(cfg.household_max_size), max(2, int(s)))
+
+    j = cdf_pick(cdf_2plus, float(gen.random()))
+    size = 2 + j
+    return min(int(cfg.household_max_size), max(2, int(size)))
 
 
-def _is_student(persona_for_person: dict[str, str], p: str) -> bool:
-    return persona_for_person.get(p, "salaried") == "student"
+def _is_student(persona_for_person: dict[str, str], person_id: str) -> bool:
+    return persona_for_person.get(person_id, "salaried") == "student"
 
 
-def _is_retired(persona_for_person: dict[str, str], p: str) -> bool:
-    return persona_for_person.get(p, "salaried") == "retired"
+def _is_retired(persona_for_person: dict[str, str], person_id: str) -> bool:
+    return persona_for_person.get(person_id, "salaried") == "retired"
 
 
-def _is_adult_supporter(persona_for_person: dict[str, str], p: str) -> bool:
-    return persona_for_person.get(p, "salaried") in {
+def _is_adult_supporter(persona_for_person: dict[str, str], person_id: str) -> bool:
+    return persona_for_person.get(person_id, "salaried") in {
         "salaried",
         "freelancer",
         "smallbiz",
@@ -68,14 +66,14 @@ def _is_adult_supporter(persona_for_person: dict[str, str], p: str) -> bool:
     }
 
 
-def _sample_support_children_n(g: np.random.Generator) -> int:
+def _sample_support_children_n(gen: np.random.Generator) -> int:
     """
     Simple heuristic:
       - usually 1 adult child participates
       - sometimes 2
       - rarely 3
     """
-    u = float(g.random())
+    u = float(gen.random())
     if u < 0.65:
         return 1
     if u < 0.92:
@@ -84,7 +82,7 @@ def _sample_support_children_n(g: np.random.Generator) -> int:
 
 
 def _choose_unique_people(
-    g: np.random.Generator,
+    gen: np.random.Generator,
     pool: list[str],
     *,
     k: int,
@@ -106,8 +104,10 @@ def _choose_unique_people(
 
     tries = 0
     max_tries = max(20, 8 * k)
+
     while len(chosen) < k and tries < max_tries:
-        cand = eligible[_as_int(cast(object, g.integers(0, len(eligible))))]
+        idx = int(cast(int | np.integer, gen.integers(0, len(eligible))))
+        cand = eligible[idx]
         tries += 1
         if cand in chosen_set:
             continue
@@ -137,9 +137,9 @@ def generate_family(
         return FamilyData([], {}, {}, {}, {}, {}, {})
 
     # local RNG so family structure stays stable regardless of upstream iteration order
-    g = np.random.default_rng(derived_seed(base_seed, "family", "households"))
+    gen = np.random.default_rng(derived_seed(base_seed, "family", "households"))
 
-    perm = np.array(g.permutation(len(persons)), dtype=np.int64)
+    perm: ArrI64 = np.asarray(gen.permutation(len(persons)), dtype=np.int64)
     cdf_2plus = _zipf_cdf(float(cfg.household_zipf_alpha), int(cfg.household_max_size))
 
     households: list[list[str]] = []
@@ -148,19 +148,21 @@ def generate_family(
     i = 0
     hid = 0
     n = len(persons)
+
     while i < n:
-        size = _sample_household_size(cfg, g, cdf_2plus)
+        size = _sample_household_size(cfg, gen, cdf_2plus)
         j = min(n, i + size)
-        hh = [persons[_as_int(cast(object, perm[k]))] for k in range(i, j)]
+
+        hh = [persons[int(cast(int | np.integer, perm[k]))] for k in range(i, j)]
         households.append(hh)
-        for p in hh:
-            household_id_for_person[p] = hid
+
+        for person_id in hh:
+            household_id_for_person[person_id] = hid
+
         hid += 1
         i = j
 
     spouse_of: dict[str, str] = {}
-
-    # dependent-child relationships
     parents_of: dict[str, tuple[str, ...]] = {}
     children_of: dict[str, list[str]] = {}
 
@@ -168,59 +170,73 @@ def generate_family(
     if not adults:
         adults = list(persons)
 
-    for hh in households:
-        adult_candidates = [p for p in hh if not _is_student(persona_for_person, p)]
+    for household in households:
+        adult_candidates = [
+            p for p in household if not _is_student(persona_for_person, p)
+        ]
 
-        if len(adult_candidates) >= 2 and float(g.random()) < float(cfg.spouse_pair_p):
-            a_idx = _as_int(cast(object, g.integers(0, len(adult_candidates))))
-            b_idx = _as_int(cast(object, g.integers(0, len(adult_candidates) - 1)))
+        if len(adult_candidates) >= 2 and float(gen.random()) < float(
+            cfg.spouse_pair_p
+        ):
+            a_idx = int(cast(int | np.integer, gen.integers(0, len(adult_candidates))))
+            b_idx = int(
+                cast(int | np.integer, gen.integers(0, len(adult_candidates) - 1))
+            )
             if b_idx >= a_idx:
                 b_idx += 1
+
             a = adult_candidates[a_idx]
             b = adult_candidates[b_idx]
             spouse_of[a] = b
             spouse_of[b] = a
 
-        students = [p for p in hh if _is_student(persona_for_person, p)]
+        students = [p for p in household if _is_student(persona_for_person, p)]
         if not students:
             continue
 
         for child in students:
-            if float(g.random()) >= float(cfg.student_dependent_p):
+            if float(gen.random()) >= float(cfg.student_dependent_p):
                 continue
 
             use_household_parents = (len(adult_candidates) >= 1) and (
-                float(g.random()) < float(cfg.co_reside_student_p)
+                float(gen.random()) < float(cfg.co_reside_student_p)
             )
             parent_pool = adult_candidates if use_household_parents else adults
             if not parent_pool:
                 continue
 
             want_two = (len(parent_pool) >= 2) and (
-                float(g.random()) < float(cfg.two_parent_p)
+                float(gen.random()) < float(cfg.two_parent_p)
             )
+
             if want_two:
-                p1 = parent_pool[_as_int(cast(object, g.integers(0, len(parent_pool))))]
+                p1 = parent_pool[
+                    int(cast(int | np.integer, gen.integers(0, len(parent_pool))))
+                ]
                 p2 = p1
+
                 tries = 0
                 while p2 == p1 and tries < 8:
                     p2 = parent_pool[
-                        _as_int(cast(object, g.integers(0, len(parent_pool))))
+                        int(cast(int | np.integer, gen.integers(0, len(parent_pool))))
                     ]
                     tries += 1
+
                 if p2 == p1 and len(parent_pool) >= 2:
                     idx = parent_pool.index(p1)
                     p2 = parent_pool[(idx + 1) % len(parent_pool)]
+
                 parents = (p1, p2) if p1 != p2 else (p1,)
             else:
-                p1 = parent_pool[_as_int(cast(object, g.integers(0, len(parent_pool))))]
+                p1 = parent_pool[
+                    int(cast(int | np.integer, gen.integers(0, len(parent_pool))))
+                ]
                 parents = (p1,)
 
             parents_of[child] = parents
-            for par in parents:
-                children_of.setdefault(par, []).append(child)
+            for parent in parents:
+                children_of.setdefault(parent, []).append(child)
 
-    # adult-child support relationships for retirees
     adult_parents_of: dict[str, tuple[str, ...]] = {}
     adult_children_of: dict[str, list[str]] = {}
 
@@ -233,30 +249,32 @@ def generate_family(
         spouse = spouse_of.get(parent)
         if spouse is not None and _is_retired(persona_for_person, spouse):
             shared = adult_children_of.get(spouse)
-            if shared is not None and float(g.random()) < 0.85:
+            if shared is not None and float(gen.random()) < 0.85:
                 adult_children_of[parent] = list(shared)
                 for child in shared:
                     prev = adult_parents_of.get(child, ())
                     adult_parents_of[child] = prev + (parent,)
                 continue
 
-        if float(g.random()) >= float(cfg.retiree_has_adult_child_p):
+        if float(gen.random()) >= float(cfg.retiree_has_adult_child_p):
             continue
 
-        hh = households[household_id_for_person[parent]]
+        household = households[household_id_for_person[parent]]
         resident_supporters = [
-            p for p in hh if p != parent and _is_adult_supporter(persona_for_person, p)
+            p
+            for p in household
+            if p != parent and _is_adult_supporter(persona_for_person, p)
         ]
 
-        use_resident = resident_supporters and (
-            float(g.random()) < float(cfg.retiree_support_co_reside_p)
+        use_resident = bool(resident_supporters) and (
+            float(gen.random()) < float(cfg.retiree_support_co_reside_p)
         )
         pool = resident_supporters if use_resident else global_supporters
 
         chosen = _choose_unique_people(
-            g,
+            gen,
             pool,
-            k=_sample_support_children_n(g),
+            k=_sample_support_children_n(gen),
             exclude={parent},
         )
         if not chosen:

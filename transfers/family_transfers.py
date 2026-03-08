@@ -5,6 +5,7 @@ from typing import cast
 import numpy as np
 
 from common.config import FamilyConfig, WindowConfig
+from common.probability import as_int
 from common.rng import Rng
 from common.seeding import derived_seed
 from common.temporal import iter_month_starts
@@ -12,13 +13,6 @@ from common.types import Txn
 from entities.merchants import MerchantData
 from relationships.family import FamilyData
 from transfers.txns import TxnFactory, TxnSpec
-
-
-type NumScalar = float | int | np.floating | np.integer
-
-
-def _as_int(x: object) -> int:
-    return int(cast(int | np.integer, x))
 
 
 def pareto_amount(rng: Rng, *, xm: float, alpha: float) -> float:
@@ -34,16 +28,19 @@ def pareto_amount(rng: Rng, *, xm: float, alpha: float) -> float:
 
 
 def _pick_education_payee(
-    merchants: MerchantData, g: np.random.Generator
+    merchants: MerchantData,
+    gen: np.random.Generator,
 ) -> str | None:
-    edu = [
+    education_accounts = [
         acct
         for acct, cat in zip(merchants.counterparty_acct, merchants.category)
         if cat == "education"
     ]
-    if not edu:
+    if not education_accounts:
         return None
-    return edu[_as_int(cast(object, g.integers(0, len(edu))))]
+
+    idx = as_int(cast(int | np.integer, gen.integers(0, len(education_accounts))))
+    return education_accounts[idx]
 
 
 def _support_capacity_weight(persona: str) -> float:
@@ -63,25 +60,28 @@ def _support_capacity_weight(persona: str) -> float:
 def _weighted_pick_person(
     people: list[str],
     persona_for_person: dict[str, str],
-    g: np.random.Generator,
+    gen: np.random.Generator,
 ) -> str:
     if len(people) == 1:
         return people[0]
 
     weights = [
-        _support_capacity_weight(persona_for_person.get(p, "salaried")) for p in people
+        _support_capacity_weight(persona_for_person.get(person_id, "salaried"))
+        for person_id in people
     ]
     total = float(sum(weights))
+
     if total <= 0.0:
-        idx = _as_int(cast(object, g.integers(0, len(people))))
+        idx = as_int(cast(int | np.integer, gen.integers(0, len(people))))
         return people[idx]
 
-    u = float(g.random()) * total
+    u = float(gen.random()) * total
     acc = 0.0
     for person_id, weight in zip(people, weights):
         acc += float(weight)
         if u <= acc:
             return person_id
+
     return people[-1]
 
 
@@ -112,8 +112,8 @@ def generate_family_transfers(
 
     txns: list[Txn] = []
 
-    # Local deterministic generator for stable schedules/choices
-    g = np.random.default_rng(derived_seed(base_seed, "family", "transfers"))
+    # Local deterministic generator for stable schedules/choices.
+    gen = np.random.default_rng(derived_seed(base_seed, "family", "transfers"))
 
     month_starts = _window_month_starts(start_date, days)
     if not month_starts:
@@ -131,17 +131,19 @@ def generate_family_transfers(
             if child_acct is None:
                 continue
 
-            weekly = float(g.random()) < float(fcfg.allowance_weekly_p)
+            weekly = float(gen.random()) < float(fcfg.allowance_weekly_p)
             step_days = 7 if weekly else 14
 
             t = start_date + timedelta(
-                days=_as_int(cast(object, g.integers(0, 14))),
-                hours=_as_int(cast(object, g.integers(7, 21))),
-                minutes=_as_int(cast(object, g.integers(0, 60))),
+                days=as_int(cast(int | np.integer, gen.integers(0, 14))),
+                hours=as_int(cast(int | np.integer, gen.integers(7, 21))),
+                minutes=as_int(cast(int | np.integer, gen.integers(0, 60))),
             )
 
             while t < end_excl:
-                payer_idx = _as_int(cast(object, g.integers(0, len(parents))))
+                payer_idx = as_int(
+                    cast(int | np.integer, gen.integers(0, len(parents)))
+                )
                 payer_person = parents[payer_idx]
                 payer_acct = primary_acct_for_person.get(payer_person)
 
@@ -163,34 +165,40 @@ def generate_family_transfers(
                         )
                     )
 
-                jitter = _as_int(cast(object, g.integers(-1, 2)))
+                jitter = as_int(cast(int | np.integer, gen.integers(-1, 2)))
                 t = t + timedelta(days=step_days + jitter)
 
     # -------------------------
     # Tuition: parent -> education biller
     # -------------------------
     if fcfg.tuition_enabled:
-        payee = _pick_education_payee(merchants, g)
+        payee = _pick_education_payee(merchants, gen)
         if payee is not None:
-            students = [p for p, per in persona_for_person.items() if per == "student"]
+            students = [
+                person_id
+                for person_id, persona in persona_for_person.items()
+                if persona == "student"
+            ]
 
             for student_id in students:
                 if student_id not in family.parents_of:
                     continue
-                if float(g.random()) >= float(fcfg.tuition_students_p):
+                if float(gen.random()) >= float(fcfg.tuition_students_p):
                     continue
 
                 parents = family.parents_of[student_id]
-                payer_idx = _as_int(cast(object, g.integers(0, len(parents))))
+                payer_idx = as_int(
+                    cast(int | np.integer, gen.integers(0, len(parents)))
+                )
                 payer_person = parents[payer_idx]
                 payer_acct = primary_acct_for_person.get(payer_person)
                 if payer_acct is None:
                     continue
 
-                n_inst = _as_int(
+                n_inst = as_int(
                     cast(
-                        object,
-                        g.integers(
+                        int | np.integer,
+                        gen.integers(
                             int(fcfg.tuition_installments_min),
                             int(fcfg.tuition_installments_max) + 1,
                         ),
@@ -198,16 +206,16 @@ def generate_family_transfers(
                 )
 
                 total = float(
-                    g.lognormal(
+                    gen.lognormal(
                         mean=float(fcfg.tuition_total_logn_mu),
                         sigma=float(fcfg.tuition_total_logn_sigma),
                     )
                 )
                 total = round(max(200.0, total), 2)
-                inst = round(total / max(1, n_inst), 2)
+                installment_amount = round(total / max(1, n_inst), 2)
 
                 semester_start = month_starts[0] + timedelta(
-                    days=_as_int(cast(object, g.integers(0, 10)))
+                    days=as_int(cast(int | np.integer, gen.integers(0, 10)))
                 )
 
                 for installment_idx in range(n_inst):
@@ -216,15 +224,15 @@ def generate_family_transfers(
                         break
 
                     ts = ts + timedelta(
-                        days=_as_int(cast(object, g.integers(0, 5))),
-                        hours=_as_int(cast(object, g.integers(8, 18))),
-                        minutes=_as_int(cast(object, g.integers(0, 60))),
+                        days=as_int(cast(int | np.integer, gen.integers(0, 5))),
+                        hours=as_int(cast(int | np.integer, gen.integers(8, 18))),
+                        minutes=as_int(cast(int | np.integer, gen.integers(0, 60))),
                     )
                     if ts >= end_excl:
                         break
 
-                    noise = float(g.normal(loc=0.0, scale=0.03))
-                    amt = round(max(10.0, inst * (1.0 + noise)), 2)
+                    noise = float(gen.normal(loc=0.0, scale=0.03))
+                    amt = round(max(10.0, installment_amount * (1.0 + noise)), 2)
 
                     txns.append(
                         infra_factory.make(
@@ -242,7 +250,11 @@ def generate_family_transfers(
     # Support: adult child -> retired parent
     # -------------------------
     if fcfg.retiree_support_enabled:
-        retirees = [p for p, per in persona_for_person.items() if per == "retired"]
+        retirees = [
+            person_id
+            for person_id, persona in persona_for_person.items()
+            if persona == "retired"
+        ]
 
         for retiree_id in retirees:
             adult_kids = family.adult_children_of.get(retiree_id)
@@ -254,22 +266,22 @@ def generate_family_transfers(
                 continue
 
             for month_start in month_starts:
-                if float(g.random()) >= float(fcfg.retiree_support_p):
+                if float(gen.random()) >= float(fcfg.retiree_support_p):
                     continue
 
                 payer_person = _weighted_pick_person(
                     adult_kids,
                     persona_for_person,
-                    g,
+                    gen,
                 )
                 payer_acct = primary_acct_for_person.get(payer_person)
                 if payer_acct is None or payer_acct == retiree_acct:
                     continue
 
                 ts = month_start + timedelta(
-                    days=_as_int(cast(object, g.integers(0, 6))),
-                    hours=_as_int(cast(object, g.integers(7, 21))),
-                    minutes=_as_int(cast(object, g.integers(0, 60))),
+                    days=as_int(cast(int | np.integer, gen.integers(0, 6))),
+                    hours=as_int(cast(int | np.integer, gen.integers(7, 21))),
+                    minutes=as_int(cast(int | np.integer, gen.integers(0, 60))),
                 )
                 if ts >= end_excl:
                     break

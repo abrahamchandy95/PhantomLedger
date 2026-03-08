@@ -6,11 +6,12 @@ import numpy.typing as npt
 
 from common.config import MerchantsConfig, PopulationConfig
 from common.ids import external_account_id, merchant_account_id
+from common.probability import as_float
 from common.rng import Rng
 from common.seeding import derived_seed
 from emit.tg_csv import CsvCell, CsvRow
 
-# Python 3.12+ typing (works in 3.14)
+
 type NumScalar = float | int | np.floating | np.integer
 type ArrF64 = npt.NDArray[np.float64]
 
@@ -44,10 +45,6 @@ def _merchant_entity_id(i: int) -> str:
     return f"MERCH{i:06d}"
 
 
-def _as_float(x: object) -> float:
-    return float(cast(NumScalar, x))
-
-
 def generate_merchants(
     mcfg: MerchantsConfig,
     pop: PopulationConfig,
@@ -62,20 +59,18 @@ def generate_merchants(
 
     sigma = float(mcfg.size_lognormal_sigma)
 
-    # Avoid Any leakage from NumPy stubs by casting through object and re-typing.
-    w_obj: object = cast(
-        object, rng.gen.lognormal(mean=0.0, sigma=sigma, size=n_merchants)
+    w_obj = cast(
+        object,
+        rng.gen.lognormal(mean=0.0, sigma=sigma, size=n_merchants),
     )
     w: ArrF64 = np.asarray(w_obj, dtype=np.float64)
 
-    s_obj: object = cast(object, np.sum(w, dtype=np.float64))
-    s = _as_float(s_obj)
-
-    if not np.isfinite(s) or s <= 0.0:
+    w_sum = as_float(cast(NumScalar, np.sum(w, dtype=np.float64)))
+    if not np.isfinite(w_sum) or w_sum <= 0.0:
         w[:] = 1.0
-        s = float(w.size)
+        w_sum = float(w.size)
 
-    w = w / s
+    w = w / w_sum
 
     merchant_ids: list[str] = []
     counterparty_acct: list[str] = []
@@ -90,8 +85,7 @@ def generate_merchants(
     for i in range(1, n_merchants + 1):
         merchant_ids.append(_merchant_entity_id(i))
 
-        cat_idx_obj: object = cast(object, g.integers(0, len(_CATEGORIES)))
-        cat_idx = int(cast(int | np.integer, cat_idx_obj))
+        cat_idx = int(cast(int | np.integer, g.integers(0, len(_CATEGORIES))))
         cat = _CATEGORIES[cat_idx]
         category.append(cat)
 
@@ -118,12 +112,12 @@ def iter_merchants_rows(data: MerchantData) -> list[CsvRow]:
     # merchants.csv: merchant_id, counterparty_acct, category, weight, in_bank
     rows: list[CsvRow] = []
 
-    w_arr = np.asarray(data.weight, dtype=np.float64).reshape(-1)
+    w_arr: ArrF64 = np.asarray(data.weight, dtype=np.float64).reshape(-1)
 
     for i, (mid, acct, cat) in enumerate(
         zip(data.merchant_ids, data.counterparty_acct, data.category)
     ):
-        w = _as_float(cast(object, w_arr[i]))
+        w = as_float(cast(NumScalar, w_arr[i]))
         row: list[CsvCell] = [
             mid,
             acct,

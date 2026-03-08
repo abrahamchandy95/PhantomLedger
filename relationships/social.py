@@ -5,21 +5,13 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
+from common.probability import build_cdf, cdf_pick
 from common.rng import Rng
 from common.seeding import derived_seed
 
 
-type NumScalar = float | int | np.floating | np.integer
 type ArrF64 = npt.NDArray[np.float64]
 type ArrI32 = npt.NDArray[np.int32]
-
-
-def _as_int(x: object) -> int:
-    return int(cast(int | np.integer, x))
-
-
-def _as_float(x: object) -> float:
-    return float(cast(NumScalar, x))
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,30 +28,6 @@ class SocialGraph:
     k_contacts: int
 
 
-def _build_cdf_from_weights(weights: ArrF64 | npt.NDArray[np.float64]) -> ArrF64:
-    w = np.asarray(weights, dtype=np.float64).reshape(-1)
-
-    s_obj: object = cast(object, np.sum(w, dtype=np.float64))
-    s = _as_float(s_obj)
-
-    if not np.isfinite(s) or s <= 0.0:
-        w[:] = 1.0
-        s = float(w.size)
-
-    cdf_obj: object = cast(object, np.cumsum(w / s, dtype=np.float64))
-    cdf = np.asarray(cdf_obj, dtype=np.float64)
-    cdf[-1] = 1.0
-    return cdf
-
-
-def _cdf_pick(cdf: ArrF64, u: float) -> int:
-    j_obj: object = cast(object, np.searchsorted(cdf, u, side="right"))
-    j = _as_int(j_obj)
-    if j >= int(cdf.size):
-        return int(cdf.size) - 1
-    return j
-
-
 def _choose_unique_indices(*, needed: int, draw_one: Callable[[], int]) -> list[int]:
     out: list[int] = []
     seen: set[int] = set()
@@ -68,7 +36,7 @@ def _choose_unique_indices(*, needed: int, draw_one: Callable[[], int]) -> list[
     max_tries = max(24, 10 * needed)
 
     while len(out) < needed and tries < max_tries:
-        drawn_idx = int(draw_one())
+        drawn_idx = draw_one()
         tries += 1
         if drawn_idx in seen:
             continue
@@ -153,19 +121,19 @@ def build_social_graph(
 
     block_for_person: list[int] = [0] * n_people
     for block_idx in range(num_blocks):
-        lo = int(block_starts[block_idx])
-        hi = int(block_ends[block_idx])
+        lo = block_starts[block_idx]
+        hi = block_ends[block_idx]
         for person_idx in range(lo, hi):
             block_for_person[person_idx] = block_idx
 
     # -----------------------------
     # attractiveness prior
     # -----------------------------
-    attract_obj: object = cast(
+    attract_obj = cast(
         object,
         rng.gen.lognormal(mean=0.0, sigma=float(attractiveness_sigma), size=n_people),
     )
-    attract = np.asarray(attract_obj, dtype=np.float64)
+    attract: ArrF64 = np.asarray(attract_obj, dtype=np.float64)
 
     if hub_people:
         people_index = {person_id: i for i, person_id in enumerate(people)}
@@ -175,13 +143,13 @@ def build_social_graph(
             if hub_idx is not None:
                 attract[hub_idx] *= boost
 
-    global_cdf = _build_cdf_from_weights(attract)
+    global_cdf = build_cdf(attract)
 
     block_cdfs: list[ArrF64] = []
     for block_idx in range(num_blocks):
-        lo = int(block_starts[block_idx])
-        hi = int(block_ends[block_idx])
-        block_cdfs.append(_build_cdf_from_weights(attract[lo:hi]))
+        lo = block_starts[block_idx]
+        hi = block_ends[block_idx]
+        block_cdfs.append(build_cdf(attract[lo:hi]))
 
     contacts = np.empty((n_people, k_contacts), dtype=np.int32)
 
@@ -191,10 +159,10 @@ def build_social_graph(
     for src_idx, person_id in enumerate(people):
         g = np.random.default_rng(derived_seed(seed, "p2p_contacts", person_id))
 
-        src_block_idx = int(block_for_person[src_idx])
-        local_lo = int(block_starts[src_block_idx])
-        local_hi = int(block_ends[src_block_idx])
-        local_size = int(local_hi - local_lo)
+        src_block_idx = block_for_person[src_idx]
+        local_lo = block_starts[src_block_idx]
+        local_hi = block_ends[src_block_idx]
+        local_size = local_hi - local_lo
         local_cdf = block_cdfs[src_block_idx]
 
         def draw_local() -> int:
@@ -203,8 +171,8 @@ def build_social_graph(
 
             tries = 0
             while True:
-                picked_local = _cdf_pick(local_cdf, float(g.random()))
-                cand = int(local_lo + picked_local)
+                picked_local = cdf_pick(local_cdf, float(g.random()))
+                cand = local_lo + picked_local
                 if cand != src_idx:
                     return cand
 
@@ -213,7 +181,7 @@ def build_social_graph(
                     if src_idx != local_lo:
                         return local_lo
 
-                    next_local = int(src_idx + 1)
+                    next_local = src_idx + 1
                     if next_local < local_hi:
                         return next_local
 
@@ -225,7 +193,7 @@ def build_social_graph(
 
             tries = 0
             while True:
-                cand = _cdf_pick(global_cdf, float(g.random()))
+                cand = cdf_pick(global_cdf, float(g.random()))
                 if cand != src_idx:
                     return cand
 
@@ -239,7 +207,7 @@ def build_social_graph(
 
             tries = 0
             while True:
-                cand = _cdf_pick(global_cdf, float(g.random()))
+                cand = cdf_pick(global_cdf, float(g.random()))
                 if cand != src_idx and not (local_lo <= cand < local_hi):
                     return cand
 
@@ -272,7 +240,7 @@ def build_social_graph(
         if not unique_contacts:
             unique_contacts = [_fallback_other_index(src_idx, n_people)]
 
-        strength_obj: object = cast(
+        strength_obj = cast(
             object,
             g.gamma(
                 shape=float(edge_weight_gamma_shape),
@@ -280,11 +248,11 @@ def build_social_graph(
                 size=len(unique_contacts),
             ),
         )
-        strength = np.asarray(strength_obj, dtype=np.float64)
-        strength_cdf = _build_cdf_from_weights(strength)
+        strength: ArrF64 = np.asarray(strength_obj, dtype=np.float64)
+        strength_cdf = build_cdf(strength)
 
         for contact_slot in range(k_contacts):
-            pick = _cdf_pick(strength_cdf, float(g.random()))
-            contacts[src_idx, contact_slot] = int(unique_contacts[pick])
+            pick = cdf_pick(strength_cdf, float(g.random()))
+            contacts[src_idx, contact_slot] = unique_contacts[pick]
 
     return SocialGraph(contacts=contacts, k_contacts=k_contacts)

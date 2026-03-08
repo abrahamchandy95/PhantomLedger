@@ -2,9 +2,17 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 
 from common.config import GraphConfig
+from common.probability import as_float, build_cdf, cdf_pick
 from common.rng import Rng
+
+
+type NumScalar = float | int | np.floating | np.integer
+type ArrF64 = npt.NDArray[np.float64]
+type ArrF32 = npt.NDArray[np.float32]
+type ArrI32 = npt.NDArray[np.int32]
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,20 +23,8 @@ class NeighborGraph:
       cdf[i, j]       = cumulative probability up to j (last element ~ 1.0)
     """
 
-    neighbors: np.ndarray  # (n_accounts, k) int32
-    cdf: np.ndarray  # (n_accounts, k) float32
-
-
-_NumScalar = float | int | np.floating | np.integer
-
-
-def _as_float(x: object) -> float:
-    # No Any in signature; cast from object to a safe numeric union.
-    return float(cast(_NumScalar, x))
-
-
-def _as_int(x: object) -> int:
-    return int(cast(int | np.integer, x))
+    neighbors: ArrI32  # shape (n_accounts, k)
+    cdf: ArrF32  # shape (n_accounts, k)
 
 
 def _assign_households(rng: Rng, persons: list[str]) -> dict[str, int]:
@@ -85,44 +81,36 @@ def build_neighbor_graph(
 
     acct_index: dict[str, int] = {a: i for i, a in enumerate(accounts)}
 
-    persons = list({acct_owner[a] for a in accounts if a in acct_owner})
+    # Keep person order deterministic.
+    persons = list(dict.fromkeys(acct_owner[a] for a in accounts if a in acct_owner))
     person_household = _assign_households(rng, persons)
 
     household_accounts: dict[int, list[int]] = {}
-    for a in accounts:
-        p = acct_owner.get(a)
-        if p is None:
+    for acct in accounts:
+        owner = acct_owner.get(acct)
+        if owner is None:
             continue
-        hid = person_household.get(p, -1)
-        household_accounts.setdefault(hid, []).append(acct_index[a])
+        hid = person_household.get(owner, -1)
+        household_accounts.setdefault(hid, []).append(acct_index[acct])
 
-    # -----------------------------
-    # Destination attractiveness (heavy-tailed)
-    # -----------------------------
     sigma = float(gcfg.graph_attractiveness_sigma)
 
-    attract_obj: object = cast(object, rng.gen.lognormal(mean=0.0, sigma=sigma, size=n))
-    attract: np.ndarray = np.asarray(attract_obj, dtype=np.float64)
+    attract: ArrF64 = np.asarray(
+        cast(object, rng.gen.lognormal(mean=0.0, sigma=sigma, size=n)),
+        dtype=np.float64,
+    )
 
     if hub_accounts:
         hub_boost = float(gcfg.graph_hub_weight_boost)
-        for ha in hub_accounts:
-            idx = acct_index.get(ha)
+        for hub_acct in hub_accounts:
+            idx = acct_index.get(hub_acct)
             if idx is not None:
                 attract[idx] *= hub_boost
 
-    # -----------------------------
-    # Global CDF sampler
-    # -----------------------------
-    w: np.ndarray = attract
-    w_sum = _as_float(np.sum(w, dtype=np.float64))
-    if w_sum <= 0.0 or not np.isfinite(w_sum):
-        raise ValueError("invalid dest weight sum")
+    cdf_global = build_cdf(attract)
 
-    cdf_global: np.ndarray = np.cumsum(w / w_sum, dtype=np.float64)
-
-    neighbors = np.empty((n, k), dtype=np.int32)
-    weights = np.empty((n, k), dtype=np.float64)
+    neighbors: ArrI32 = np.empty((n, k), dtype=np.int32)
+    weights: ArrF64 = np.empty((n, k), dtype=np.float64)
 
     intra_p = float(gcfg.graph_intra_household_p)
     edge_shape = float(gcfg.graph_edge_weight_gamma_shape)
@@ -134,6 +122,7 @@ def build_neighbor_graph(
 
         for j in range(k):
             use_local = (len(local_pool) >= 2) and rng.coin(intra_p)
+
             if use_local:
                 dst = i
                 tries = 0
@@ -141,34 +130,29 @@ def build_neighbor_graph(
                     dst = local_pool[rng.int(0, len(local_pool))]
                     tries += 1
             else:
-                u = rng.float()
-                dst = _as_int(np.searchsorted(cdf_global, u, side="right"))
-                if dst >= n:
-                    dst = n - 1
+                dst = cdf_pick(cdf_global, rng.float())
                 if dst == i:
-                    u2 = rng.float()
-                    dst = _as_int(np.searchsorted(cdf_global, u2, side="right"))
-                    if dst >= n:
-                        dst = n - 1
+                    dst = cdf_pick(cdf_global, rng.float())
                     if dst == i:
                         dst = (i + 1) % n
 
             neighbors[i, j] = dst
 
-            gamma_obj: object = cast(object, rng.gen.gamma(shape=edge_shape, scale=1.0))
-            weights[i, j] = _as_float(gamma_obj)
+            weights[i, j] = as_float(
+                cast(
+                    NumScalar,
+                    rng.gen.gamma(shape=edge_shape, scale=1.0),
+                )
+            )
 
-        weights_row_obj: object = cast(object, weights[i, :])
-        weights_row: np.ndarray = np.asarray(weights_row_obj, dtype=np.float64)
-        row_sum = _as_float(np.sum(weights_row, dtype=np.float64))
-
+        row_sum = as_float(cast(NumScalar, np.sum(weights[i, :], dtype=np.float64)))
         if row_sum <= 0.0 or not np.isfinite(row_sum):
             weights[i, :] = 1.0
             row_sum = float(k)
 
         weights[i, :] = weights[i, :] / row_sum
 
-    cdf: np.ndarray = np.cumsum(weights, axis=1, dtype=np.float64).astype(np.float32)
+    cdf: ArrF32 = np.cumsum(weights, axis=1, dtype=np.float64).astype(np.float32)
     cdf[:, -1] = 1.0
 
     return NeighborGraph(neighbors=neighbors, cdf=cdf)
