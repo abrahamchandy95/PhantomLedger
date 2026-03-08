@@ -1,8 +1,6 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.rng import Rng
-from emit.tg_csv import CsvCell, CsvRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,31 +36,3 @@ def generate_pii(people: list[str], rng: Rng) -> PiiData:
         person_email[p] = _email_for_person(p)
 
     return PiiData(person_phone=person_phone, person_email=person_email)
-
-
-def iter_phone_rows(pii: PiiData) -> Iterator[CsvRow]:
-    """phone.csv rows: phone_id"""
-    for phone in pii.person_phone.values():
-        row: list[CsvCell] = [phone]
-        yield row
-
-
-def iter_email_rows(pii: PiiData) -> Iterator[CsvRow]:
-    """email.csv rows: email_id"""
-    for email in pii.person_email.values():
-        row: list[CsvCell] = [email]
-        yield row
-
-
-def iter_has_phone_rows(people: list[str], pii: PiiData) -> Iterator[CsvRow]:
-    """HAS_PHONE.csv rows: FROM, TO"""
-    for p in people:
-        row: list[CsvCell] = [p, pii.person_phone[p]]
-        yield row
-
-
-def iter_has_email_rows(people: list[str], pii: PiiData) -> Iterator[CsvRow]:
-    """HAS_EMAIL.csv rows: FROM, TO"""
-    for p in people:
-        row: list[CsvCell] = [p, pii.person_email[p]]
-        yield row

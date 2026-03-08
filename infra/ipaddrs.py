@@ -1,22 +1,27 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from common.config import FraudConfig, WindowConfig
 from common.ids import rand_ipv4
 from common.rng import Rng
-from common.temporal import dt_str, sample_seen_window
-from emit.tg_csv import CsvCell, CsvRow
-
+from common.temporal import sample_seen_window
 from entities.people import PeopleData
+
+
+@dataclass(frozen=True, slots=True)
+class IpUsage:
+    person_id: str
+    ip_address: str
+    first_seen: datetime
+    last_seen: datetime
 
 
 @dataclass(frozen=True, slots=True)
 class IpData:
     # ip_address -> blacklisted_ip (0/1)
     ips: dict[str, int]
-    # HAS_IP rows: FROM, TO, first_seen, last_seen
-    has_ip_rows: list[CsvRow]
+    # domain records, not CSV rows
+    has_ip: list[IpUsage]
     # person_id -> list of ip addresses (used later to stamp txns)
     person_ips: dict[str, list[str]]
 
@@ -38,8 +43,8 @@ def generate_ipaddrs(
     days = int(window.days)
 
     ip_blacklist_flag: dict[str, int] = {}
-    has_ip_rows: list[CsvRow] = []
-    person_ips: dict[str, list[str]] = {p: [] for p in people.people}
+    has_ip: list[IpUsage] = []
+    person_ips: dict[str, list[str]] = {person_id: [] for person_id in people.people}
 
     # Baseline IPs per person
     for person_id in people.people:
@@ -53,13 +58,20 @@ def generate_ipaddrs(
 
             person_ips[person_id].append(ip)
 
-            fs, ls = sample_seen_window(rng, start_date, days)
-            ip_row: list[CsvCell] = [person_id, ip, dt_str(fs), dt_str(ls)]
-            has_ip_rows.append(ip_row)
+            first_seen, last_seen = sample_seen_window(rng, start_date, days)
+            has_ip.append(
+                IpUsage(
+                    person_id=person_id,
+                    ip_address=ip,
+                    first_seen=first_seen,
+                    last_seen=last_seen,
+                )
+            )
+
     # Fraud ring shared IPs (blacklisted)
     if fraud_cfg.fraud_rings > 0:
-        full_first = dt_str(start_date)
-        full_last = dt_str(start_date + timedelta(days=days - 1))
+        full_first = start_date
+        full_last = start_date + timedelta(days=days - 1)
 
         for ring in people.rings:
             shared_ip = rand_ipv4(rng.gen)
@@ -67,23 +79,17 @@ def generate_ipaddrs(
 
             for person_id in ring.ring_people:
                 person_ips[person_id].append(shared_ip)
+                has_ip.append(
+                    IpUsage(
+                        person_id=person_id,
+                        ip_address=shared_ip,
+                        first_seen=full_first,
+                        last_seen=full_last,
+                    )
+                )
 
-                shared_ip_row: list[CsvCell] = [
-                    person_id,
-                    shared_ip,
-                    full_first,
-                    full_last,
-                ]
-                has_ip_rows.append(shared_ip_row)
-
-    return IpData(ips=ip_blacklist_flag, has_ip_rows=has_ip_rows, person_ips=person_ips)
-
-
-def iter_ip_rows(data: IpData) -> Iterator[CsvRow]:
-    """
-    ipaddress.csv rows:
-      ip_address, blacklisted_ip
-    """
-    for ip in sorted(data.ips):
-        row: list[CsvCell] = [ip, int(data.ips[ip])]
-        yield row
+    return IpData(
+        ips=ip_blacklist_flag,
+        has_ip=has_ip,
+        person_ips=person_ips,
+    )

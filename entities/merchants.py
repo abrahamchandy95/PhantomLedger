@@ -9,7 +9,6 @@ from common.ids import external_account_id, merchant_account_id
 from common.probability import as_float
 from common.rng import Rng
 from common.seeding import derived_seed
-from emit.tg_csv import CsvCell, CsvRow
 
 
 type NumScalar = float | int | np.floating | np.integer
@@ -106,34 +105,3 @@ def generate_merchants(
         in_bank_accounts=in_bank_accounts,
         external_accounts=external_accounts,
     )
-
-
-def iter_merchants_rows(data: MerchantData) -> list[CsvRow]:
-    # merchants.csv: merchant_id, counterparty_acct, category, weight, in_bank
-    rows: list[CsvRow] = []
-
-    w_arr: ArrF64 = np.asarray(data.weight, dtype=np.float64).reshape(-1)
-
-    for i, (mid, acct, cat) in enumerate(
-        zip(data.merchant_ids, data.counterparty_acct, data.category)
-    ):
-        w = as_float(cast(NumScalar, w_arr[i]))
-        row: list[CsvCell] = [
-            mid,
-            acct,
-            cat,
-            round(w, 10),
-            1 if acct.startswith("M") else 0,
-        ]
-        rows.append(row)
-
-    return rows
-
-
-def iter_external_accounts_rows(data: MerchantData) -> list[CsvRow]:
-    # external_accounts.csv: account_id, kind, category
-    rows: list[CsvRow] = []
-    for acct, cat in zip(data.counterparty_acct, data.category):
-        if acct.startswith("X"):
-            rows.append([acct, "merchant_external", cat])
-    return rows

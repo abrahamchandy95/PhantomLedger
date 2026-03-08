@@ -1,5 +1,7 @@
+from collections.abc import Iterable
 from datetime import datetime
 
+import emit
 from common.schema import (
     ACCOUNTNUMBER,
     DEVICE,
@@ -12,32 +14,17 @@ from common.schema import (
     IPADDRESS,
     PERSON,
     PHONE,
+    CsvSpec,
 )
 from common.types import Txn
-from emit.tg_csv import write_csv
-from entities.accounts import (
-    generate_accounts,
-    iter_account_rows,
-    iter_has_account_rows,
-    with_extra_accounts,
-)
+from entities.accounts import generate_accounts, with_extra_accounts
 from entities.credit_cards import attach_credit_cards
-from entities.merchants import (
-    generate_merchants,
-    iter_external_accounts_rows,
-    iter_merchants_rows,
-)
-from entities.people import generate_people, iter_person_rows
+from entities.merchants import generate_merchants
+from entities.people import generate_people
 from entities.personas import assign_personas
-from entities.pii import (
-    generate_pii,
-    iter_email_rows,
-    iter_has_email_rows,
-    iter_has_phone_rows,
-    iter_phone_rows,
-)
-from infra.devices import generate_devices, iter_device_rows
-from infra.ipaddrs import generate_ipaddrs, iter_ip_rows
+from entities.pii import generate_pii
+from infra.devices import generate_devices
+from infra.ipaddrs import generate_ipaddrs
 from infra.txn_infra import TxnInfraAssigner
 from pipeline.state import GenerationState
 from transfers.aggregate import emit_transfer_outputs
@@ -173,33 +160,33 @@ def emit_outputs(st: GenerationState) -> None:
         out_dir, st.all_txns, cfg.output.emit_raw_ledger
     )
 
-    tables = [
-        (PERSON, iter_person_rows(st.people)),
-        (ACCOUNTNUMBER, iter_account_rows(st.accounts)),
-        (PHONE, iter_phone_rows(st.pii)),
-        (EMAIL, iter_email_rows(st.pii)),
-        (DEVICE, iter_device_rows(st.devices)),
-        (IPADDRESS, iter_ip_rows(st.ipdata)),
-        (HAS_ACCOUNT, iter_has_account_rows(st.accounts)),
-        (HAS_PHONE, iter_has_phone_rows(st.people.people, st.pii)),
-        (HAS_EMAIL, iter_has_email_rows(st.people.people, st.pii)),
-        (HAS_USED, st.devices.has_used_rows),
-        (HAS_IP, st.ipdata.has_ip_rows),
+    tables: list[tuple[CsvSpec, Iterable[emit.CsvRow]]] = [
+        (PERSON, emit.iter_person_rows(st.people)),
+        (ACCOUNTNUMBER, emit.iter_account_rows(st.accounts)),
+        (PHONE, emit.iter_phone_rows(st.pii)),
+        (EMAIL, emit.iter_email_rows(st.pii)),
+        (DEVICE, emit.iter_device_rows(st.devices)),
+        (IPADDRESS, emit.iter_ip_rows(st.ipdata)),
+        (HAS_ACCOUNT, emit.iter_has_account_rows(st.accounts)),
+        (HAS_PHONE, emit.iter_has_phone_rows(st.people.people, st.pii)),
+        (HAS_EMAIL, emit.iter_has_email_rows(st.people.people, st.pii)),
+        (HAS_USED, emit.iter_has_used_rows(st.devices)),
+        (HAS_IP, emit.iter_has_ip_rows(st.ipdata)),
     ]
 
     for spec, rows in tables:
-        write_csv(out_dir / spec.filename, spec.header, rows)
+        emit.write_csv(out_dir / spec.filename, spec.header, rows)
 
     if st.merchants is not None:
-        write_csv(
+        emit.write_csv(
             out_dir / "merchants.csv",
             ("merchant_id", "counterparty_acct", "category", "weight", "in_bank"),
-            iter_merchants_rows(st.merchants),
+            emit.iter_merchants_rows(st.merchants),
         )
-        write_csv(
+        emit.write_csv(
             out_dir / "external_accounts.csv",
             ("account_id", "kind", "category"),
-            iter_external_accounts_rows(st.merchants),
+            emit.iter_external_accounts_rows(st.merchants),
         )
 
 

@@ -1,10 +1,8 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.config import AccountsConfig
 from common.ids import iter_account_ids
 from common.rng import Rng
-from emit.tg_csv import CsvCell, CsvRow
 
 from entities.people import PeopleData
 
@@ -108,32 +106,6 @@ def generate_accounts(
         mule_accounts=mule_accounts,
         victim_accounts=victim_accounts,
     )
-
-
-def iter_account_rows(data: AccountsData) -> Iterator[CsvRow]:
-    """
-    accountnumber.csv rows:
-      account_number, mule, fraud, victim
-    """
-    for a in data.accounts:
-        row: list[CsvCell] = [
-            a,
-            1 if a in data.mule_accounts else 0,
-            1 if a in data.fraud_accounts else 0,
-            1 if a in data.victim_accounts else 0,
-        ]
-        yield row
-
-
-def iter_has_account_rows(data: AccountsData) -> Iterator[CsvRow]:
-    """
-    HAS_ACCOUNT.csv rows:
-      FROM, TO
-    """
-    for p, accts in data.person_accounts.items():
-        for a in accts:
-            row: list[CsvCell] = [p, a]
-            yield row
 
 
 def with_extra_accounts(data: AccountsData, extra_accounts: list[str]) -> AccountsData:
