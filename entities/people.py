@@ -1,10 +1,8 @@
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from common.config import FraudConfig, PopulationConfig
 from common.ids import iter_person_ids
 from common.rng import Rng
-from emit.tg_csv import CsvCell, CsvRow
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,7 +24,9 @@ class PeopleData:
 
 
 def generate_people(
-    pop: PopulationConfig, fraud_cfg: FraudConfig, rng: Rng
+    pop: PopulationConfig,
+    fraud_cfg: FraudConfig,
+    rng: Rng,
 ) -> PeopleData:
     """
     Generate all person IDs plus fraud/mule/victim flags.
@@ -75,11 +75,9 @@ def generate_people(
 
         fraud_list = [p for p in ring_people if p not in mule_set]
         if not fraud_list:
-            # Move one mule to fraud coordinator role.
             moved = mule_list.pop()
             fraud_list.append(moved)
 
-        # Victims outside ring participants (sampled per ring; may repeat across rings)
         victims_k = fraud_cfg.victims_per_ring
         victim_list = (
             rng.choice_k(non_ring_people, victims_k, replace=False)
@@ -108,18 +106,3 @@ def generate_people(
         victim_people=victim_people,
         rings=rings,
     )
-
-
-def iter_person_rows(data: PeopleData) -> Iterator[CsvRow]:
-    """
-    person.csv rows:
-      customer_id, mule, fraud, victim
-    """
-    for p in data.people:
-        row: list[CsvCell] = [
-            p,
-            1 if p in data.mule_people else 0,
-            1 if p in data.fraud_people else 0,
-            1 if p in data.victim_people else 0,
-        ]
-        yield row
