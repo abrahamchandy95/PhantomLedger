@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from common.schema import (
     ACCOUNTNUMBER,
     DEVICE,
@@ -11,6 +13,7 @@ from common.schema import (
     PERSON,
     PHONE,
 )
+from common.types import Txn
 from emit.tg_csv import write_csv
 from entities.accounts import (
     generate_accounts,
@@ -18,18 +21,20 @@ from entities.accounts import (
     iter_has_account_rows,
     with_extra_accounts,
 )
+from entities.credit_cards import attach_credit_cards
+from entities.merchants import (
+    generate_merchants,
+    iter_external_accounts_rows,
+    iter_merchants_rows,
+)
 from entities.people import generate_people, iter_person_rows
+from entities.personas import assign_personas
 from entities.pii import (
     generate_pii,
     iter_email_rows,
     iter_has_email_rows,
     iter_has_phone_rows,
     iter_phone_rows,
-)
-from entities.merchants import (
-    generate_merchants,
-    iter_merchants_rows,
-    iter_external_accounts_rows,
 )
 from infra.devices import generate_devices, iter_device_rows
 from infra.ipaddrs import generate_ipaddrs, iter_ip_rows
@@ -40,6 +45,23 @@ from transfers.fraud import FraudInjectionKnobs, inject_fraud_transfers
 from transfers.legit import generate_legit_transfers
 
 
+type TxnSortKey = tuple[datetime, str, str, float, int, int, str, str, str]
+
+
+def _txn_sort_key(t: Txn) -> TxnSortKey:
+    return (
+        t.ts,
+        t.src_acct,
+        t.dst_acct,
+        float(t.amount),
+        int(t.is_fraud),
+        int(t.ring_id),
+        t.channel or "",
+        t.device_id or "",
+        t.ip_address or "",
+    )
+
+
 def build_entities(st: GenerationState) -> None:
     cfg = st.cfg
     rng = st.rng
@@ -48,12 +70,26 @@ def build_entities(st: GenerationState) -> None:
     st.accounts = generate_accounts(cfg.accounts, rng, st.people)
     st.pii = generate_pii(st.people.people, rng)
 
-    # NEW: merchant ecosystem
+    # Merchant ecosystem
     st.merchants = generate_merchants(cfg.merchants, cfg.population, rng)
 
     # Add in-bank merchants (M...) into internal account universe
     if st.merchants.in_bank_accounts:
         st.accounts = with_extra_accounts(st.accounts, st.merchants.in_bank_accounts)
+
+    # Compute personas once
+    persons = list(st.accounts.person_accounts.keys())
+    st.persona_for_person = assign_personas(cfg.personas, rng, persons)
+
+    # Attach credit card accounts before infra is built
+    st.accounts, st.credit_cards = attach_credit_cards(
+        cfg.credit,
+        rng,
+        base_seed=cfg.population.seed,
+        accounts=st.accounts,
+        persons=persons,
+        persona_for_person=st.persona_for_person,
+    )
 
 
 def build_infra(st: GenerationState) -> None:
@@ -82,6 +118,7 @@ def build_transfers(st: GenerationState) -> None:
     assert st.people is not None
     assert st.accounts is not None
     assert st.merchants is not None
+    assert st.persona_for_person is not None
 
     st.legit = generate_legit_transfers(
         cfg.window,
@@ -92,11 +129,15 @@ def build_transfers(st: GenerationState) -> None:
         cfg.events,
         cfg.recurring,
         cfg.balances,
-        cfg.merchants,  # NEW
+        cfg.merchants,
         rng,
         st.accounts,
-        merchants=st.merchants,  # NEW
+        merchants=st.merchants,
         infra=st.infra,
+        persona_for_person_override=st.persona_for_person,
+        family_cfg=cfg.family,
+        credit_cfg=cfg.credit,
+        credit_cards=st.credit_cards,
     )
     st.base_txns = st.legit.txns
 
@@ -108,11 +149,13 @@ def build_transfers(st: GenerationState) -> None:
         st.people,
         st.accounts,
         st.base_txns,
-        biller_accounts=st.legit.biller_accounts,  # NEW
-        employers=st.legit.employers,  # NEW
+        biller_accounts=st.legit.biller_accounts,
+        employers=st.legit.employers,
         infra=st.infra,
     )
-    st.all_txns = st.fraud.txns
+
+    # Canonical chronological order for all downstream consumers.
+    st.all_txns = sorted(st.fraud.txns, key=_txn_sort_key)
 
 
 def emit_outputs(st: GenerationState) -> None:
@@ -126,12 +169,10 @@ def emit_outputs(st: GenerationState) -> None:
     assert st.ipdata is not None
     assert st.all_txns is not None
 
-    # Transfers (HAS_PAID always, optional raw ledger)
     st.unique_has_paid_edges = emit_transfer_outputs(
         out_dir, st.all_txns, cfg.output.emit_raw_ledger
     )
 
-    # Non-transfer CSVs (TigerGraph-ready core)
     tables = [
         (PERSON, iter_person_rows(st.people)),
         (ACCOUNTNUMBER, iter_account_rows(st.accounts)),
@@ -149,7 +190,6 @@ def emit_outputs(st: GenerationState) -> None:
     for spec, rows in tables:
         write_csv(out_dir / spec.filename, spec.header, rows)
 
-    # NEW: export merchant + external metadata (generic ledger extras)
     if st.merchants is not None:
         write_csv(
             out_dir / "merchants.csv",

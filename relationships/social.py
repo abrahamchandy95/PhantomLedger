@@ -1,23 +1,87 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
+import numpy.typing as npt
 
 from common.rng import Rng
 from common.seeding import derived_seed
 
-_NumScalar = float | int | np.floating | np.integer
+
+type NumScalar = float | int | np.floating | np.integer
+type ArrF64 = npt.NDArray[np.float64]
+type ArrI32 = npt.NDArray[np.int32]
 
 
 def _as_int(x: object) -> int:
     return int(cast(int | np.integer, x))
 
 
+def _as_float(x: object) -> float:
+    return float(cast(NumScalar, x))
+
+
 @dataclass(frozen=True, slots=True)
 class SocialGraph:
-    # For each person index i, contacts[i] gives person indices (int32) of likely P2P counterparties
-    contacts: np.ndarray  # shape (n_people, k_contacts) int32
+    """
+    For each person index i, contacts[i] stores person indices (int32) of
+    likely P2P counterparties.
+
+    Repeated indices are allowed and intentional: repetition encodes stronger
+    ties, because downstream code samples uniformly from this fixed-width row.
+    """
+
+    contacts: ArrI32  # shape (n_people, k_contacts)
     k_contacts: int
+
+
+def _build_cdf_from_weights(weights: ArrF64 | npt.NDArray[np.float64]) -> ArrF64:
+    w = np.asarray(weights, dtype=np.float64).reshape(-1)
+
+    s_obj: object = cast(object, np.sum(w, dtype=np.float64))
+    s = _as_float(s_obj)
+
+    if not np.isfinite(s) or s <= 0.0:
+        w[:] = 1.0
+        s = float(w.size)
+
+    cdf_obj: object = cast(object, np.cumsum(w / s, dtype=np.float64))
+    cdf = np.asarray(cdf_obj, dtype=np.float64)
+    cdf[-1] = 1.0
+    return cdf
+
+
+def _cdf_pick(cdf: ArrF64, u: float) -> int:
+    j_obj: object = cast(object, np.searchsorted(cdf, u, side="right"))
+    j = _as_int(j_obj)
+    if j >= int(cdf.size):
+        return int(cdf.size) - 1
+    return j
+
+
+def _choose_unique_indices(*, needed: int, draw_one: Callable[[], int]) -> list[int]:
+    out: list[int] = []
+    seen: set[int] = set()
+
+    tries = 0
+    max_tries = max(24, 10 * needed)
+
+    while len(out) < needed and tries < max_tries:
+        drawn_idx = int(draw_one())
+        tries += 1
+        if drawn_idx in seen:
+            continue
+        seen.add(drawn_idx)
+        out.append(drawn_idx)
+
+    return out
+
+
+def _fallback_other_index(src_idx: int, n_people: int) -> int:
+    if n_people <= 1:
+        return src_idx
+    return (src_idx + 1) % n_people
 
 
 def build_social_graph(
@@ -29,70 +93,198 @@ def build_social_graph(
     community_min: int = 80,
     community_max: int = 450,
     cross_community_p: float = 0.03,
+    local_contact_p: float = 0.70,
+    hub_people: set[str] | None = None,
+    hub_weight_boost: float = 1.0,
+    attractiveness_sigma: float = 1.0,
+    edge_weight_gamma_shape: float = 1.0,
 ) -> SocialGraph:
     """
-    Community-block model:
-      - people are partitioned into contiguous communities (block sizes in [min,max])
-      - each person chooses most contacts within their community
-      - small probability of cross-community links
+    Person-level contact graph with local communities and weighted tie strength.
 
-    This is intentionally *not* an ER-like random graph, so hop distances do not collapse.
+    Interpretation of parameters:
+      - k_contacts: width of stored contact row per person
+      - local_contact_p: probability a candidate contact comes from the
+        person's local community
+      - cross_community_p: probability a non-local draw is forced outside
+        the person's community
+      - hub_weight_boost: attractiveness multiplier for hub-connected people
+      - attractiveness_sigma: dispersion in person attractiveness
+      - edge_weight_gamma_shape: concentration of tie strengths among the
+        chosen contacts; lower => more uneven / repeated strong ties
     """
-    n = len(people)
-    if n == 0:
-        return SocialGraph(
-            contacts=np.zeros((0, k_contacts), dtype=np.int32), k_contacts=k_contacts
-        )
+    n_people = len(people)
+    if n_people == 0:
+        empty = np.zeros((0, k_contacts), dtype=np.int32)
+        return SocialGraph(contacts=empty, k_contacts=k_contacts)
 
     if k_contacts <= 0:
         raise ValueError("k_contacts must be > 0")
-
+    if community_min <= 0:
+        raise ValueError("community_min must be > 0")
     if community_max < community_min:
         raise ValueError("community_max must be >= community_min")
+    if not (0.0 <= cross_community_p <= 1.0):
+        raise ValueError("cross_community_p must be between 0 and 1")
+    if not (0.0 <= local_contact_p <= 1.0):
+        raise ValueError("local_contact_p must be between 0 and 1")
+    if hub_weight_boost <= 0.0:
+        raise ValueError("hub_weight_boost must be > 0")
+    if attractiveness_sigma <= 0.0:
+        raise ValueError("attractiveness_sigma must be > 0")
+    if edge_weight_gamma_shape <= 0.0:
+        raise ValueError("edge_weight_gamma_shape must be > 0")
 
-    # community boundaries as contiguous blocks
-    starts: list[int] = []
-    ends: list[int] = []
+    # -----------------------------
+    # contiguous communities
+    # -----------------------------
+    block_starts: list[int] = []
+    block_ends: list[int] = []
 
-    i = 0
-    while i < n:
-        # random-ish block size
-        size = community_min + rng.int(0, max(1, (community_max - community_min + 1)))
-        j = min(n, i + size)
-        starts.append(i)
-        ends.append(j)
-        i = j
+    cursor = 0
+    while cursor < n_people:
+        size = community_min + rng.int(0, max(1, community_max - community_min + 1))
+        end_idx = min(n_people, cursor + size)
+        block_starts.append(cursor)
+        block_ends.append(end_idx)
+        cursor = end_idx
 
-    # For each person, find their block by scanning boundaries.
-    # Since blocks are contiguous, we can walk once.
-    block_for_person = np.empty(n, dtype=np.int32)
-    b = 0
-    for idx in range(n):
-        while idx >= ends[b]:
-            b += 1
-        block_for_person[idx] = b
+    num_blocks = len(block_starts)
 
-    contacts = np.empty((n, k_contacts), dtype=np.int32)
+    block_for_person: list[int] = [0] * n_people
+    for block_idx in range(num_blocks):
+        lo = int(block_starts[block_idx])
+        hi = int(block_ends[block_idx])
+        for person_idx in range(lo, hi):
+            block_for_person[person_idx] = block_idx
 
-    # Deterministic contact selection per person (stable regardless of loop order)
-    for idx, pid in enumerate(people):
-        b = _as_int(cast(object, block_for_person[idx]))
-        lo = starts[b]
-        hi = ends[b]
+    # -----------------------------
+    # attractiveness prior
+    # -----------------------------
+    attract_obj: object = cast(
+        object,
+        rng.gen.lognormal(mean=0.0, sigma=float(attractiveness_sigma), size=n_people),
+    )
+    attract = np.asarray(attract_obj, dtype=np.float64)
 
-        g = np.random.default_rng(derived_seed(seed, "p2p_contacts", pid))
+    if hub_people:
+        people_index = {person_id: i for i, person_id in enumerate(people)}
+        boost = float(hub_weight_boost)
+        for hub_person in hub_people:
+            hub_idx = people_index.get(hub_person)
+            if hub_idx is not None:
+                attract[hub_idx] *= boost
 
-        for j in range(k_contacts):
-            if float(g.random()) < float(cross_community_p):
-                # global contact
-                other = int(g.integers(0, n))
-            else:
-                # within-community
-                other = int(g.integers(lo, hi))
+    global_cdf = _build_cdf_from_weights(attract)
 
-            if other == idx:
-                other = lo if idx != lo else min(hi - 1, idx + 1)
+    block_cdfs: list[ArrF64] = []
+    for block_idx in range(num_blocks):
+        lo = int(block_starts[block_idx])
+        hi = int(block_ends[block_idx])
+        block_cdfs.append(_build_cdf_from_weights(attract[lo:hi]))
 
-            contacts[idx, j] = int(other)
+    contacts = np.empty((n_people, k_contacts), dtype=np.int32)
+
+    # -----------------------------
+    # per-person contact selection
+    # -----------------------------
+    for src_idx, person_id in enumerate(people):
+        g = np.random.default_rng(derived_seed(seed, "p2p_contacts", person_id))
+
+        src_block_idx = int(block_for_person[src_idx])
+        local_lo = int(block_starts[src_block_idx])
+        local_hi = int(block_ends[src_block_idx])
+        local_size = int(local_hi - local_lo)
+        local_cdf = block_cdfs[src_block_idx]
+
+        def draw_local() -> int:
+            if local_size <= 1:
+                return _fallback_other_index(src_idx, n_people)
+
+            tries = 0
+            while True:
+                picked_local = _cdf_pick(local_cdf, float(g.random()))
+                cand = int(local_lo + picked_local)
+                if cand != src_idx:
+                    return cand
+
+                tries += 1
+                if tries >= 8:
+                    if src_idx != local_lo:
+                        return local_lo
+
+                    next_local = int(src_idx + 1)
+                    if next_local < local_hi:
+                        return next_local
+
+                    return _fallback_other_index(src_idx, n_people)
+
+        def draw_global() -> int:
+            if n_people <= 1:
+                return src_idx
+
+            tries = 0
+            while True:
+                cand = _cdf_pick(global_cdf, float(g.random()))
+                if cand != src_idx:
+                    return cand
+
+                tries += 1
+                if tries >= 8:
+                    return _fallback_other_index(src_idx, n_people)
+
+        def draw_cross_community() -> int:
+            if n_people - local_size <= 0:
+                return draw_global()
+
+            tries = 0
+            while True:
+                cand = _cdf_pick(global_cdf, float(g.random()))
+                if cand != src_idx and not (local_lo <= cand < local_hi):
+                    return cand
+
+                tries += 1
+                if tries >= 24:
+                    return draw_global()
+
+        base_unique = max(1, min(k_contacts, max(3, (k_contacts + 1) // 2)))
+
+        def draw_candidate() -> int:
+            use_local = (local_size > 1) and (
+                float(g.random()) < float(local_contact_p)
+            )
+            if use_local:
+                return draw_local()
+
+            force_cross = (n_people - local_size > 0) and (
+                float(g.random()) < float(cross_community_p)
+            )
+            if force_cross:
+                return draw_cross_community()
+
+            return draw_global()
+
+        unique_contacts = _choose_unique_indices(
+            needed=base_unique,
+            draw_one=draw_candidate,
+        )
+
+        if not unique_contacts:
+            unique_contacts = [_fallback_other_index(src_idx, n_people)]
+
+        strength_obj: object = cast(
+            object,
+            g.gamma(
+                shape=float(edge_weight_gamma_shape),
+                scale=1.0,
+                size=len(unique_contacts),
+            ),
+        )
+        strength = np.asarray(strength_obj, dtype=np.float64)
+        strength_cdf = _build_cdf_from_weights(strength)
+
+        for contact_slot in range(k_contacts):
+            pick = _cdf_pick(strength_cdf, float(g.random()))
+            contacts[src_idx, contact_slot] = int(unique_contacts[pick])
 
     return SocialGraph(contacts=contacts, k_contacts=k_contacts)
