@@ -5,7 +5,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from common.config import EventsConfig, MerchantsConfig
+from common.config import CreditConfig, EventsConfig, MerchantsConfig
 from common.rng import Rng
 from common.seeding import derived_seed
 from common.types import Txn
@@ -26,7 +26,6 @@ from math_models.timing import (
 from relationships.social import SocialGraph
 from transfers.txns import TxnFactory, TxnSpec
 
-# Python 3.12+ (and therefore 3.14) typing syntax (PEP 695)
 type NumScalar = float | int | np.floating | np.integer
 type ArrF64 = npt.NDArray[np.float64]
 type ArrI32 = npt.NDArray[np.int32]
@@ -44,11 +43,7 @@ def _as_int(x: object) -> int:
 
 
 def _build_cdf(weights: ArrF64) -> ArrF64:
-    """
-    Normalize weights into a CDF. Last element is exactly 1.0.
-    """
     w = np.asarray(weights, dtype=np.float64)
-
     s_obj: object = cast(object, np.sum(w, dtype=np.float64))
     s = _as_float(s_obj)
 
@@ -71,9 +66,6 @@ def _cdf_pick_u(cdf: ArrF64, u: float) -> int:
 
 
 def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list[int]:
-    """
-    Pick k unique indices using a CDF sampler. k is small (<= ~30).
-    """
     out: list[int] = []
     seen: set[int] = set()
     tries = 0
@@ -95,10 +87,56 @@ def _pick_unique_weighted(gen: np.random.Generator, cdf: ArrF64, k: int) -> list
 
 def _row_contains(arr_row: ArrI32, k: int, v: int) -> bool:
     for i in range(k):
-        # Avoid numpy-stub Any leakage from arr_row[i]
         if _as_int(cast(object, arr_row[i])) == v:
             return True
     return False
+
+
+def _build_channel_cdf(ecfg: EventsConfig, mcfg: MerchantsConfig) -> ArrF64:
+    """
+    Channel mix:
+      - merchant
+      - bills
+      - p2p
+      - external_unknown
+
+    unknown_outflow_p is treated as the final probability of the external_unknown
+    channel. The other three shares are renormalized to fill the remaining mass.
+    """
+    unknown_p = min(1.0, max(0.0, float(ecfg.unknown_outflow_p)))
+
+    core = np.array(
+        [
+            float(mcfg.share_merchant),
+            float(mcfg.share_bills),
+            float(mcfg.share_p2p),
+        ],
+        dtype=np.float64,
+    )
+
+    core_sum_obj: object = cast(object, np.sum(core, dtype=np.float64))
+    core_sum = _as_float(core_sum_obj)
+
+    if not np.isfinite(core_sum) or core_sum <= 0.0:
+        core[:] = 1.0
+        core_sum = float(core.size)
+
+    core = core / core_sum
+
+    shares = np.array(
+        [
+            (1.0 - unknown_p) * core[0],
+            (1.0 - unknown_p) * core[1],
+            (1.0 - unknown_p) * core[2],
+            unknown_p,
+        ],
+        dtype=np.float64,
+    )
+
+    cdf_obj: object = cast(object, np.cumsum(shares, dtype=np.float64))
+    cdf = np.asarray(cdf_obj, dtype=np.float64)
+    cdf[-1] = 1.0
+    return cdf
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,18 +151,19 @@ class DayToDayContext:
 
     merchants: MerchantData
     merch_cdf: ArrF64
+    global_biller_cdf: ArrF64
 
     social: SocialGraph
 
-    fav_merchants_idx: ArrI32  # (n_persons, fav_max)
-    fav_k: ArrI16  # (n_persons,)
+    fav_merchants_idx: ArrI32
+    fav_k: ArrI16
 
-    billers_idx: ArrI32  # (n_persons, bill_max)
-    bill_k: ArrI16  # (n_persons,)
+    billers_idx: ArrI32
+    bill_k: ArrI16
 
-    explore_propensity: ArrF32  # (n_persons,)
-    burst_start_day: ArrI32  # (n_persons,)
-    burst_len: ArrI16  # (n_persons,)
+    explore_propensity: ArrF32
+    burst_start_day: ArrI32
+    burst_len: ArrI16
 
 
 def build_day_to_day_context(
@@ -141,24 +180,20 @@ def build_day_to_day_context(
     social: SocialGraph,
     base_seed: int,
 ) -> DayToDayContext:
-    # Touch these so strict linters don't complain; no semantic effect.
-    _ = (float(ecfg.prefer_billers_p), start_date.year)
-
+    _ = start_date.year
     timing = default_timing_profiles()
 
     merch_w: ArrF64 = np.asarray(merchants.weight, dtype=np.float64)
     merch_cdf: ArrF64 = _build_cdf(merch_w)
 
-    # Build biller-only weights (utilities/telco/insurance/education), fallback to global
     biller_cats: set[str] = {"utilities", "telecom", "insurance", "education"}
     mask_list: list[bool] = [c in biller_cats for c in merchants.category]
     mask: ArrBool = np.asarray(mask_list, dtype=np.bool_)
 
     biller_w: ArrF64 = merch_w * mask.astype(np.float64)
-
     biller_sum_obj: object = cast(object, np.sum(biller_w, dtype=np.float64))
     biller_sum = _as_float(biller_sum_obj)
-    biller_cdf: ArrF64 = _build_cdf(biller_w) if biller_sum > 0.0 else merch_cdf
+    global_biller_cdf: ArrF64 = _build_cdf(biller_w) if biller_sum > 0.0 else merch_cdf
 
     n = len(persons)
     people_index = {p: i for i, p in enumerate(persons)}
@@ -189,7 +224,7 @@ def build_day_to_day_context(
         bk = int(g.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1))
 
         fav = _pick_unique_weighted(g, merch_cdf, fk)
-        bill = _pick_unique_weighted(g, biller_cdf, bk)
+        bill = _pick_unique_weighted(g, global_biller_cdf, bk)
 
         fav_k[i] = fk
         bill_k[i] = bk
@@ -200,19 +235,17 @@ def build_day_to_day_context(
         bill_idx[i, :] = int(bill[0])
         bill_idx[i, : len(bill)] = np.asarray(bill, dtype=np.int32)
 
-        # Heterogeneous exploration propensity (many low, few higher)
         alpha = 1.6
         beta = 9.5
         explore_prop[i] = np.float32(float(g.beta(alpha, beta)))
 
-        # Optional novelty burst window
         if days > 0 and float(g.random()) < burst_p:
             bs = int(g.integers(0, max(1, days)))
             bl = int(g.integers(burst_len_min, burst_len_max + 1))
             burst_start[i] = bs
             burst_len[i] = np.int16(bl)
 
-    _ = rng.float()
+    _ = (rng.float(), float(ecfg.prefer_billers_p))
 
     return DayToDayContext(
         persons=persons,
@@ -222,6 +255,7 @@ def build_day_to_day_context(
         timing=timing,
         merchants=merchants,
         merch_cdf=merch_cdf,
+        global_biller_cdf=global_biller_cdf,
         social=social,
         fav_merchants_idx=fav_idx,
         fav_k=fav_k,
@@ -242,30 +276,17 @@ def generate_day_to_day_superposition(
     days: int,
     ctx: DayToDayContext,
     infra: TxnInfraAssigner | None = None,
+    credit_cfg: CreditConfig | None = None,
+    card_for_person: dict[str, str] | None = None,
 ) -> list[Txn]:
     if days <= 0:
         return []
 
     txf = TxnFactory(rng=rng, infra=infra)
-
-    shares: ArrF64 = np.array(
-        [
-            float(mcfg.share_merchant),
-            float(mcfg.share_bills),
-            float(mcfg.share_p2p),
-            float(mcfg.share_external_unknown),
-        ],
-        dtype=np.float64,
-    )
-    sum_shares_obj: object = cast(object, np.sum(shares, dtype=np.float64))
-    sum_shares = _as_float(sum_shares_obj)
-    shares = shares / (sum_shares if sum_shares > 0.0 else 1.0)
-
-    cdf_chan_obj: object = cast(object, np.cumsum(shares, dtype=np.float64))
-    cdf_chan: ArrF64 = np.asarray(cdf_chan_obj, dtype=np.float64)
-    cdf_chan[-1] = 1.0
+    cdf_chan = _build_channel_cdf(ecfg, mcfg)
 
     base_per_day = float(mcfg.target_payments_per_person_per_month) / 30.0
+    prefer_billers_p = float(ecfg.prefer_billers_p)
 
     explore_base = float(mcfg.explore_p)
     weekend_explore_mult = 1.25
@@ -278,11 +299,22 @@ def generate_day_to_day_superposition(
 
     day_cap = int(ecfg.max_events_per_day)
 
+    ccfg: CreditConfig | None = None
+    card_map: dict[str, str] = {}
+
+    if credit_cfg is not None and credit_cfg.enable_credit_cards:
+        ccfg = credit_cfg
+        if card_for_person is not None:
+            card_map = card_for_person
+
     for day in range(days):
         day_start = start_date + timedelta(days=day)
 
         wd_mult = float(weekday_multiplier(day_start, DEFAULT_COUNT_MODELS))
         is_weekend = day_start.weekday() >= 5
+
+        k = float(ecfg.day_multiplier_gamma_shape)
+        day_shock = float(rng.gen.gamma(shape=k, scale=(1.0 / k)))
 
         produced_today = 0
 
@@ -291,14 +323,14 @@ def generate_day_to_day_superposition(
                 break
 
             p = persons[pi]
-            src = ctx.primary_acct_for_person.get(p)
-            if src is None:
+            dep_acct = ctx.primary_acct_for_person.get(p)
+            if dep_acct is None:
                 continue
 
             pname = ctx.persona_for_person.get(p, "salaried")
             persona = PERSONAS.get(pname, PERSONAS["salaried"])
 
-            rate = base_per_day * float(persona.rate_mult) * wd_mult
+            rate = base_per_day * float(persona.rate_mult) * wd_mult * day_shock
 
             n_out_obj: object = cast(
                 object,
@@ -321,7 +353,6 @@ def generate_day_to_day_superposition(
             )
             offsets: ArrI32 = np.asarray(offsets_obj, dtype=np.int32)
 
-            # --- FIX: avoid float()/int() directly on numpy scalars (Any leakage) ---
             ep = _as_float(cast(object, ctx.explore_propensity[pi]))
             bs = _as_int(cast(object, ctx.burst_start_day[pi]))
             bl = _as_int(cast(object, ctx.burst_len[pi]))
@@ -333,7 +364,6 @@ def generate_day_to_day_superposition(
                 p_explore *= weekend_explore_mult
             if bs >= 0 and bl > 0 and (bs <= day < bs + bl):
                 p_explore *= burst_explore_mult
-
             p_explore = min(0.50, max(0.0, p_explore))
 
             for i in range(n_out):
@@ -346,17 +376,17 @@ def generate_day_to_day_superposition(
                 )
                 ch = _as_int(ch_obj)
 
+                # P2P
                 if ch == 2:
                     cidx_obj: object = cast(
                         object,
                         ctx.social.contacts[pi, rng.int(0, ctx.social.k_contacts)],
                     )
                     cidx = _as_int(cidx_obj)
-
                     if 0 <= cidx < n_persons:
                         dst_person = persons[cidx]
                         dst = ctx.primary_acct_for_person.get(dst_person)
-                        if dst is None or dst == src:
+                        if dst is None or dst == dep_acct:
                             continue
 
                         amt = _as_float(cast(object, p2p_amount(rng))) * float(
@@ -366,26 +396,44 @@ def generate_day_to_day_superposition(
 
                         txns.append(
                             txf.make(
-                                TxnSpec(src=src, dst=dst, amt=amt, ts=ts, channel="p2p")
+                                TxnSpec(
+                                    src=dep_acct,
+                                    dst=dst,
+                                    amt=amt,
+                                    ts=ts,
+                                    channel="p2p",
+                                )
                             )
                         )
                         produced_today += 1
 
+                # Bills
                 elif ch == 1:
-                    j_obj: object = cast(
-                        object, ctx.billers_idx[pi, rng.int(0, max(1, bk))]
-                    )
-                    j = _as_int(j_obj)
-                    dst = ctx.merchants.counterparty_acct[j]
+                    if bk > 0 and rng.coin(prefer_billers_p):
+                        j_obj: object = cast(
+                            object, ctx.billers_idx[pi, rng.int(0, max(1, bk))]
+                        )
+                        j = _as_int(j_obj)
+                    else:
+                        j = _cdf_pick_u(ctx.global_biller_cdf, float(rng.float()))
 
+                    dst = ctx.merchants.counterparty_acct[j]
                     amt = _as_float(cast(object, bill_amount(rng)))
+
                     txns.append(
                         txf.make(
-                            TxnSpec(src=src, dst=dst, amt=amt, ts=ts, channel="bill")
+                            TxnSpec(
+                                src=dep_acct,
+                                dst=dst,
+                                amt=amt,
+                                ts=ts,
+                                channel="bill",
+                            )
                         )
                     )
                     produced_today += 1
 
+                # External unknown
                 elif ch == 3:
                     if ctx.merchants.external_accounts:
                         dst = rng.choice(ctx.merchants.external_accounts)
@@ -398,7 +446,7 @@ def generate_day_to_day_superposition(
                     txns.append(
                         txf.make(
                             TxnSpec(
-                                src=src,
+                                src=dep_acct,
                                 dst=dst,
                                 amt=amt,
                                 ts=ts,
@@ -408,6 +456,7 @@ def generate_day_to_day_superposition(
                     )
                     produced_today += 1
 
+                # Merchant purchase
                 else:
                     exploring = rng.coin(p_explore)
 
@@ -417,13 +466,10 @@ def generate_day_to_day_superposition(
                         )
                         j = _as_int(j_obj2)
                     else:
-                        # exploration: sample global merchant distribution, try to avoid favorites
                         tries = 0
                         j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
-
                         row_obj: object = cast(object, ctx.fav_merchants_idx[pi, :])
                         row: ArrI32 = np.asarray(row_obj, dtype=np.int32)
-
                         while fk > 0 and _row_contains(row, fk, j) and tries < 6:
                             j = _cdf_pick_u(ctx.merch_cdf, float(rng.float()))
                             tries += 1
@@ -435,10 +481,25 @@ def generate_day_to_day_superposition(
                     )
                     amt = round(max(1.0, amt), 2)
 
+                    src_acct = dep_acct
+                    channel = "merchant"
+
+                    if ccfg is not None:
+                        card = card_map.get(p)
+                        if card is not None:
+                            p_cc = float(ccfg.cc_share_for_merchant(pname))
+                            if rng.coin(p_cc):
+                                src_acct = card
+                                channel = "card_purchase"
+
                     txns.append(
                         txf.make(
                             TxnSpec(
-                                src=src, dst=dst, amt=amt, ts=ts, channel="merchant"
+                                src=src_acct,
+                                dst=dst,
+                                amt=amt,
+                                ts=ts,
+                                channel=channel,
                             )
                         )
                     )
