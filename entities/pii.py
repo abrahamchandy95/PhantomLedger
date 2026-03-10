@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from common.rng import Rng
+from common.random import Rng
 
 
 @dataclass(frozen=True, slots=True)

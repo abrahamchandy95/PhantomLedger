@@ -1,6 +1,4 @@
 from .accounts import AccountsConfig
-from .balances import BalancesConfig
-from .credit import CreditConfig
 from .family import FamilyConfig
 from .hubs import HubsConfig
 from .merchants import MerchantsConfig
@@ -14,6 +12,4 @@ __all__ = [
     "PersonasConfig",
     "MerchantsConfig",
     "FamilyConfig",
-    "CreditConfig",
-    "BalancesConfig",
 ]

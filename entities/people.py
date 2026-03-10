@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from common.config import FraudConfig, PopulationConfig
 from common.ids import iter_person_ids
-from common.rng import Rng
+from common.random import Rng
 
 
 @dataclass(frozen=True, slots=True)

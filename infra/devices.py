@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from common.config import FraudConfig, WindowConfig
 from common.ids import device_id_for_person, shared_ring_device_id
-from common.rng import Rng
+from common.random import Rng
 from common.temporal import sample_seen_window
 from entities.people import PeopleData
 

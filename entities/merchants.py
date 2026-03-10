@@ -2,17 +2,11 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
-import numpy.typing as npt
 
 from common.config import MerchantsConfig, PopulationConfig
 from common.ids import external_account_id, merchant_account_id
-from common.probability import as_float
-from common.rng import Rng
-from common.seeding import derived_seed
-
-
-type NumScalar = float | int | np.floating | np.integer
-type ArrF64 = npt.NDArray[np.float64]
+from common.math import as_float, NumScalar, ArrF64
+from common.random import Rng, derived_seed
 
 
 @dataclass(frozen=True, slots=True)

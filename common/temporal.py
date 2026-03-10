@@ -2,7 +2,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from common.rng import Rng
+from common.random import Rng
 
 
 TG_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -27,6 +27,13 @@ def iter_days(start_date: datetime, days: int) -> Iterator[datetime]:
 
 
 def iter_month_starts(start_date: datetime, days: int) -> list[datetime]:
+    """
+    Return calendar month starts touched by the simulation range.
+
+    Note:
+        This may include the first day of the starting month even when that
+        date is earlier than start_date.
+    """
     if days < 0:
         raise ValueError("days must be >= 0")
 
@@ -39,6 +46,19 @@ def iter_month_starts(start_date: datetime, days: int) -> list[datetime]:
         d = datetime(d.year + (d.month == 12), 1 if d.month == 12 else d.month + 1, 1)
 
     return out
+
+
+def iter_window_month_starts(start_date: datetime, days: int) -> list[datetime]:
+    """
+    Return month anchors that fall within the actual simulation window:
+        [start_date, start_date + days)
+
+    Unlike iter_month_starts(), this never yields a date before start_date.
+    """
+    if days < 0:
+        raise ValueError("days must be >= 0")
+
+    return [dt for dt in iter_month_starts(start_date, days) if dt >= start_date]
 
 
 def sample_seen_window(

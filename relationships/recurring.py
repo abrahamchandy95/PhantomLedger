@@ -1,40 +1,112 @@
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import cast
 
 import numpy as np
 
-from common.config import RecurringConfig
-from common.rng import Rng
-from common.seeding import derived_seed
-
+from common.random import Rng, SeedBank
+from common.validate import (
+    require_float_between,
+    require_float_ge,
+    require_float_gt,
+)
 
 type SalarySampler = Callable[[], float]
 type RentSampler = Callable[[], float]
+
+
+@dataclass(frozen=True, slots=True)
+class RecurringPolicy:
+    salary_fraction: float = 0.65
+    rent_fraction: float = 0.55
+
+    employer_tenure_years_min: float = 2.0
+    employer_tenure_years_max: float = 10.0
+    landlord_tenure_years_min: float = 2.0
+    landlord_tenure_years_max: float = 10.0
+
+    annual_inflation_rate: float = 0.03
+
+    salary_real_raise_mu: float = 0.02
+    salary_real_raise_sigma: float = 0.01
+    salary_real_raise_floor: float = 0.005
+
+    job_switch_bump_mu: float = 0.08
+    job_switch_bump_sigma: float = 0.05
+    job_switch_bump_floor: float = 0.00
+
+    rent_real_raise_mu: float = 0.03
+    rent_real_raise_sigma: float = 0.02
+    rent_real_raise_floor: float = 0.00
+
+    def validate(self) -> None:
+        require_float_between("salary_fraction", self.salary_fraction, 0.0, 1.0)
+        require_float_between("rent_fraction", self.rent_fraction, 0.0, 1.0)
+
+        require_float_gt(
+            "employer_tenure_years_min",
+            self.employer_tenure_years_min,
+            0.0,
+        )
+        if float(self.employer_tenure_years_max) < float(
+            self.employer_tenure_years_min
+        ):
+            raise ValueError(
+                "employer_tenure_years_max must be >= employer_tenure_years_min"
+            )
+
+        require_float_gt(
+            "landlord_tenure_years_min",
+            self.landlord_tenure_years_min,
+            0.0,
+        )
+        if float(self.landlord_tenure_years_max) < float(
+            self.landlord_tenure_years_min
+        ):
+            raise ValueError(
+                "landlord_tenure_years_max must be >= landlord_tenure_years_min"
+            )
+
+        require_float_ge("annual_inflation_rate", self.annual_inflation_rate, 0.0)
+        require_float_ge("salary_real_raise_sigma", self.salary_real_raise_sigma, 0.0)
+        require_float_ge("job_switch_bump_sigma", self.job_switch_bump_sigma, 0.0)
+        require_float_ge("rent_real_raise_sigma", self.rent_real_raise_sigma, 0.0)
+
+
+DEFAULT_RECURRING_POLICY = RecurringPolicy()
+
+type SeedSource = SeedBank | int
+type AnnualRaiseSampler = Callable[[RecurringPolicy, SeedBank, str, int], float]
+
+
+def _as_seedbank(seed: SeedSource) -> SeedBank:
+    if isinstance(seed, SeedBank):
+        return seed
+    return SeedBank(int(seed))
 
 
 def _years_to_days(years: float) -> int:
     return int(round(years * 365.25))
 
 
-def _local_gen(seed: int, *parts: str) -> np.random.Generator:
-    """
-    Local deterministic RNG derived from seed + parts.
-    Useful to make per-entity decisions stable regardless of iteration order.
-    """
-    return np.random.default_rng(derived_seed(seed, *parts))
+def _draw_index(gen: np.random.Generator, hi: int) -> int:
+    if hi <= 0:
+        raise ValueError("upper bound must be > 0")
+    return int(gen.integers(0, hi))
 
 
 def _pick_one(gen: np.random.Generator, items: Sequence[str], *, name: str) -> str:
     if not items:
         raise ValueError(f"{name} must be non-empty")
-    idx = int(cast(int | np.integer, gen.integers(0, len(items))))
-    return items[idx]
+    return items[_draw_index(gen, len(items))]
 
 
 def _pick_different_or_same(
-    rng: Rng, items: Sequence[str], current: str, *, name: str
+    rng: Rng,
+    items: Sequence[str],
+    current: str,
+    *,
+    name: str,
 ) -> str:
     if not items:
         raise ValueError(f"{name} must be non-empty")
@@ -52,9 +124,6 @@ def _sample_tenure_days(
     years_min: float,
     years_max: float,
 ) -> int:
-    """
-    Uniform tenure in [years_min, years_max] years.
-    """
     if years_max <= years_min:
         return max(1, _years_to_days(years_min))
 
@@ -69,12 +138,8 @@ def _sample_backdated_interval(
     years_min: float,
     years_max: float,
 ) -> tuple[datetime, datetime]:
-    """
-    Create a [start, end) interval where the contract/job/lease is already
-    somewhere inside its tenure at anchor_date.
-    """
     tenure_days = _sample_tenure_days(gen, years_min, years_max)
-    age_days = int(cast(int | np.integer, gen.integers(0, max(1, tenure_days))))
+    age_days = _draw_index(gen, max(1, tenure_days))
 
     start = anchor_date - timedelta(days=age_days)
     end = start + timedelta(days=tenure_days)
@@ -115,59 +180,59 @@ def _lognormal_multiplier(gen: np.random.Generator, *, sigma: float) -> float:
     return float(gen.lognormal(mean=0.0, sigma=sigma))
 
 
-def _real_raise_for_year(
-    rcfg: RecurringConfig,
-    seed: int,
+def _salary_real_raise_for_year(
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     key: str,
     year: int,
 ) -> float:
-    gen = _local_gen(seed, "salary_real_raise", key, str(year))
+    gen = seedbank.generator("salary_real_raise", key, str(year))
     return _normal_clamped(
         gen,
-        mu=rcfg.salary_real_raise_mu,
-        sigma=rcfg.salary_real_raise_sigma,
-        floor=rcfg.salary_real_raise_floor,
+        mu=policy.salary_real_raise_mu,
+        sigma=policy.salary_real_raise_sigma,
+        floor=policy.salary_real_raise_floor,
     )
 
 
 def _rent_real_raise_for_year(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     key: str,
     year: int,
 ) -> float:
-    gen = _local_gen(seed, "rent_real_raise", key, str(year))
+    gen = seedbank.generator("rent_real_raise", key, str(year))
     return _normal_clamped(
         gen,
-        mu=rcfg.rent_real_raise_mu,
-        sigma=rcfg.rent_real_raise_sigma,
-        floor=rcfg.rent_real_raise_floor,
+        mu=policy.rent_real_raise_mu,
+        sigma=policy.rent_real_raise_sigma,
+        floor=policy.rent_real_raise_floor,
     )
 
 
 def _job_switch_bump(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     person_id: str,
     switch_index: int,
 ) -> float:
-    gen = _local_gen(seed, "job_switch_bump", person_id, str(switch_index))
+    gen = seedbank.generator("job_switch_bump", person_id, str(switch_index))
     return _normal_clamped(
         gen,
-        mu=rcfg.job_switch_bump_mu,
-        sigma=rcfg.job_switch_bump_sigma,
-        floor=rcfg.job_switch_bump_floor,
+        mu=policy.job_switch_bump_mu,
+        sigma=policy.job_switch_bump_sigma,
+        floor=policy.job_switch_bump_floor,
     )
 
 
 def _compound_growth(
     *,
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     key: str,
     start: datetime,
     now: datetime,
-    annual_real_raise: Callable[[RecurringConfig, int, str, int], float],
+    annual_real_raise: AnnualRaiseSampler,
 ) -> float:
     n = _anniversaries_passed(start, now)
     if n <= 0:
@@ -176,39 +241,39 @@ def _compound_growth(
     growth = 1.0
     for i in range(n):
         year = start.year + i
-        real = annual_real_raise(rcfg, seed, key, year)
-        growth *= 1.0 + rcfg.annual_inflation_rate + real
+        real = annual_real_raise(policy, seedbank, key, year)
+        growth *= 1.0 + policy.annual_inflation_rate + real
 
     return growth
 
 
 def _compound_growth_salary(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     person_id: str,
     start: datetime,
     now: datetime,
 ) -> float:
     return _compound_growth(
-        rcfg=rcfg,
-        seed=seed,
+        policy=policy,
+        seedbank=seedbank,
         key=person_id,
         start=start,
         now=now,
-        annual_real_raise=_real_raise_for_year,
+        annual_real_raise=_salary_real_raise_for_year,
     )
 
 
 def _compound_growth_rent(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seedbank: SeedBank,
     payer_acct: str,
     start: datetime,
     now: datetime,
 ) -> float:
     return _compound_growth(
-        rcfg=rcfg,
-        seed=seed,
+        policy=policy,
+        seedbank=seedbank,
         key=payer_acct,
         start=start,
         now=now,
@@ -222,7 +287,7 @@ class EmploymentState:
     start: datetime
     end: datetime
     base_salary: float
-    switch_index: int  # increments per job change
+    switch_index: int
 
 
 @dataclass(slots=True)
@@ -235,8 +300,8 @@ class LeaseState:
 
 
 def init_employment(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     rng: Rng,
     *,
     person_id: str,
@@ -247,20 +312,21 @@ def init_employment(
     if not employers:
         raise ValueError("employers must be non-empty")
 
-    gen = _local_gen(seed, "employment_init", person_id)
+    policy.validate()
+    seedbank = _as_seedbank(seed)
+    gen = seedbank.generator("employment_init", person_id)
 
     employer = _pick_one(gen, employers, name="employers")
     job_start, job_end = _sample_backdated_interval(
         gen,
         anchor_date=start_date,
-        years_min=rcfg.employer_tenure_years_min,
-        years_max=rcfg.employer_tenure_years_max,
+        years_min=policy.employer_tenure_years_min,
+        years_max=policy.employer_tenure_years_max,
     )
 
     base_salary_raw = float(base_salary_sampler())
     base_salary = base_salary_raw * _lognormal_multiplier(gen, sigma=0.03)
 
-    # touch rng so callers relying on global rng advancement still behave predictably
     _ = rng.float()
 
     return EmploymentState(
@@ -273,8 +339,8 @@ def init_employment(
 
 
 def advance_employment(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     rng: Rng,
     *,
     person_id: str,
@@ -284,6 +350,8 @@ def advance_employment(
 ) -> EmploymentState:
     if not employers:
         raise ValueError("employers must be non-empty")
+
+    seedbank = _as_seedbank(seed)
 
     employer = _pick_different_or_same(
         rng,
@@ -295,19 +363,19 @@ def advance_employment(
     start, end = _sample_forward_interval(
         rng.gen,
         start=now,
-        years_min=rcfg.employer_tenure_years_min,
-        years_max=rcfg.employer_tenure_years_max,
+        years_min=policy.employer_tenure_years_min,
+        years_max=policy.employer_tenure_years_max,
     )
 
     current_salary = prev.base_salary * _compound_growth_salary(
-        rcfg,
-        seed,
+        policy,
+        seedbank,
         person_id,
         prev.start,
         now,
     )
 
-    bump = _job_switch_bump(rcfg, seed, person_id, prev.switch_index + 1)
+    bump = _job_switch_bump(policy, seedbank, person_id, prev.switch_index + 1)
     new_base = current_salary * (1.0 + bump)
 
     return EmploymentState(
@@ -320,16 +388,17 @@ def advance_employment(
 
 
 def salary_at(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     *,
     person_id: str,
     state: EmploymentState,
     pay_date: datetime,
 ) -> float:
+    seedbank = _as_seedbank(seed)
     amount = state.base_salary * _compound_growth_salary(
-        rcfg,
-        seed,
+        policy,
+        seedbank,
         person_id,
         state.start,
         pay_date,
@@ -338,8 +407,8 @@ def salary_at(
 
 
 def init_lease(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     rng: Rng,
     *,
     payer_acct: str,
@@ -350,14 +419,16 @@ def init_lease(
     if not landlords:
         raise ValueError("landlords must be non-empty")
 
-    gen = _local_gen(seed, "lease_init", payer_acct)
+    policy.validate()
+    seedbank = _as_seedbank(seed)
+    gen = seedbank.generator("lease_init", payer_acct)
 
     landlord = _pick_one(gen, landlords, name="landlords")
     lease_start, lease_end = _sample_backdated_interval(
         gen,
         anchor_date=start_date,
-        years_min=rcfg.landlord_tenure_years_min,
-        years_max=rcfg.landlord_tenure_years_max,
+        years_min=policy.landlord_tenure_years_min,
+        years_max=policy.landlord_tenure_years_max,
     )
 
     base_rent_raw = float(base_rent_sampler())
@@ -375,8 +446,8 @@ def init_lease(
 
 
 def advance_lease(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     rng: Rng,
     *,
     payer_acct: str,
@@ -388,6 +459,8 @@ def advance_lease(
     if not landlords:
         raise ValueError("landlords must be non-empty")
 
+    seedbank = _as_seedbank(seed)
+
     landlord = _pick_different_or_same(
         rng,
         landlords,
@@ -398,12 +471,12 @@ def advance_lease(
     start, end = _sample_forward_interval(
         rng.gen,
         start=now,
-        years_min=rcfg.landlord_tenure_years_min,
-        years_max=rcfg.landlord_tenure_years_max,
+        years_min=policy.landlord_tenure_years_min,
+        years_max=policy.landlord_tenure_years_max,
     )
 
     base_rent_raw = float(reset_rent_sampler())
-    gen = _local_gen(seed, "lease_reset_rent", payer_acct, str(prev.move_index + 1))
+    gen = seedbank.generator("lease_reset_rent", payer_acct, str(prev.move_index + 1))
     base_rent = base_rent_raw * _lognormal_multiplier(gen, sigma=0.05)
 
     return LeaseState(
@@ -416,16 +489,17 @@ def advance_lease(
 
 
 def rent_at(
-    rcfg: RecurringConfig,
-    seed: int,
+    policy: RecurringPolicy,
+    seed: SeedSource,
     *,
     payer_acct: str,
     state: LeaseState,
     pay_date: datetime,
 ) -> float:
+    seedbank = _as_seedbank(seed)
     amount = state.base_rent * _compound_growth_rent(
-        rcfg,
-        seed,
+        policy,
+        seedbank,
         payer_acct,
         state.start,
         pay_date,

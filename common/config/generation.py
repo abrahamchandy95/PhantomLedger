@@ -9,12 +9,8 @@ from .population.hubs import HubsConfig
 from .population.personas import PersonasConfig
 from .population.merchants import MerchantsConfig
 from .population.family import FamilyConfig
-from .population.credit import CreditConfig
-from .population.balances import BalancesConfig
 
 from .simulation.fraud import FraudConfig
-from .simulation.recurring import RecurringConfig
-from .simulation.graph import GraphConfig
 from .simulation.events import EventsConfig
 from .simulation.infra import InfraConfig
 
@@ -30,12 +26,8 @@ class GenerationConfig:
     personas: PersonasConfig = field(default_factory=PersonasConfig)
     merchants: MerchantsConfig = field(default_factory=MerchantsConfig)
     family: FamilyConfig = field(default_factory=FamilyConfig)
-    credit: CreditConfig = field(default_factory=CreditConfig)
-    balances: BalancesConfig = field(default_factory=BalancesConfig)
 
     fraud: FraudConfig = field(default_factory=FraudConfig)
-    recurring: RecurringConfig = field(default_factory=RecurringConfig)
-    graph: GraphConfig = field(default_factory=GraphConfig)
     events: EventsConfig = field(default_factory=EventsConfig)
     infra: InfraConfig = field(default_factory=InfraConfig)
 
@@ -52,12 +44,8 @@ def validate_all(cfg: GenerationConfig) -> None:
     cfg.personas.validate()
     cfg.merchants.validate()
     cfg.family.validate()
-    cfg.credit.validate()
-    cfg.balances.validate()
 
     cfg.fraud.validate(persons=cfg.population.persons)
-    cfg.recurring.validate()
-    cfg.graph.validate()
     cfg.events.validate()
     cfg.infra.validate()
 

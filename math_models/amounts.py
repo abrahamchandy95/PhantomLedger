@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from common.probability import lognormal_by_median
-from common.rng import Rng
+from common.math import lognormal_by_median
+from common.random import Rng
 
 
 @dataclass(frozen=True, slots=True)

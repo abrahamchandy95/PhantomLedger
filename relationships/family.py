@@ -2,16 +2,10 @@ from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
-import numpy.typing as npt
 
 from common.config import FamilyConfig
-from common.probability import build_cdf, cdf_pick
-from common.rng import Rng
-from common.seeding import derived_seed
-
-
-type ArrF64 = npt.NDArray[np.float64]
-type ArrI64 = npt.NDArray[np.int64]
+from common.math import build_cdf, cdf_pick, ArrF64, ArrI64
+from common.random import Rng, derived_seed
 
 
 @dataclass(frozen=True, slots=True)
