@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from common.config import AccountsConfig
 from common.ids import iter_account_ids
-from common.rng import Rng
+from common.random import Rng
 
 from entities.people import PeopleData
 

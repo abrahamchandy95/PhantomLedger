@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from common.config import InfraConfig
-from common.rng import Rng
+from common.random import Rng
 
 
 @dataclass(slots=True)

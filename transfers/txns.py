@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from common.rng import Rng
+from common.random import Rng
 from common.types import Txn
 
 

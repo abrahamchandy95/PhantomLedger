@@ -3,7 +3,7 @@ import typing
 import numpy as np
 import numpy.typing as npt
 
-from common.rng import Rng
+from common.random import Rng
 
 
 def _normalize(p: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:

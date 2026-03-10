@@ -3,7 +3,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
-from common.probability import as_float
+from common.math import as_float
 from emit.csv_io import CsvCell, CsvRow
 from entities.merchants import MerchantData
 

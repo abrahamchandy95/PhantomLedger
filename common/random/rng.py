@@ -1,7 +1,8 @@
-import numpy as np
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TypeVar, cast
+
+import numpy as np
 
 T = TypeVar("T")
 

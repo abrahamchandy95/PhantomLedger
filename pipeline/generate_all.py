@@ -1,8 +1,8 @@
 from pathlib import Path
 
 from common.config import GenerationConfig, default_config
-from common.rng import Rng
-from pipeline.state import GenerationState
+from common.random import Rng
+from pipeline.state import GenerationRuntime, GenerationState
 from pipeline.stages import (
     build_entities,
     build_infra,
@@ -22,7 +22,13 @@ def generate_all(cfg: GenerationConfig | None = None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     rng = Rng.from_seed(cfg.population.seed)
-    st = GenerationState(cfg=cfg, rng=rng, out_dir=out_dir)
+    st = GenerationState(
+        runtime=GenerationRuntime(
+            cfg=cfg,
+            rng=rng,
+            out_dir=out_dir,
+        )
+    )
 
     build_entities(st)
     build_infra(st)
