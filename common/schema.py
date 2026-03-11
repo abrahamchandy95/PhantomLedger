@@ -11,7 +11,6 @@ class CsvSpec:
 # -----------------------------
 # Vertex CSV specs
 # -----------------------------
-
 PERSON: Final[CsvSpec] = CsvSpec(
     filename="person.csv",
     header=("customer_id", "mule", "fraud", "victim"),
@@ -22,12 +21,12 @@ DEVICE: Final[CsvSpec] = CsvSpec(
     header=("device_id", "device_type", "flagged_device"),
 )
 
-IPADDRESS: Final[CsvSpec] = CsvSpec(
+IP_ADDRESS: Final[CsvSpec] = CsvSpec(
     filename="ipaddress.csv",
     header=("ip_address", "blacklisted_ip"),
 )
 
-ACCOUNTNUMBER: Final[CsvSpec] = CsvSpec(
+ACCOUNT_NUMBER: Final[CsvSpec] = CsvSpec(
     filename="accountnumber.csv",
     header=("account_number", "mule", "fraud", "victim"),
 )
@@ -42,16 +41,26 @@ EMAIL: Final[CsvSpec] = CsvSpec(
     header=("email_id",),
 )
 
+MERCHANT: Final[CsvSpec] = CsvSpec(
+    filename="merchants.csv",
+    header=("merchant_id", "counterparty_acct", "category", "weight", "in_bank"),
+)
+
+EXTERNAL_ACCOUNT: Final[CsvSpec] = CsvSpec(
+    filename="external_accounts.csv",
+    header=("account_id", "kind", "category"),
+)
 
 VERTEX_SPECS: Final[tuple[CsvSpec, ...]] = (
     PERSON,
     DEVICE,
-    IPADDRESS,
-    ACCOUNTNUMBER,
+    IP_ADDRESS,
+    ACCOUNT_NUMBER,
     PHONE,
     EMAIL,
+    MERCHANT,
+    EXTERNAL_ACCOUNT,
 )
-
 
 # -----------------------------
 # Edge CSV specs
@@ -108,7 +117,6 @@ RAW_LEDGER: Final[CsvSpec] = CsvSpec(
         "channel",
     ),
 )
-
 
 EDGE_SPECS: Final[tuple[CsvSpec, ...]] = (
     HAS_ACCOUNT,

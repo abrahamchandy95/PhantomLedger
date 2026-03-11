@@ -2,12 +2,14 @@ from pathlib import Path
 
 from common.ids import is_external_account
 from common.schema import HAS_PAID, RAW_LEDGER
-from common.types import Txn
+from common.transactions import Transaction
 from emit.csv_io import write_csv
 from emit.transfers import build_has_paid_rows, build_raw_ledger_rows
 
 
-def emit_transfer_outputs(out_dir: Path, txns: list[Txn], emit_raw_ledger: bool) -> int:
+def emit_transfer_outputs(
+    out_dir: Path, txns: list[Transaction], emit_raw_ledger: bool
+) -> int:
     """
     Writes:
       - HAS_PAID.csv        : internal->internal only (TigerGraph schema-safe)
@@ -21,8 +23,8 @@ def emit_transfer_outputs(out_dir: Path, txns: list[Txn], emit_raw_ledger: bool)
     internal_txns = [
         txn
         for txn in txns
-        if (not is_external_account(txn.src_acct))
-        and (not is_external_account(txn.dst_acct))
+        if (not is_external_account(txn.source))
+        and (not is_external_account(txn.target))
     ]
 
     # TG-safe

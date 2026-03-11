@@ -37,9 +37,9 @@ def generate_people(
       - Victims are sampled from outside all ring participants. A victim can
         appear in multiple rings (matches the spirit of your original code).
     """
-    people = list(iter_person_ids(pop.persons))
+    people = list(iter_person_ids(pop.size))
 
-    if fraud_cfg.fraud_rings <= 0:
+    if fraud_cfg.num_rings <= 0:
         return PeopleData(
             people=people,
             fraud_people=set(),
@@ -48,7 +48,7 @@ def generate_people(
             rings=[],
         )
 
-    ring_total = fraud_cfg.fraud_rings * fraud_cfg.ring_size
+    ring_total = fraud_cfg.num_rings * fraud_cfg.ring_size
     if ring_total >= len(people):
         raise ValueError("fraud ring participants exceed/consume the population size")
 
@@ -63,7 +63,7 @@ def generate_people(
     ring_all_set = set(ring_pool)
     non_ring_people = [p for p in people if p not in ring_all_set]
 
-    for rid in range(fraud_cfg.fraud_rings):
+    for rid in range(fraud_cfg.num_rings):
         start = rid * fraud_cfg.ring_size
         end = start + fraud_cfg.ring_size
         ring_people = ring_pool[start:end]

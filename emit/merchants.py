@@ -1,25 +1,20 @@
 from typing import cast
 
 import numpy as np
-import numpy.typing as npt
 
-from common.math import as_float
+from common.math import ArrF64, NumScalar, as_float
 from emit.csv_io import CsvCell, CsvRow
 from entities.merchants import MerchantData
-
-
-type NumScalar = float | int | np.floating | np.integer
-type ArrF64 = npt.NDArray[np.float64]
 
 
 def iter_merchants_rows(data: MerchantData) -> list[CsvRow]:
     # merchants.csv: merchant_id, counterparty_acct, category, weight, in_bank
     rows: list[CsvRow] = []
 
-    weights: ArrF64 = np.asarray(data.weight, dtype=np.float64).reshape(-1)
+    weights: ArrF64 = np.asarray(data.weights, dtype=np.float64).reshape(-1)
 
     for i, (merchant_id, acct, category) in enumerate(
-        zip(data.merchant_ids, data.counterparty_acct, data.category)
+        zip(data.merchant_ids, data.counterparty_accts, data.categories)
     ):
         weight = as_float(cast(NumScalar, weights[i]))
         row: list[CsvCell] = [
@@ -37,7 +32,7 @@ def iter_merchants_rows(data: MerchantData) -> list[CsvRow]:
 def iter_external_accounts_rows(data: MerchantData) -> list[CsvRow]:
     # external_accounts.csv: account_id, kind, category
     rows: list[CsvRow] = []
-    for acct, category in zip(data.counterparty_acct, data.category):
+    for acct, category in zip(data.counterparty_accts, data.categories):
         if acct.startswith("X"):
             rows.append([acct, "merchant_external", category])
     return rows

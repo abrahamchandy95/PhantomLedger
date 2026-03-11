@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from common.config import FraudConfig, WindowConfig
 from common.ids import device_id_for_person, shared_ring_device_id
 from common.random import Rng
-from common.temporal import sample_seen_window
+from common.timeline import sample_active_dates
 from entities.people import PeopleData
 
 
@@ -55,7 +55,7 @@ def generate_devices(
             devices[device_id] = (device_type, flagged)
             person_devices[person_id].append(device_id)
 
-            first_seen, last_seen = sample_seen_window(rng, start_date, days)
+            first_seen, last_seen = sample_active_dates(rng, start_date, days)
             has_used.append(
                 DeviceUsage(
                     person_id=person_id,
@@ -65,7 +65,7 @@ def generate_devices(
                 )
             )
 
-    if fraud_cfg.fraud_rings > 0:
+    if fraud_cfg.num_rings > 0:
         full_first = start_date
         full_last = start_date + timedelta(days=days - 1)
 

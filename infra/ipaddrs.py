@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from common.config import FraudConfig, WindowConfig
 from common.ids import rand_ipv4
 from common.random import Rng
-from common.temporal import sample_seen_window
+from common.timeline import sample_active_dates
 from entities.people import PeopleData
 
 
@@ -58,7 +58,7 @@ def generate_ipaddrs(
 
             person_ips[person_id].append(ip)
 
-            first_seen, last_seen = sample_seen_window(rng, start_date, days)
+            first_seen, last_seen = sample_active_dates(rng, start_date, days)
             has_ip.append(
                 IpUsage(
                     person_id=person_id,
@@ -69,7 +69,7 @@ def generate_ipaddrs(
             )
 
     # Fraud ring shared IPs (blacklisted)
-    if fraud_cfg.fraud_rings > 0:
+    if fraud_cfg.num_rings > 0:
         full_first = start_date
         full_last = start_date + timedelta(days=days - 1)
 

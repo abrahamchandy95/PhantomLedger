@@ -1,6 +1,6 @@
 from collections.abc import Iterator
 
-from common.temporal import dt_str
+from common.timeline import format_datetime
 from emit.csv_io import CsvCell, CsvRow
 from infra.devices import DevicesData
 from infra.ipaddrs import IpData
@@ -26,8 +26,8 @@ def iter_has_used_rows(data: DevicesData) -> Iterator[CsvRow]:
         row: list[CsvCell] = [
             rec.person_id,
             rec.device_id,
-            dt_str(rec.first_seen),
-            dt_str(rec.last_seen),
+            format_datetime(rec.first_seen),
+            format_datetime(rec.last_seen),
         ]
         yield row
 
@@ -51,7 +51,7 @@ def iter_has_ip_rows(data: IpData) -> Iterator[CsvRow]:
         row: list[CsvCell] = [
             rec.person_id,
             rec.ip_address,
-            dt_str(rec.first_seen),
-            dt_str(rec.last_seen),
+            format_datetime(rec.first_seen),
+            format_datetime(rec.last_seen),
         ]
         yield row

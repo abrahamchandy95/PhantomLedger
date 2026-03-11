@@ -1,4 +1,4 @@
-from common.types import Txn
+from common.transactions import Transaction
 from pipeline.state import GenerationState, TransferStageData
 
 from .requests import build_fraud_request, build_legit_request
@@ -15,7 +15,7 @@ def build_transfers(st: GenerationState) -> None:
         request=legit_request
     ).build()
 
-    base_txns: list[Txn] = legit_result.txns
+    base_txns: list[Transaction] = legit_result.txns
     biller_accounts: list[str] = legit_result.biller_accounts
     employers: list[str] = legit_result.employers
 

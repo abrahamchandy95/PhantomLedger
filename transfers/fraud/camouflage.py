@@ -1,7 +1,7 @@
 from datetime import timedelta
 
-from common.temporal import iter_window_month_starts
-from common.types import Txn
+from common.timeline import get_active_months
+from common.transactions import Transaction
 from math_models.amounts import bill_amount, p2p_amount, salary_amount
 from transfers.txns import TxnSpec
 
@@ -12,7 +12,7 @@ from .run_context import CamouflageContext
 def inject_camouflage(
     ctx: CamouflageContext,
     ring_plan: RingPlan,
-) -> list[Txn]:
+) -> list[Transaction]:
     ring_accounts = ring_plan.participant_accounts
     if not ring_accounts:
         return []
@@ -23,10 +23,10 @@ def inject_camouflage(
     start_date = ctx.window.start_date
     days = ctx.window.days
 
-    out: list[Txn] = []
+    out: list[Transaction] = []
 
     if ctx.accounts.biller_accounts and float(policy.bill_monthly_p) > 0.0:
-        for pay_day in iter_window_month_starts(start_date, days):
+        for pay_day in get_active_months(start_date, days):
             for acct in ring_accounts:
                 if rng.coin(float(policy.bill_monthly_p)):
                     dst = rng.choice(ctx.accounts.biller_accounts)

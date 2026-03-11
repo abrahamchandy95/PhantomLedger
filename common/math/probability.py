@@ -4,9 +4,7 @@ from typing import cast, overload
 import numpy as np
 import numpy.typing as npt
 
-
-type NumScalar = float | int | np.floating | np.integer
-type ArrF64 = npt.NDArray[np.float64]
+from .numeric import ArrF64, NumScalar
 
 
 def as_float(x: NumScalar) -> float:

@@ -8,7 +8,7 @@ from common.validate import (
 
 @dataclass(frozen=True, slots=True)
 class FraudConfig:
-    fraud_rings: int = 46
+    num_rings: int = 46
     ring_size: int = 12
     mules_per_ring: int = 4
     victims_per_ring: int = 60
@@ -21,16 +21,16 @@ class FraudConfig:
         return max(1, ring_size - mules)
 
     def expected_fraudsters(self) -> int:
-        return int(self.fraud_rings) * self.fraudsters_per_ring()
+        return int(self.num_rings) * self.fraudsters_per_ring()
 
     def expected_mules(self) -> int:
-        rings = int(self.fraud_rings)
+        rings = int(self.num_rings)
         ring_size = int(self.ring_size)
         mules = int(self.mules_per_ring)
         return rings * min(mules, max(0, ring_size - 1))
 
     def validate(self, *, persons: int) -> None:
-        require_int_ge("fraud_rings", self.fraud_rings, 0)
+        require_int_ge("num_rings", self.num_rings, 0)
         require_float_between(
             "target_illicit_ratio",
             self.target_illicit_ratio,
@@ -38,14 +38,14 @@ class FraudConfig:
             0.5,
         )
 
-        if self.fraud_rings == 0:
+        if self.num_rings == 0:
             return
 
         require_int_ge("ring_size", self.ring_size, 3)
         require_int_ge("mules_per_ring", self.mules_per_ring, 0)
         require_int_ge("victims_per_ring", self.victims_per_ring, 0)
 
-        ring_people = int(self.fraud_rings) * int(self.ring_size)
+        ring_people = int(self.num_rings) * int(self.ring_size)
         if ring_people >= int(persons):
             raise ValueError(
                 "fraud ring participants exceed/consume the population size"

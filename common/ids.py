@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 from collections.abc import Iterator
+from dataclasses import dataclass
+
 import numpy as np
 
 
@@ -8,8 +9,10 @@ class IdFormat:
     prefix: str
     width: int
 
-    def format(self, n: int) -> str:
-        return f"{self.prefix}{n:0{self.width}d}"
+    def format(self, seq_num: int) -> str:
+        if seq_num <= 0:
+            raise ValueError(f"ID sequence number must be >= 1, got {seq_num}")
+        return f"{self.prefix}{seq_num:0{self.width}d}"
 
 
 PERSON_ID = IdFormat(prefix="C", width=7)
@@ -18,18 +21,14 @@ MERCHANT_ACCOUNT_ID = IdFormat(prefix="M", width=9)
 EXTERNAL_ACCOUNT_ID = IdFormat(prefix="X", width=10)
 
 
-def person_id(n: int) -> str:
-    """1-based person/customer id."""
-    if n <= 0:
-        raise ValueError("person_id expects n >= 1")
-    return PERSON_ID.format(n)
+def person_id(seq_num: int) -> str:
+    """1-based person id."""
+    return PERSON_ID.format(seq_num)
 
 
-def account_id(n: int) -> str:
+def account_id(seq_num: int) -> str:
     """1-based account id."""
-    if n <= 0:
-        raise ValueError("account_id expects n >= 1")
-    return ACCOUNT_ID.format(n)
+    return ACCOUNT_ID.format(seq_num)
 
 
 def iter_person_ids(count: int) -> Iterator[str]:
@@ -48,17 +47,18 @@ def iter_account_ids(count: int) -> Iterator[str]:
         yield account_id(i)
 
 
-def device_id_for_person(customer_id: str, index: int) -> str:
+def device_id_for_person(person_id_str: str, index: int) -> str:
     """
     Deterministic per-person device id.
     Mirrors the original shape: D{person[1:]}_{j+1}
-    Example: customer_id="C0000123", index=1 -> "D0000123_1"
+    Example: person_id_str="C0000123", index=1 -> "D0000123_1"
     """
     if index <= 0:
         raise ValueError("index must be >= 1")
-    if not customer_id.startswith("C") or len(customer_id) < 2:
-        raise ValueError("unexpected customer_id format")
-    return f"D{customer_id[1:]}_{index}"
+    if not person_id_str.startswith("C") or len(person_id_str) < 2:
+        raise ValueError("unexpected person_id format")
+
+    return f"D{person_id_str[1:]}_{index}"
 
 
 def shared_ring_device_id(ring_id: int) -> str:
@@ -73,26 +73,21 @@ def rand_ipv4(rng: np.random.Generator) -> str:
     Generate a 'public-looking' IPv4 address.
     Not a perfect filter of all reserved ranges, but avoids very low/high first octets.
     """
-    a = int(rng.integers(11, 223))
-    b = int(rng.integers(0, 256))
-    c = int(rng.integers(0, 256))
-    d = int(rng.integers(1, 255))
-    return f"{a}.{b}.{c}.{d}"
+    # Optimized: Generate all 4 octets at once using arrays of bounds.
+    # Note: rng.integers high bound is exclusive.
+    octets = rng.integers([11, 0, 0, 1], [223, 256, 256, 255])
+    return f"{octets[0]}.{octets[1]}.{octets[2]}.{octets[3]}"
 
 
-def merchant_account_id(n: int) -> str:
+def merchant_account_id(seq_num: int) -> str:
     """1-based merchant account id."""
-    if n <= 0:
-        raise ValueError("merchant_account_id expects n >= 1")
-    return MERCHANT_ACCOUNT_ID.format(n)
+    return MERCHANT_ACCOUNT_ID.format(seq_num)
 
 
-def external_account_id(n: int) -> str:
+def external_account_id(seq_num: int) -> str:
     """1-based external counterparty id."""
-    if n <= 0:
-        raise ValueError("external_account_id expects n >= 1")
-    return EXTERNAL_ACCOUNT_ID.format(n)
+    return EXTERNAL_ACCOUNT_ID.format(seq_num)
 
 
-def is_external_account(acct: str) -> bool:
-    return acct.startswith("X")
+def is_external_account(acct_id: str) -> bool:
+    return acct_id.startswith("X")

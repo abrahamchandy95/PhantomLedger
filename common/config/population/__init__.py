@@ -3,7 +3,7 @@ from .family import FamilyConfig
 from .hubs import HubsConfig
 from .merchants import MerchantsConfig
 from .personas import PersonasConfig
-from .population import PopulationConfig
+from .totals import PopulationConfig
 
 __all__ = [
     "PopulationConfig",

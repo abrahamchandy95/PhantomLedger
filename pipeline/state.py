@@ -3,7 +3,7 @@ from pathlib import Path
 
 from common.config import GenerationConfig
 from common.random import Rng
-from common.types import Txn
+from common.transactions import Transaction
 from entities.accounts import AccountsData
 from entities.credit_cards import CreditCardData
 from entities.merchants import MerchantData
@@ -44,8 +44,8 @@ class InfraStageData:
 class TransferStageData:
     legit: LegitTransfers
     fraud: fraud_model.FraudInjectionResult
-    base_txns: list[Txn]
-    all_txns: list[Txn]
+    base_txns: list[Transaction]
+    all_txns: list[Transaction]
 
 
 @dataclass(slots=True)

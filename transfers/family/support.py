@@ -4,7 +4,7 @@ from typing import cast
 import numpy as np
 
 from common.math import as_int
-from common.types import Txn
+from common.transactions import Transaction
 from transfers.txns import TxnSpec
 
 from .helpers import pareto_amount, support_capacity_weight, weighted_pick_person
@@ -15,12 +15,12 @@ def generate_support_txns(
     request: FamilyTransferRequest,
     schedule: FamilyTransferSchedule,
     gen: np.random.Generator,
-) -> list[Txn]:
+) -> list[Transaction]:
     fcfg = request.family_cfg
     if not fcfg.retiree_support_enabled:
         return []
 
-    txns: list[Txn] = []
+    txns: list[Transaction] = []
 
     retirees = [
         person_id

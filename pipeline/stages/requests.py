@@ -1,11 +1,11 @@
 import entities.credit_cards as credit_cards_entity
-from common.types import Txn
+from common.transactions import Transaction
 from pipeline.state import EntityStageData, GenerationState
 import transfers.fraud as fraud_model
 import transfers.legit as legit_model
 
 
-def _with_credit_cards(
+def _replace_credit_cards(
     entities: EntityStageData,
     credit_cards: credit_cards_entity.CreditCardData,
 ) -> EntityStageData:
@@ -19,9 +19,13 @@ def _with_credit_cards(
     )
 
 
-def credit_cards_for_legit(
+def ensure_credit_cards_for_legit(
     st: GenerationState,
 ) -> credit_cards_entity.CreditCardData:
+    """
+    Return stage credit-card data, inserting an explicit empty value into
+    state when the entity stage has not populated cards.
+    """
     entities = st.require_entities()
     credit_cards = entities.credit_cards
 
@@ -29,7 +33,7 @@ def credit_cards_for_legit(
         return credit_cards
 
     empty_cards = credit_cards_entity.empty_credit_cards()
-    st.entities = _with_credit_cards(entities, empty_cards)
+    st.entities = _replace_credit_cards(entities, empty_cards)
     return empty_cards
 
 
@@ -56,7 +60,7 @@ def build_legit_request(st: GenerationState) -> legit_model.LegitGenerationReque
             family_cfg=cfg.family,
         ),
         credit_runtime=legit_model.LegitCreditRuntime(
-            cards=credit_cards_for_legit(st),
+            cards=ensure_credit_cards_for_legit(st),
         ),
     )
 
@@ -64,7 +68,7 @@ def build_legit_request(st: GenerationState) -> legit_model.LegitGenerationReque
 def build_fraud_request(
     st: GenerationState,
     *,
-    base_txns: list[Txn],
+    base_txns: list[Transaction],
     biller_accounts: list[str],
     employers: list[str],
 ) -> fraud_model.FraudInjectionRequest:
