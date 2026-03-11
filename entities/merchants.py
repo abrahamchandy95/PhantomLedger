@@ -11,13 +11,13 @@ from common.random import Rng, derived_seed
 
 @dataclass(frozen=True, slots=True)
 class MerchantData:
-    merchant_ids: list[str]  # e.g. MERCH000001
-    counterparty_acct: list[str]  # M... or X...
-    category: list[str]
-    weight: ArrF64  # float64 selection weights (sum ~ 1)
+    merchant_ids: list[str]
+    counterparty_accts: list[str]
+    categories: list[str]
+    weights: ArrF64
 
-    in_bank_accounts: list[str]  # subset starting with M
-    external_accounts: list[str]  # subset starting with X
+    in_bank_accounts: list[str]
+    external_accounts: list[str]
 
 
 _CATEGORIES: tuple[str, ...] = (
@@ -34,7 +34,7 @@ _CATEGORIES: tuple[str, ...] = (
 )
 
 
-def _merchant_entity_id(i: int) -> str:
+def _create_merchant_id(i: int) -> str:
     return f"MERCH{i:06d}"
 
 
@@ -43,59 +43,60 @@ def generate_merchants(
     pop: PopulationConfig,
     rng: Rng,
 ) -> MerchantData:
-    n_people = int(pop.persons)
+    num_people = int(pop.size)
 
-    n_merchants = int(
-        round(float(mcfg.merchants_per_10k_people) * (n_people / 10_000.0))
-    )
-    n_merchants = max(50, n_merchants)
+    num_merchants = int(round(float(mcfg.per_10k_people) * (num_people / 10_000.0)))
+    num_merchants = max(50, num_merchants)
 
     sigma = float(mcfg.size_lognormal_sigma)
 
-    w_obj = cast(
-        object,
-        rng.gen.lognormal(mean=0.0, sigma=sigma, size=n_merchants),
-    )
-    w: ArrF64 = np.asarray(w_obj, dtype=np.float64)
+    # Lognormal distribution creates a realistic heavy-tail of merchant traffic
+    base_weights = rng.gen.lognormal(mean=0.0, sigma=sigma, size=num_merchants)
 
-    w_sum = as_float(cast(NumScalar, np.sum(w, dtype=np.float64)))
-    if not np.isfinite(w_sum) or w_sum <= 0.0:
-        w[:] = 1.0
-        w_sum = float(w.size)
+    weights_obj = cast(object, base_weights)
+    weights: ArrF64 = np.asarray(weights_obj, dtype=np.float64)
+    weights_sum = as_float(cast(NumScalar, np.sum(weights, dtype=np.float64)))
+    if not np.isfinite(weights_sum) or weights_sum <= 0.0:
+        weights[:] = 1.0
+        weights_sum = float(weights.size)
 
-    w = w / w_sum
+    weights = weights / weights_sum
 
     merchant_ids: list[str] = []
-    counterparty_acct: list[str] = []
-    category: list[str] = []
+    counterparty_accts: list[str] = []
+    categories: list[str] = []
     in_bank_accounts: list[str] = []
     external_accounts: list[str] = []
 
-    in_bank_frac = float(mcfg.in_bank_merchant_frac)
+    # Updated to match our new _pct standard
+    in_bank_pct = float(mcfg.in_bank_p)
 
-    g = np.random.default_rng(derived_seed(int(pop.seed), "merchant_generation"))
+    # Renamed g to local_rng
+    local_rng = np.random.default_rng(
+        derived_seed(int(pop.seed), "merchant_generation")
+    )
 
-    for i in range(1, n_merchants + 1):
-        merchant_ids.append(_merchant_entity_id(i))
+    for i in range(1, num_merchants + 1):
+        merchant_ids.append(_create_merchant_id(i))
 
-        cat_idx = int(cast(int | np.integer, g.integers(0, len(_CATEGORIES))))
-        cat = _CATEGORIES[cat_idx]
-        category.append(cat)
+        cat_idx = int(cast(int | np.integer, local_rng.integers(0, len(_CATEGORIES))))
+        cat_name = _CATEGORIES[cat_idx]
+        categories.append(cat_name)
 
-        if float(g.random()) < in_bank_frac:
-            acct = merchant_account_id(i)
-            in_bank_accounts.append(acct)
+        if float(local_rng.random()) < in_bank_pct:
+            acct_id = merchant_account_id(i)
+            in_bank_accounts.append(acct_id)
         else:
-            acct = external_account_id(i)
-            external_accounts.append(acct)
+            acct_id = external_account_id(i)
+            external_accounts.append(acct_id)
 
-        counterparty_acct.append(acct)
+        counterparty_accts.append(acct_id)
 
     return MerchantData(
         merchant_ids=merchant_ids,
-        counterparty_acct=counterparty_acct,
-        category=category,
-        weight=w,
+        counterparty_accts=counterparty_accts,
+        categories=categories,
+        weights=weights,
         in_bank_accounts=in_bank_accounts,
         external_accounts=external_accounts,
     )

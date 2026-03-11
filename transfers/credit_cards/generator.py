@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from common.random import SeedBank
-from common.types import Txn
+from common.transactions import Transaction
 from transfers.txns import TxnSpec
 
 from .models import CreditLifecyclePolicy, CreditLifecycleRequest
@@ -35,17 +35,17 @@ def _collect_purchases_by_card(
     request: CreditLifecycleRequest,
     start: datetime,
     end_excl: datetime,
-) -> dict[str, list[Txn]]:
+) -> dict[str, list[Transaction]]:
     card_set = set(request.cards.card_accounts)
-    purchases_by_card: dict[str, list[Txn]] = {
+    purchases_by_card: dict[str, list[Transaction]] = {
         card: [] for card in request.cards.card_accounts
     }
 
     for txn in request.existing_txns:
         if txn.channel != "card_purchase":
             continue
-        if txn.src_acct in card_set and start <= txn.ts < end_excl:
-            purchases_by_card[txn.src_acct].append(txn)
+        if txn.source in card_set and start <= txn.timestamp < end_excl:
+            purchases_by_card[txn.source].append(txn)
 
     return purchases_by_card
 
@@ -78,7 +78,7 @@ def _card_runtime_for(
 def generate_credit_card_lifecycle_txns(
     policy: CreditLifecyclePolicy,
     request: CreditLifecycleRequest,
-) -> list[Txn]:
+) -> list[Transaction]:
     """
     Reads existing card_purchase txns and generates:
       - refunds / chargebacks (external -> card)
@@ -95,7 +95,7 @@ def generate_credit_card_lifecycle_txns(
     end_excl = start + timedelta(days=int(request.window.days))
 
     purchases_by_card = _collect_purchases_by_card(request, start, end_excl)
-    out: list[Txn] = []
+    out: list[Transaction] = []
 
     seedbank = SeedBank(request.base_seed)
     lifecycle_gen = seedbank.generator("cc_lifecycle")
@@ -108,7 +108,7 @@ def generate_credit_card_lifecycle_txns(
         if runtime is None:
             continue
 
-        purchases.sort(key=lambda txn: txn.ts)
+        purchases.sort(key=lambda txn: txn.timestamp)
 
         closes = iter_cycle_closes(start, end_excl, runtime.cycle_day)
         if not closes:
@@ -117,7 +117,7 @@ def generate_credit_card_lifecycle_txns(
         balance = 0.0
         in_grace = True
 
-        scheduled_credits: list[Txn] = []
+        scheduled_credits: list[Transaction] = []
         credit_idx = 0
         purchase_idx = 0
         last_close = start
@@ -126,10 +126,11 @@ def generate_credit_card_lifecycle_txns(
             cycle_start = last_close
             cycle_end = close
 
-            cycle_events: list[Txn] = []
+            cycle_events: list[Transaction] = []
 
             while (
-                purchase_idx < len(purchases) and purchases[purchase_idx].ts < cycle_end
+                purchase_idx < len(purchases)
+                and purchases[purchase_idx].timestamp < cycle_end
             ):
                 purchase = purchases[purchase_idx]
                 cycle_events.append(purchase)
@@ -151,15 +152,15 @@ def generate_credit_card_lifecycle_txns(
                 purchase_idx += 1
 
             if scheduled_credits:
-                keep: list[Txn] = []
+                keep: list[Transaction] = []
                 for credit_txn in scheduled_credits:
-                    if cycle_start <= credit_txn.ts < cycle_end:
+                    if cycle_start <= credit_txn.timestamp < cycle_end:
                         cycle_events.append(credit_txn)
                     else:
                         keep.append(credit_txn)
                 scheduled_credits = keep
 
-            cycle_events.sort(key=lambda txn: txn.ts)
+            cycle_events.sort(key=lambda txn: txn.timestamp)
 
             avg_balance, balance_end = integrated_avg_balance(
                 card,
@@ -264,9 +265,9 @@ def generate_credit_card_lifecycle_txns(
 
     out.sort(
         key=lambda txn: (
-            txn.ts,
-            txn.src_acct,
-            txn.dst_acct,
+            txn.timestamp,
+            txn.source,
+            txn.target,
             float(txn.amount),
             txn.channel or "",
         )

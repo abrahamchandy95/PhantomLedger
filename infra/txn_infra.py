@@ -10,7 +10,7 @@ class TxnInfraAssigner:
     Picks (device_id, ip_address) for a transaction based on the src account's owner.
 
     - Uses a "sticky current device/ip" per person
-    - Occasionally switches with probability infra_cfg.infra_switch_p
+    - Occasionally switches with probability infra_cfg.switch_prob
     """
 
     acct_owner: dict[str, str]
@@ -32,7 +32,7 @@ class TxnInfraAssigner:
         person_devices: dict[str, list[str]],
         person_ips: dict[str, list[str]],
     ) -> "TxnInfraAssigner":
-        switch_p = float(infra_cfg.infra_switch_p)
+        switch_p = float(infra_cfg.switch_prob)
 
         current_device: dict[str, str] = {}
         for person_id, devs in person_devices.items():

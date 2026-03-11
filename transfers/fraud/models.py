@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 from common.config import FraudConfig, WindowConfig
 from common.random import Rng
-from common.types import Txn
+from common.transactions import Transaction
 from entities.accounts import AccountsData
 from entities.people import PeopleData
 from infra.txn_infra import TxnInfraAssigner
@@ -16,7 +16,7 @@ class FraudScenario:
     window: WindowConfig
     people: PeopleData
     accounts: AccountsData
-    base_txns: list[Txn]
+    base_txns: list[Transaction]
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,5 +41,5 @@ class FraudInjectionRequest:
 
 @dataclass(frozen=True, slots=True)
 class FraudInjectionResult:
-    txns: list[Txn]
+    txns: list[Transaction]
     injected_count: int

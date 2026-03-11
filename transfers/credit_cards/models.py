@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from common.config import WindowConfig
 from common.random import Rng
-from common.types import Txn
+from common.transactions import Transaction
 from common.validate import (
     require_float_between,
     require_float_ge,
@@ -90,8 +90,7 @@ class CreditLifecycleRequest:
     rng: Rng
     base_seed: int
     cards: CreditCardData
-    existing_txns: list[Txn]
+    existing_txns: list[Transaction]
     primary_acct_for_person: dict[str, str]
     issuer_acct: str
     txf: TxnFactory
-

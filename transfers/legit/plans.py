@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from common.temporal import iter_window_month_starts
+from common.timeline import get_active_months
 from entities.accounts import AccountsData
 from entities.personas import assign_personas
 
@@ -53,7 +53,7 @@ def _select_hub_accounts(
     if not persons:
         return []
 
-    n_hubs = int(inputs.pop.persons * inputs.hubs.hub_fraction)
+    n_hubs = int(inputs.pop.size * inputs.hubs.hub_fraction)
     n_hubs = max(1, min(n_hubs, len(persons)))
 
     hub_people = inputs.rng.choice_k(persons, n_hubs, replace=False)
@@ -125,7 +125,7 @@ def build_legit_plan(
     counterparties = _build_counterparty_plan(inputs)
     personas = _build_persona_plan(inputs, overrides, persons)
     primary_acct_for_person = _primary_acct_for_person(inputs.accounts)
-    paydays = iter_window_month_starts(start_date, days)
+    paydays = get_active_months(start_date, days)
 
     return LegitBuildPlan(
         start_date=start_date,

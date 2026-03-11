@@ -18,18 +18,18 @@ class FamilyConfig:
 
     # --- dependency structure ---
     student_dependent_p: float = 0.65
-    co_reside_student_p: float = 0.35  # fraction of dependent students co-residing
-    two_parent_p: float = 0.70  # if dependent, probability of 2 parents vs 1
+    co_reside_student_p: float = 0.35
+    two_parent_p: float = 0.70
 
     # --- allowance process ---
     allowance_enabled: bool = True
-    allowance_weekly_p: float = 0.60  # else biweekly
-    allowance_pareto_xm: float = 15.0  # minimum allowance
-    allowance_pareto_alpha: float = 2.2  # tail index
+    allowance_weekly_p: float = 0.60
+    allowance_pareto_xm: float = 15.0
+    allowance_pareto_alpha: float = 2.2
 
     # --- tuition process ---
     tuition_enabled: bool = True
-    tuition_students_p: float = 0.55  # fraction of students who pay tuition in-window
+    tuition_students_p: float = 0.55
     tuition_installments_min: int = 4
     tuition_installments_max: int = 5
     tuition_total_logn_mu: float = 8.7

@@ -4,7 +4,7 @@ from typing import cast
 import numpy as np
 
 from common.math import as_int
-from common.types import Txn
+from common.transactions import Transaction
 from transfers.txns import TxnSpec
 
 from .helpers import pareto_amount
@@ -15,12 +15,12 @@ def generate_allowance_txns(
     request: FamilyTransferRequest,
     schedule: FamilyTransferSchedule,
     gen: np.random.Generator,
-) -> list[Txn]:
+) -> list[Transaction]:
     fcfg = request.family_cfg
     if not fcfg.allowance_enabled:
         return []
 
-    txns: list[Txn] = []
+    txns: list[Transaction] = []
 
     for child, parents in request.family.parents_of.items():
         if request.persona_for_person.get(child) != "student":

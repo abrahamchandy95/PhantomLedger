@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from datetime import datetime
 
-from common.temporal import dt_str
-from common.types import Txn
+from common.timeline import format_datetime
+from common.transactions import Transaction
 from emit.csv_io import CsvCell, CsvRow
 
 
@@ -14,7 +14,7 @@ class _Agg:
     last_ts: datetime
 
 
-def _aggregate_has_paid(txns: list[Txn]) -> dict[tuple[str, str], _Agg]:
+def _aggregate_has_paid(txns: list[Transaction]) -> dict[tuple[str, str], _Agg]:
     """
     Aggregate per-transaction ledger into HAS_PAID edge stats.
 
@@ -23,28 +23,28 @@ def _aggregate_has_paid(txns: list[Txn]) -> dict[tuple[str, str], _Agg]:
     agg: dict[tuple[str, str], _Agg] = {}
 
     for txn in txns:
-        key = (txn.src_acct, txn.dst_acct)
+        key = (txn.source, txn.target)
         rec = agg.get(key)
         if rec is None:
             agg[key] = _Agg(
                 total_amount=float(txn.amount),
                 total_num_txns=1,
-                first_ts=txn.ts,
-                last_ts=txn.ts,
+                first_ts=txn.timestamp,
+                last_ts=txn.timestamp,
             )
             continue
 
         rec.total_amount += float(txn.amount)
         rec.total_num_txns += 1
-        if txn.ts < rec.first_ts:
-            rec.first_ts = txn.ts
-        if txn.ts > rec.last_ts:
-            rec.last_ts = txn.ts
+        if txn.timestamp < rec.first_ts:
+            rec.first_ts = txn.timestamp
+        if txn.timestamp > rec.last_ts:
+            rec.last_ts = txn.timestamp
 
     return agg
 
 
-def build_has_paid_rows(txns: list[Txn]) -> list[CsvRow]:
+def build_has_paid_rows(txns: list[Transaction]) -> list[CsvRow]:
     """
     Build rows for HAS_PAID.csv:
       FROM, TO, total_amount, total_num_txns, first_txn_date, last_txn_date
@@ -58,24 +58,24 @@ def build_has_paid_rows(txns: list[Txn]) -> list[CsvRow]:
             dst,
             round(float(rec.total_amount), 2),
             int(rec.total_num_txns),
-            dt_str(rec.first_ts),
-            dt_str(rec.last_ts),
+            format_datetime(rec.first_ts),
+            format_datetime(rec.last_ts),
         ]
         rows.append(row)
 
     return rows
 
 
-def build_raw_ledger_rows(txns: list[Txn]) -> list[CsvRow]:
+def build_raw_ledger_rows(txns: list[Transaction]) -> list[CsvRow]:
     rows: list[CsvRow] = []
     for txn in txns:
         row: list[CsvCell] = [
-            txn.src_acct,
-            txn.dst_acct,
+            txn.source,
+            txn.target,
             float(txn.amount),
-            dt_str(txn.ts),
-            int(txn.is_fraud),
-            int(txn.ring_id),
+            format_datetime(txn.timestamp),
+            int(txn.fraud_flag),
+            int(txn.fraud_ring_id),
             txn.device_id,
             txn.ip_address,
             txn.channel,

@@ -58,11 +58,11 @@ def assign_personas(
         return {}
 
     fracs: dict[str, float] = {
-        "student": float(pcfg.persona_student_frac),
-        "retired": float(pcfg.persona_retired_frac),
-        "freelancer": float(pcfg.persona_freelancer_frac),
-        "smallbiz": float(pcfg.persona_smallbiz_frac),
-        "hnw": float(pcfg.persona_hnw_frac),
+        "student": float(pcfg.student_frac),
+        "retired": float(pcfg.retired_frac),
+        "freelancer": float(pcfg.freelancer_frac),
+        "smallbiz": float(pcfg.smallbiz_frac),
+        "hnw": float(pcfg.hnw_frac),
     }
 
     # sanitize

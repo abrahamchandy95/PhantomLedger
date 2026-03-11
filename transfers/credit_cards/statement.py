@@ -4,7 +4,7 @@ from math import isfinite
 import numpy as np
 
 from common.random import Rng
-from common.types import Txn
+from common.transactions import Transaction
 from transfers.txns import TxnFactory, TxnSpec
 
 from .models import CreditLifecyclePolicy
@@ -14,15 +14,15 @@ def days_frac(a: datetime, b: datetime) -> float:
     return max(0.0, (b - a).total_seconds() / 86400.0)
 
 
-def balance_delta_for_card(card: str, txn: Txn) -> float:
+def balance_delta_for_card(card: str, txn: Transaction) -> float:
     """
     Card balance convention:
       - if card is src: card is charged => balance decreases (more debt)
       - if card is dst: card is credited => balance increases (less debt)
     """
-    if txn.src_acct == card:
+    if txn.source == card:
         return -float(txn.amount)
-    if txn.dst_acct == card:
+    if txn.target == card:
         return +float(txn.amount)
     return 0.0
 
@@ -30,7 +30,7 @@ def balance_delta_for_card(card: str, txn: Txn) -> float:
 def integrated_avg_balance(
     card: str,
     balance_at_start: float,
-    events: list[Txn],
+    events: list[Transaction],
     t0: datetime,
     t1: datetime,
 ) -> tuple[float, float]:
@@ -50,7 +50,7 @@ def integrated_avg_balance(
     prev = t0
 
     for event in events:
-        ts = event.ts
+        ts = event.timestamp
         if ts < t0 or ts >= t1:
             continue
 
@@ -171,10 +171,10 @@ def sample_credit_event_for_purchase(
     *,
     card: str,
     credit_idx: int,
-    purchase: Txn,
+    purchase: Transaction,
     end_excl: datetime,
     txf: TxnFactory,
-) -> Txn | None:
+) -> Transaction | None:
     """
     For a single purchase, probabilistically schedule either:
       - a refund, with probability refund_p
@@ -189,7 +189,7 @@ def sample_credit_event_for_purchase(
                 int(policy.refund_delay_days_max) + 1,
             )
         )
-        ts = purchase.ts + timedelta(days=delay, hours=int(gen.integers(9, 21)))
+        ts = purchase.timestamp + timedelta(days=delay, hours=int(gen.integers(9, 21)))
         if ts >= end_excl:
             return None
 
@@ -211,7 +211,7 @@ def sample_credit_event_for_purchase(
                 int(policy.chargeback_delay_days_max) + 1,
             )
         )
-        ts = purchase.ts + timedelta(days=delay, hours=int(gen.integers(9, 21)))
+        ts = purchase.timestamp + timedelta(days=delay, hours=int(gen.integers(9, 21)))
         if ts >= end_excl:
             return None
 

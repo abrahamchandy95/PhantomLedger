@@ -9,7 +9,7 @@ from common.validate import (
 
 @dataclass(frozen=True, slots=True)
 class EventsConfig:
-    clearing_accounts_n: int = 3
+    num_clearing_accounts: int = 3
     unknown_outflow_p: float = 0.45
 
     day_multiplier_gamma_shape: float = 1.3
@@ -17,7 +17,7 @@ class EventsConfig:
     prefer_billers_p: float = 0.55
 
     def validate(self) -> None:
-        require_int_ge("clearing_accounts_n", self.clearing_accounts_n, 0)
+        require_int_ge("num_clearing_accounts", self.num_clearing_accounts, 0)
         require_float_between("unknown_outflow_p", self.unknown_outflow_p, 0.0, 1.0)
         require_float_gt(
             "day_multiplier_gamma_shape",

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from common.types import Txn
+from common.transactions import Transaction
 from math_models.amounts import bill_amount, salary_amount
 import relationships.recurring as recurring_model
 from transfers.txns import TxnFactory, TxnSpec
@@ -41,13 +41,13 @@ def generate_salary_txns(
     policies: LegitPolicies,
     plan: LegitBuildPlan,
     txf: TxnFactory,
-) -> list[Txn]:
+) -> list[Transaction]:
     recurring_policy = policies.recurring
     rng = inputs.rng
     salary_people = _salary_people(inputs, policies, plan)
 
     employment: dict[str, recurring_model.EmploymentState] = {}
-    txns: list[Txn] = []
+    txns: list[Transaction] = []
 
     def base_salary_draw() -> float:
         return float(salary_amount(rng))
@@ -135,13 +135,13 @@ def generate_rent_txns(
     policies: LegitPolicies,
     plan: LegitBuildPlan,
     txf: TxnFactory,
-) -> list[Txn]:
+) -> list[Transaction]:
     recurring_policy = policies.recurring
     rng = inputs.rng
     rent_active = _rent_payers(inputs, policies, plan)
 
     leases: dict[str, recurring_model.LeaseState] = {}
-    txns: list[Txn] = []
+    txns: list[Transaction] = []
 
     def base_rent_draw() -> float:
         return float(bill_amount(rng))

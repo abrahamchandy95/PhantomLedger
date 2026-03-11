@@ -10,7 +10,7 @@ from common.config import (
     WindowConfig,
 )
 from common.random import Rng
-from common.types import Txn
+from common.transactions import Transaction
 from entities.accounts import AccountsData
 import entities.credit_cards as credit_cards_entity
 from entities.merchants import MerchantData
@@ -23,7 +23,7 @@ import transfers.credit_cards as credit_cards_transfer
 
 @dataclass(frozen=True, slots=True)
 class LegitTransfers:
-    txns: list[Txn]
+    txns: list[Transaction]
     hub_accounts: list[str]
     biller_accounts: list[str]
     employers: list[str]

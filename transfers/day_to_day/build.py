@@ -94,18 +94,18 @@ class _DayToDayContextBuilder:
         )
 
     def _merch_cdf(self) -> ArrF64:
-        merch_w: ArrF64 = np.asarray(self.request.merchants.weight, dtype=np.float64)
+        merch_w: ArrF64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
         return build_cdf(merch_w)
 
     def _global_biller_cdf(self, merch_cdf: ArrF64) -> ArrF64:
         biller_categories = set(self.request.policy.biller_categories)
         mask_list: list[bool] = [
             category in biller_categories
-            for category in self.request.merchants.category
+            for category in self.request.merchants.categories
         ]
         mask: ArrBool = np.asarray(mask_list, dtype=np.bool_)
 
-        merch_w: ArrF64 = np.asarray(self.request.merchants.weight, dtype=np.float64)
+        merch_w: ArrF64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
         biller_w: ArrF64 = merch_w * mask.astype(np.float64)
         biller_sum = as_float(cast(NumScalar, np.sum(biller_w, dtype=np.float64)))
 
@@ -122,7 +122,7 @@ class _DayToDayContextBuilder:
         mcfg = self.request.merchants_cfg
         policy = self.request.policy
 
-        fav_max = int(mcfg.fav_merchants_max)
+        fav_max = int(mcfg.fav_max)
         bill_max = int(mcfg.billers_max)
 
         fav_idx: ArrI32 = np.empty((n_people, fav_max), dtype=np.int32)
@@ -144,8 +144,8 @@ class _DayToDayContextBuilder:
                 cast(
                     int | np.integer,
                     gen.integers(
-                        int(mcfg.fav_merchants_min),
-                        int(mcfg.fav_merchants_max) + 1,
+                        int(mcfg.fav_min),
+                        int(mcfg.fav_max) + 1,
                     ),
                 )
             )
@@ -155,7 +155,6 @@ class _DayToDayContextBuilder:
                     gen.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1),
                 )
             )
-
             favorites = _pick_unique_weighted(
                 gen,
                 merch_cdf,

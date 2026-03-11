@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from common.config import GenerationConfig, default_config
+from common.config import GenerationConfig
 from common.random import Rng
 from pipeline.state import GenerationRuntime, GenerationState
 from pipeline.stages import (
@@ -12,26 +12,27 @@ from pipeline.stages import (
 )
 
 
-def generate_all(cfg: GenerationConfig | None = None) -> None:
-    if cfg is None:
-        cfg = default_config()
+def generate_(config: GenerationConfig | None = None) -> None:
+    if config is None:
+        config = GenerationConfig.create_default()
     else:
-        cfg.validate()
+        config.validate()
+    output_dir: Path = config.output.out_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    out_dir: Path = cfg.output.out_dir
-    out_dir.mkdir(parents=True, exist_ok=True)
+    rng = Rng.from_seed(config.population.seed)
 
-    rng = Rng.from_seed(cfg.population.seed)
-    st = GenerationState(
+    state = GenerationState(
         runtime=GenerationRuntime(
-            cfg=cfg,
+            cfg=config,
             rng=rng,
-            out_dir=out_dir,
+            out_dir=output_dir,
         )
     )
 
-    build_entities(st)
-    build_infra(st)
-    build_transfers(st)
-    emit_outputs(st)
-    print_summary(st)
+    # 3. Pipeline Execution
+    build_entities(state)
+    build_infra(state)
+    build_transfers(state)
+    emit_outputs(state)
+    print_summary(state)

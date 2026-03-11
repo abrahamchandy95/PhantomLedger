@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from common.types import Txn
+from common.transactions import Transaction
 from transfers.txns import TxnFactory
 
 from .camouflage import inject_camouflage
@@ -82,7 +82,7 @@ class _FraudInjector:
 
         policies.validate()
 
-        if scenario.fraud_cfg.fraud_rings <= 0 or not scenario.people.rings:
+        if scenario.fraud_cfg.num_rings <= 0 or not scenario.people.rings:
             return FraudInjectionResult(txns=list(scenario.base_txns), injected_count=0)
 
         camouflage_ctx = self._camouflage_context()
@@ -92,7 +92,7 @@ class _FraudInjector:
             build_ring_plan(ring, scenario.accounts) for ring in scenario.people.rings
         ]
 
-        camouflage: list[Txn] = []
+        camouflage: list[Transaction] = []
         for ring_plan in ring_plans:
             camouflage.extend(inject_camouflage(camouflage_ctx, ring_plan))
 
@@ -106,7 +106,7 @@ class _FraudInjector:
             out.extend(camouflage)
             return FraudInjectionResult(txns=out, injected_count=len(camouflage))
 
-        illicit: list[Txn] = []
+        illicit: list[Transaction] = []
         remaining_budget = target_illicit_n
 
         for ring_index, ring_plan in enumerate(ring_plans):

@@ -26,7 +26,7 @@ def pick_education_payee(
 ) -> str | None:
     education_accounts = [
         acct
-        for acct, cat in zip(merchants.counterparty_acct, merchants.category)
+        for acct, cat in zip(merchants.counterparty_accts, merchants.categories)
         if cat == "education"
     ]
     if not education_accounts:

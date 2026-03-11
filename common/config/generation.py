@@ -1,15 +1,18 @@
 from dataclasses import dataclass, field
 
+# Runtime
 from .runtime.output import OutputConfig
 from .runtime.window import WindowConfig
 
-from .population.population import PopulationConfig
+# Population
+from .population.totals import PopulationConfig
 from .population.accounts import AccountsConfig
 from .population.hubs import HubsConfig
 from .population.personas import PersonasConfig
 from .population.merchants import MerchantsConfig
 from .population.family import FamilyConfig
 
+# Simulation
 from .simulation.fraud import FraudConfig
 from .simulation.events import EventsConfig
 from .simulation.infra import InfraConfig
@@ -17,9 +20,11 @@ from .simulation.infra import InfraConfig
 
 @dataclass(frozen=True, slots=True)
 class GenerationConfig:
+    # Runtime Configs
     output: OutputConfig = field(default_factory=OutputConfig)
     window: WindowConfig = field(default_factory=WindowConfig)
 
+    # Population Configs
     population: PopulationConfig = field(default_factory=PopulationConfig)
     accounts: AccountsConfig = field(default_factory=AccountsConfig)
     hubs: HubsConfig = field(default_factory=HubsConfig)
@@ -27,30 +32,30 @@ class GenerationConfig:
     merchants: MerchantsConfig = field(default_factory=MerchantsConfig)
     family: FamilyConfig = field(default_factory=FamilyConfig)
 
+    # Simulation Configs
     fraud: FraudConfig = field(default_factory=FraudConfig)
     events: EventsConfig = field(default_factory=EventsConfig)
     infra: InfraConfig = field(default_factory=InfraConfig)
 
     def validate(self) -> None:
-        validate_all(self)
+        """Validates the entire configuration tree."""
+        self.window.validate()
 
+        self.population.validate()
+        self.accounts.validate()
+        self.hubs.validate()
+        self.personas.validate()
+        self.merchants.validate()
+        self.family.validate()
 
-def validate_all(cfg: GenerationConfig) -> None:
-    cfg.window.validate()
+        # Fraud validation requires cross-config dependency
+        self.fraud.validate(persons=self.population.size)
+        self.events.validate()
+        self.infra.validate()
 
-    cfg.population.validate()
-    cfg.accounts.validate()
-    cfg.hubs.validate()
-    cfg.personas.validate()
-    cfg.merchants.validate()
-    cfg.family.validate()
-
-    cfg.fraud.validate(persons=cfg.population.persons)
-    cfg.events.validate()
-    cfg.infra.validate()
-
-
-def default_config() -> GenerationConfig:
-    cfg = GenerationConfig()
-    cfg.validate()
-    return cfg
+    @classmethod
+    def create_default(cls) -> "GenerationConfig":
+        """Instantiates and validates a default GenerationConfig."""
+        config = cls()
+        config.validate()
+        return config
