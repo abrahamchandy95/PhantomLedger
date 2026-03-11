@@ -33,3 +33,5 @@ out_*/
 Thumbs.db
 .vscode/
 .idea/
+out_bank_data/
+.gitignore

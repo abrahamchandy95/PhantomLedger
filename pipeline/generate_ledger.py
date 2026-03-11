@@ -12,7 +12,7 @@ from pipeline.stages import (
 )
 
 
-def generate_(config: GenerationConfig | None = None) -> None:
+def generate_ledger(config: GenerationConfig | None = None) -> None:
     if config is None:
         config = GenerationConfig.create_default()
     else:

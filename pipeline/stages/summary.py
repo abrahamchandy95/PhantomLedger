@@ -7,7 +7,7 @@ def print_summary(st: GenerationState) -> None:
 
     total_before = len(transfers.base_txns)
     total_after = len(transfers.all_txns)
-    illicit = sum(1 for txn in transfers.all_txns if txn.is_fraud == 1)
+    illicit = sum(1 for txn in transfers.all_txns if txn.fraud_flag == 1)
     ratio = illicit / max(1, total_after)
 
     print(f"Wrote outputs to: {st.out_dir}")

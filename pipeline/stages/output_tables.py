@@ -13,11 +13,11 @@ def build_output_tables(
 ) -> list[OutputTable]:
     return [
         (schema.PERSON, emit.iter_person_rows(entities.people)),
-        (schema.ACCOUNTNUMBER, emit.iter_account_rows(entities.accounts)),
+        (schema.ACCOUNT_NUMBER, emit.iter_account_rows(entities.accounts)),
         (schema.PHONE, emit.iter_phone_rows(entities.pii)),
         (schema.EMAIL, emit.iter_email_rows(entities.pii)),
         (schema.DEVICE, emit.iter_device_rows(infra_state.devices)),
-        (schema.IPADDRESS, emit.iter_ip_rows(infra_state.ipdata)),
+        (schema.IP_ADDRESS, emit.iter_ip_rows(infra_state.ipdata)),
         (schema.HAS_ACCOUNT, emit.iter_has_account_rows(entities.accounts)),
         (
             schema.HAS_PHONE,

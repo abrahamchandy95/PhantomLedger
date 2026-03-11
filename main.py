@@ -1,4 +1,4 @@
-from pipeline.generate_all import generate_all
+from pipeline.generate_ledger import generate_ledger
 
 if __name__ == "__main__":
-    generate_all()
+    generate_ledger()
