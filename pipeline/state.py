@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from common.transactions import Transaction
 
@@ -36,7 +36,12 @@ class Infra:
 
 @dataclass(frozen=True, slots=True)
 class Transfers:
+    """
+    End-to-end transfer artifacts.
+    """
+
     legit: TransfersPayload
     fraud: fraud_model.InjectionOutput
     draft_txns: list[Transaction]
     final_txns: list[Transaction]
+    drop_counts: dict[str, int] = field(default_factory=dict)

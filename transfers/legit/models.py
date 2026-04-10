@@ -1,23 +1,28 @@
 from dataclasses import dataclass, field
 
-import entities.models as models
-from common import config
-from common.random import Rng
-from common.transactions import Transaction
 import entities.credit_cards as credit_cards_entity
-from entities.counterparties import Pools as CounterpartyPools
-from infra.routing import Router
+import entities.models as models
 import relationships.recurring as recurring_model
 import transfers.balances as balances_model
 import transfers.credit_cards as credit_cards_transfer
+from common import config
+from common.random import Rng
+from common.transactions import Transaction
+from entities.counterparties import Pools as CounterpartyPools
+from infra.routing import Router
 
 
 @dataclass(frozen=True, slots=True)
 class TransfersPayload:
-    txns: list[Transaction]
+    """
+    Semantic-order legit candidates plus the pristine starting ledger.
+    """
+
+    candidate_txns: list[Transaction]
     hub_accounts: list[str]
     biller_accounts: list[str]
     employers: list[str]
+    initial_book: balances_model.Ledger | None = None
 
 
 @dataclass(frozen=True, slots=True)

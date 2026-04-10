@@ -15,6 +15,17 @@ from common.validate import between, ge
 from entities.personas import get_persona
 
 
+REJECT_INVALID_AMOUNT = "invalid_amount"
+REJECT_EXTERNAL_TO_EXTERNAL = "external_to_external"
+REJECT_INSUFFICIENT_FUNDS = "insufficient_funds"
+
+
+@dataclass(frozen=True, slots=True)
+class TransferDecision:
+    accepted: bool
+    reason: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class Rules:
     enable_constraints: bool = True
@@ -125,6 +136,15 @@ class Ledger:
     hub_indices: set[int]
     external_indices: set[int]
 
+    def copy(self) -> "Ledger":
+        return Ledger(
+            balances=np.array(self.balances, copy=True, dtype=np.float64),
+            overdrafts=np.array(self.overdrafts, copy=True, dtype=np.float64),
+            account_indices=dict(self.account_indices),
+            hub_indices=set(self.hub_indices),
+            external_indices=set(self.external_indices),
+        )
+
     def _index_of(self, account: str) -> int | None:
         return self.account_indices.get(account)
 
@@ -136,10 +156,18 @@ class Ledger:
         self.overdrafts[idx] = float(limit_value)
 
     def try_transfer(self, src: str, dst: str, amount: float) -> bool:
-        """Executes a transfer if sufficient funds exist."""
+        return self.try_transfer_with_reason(src, dst, amount).accepted
+
+    def try_transfer_with_reason(
+        self,
+        src: str,
+        dst: str,
+        amount: float,
+    ) -> TransferDecision:
+        """Execute a transfer if allowed, returning the drop reason on failure."""
         amt = float(amount)
         if amt <= 0.0 or not np.isfinite(amt):
-            return False
+            return TransferDecision(False, REJECT_INVALID_AMOUNT)
 
         src_idx = self._index_of(src)
         dst_idx = self._index_of(dst)
@@ -147,49 +175,46 @@ class Ledger:
         src_ext = src_idx is not None and src_idx in self.external_indices
         dst_ext = dst_idx is not None and dst_idx in self.external_indices
 
-        # Unknown source that isn't registered — treat as external
+        # Unknown accounts are treated as external counterparties.
         if src_idx is None:
             src_ext = True
         if dst_idx is None:
             dst_ext = True
 
         if src_ext and dst_ext:
-            return False
+            return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
 
         balances = self.balances
         overdrafts = self.overdrafts
         hubs = self.hub_indices
 
-        # Case 1: Inbound from External
+        # Case 1: Inbound from external into a known internal account.
         if src_ext:
-            if dst_idx is None:
-                return False
+            assert dst_idx is not None
             balances[dst_idx] += amt
-            return True
+            return TransferDecision(True)
 
-        # src_idx is guaranteed not None here since src_ext is False
+        # src is internal from here onward.
         assert src_idx is not None
         is_hub = src_idx in hubs
 
-        # Debit Constraint Check
         if not is_hub and (balances[src_idx] + overdrafts[src_idx] < amt):
-            return False
+            return TransferDecision(False, REJECT_INSUFFICIENT_FUNDS)
 
-        # Case 2: Outbound to External
+        # Case 2: Outbound to external.
         if dst_ext:
             if not is_hub:
                 balances[src_idx] -= amt
-            return True
+            return TransferDecision(True)
 
-        # Case 3: Internal P2P
-        if dst_idx is None:
-            return False
+        # Case 3: Internal P2P.
+        assert dst_idx is not None
 
         if not is_hub:
             balances[src_idx] -= amt
 
         balances[dst_idx] += amt
-        return True
+        return TransferDecision(True)
 
 
 def initialize(

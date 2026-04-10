@@ -28,6 +28,12 @@ def print_summary(
     )
     print(f"Unique HAS_PAID edges: {unique_has_paid_edges}")
 
+    if transfers.drop_counts:
+        dropped_total = sum(transfers.drop_counts.values())
+        top_drops = Counter(transfers.drop_counts).most_common(5)
+        breakdown = ", ".join(f"{reason}={count}" for reason, count in top_drops)
+        print(f"Dropped pre-fraud txns: {dropped_total} ({breakdown})")
+
     # Channel breakdown — validates that fraud channels align with flags
     channel_counts: Counter[str] = Counter()
     fraud_by_channel: Counter[str] = Counter()

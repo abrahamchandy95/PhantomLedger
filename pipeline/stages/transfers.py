@@ -8,10 +8,11 @@ from pipeline.state import Entities, Infra, Transfers
 from .requests import build_fraud, build_legit
 from .sorting import key
 
+from transfers.factory import TransactionFactory
 from transfers.fraud import InjectionOutput, inject as inject_fraud
 from transfers.insurance import generate as generate_insurance
 from transfers.legit import LegitTransferBuilder, TransfersPayload
-from transfers.factory import TransactionFactory
+from transfers.legit.accumulator import ChronoReplayAccumulator
 from transfers.obligations import emit as emit_obligations
 
 
@@ -24,7 +25,10 @@ def build(
     legit_request = build_legit(cfg, rng, entities, infra)
     legit_result: TransfersPayload = LegitTransferBuilder(request=legit_request).build()
 
-    draft_txns: list[Transaction] = legit_result.txns
+    # Legit builder preserves semantic generation order for dependency purposes.
+    # Balance enforcement happens once, here, over the full pre-fraud candidate
+    # set in chronological order.
+    candidate_txns: list[Transaction] = list(legit_result.candidate_txns)
     biller_accounts: list[str] = legit_result.biller_accounts
     employers: list[str] = legit_result.employers
 
@@ -34,7 +38,7 @@ def build(
 
     gov_txf = TransactionFactory(rng=rng, infra=infra.router)
 
-    # Insurance premiums and claims — reads from portfolio
+    # Insurance premiums and claims — reads from portfolio.
     ins_txns = generate_insurance(
         cfg.insurance,
         cfg.window,
@@ -44,9 +48,9 @@ def build(
         portfolios=entities.portfolios,
         primary_accounts=primary_accounts,
     )
-    draft_txns.extend(ins_txns)
+    candidate_txns.extend(ins_txns)
 
-    # Financial product obligations (mortgages, loans, taxes)
+    # Financial product obligations (mortgages, loans, taxes).
     start = cfg.window.start_date
     end_excl = start + timedelta(days=int(cfg.window.days))
 
@@ -58,9 +62,23 @@ def build(
         rng=rng,
         txf=gov_txf,
     )
-    draft_txns.extend(obligation_txns)
+    candidate_txns.extend(obligation_txns)
 
-    # Inject the fraud logic into the drafts
+    # Single authoritative pre-fraud balance pass from the pristine starting
+    # ledger. This is the only place where balances decide keep/drop.
+    replay_acc = ChronoReplayAccumulator(
+        book=None
+        if legit_result.initial_book is None
+        else legit_result.initial_book.copy()
+    )
+    replay_acc.extend(sorted(candidate_txns, key=key))
+
+    draft_txns = replay_acc.txns
+
+    # Report only the authoritative chronological replay drops.
+    drop_counts = dict(replay_acc.drop_counts)
+
+    # Inject the fraud logic into the drafts.
     fraud_request = build_fraud(
         cfg,
         rng,
@@ -77,4 +95,5 @@ def build(
         fraud=fraud_result,
         draft_txns=draft_txns,
         final_txns=sorted(fraud_result.txns, key=key),
+        drop_counts=drop_counts,
     )
