@@ -1,89 +1,97 @@
 from datetime import datetime
 
-from common.random import Rng, SeedBank
+from common.random import Rng, RngFactory
 
 from .growth import (
-    as_seedbank,
+    build_rng_factory,
     compound_growth,
-    lognormal_multiplier,
-    normal_clamped,
-    pick_different_or_same,
+    pick_different,
     pick_one,
     sample_backdated_interval,
     sample_forward_interval,
-    validated_seedbank,
+    sample_lognormal_multiplier,
+    sample_normal_clamped,
 )
-from .models import LeaseState
-from .policy import RecurringPolicy
-from .types import RentSampler, SeedSource
+from .policy import Policy
+from .state import Lease as State, RentSource, SeedSource
 
 
 def _require_landlords(landlords: list[str]) -> None:
     if not landlords:
-        raise ValueError("landlords must be non-empty")
+        raise ValueError("The landlords list must be non-empty.")
 
 
-def rent_real_raise_for_year(
-    policy: RecurringPolicy,
-    seedbank: SeedBank,
+def _rent_real_raise_for_year(
+    policy: Policy,
+    rng_factory: RngFactory,
     key: str,
     year: int,
 ) -> float:
-    gen = seedbank.generator("rent_real_raise", key, str(year))
-    return normal_clamped(
+    """Internal helper to calculate the real rent raise for a specific year."""
+    gen = rng_factory.rng("rent_real_raise", key, str(year)).gen
+    return sample_normal_clamped(
         gen,
-        mu=policy.rent_real_raise_mu,
-        sigma=policy.rent_real_raise_sigma,
-        floor=policy.rent_real_raise_floor,
+        mu=policy.rent_raise_mu,
+        sigma=policy.rent_raise_sigma,
+        floor=policy.rent_raise_floor,
     )
 
 
-def compound_growth_rent(
-    policy: RecurringPolicy,
-    seedbank: SeedBank,
+def _compound_growth_rent(
+    policy: Policy,
+    rng_factory: RngFactory,
     payer_acct: str,
     start: datetime,
     now: datetime,
 ) -> float:
+    """Internal helper to compound rent growth over time."""
     return compound_growth(
         policy=policy,
-        seedbank=seedbank,
+        rng_factory=rng_factory,
         key=payer_acct,
         start=start,
         now=now,
-        annual_real_raise=rent_real_raise_for_year,
+        annual_raise_source=_rent_real_raise_for_year,
     )
 
 
-def init_lease(
-    policy: RecurringPolicy,
+# --- Public API ---
+
+
+def initialize(
+    policy: Policy,
     seed: SeedSource,
     rng: Rng,
     *,
     payer_acct: str,
     start_date: datetime,
     landlords: list[str],
-    base_rent_sampler: RentSampler,
-) -> LeaseState:
+    base_rent_source: RentSource,
+) -> State:
+    """
+    Bootstraps the initial lease state for a person.
+    """
     _require_landlords(landlords)
 
-    seedbank = validated_seedbank(policy, seed)
-    gen = seedbank.generator("lease_init", payer_acct)
+    # Note: validation is now automatically handled in Policy.__post_init__
+    rng_factory = build_rng_factory(seed)
+    gen = rng_factory.rng("lease_init", payer_acct).gen
 
     landlord = pick_one(gen, landlords, name="landlords")
     lease_start, lease_end = sample_backdated_interval(
         gen,
         anchor_date=start_date,
-        years_min=policy.landlord_tenure_years_min,
-        years_max=policy.landlord_tenure_years_max,
+        years_min=policy.lease_tenure_min,
+        years_max=policy.lease_tenure_max,
     )
 
-    base_rent_raw = float(base_rent_sampler())
-    base_rent = base_rent_raw * lognormal_multiplier(gen, sigma=0.05)
+    base_rent_raw = float(base_rent_source())
+    base_rent = base_rent_raw * sample_lognormal_multiplier(gen, sigma=0.05)
 
+    # Advance global RNG to maintain determinism
     _ = rng.float()
 
-    return LeaseState(
+    return State(
         landlord_acct=landlord,
         start=lease_start,
         end=lease_end,
@@ -92,23 +100,27 @@ def init_lease(
     )
 
 
-def advance_lease(
-    policy: RecurringPolicy,
+def advance(
+    policy: Policy,
     seed: SeedSource,
     rng: Rng,
     *,
     payer_acct: str,
     now: datetime,
     landlords: list[str],
-    prev: LeaseState,
-    reset_rent_sampler: RentSampler,
-) -> LeaseState:
+    prev: State,
+    reset_rent_source: RentSource,
+) -> State:
+    """
+    Transitions a person to a new lease, pulling a fresh base rent from the source.
+    """
     _require_landlords(landlords)
 
-    seedbank = as_seedbank(seed)
+    rng_factory = build_rng_factory(seed)
 
-    landlord = pick_different_or_same(
-        rng,
+    # Use the optimized O(1) vectorized selection
+    landlord = pick_different(
+        rng.gen,
         landlords,
         prev.landlord_acct,
         name="landlords",
@@ -117,15 +129,15 @@ def advance_lease(
     start, end = sample_forward_interval(
         rng.gen,
         start=now,
-        years_min=policy.landlord_tenure_years_min,
-        years_max=policy.landlord_tenure_years_max,
+        years_min=policy.lease_tenure_min,
+        years_max=policy.lease_tenure_max,
     )
 
-    base_rent_raw = float(reset_rent_sampler())
-    gen = seedbank.generator("lease_reset_rent", payer_acct, str(prev.move_index + 1))
-    base_rent = base_rent_raw * lognormal_multiplier(gen, sigma=0.05)
+    base_rent_raw = float(reset_rent_source())
+    gen = rng_factory.rng("lease_reset_rent", payer_acct, str(prev.move_index + 1)).gen
+    base_rent = base_rent_raw * sample_lognormal_multiplier(gen, sigma=0.05)
 
-    return LeaseState(
+    return State(
         landlord_acct=landlord,
         start=start,
         end=end,
@@ -134,18 +146,21 @@ def advance_lease(
     )
 
 
-def rent_at(
-    policy: RecurringPolicy,
+def calculate_rent(
+    policy: Policy,
     seed: SeedSource,
     *,
     payer_acct: str,
-    state: LeaseState,
+    state: State,
     pay_date: datetime,
 ) -> float:
-    seedbank = as_seedbank(seed)
-    amount = state.base_rent * compound_growth_rent(
+    """
+    Calculates the exact rent for a given pay period, including compounded inflation/raises.
+    """
+    rng_factory = build_rng_factory(seed)
+    amount = state.base_rent * _compound_growth_rent(
         policy,
-        seedbank,
+        rng_factory,
         payer_acct,
         state.start,
         pay_date,

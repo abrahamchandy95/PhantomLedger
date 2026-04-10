@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 
-from common.validate import require_int_gt
+from common.validate import gt
 
 
 @dataclass(frozen=True, slots=True)
-class PopulationConfig:
+class Population:
     seed: int = 7
-    size: int = 10_000
+    size: int = 500_000
 
-    def validate(self) -> None:
-        require_int_gt("size", self.size, 0)
+    def __post_init__(self) -> None:
+        gt("size", self.size, 0)

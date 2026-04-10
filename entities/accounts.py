@@ -1,135 +1,99 @@
-from dataclasses import dataclass
+from typing import cast
 
-from common.config import AccountsConfig
-from common.ids import iter_account_ids
+from common import config
+from common.ids import accounts
 from common.random import Rng
-
-from entities.people import PeopleData
-
-
-@dataclass(frozen=True, slots=True)
-class AccountsData:
-    accounts: list[str]
-    person_accounts: dict[str, list[str]]
-    acct_owner: dict[str, str]
-
-    fraud_accounts: set[str]
-    mule_accounts: set[str]
-    victim_accounts: set[str]
+from . import models
 
 
-def _account_count_per_person(acfg: AccountsConfig, rng: Rng, n: int) -> list[int]:
+def _accounts_per_person(cfg: config.Accounts, rng: Rng, n: int) -> list[int]:
     """
     Draw number of accounts per person.
-
-    Mirrors your original distribution:
-      1 + Binomial(n=max_accounts_per_person-1, p=0.25), clipped.
-
-    Implemented as explicit Bernoulli trials to avoid NumPy typing issues
-    under strict basedpyright settings.
+    Vectorized via NumPy for maximum speed while satisfying strict Pyright typing.
     """
-    max_per = int(acfg.max_accounts_per_person)
+    max_per = int(cfg.max_per_person)
     if max_per <= 1:
         return [1] * n
 
     trials = max_per - 1
-    p = 0.25
-    max_k = max_per
 
-    out: list[int] = []
-    for _ in range(n):
-        extra = 0
-        for _ in range(trials):
-            extra += 1 if rng.coin(p) else 0
+    raw_draws = rng.gen.binomial(n=trials, p=0.25, size=n) + 1
 
-        k = 1 + extra
-        if k < 1:
-            k = 1
-        elif k > max_k:
-            k = max_k
-
-        out.append(k)
-
-    return out
+    return cast(list[int], raw_draws.tolist())
 
 
-def generate_accounts(
-    acfg: AccountsConfig, rng: Rng, people: PeopleData
-) -> AccountsData:
+def build(cfg: config.Accounts, rng: Rng, people_mdl: models.People) -> models.Accounts:
     """
     Generate account IDs and mappings.
-
-    Flags:
-      - Each flagged person has at least their primary account flagged.
-      - If a person has >1 accounts, you can later decide to spread flags across multiple accounts,
-        but we keep it simple and consistent with your original code.
     """
-    persons = people.people
-    counts = _account_count_per_person(acfg, rng, len(persons))
+    persons = people_mdl.ids
+    counts = _accounts_per_person(cfg, rng, len(persons))
 
     total_accounts = sum(counts)
-    account_ids = list(iter_account_ids(total_accounts))
+    account_ids = list(accounts(total_accounts))
 
-    accounts: list[str] = []
-    person_accounts: dict[str, list[str]] = {}
-    acct_owner: dict[str, str] = {}
+    by_person: dict[str, list[str]] = {}
+    owner_map: dict[str, str] = {}
 
-    fraud_accounts: set[str] = set()
-    mule_accounts: set[str] = set()
-    victim_accounts: set[str] = set()
+    frauds: set[str] = set()
+    mules: set[str] = set()
+    victims: set[str] = set()
 
     cursor = 0
-    for pid, k in zip(persons, counts):
-        accts: list[str] = []
-        for _ in range(k):
-            aid = account_ids[cursor]
-            cursor += 1
-            accounts.append(aid)
-            accts.append(aid)
-            acct_owner[aid] = pid
+    for pid, k in zip(persons, counts, strict=True):
+        accts = account_ids[cursor : cursor + k]
+        cursor += k
 
-        person_accounts[pid] = accts
+        by_person[pid] = accts
 
-        primary = accts[0]
-        if pid in people.fraud_people:
-            fraud_accounts.add(primary)
-        if pid in people.mule_people:
-            mule_accounts.add(primary)
-        if pid in people.victim_people:
-            victim_accounts.add(primary)
+        for aid in accts:
+            owner_map[aid] = pid
 
-    return AccountsData(
-        accounts=accounts,
-        person_accounts=person_accounts,
-        acct_owner=acct_owner,
-        fraud_accounts=fraud_accounts,
-        mule_accounts=mule_accounts,
-        victim_accounts=victim_accounts,
+    frauds = {by_person[pid][0] for pid in people_mdl.frauds}
+    mules = {by_person[pid][0] for pid in people_mdl.mules}
+    victims = {by_person[pid][0] for pid in people_mdl.victims}
+
+    return models.Accounts(
+        ids=account_ids,
+        by_person=by_person,
+        owner_map=owner_map,
+        frauds=frauds,
+        mules=mules,
+        victims=victims,
+        externals=set(),
     )
 
 
-def with_extra_accounts(data: AccountsData, extra_accounts: list[str]) -> AccountsData:
+def merge(
+    data: models.Accounts,
+    new_ids: list[str],
+    *,
+    mark_external: bool = False,
+) -> models.Accounts:
     """
-    Return a new AccountsData with extra accounts appended to .accounts.
-
-    Does NOT assign owners (acct_owner unchanged).
-    Keeps all flag sets unchanged.
+    Safely merges new accounts into the existing Accounts pool.
     """
-    if not extra_accounts:
+    if not new_ids:
         return data
 
-    existing = set(data.accounts)
-    new_list = list(data.accounts)
-    for a in extra_accounts:
-        if a not in existing:
-            new_list.append(a)
-            existing.add(a)
+    existing = set(data.ids)
+    additions = [a for a in new_ids if a not in existing]
 
-    return AccountsData(
-        accounts=new_list,
-        person_accounts=data.person_accounts,
-        acct_owner=data.acct_owner,
-        fraud_accounts=data.fraud_accounts,
-        mule_accounts=data.mule_accounts,
-        victim_accounts=data.victim_accounts,
+    if not additions:
+        return data
+
+    new_list = data.ids + additions
+    new_externals = set(data.externals)
+
+    if mark_external:
+        new_externals.update(additions)
+
+    return models.Accounts(
+        ids=new_list,
+        by_person=data.by_person,
+        owner_map=data.owner_map,
+        frauds=data.frauds,
+        mules=data.mules,
+        victims=data.victims,
+        externals=new_externals,
     )

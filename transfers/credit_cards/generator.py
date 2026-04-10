@@ -1,29 +1,34 @@
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
-from common.random import SeedBank
+import numpy as np
+
+from common.channels import CC_INTEREST, CC_PAYMENT, CC_LATE_FEE, CARD_PURCHASE
+from common.random import RngFactory
 from common.transactions import Transaction
-from transfers.txns import TxnSpec
+from transfers.factory import TransactionDraft
 
-from .models import CreditLifecyclePolicy, CreditLifecycleRequest
-from .schedule import effective_due_cutoff, iter_cycle_closes, payment_received_on_time
+from .params import Habits, Request, Terms
+from .schedule import calculate_cycle_closes, is_on_time, resolve_due_date
 from .statement import (
-    choose_manual_payment_amount,
-    days_frac,
-    finite_interest_amount,
-    integrated_avg_balance,
-    min_payment,
-    payment_timestamp,
-    sample_credit_event_for_purchase,
+    calculate_avg_balance,
+    calculate_interval_days,
+    calculate_min_due,
+    get_billable_interest,
+    sample_manual_payment,
+    sample_merchant_credit,
+    sample_payment_time,
 )
-
 
 _DEFAULT_CARD_APR = 0.22
 _DEFAULT_CYCLE_DAY = 15
 
 
 @dataclass(frozen=True, slots=True)
-class _CardRuntime:
+class _CardContext:
+    """Holds the static evaluated parameters for a single card."""
+
     card: str
     pay_from: str
     apr: float
@@ -31,236 +36,236 @@ class _CardRuntime:
     autopay_mode: int
 
 
-def _collect_purchases_by_card(
-    request: CreditLifecycleRequest,
+@dataclass(slots=True)
+class _CycleState:
+    """Holds the mutable financial state of a card across billing cycles."""
+
+    balance: float = 0.0
+    in_grace: bool = True
+    purchase_idx: int = 0
+    credit_idx: int = 0
+    scheduled_credits: list[Transaction] = field(default_factory=list)
+
+
+def _group_purchases(
+    request: Request,
     start: datetime,
     end_excl: datetime,
 ) -> dict[str, list[Transaction]]:
-    card_set = set(request.cards.card_accounts)
-    purchases_by_card: dict[str, list[Transaction]] = {
-        card: [] for card in request.cards.card_accounts
-    }
+    """grouping of relevant card transactions."""
+    card_set = set(request.cards.ids)
+    grouped: dict[str, list[Transaction]] = defaultdict(list)
 
-    for txn in request.existing_txns:
-        if txn.channel != "card_purchase":
-            continue
-        if txn.source in card_set and start <= txn.timestamp < end_excl:
-            purchases_by_card[txn.source].append(txn)
+    for txn in request.txns:
+        if txn.channel == CARD_PURCHASE and txn.source in card_set:
+            if start <= txn.timestamp < end_excl:
+                grouped[txn.source].append(txn)
 
-    return purchases_by_card
+    return dict(grouped)
 
 
-def _card_runtime_for(
-    request: CreditLifecycleRequest,
-    card: str,
-) -> _CardRuntime | None:
-    owner = request.cards.owner_for_card.get(card)
-    if owner is None:
+def _build_context(request: Request, card: str) -> _CardContext | None:
+    owner = request.cards.owner_map.get(card)
+    if not owner:
         return None
 
-    pay_from = request.primary_acct_for_person.get(owner)
-    if pay_from is None:
+    pay_from = request.primary_accounts.get(owner)
+    if not pay_from:
         return None
 
-    apr = float(request.cards.apr_by_card.get(card, _DEFAULT_CARD_APR))
-    cycle_day = int(request.cards.cycle_day_by_card.get(card, _DEFAULT_CYCLE_DAY))
-    autopay_mode = int(request.cards.autopay_mode_by_card.get(card, 0))
-
-    return _CardRuntime(
+    return _CardContext(
         card=card,
         pay_from=pay_from,
-        apr=apr,
-        cycle_day=cycle_day,
-        autopay_mode=autopay_mode,
+        apr=float(request.cards.aprs.get(card, _DEFAULT_CARD_APR)),
+        cycle_day=int(request.cards.cycle_days.get(card, _DEFAULT_CYCLE_DAY)),
+        autopay_mode=int(request.cards.autopay_modes.get(card, 0)),
     )
 
 
-def generate_credit_card_lifecycle_txns(
-    policy: CreditLifecyclePolicy,
-    request: CreditLifecycleRequest,
+def _process_billing_cycle(
+    terms: Terms,
+    habits: Habits,
+    request: Request,
+    context: _CardContext,
+    state: _CycleState,
+    purchases: list[Transaction],
+    cycle_start: datetime,
+    cycle_end: datetime,
+    end_excl: datetime,
+    lifecycle_gen: np.random.Generator,
+) -> list[Transaction]:
+    """Handles the financial business logic for a single billing month."""
+    out: list[Transaction] = []
+    cycle_events: list[Transaction] = []
+
+    while (
+        state.purchase_idx < len(purchases)
+        and purchases[state.purchase_idx].timestamp < cycle_end
+    ):
+        purchase = purchases[state.purchase_idx]
+        cycle_events.append(purchase)
+
+        state.credit_idx += 1
+        credit_txn = sample_merchant_credit(
+            terms,
+            habits,
+            lifecycle_gen,
+            card=context.card,
+            credit_idx=state.credit_idx,
+            purchase=purchase,
+            end_excl=end_excl,
+            txf=request.txf,
+        )
+        if credit_txn:
+            state.scheduled_credits.append(credit_txn)
+            out.append(credit_txn)
+
+        state.purchase_idx += 1
+
+    if state.scheduled_credits:
+        keep: list[Transaction] = []
+        for credit_txn in state.scheduled_credits:
+            if cycle_start <= credit_txn.timestamp < cycle_end:
+                cycle_events.append(credit_txn)
+            else:
+                keep.append(credit_txn)
+        state.scheduled_credits = keep
+
+    if cycle_events:
+        cycle_events.sort(key=lambda txn: txn.timestamp)
+
+    avg_balance, state.balance = calculate_avg_balance(
+        context.card, state.balance, cycle_events, cycle_start, cycle_end
+    )
+
+    if not state.in_grace:
+        interval_days = calculate_interval_days(cycle_start, cycle_end)
+        debt_avg = max(0.0, -float(avg_balance))
+
+        interest_raw = debt_avg * (context.apr / 365.0) * float(interval_days)
+        interest = get_billable_interest(interest_raw)
+
+        if interest is not None:
+            interest_txn = request.txf.make(
+                TransactionDraft(
+                    source=context.card,
+                    destination=request.issuer_acct,
+                    amount=interest,
+                    timestamp=cycle_end + timedelta(minutes=15),
+                    channel=CC_INTEREST,
+                )
+            )
+            out.append(interest_txn)
+            state.balance -= float(interest)
+
+    statement_abs = max(0.0, -state.balance)
+    if statement_abs <= 0.01:
+        state.in_grace = True
+        return out
+
+    min_due = round(calculate_min_due(terms, statement_abs), 2)
+    due = cycle_end + timedelta(days=int(terms.grace_days), hours=17)
+
+    if context.autopay_mode == 2:
+        pay_amt = float(statement_abs)
+        pay_ts = sample_payment_time(habits, request.rng, due, is_autopay=True)
+    elif context.autopay_mode == 1:
+        pay_amt = float(min_due)
+        pay_ts = sample_payment_time(habits, request.rng, due, is_autopay=True)
+    else:
+        pay_amt = sample_manual_payment(habits, request.rng, statement_abs, min_due)
+        pay_ts = sample_payment_time(habits, request.rng, due, is_autopay=False)
+
+    pay_amt = round(max(0.0, float(pay_amt)), 2)
+
+    paid_by_due = (pay_amt >= min_due - 1e-6) and is_on_time(pay_ts, due)
+    paid_full_by_due = (pay_amt >= statement_abs - 1e-6) and is_on_time(pay_ts, due)
+
+    if pay_amt > 0.0 and pay_ts < end_excl:
+        payment_txn = request.txf.make(
+            TransactionDraft(
+                source=context.pay_from,
+                destination=context.card,
+                amount=pay_amt,
+                timestamp=pay_ts,
+                channel=CC_PAYMENT,
+            )
+        )
+        out.append(payment_txn)
+        state.balance += float(pay_amt)
+
+    if not paid_by_due and float(terms.late_fee) > 0.0:
+        fee_ts = min(
+            end_excl - timedelta(seconds=1),
+            resolve_due_date(due) + timedelta(days=1, hours=10),
+        )
+        fee = round(float(terms.late_fee), 2)
+        fee_txn = request.txf.make(
+            TransactionDraft(
+                source=context.card,
+                destination=request.issuer_acct,
+                amount=fee,
+                timestamp=fee_ts,
+                channel=CC_LATE_FEE,
+            )
+        )
+        out.append(fee_txn)
+        state.balance -= float(fee)
+
+    state.in_grace = bool(paid_full_by_due)
+    return out
+
+
+def generate(
+    terms: Terms,
+    habits: Habits,
+    request: Request,
 ) -> list[Transaction]:
     """
-    Reads existing card_purchase txns and generates:
-      - refunds / chargebacks (external -> card)
-      - interest (card -> issuer)
-      - late fees (card -> issuer)
-      - payments (deposit -> card)
+    Reads existing card_purchase txns and generates the lifecycle edges:
+      - refunds / chargebacks
+      - interest & late fees
+      - payments
     """
-    policy.validate()
-
-    if not request.cards.card_accounts:
+    if not request.cards.ids:
         return []
 
-    start = request.window.start_date()
+    start = request.window.start_date
     end_excl = start + timedelta(days=int(request.window.days))
+    purchases_by_card = _group_purchases(request, start, end_excl)
 
-    purchases_by_card = _collect_purchases_by_card(request, start, end_excl)
+    rng_factory = RngFactory(request.base_seed)
+    lifecycle_gen = rng_factory.rng("cc_lifecycle").gen
+
     out: list[Transaction] = []
 
-    seedbank = SeedBank(request.base_seed)
-    lifecycle_gen = seedbank.generator("cc_lifecycle")
-
     for card, purchases in purchases_by_card.items():
-        if not purchases:
-            continue
-
-        runtime = _card_runtime_for(request, card)
-        if runtime is None:
+        context = _build_context(request, card)
+        if not context:
             continue
 
         purchases.sort(key=lambda txn: txn.timestamp)
-
-        closes = iter_cycle_closes(start, end_excl, runtime.cycle_day)
+        closes = calculate_cycle_closes(start, end_excl, context.cycle_day)
         if not closes:
             continue
 
-        balance = 0.0
-        in_grace = True
-
-        scheduled_credits: list[Transaction] = []
-        credit_idx = 0
-        purchase_idx = 0
+        state = _CycleState()
         last_close = start
 
         for close in closes:
-            cycle_start = last_close
-            cycle_end = close
-
-            cycle_events: list[Transaction] = []
-
-            while (
-                purchase_idx < len(purchases)
-                and purchases[purchase_idx].timestamp < cycle_end
-            ):
-                purchase = purchases[purchase_idx]
-                cycle_events.append(purchase)
-
-                credit_idx += 1
-                credit_txn = sample_credit_event_for_purchase(
-                    policy,
-                    lifecycle_gen,
-                    card=card,
-                    credit_idx=credit_idx,
-                    purchase=purchase,
-                    end_excl=end_excl,
-                    txf=request.txf,
-                )
-                if credit_txn is not None:
-                    scheduled_credits.append(credit_txn)
-                    out.append(credit_txn)
-
-                purchase_idx += 1
-
-            if scheduled_credits:
-                keep: list[Transaction] = []
-                for credit_txn in scheduled_credits:
-                    if cycle_start <= credit_txn.timestamp < cycle_end:
-                        cycle_events.append(credit_txn)
-                    else:
-                        keep.append(credit_txn)
-                scheduled_credits = keep
-
-            cycle_events.sort(key=lambda txn: txn.timestamp)
-
-            avg_balance, balance_end = integrated_avg_balance(
-                card,
-                balance,
-                cycle_events,
-                cycle_start,
-                cycle_end,
+            cycle_txns = _process_billing_cycle(
+                terms=terms,
+                habits=habits,
+                request=request,
+                context=context,
+                state=state,
+                purchases=purchases,
+                cycle_start=last_close,
+                cycle_end=close,
+                end_excl=end_excl,
+                lifecycle_gen=lifecycle_gen,
             )
-            balance = balance_end
-
-            if not in_grace:
-                interval_days = days_frac(cycle_start, cycle_end)
-                debt_avg = max(0.0, -float(avg_balance))
-                interest_raw = (
-                    debt_avg * (float(runtime.apr) / 365.0) * float(interval_days)
-                )
-                interest = finite_interest_amount(interest_raw)
-
-                if interest is not None:
-                    interest_txn = request.txf.make(
-                        TxnSpec(
-                            src=card,
-                            dst=request.issuer_acct,
-                            amt=interest,
-                            ts=close + timedelta(minutes=15),
-                            channel="cc_interest",
-                        )
-                    )
-                    out.append(interest_txn)
-                    balance -= float(interest)
-
-            statement_abs = max(0.0, -balance)
-            if statement_abs <= 0.01:
-                in_grace = True
-                last_close = close
-                continue
-
-            min_due = round(min_payment(policy, statement_abs), 2)
-            due = close + timedelta(days=int(policy.grace_days), hours=17)
-
-            if runtime.autopay_mode == 2:
-                pay_amt = float(statement_abs)
-                pay_ts = payment_timestamp(policy, request.rng, due, is_autopay=True)
-            elif runtime.autopay_mode == 1:
-                pay_amt = float(min_due)
-                pay_ts = payment_timestamp(policy, request.rng, due, is_autopay=True)
-            else:
-                pay_amt = choose_manual_payment_amount(
-                    policy,
-                    request.rng,
-                    statement_abs,
-                    min_due,
-                )
-                pay_ts = payment_timestamp(policy, request.rng, due, is_autopay=False)
-
-            pay_amt = round(max(0.0, float(pay_amt)), 2)
-
-            paid_by_due = (pay_amt >= min_due - 1e-6) and payment_received_on_time(
-                pay_ts,
-                due,
-            )
-            paid_full_by_due = (
-                pay_amt >= statement_abs - 1e-6
-            ) and payment_received_on_time(
-                pay_ts,
-                due,
-            )
-
-            if pay_amt > 0.0 and pay_ts < end_excl:
-                payment_txn = request.txf.make(
-                    TxnSpec(
-                        src=runtime.pay_from,
-                        dst=card,
-                        amt=pay_amt,
-                        ts=pay_ts,
-                        channel="cc_payment",
-                    )
-                )
-                out.append(payment_txn)
-                balance += float(pay_amt)
-
-            if not paid_by_due and float(policy.late_fee_amount) > 0.0:
-                fee_ts = min(
-                    end_excl - timedelta(seconds=1),
-                    effective_due_cutoff(due) + timedelta(days=1, hours=10),
-                )
-                fee = round(float(policy.late_fee_amount), 2)
-                fee_txn = request.txf.make(
-                    TxnSpec(
-                        src=card,
-                        dst=request.issuer_acct,
-                        amt=fee,
-                        ts=fee_ts,
-                        channel="cc_late_fee",
-                    )
-                )
-                out.append(fee_txn)
-                balance -= float(fee)
-
-            in_grace = bool(paid_full_by_due)
+            out.extend(cycle_txns)
             last_close = close
 
     out.sort(

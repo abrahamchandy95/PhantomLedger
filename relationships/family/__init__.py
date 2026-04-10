@@ -1,7 +1,7 @@
-from .generator import generate_family
-from .models import FamilyData
+from .generator import build
+from .network import FamilyGraph
 
 __all__ = [
-    "FamilyData",
-    "generate_family",
+    "FamilyGraph",
+    "build",
 ]

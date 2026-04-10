@@ -1,64 +1,43 @@
 from math import log
-from typing import cast, overload
+from typing import overload
 
 import numpy as np
 import numpy.typing as npt
 
-from .numeric import ArrF64, NumScalar
+from .numeric import F64
 
 
-def as_float(x: NumScalar) -> float:
-    return float(x)
-
-
-def as_int(x: int | np.integer) -> int:
-    return int(x)
-
-
-def as_f64_array(x: object) -> ArrF64:
-    return np.asarray(x, dtype=np.float64)
-
-
-def build_cdf(weights: npt.ArrayLike) -> ArrF64:
-    """
-    Convert a 1D non-negative weight vector into a cumulative distribution.
-    """
-    w = np.asarray(weights, dtype=np.float64).reshape(-1)
+def build_cdf(weights: npt.ArrayLike) -> F64:
+    """Convert non-negative weights into a cumulative distribution."""
+    w = np.asarray(weights, dtype=np.float64).flatten()
 
     if w.size == 0:
-        raise ValueError("weights must be non-empty")
+        raise ValueError("Weights cannot be empty")
     if np.any(w < 0.0):
-        raise ValueError("weights must be non-negative")
+        raise ValueError("Weights must be non-negative")
 
-    s = float(np.sum(w, dtype=np.float64))
-    if not np.isfinite(s) or s <= 0.0:
-        raise ValueError("weights must sum to a finite positive value")
+    total = float(np.sum(w))
+    if not np.isfinite(total) or total <= 0.0:
+        raise ValueError("Weights must sum to a finite positive value")
 
-    cdf = np.cumsum(w / s, dtype=np.float64)
+    cdf = np.cumsum(w / total)
     cdf[-1] = 1.0
     return cdf
 
 
-def cdf_pick(cdf: ArrF64, u: float) -> int:
-    """
-    Pick an index from a cumulative distribution using u in [0, 1].
-    """
+def cdf_pick(cdf: F64, u: float) -> int:
+    """Pick an index from a CDF using u in [0, 1]."""
     if cdf.ndim != 1 or cdf.size == 0:
-        raise ValueError("cdf must be a non-empty 1D array")
+        raise ValueError("CDF must be a non-empty 1D array")
 
-    j = as_int(cast(int | np.integer, np.searchsorted(cdf, float(u), side="right")))
-    if j >= int(cdf.size):
-        return int(cdf.size) - 1
-    return j
+    # searchsorted returns the index where u would be inserted
+    idx = np.searchsorted(cdf, u, side="right")
+    return int(min(idx, cdf.size - 1))
 
 
 @overload
 def lognormal_by_median(
-    gen: np.random.Generator,
-    *,
-    median: float,
-    sigma: float,
-    size: None = None,
+    gen: np.random.Generator, *, median: float, sigma: float, size: None = None
 ) -> float: ...
 
 
@@ -69,7 +48,7 @@ def lognormal_by_median(
     median: float,
     sigma: float,
     size: int | tuple[int, ...],
-) -> ArrF64: ...
+) -> F64: ...
 
 
 def lognormal_by_median(
@@ -78,22 +57,17 @@ def lognormal_by_median(
     median: float,
     sigma: float,
     size: int | tuple[int, ...] | None = None,
-) -> float | ArrF64:
-    """
-    Sample a lognormal distribution parameterized by median instead of mu.
+) -> float | F64:
+    """Sample a lognormal distribution parameterized by median (exp(mu))."""
+    if median <= 0.0:
+        raise ValueError(f"Median must be > 0, got {median}")
+    if sigma < 0.0:
+        raise ValueError(f"Sigma must be >= 0, got {sigma}")
 
-    median = exp(mu)  =>  mu = log(median)
-    """
-    if float(median) <= 0.0:
-        raise ValueError("median must be > 0")
-    if float(sigma) < 0.0:
-        raise ValueError("sigma must be >= 0")
+    mu = log(median)
 
-    mu = log(float(median))
+    res = gen.lognormal(mean=mu, sigma=sigma, size=size)
 
     if size is None:
-        scalar_obj = cast(object, gen.lognormal(mean=mu, sigma=float(sigma)))
-        return as_float(cast(NumScalar, scalar_obj))
-
-    array_obj = cast(object, gen.lognormal(mean=mu, sigma=float(sigma), size=size))
-    return np.asarray(array_obj, dtype=np.float64)
+        return float(res)
+    return np.asarray(res, dtype=np.float64)

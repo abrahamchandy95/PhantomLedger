@@ -1,155 +1,163 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import cast
 
 import numpy as np
 
-from common.math import NumScalar, as_float, as_int
-from entities.personas import PERSONAS, PersonaSpec
-from math_models.counts import (
-    DEFAULT_COUNT_MODELS,
-    gamma_poisson_out_count,
-    weekday_multiplier,
-)
-from transfers.txns import TxnFactory
+import entities.models as models
+from common.math import Scalar, as_float, as_int
+from common.persona_names import SALARIED
+from entities.personas import PERSONAS
+from math_models.counts import DEFAULT_RATES, gamma_poisson, weekday_multiplier
+from transfers.factory import TransactionFactory
 
-from .models import DayToDayContext, DayToDayGenerationRequest
+from .engine import GenerateRequest
+
+
+_FALLBACK_PERSONA = PERSONAS[SALARIED]
 
 
 @dataclass(frozen=True, slots=True)
-class PersonState:
-    person_id: str
+class Spender:
+    """Snapshot of a person's financial mapping and behavioral dials."""
+
+    id: str
     deposit_acct: str
     persona_name: str
-    persona: PersonaSpec
-    favorite_k: int
-    biller_k: int
-    explore_propensity: float
+    persona: models.Persona
+    fav_k: int
+    bill_k: int
+    explore_prop: float
     burst_start: int
     burst_len: int
 
 
 @dataclass(frozen=True, slots=True)
-class DayFrame:
-    day_index: int
-    day_start: datetime
+class Day:
+    """The temporal constraints and global modifiers for a single simulation day."""
+
+    index: int
+    start: datetime
     is_weekend: bool
-    day_shock: float
+    shock: float
 
 
 @dataclass(frozen=True, slots=True)
-class EventFrame:
+class Event:
+    """The specific context passed down to evaluate a single transaction event."""
+
     person_idx: int
-    person_state: PersonState
-    txn_ts: datetime
-    txf: TxnFactory
+    spender: Spender
+    ts: datetime
+    txf: TransactionFactory
     explore_p: float
 
 
-def build_day_frame(
-    request: DayToDayGenerationRequest,
-    day_index: int,
-) -> DayFrame:
-    from datetime import timedelta
+def build_day(request: GenerateRequest, index: int) -> Day:
+    start = request.start_date + timedelta(days=index)
+    is_weekend = start.weekday() >= 5
 
-    day_start = request.start_date + timedelta(days=day_index)
-    is_weekend = day_start.weekday() >= 5
+    shape = float(request.events.day_multiplier_shape)
+    shock = float(request.rng.gen.gamma(shape=shape, scale=(1.0 / shape)))
 
-    gamma_shape = float(request.events.day_multiplier_gamma_shape)
-    day_shock = float(
-        request.rng.gen.gamma(shape=gamma_shape, scale=(1.0 / gamma_shape))
-    )
-
-    return DayFrame(
-        day_index=day_index,
-        day_start=day_start,
+    return Day(
+        index=index,
+        start=start,
         is_weekend=is_weekend,
-        day_shock=day_shock,
+        shock=shock,
     )
 
 
-def build_person_state(
-    request: DayToDayGenerationRequest,
-    person_idx: int,
-) -> PersonState | None:
-    ctx: DayToDayContext = request.ctx
+def build_spender(request: GenerateRequest, index: int) -> Spender | None:
+    pop = request.ctx.population
+    merch = request.ctx.merchant
 
-    person_id = ctx.persons[person_idx]
-    deposit_acct = ctx.primary_acct_for_person.get(person_id)
+    person_id = pop.persons[index]
+    deposit_acct = pop.primary_accounts.get(person_id)
     if deposit_acct is None:
         return None
 
-    persona_name = ctx.persona_for_person.get(person_id, "salaried")
-    persona = PERSONAS.get(persona_name, PERSONAS["salaried"])
+    persona = pop.persona_objects.get(person_id, _FALLBACK_PERSONA)
 
-    favorite_k = as_int(cast(int | np.integer, ctx.fav_k[person_idx]))
-    biller_k = as_int(cast(int | np.integer, ctx.bill_k[person_idx]))
-    explore_propensity = as_float(cast(NumScalar, ctx.explore_propensity[person_idx]))
-    burst_start = as_int(cast(int | np.integer, ctx.burst_start_day[person_idx]))
-    burst_len = as_int(cast(int | np.integer, ctx.burst_len[person_idx]))
-
-    return PersonState(
-        person_id=person_id,
+    return Spender(
+        id=person_id,
         deposit_acct=deposit_acct,
-        persona_name=persona_name,
+        persona_name=persona.name,
         persona=persona,
-        favorite_k=favorite_k,
-        biller_k=biller_k,
-        explore_propensity=explore_propensity,
-        burst_start=burst_start,
-        burst_len=burst_len,
+        fav_k=as_int(cast(int | np.integer, merch.fav_k[index])),
+        bill_k=as_int(cast(int | np.integer, merch.bill_k[index])),
+        explore_prop=as_float(cast(Scalar, merch.explore_propensity[index])),
+        burst_start=as_int(cast(int | np.integer, merch.burst_start_day[index])),
+        burst_len=as_int(cast(int | np.integer, merch.burst_len[index])),
     )
 
 
-def compute_outgoing_count(
-    request: DayToDayGenerationRequest,
-    person_state: PersonState,
-    day_frame: DayFrame,
-    base_per_day: float,
-    remaining_today: int | None,
+def sample_txn_count(
+    request: GenerateRequest,
+    spender: Spender,
+    day: Day,
+    base_rate: float,
+    limit: int | None,
+    *,
+    dynamics_multiplier: float = 1.0,
 ) -> int:
+    """
+    Sample the number of outbound transactions for one person-day.
+
+    The dynamics_multiplier combines momentum (AR(1) spending
+    persistence) and dormancy (active/dormant/waking state).
+    It is computed externally by PersonDynamics.advance_day()
+    and passed in to keep this function pure.
+
+    Sources:
+      - Barabási (2005, Nature 435:207-211): human activity is bursty
+      - Vilella et al. (2021, EPJ Data Science 10:25): spending
+        persistence autocorrelation of 0.3-0.6 at weekly resolution
+      - Greene & Stavins (2018): avg ~70 expenses/month per consumer
+    """
     rate = (
-        base_per_day
-        * float(person_state.persona.rate_mult)
-        * float(weekday_multiplier(day_frame.day_start, DEFAULT_COUNT_MODELS))
-        * day_frame.day_shock
+        base_rate
+        * float(spender.persona.rate_multiplier)
+        * float(weekday_multiplier(day.start, DEFAULT_RATES))
+        * day.shock
+        * dynamics_multiplier
     )
 
-    n_out = gamma_poisson_out_count(
+    count = gamma_poisson(
         request.rng,
         base_rate=rate,
-        models=DEFAULT_COUNT_MODELS,
+        rates=DEFAULT_RATES,
     )
-    if n_out <= 0:
+
+    if count <= 0:
         return 0
 
-    if remaining_today is not None:
-        n_out = min(n_out, max(0, remaining_today))
-    return n_out
+    if limit is not None:
+        count = min(count, max(0, limit))
+
+    return count
 
 
-def compute_explore_probability(
-    request: DayToDayGenerationRequest,
-    person_state: PersonState,
-    day_frame: DayFrame,
+def calculate_explore_p(
+    request: GenerateRequest,
+    spender: Spender,
+    day: Day,
 ) -> float:
-    explore_base = float(request.merchants_cfg.explore_p)
-    policy = request.policy
+    base_p = float(request.merchants_cfg.explore_p)
+    params = request.params
 
-    explore_p = explore_base * (0.25 + 0.75 * person_state.explore_propensity)
+    explore_p = base_p * (0.25 + 0.75 * spender.explore_prop)
 
-    if day_frame.is_weekend:
-        explore_p *= float(policy.weekend_explore_multiplier)
+    if day.is_weekend:
+        explore_p *= float(params.weekend_boost)
 
-    if (
-        person_state.burst_start >= 0
-        and person_state.burst_len > 0
-        and (
-            person_state.burst_start
-            <= day_frame.day_index
-            < person_state.burst_start + person_state.burst_len
-        )
-    ):
-        explore_p *= float(policy.burst_explore_multiplier)
+    in_burst_window = (
+        spender.burst_start >= 0
+        and spender.burst_len > 0
+        and spender.burst_start <= day.index < (spender.burst_start + spender.burst_len)
+    )
+
+    if in_burst_window:
+        explore_p *= float(params.burst_boost)
 
     return min(0.50, max(0.0, explore_p))

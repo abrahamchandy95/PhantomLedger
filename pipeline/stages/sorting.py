@@ -2,10 +2,13 @@ from datetime import datetime
 
 from common.transactions import Transaction
 
-type TxnSortKey = tuple[datetime, str, str, float, int, int, str, str, str]
+type Key = tuple[datetime, str, str, float, int, int, str, str, str]
 
 
-def txn_sort_key(txn: Transaction) -> TxnSortKey:
+def key(txn: Transaction) -> Key:
+    """
+    Deterministic sorting key for transactions.
+    """
     return (
         txn.timestamp,
         txn.source,

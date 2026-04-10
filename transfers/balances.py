@@ -1,108 +1,74 @@
 from dataclasses import dataclass
-from typing import cast
 
 import numpy as np
 import numpy.typing as npt
 
-from common.ids import is_external_account
+from common.ids import is_external
 from common.math import (
-    ArrBool,
-    ArrF64,
-    ArrI64,
-    NumScalar,
-    as_float,
+    Bool,
+    F64,
+    I64,
     lognormal_by_median,
 )
 from common.random import Rng
-from common.validate import (
-    require_float_between,
-    require_float_ge,
-)
+from common.validate import between, ge
+from entities.personas import get_persona
 
 
 @dataclass(frozen=True, slots=True)
-class BalancePolicy:
-    enable_balance_constraints: bool = True
+class Rules:
+    enable_constraints: bool = True
 
-    overdraft_frac: float = 0.05
+    overdraft_fraction: float = 0.05
     overdraft_limit_median: float = 300.0
     overdraft_limit_sigma: float = 0.6
 
-    init_bal_student: float = 200.0
-    init_bal_salaried: float = 1200.0
-    init_bal_retired: float = 1500.0
-    init_bal_freelancer: float = 900.0
-    init_bal_smallbiz: float = 8000.0
-    init_bal_hnw: float = 25000.0
-    init_bal_sigma: float = 1.0
+    initial_balance_sigma: float = 1.0
 
-    def validate(self) -> None:
-        require_float_between("overdraft_frac", self.overdraft_frac, 0.0, 1.0)
-        require_float_ge("overdraft_limit_median", self.overdraft_limit_median, 0.0)
-        require_float_ge("overdraft_limit_sigma", self.overdraft_limit_sigma, 0.0)
-        require_float_ge("init_bal_sigma", self.init_bal_sigma, 0.0)
+    def __post_init__(self) -> None:
+        between("overdraft_fraction", self.overdraft_fraction, 0.0, 1.0)
+        ge("overdraft_limit_median", self.overdraft_limit_median, 0.0)
+        ge("overdraft_limit_sigma", self.overdraft_limit_sigma, 0.0)
+        ge("initial_balance_sigma", self.initial_balance_sigma, 0.0)
 
     def initial_balance_median(self, persona: str) -> float:
-        match persona:
-            case "student":
-                return float(self.init_bal_student)
-            case "retired":
-                return float(self.init_bal_retired)
-            case "freelancer":
-                return float(self.init_bal_freelancer)
-            case "smallbiz":
-                return float(self.init_bal_smallbiz)
-            case "hnw":
-                return float(self.init_bal_hnw)
-            case _:
-                return float(self.init_bal_salaried)
+        return float(get_persona(persona).initial_balance)
 
 
-DEFAULT_BALANCE_POLICY = BalancePolicy()
+DEFAULT_RULES = Rules()
 
 
 @dataclass(frozen=True, slots=True)
-class BalanceInitRequest:
+class SetupParams:
     accounts: list[str]
-    acct_index: dict[str, int]
-    hub_set_idx: set[int]
-    persona_for_acct: npt.NDArray[np.integer]
+    account_indices: dict[str, int]
+    hub_indices: set[int]
+    persona_mapping: npt.NDArray[np.integer]
     persona_names: list[str]
 
 
-def _scalar_at(arr: ArrF64, idx: int) -> float:
-    return as_float(cast(NumScalar, arr[idx]))
-
-
-def _eligible_non_hub_mask(n: int, hub_set_idx: set[int]) -> ArrBool:
-    mask = np.ones(n, dtype=np.bool_)
-    for idx in hub_set_idx:
-        mask[idx] = False
-    return mask
-
-
-def _sample_initial_balances(
-    policy: BalancePolicy,
+def _sample_balances(
+    rules: Rules,
     rng: Rng,
     *,
-    n_accounts: int,
-    persona_for_acct: npt.NDArray[np.integer],
+    num_accounts: int,
+    persona_mapping: npt.NDArray[np.integer],
     persona_names: list[str],
-) -> ArrF64:
-    balances: ArrF64 = np.zeros(n_accounts, dtype=np.float64)
-    persona_arr: ArrI64 = np.asarray(persona_for_acct, dtype=np.int64)
+) -> F64:
+    balances: F64 = np.zeros(num_accounts, dtype=np.float64)
+    persona_arr: I64 = np.asarray(persona_mapping, dtype=np.int64)
 
-    sigma = float(policy.init_bal_sigma)
+    sigma = float(rules.initial_balance_sigma)
 
     for persona_id, persona_name in enumerate(persona_names):
-        mask: ArrBool = np.asarray(persona_arr == int(persona_id), dtype=np.bool_)
+        mask: Bool = np.asarray(persona_arr == persona_id, dtype=np.bool_)
         count = int(np.count_nonzero(mask))
         if count <= 0:
             continue
 
         balances[mask] = lognormal_by_median(
             rng.gen,
-            median=policy.initial_balance_median(persona_name),
+            median=rules.initial_balance_median(persona_name),
             sigma=sigma,
             size=count,
         )
@@ -110,150 +76,157 @@ def _sample_initial_balances(
     return balances
 
 
-def _sample_overdraft_limits(
-    policy: BalancePolicy,
+def _sample_overdrafts(
+    rules: Rules,
     rng: Rng,
     *,
-    n_accounts: int,
-    hub_set_idx: set[int],
-) -> ArrF64:
-    overdraft_limit: ArrF64 = np.zeros(n_accounts, dtype=np.float64)
-    overdraft_frac = float(policy.overdraft_frac)
+    num_accounts: int,
+    hub_indices: set[int],
+) -> F64:
+    overdrafts: F64 = np.zeros(num_accounts, dtype=np.float64)
+    fraction = float(rules.overdraft_fraction)
 
-    if overdraft_frac <= 0.0:
-        return overdraft_limit
+    if fraction <= 0.0:
+        return overdrafts
 
-    eligible_mask = _eligible_non_hub_mask(n_accounts, hub_set_idx)
-    eligible_idx: ArrI64 = np.asarray(np.nonzero(eligible_mask)[0], dtype=np.int64)
-    eligible_count = int(eligible_idx.size)
+    eligible_mask = np.ones(num_accounts, dtype=np.bool_)
+    if hub_indices:
+        eligible_mask[list(hub_indices)] = False
 
-    k = int(overdraft_frac * eligible_count)
+    eligible_idx = np.flatnonzero(eligible_mask)
+    eligible_count = eligible_idx.size
+
+    k = int(fraction * eligible_count)
     if k <= 0:
-        return overdraft_limit
+        return overdrafts
 
-    chosen: ArrI64 = np.asarray(
-        cast(object, rng.gen.choice(eligible_idx, size=k, replace=False)),
+    chosen: I64 = np.asarray(
+        rng.gen.choice(eligible_idx, size=k, replace=False),
         dtype=np.int64,
     )
 
-    overdraft_limit[chosen] = lognormal_by_median(
+    overdrafts[chosen] = lognormal_by_median(
         rng.gen,
-        median=float(policy.overdraft_limit_median),
-        sigma=float(policy.overdraft_limit_sigma),
+        median=float(rules.overdraft_limit_median),
+        sigma=float(rules.overdraft_limit_sigma),
         size=int(chosen.size),
     )
 
-    return overdraft_limit
+    return overdrafts
 
 
 @dataclass(slots=True)
-class BalanceBook:
-    balances: ArrF64
-    overdraft_limit: ArrF64
-    acct_index: dict[str, int]
-    hub_set_idx: set[int]
+class Ledger:
+    """Manages internal state for account balances and transfer mechanics."""
 
-    def _index_of(self, acct: str) -> int | None:
-        return self.acct_index.get(acct)
+    balances: F64
+    overdrafts: F64
+    account_indices: dict[str, int]
+    hub_indices: set[int]
+    external_indices: set[int]
 
-    def _balance_at(self, idx: int) -> float:
-        return _scalar_at(self.balances, idx)
+    def _index_of(self, account: str) -> int | None:
+        return self.account_indices.get(account)
 
-    def _overdraft_at(self, idx: int) -> float:
-        return _scalar_at(self.overdraft_limit, idx)
-
-    def _credit_idx(self, idx: int, amount: float) -> None:
-        self.balances[idx] = self._balance_at(idx) + amount
-
-    def _can_debit_idx(self, idx: int, amount: float) -> bool:
-        if idx in self.hub_set_idx:
-            return True
-        return self._balance_at(idx) + self._overdraft_at(idx) >= amount
-
-    def _debit_idx(self, idx: int, amount: float) -> bool:
-        if idx in self.hub_set_idx:
-            return True
-        if not self._can_debit_idx(idx, amount):
-            return False
-
-        self.balances[idx] = self._balance_at(idx) - amount
-        return True
-
-    def set_credit_limit(self, acct: str, limit_value: float) -> None:
-        idx = self._index_of(acct)
+    def set_credit_limit(self, account: str, limit_value: float) -> None:
+        idx = self._index_of(account)
         if idx is None:
             return
         self.balances[idx] = 0.0
-        self.overdraft_limit[idx] = float(limit_value)
+        self.overdrafts[idx] = float(limit_value)
 
     def try_transfer(self, src: str, dst: str, amount: float) -> bool:
+        """Executes a transfer if sufficient funds exist."""
         amt = float(amount)
         if amt <= 0.0 or not np.isfinite(amt):
             return False
 
-        src_ext = is_external_account(src)
-        dst_ext = is_external_account(dst)
+        src_idx = self._index_of(src)
+        dst_idx = self._index_of(dst)
+
+        src_ext = src_idx is not None and src_idx in self.external_indices
+        dst_ext = dst_idx is not None and dst_idx in self.external_indices
+
+        # Unknown source that isn't registered — treat as external
+        if src_idx is None:
+            src_ext = True
+        if dst_idx is None:
+            dst_ext = True
 
         if src_ext and dst_ext:
             return False
 
-        if src_ext and not dst_ext:
-            dst_idx = self._index_of(dst)
+        balances = self.balances
+        overdrafts = self.overdrafts
+        hubs = self.hub_indices
+
+        # Case 1: Inbound from External
+        if src_ext:
             if dst_idx is None:
                 return False
-
-            self._credit_idx(dst_idx, amt)
+            balances[dst_idx] += amt
             return True
 
-        if not src_ext and dst_ext:
-            src_idx = self._index_of(src)
-            if src_idx is None:
-                return False
+        # src_idx is guaranteed not None here since src_ext is False
+        assert src_idx is not None
+        is_hub = src_idx in hubs
 
-            return self._debit_idx(src_idx, amt)
-
-        src_idx = self._index_of(src)
-        dst_idx = self._index_of(dst)
-        if src_idx is None or dst_idx is None:
+        # Debit Constraint Check
+        if not is_hub and (balances[src_idx] + overdrafts[src_idx] < amt):
             return False
 
-        if not self._debit_idx(src_idx, amt):
+        # Case 2: Outbound to External
+        if dst_ext:
+            if not is_hub:
+                balances[src_idx] -= amt
+            return True
+
+        # Case 3: Internal P2P
+        if dst_idx is None:
             return False
 
-        self._credit_idx(dst_idx, amt)
+        if not is_hub:
+            balances[src_idx] -= amt
+
+        balances[dst_idx] += amt
         return True
 
 
-def init_balances(
-    policy: BalancePolicy,
+def initialize(
+    rules: Rules,
     rng: Rng,
-    request: BalanceInitRequest,
-) -> BalanceBook:
-    policy.validate()
+    params: SetupParams,
+) -> Ledger:
+    """Entry point to bootstrap a new Ledger with randomized starting state."""
+    num_accounts = len(params.accounts)
 
-    n_accounts = len(request.accounts)
-
-    balances = _sample_initial_balances(
-        policy,
+    balances = _sample_balances(
+        rules,
         rng,
-        n_accounts=n_accounts,
-        persona_for_acct=request.persona_for_acct,
-        persona_names=request.persona_names,
+        num_accounts=num_accounts,
+        persona_mapping=params.persona_mapping,
+        persona_names=params.persona_names,
     )
 
-    for idx in request.hub_set_idx:
-        balances[idx] = 1e18
+    if params.hub_indices:
+        balances[list(params.hub_indices)] = 1e18
 
-    overdraft_limit = _sample_overdraft_limits(
-        policy,
+    overdrafts = _sample_overdrafts(
+        rules,
         rng,
-        n_accounts=n_accounts,
-        hub_set_idx=request.hub_set_idx,
+        num_accounts=num_accounts,
+        hub_indices=params.hub_indices,
     )
 
-    return BalanceBook(
+    # Pre-compute external account indices for O(1) lookup in hot path
+    external_indices = {
+        idx for acct, idx in params.account_indices.items() if is_external(acct)
+    }
+
+    return Ledger(
         balances=balances,
-        overdraft_limit=overdraft_limit,
-        acct_index=request.acct_index,
-        hub_set_idx=request.hub_set_idx,
+        overdrafts=overdrafts,
+        account_indices=params.account_indices,
+        hub_indices=params.hub_indices,
+        external_indices=external_indices,
     )

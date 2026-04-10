@@ -1,32 +1,20 @@
-from .numeric import (
-    ArrBool,
-    ArrF32,
-    ArrF64,
-    ArrI16,
-    ArrI32,
-    ArrI64,
-    NumScalar,
-)
+from .numeric import Bool, F32, F64, I16, I32, I64, Scalar, as_float, as_int
 from .probability import (
-    as_f64_array,
-    as_float,
-    as_int,
     build_cdf,
     cdf_pick,
     lognormal_by_median,
 )
 
 __all__ = [
-    "NumScalar",
-    "ArrF64",
-    "ArrF32",
-    "ArrI64",
-    "ArrI32",
-    "ArrI16",
-    "ArrBool",
+    "Scalar",
+    "F64",
+    "F32",
+    "I64",
+    "I32",
+    "I16",
+    "Bool",
     "as_float",
     "as_int",
-    "as_f64_array",
     "build_cdf",
     "cdf_pick",
     "lognormal_by_median",

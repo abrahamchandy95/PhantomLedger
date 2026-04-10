@@ -1,95 +1,103 @@
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Final
 
 from common.random import Rng
 
-DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+ISO_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
 
 
-def format_datetime(timestamp: datetime) -> str:
-    return timestamp.strftime(DATETIME_FORMAT)
+def format_ts(ts: datetime) -> str:
+    """Standardize timestamp formatting for CSV output."""
+    return ts.strftime(ISO_FORMAT)
 
 
-def get_date_at_offset(start_date: datetime, offset_days: int) -> datetime:
-    if offset_days < 0:
-        raise ValueError("offset_days must be >= 0")
-    return start_date + timedelta(days=offset_days)
+def offset(start: datetime, days: int) -> datetime:
+    """Return date at a specific day offset."""
+    if days < 0:
+        raise ValueError("offset days must be >= 0")
+    return start + timedelta(days=days)
 
 
-def yield_daily_dates(start_date: datetime, num_days: int) -> Iterator[datetime]:
-    if num_days < 0:
-        raise ValueError("num_days must be >= 0")
-    for offset in range(num_days):
-        yield start_date + timedelta(days=offset)
+def daily(start: datetime, days: int) -> Iterator[datetime]:
+    """Yield daily timestamps for a duration."""
+    for i in range(max(0, days)):
+        yield start + timedelta(days=i)
 
 
-def get_overlapping_months(start_date: datetime, num_days: int) -> list[datetime]:
-    """
-    Return calendar month starts touched by the simulation range.
-    Note: May include the first day of the starting month even if earlier than start_date.
-    """
-    if num_days < 0:
-        raise ValueError("num_days must be >= 0")
+def months(start: datetime, days: int) -> list[datetime]:
+    """Return the first day of every month touched by this range."""
+    if days < 0:
+        raise ValueError("days must be >= 0")
 
-    end_date = start_date + timedelta(days=num_days)
-    current_month = datetime(start_date.year, start_date.month, 1)
+    end = start + timedelta(days=days)
+    curr = datetime(start.year, start.month, 1)
+    results: list[datetime] = []
 
-    touched_months: list[datetime] = []
+    while curr < end:
+        results.append(curr)
+        # Advance to first of next month
+        next_m = curr.month + 1
+        next_y = curr.year
+        if next_m > 12:
+            next_m = 1
+            next_y += 1
+        curr = datetime(next_y, next_m, 1)
 
-    while current_month < end_date:
-        touched_months.append(current_month)
-
-        # De-cluttered the clever math into highly readable steps
-        year_carry = current_month.month == 12
-        next_year = current_month.year + year_carry
-        next_month = 1 if year_carry else current_month.month + 1
-
-        current_month = datetime(next_year, next_month, 1)
-
-    return touched_months
+    return results
 
 
-def get_active_months(start_date: datetime, num_days: int) -> list[datetime]:
-    """
-    Return month anchors that fall strictly within the actual simulation window.
-    Unlike get_touched_month_starts(), this never yields a date before start_date.
-    """
-    if num_days < 0:
-        raise ValueError("num_days must be >= 0")
-
-    all_touched_months = get_overlapping_months(start_date, num_days)
-    return [month for month in all_touched_months if month >= start_date]
+def active_months(start: datetime, days: int) -> list[datetime]:
+    """Return month starts that fall strictly within [start, start+days]."""
+    return [m for m in months(start, days) if m >= start]
 
 
-def sample_active_dates(
-    rng: Rng, start_date: datetime, num_days: int
+def sample_span(rng: Rng, start: datetime, days: int) -> tuple[datetime, datetime]:
+    """Sample a (first_seen, last_seen) pair within the window."""
+    if days <= 0:
+        raise ValueError("days must be > 0")
+
+    first = start + timedelta(days=rng.int(0, days))
+
+    # Calculate remaining days from 'first' to the end of the window
+    remaining = days - (first - start).days
+    last = first + timedelta(days=rng.int(0, max(1, remaining)))
+
+    return first, last
+
+
+def sample_short_span(
+    rng: Rng, start: datetime, days: int
 ) -> tuple[datetime, datetime]:
-    """
-    Sample (first_seen, last_seen) within the simulation window.
-    """
-    if num_days <= 0:
-        raise ValueError("num_days must be > 0")
+    """Sample a short 2 to 8 day burst within the overall timeframe."""
+    span_days = min(days, rng.int(2, 8))
+    max_start_offset = max(0, days - span_days)
+    start_offset = 0 if max_start_offset == 0 else rng.int(0, max_start_offset + 1)
 
-    first_seen = start_date + timedelta(days=rng.int(0, num_days))
-
-    days_remaining = num_days - (first_seen - start_date).days
-    span = max(1, days_remaining)
-
-    last_seen = first_seen + timedelta(days=rng.int(0, span))
-
+    first_seen = start + timedelta(days=start_offset)
+    last_seen = first_seen + timedelta(days=span_days - 1)
     return first_seen, last_seen
 
 
 @dataclass(frozen=True, slots=True)
-class SimulationPeriod:
-    start_date: datetime
-    num_days: int
+class Period:
+    """An active simulation window used for iteration and math."""
+
+    start: datetime
+    days: int
+
+    def __post_init__(self) -> None:
+        if self.days <= 0:
+            raise ValueError("Period duration (days) must be > 0")
 
     @property
-    def end_date_exclusive(self) -> datetime:
-        return self.start_date + timedelta(days=self.num_days)
+    def end(self) -> datetime:
+        """The exclusive end boundary of the period."""
+        return self.start + timedelta(days=self.days)
 
-    def validate(self) -> None:
-        if self.num_days <= 0:
-            raise ValueError("num_days must be > 0")
+    def daily(self) -> Iterator[datetime]:
+        return daily(self.start, self.days)
+
+    def months(self) -> list[datetime]:
+        return months(self.start, self.days)

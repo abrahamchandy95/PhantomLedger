@@ -1,30 +1,32 @@
-from .generation import GenerationConfig
-
-from .runtime.output import OutputConfig
-from .runtime.window import WindowConfig
-
-from .population.totals import PopulationConfig
-from .population.accounts import AccountsConfig
-from .population.hubs import HubsConfig
-from .population.personas import PersonasConfig
-from .population.merchants import MerchantsConfig
-from .population.family import FamilyConfig
-
-from .simulation.fraud import FraudConfig
-from .simulation.events import EventsConfig
-from .simulation.infra import InfraConfig
+from .world import World
+from .runtime.window import Window
+from .population.totals import Population
+from .population.accounts import Accounts
+from .population.hubs import Hubs
+from .population.personas import Personas
+from .population.merchants import Merchants
+from .population.family import Family
+from .population.social import Social
+from .population.government import Government
+from .population.insurance import Insurance
+from .simulation.events import Events
+from .simulation.infra import Infra
+from .simulation.fraud import Fraud, Patterns
 
 __all__ = [
-    "GenerationConfig",
-    "OutputConfig",
-    "WindowConfig",
-    "PopulationConfig",
-    "AccountsConfig",
-    "HubsConfig",
-    "PersonasConfig",
-    "MerchantsConfig",
-    "FamilyConfig",
-    "FraudConfig",
-    "EventsConfig",
-    "InfraConfig",
+    "World",
+    "Window",
+    "Population",
+    "Accounts",
+    "Hubs",
+    "Personas",
+    "Merchants",
+    "Family",
+    "Social",
+    "Government",
+    "Insurance",
+    "Events",
+    "Infra",
+    "Fraud",
+    "Patterns",
 ]

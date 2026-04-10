@@ -3,66 +3,80 @@ from typing import cast
 
 import numpy as np
 
+from common.channels import ALLOWANCE
 from common.math import as_int
+from common.persona_names import STUDENT
 from common.transactions import Transaction
-from transfers.txns import TxnSpec
+from transfers.factory import TransactionDraft
 
-from .helpers import pareto_amount
-from .models import FamilyTransferRequest, FamilyTransferSchedule
+from .engine import GenerateRequest, Schedule
+from .helpers import pareto_amount, resolve_family_acct
 
 
-def generate_allowance_txns(
-    request: FamilyTransferRequest,
-    schedule: FamilyTransferSchedule,
+def generate(
+    request: GenerateRequest,
+    schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
-    fcfg = request.family_cfg
-    if not fcfg.allowance_enabled:
+    """Generates recurring allowance transactions from parents to student children."""
+    params = request.params
+    if not params.allowance_enabled:
         return []
 
     txns: list[Transaction] = []
 
-    for child, parents in request.family.parents_of.items():
-        if request.persona_for_person.get(child) != "student":
+    for child_id, parents in request.family.parents.items():
+        if request.personas.get(child_id) != STUDENT:
             continue
 
-        child_acct = request.primary_acct_for_person.get(child)
-        if child_acct is None:
+        child_acct = request.primary_accounts.get(child_id)
+        if not child_acct:
             continue
 
-        weekly = float(gen.random()) < float(fcfg.allowance_weekly_p)
-        step_days = 7 if weekly else 14
+        is_weekly = gen.random() < float(params.allowance_weekly_p)
+        interval_days = 7 if is_weekly else 14
 
-        t = schedule.start_date + timedelta(
-            days=as_int(cast(int | np.integer, gen.integers(0, 14))),
-            hours=as_int(cast(int | np.integer, gen.integers(7, 21))),
-            minutes=as_int(cast(int | np.integer, gen.integers(0, 60))),
+        # Calculate the initial offset for the first allowance payment
+        offset_days = as_int(cast(int | np.integer, gen.integers(0, 14)))
+        offset_hours = as_int(cast(int | np.integer, gen.integers(7, 21)))
+        offset_mins = as_int(cast(int | np.integer, gen.integers(0, 60)))
+
+        ts = schedule.start_date + timedelta(
+            days=offset_days,
+            hours=offset_hours,
+            minutes=offset_mins,
         )
 
-        while t < schedule.end_excl:
+        # Loop through the schedule window and process payouts
+        while ts < schedule.end_excl:
             payer_idx = as_int(cast(int | np.integer, gen.integers(0, len(parents))))
-            payer_person = parents[payer_idx]
-            payer_acct = request.primary_acct_for_person.get(payer_person)
-
-            if payer_acct is not None and payer_acct != child_acct:
+            payer_id = parents[payer_idx]
+            payer_acct = resolve_family_acct(
+                payer_id,
+                request.primary_accounts,
+                float(request.params.external_family_p),
+            )
+            if payer_acct and payer_acct != child_acct:
                 amt = pareto_amount(
                     request.rng,
-                    xm=float(fcfg.allowance_pareto_xm),
-                    alpha=float(fcfg.allowance_pareto_alpha),
+                    xm=float(params.allowance_pareto_xm),
+                    alpha=float(params.allowance_pareto_alpha),
                 )
+
                 txns.append(
                     request.txf.make(
-                        TxnSpec(
-                            src=payer_acct,
-                            dst=child_acct,
-                            amt=amt,
-                            ts=t,
-                            channel="allowance",
+                        TransactionDraft(
+                            source=payer_acct,
+                            destination=child_acct,
+                            amount=amt,
+                            timestamp=ts,
+                            channel=ALLOWANCE,
                         )
                     )
                 )
 
-            jitter = as_int(cast(int | np.integer, gen.integers(-1, 2)))
-            t = t + timedelta(days=step_days + jitter)
+            # Advance to the next payment with slight schedule jitter
+            jitter_days = as_int(cast(int | np.integer, gen.integers(-1, 2)))
+            ts += timedelta(days=interval_days + jitter_days)
 
     return txns

@@ -1,28 +1,58 @@
-from infra.devices import generate_devices
-from infra.ipaddrs import generate_ipaddrs
-from infra.txn_infra import TxnInfraAssigner
-from pipeline.state import GenerationState, InfraStageData
+from common import config
+from common.random import Rng
+
+from infra.devices import build as build_devices
+from infra.ipaddrs import build as build_ips
+from infra.ring_infra import build as build_ring_plans
+from infra.routing import Router
+from infra.shared import SharedInfra
+
+from pipeline.state import Entities, Infra
 
 
-def build_infra(st: GenerationState) -> None:
-    cfg = st.cfg
-    rng = st.rng
-
-    entities = st.require_entities()
-
-    devices = generate_devices(cfg.window, cfg.fraud, rng, entities.people)
-    ipdata = generate_ipaddrs(cfg.window, cfg.fraud, rng, entities.people)
-
-    infra = TxnInfraAssigner.build(
-        cfg.infra,
+def build(
+    cfg: config.World,
+    rng: Rng,
+    entities: Entities,
+) -> Infra:
+    ring_plans = build_ring_plans(
+        cfg.window,
+        cfg.patterns,
         rng,
-        acct_owner=entities.accounts.acct_owner,
-        person_devices=devices.person_devices,
-        person_ips=ipdata.person_ips,
+        entities.people.rings,
     )
 
-    st.infra = InfraStageData(
+    devices = build_devices(
+        cfg.window,
+        cfg.patterns,
+        rng,
+        entities.people,
+        ring_plans,
+    )
+
+    ips = build_ips(
+        cfg.window,
+        cfg.patterns,
+        rng,
+        entities.people,
+        ring_plans,
+    )
+
+    router = Router.build(
+        cfg.infra,
+        owner_map=entities.accounts.owner_map,
+        devices_by_person=devices.by_person,
+        ips_by_person=ips.by_person,
+    )
+
+    ring_infra = SharedInfra(
+        ring_device=dict(devices.ring_map),
+        ring_ip=dict(ips.ring_map),
+    )
+
+    return Infra(
         devices=devices,
-        ipdata=ipdata,
-        infra=infra,
+        ips=ips,
+        router=router,
+        ring_infra=ring_infra,
     )

@@ -1,37 +1,80 @@
+from datetime import timedelta
+
+from common import config
+from common.random import Rng
 from common.transactions import Transaction
-from pipeline.state import GenerationState, TransferStageData
+from pipeline.state import Entities, Infra, Transfers
 
-from .requests import build_fraud_request, build_legit_request
-from .sorting import txn_sort_key
-import transfers.fraud as fraud_model
-import transfers.legit as legit_model
+from .requests import build_fraud, build_legit
+from .sorting import key
+
+from transfers.fraud import InjectionOutput, inject as inject_fraud
+from transfers.insurance import generate as generate_insurance
+from transfers.legit import LegitTransferBuilder, TransfersPayload
+from transfers.factory import TransactionFactory
+from transfers.obligations import emit as emit_obligations
 
 
-def build_transfers(st: GenerationState) -> None:
-    _ = st.require_entities()
+def build(
+    cfg: config.World,
+    rng: Rng,
+    entities: Entities,
+    infra: Infra,
+) -> Transfers:
+    legit_request = build_legit(cfg, rng, entities, infra)
+    legit_result: TransfersPayload = LegitTransferBuilder(request=legit_request).build()
 
-    legit_request = build_legit_request(st)
-    legit_result: legit_model.LegitTransfers = legit_model.LegitTransferBuilder(
-        request=legit_request
-    ).build()
-
-    base_txns: list[Transaction] = legit_result.txns
+    draft_txns: list[Transaction] = legit_result.txns
     biller_accounts: list[str] = legit_result.biller_accounts
     employers: list[str] = legit_result.employers
 
-    fraud_request = build_fraud_request(
-        st,
-        base_txns=base_txns,
+    primary_accounts = {
+        pid: accts[0] for pid, accts in entities.accounts.by_person.items() if accts
+    }
+
+    gov_txf = TransactionFactory(rng=rng, infra=infra.router)
+
+    # Insurance premiums and claims — reads from portfolio
+    ins_txns = generate_insurance(
+        cfg.insurance,
+        cfg.window,
+        rng,
+        gov_txf,
+        base_seed=cfg.population.seed,
+        portfolios=entities.portfolios,
+        primary_accounts=primary_accounts,
+    )
+    draft_txns.extend(ins_txns)
+
+    # Financial product obligations (mortgages, loans, taxes)
+    start = cfg.window.start_date
+    end_excl = start + timedelta(days=int(cfg.window.days))
+
+    obligation_txns = emit_obligations(
+        entities.portfolios,
+        start=start,
+        end_excl=end_excl,
+        primary_accounts=primary_accounts,
+        rng=rng,
+        txf=gov_txf,
+    )
+    draft_txns.extend(obligation_txns)
+
+    # Inject the fraud logic into the drafts
+    fraud_request = build_fraud(
+        cfg,
+        rng,
+        entities,
+        infra,
+        draft_txns=draft_txns,
         biller_accounts=biller_accounts,
         employers=employers,
     )
-    fraud_result: fraud_model.FraudInjectionResult = fraud_model.inject_fraud_transfers(
-        fraud_request
-    )
+    fraud_result: InjectionOutput = inject_fraud(fraud_request)
 
-    st.transfers = TransferStageData(
+    return Transfers(
         legit=legit_result,
         fraud=fraud_result,
-        base_txns=base_txns,
-        all_txns=sorted(fraud_result.txns, key=txn_sort_key),
+        draft_txns=draft_txns,
+        final_txns=sorted(fraud_result.txns, key=key),
     )

@@ -1,98 +1,76 @@
 from typing import cast
 
-import numpy as np
+from common.channels import CARD_PURCHASE, MERCHANT
+from common.math import cdf_pick
+from transfers.factory import TransactionDraft
 
-from common.math import ArrI32, as_int, cdf_pick
-from transfers.txns import TxnSpec
-
-from .models import DayToDayGenerationRequest
-from .state import EventFrame
-
-
-def row_contains(row: ArrI32, k: int, value: int) -> bool:
-    for idx in range(k):
-        if as_int(cast(int | np.integer, row[idx])) == value:
-            return True
-    return False
+from .engine import GenerateRequest
+from .state import Event
 
 
-def pick_merchant_destination(
-    request: DayToDayGenerationRequest,
-    event_frame: EventFrame,
-) -> str:
-    ctx = request.ctx
-    person_idx = event_frame.person_idx
-    person_state = event_frame.person_state
+def choose_merchant(request: GenerateRequest, event: Event) -> int:
+    """Returns the merchant index so callers can look up category."""
+    merch = request.ctx.merchant
+    spender = event.spender
+    idx = event.person_idx
 
-    exploring = request.rng.coin(event_frame.explore_p)
+    exploring = request.rng.coin(event.explore_p)
 
-    if (not exploring) and person_state.favorite_k > 0:
-        merchant_idx = as_int(
-            cast(
-                int | np.integer,
-                ctx.fav_merchants_idx[
-                    person_idx,
-                    request.rng.int(0, person_state.favorite_k),
-                ],
-            )
-        )
+    if not exploring and spender.fav_k > 0:
+        fav_idx = request.rng.int(0, spender.fav_k)
+        merchant_idx = int(cast(int, merch.fav_merchants_idx[idx, fav_idx]))
+
     else:
-        merchant_idx = cdf_pick(ctx.merch_cdf, request.rng.float())
-        favorite_row: ArrI32 = np.asarray(
-            ctx.fav_merchants_idx[person_idx, :],
-            dtype=np.int32,
-        )
+        merchant_idx = cdf_pick(merch.merch_cdf, request.rng.float())
 
-        tries = 0
-        retry_limit = int(request.policy.merchant_retry_limit)
-        while (
-            person_state.favorite_k > 0
-            and row_contains(favorite_row, person_state.favorite_k, merchant_idx)
-            and tries < retry_limit
-        ):
-            merchant_idx = cdf_pick(ctx.merch_cdf, request.rng.float())
-            tries += 1
+        if spender.fav_k > 0:
+            favorites = set(
+                cast(list[int], merch.fav_merchants_idx[idx, : spender.fav_k].tolist())
+            )
+            tries = 0
+            retry_limit = int(request.params.merchant_retry_limit)
 
-    return ctx.merchants.counterparty_accts[merchant_idx]
+            while merchant_idx in favorites and tries < retry_limit:
+                merchant_idx = cdf_pick(merch.merch_cdf, request.rng.float())
+                tries += 1
+
+    return merchant_idx
 
 
-def pick_merchant_source(
-    request: DayToDayGenerationRequest,
-    event_frame: EventFrame,
+def determine_payment_method(
+    request: GenerateRequest,
+    event: Event,
 ) -> tuple[str, str]:
-    src_acct = event_frame.person_state.deposit_acct
-    channel = "merchant"
+    deposit_acct = event.spender.deposit_acct
 
-    policy = request.credit_policy
-    card_map = request.card_for_person
-    if policy is None or card_map is None or not card_map:
-        return src_acct, channel
+    if not request.cards:
+        return deposit_acct, MERCHANT
 
-    card_acct = card_map.get(event_frame.person_state.person_id)
-    if card_acct is None:
-        return src_acct, channel
+    card_acct = request.cards.get(event.spender.id)
+    if not card_acct:
+        return deposit_acct, MERCHANT
 
-    credit_share = float(
-        policy.merchant_credit_share(event_frame.person_state.persona_name)
-    )
+    credit_share = float(event.spender.persona.cc_share)
+
     if request.rng.coin(credit_share):
-        return card_acct, "card_purchase"
+        return card_acct, CARD_PURCHASE
 
-    return src_acct, channel
+    return deposit_acct, MERCHANT
 
 
-def build_merchant_txn_spec(
-    request: DayToDayGenerationRequest,
-    event_frame: EventFrame,
+def draft_merchant_spec(
+    request: GenerateRequest,
+    event: Event,
     amount: float,
-) -> TxnSpec:
-    dst_acct = pick_merchant_destination(request, event_frame)
-    src_acct, channel = pick_merchant_source(request, event_frame)
+    dst_acct: str,
+) -> TransactionDraft:
+    """Builds the draft with a pre-resolved destination account."""
+    src_acct, channel = determine_payment_method(request, event)
 
-    return TxnSpec(
-        src=src_acct,
-        dst=dst_acct,
-        amt=amount,
-        ts=event_frame.txn_ts,
+    return TransactionDraft(
+        source=src_acct,
+        destination=dst_acct,
+        amount=amount,
+        timestamp=event.ts,
         channel=channel,
     )

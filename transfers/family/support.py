@@ -3,79 +3,94 @@ from typing import cast
 
 import numpy as np
 
+from common.channels import FAMILY_SUPPORT
 from common.math import as_int
+from common.persona_names import RETIRED
 from common.transactions import Transaction
-from transfers.txns import TxnSpec
+from transfers.factory import TransactionDraft
 
-from .helpers import pareto_amount, support_capacity_weight, weighted_pick_person
-from .models import FamilyTransferRequest, FamilyTransferSchedule
+from .engine import GenerateRequest, Schedule
+from .helpers import (
+    resolve_family_acct,
+    weighted_pick_person,
+    support_capacity_weight,
+    pareto_amount,
+)
 
 
-def generate_support_txns(
-    request: FamilyTransferRequest,
-    schedule: FamilyTransferSchedule,
+def generate(
+    request: GenerateRequest,
+    schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
-    fcfg = request.family_cfg
-    if not fcfg.retiree_support_enabled:
+    """Generates financial support transactions from adult children to retired parents."""
+    params = request.params
+    if not params.retiree_support_enabled:
         return []
 
     txns: list[Transaction] = []
 
     retirees = [
         person_id
-        for person_id, persona in request.persona_for_person.items()
-        if persona == "retired"
+        for person_id, persona in request.personas.items()
+        if persona == RETIRED
     ]
 
     for retiree_id in retirees:
-        adult_kids = request.family.adult_children_of.get(retiree_id)
+        adult_kids = request.family.supporting_children.get(retiree_id)
         if not adult_kids:
             continue
 
-        retiree_acct = request.primary_acct_for_person.get(retiree_id)
-        if retiree_acct is None:
+        retiree_acct = request.primary_accounts.get(retiree_id)
+        if not retiree_acct:
             continue
 
         for month_start in schedule.month_starts:
-            if float(gen.random()) >= float(fcfg.retiree_support_p):
+            if float(gen.random()) >= float(params.retiree_support_p):
                 continue
 
-            payer_person = weighted_pick_person(
+            payer_id = weighted_pick_person(
                 adult_kids,
-                request.persona_for_person,
+                request.persona_objects,
                 gen,
             )
-            payer_acct = request.primary_acct_for_person.get(payer_person)
-            if payer_acct is None or payer_acct == retiree_acct:
+            payer_acct = resolve_family_acct(
+                payer_id,
+                request.primary_accounts,
+                float(request.params.external_family_p),
+            )
+            if not payer_acct or payer_acct == retiree_acct:
                 continue
 
+            offset_days = as_int(cast(int | np.integer, gen.integers(0, 6)))
+            offset_hours = as_int(cast(int | np.integer, gen.integers(7, 21)))
+            offset_mins = as_int(cast(int | np.integer, gen.integers(0, 60)))
+
             ts = month_start + timedelta(
-                days=as_int(cast(int | np.integer, gen.integers(0, 6))),
-                hours=as_int(cast(int | np.integer, gen.integers(7, 21))),
-                minutes=as_int(cast(int | np.integer, gen.integers(0, 60))),
+                days=offset_days,
+                hours=offset_hours,
+                minutes=offset_mins,
             )
+
             if ts >= schedule.end_excl:
                 break
 
-            base_amt = pareto_amount(
+            base_amount = pareto_amount(
                 request.rng,
-                xm=float(fcfg.retiree_support_pareto_xm),
-                alpha=float(fcfg.retiree_support_pareto_alpha),
+                xm=float(params.retiree_support_pareto_xm),
+                alpha=float(params.retiree_support_pareto_alpha),
             )
-            mult = support_capacity_weight(
-                request.persona_for_person.get(payer_person, "salaried")
-            )
-            amt = round(max(5.0, base_amt * mult), 2)
+            multiplier = support_capacity_weight(payer_id, request.persona_objects)
+            final_amount = round(max(5.0, base_amount * multiplier), 2)
 
             txns.append(
                 request.txf.make(
-                    TxnSpec(
-                        src=payer_acct,
-                        dst=retiree_acct,
-                        amt=amt,
-                        ts=ts,
-                        channel="family_support",
+                    TransactionDraft(
+                        source=payer_acct,
+                        destination=retiree_acct,
+                        amount=final_amount,
+                        timestamp=ts,
+                        channel=FAMILY_SUPPORT,
                     )
                 )
             )
