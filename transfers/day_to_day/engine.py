@@ -5,7 +5,7 @@ import entities.models as entity_models
 from common.config import Events, Merchants
 from common.math import F32, F64, I16, I32
 from common.random import Rng
-from common.validate import between, gt, ge
+from common.validate import between, ge, gt
 from entities.credit_cards import IssuancePolicy
 from infra.routing import Router
 from math_models.seasonal import SeasonalConfig
@@ -39,6 +39,14 @@ class Parameters:
     weekend_boost: float = 1.25
     burst_boost: float = 3.25
 
+    # Stronger affordability gate tied to pay-cycle distance.
+    enable_liquidity_gating: bool = True
+    liquidity_relief_days: int = 2
+    liquidity_stress_start_day: int = 4
+    liquidity_stress_ramp_days: int = 7
+    liquidity_floor: float = 0.18
+    liquidity_explore_floor: float = 0.05
+
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)
     seasonal: SeasonalConfig = field(default_factory=SeasonalConfig)
 
@@ -55,6 +63,12 @@ class Parameters:
 
         gt("weekend_boost", self.weekend_boost, 0.0)
         gt("burst_boost", self.burst_boost, 0.0)
+
+        ge("liquidity_relief_days", self.liquidity_relief_days, 0)
+        ge("liquidity_stress_start_day", self.liquidity_stress_start_day, 0)
+        ge("liquidity_stress_ramp_days", self.liquidity_stress_ramp_days, 1)
+        between("liquidity_floor", self.liquidity_floor, 0.05, 1.0)
+        between("liquidity_explore_floor", self.liquidity_explore_floor, 0.0, 1.0)
 
 
 DEFAULT_PARAMETERS = Parameters()

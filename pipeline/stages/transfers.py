@@ -69,7 +69,8 @@ def build(
     replay_acc = ChronoReplayAccumulator(
         book=None
         if legit_result.initial_book is None
-        else legit_result.initial_book.copy()
+        else legit_result.initial_book.copy(),
+        rng=rng,
     )
     replay_acc.extend(sorted(candidate_txns, key=key))
 

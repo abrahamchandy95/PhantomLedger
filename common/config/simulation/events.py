@@ -13,7 +13,7 @@ class Events:
     unknown_outflow_p: float = 0.45
 
     day_multiplier_shape: float = 1.3
-    max_per_day: int = 0
+    max_per_day: int = 4
     prefer_billers_p: float = 0.55
 
     def __post_init__(self) -> None:

@@ -18,10 +18,11 @@ class Merchants:
 
     explore_p: float = 0.02
 
+    # Active channel mix for non-unknown day-to-day outflows only.
+    # Generic external outflows are controlled by Events.unknown_outflow_p.
     channel_merchant_p: float = 0.68
     channel_bills_p: float = 0.20
     channel_p2p_p: float = 0.10
-    channel_unknown_p: float = 0.02
 
     txns_per_month: float = 18.0
 
@@ -54,7 +55,6 @@ class Merchants:
             self.channel_merchant_p,
             self.channel_bills_p,
             self.channel_p2p_p,
-            self.channel_unknown_p,
         )
         if any(s < 0.0 for s in shares):
             raise ValueError("channel probabilities must be >= 0")

@@ -100,28 +100,34 @@ def sample_txn_count(
     limit: int | None,
     *,
     dynamics_multiplier: float = 1.0,
+    liquidity_multiplier: float = 1.0,
 ) -> int:
     """
     Sample the number of outbound transactions for one person-day.
 
-    The dynamics_multiplier combines momentum (AR(1) spending
-    persistence) and dormancy (active/dormant/waking state).
-    It is computed externally by PersonDynamics.advance_day()
-    and passed in to keep this function pure.
-
-    Sources:
-      - Barabási (2005, Nature 435:207-211): human activity is bursty
-      - Vilella et al. (2021, EPJ Data Science 10:25): spending
-        persistence autocorrelation of 0.3-0.6 at weekly resolution
-      - Greene & Stavins (2018): avg ~70 expenses/month per consumer
+    dynamics_multiplier captures behavior state.
+    liquidity_multiplier captures affordability pressure and should have
+    a stronger-than-linear effect so that late-cycle stress suppresses
+    attempts before replay has to reject them.
     """
+    liq = max(0.0, min(1.25, float(liquidity_multiplier)))
+
     rate = (
         base_rate
         * float(spender.persona.rate_multiplier)
         * float(weekday_multiplier(day.start, DEFAULT_RATES))
         * day.shock
         * dynamics_multiplier
+        * (liq * liq)
     )
+
+    # Hard suppression for highly stressed days.
+    if liq < 0.25:
+        return 0
+
+    # Probabilistic suppression in the stress band.
+    if liq < 0.45 and request.rng.float() > liq:
+        return 0
 
     count = gamma_poisson(
         request.rng,
@@ -131,6 +137,11 @@ def sample_txn_count(
 
     if count <= 0:
         return 0
+
+    if liq < 0.45:
+        count = min(count, 1)
+    elif liq < 0.65:
+        count = min(count, 2)
 
     if limit is not None:
         count = min(count, max(0, limit))

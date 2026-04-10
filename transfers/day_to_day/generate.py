@@ -39,6 +39,42 @@ def _is_month_boundary(
     return curr.month != prev.month or curr.year != prev.year
 
 
+def _liquidity_multiplier(
+    request: GenerateRequest,
+    *,
+    days_since_payday: int,
+    paycheck_sensitivity: float,
+) -> float:
+    """
+    Upstream affordability proxy.
+
+    We still do not have live balances here, so this remains a proxy,
+    but it should be aggressive enough to prevent replay from receiving
+    obviously unaffordable discretionary debit attempts late in the cycle.
+    """
+    params = request.params
+    if not params.enable_liquidity_gating:
+        return 1.0
+
+    relief_days = int(params.liquidity_relief_days)
+    stress_start = int(params.liquidity_stress_start_day)
+    stress_ramp = int(params.liquidity_stress_ramp_days)
+
+    relief = 0.0
+    if relief_days > 0 and days_since_payday <= relief_days:
+        relief = float(relief_days - days_since_payday) / float(relief_days)
+
+    stress_days = max(0, days_since_payday - stress_start)
+    stress = min(1.0, float(stress_days) / float(max(1, stress_ramp)))
+
+    down = stress * (0.30 + 0.85 * paycheck_sensitivity)
+    up = relief * (0.08 + 0.12 * paycheck_sensitivity)
+
+    floor = float(params.liquidity_floor)
+    mult = 1.0 - down + up
+    return min(1.10, max(floor, mult))
+
+
 @dataclass(slots=True)
 class _Generator:
     """Orchestrates the daily simulation loop for all spenders."""
@@ -63,6 +99,7 @@ class _Generator:
         num_spenders = len(ctx.population.persons)
 
         txns: list[Transaction] = []
+        days_since_payday: list[int] = [365] * num_spenders
 
         for day_index in range(self.request.days):
             # --- Monthly counterparty evolution at month boundaries ---
@@ -80,12 +117,10 @@ class _Generator:
                 )
 
             day = build_day(self.request, day_index)
-
-            # Seasonal multiplier: applies uniformly to all spenders today,
-            # derived from the calendar month of the simulation day.
-            # This is a population-wide effect (everyone shops more in
-            # December) so we compute it once per day, not per person.
             seasonal_mult = monthly_multiplier(day.start.month, seasonal_cfg)
+
+            # Important bug fix:
+            # advance dynamics exactly once per person per day.
             daily_multipliers = advance_all_daily(
                 dynamics,
                 self.request.rng,
@@ -107,6 +142,17 @@ class _Generator:
                 if spender is None:
                     continue
 
+                if day_index in ctx.paydays_by_person[person_idx]:
+                    days_since_payday[person_idx] = 0
+                else:
+                    days_since_payday[person_idx] += 1
+
+                liquidity_mult = _liquidity_multiplier(
+                    self.request,
+                    days_since_payday=days_since_payday[person_idx],
+                    paycheck_sensitivity=float(spender.persona.paycheck_sensitivity),
+                )
+
                 remaining_today = (
                     None if daily_limit <= 0 else max(0, daily_limit - txns_today)
                 )
@@ -120,40 +166,8 @@ class _Generator:
                     base_per_day,
                     remaining_today,
                     dynamics_multiplier=combined_mult,
+                    liquidity_multiplier=liquidity_mult,
                 )
-            txns_today = 0
-
-            for person_idx in range(num_spenders):
-                if 0 < daily_limit <= txns_today:
-                    break
-
-                spender = build_spender(self.request, person_idx)
-                if spender is None:
-                    continue
-
-                is_payday = day_index in ctx.paydays_by_person[person_idx]
-                daily_multiplier = dynamics[person_idx].advance_day(
-                    self.request.rng,
-                    dynamics_cfg,
-                    is_payday=is_payday,
-                    paycheck_sensitivity=float(spender.persona.paycheck_sensitivity),
-                )
-                remaining_today = (
-                    None if daily_limit <= 0 else max(0, daily_limit - txns_today)
-                )
-
-                # Combine per-person dynamics with population seasonal effect.
-                combined_mult = daily_multiplier * seasonal_mult
-
-                txn_count = sample_txn_count(
-                    self.request,
-                    spender,
-                    day,
-                    base_per_day,
-                    remaining_today,
-                    dynamics_multiplier=combined_mult,
-                )
-
                 if txn_count <= 0:
                     continue
 
@@ -168,6 +182,8 @@ class _Generator:
                 )
 
                 explore_p = calculate_explore_p(self.request, spender, day)
+                explore_floor = float(self.request.params.liquidity_explore_floor)
+                explore_p *= max(explore_floor, liquidity_mult * liquidity_mult)
 
                 for i in range(txn_count):
                     offset_sec = as_int(cast(int | np.integer, offsets[i]))
