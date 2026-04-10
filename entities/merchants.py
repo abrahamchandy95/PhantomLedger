@@ -1,102 +1,70 @@
-from dataclasses import dataclass
 from typing import cast
 
 import numpy as np
 
-from common.config import MerchantsConfig, PopulationConfig
-from common.ids import external_account_id, merchant_account_id
-from common.math import as_float, NumScalar, ArrF64
-from common.random import Rng, derived_seed
+from common import config
+from common.ids import merchant_external_id, merchant_id
+from common.math import F64
+from common.random import Rng
+from . import models
 
 
-@dataclass(frozen=True, slots=True)
-class MerchantData:
-    merchant_ids: list[str]
-    counterparty_accts: list[str]
-    categories: list[str]
-    weights: ArrF64
-
-    in_bank_accounts: list[str]
-    external_accounts: list[str]
-
-
-_CATEGORIES: tuple[str, ...] = (
-    "grocery",
-    "fuel",
-    "utilities",
-    "telecom",
-    "ecommerce",
-    "restaurant",
-    "pharmacy",
-    "retail_other",
-    "insurance",
-    "education",
-)
-
-
-def _create_merchant_id(i: int) -> str:
-    return f"MERCH{i:06d}"
-
-
-def generate_merchants(
-    mcfg: MerchantsConfig,
-    pop: PopulationConfig,
+def build(
+    merch_cfg: config.Merchants,
+    pop_cfg: config.Population,
     rng: Rng,
-) -> MerchantData:
-    num_people = int(pop.size)
-
-    num_merchants = int(round(float(mcfg.per_10k_people) * (num_people / 10_000.0)))
+) -> models.Merchants:
+    """
+    Builds the synthetic merchant population and their payment counterparty accounts.
+    """
+    num_merchants = int(round(merch_cfg.per_10k_people * (pop_cfg.size / 10_000.0)))
     num_merchants = max(50, num_merchants)
 
-    sigma = float(mcfg.size_lognormal_sigma)
+    raw_weights = rng.gen.lognormal(
+        mean=0.0, sigma=merch_cfg.size_sigma, size=num_merchants
+    )
+    weights: F64 = np.asarray(raw_weights, dtype=np.float64)
 
-    # Lognormal distribution creates a realistic heavy-tail of merchant traffic
-    base_weights = rng.gen.lognormal(mean=0.0, sigma=sigma, size=num_merchants)
-
-    weights_obj = cast(object, base_weights)
-    weights: ArrF64 = np.asarray(weights_obj, dtype=np.float64)
-    weights_sum = as_float(cast(NumScalar, np.sum(weights, dtype=np.float64)))
+    weights_sum = float(np.sum(weights))
     if not np.isfinite(weights_sum) or weights_sum <= 0.0:
         weights[:] = 1.0
-        weights_sum = float(weights.size)
+        weights_sum = float(num_merchants)
 
-    weights = weights / weights_sum
+    weights /= weights_sum
 
-    merchant_ids: list[str] = []
-    counterparty_accts: list[str] = []
-    categories: list[str] = []
-    in_bank_accounts: list[str] = []
-    external_accounts: list[str] = []
+    # Use categories from config — single source of truth
+    categories_pool = list(merch_cfg.categories)
 
-    # Updated to match our new _pct standard
-    in_bank_pct = float(mcfg.in_bank_p)
+    merchant_ids = [f"MERCH{i:06d}" for i in range(1, num_merchants + 1)]
 
-    # Renamed g to local_rng
-    local_rng = np.random.default_rng(
-        derived_seed(int(pop.seed), "merchant_generation")
+    categories = cast(
+        list[str], rng.gen.choice(categories_pool, size=num_merchants).tolist()
     )
 
-    for i in range(1, num_merchants + 1):
-        merchant_ids.append(_create_merchant_id(i))
+    is_in_bank = cast(
+        list[bool], (rng.gen.random(size=num_merchants) < merch_cfg.in_bank_p).tolist()
+    )
 
-        cat_idx = int(cast(int | np.integer, local_rng.integers(0, len(_CATEGORIES))))
-        cat_name = _CATEGORIES[cat_idx]
-        categories.append(cat_name)
+    counterparties = [
+        merchant_id(i) if in_bank else merchant_external_id(i)
+        for i, in_bank in enumerate(is_in_bank, start=1)
+    ]
 
-        if float(local_rng.random()) < in_bank_pct:
-            acct_id = merchant_account_id(i)
-            in_bank_accounts.append(acct_id)
-        else:
-            acct_id = external_account_id(i)
-            external_accounts.append(acct_id)
-
-        counterparty_accts.append(acct_id)
-
-    return MerchantData(
-        merchant_ids=merchant_ids,
-        counterparty_accts=counterparty_accts,
+    internals = [
+        acct
+        for acct, in_bank in zip(counterparties, is_in_bank, strict=True)
+        if in_bank
+    ]
+    externals = [
+        acct
+        for acct, in_bank in zip(counterparties, is_in_bank, strict=True)
+        if not in_bank
+    ]
+    return models.Merchants(
+        ids=merchant_ids,
+        counterparties=counterparties,
         categories=categories,
         weights=weights,
-        in_bank_accounts=in_bank_accounts,
-        external_accounts=external_accounts,
+        internals=internals,
+        externals=externals,
     )

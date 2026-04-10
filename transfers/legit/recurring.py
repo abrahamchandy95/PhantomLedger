@@ -1,9 +1,13 @@
 from datetime import timedelta
 
+from common.channels import SALARY, RENT
 from common.transactions import Transaction
-from math_models.amounts import bill_amount, salary_amount
+from math_models.amount_model import (
+    SALARY as SALARY_MODEL,
+    RENT as RENT_MODEL,
+)
 import relationships.recurring as recurring_model
-from transfers.txns import TxnFactory, TxnSpec
+from transfers.factory import TransactionDraft, TransactionFactory
 
 from .models import LegitInputs, LegitPolicies
 from .plans import LegitBuildPlan
@@ -40,37 +44,35 @@ def generate_salary_txns(
     inputs: LegitInputs,
     policies: LegitPolicies,
     plan: LegitBuildPlan,
-    txf: TxnFactory,
+    txf: TransactionFactory,
 ) -> list[Transaction]:
     recurring_policy = policies.recurring
     rng = inputs.rng
     salary_people = _salary_people(inputs, policies, plan)
 
-    employment: dict[str, recurring_model.EmploymentState] = {}
+    employment: dict[str, recurring_model.Employment] = {}
     txns: list[Transaction] = []
 
     def base_salary_draw() -> float:
-        return float(salary_amount(rng))
+        return SALARY_MODEL.sample(rng)
 
     for person_id in salary_people:
-        employment[person_id] = recurring_model.init_employment(
+        employment[person_id] = recurring_model.employment.initialize(
             recurring_policy,
             plan.seed,
-            rng,
             person_id=person_id,
             start_date=plan.start_date,
             employers=plan.counterparties.employers,
-            base_salary_sampler=base_salary_draw,
+            base_salary_source=base_salary_draw,
         )
 
     for payday in plan.paydays:
         for person_id in salary_people:
             state = employment[person_id]
             while payday >= state.end:
-                state = recurring_model.advance_employment(
+                state = recurring_model.employment.advance(
                     recurring_policy,
                     plan.seed,
-                    rng,
                     person_id=person_id,
                     now=state.end,
                     employers=plan.counterparties.employers,
@@ -86,7 +88,7 @@ def generate_salary_txns(
                 hours=rng.int(8, 18),
                 minutes=rng.int(0, 60),
             )
-            amount = recurring_model.salary_at(
+            amount = recurring_model.employment.calculate_salary(
                 recurring_policy,
                 plan.seed,
                 person_id=person_id,
@@ -96,12 +98,12 @@ def generate_salary_txns(
 
             txns.append(
                 txf.make(
-                    TxnSpec(
-                        src=state.employer_acct,
-                        dst=dst_acct,
-                        amt=amount,
-                        ts=txn_ts,
-                        channel="salary",
+                    TransactionDraft(
+                        source=state.employer_acct,
+                        destination=dst_acct,
+                        amount=amount,
+                        timestamp=txn_ts,
+                        channel=SALARY,
                         is_fraud=0,
                         ring_id=-1,
                     )
@@ -134,42 +136,42 @@ def generate_rent_txns(
     inputs: LegitInputs,
     policies: LegitPolicies,
     plan: LegitBuildPlan,
-    txf: TxnFactory,
+    txf: TransactionFactory,
 ) -> list[Transaction]:
     recurring_policy = policies.recurring
     rng = inputs.rng
     rent_active = _rent_payers(inputs, policies, plan)
 
-    leases: dict[str, recurring_model.LeaseState] = {}
+    leases: dict[str, recurring_model.Lease] = {}
     txns: list[Transaction] = []
 
     def base_rent_draw() -> float:
-        return float(bill_amount(rng))
+        return RENT_MODEL.sample(rng)
 
     for payer_acct in rent_active:
-        leases[payer_acct] = recurring_model.init_lease(
+        leases[payer_acct] = recurring_model.lease.initialize(
             recurring_policy,
             plan.seed,
             rng,
             payer_acct=payer_acct,
             start_date=plan.start_date,
-            landlords=plan.counterparties.biller_accounts,
-            base_rent_sampler=base_rent_draw,
+            landlords=plan.counterparties.landlords,
+            base_rent_source=base_rent_draw,
         )
 
     for payday in plan.paydays:
         for payer_acct in rent_active:
             state = leases[payer_acct]
             while payday >= state.end:
-                state = recurring_model.advance_lease(
+                state = recurring_model.lease.advance(
                     recurring_policy,
                     plan.seed,
                     rng,
                     payer_acct=payer_acct,
                     now=state.end,
-                    landlords=plan.counterparties.biller_accounts,
+                    landlords=plan.counterparties.landlords,
                     prev=state,
-                    reset_rent_sampler=base_rent_draw,
+                    reset_rent_source=base_rent_draw,
                 )
             leases[payer_acct] = state
 
@@ -178,7 +180,7 @@ def generate_rent_txns(
                 hours=rng.int(7, 22),
                 minutes=rng.int(0, 60),
             )
-            amount = recurring_model.rent_at(
+            amount = recurring_model.lease.calculate_rent(
                 recurring_policy,
                 plan.seed,
                 payer_acct=payer_acct,
@@ -188,12 +190,12 @@ def generate_rent_txns(
 
             txns.append(
                 txf.make(
-                    TxnSpec(
-                        src=payer_acct,
-                        dst=state.landlord_acct,
-                        amt=amount,
-                        ts=txn_ts,
-                        channel="rent",
+                    TransactionDraft(
+                        source=payer_acct,
+                        destination=state.landlord_acct,
+                        amount=amount,
+                        timestamp=txn_ts,
+                        channel=RENT,
                         is_fraud=0,
                         ring_id=-1,
                     )

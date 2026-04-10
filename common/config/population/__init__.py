@@ -1,15 +1,21 @@
-from .accounts import AccountsConfig
-from .family import FamilyConfig
-from .hubs import HubsConfig
-from .merchants import MerchantsConfig
-from .personas import PersonasConfig
-from .totals import PopulationConfig
+from .accounts import Accounts
+from .family import Family
+from .government import Government
+from .hubs import Hubs
+from .insurance import Insurance
+from .merchants import Merchants
+from .personas import Personas
+from .social import Social
+from .totals import Population
 
 __all__ = [
-    "PopulationConfig",
-    "AccountsConfig",
-    "HubsConfig",
-    "PersonasConfig",
-    "MerchantsConfig",
-    "FamilyConfig",
+    "Population",
+    "Accounts",
+    "Hubs",
+    "Personas",
+    "Merchants",
+    "Family",
+    "Social",
+    "Government",
+    "Insurance",
 ]

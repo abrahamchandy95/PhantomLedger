@@ -1,104 +1,105 @@
 from datetime import datetime
 
-from common.random import Rng, SeedBank
+from common.random import RngFactory
 
 from .growth import (
-    as_seedbank,
+    build_rng_factory,
     compound_growth,
-    lognormal_multiplier,
-    normal_clamped,
-    pick_different_or_same,
+    pick_different,
     pick_one,
     sample_backdated_interval,
     sample_forward_interval,
-    validated_seedbank,
+    sample_lognormal_multiplier,
+    sample_normal_clamped,
 )
-from .models import EmploymentState
-from .policy import RecurringPolicy
-from .types import SalarySampler, SeedSource
+from .policy import Policy
+from .state import Employment as State, SalarySource, SeedSource
 
 
 def _require_employers(employers: list[str]) -> None:
     if not employers:
-        raise ValueError("employers must be non-empty")
+        raise ValueError("The employers list must be non-empty.")
 
 
-def salary_real_raise_for_year(
-    policy: RecurringPolicy,
-    seedbank: SeedBank,
+def _salary_real_raise_for_year(
+    policy: Policy,
+    rng_factory: RngFactory,
     key: str,
     year: int,
 ) -> float:
-    gen = seedbank.generator("salary_real_raise", key, str(year))
-    return normal_clamped(
+    gen = rng_factory.rng("salary_real_raise", key, str(year)).gen
+    return sample_normal_clamped(
         gen,
-        mu=policy.salary_real_raise_mu,
-        sigma=policy.salary_real_raise_sigma,
-        floor=policy.salary_real_raise_floor,
+        mu=policy.salary_raise_mu,
+        sigma=policy.salary_raise_sigma,
+        floor=policy.salary_raise_floor,
     )
 
 
-def job_switch_bump(
-    policy: RecurringPolicy,
-    seedbank: SeedBank,
+def _job_switch_bump(
+    policy: Policy,
+    rng_factory: RngFactory,
     person_id: str,
     switch_index: int,
 ) -> float:
-    gen = seedbank.generator("job_switch_bump", person_id, str(switch_index))
-    return normal_clamped(
+    gen = rng_factory.rng("job_switch_bump", person_id, str(switch_index)).gen
+    return sample_normal_clamped(
         gen,
-        mu=policy.job_switch_bump_mu,
-        sigma=policy.job_switch_bump_sigma,
-        floor=policy.job_switch_bump_floor,
+        mu=policy.job_bump_mu,
+        sigma=policy.job_bump_sigma,
+        floor=policy.job_bump_floor,
     )
 
 
-def compound_growth_salary(
-    policy: RecurringPolicy,
-    seedbank: SeedBank,
+def _compound_growth_salary(
+    policy: Policy,
+    rng_factory: RngFactory,
     person_id: str,
     start: datetime,
     now: datetime,
 ) -> float:
     return compound_growth(
         policy=policy,
-        seedbank=seedbank,
+        rng_factory=rng_factory,
         key=person_id,
         start=start,
         now=now,
-        annual_real_raise=salary_real_raise_for_year,
+        annual_raise_source=_salary_real_raise_for_year,
     )
 
 
-def init_employment(
-    policy: RecurringPolicy,
+# --- Public API ---
+
+
+def initialize(
+    policy: Policy,
     seed: SeedSource,
-    rng: Rng,
     *,
     person_id: str,
     start_date: datetime,
     employers: list[str],
-    base_salary_sampler: SalarySampler,
-) -> EmploymentState:
+    base_salary_source: SalarySource,
+) -> State:
+    """
+    Bootstraps the initial employment state for a person.
+    """
     _require_employers(employers)
 
-    seedbank = validated_seedbank(policy, seed)
-    gen = seedbank.generator("employment_init", person_id)
+    rng_factory = build_rng_factory(seed)
+    gen = rng_factory.rng("employment_init", person_id).gen
 
     employer = pick_one(gen, employers, name="employers")
     job_start, job_end = sample_backdated_interval(
         gen,
         anchor_date=start_date,
-        years_min=policy.employer_tenure_years_min,
-        years_max=policy.employer_tenure_years_max,
+        years_min=policy.job_tenure_min,
+        years_max=policy.job_tenure_max,
     )
 
-    base_salary_raw = float(base_salary_sampler())
-    base_salary = base_salary_raw * lognormal_multiplier(gen, sigma=0.03)
+    base_salary_raw = float(base_salary_source())
+    base_salary = base_salary_raw * sample_lognormal_multiplier(gen, sigma=0.03)
 
-    _ = rng.float()
-
-    return EmploymentState(
+    return State(
         employer_acct=employer,
         start=job_start,
         end=job_end,
@@ -107,46 +108,53 @@ def init_employment(
     )
 
 
-def advance_employment(
-    policy: RecurringPolicy,
+def advance(
+    policy: Policy,
     seed: SeedSource,
-    rng: Rng,
     *,
     person_id: str,
     now: datetime,
     employers: list[str],
-    prev: EmploymentState,
-) -> EmploymentState:
+    prev: State,
+) -> State:
+    """
+    Transitions a person to a new job, applying tenure and salary bumps.
+    """
     _require_employers(employers)
 
-    seedbank = as_seedbank(seed)
+    rng_factory = build_rng_factory(seed)
 
-    employer = pick_different_or_same(
-        rng,
+    # advance uses its own derived stream for the employer pick
+    adv_gen = rng_factory.rng(
+        "employment_advance", person_id, str(prev.switch_index + 1)
+    ).gen
+
+    employer = pick_different(
+        adv_gen,
         employers,
         prev.employer_acct,
         name="employers",
     )
 
     start, end = sample_forward_interval(
-        rng.gen,
+        adv_gen,
         start=now,
-        years_min=policy.employer_tenure_years_min,
-        years_max=policy.employer_tenure_years_max,
+        years_min=policy.job_tenure_min,
+        years_max=policy.job_tenure_max,
     )
 
-    current_salary = prev.base_salary * compound_growth_salary(
+    current_salary = prev.base_salary * _compound_growth_salary(
         policy,
-        seedbank,
+        rng_factory,
         person_id,
         prev.start,
         now,
     )
 
-    bump = job_switch_bump(policy, seedbank, person_id, prev.switch_index + 1)
+    bump = _job_switch_bump(policy, rng_factory, person_id, prev.switch_index + 1)
     new_base = current_salary * (1.0 + bump)
 
-    return EmploymentState(
+    return State(
         employer_acct=employer,
         start=start,
         end=end,
@@ -155,18 +163,21 @@ def advance_employment(
     )
 
 
-def salary_at(
-    policy: RecurringPolicy,
+def calculate_salary(
+    policy: Policy,
     seed: SeedSource,
     *,
     person_id: str,
-    state: EmploymentState,
+    state: State,
     pay_date: datetime,
 ) -> float:
-    seedbank = as_seedbank(seed)
-    amount = state.base_salary * compound_growth_salary(
+    """
+    Calculates the exact salary for a given pay period, including all compounded raises.
+    """
+    rng_factory = build_rng_factory(seed)
+    amount = state.base_salary * _compound_growth_salary(
         policy,
-        seedbank,
+        rng_factory,
         person_id,
         state.start,
         pay_date,

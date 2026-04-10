@@ -5,11 +5,11 @@ from common.random import Rng
 
 
 @dataclass(frozen=True, slots=True)
-class CountModels:
+class Rates:
     """
-    Models that control transaction COUNT generation.
+    Statistical parameters that control transaction count generation.
 
-    We use a Gamma–Poisson mixture to create overdispersed counts:
+    We use a Gamma-Poisson mixture to create overdispersed counts:
       lambda_day ~ Gamma(shape=k, scale=base_rate/k)
       n_out      ~ Poisson(lambda_day)
 
@@ -22,44 +22,42 @@ class CountModels:
     max_txns_per_account_per_day: int = 0
 
 
-DEFAULT_COUNT_MODELS = CountModels()
+DEFAULT_RATES = Rates()
 
 
-def weekday_multiplier(
-    day_start: datetime, models: CountModels = DEFAULT_COUNT_MODELS
-) -> float:
+def weekday_multiplier(day_start: datetime, rates: Rates = DEFAULT_RATES) -> float:
     """
     Returns a multiplier for activity based on day-of-week.
     Weekend (Sat/Sun) gets reduced activity.
     """
     dow: int = day_start.weekday()  # Mon=0 .. Sun=6
-    return models.weekend_multiplier if dow >= 5 else 1.0
+    return rates.weekend_multiplier if dow >= 5 else 1.0
 
 
-def gamma_poisson_out_count(
+def gamma_poisson(
     rng: Rng,
     *,
     base_rate: float,
-    models: CountModels = DEFAULT_COUNT_MODELS,
+    rates: Rates = DEFAULT_RATES,
 ) -> int:
     """
-    Generate an overdispersed outgoing transaction count for one account-day.
+    Generate an overdispersed transaction count for one account-day.
 
     base_rate: the "typical" mean for that account-day before overdispersion.
     """
     if base_rate <= 0.0:
         return 0
 
-    k = models.gamma_shape_k
+    k = rates.gamma_shape_k
     if k <= 0.0:
         raise ValueError("gamma_shape_k must be > 0")
 
-    # Gamma–Poisson mixture: lambda ~ Gamma(k, scale=base_rate/k)
+    # Gamma-Poisson mixture: lambda ~ Gamma(k, scale=base_rate/k)
     lam_day = float(rng.gen.gamma(shape=k, scale=max(1e-12, base_rate / k)))
 
     n_out = int(rng.gen.poisson(lam=lam_day))
 
-    cap = models.max_txns_per_account_per_day
+    cap = rates.max_txns_per_account_per_day
     if cap > 0 and n_out > cap:
         n_out = cap
 

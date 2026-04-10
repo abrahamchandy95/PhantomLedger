@@ -1,38 +1,25 @@
-from pathlib import Path
-
-from common.config import GenerationConfig
+from common.config import World as config_world
 from common.random import Rng
-from pipeline.state import GenerationRuntime, GenerationState
+from pipeline.result import SimulationResult
 from pipeline.stages import (
     build_entities,
     build_infra,
     build_transfers,
-    emit_outputs,
-    print_summary,
 )
 
 
-def generate_ledger(config: GenerationConfig | None = None) -> None:
-    if config is None:
-        config = GenerationConfig.create_default()
-    else:
-        config.validate()
-    output_dir: Path = config.output.out_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+def simulate(cfg: config_world) -> SimulationResult:
+    """
+    Main orchestration entry point for the synthetic ledger generation.
+    """
+    rng = Rng.from_seed(cfg.population.seed)
 
-    rng = Rng.from_seed(config.population.seed)
+    entities = build_entities(cfg, rng)
+    infra = build_infra(cfg, rng, entities)
+    transfers = build_transfers(cfg, rng, entities, infra)
 
-    state = GenerationState(
-        runtime=GenerationRuntime(
-            cfg=config,
-            rng=rng,
-            out_dir=output_dir,
-        )
+    return SimulationResult(
+        entities=entities,
+        infra=infra,
+        transfers=transfers,
     )
-
-    # 3. Pipeline Execution
-    build_entities(state)
-    build_infra(state)
-    build_transfers(state)
-    emit_outputs(state)
-    print_summary(state)

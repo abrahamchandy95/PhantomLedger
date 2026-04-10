@@ -1,12 +1,5 @@
-from dataclasses import dataclass
-
 from common.random import Rng
-
-
-@dataclass(frozen=True, slots=True)
-class PiiData:
-    person_phone: dict[str, str]
-    person_email: dict[str, str]
+from . import models
 
 
 def _rand_us_phone(rng: Rng) -> str:
@@ -24,15 +17,13 @@ def _email_for_person(customer_id: str) -> str:
     return f"user{customer_id.lower()}@example.com"
 
 
-def generate_pii(people: list[str], rng: Rng) -> PiiData:
+def generate(people: models.People, rng: Rng) -> models.Pii:
     """
     Generate phone/email for each person.
     """
-    person_phone: dict[str, str] = {}
-    person_email: dict[str, str] = {}
+    persons = people.ids
 
-    for p in people:
-        person_phone[p] = _rand_us_phone(rng)
-        person_email[p] = _email_for_person(p)
+    phone_map = {p: _rand_us_phone(rng) for p in persons}
+    email_map = {p: _email_for_person(p) for p in persons}
 
-    return PiiData(person_phone=person_phone, person_email=person_email)
+    return models.Pii(phone_map=phone_map, email_map=email_map)

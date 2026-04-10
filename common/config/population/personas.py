@@ -1,27 +1,27 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from common.validate import require_float_between
+from common.validate import between
 
 
 @dataclass(frozen=True, slots=True)
-class PersonasConfig:
-    student_frac: float = 0.12
-    retired_frac: float = 0.10
-    freelancer_frac: float = 0.10
-    smallbiz_frac: float = 0.06
-    hnw_frac: float = 0.02
-
-    def validate(self) -> None:
-        items = {
-            "student_frac": self.student_frac,
-            "retired_frac": self.retired_frac,
-            "freelancer_frac": self.freelancer_frac,
-            "persona_smallbiz_frac": self.smallbiz_frac,
-            "hnw_frac": self.hnw_frac,
+class Personas:
+    fractions: dict[str, float] = field(
+        default_factory=lambda: {
+            "student": 0.12,
+            "retired": 0.10,
+            "freelancer": 0.10,
+            "smallbiz": 0.06,
+            "hnw": 0.02,
         }
+    )
+    default: str = "salaried"
 
-        for name, value in items.items():
-            require_float_between(name, value, 0.0, 1.0)
+    def __post_init__(self) -> None:
+        for name, value in self.fractions.items():
+            between(name, value, 0.0, 1.0)
 
-        if float(sum(map(float, items.values()))) > 1.0:
-            raise ValueError("sum of persona_*_frac must be <= 1.0")
+        total = sum(self.fractions.values())
+        if total > 1.0:
+            raise ValueError(
+                f"Sum of persona fractions must be <= 1.0, got {total:.4f}"
+            )

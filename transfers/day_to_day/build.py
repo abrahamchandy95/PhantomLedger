@@ -4,225 +4,167 @@ from typing import cast
 import numpy as np
 
 from common.math import (
-    ArrBool,
-    ArrF32,
-    ArrF64,
-    ArrI16,
-    ArrI32,
-    NumScalar,
+    Bool,
+    F32,
+    F64,
+    I16,
+    I32,
+    Scalar,
     as_float,
     as_int,
     build_cdf,
     cdf_pick,
 )
-from common.random import derived_seed
+from common.random import derive_seed
+from math_models.timing import DEFAULT_PROFILES
 
-from math_models.timing import default_timing_profiles
-
-from .models import DayToDayBuildRequest, DayToDayContext
+from .dynamics import initialize_dynamics
+from .engine import BuildRequest, Context, MerchantView, PopulationView
 
 
 @dataclass(frozen=True, slots=True)
 class _PayeeState:
-    fav_merchants_idx: ArrI32
-    fav_k: ArrI16
-    billers_idx: ArrI32
-    bill_k: ArrI16
-    explore_propensity: ArrF32
-    burst_start_day: ArrI32
-    burst_len: ArrI16
+    """Internal container for vectorized payee attributes."""
+
+    fav_idx: I32
+    fav_k: I16
+    bill_idx: I32
+    bill_k: I16
+    explore_propensity: F32
+    burst_start: I32
+    burst_len: I16
 
 
-def _pick_unique_weighted(
+def _unique_weighted_pick(
     gen: np.random.Generator,
-    cdf: ArrF64,
+    cdf: F64,
     k: int,
     max_tries: int,
 ) -> list[int]:
+    """Picks k unique indices from a CDF with a retry limit."""
     out: list[int] = []
     seen: set[int] = set()
     tries = 0
 
     while len(out) < k and tries < max_tries:
-        picked_idx = cdf_pick(cdf, float(gen.random()))
+        idx = cdf_pick(cdf, float(gen.random()))
         tries += 1
-        if picked_idx in seen:
-            continue
-        seen.add(picked_idx)
-        out.append(picked_idx)
+        if idx not in seen:
+            seen.add(idx)
+            out.append(idx)
 
-    if not out:
-        out.append(0)
-    return out
+    return out if out else [0]
 
 
-@dataclass(slots=True)
-class _DayToDayContextBuilder:
-    request: DayToDayBuildRequest
+class _ContextBuilder:
+    """Orchestrates the construction of the generation context."""
 
-    def build(self) -> DayToDayContext:
-        self.request.policy.validate()
-        _ = self.request.start_date.year
+    request: BuildRequest
 
-        timing = default_timing_profiles()
-        merch_cdf = self._merch_cdf()
-        global_biller_cdf = self._global_biller_cdf(merch_cdf)
-        people_index = {
-            person_id: idx for idx, person_id in enumerate(self.request.persons)
-        }
-        payee_state = self._build_payee_state(merch_cdf, global_biller_cdf)
+    def __init__(self, request: BuildRequest):
+        self.request = request
 
-        _ = (self.request.rng.float(), float(self.request.events.prefer_billers_p))
+    def build(self) -> Context:
+        merch_cdf = self._build_merch_cdf()
+        biller_cdf = self._build_biller_cdf(merch_cdf)
 
-        return DayToDayContext(
-            persons=self.request.persons,
-            people_index=people_index,
-            primary_acct_for_person=self.request.primary_acct_for_person,
-            persona_for_person=self.request.persona_for_person,
-            timing=timing,
-            merchants=self.request.merchants,
-            merch_cdf=merch_cdf,
-            global_biller_cdf=global_biller_cdf,
+        people_index = {pid: i for i, pid in enumerate(self.request.persons)}
+        state = self._compute_payee_state(merch_cdf, biller_cdf)
+
+        paydays = tuple(
+            self.request.paydays_by_person.get(person_id, frozenset())
+            for person_id in self.request.persons
+        )
+        n_people = len(self.request.persons)
+        dynamics = initialize_dynamics(n_people)
+
+        return Context(
+            population=PopulationView(
+                persons=self.request.persons,
+                people_index=people_index,
+                primary_accounts=self.request.primary_accounts,
+                personas=self.request.personas,
+                persona_objects=self.request.persona_objects,
+                timing=DEFAULT_PROFILES,
+            ),
+            merchant=MerchantView(
+                merchants=self.request.merchants,
+                merch_cdf=merch_cdf,
+                biller_cdf=biller_cdf,
+                fav_merchants_idx=state.fav_idx,
+                fav_k=state.fav_k,
+                billers_idx=state.bill_idx,
+                bill_k=state.bill_k,
+                explore_propensity=state.explore_propensity,
+                burst_start_day=state.burst_start,
+                burst_len=state.burst_len,
+            ),
             social=self.request.social,
-            fav_merchants_idx=payee_state.fav_merchants_idx,
-            fav_k=payee_state.fav_k,
-            billers_idx=payee_state.billers_idx,
-            bill_k=payee_state.bill_k,
-            explore_propensity=payee_state.explore_propensity,
-            burst_start_day=payee_state.burst_start_day,
-            burst_len=payee_state.burst_len,
+            person_dynamics=dynamics,
+            paydays_by_person=paydays,
         )
 
-    def _merch_cdf(self) -> ArrF64:
-        merch_w: ArrF64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
-        return build_cdf(merch_w)
+    def _build_merch_cdf(self) -> F64:
+        weights: F64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
+        return build_cdf(weights)
 
-    def _global_biller_cdf(self, merch_cdf: ArrF64) -> ArrF64:
-        biller_categories = set(self.request.policy.biller_categories)
-        mask_list: list[bool] = [
-            category in biller_categories
-            for category in self.request.merchants.categories
-        ]
-        mask: ArrBool = np.asarray(mask_list, dtype=np.bool_)
+    def _build_biller_cdf(self, merch_cdf: F64) -> F64:
+        categories = set(self.request.params.biller_categories)
+        mask_list = [c in categories for c in self.request.merchants.categories]
+        mask: Bool = np.asarray(mask_list, dtype=np.bool_)
 
-        merch_w: ArrF64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
-        biller_w: ArrF64 = merch_w * mask.astype(np.float64)
-        biller_sum = as_float(cast(NumScalar, np.sum(biller_w, dtype=np.float64)))
+        weights: F64 = np.asarray(self.request.merchants.weights, dtype=np.float64)
+        biller_w: F64 = weights * mask.astype(np.float64)
 
-        if biller_sum > 0.0:
+        if as_float(cast(Scalar, np.sum(biller_w))) > 0.0:
             return build_cdf(biller_w)
         return merch_cdf
 
-    def _build_payee_state(
-        self,
-        merch_cdf: ArrF64,
-        global_biller_cdf: ArrF64,
-    ) -> _PayeeState:
-        n_people = len(self.request.persons)
-        mcfg = self.request.merchants_cfg
-        policy = self.request.policy
+    def _compute_payee_state(self, merch_cdf: F64, biller_cdf: F64) -> _PayeeState:
+        n = len(self.request.persons)
+        cfg = self.request.merchants_cfg
+        policy = self.request.params
 
-        fav_max = int(mcfg.fav_max)
-        bill_max = int(mcfg.billers_max)
+        fav_idx: I32 = np.empty((n, int(cfg.favorite_max)), dtype=np.int32)
+        fav_k: I16 = np.empty(n, dtype=np.int16)
+        bill_idx: I32 = np.empty((n, int(cfg.biller_max)), dtype=np.int32)
+        bill_k: I16 = np.empty(n, dtype=np.int16)
+        explore: F32 = np.empty(n, dtype=np.float32)
+        burst_start: I32 = np.full(n, -1, dtype=np.int32)
+        burst_len: I16 = np.zeros(n, dtype=np.int16)
 
-        fav_idx: ArrI32 = np.empty((n_people, fav_max), dtype=np.int32)
-        fav_k: ArrI16 = np.empty(n_people, dtype=np.int16)
-
-        bill_idx: ArrI32 = np.empty((n_people, bill_max), dtype=np.int32)
-        bill_k: ArrI16 = np.empty(n_people, dtype=np.int16)
-
-        explore_prop: ArrF32 = np.empty(n_people, dtype=np.float32)
-        burst_start: ArrI32 = np.full(n_people, -1, dtype=np.int32)
-        burst_len: ArrI16 = np.zeros(n_people, dtype=np.int16)
-
-        for person_idx, person_id in enumerate(self.request.persons):
+        for i, person_id in enumerate(self.request.persons):
             gen = np.random.default_rng(
-                derived_seed(self.request.base_seed, "payees", person_id)
+                derive_seed(self.request.base_seed, "payees", person_id)
             )
 
-            favorite_count = as_int(
-                cast(
-                    int | np.integer,
-                    gen.integers(
-                        int(mcfg.fav_min),
-                        int(mcfg.fav_max) + 1,
-                    ),
+            fk = as_int(gen.integers(int(cfg.favorite_min), int(cfg.favorite_max) + 1))
+            bk = as_int(gen.integers(int(cfg.biller_min), int(cfg.biller_max) + 1))
+
+            fav_k[i], bill_k[i] = np.int16(fk), np.int16(bk)
+
+            favs = _unique_weighted_pick(gen, merch_cdf, fk, policy.pick_max_tries)
+            bills = _unique_weighted_pick(gen, biller_cdf, bk, policy.pick_max_tries)
+
+            fav_idx[i, :] = favs[0]
+            fav_idx[i, : len(favs)] = np.asarray(favs, dtype=np.int32)
+
+            bill_idx[i, :] = bills[0]
+            bill_idx[i, : len(bills)] = np.asarray(bills, dtype=np.int32)
+
+            explore[i] = np.float32(gen.beta(policy.explore_alpha, policy.explore_beta))
+
+            if self.request.days > 0 and gen.random() < policy.burst_p:
+                burst_start[i] = as_int(gen.integers(0, self.request.days))
+                burst_len[i] = np.int16(
+                    gen.integers(policy.burst_min, policy.burst_max + 1)
                 )
-            )
-            biller_count = as_int(
-                cast(
-                    int | np.integer,
-                    gen.integers(int(mcfg.billers_min), int(mcfg.billers_max) + 1),
-                )
-            )
-            favorites = _pick_unique_weighted(
-                gen,
-                merch_cdf,
-                favorite_count,
-                int(policy.unique_pick_max_tries),
-            )
-            billers = _pick_unique_weighted(
-                gen,
-                global_biller_cdf,
-                biller_count,
-                int(policy.unique_pick_max_tries),
-            )
-
-            fav_k[person_idx] = np.int16(favorite_count)
-            bill_k[person_idx] = np.int16(biller_count)
-
-            fav_idx[person_idx, :] = int(favorites[0])
-            fav_idx[person_idx, : len(favorites)] = np.asarray(
-                favorites,
-                dtype=np.int32,
-            )
-
-            bill_idx[person_idx, :] = int(billers[0])
-            bill_idx[person_idx, : len(billers)] = np.asarray(
-                billers,
-                dtype=np.int32,
-            )
-
-            explore_prop[person_idx] = np.float32(
-                float(
-                    gen.beta(
-                        float(policy.explore_beta_alpha),
-                        float(policy.explore_beta_beta),
-                    )
-                )
-            )
-
-            if self.request.days > 0 and float(gen.random()) < float(
-                policy.burst_probability
-            ):
-                burst_day = as_int(
-                    cast(
-                        int | np.integer,
-                        gen.integers(0, max(1, self.request.days)),
-                    )
-                )
-                burst_days = as_int(
-                    cast(
-                        int | np.integer,
-                        gen.integers(
-                            int(policy.burst_len_min),
-                            int(policy.burst_len_max) + 1,
-                        ),
-                    )
-                )
-                burst_start[person_idx] = burst_day
-                burst_len[person_idx] = np.int16(burst_days)
 
         return _PayeeState(
-            fav_merchants_idx=fav_idx,
-            fav_k=fav_k,
-            billers_idx=bill_idx,
-            bill_k=bill_k,
-            explore_propensity=explore_prop,
-            burst_start_day=burst_start,
-            burst_len=burst_len,
+            fav_idx, fav_k, bill_idx, bill_k, explore, burst_start, burst_len
         )
 
 
-def build_day_to_day_context(request: DayToDayBuildRequest) -> DayToDayContext:
-    return _DayToDayContextBuilder(request=request).build()
+def build_context(request: BuildRequest) -> Context:
+    """Top-level entry point to initialize the daily generation environment."""
+    return _ContextBuilder(request).build()

@@ -6,12 +6,12 @@ from .models import (
     LegitInputs,
     LegitOverrides,
     LegitPolicies,
-    LegitTransfers,
+    TransfersPayload,
 )
 
 __all__ = [
     "DEFAULT_LEGIT_POLICIES",
-    "LegitTransfers",
+    "TransfersPayload",
     "LegitPolicies",
     "LegitCreditRuntime",
     "LegitInputs",

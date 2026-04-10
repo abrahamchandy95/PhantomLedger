@@ -1,12 +1,12 @@
 from dataclasses import dataclass, field
 
 from common.transactions import Transaction
-from transfers.balances import BalanceBook
+from transfers.balances import Ledger
 
 
 @dataclass(slots=True)
 class TxnAccumulator:
-    book: BalanceBook | None
+    book: Ledger | None
     txns: list[Transaction] = field(default_factory=list)
 
     def append(self, txn: Transaction) -> None:

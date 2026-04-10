@@ -7,8 +7,6 @@ from common.random import Rng
 
 
 def _normalize(p: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
-    # typing.cast removes the 'Any' leakage completely at type-checking time
-    # without adding overhead at runtime.
     s = float(typing.cast(float, p.sum()))
 
     if s <= 0.0 or not np.isfinite(s):
@@ -18,15 +16,24 @@ def _normalize(p: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
 
 
 @dataclass(frozen=True, slots=True)
-class TimingProfiles:
+class Profiles:
     consumer: np.ndarray
     consumer_day: np.ndarray
     business: np.ndarray
 
+    def get(self, name: str) -> np.ndarray:
+        """Routes a profile string to the correct probability array."""
+        if name == "consumer":
+            return self.consumer
+        if name == "consumer_day":
+            return self.consumer_day
+        if name == "business":
+            return self.business
+        raise ValueError(f"unknown timing profile: {name}")
 
-def default_timing_profiles() -> TimingProfiles:
-    # 24-hour discrete distributions. Shape is "roughly realistic": business hours peak for business,
-    # evening peaks for consumers, retirees more daytime.
+
+def _build_defaults() -> Profiles:
+    """Internal factory to build and normalize the defaults once."""
     c = np.array(
         [
             0.02,
@@ -114,16 +121,19 @@ def default_timing_profiles() -> TimingProfiles:
         ],
         dtype=np.float64,
     )
-    return TimingProfiles(
+    return Profiles(
         consumer=_normalize(c), consumer_day=_normalize(c_day), business=_normalize(b)
     )
 
 
-def sample_offsets_seconds(
+DEFAULT_PROFILES = _build_defaults()
+
+
+def sample_offsets(
     rng: Rng,
     profile_name: str,
     n: int,
-    profiles: TimingProfiles,
+    profiles: Profiles = DEFAULT_PROFILES,
 ) -> np.ndarray:
     """
     Returns array of offsets in seconds from the day start.
@@ -131,14 +141,7 @@ def sample_offsets_seconds(
     if n <= 0:
         return np.zeros(0, dtype=np.int32)
 
-    if profile_name == "consumer":
-        p = profiles.consumer
-    elif profile_name == "consumer_day":
-        p = profiles.consumer_day
-    elif profile_name == "business":
-        p = profiles.business
-    else:
-        raise ValueError(f"unknown timing profile: {profile_name}")
+    p = profiles.get(profile_name)
 
     hours = rng.gen.choice(24, size=n, p=p)
     minutes = rng.gen.integers(0, 60, size=n)

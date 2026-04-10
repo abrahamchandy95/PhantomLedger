@@ -1,4 +1,3 @@
-from .output import OutputConfig
-from .window import WindowConfig
+from .window import Window
 
-__all__ = ["OutputConfig", "WindowConfig"]
+__all__ = ["Window"]

@@ -1,23 +1,20 @@
 from typing import cast
-
 import numpy as np
 
-from common.math import ArrF64, NumScalar, as_float, build_cdf
+from common.math import F64, Scalar, as_float, build_cdf
 from common.transactions import Transaction
 
-from .models import DayToDayGenerationRequest
+from .engine import GenerateRequest
 from .payments import (
-    emit_bill_txn,
-    emit_external_unknown_txn,
-    emit_merchant_txn,
-    emit_p2p_txn,
+    bill,
+    external,
+    merchant,
+    p2p,
 )
-from .state import EventFrame
+from .state import Event
 
 
-def build_channel_cdf(
-    request: DayToDayGenerationRequest,
-) -> ArrF64:
+def build_channel_cdf(request: GenerateRequest) -> F64:
     unknown_p = min(1.0, max(0.0, float(request.events.unknown_outflow_p)))
 
     core = np.array(
@@ -29,7 +26,7 @@ def build_channel_cdf(
         dtype=np.float64,
     )
 
-    core_sum = as_float(cast(NumScalar, np.sum(core, dtype=np.float64)))
+    core_sum = as_float(cast(Scalar, np.sum(core, dtype=np.float64)))
     if not np.isfinite(core_sum) or core_sum <= 0.0:
         core[:] = 1.0
         core_sum = float(core.size)
@@ -49,16 +46,18 @@ def build_channel_cdf(
     return build_cdf(shares)
 
 
-def build_channel_txn(
+def route_channel_txn(
     channel_idx: int,
-    request: DayToDayGenerationRequest,
-    event_frame: EventFrame,
+    request: GenerateRequest,
+    event: Event,
     prefer_billers_p: float,
 ) -> Transaction | None:
+    """Routes the generated event to the correct payment channel handler."""
     if channel_idx == 2:
-        return emit_p2p_txn(request, event_frame)
+        return p2p(request, event)
     if channel_idx == 1:
-        return emit_bill_txn(request, event_frame, prefer_billers_p)
+        return bill(request, event, prefer_billers_p)
     if channel_idx == 3:
-        return emit_external_unknown_txn(request, event_frame)
-    return emit_merchant_txn(request, event_frame)
+        return external(request, event)
+
+    return merchant(request, event)

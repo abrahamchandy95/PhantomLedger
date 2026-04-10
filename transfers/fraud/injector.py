@@ -2,54 +2,58 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from common.transactions import Transaction
-from transfers.txns import TxnFactory
+from transfers.factory import TransactionFactory
 
-from .camouflage import inject_camouflage
-from .models import FraudInjectionRequest, FraudInjectionResult
-from .ring_plan import RingPlan, build_ring_plan
-from .run_context import (
+from .camouflage import generate as generate_camouflage
+from .engine import (
+    AccountPools,
+    ActiveWindow,
     CamouflageContext,
-    FraudAccountPools,
-    FraudExecution,
-    FraudWindow,
+    Execution,
     IllicitContext,
+    InjectionInput,
+    InjectionOutput,
 )
-from .schedule import target_illicit_count
-from .typologies import inject_illicit_for_ring
+from .rings import Plan, build_plan
+from .schedule import calculate_illicit_budget
+from .typologies import generate as generate_typologies
 
 
 @dataclass(slots=True)
-class _FraudInjector:
-    request: FraudInjectionRequest
-    txf: TxnFactory = field(init=False)
+class _Injector:
+    """Orchestrates the injection of camouflage and illicit transactions for fraud rings."""
+
+    input_data: InjectionInput
+    txf: TransactionFactory = field(init=False)
     start_date: datetime = field(init=False)
     days: int = field(init=False)
 
     def __post_init__(self) -> None:
-        self.txf = TxnFactory(
-            rng=self.request.runtime.rng,
-            infra=self.request.runtime.infra,
+        self.txf = TransactionFactory(
+            rng=self.input_data.runtime.rng,
+            infra=self.input_data.runtime.infra,
+            ring_infra=self.input_data.runtime.ring_infra,
         )
-        self.start_date = self.request.scenario.window.start_date()
-        self.days = int(self.request.scenario.window.days)
+        self.start_date = self.input_data.scenario.window.start_date
+        self.days = int(self.input_data.scenario.window.days)
 
-    def _execution(self) -> FraudExecution:
-        return FraudExecution(
+    def _execution(self) -> Execution:
+        return Execution(
             txf=self.txf,
-            rng=self.request.runtime.rng,
+            rng=self.input_data.runtime.rng,
         )
 
-    def _window(self) -> FraudWindow:
-        return FraudWindow(
+    def _window(self) -> ActiveWindow:
+        return ActiveWindow(
             start_date=self.start_date,
             days=self.days,
         )
 
-    def _account_pools(self) -> FraudAccountPools:
-        return FraudAccountPools(
-            all_accounts=tuple(self.request.scenario.accounts.accounts),
-            biller_accounts=self.request.counterparties.biller_accounts,
-            employers=self.request.counterparties.employers,
+    def _account_pools(self) -> AccountPools:
+        return AccountPools(
+            all_accounts=tuple(self.input_data.scenario.accounts.ids),
+            biller_accounts=self.input_data.counterparties.biller_accounts,
+            employers=self.input_data.counterparties.employers,
         )
 
     def _camouflage_context(self) -> CamouflageContext:
@@ -57,7 +61,7 @@ class _FraudInjector:
             execution=self._execution(),
             window=self._window(),
             accounts=self._account_pools(),
-            policy=self.request.policies.camouflage,
+            rates=self.input_data.params.camouflage,
         )
 
     def _illicit_context(self) -> IllicitContext:
@@ -66,8 +70,8 @@ class _FraudInjector:
             execution=self._execution(),
             window=self._window(),
             biller_accounts=pools.biller_accounts,
-            layering_policy=self.request.policies.layering,
-            structuring_policy=self.request.policies.structuring,
+            layering_rules=self.input_data.params.layering,
+            structuring_rules=self.input_data.params.structuring,
         )
 
     @staticmethod
@@ -75,38 +79,36 @@ class _FraudInjector:
         per_ring = max(1, remaining_budget // max(1, rings_left))
         return min(per_ring, remaining_budget)
 
-    def run(self) -> FraudInjectionResult:
-        scenario = self.request.scenario
-        runtime = self.request.runtime
-        policies = self.request.policies
+    def run(self) -> InjectionOutput:
+        scenario = self.input_data.scenario
+        runtime = self.input_data.runtime
+        params = self.input_data.params
 
-        policies.validate()
-
-        if scenario.fraud_cfg.num_rings <= 0 or not scenario.people.rings:
-            return FraudInjectionResult(txns=list(scenario.base_txns), injected_count=0)
+        if not scenario.people.rings:
+            return InjectionOutput(txns=list(scenario.base_txns), injected_count=0)
 
         camouflage_ctx = self._camouflage_context()
         illicit_ctx = self._illicit_context()
 
-        ring_plans: list[RingPlan] = [
-            build_ring_plan(ring, scenario.accounts) for ring in scenario.people.rings
+        ring_plans: list[Plan] = [
+            build_plan(ring, scenario.accounts) for ring in scenario.people.rings
         ]
 
-        camouflage: list[Transaction] = []
+        camo_txns: list[Transaction] = []
         for ring_plan in ring_plans:
-            camouflage.extend(inject_camouflage(camouflage_ctx, ring_plan))
+            camo_txns.extend(generate_camouflage(camouflage_ctx, ring_plan))
 
-        target_illicit_n = target_illicit_count(
-            target_ratio=float(scenario.fraud_cfg.target_illicit_ratio),
-            legit_count=len(scenario.base_txns) + len(camouflage),
+        target_illicit_n = calculate_illicit_budget(
+            target_ratio=float(scenario.fraud_cfg.target_illicit_p),
+            legit_count=len(scenario.base_txns) + len(camo_txns),
         )
 
         if target_illicit_n <= 0:
             out = list(scenario.base_txns)
-            out.extend(camouflage)
-            return FraudInjectionResult(txns=out, injected_count=len(camouflage))
+            out.extend(camo_txns)
+            return InjectionOutput(txns=out, injected_count=len(camo_txns))
 
-        illicit: list[Transaction] = []
+        illicit_txns: list[Transaction] = []
         remaining_budget = target_illicit_n
 
         for ring_index, ring_plan in enumerate(ring_plans):
@@ -117,27 +119,28 @@ class _FraudInjector:
                 remaining_budget,
                 len(ring_plans) - ring_index,
             )
-            typology = policies.typology.choose(runtime.rng)
-            ring_illicit = inject_illicit_for_ring(
+
+            typology_choice = params.typology.choose(runtime.rng)
+            ring_illicit = generate_typologies(
                 illicit_ctx,
                 ring_plan,
-                typology,
+                typology_choice,
                 ring_budget,
             )
-            illicit.extend(ring_illicit)
+
+            illicit_txns.extend(ring_illicit)
             remaining_budget -= len(ring_illicit)
 
         out = list(scenario.base_txns)
-        out.extend(camouflage)
-        out.extend(illicit)
+        out.extend(camo_txns)
+        out.extend(illicit_txns)
 
-        return FraudInjectionResult(
+        return InjectionOutput(
             txns=out,
-            injected_count=len(camouflage) + len(illicit),
+            injected_count=len(camo_txns) + len(illicit_txns),
         )
 
 
-def inject_fraud_transfers(
-    request: FraudInjectionRequest,
-) -> FraudInjectionResult:
-    return _FraudInjector(request).run()
+def inject(input_data: InjectionInput) -> InjectionOutput:
+    """Entry point for the fraud injection engine."""
+    return _Injector(input_data).run()

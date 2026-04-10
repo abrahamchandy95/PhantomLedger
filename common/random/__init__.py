@@ -1,9 +1,8 @@
 from .rng import Rng
-from .seedbank import SeedBank
-from .seeding import derived_seed
+from .factory import derive_seed, RngFactory
 
 __all__ = [
     "Rng",
-    "SeedBank",
-    "derived_seed",
+    "RngFactory",
+    "derive_seed",
 ]

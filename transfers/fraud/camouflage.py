@@ -1,100 +1,126 @@
 from datetime import timedelta
 
-from common.timeline import get_active_months
+from common.channels import CAMOUFLAGE_BILL, CAMOUFLAGE_P2P, CAMOUFLAGE_SALARY
+from common.timeline import active_months
 from common.transactions import Transaction
-from math_models.amounts import bill_amount, p2p_amount, salary_amount
-from transfers.txns import TxnSpec
+from math_models.amount_model import (
+    BILL as BILL_MODEL,
+    P2P as P2P_MODEL,
+    SALARY as SALARY_MODEL,
+)
+from transfers.factory import TransactionDraft
 
-from .ring_plan import RingPlan
-from .run_context import CamouflageContext
+from .engine import CamouflageContext
+from .rings import Plan
 
 
-def inject_camouflage(
+def generate(
     ctx: CamouflageContext,
-    ring_plan: RingPlan,
+    ring_plan: Plan,
 ) -> list[Transaction]:
+    """Generates legitimate-looking transactions to hide fraud activity in ring accounts."""
     ring_accounts = ring_plan.participant_accounts
     if not ring_accounts:
         return []
 
     rng = ctx.execution.rng
     txf = ctx.execution.txf
-    policy = ctx.policy
+    rates = ctx.rates
     start_date = ctx.window.start_date
     days = ctx.window.days
 
-    out: list[Transaction] = []
+    txns: list[Transaction] = []
 
-    if ctx.accounts.biller_accounts and float(policy.bill_monthly_p) > 0.0:
-        for pay_day in get_active_months(start_date, days):
+    # 1. Camouflage: Monthly Bills
+    if ctx.accounts.biller_accounts and float(rates.bill_monthly_p) > 0.0:
+        for pay_day in active_months(start_date, days):
             for acct in ring_accounts:
-                if rng.coin(float(policy.bill_monthly_p)):
+                if rng.coin(float(rates.bill_monthly_p)):
                     dst = rng.choice(ctx.accounts.biller_accounts)
+
+                    offset_days = rng.int(0, 5)
+                    offset_hours = rng.int(7, 22)
+                    offset_mins = rng.int(0, 60)
+
                     ts = pay_day + timedelta(
-                        days=rng.int(0, 5),
-                        hours=rng.int(7, 22),
-                        minutes=rng.int(0, 60),
+                        days=offset_days,
+                        hours=offset_hours,
+                        minutes=offset_mins,
                     )
-                    out.append(
+
+                    txns.append(
                         txf.make(
-                            TxnSpec(
-                                src=acct,
-                                dst=dst,
-                                amt=bill_amount(rng),
-                                ts=ts,
+                            TransactionDraft(
+                                source=acct,
+                                destination=dst,
+                                amount=BILL_MODEL.sample(rng),
+                                timestamp=ts,
                                 is_fraud=0,
-                                ring_id=ring_plan.ring_id,
-                                channel="camouflage_bill",
+                                ring_id=-1,
+                                channel=CAMOUFLAGE_BILL,
                             )
                         )
                     )
 
+    # 2. Camouflage: Small Daily P2P
     for day in range(days):
         day_start = start_date + timedelta(days=day)
         for acct in ring_accounts:
-            if rng.coin(float(policy.small_p2p_per_day_p)):
+            if rng.coin(float(rates.small_p2p_per_day_p)):
                 dst = rng.choice(ctx.accounts.all_accounts)
                 if dst == acct:
                     continue
+
+                offset_hours = rng.int(0, 24)
+                offset_mins = rng.int(0, 60)
+
                 ts = day_start + timedelta(
-                    hours=rng.int(0, 24),
-                    minutes=rng.int(0, 60),
+                    hours=offset_hours,
+                    minutes=offset_mins,
                 )
-                out.append(
+
+                txns.append(
                     txf.make(
-                        TxnSpec(
-                            src=acct,
-                            dst=dst,
-                            amt=p2p_amount(rng),
-                            ts=ts,
+                        TransactionDraft(
+                            source=acct,
+                            destination=dst,
+                            amount=P2P_MODEL.sample(rng),
+                            timestamp=ts,
                             is_fraud=0,
-                            ring_id=ring_plan.ring_id,
-                            channel="camouflage_p2p",
+                            ring_id=-1,
+                            channel=CAMOUFLAGE_P2P,
                         )
                     )
                 )
 
-    if ctx.accounts.employers and float(policy.salary_inbound_p) > 0.0:
+    # 3. Camouflage: Inbound Salary
+    if ctx.accounts.employers and float(rates.salary_inbound_p) > 0.0:
         for acct in ring_accounts:
-            if rng.coin(float(policy.salary_inbound_p)):
+            if rng.coin(float(rates.salary_inbound_p)):
                 src = rng.choice(ctx.accounts.employers)
+
+                offset_days = rng.int(0, max(1, days))
+                offset_hours = rng.int(8, 18)
+                offset_mins = rng.int(0, 60)
+
                 ts = start_date + timedelta(
-                    days=rng.int(0, max(1, days)),
-                    hours=rng.int(8, 18),
-                    minutes=rng.int(0, 60),
+                    days=offset_days,
+                    hours=offset_hours,
+                    minutes=offset_mins,
                 )
-                out.append(
+
+                txns.append(
                     txf.make(
-                        TxnSpec(
-                            src=src,
-                            dst=acct,
-                            amt=salary_amount(rng),
-                            ts=ts,
+                        TransactionDraft(
+                            source=src,
+                            destination=acct,
+                            amount=SALARY_MODEL.sample(rng),
+                            timestamp=ts,
                             is_fraud=0,
-                            ring_id=ring_plan.ring_id,
-                            channel="camouflage_salary",
+                            ring_id=-1,
+                            channel=CAMOUFLAGE_SALARY,
                         )
                     )
                 )
 
-    return out
+    return txns

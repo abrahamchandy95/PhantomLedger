@@ -1,7 +1,7 @@
-from relationships.family import generate_family
+from relationships.family import build as build_family
 from common.transactions import Transaction
-from transfers.family import FamilyTransferRequest, generate_family_transfers
-from transfers.txns import TxnFactory
+from transfers.family import GenerateRequest, generate
+from transfers.factory import TransactionFactory
 
 from .models import LegitGenerationRequest
 from .plans import LegitBuildPlan
@@ -10,29 +10,29 @@ from .plans import LegitBuildPlan
 def generate_family_txns(
     request: LegitGenerationRequest,
     plan: LegitBuildPlan,
-    txf: TxnFactory,
+    txf: TransactionFactory,
 ) -> list[Transaction]:
     family_cfg = request.overrides.family_cfg
     if family_cfg is None:
         return []
 
-    family = generate_family(
+    family = build_family(
         family_cfg,
-        request.inputs.rng,
         base_seed=plan.seed,
-        persons=plan.persons,
-        persona_for_person=plan.personas.persona_for_person,
+        people=plan.persons,
+        persona_map=plan.personas.persona_for_person,
     )
 
-    return generate_family_transfers(
-        FamilyTransferRequest(
+    return generate(
+        GenerateRequest(
             window=request.inputs.window,
-            family_cfg=family_cfg,
+            params=family_cfg,
             rng=request.inputs.rng,
             base_seed=plan.seed,
             family=family,
-            persona_for_person=plan.personas.persona_for_person,
-            primary_acct_for_person=plan.primary_acct_for_person,
+            personas=plan.personas.persona_for_person,
+            persona_objects=plan.personas.persona_objects,
+            primary_accounts=plan.primary_acct_for_person,
             merchants=request.inputs.merchants,
             txf=txf,
         )
