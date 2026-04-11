@@ -34,6 +34,16 @@ class Portfolio:
     def has_insurance(self) -> bool:
         return self.insurance is not None and self.insurance.has_any()
 
+    def is_homeowner(self) -> bool:
+        if self.mortgage is not None:
+            return True
+        return bool(self.insurance is not None and self.insurance.home is not None)
+
+    def has_vehicle(self) -> bool:
+        if self.auto_loan is not None:
+            return True
+        return bool(self.insurance is not None and self.insurance.auto is not None)
+
     def scheduled_events(
         self,
         start: datetime,

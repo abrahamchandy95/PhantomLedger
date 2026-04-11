@@ -45,10 +45,44 @@ from .student_loan import (
 )
 from .tax_profile import DEFAULT_TAX_CONFIG, TaxConfig, TaxTerms
 
+_MANDATORY_COLLATERAL_COVERAGE_P = 0.995
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
+
 
 def _sample_payment_day(gen: np.random.Generator) -> int:
     """Sample a billing day in [1, 28]."""
     return int(gen.integers(1, 29))
+
+
+def _residual_policy_probability(
+    *,
+    target_p: float,
+    anchored_population_p: float,
+    anchored_policy_p: float = _MANDATORY_COLLATERAL_COVERAGE_P,
+) -> float:
+    """
+    Back into the policy probability for the non-anchored population.
+
+    Example:
+      if 45% of a persona finances a car and financed cars are treated as
+      insured with ~99.5% probability, this returns the probability that the
+      remaining non-financed group should receive auto coverage so that the
+      overall insurance rate stays close to the target persona rate.
+    """
+    target = _clamp01(target_p)
+    anchored_share = _clamp01(anchored_population_p)
+    anchored_policy = _clamp01(anchored_policy_p)
+
+    if target <= 0.0:
+        return 0.0
+    if anchored_share >= 1.0:
+        return anchored_policy
+
+    residual = (target - (anchored_share * anchored_policy)) / (1.0 - anchored_share)
+    return _clamp01(residual)
 
 
 def _try_mortgage(
@@ -160,13 +194,22 @@ def _try_insurance(
     gen: np.random.Generator,
     cfg: InsuranceConfig,
     persona_name: str,
+    *,
+    mortgage: MortgageTerms | None,
+    auto_loan: AutoLoanTerms | None,
+    mortgage_anchor_p: float,
+    auto_loan_anchor_p: float,
 ) -> InsuranceHoldings | None:
     """
-    Sample insurance coverage for one person based on persona rates.
+    Sample insurance coverage for one person.
 
-    Each coverage type (auto, home, life) is an independent Bernoulli
-    trial, so a person might hold any subset. Premium amounts are
-    sampled lognormally around the config medians.
+    Home and auto coverage are anchored to the underlying financed asset:
+      - mortgage holders are almost always issued home insurance
+      - auto-loan holders are almost always issued auto insurance
+
+    Non-financed owners can still hold coverage, but their residual issuance
+    probability is backed out so the overall persona-level insurance rate stays
+    close to the configured target.
     """
     rates = cfg.for_persona(persona_name)
 
@@ -174,7 +217,14 @@ def _try_insurance(
     home: InsurancePolicy | None = None
     life: InsurancePolicy | None = None
 
-    if float(gen.random()) < rates.auto:
+    if auto_loan is not None:
+        auto_issue_p = _MANDATORY_COLLATERAL_COVERAGE_P
+    else:
+        auto_issue_p = _residual_policy_probability(
+            target_p=float(rates.auto),
+            anchored_population_p=auto_loan_anchor_p,
+        )
+    if float(gen.random()) < auto_issue_p:
         premium = float(
             lognormal_by_median(gen, median=cfg.auto_median, sigma=cfg.auto_sigma)
         )
@@ -184,7 +234,14 @@ def _try_insurance(
             claim_p=float(cfg.auto_claim_annual_p),
         )
 
-    if float(gen.random()) < rates.home:
+    if mortgage is not None:
+        home_issue_p = _MANDATORY_COLLATERAL_COVERAGE_P
+    else:
+        home_issue_p = _residual_policy_probability(
+            target_p=float(rates.home),
+            anchored_population_p=mortgage_anchor_p,
+        )
+    if float(gen.random()) < home_issue_p:
         premium = float(
             lognormal_by_median(gen, median=cfg.home_median, sigma=cfg.home_sigma)
         )
@@ -194,7 +251,7 @@ def _try_insurance(
             claim_p=float(cfg.home_claim_annual_p),
         )
 
-    if float(gen.random()) < rates.life:
+    if float(gen.random()) < float(rates.life):
         premium = float(
             lognormal_by_median(gen, median=cfg.life_median, sigma=cfg.life_sigma)
         )
@@ -227,6 +284,9 @@ def build_portfolios(
     Credit card terms are extracted from the already-issued CreditCards
     model (since issuance also creates accounts). Insurance, loans, and
     tax profiles are sampled fresh from their config distributions.
+
+    The important realism constraint is that collateralized insurance is
+    no longer sampled fully independently from the financed asset.
     """
     rng_factory = RngFactory(base_seed)
 
@@ -237,13 +297,24 @@ def build_portfolios(
     for person_id, persona_name in persona_map.items():
         gen = rng_factory.rng("portfolio", person_id).gen
 
+        mortgage_anchor_p = float(mortgage_cfg.ownership_p(persona_name))
+        auto_loan_anchor_p = float(auto_loan_cfg.ownership_p(persona_name))
+
         mortgage = _try_mortgage(gen, mortgage_cfg, persona_name, start_date)
         auto_loan = _try_auto_loan(gen, auto_loan_cfg, persona_name, start_date)
         student_loan = _try_student_loan(
             gen, student_loan_cfg, persona_name, start_date
         )
         tax = _try_tax(gen, tax_cfg, persona_name)
-        insurance = _try_insurance(gen, insurance_cfg, persona_name)
+        insurance = _try_insurance(
+            gen,
+            insurance_cfg,
+            persona_name,
+            mortgage=mortgage,
+            auto_loan=auto_loan,
+            mortgage_anchor_p=mortgage_anchor_p,
+            auto_loan_anchor_p=auto_loan_anchor_p,
+        )
         card: CardTerms | None = card_terms_by_person.get(person_id)
 
         has_any = any(

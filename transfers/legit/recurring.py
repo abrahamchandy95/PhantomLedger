@@ -64,8 +64,8 @@ def _salary_probability_for_persona(persona: str) -> float:
 
 def _rent_probability_for_persona(persona: str) -> float:
     """
-    Conditional probability of being a renter, *given that the person
-    does not already hold a mortgage*.
+    Conditional probability of being a renter, given the person is not
+    already modeled as a homeowner.
     """
     table = {
         STUDENT: 0.50,
@@ -178,7 +178,7 @@ def generate_salary_txns(
     return txns
 
 
-def _mortgage_holders(inputs: LegitInputs) -> set[str]:
+def _homeowners(inputs: LegitInputs) -> set[str]:
     portfolios = inputs.portfolios
     if portfolios is None:
         return set()
@@ -186,7 +186,7 @@ def _mortgage_holders(inputs: LegitInputs) -> set[str]:
     return {
         person_id
         for person_id, portfolio in portfolios.by_person.items()
-        if portfolio.mortgage is not None
+        if portfolio.is_homeowner()
     }
 
 
@@ -196,13 +196,13 @@ def _rent_payers(
     plan: LegitBuildPlan,
 ) -> list[str]:
     rent_fraction = float(policies.recurring.rent_fraction)
-    mortgage_holders = _mortgage_holders(inputs)
+    homeowners = _homeowners(inputs)
 
     out: list[str] = []
     for person_id, acct in plan.primary_acct_for_person.items():
         if acct in plan.counterparties.hub_set:
             continue
-        if person_id in mortgage_holders:
+        if person_id in homeowners:
             continue
 
         persona = plan.personas.persona_for_person.get(person_id, SALARIED)
