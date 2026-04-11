@@ -30,11 +30,6 @@ def _scaled_probability(
     """
     Preserve the existing policy knob while switching from
     random-global assignment to persona-aware assignment.
-
-    Example:
-      if baseline_fraction is the old global default (0.65 for salary,
-      0.55 for rent), then changing policy_fraction still scales the
-      persona-specific probabilities up or down.
     """
     if base_p <= 0.0 or policy_fraction <= 0.0 or baseline_fraction <= 0.0:
         return 0.0
@@ -117,9 +112,12 @@ def generate_salary_txns(
 
     employment: dict[str, recurring_model.Employment] = {}
     txns: list[Transaction] = []
+    window_end_excl = plan.start_date + timedelta(days=plan.days)
 
-    def base_salary_draw() -> float:
-        return SALARY_MODEL.sample(rng)
+    def annual_salary_draw() -> float:
+        # The legacy salary amount model behaves like one monthly paycheck.
+        # Annualize here so per-paycheck amounts can be derived by cadence.
+        return float(SALARY_MODEL.sample(rng)) * 12.0
 
     for person_id in salary_people:
         employment[person_id] = recurring_model.employment.initialize(
@@ -128,53 +126,78 @@ def generate_salary_txns(
             person_id=person_id,
             start_date=plan.start_date,
             employers=plan.counterparties.employers,
-            base_salary_source=base_salary_draw,
+            annual_salary_source=annual_salary_draw,
         )
 
-    for payday in plan.paydays:
-        for person_id in salary_people:
-            state = employment[person_id]
-            while payday >= state.end:
-                state = recurring_model.employment.advance(
+    for person_id in salary_people:
+        dst_acct = plan.primary_acct_for_person.get(person_id)
+        if dst_acct is None:
+            continue
+
+        state = employment[person_id]
+
+        while True:
+            segment_end = min(state.end, window_end_excl)
+
+            for pay_date in recurring_model.employment.paydates_for_window(
+                state,
+                window_start=plan.start_date,
+                window_end_excl=segment_end,
+            ):
+                txn_ts = pay_date + timedelta(
+                    days=state.payroll.posting_lag_days,
+                    hours=rng.int(6, 11),
+                    minutes=rng.int(0, 60),
+                )
+
+                if txn_ts < plan.start_date or txn_ts >= window_end_excl:
+                    continue
+
+                amount = recurring_model.employment.calculate_salary(
                     recurring_policy,
                     plan.seed,
                     person_id=person_id,
-                    now=state.end,
-                    employers=plan.counterparties.employers,
-                    prev=state,
+                    state=state,
+                    pay_date=pay_date,
                 )
-            employment[person_id] = state
 
-            dst_acct = plan.primary_acct_for_person.get(person_id)
-            if dst_acct is None:
-                continue
+                txns.append(
+                    txf.make(
+                        TransactionDraft(
+                            source=state.employer_acct,
+                            destination=dst_acct,
+                            amount=amount,
+                            timestamp=txn_ts,
+                            channel=SALARY,
+                            is_fraud=0,
+                            ring_id=-1,
+                        )
+                    )
+                )
 
-            txn_ts = payday + timedelta(
-                hours=rng.int(8, 18),
-                minutes=rng.int(0, 60),
-            )
-            amount = recurring_model.employment.calculate_salary(
+            if state.end >= window_end_excl:
+                break
+
+            state = recurring_model.employment.advance(
                 recurring_policy,
                 plan.seed,
                 person_id=person_id,
-                state=state,
-                pay_date=payday,
+                now=state.end,
+                employers=plan.counterparties.employers,
+                prev=state,
             )
 
-            txns.append(
-                txf.make(
-                    TransactionDraft(
-                        source=state.employer_acct,
-                        destination=dst_acct,
-                        amount=amount,
-                        timestamp=txn_ts,
-                        channel=SALARY,
-                        is_fraud=0,
-                        ring_id=-1,
-                    )
-                )
-            )
+        employment[person_id] = state
 
+    txns.sort(
+        key=lambda txn: (
+            txn.timestamp,
+            txn.source,
+            txn.target,
+            float(txn.amount),
+            txn.channel or "",
+        )
+    )
     return txns
 
 
@@ -231,7 +254,7 @@ def generate_rent_txns(
     txns: list[Transaction] = []
 
     def base_rent_draw() -> float:
-        return RENT_MODEL.sample(rng)
+        return float(RENT_MODEL.sample(rng))
 
     for payer_acct in rent_active:
         leases[payer_acct] = recurring_model.lease.initialize(
@@ -244,10 +267,10 @@ def generate_rent_txns(
             base_rent_source=base_rent_draw,
         )
 
-    for payday in plan.paydays:
+    for month_start in plan.month_starts:
         for payer_acct in rent_active:
             state = leases[payer_acct]
-            while payday >= state.end:
+            while month_start >= state.end:
                 state = recurring_model.lease.advance(
                     recurring_policy,
                     plan.seed,
@@ -260,7 +283,7 @@ def generate_rent_txns(
                 )
             leases[payer_acct] = state
 
-            txn_ts = payday + timedelta(
+            txn_ts = month_start + timedelta(
                 days=rng.int(0, 5),
                 hours=rng.int(7, 22),
                 minutes=rng.int(0, 60),
@@ -270,7 +293,7 @@ def generate_rent_txns(
                 plan.seed,
                 payer_acct=payer_acct,
                 state=state,
-                pay_date=payday,
+                pay_date=month_start,
             )
 
             txns.append(

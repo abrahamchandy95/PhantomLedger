@@ -11,7 +11,7 @@ from .models import LegitInputs, LegitOverrides
 @dataclass(frozen=True, slots=True)
 class CounterpartyPlan:
     hub_accounts: list[str]
-    hub_set: set[str]
+    hub_set: frozenset[str]
     employers: list[str]
     landlords: list[str]
     biller_accounts: list[str]
@@ -32,10 +32,18 @@ class LegitBuildPlan:
     seed: int
     all_accounts: list[str]
     persons: list[str]
-    paydays: list[datetime]
+    month_starts: list[datetime]
     primary_acct_for_person: dict[str, str]
     counterparties: CounterpartyPlan
     personas: PersonaPlan
+
+    @property
+    def paydays(self) -> list[datetime]:
+        """
+        Compatibility shim for older generators that still expect `plan.paydays`.
+        These are month anchors, not true payroll schedules.
+        """
+        return self.month_starts
 
 
 def _select_hub_accounts(
@@ -67,15 +75,18 @@ def _build_counterparty_plan(
     overrides: LegitOverrides,
 ) -> CounterpartyPlan:
     all_accounts = inputs.accounts.ids
+    if not all_accounts:
+        raise ValueError("inputs.accounts.ids must be non-empty")
+
     hub_accounts = _select_hub_accounts(inputs)
-    hub_set = set(hub_accounts)
+    hub_set = frozenset(hub_accounts)
 
     fallback_acct = hub_accounts[0] if hub_accounts else all_accounts[0]
 
     pools = overrides.counterparty_pools
 
     if pools is not None and pools.employer_ids:
-        employers = pools.employer_ids
+        employers = list(pools.employer_ids)
     else:
         employers = (
             hub_accounts[: max(1, len(hub_accounts) // 5)]
@@ -84,7 +95,7 @@ def _build_counterparty_plan(
         )
 
     if pools is not None and pools.landlord_ids:
-        landlords = pools.landlord_ids
+        landlords = list(pools.landlord_ids)
     else:
         landlords = hub_accounts if hub_accounts else [fallback_acct]
 
@@ -144,7 +155,7 @@ def build_legit_plan(
     counterparties = _build_counterparty_plan(inputs, overrides)
     personas = _build_persona_plan(inputs, overrides, persons)
     primary_acct_for_person = _primary_acct_for_person(inputs.accounts)
-    paydays = active_months(start_date, days)
+    month_starts = active_months(start_date, days)
 
     return LegitBuildPlan(
         start_date=start_date,
@@ -152,7 +163,7 @@ def build_legit_plan(
         seed=seed,
         all_accounts=inputs.accounts.ids,
         persons=persons,
-        paydays=paydays,
+        month_starts=month_starts,
         primary_acct_for_person=primary_acct_for_person,
         counterparties=counterparties,
         personas=personas,
