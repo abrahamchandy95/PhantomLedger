@@ -60,8 +60,21 @@ def _monthly_fixed_burden(
         total += float(portfolio.auto_loan.monthly_payment)
     if portfolio.student_loan is not None and not portfolio.student_loan.in_deferment:
         total += float(portfolio.student_loan.monthly_payment)
+
     if portfolio.insurance is not None:
-        total += float(portfolio.insurance.total_monthly_premium())
+        ins = portfolio.insurance
+
+        if ins.auto is not None:
+            total += float(ins.auto.monthly_premium)
+
+        # Mortgage monthly_payment already includes escrow.
+        # Do not add home insurance a second time for mortgaged households.
+        if ins.home is not None and portfolio.mortgage is None:
+            total += float(ins.home.monthly_premium)
+
+        if ins.life is not None:
+            total += float(ins.life.monthly_premium)
+
     if portfolio.tax is not None:
         total += float(portfolio.tax.quarterly_amount) / 3.0
 

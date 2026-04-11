@@ -45,7 +45,7 @@ from .student_loan import (
 )
 from .tax_profile import DEFAULT_TAX_CONFIG, TaxConfig, TaxTerms
 
-_MANDATORY_COLLATERAL_COVERAGE_P = 0.995
+_MANDATORY_COLLATERAL_COVERAGE_P = 1.0
 
 
 def _clamp01(value: float) -> float:
@@ -67,10 +67,10 @@ def _residual_policy_probability(
     Back into the policy probability for the non-anchored population.
 
     Example:
-      if 45% of a persona finances a car and financed cars are treated as
-      insured with ~99.5% probability, this returns the probability that the
-      remaining non-financed group should receive auto coverage so that the
-      overall insurance rate stays close to the target persona rate.
+      if 45% of a persona finances a car and financed cars are always treated
+      as insured, this returns the probability that the remaining non-financed
+      group should receive auto coverage so that the overall insurance rate
+      stays close to the target.
     """
     target = _clamp01(target_p)
     anchored_share = _clamp01(anchored_population_p)
@@ -204,8 +204,8 @@ def _try_insurance(
     Sample insurance coverage for one person.
 
     Home and auto coverage are anchored to the underlying financed asset:
-      - mortgage holders are almost always issued home insurance
-      - auto-loan holders are almost always issued auto insurance
+      - mortgage holders are always issued home insurance
+      - auto-loan holders are always issued auto insurance
 
     Non-financed owners can still hold coverage, but their residual issuance
     probability is backed out so the overall persona-level insurance rate stays

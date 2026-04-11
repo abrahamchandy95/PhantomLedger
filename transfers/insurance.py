@@ -107,19 +107,23 @@ def generate(
                     )
                 )
 
-        # Home — premiums + possible claim
+        # Home — claim behavior still applies to all insured homeowners.
+        # For mortgaged households, treat the premium as escrowed inside the
+        # mortgage payment rather than as a separate direct bank outflow.
         if holdings.home is not None:
-            txns.extend(
-                _monthly_premiums(
-                    rng,
-                    txf,
-                    months,
-                    start_dt,
-                    end_dt,
-                    acct,
-                    holdings.home,
+            if portfolio.mortgage is None:
+                txns.extend(
+                    _monthly_premiums(
+                        rng,
+                        txf,
+                        months,
+                        start_dt,
+                        end_dt,
+                        acct,
+                        holdings.home,
+                    )
                 )
-            )
+
             if _claim_occurred(gen, holdings.home.annual_claim_p, n_months):
                 payout = _sample_claim(
                     gen, cfg.home_claim_median, cfg.home_claim_sigma, floor=1000.0
