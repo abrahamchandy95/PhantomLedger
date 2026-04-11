@@ -2,10 +2,16 @@ from hashlib import blake2b
 
 
 def external_family_id(person_id: str) -> str:
-    """Deterministic external-family account ID derived from a known person."""
-    h = blake2b(person_id.encode("utf-8"), digest_size=4)
+    """
+    Deterministic external-family account ID derived from a known person.
+
+    Uses a 64-bit hash suffix instead of 32-bit to make collisions vanishingly
+    unlikely even at large population sizes. The ID stays deterministic for a
+    given person_id across runs.
+    """
+    h = blake2b(person_id.encode("utf-8"), digest_size=8)
     suffix = int.from_bytes(h.digest(), "little", signed=False)
-    return f"XF{suffix:08d}"
+    return f"XF{suffix:020d}"
 
 
 def uses_external_family_account(person_id: str, external_p: float) -> bool:
