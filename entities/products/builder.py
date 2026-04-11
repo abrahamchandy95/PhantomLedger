@@ -10,6 +10,16 @@ issuance also creates accounts.
 The builder is deterministic: given the same seed and population,
 it produces identical portfolios. Each person gets an independent
 RNG stream derived from their ID, so insertion order doesn't matter.
+
+Research / modeling notes:
+- Mortgages are modeled as contractual 30-year loans, but sampled loan age
+  is capped to roughly the effective duration range documented in mortgage
+  research, since many mortgages refinance or terminate long before year 30.
+- Auto loans preserve a new-vs-used segment split so payment sizes and term
+  lengths reflect the research in auto_loan.py rather than one blended pool.
+- Student loans preserve grace periods, repayment plans, maturity, and
+  graduation-season seasonality so the implementation matches the research
+  in student_loan.py.
 """
 
 from datetime import datetime, timedelta
@@ -17,6 +27,7 @@ from datetime import datetime, timedelta
 import numpy as np
 
 from common.config.population.insurance import Insurance as InsuranceConfig
+from common.date_math import add_months
 from common.externals import (
     IRS_TREASURY,
     LENDER_AUTO,
@@ -24,6 +35,7 @@ from common.externals import (
     SERVICER_STUDENT,
 )
 from common.math import lognormal_by_median
+from common.persona_names import STUDENT
 from common.random import RngFactory
 from entities.models import CreditCards
 
@@ -52,6 +64,133 @@ def _clamp01(value: float) -> float:
 def _sample_payment_day(gen: np.random.Generator) -> int:
     """Sample a billing day in [1, 28]."""
     return int(gen.integers(1, 29))
+
+
+def _sample_mortgage_payment_day(gen: np.random.Generator) -> int:
+    """
+    Mortgages are heavily concentrated near the 1st of the month.
+    """
+    if float(gen.random()) < 0.85:
+        return 1
+    return int(gen.integers(2, 6))
+
+
+def _sample_mortgage_age_days(gen: np.random.Generator) -> int:
+    """
+    Sample observed mortgage age at simulation start.
+
+    Contractual mortgages are commonly 30 years, but the average life of a
+    mortgage is materially shorter due to refinances and moves. We therefore
+    limit sampled loan age to roughly the first decade and bias toward the
+    middle of that interval.
+    """
+    raw_years = float(gen.triangular(left=0.5, mode=5.0, right=10.0))
+    return max(30, int(round(raw_years * 365.0)))
+
+
+def _sample_auto_segment(
+    gen: np.random.Generator,
+    cfg: AutoLoanConfig,
+) -> str:
+    """
+    Sample whether this financed vehicle is modeled as new or used.
+
+    Financing rates for new vs used vehicles are purchase/origination-style
+    statistics. ownership_p() remains a stock-style prior over who currently
+    carries an auto loan, and this helper chooses segment conditional on
+    already having a loan.
+    """
+    if float(gen.random()) < float(cfg.new_vehicle_share):
+        return "new"
+    return "used"
+
+
+def _sample_auto_term_months(
+    gen: np.random.Generator,
+    cfg: AutoLoanConfig,
+    vehicle_segment: str,
+) -> int:
+    """
+    Sample a segment-specific contractual auto-loan term using a truncated
+    normal around the research-backed average term.
+    """
+    mean_months, sigma_months = cfg.term_params(vehicle_segment)
+    raw = float(gen.normal(loc=mean_months, scale=sigma_months))
+    term = int(round(raw))
+    return max(int(cfg.term_min_months), min(int(cfg.term_max_months), term))
+
+
+def _sample_student_plan(
+    gen: np.random.Generator,
+    cfg: StudentLoanConfig,
+) -> tuple[str, int]:
+    """
+    Sample plan_type and contractual repayment term.
+
+    Uses the plan mix defined in student_loan.py so the builder stays aligned
+    with that module's research notes.
+    """
+    total = float(cfg.standard_plan_p + cfg.extended_plan_p + cfg.idr_like_plan_p)
+    u = float(gen.random()) * total
+
+    if u < float(cfg.standard_plan_p):
+        return "standard", int(cfg.standard_term_months)
+
+    u -= float(cfg.standard_plan_p)
+    if u < float(cfg.extended_plan_p):
+        return "extended", int(cfg.extended_term_months)
+
+    idr_term = (
+        int(cfg.idr_20_year_term_months)
+        if float(gen.random()) < float(cfg.idr_20_year_p)
+        else int(cfg.idr_25_year_term_months)
+    )
+    return "idr_like", idr_term
+
+
+def _sample_student_exit_date(
+    gen: np.random.Generator,
+    *,
+    start_date: datetime,
+    grace_period_months: int,
+    repayment_in_future: bool,
+) -> datetime:
+    """
+    Sample a school-exit / graduation-like anchor date.
+
+    We intentionally bias toward May/June with a secondary December cycle
+    to preserve the research note about graduation-season seasonality
+    without building a full academic-calendar model.
+    """
+    month_roll = float(gen.random())
+    if month_roll < 0.45:
+        month = 5
+    elif month_roll < 0.80:
+        month = 6
+    else:
+        month = 12
+
+    year_offset = int(gen.integers(0, 5 if repayment_in_future else 8))
+    year = (
+        start_date.year + year_offset
+        if repayment_in_future
+        else start_date.year - year_offset
+    )
+    day = int(gen.integers(10, 29))
+
+    exit_date = datetime(year, month, day)
+    repayment_start = add_months(exit_date, grace_period_months)
+
+    if repayment_in_future:
+        while repayment_start <= start_date:
+            exit_date = exit_date.replace(year=exit_date.year + 1)
+            repayment_start = add_months(exit_date, grace_period_months)
+    else:
+        while repayment_start > start_date:
+            exit_date = exit_date.replace(year=exit_date.year - 1)
+            repayment_start = add_months(exit_date, grace_period_months)
+
+    return exit_date
 
 
 def _residual_policy_probability(
@@ -92,17 +231,32 @@ def _try_mortgage(
     if float(gen.random()) >= cfg.ownership_p(persona_name):
         return None
 
-    base = float(
+    # payment_median is treated as the total contractual monthly payment.
+    # Because the mortgage research anchor already refers to the observed
+    # monthly payment, we do not multiply by escrow_fraction again here.
+    payment = float(
         lognormal_by_median(gen, median=cfg.payment_median, sigma=cfg.payment_sigma)
     )
-    payment = round(max(200.0, base * (1.0 + cfg.escrow_fraction)), 2)
+    payment = round(max(200.0, payment), 2)
+
+    mortgage_age_days = _sample_mortgage_age_days(gen)
 
     return MortgageTerms(
         monthly_payment=payment,
-        payment_day=_sample_payment_day(gen),
+        payment_day=_sample_mortgage_payment_day(gen),
         lender_acct=LENDER_MORTGAGE,
-        start_date=start_date - timedelta(days=int(gen.integers(365, 3650))),
+        start_date=start_date - timedelta(days=mortgage_age_days),
         term_months=360,
+        late_p=cfg.late_p,
+        late_days_min=cfg.late_days_min,
+        late_days_max=cfg.late_days_max,
+        miss_p=cfg.miss_p,
+        partial_p=cfg.partial_p,
+        cure_p=cfg.cure_p,
+        cluster_mult=cfg.cluster_mult,
+        partial_min_frac=cfg.partial_min_frac,
+        partial_max_frac=cfg.partial_max_frac,
+        max_cure_cycles=cfg.max_cure_cycles,
     )
 
 
@@ -115,19 +269,42 @@ def _try_auto_loan(
     if float(gen.random()) >= cfg.ownership_p(persona_name):
         return None
 
+    vehicle_segment = _sample_auto_segment(gen, cfg)
+
+    payment_median, payment_sigma = cfg.payment_params(vehicle_segment)
     payment = float(
-        lognormal_by_median(gen, median=cfg.payment_median, sigma=cfg.payment_sigma)
+        lognormal_by_median(
+            gen,
+            median=payment_median,
+            sigma=payment_sigma,
+        )
     )
     payment = round(max(100.0, payment), 2)
 
-    term = int(gen.integers(36, 85))
+    term_months = _sample_auto_term_months(gen, cfg, vehicle_segment)
+
+    # Sample loan seasoning so some loans are relatively new while others
+    # are already deep into repayment when the simulation window opens.
+    max_age_days = max(30, term_months * 30)
+    age_days = int(gen.integers(30, max_age_days + 1))
 
     return AutoLoanTerms(
         monthly_payment=payment,
         payment_day=_sample_payment_day(gen),
         lender_acct=LENDER_AUTO,
-        start_date=start_date - timedelta(days=int(gen.integers(30, term * 30))),
-        term_months=term,
+        start_date=start_date - timedelta(days=age_days),
+        term_months=term_months,
+        vehicle_segment=vehicle_segment,
+        late_p=cfg.late_p,
+        late_days_min=cfg.late_days_min,
+        late_days_max=cfg.late_days_max,
+        miss_p=cfg.miss_p,
+        partial_p=cfg.partial_p,
+        cure_p=cfg.cure_p,
+        cluster_mult=cfg.cluster_mult,
+        partial_min_frac=cfg.partial_min_frac,
+        partial_max_frac=cfg.partial_max_frac,
+        max_cure_cycles=cfg.max_cure_cycles,
     )
 
 
@@ -145,16 +322,65 @@ def _try_student_loan(
     )
     payment = round(max(50.0, payment), 2)
 
-    in_deferment = (
-        persona_name == "student" and float(gen.random()) < cfg.student_deferment_p
-    )
+    plan_type, term_months = _sample_student_plan(gen, cfg)
+
+    if persona_name == STUDENT:
+        still_deferred = float(gen.random()) < float(cfg.student_deferment_p)
+
+        school_exit_date = _sample_student_exit_date(
+            gen,
+            start_date=start_date,
+            grace_period_months=int(cfg.grace_period_months),
+            repayment_in_future=still_deferred,
+        )
+        repayment_start_date = add_months(
+            school_exit_date,
+            int(cfg.grace_period_months),
+        )
+        deferment_end_date = school_exit_date if still_deferred else None
+
+        # Origination can be months to several years before leaving school.
+        origination_date = school_exit_date - timedelta(
+            days=int(gen.integers(180, (4 * 365) + 1))
+        )
+    else:
+        # Non-student personas usually already left school and are somewhere
+        # inside the repayment horizon when the simulation begins.
+        repayment_age_months = int(gen.integers(1, term_months + 1))
+        repayment_start_date = start_date - timedelta(days=repayment_age_months * 30)
+
+        # Approximate school exit to preserve the notion that repayment begins
+        # only after a grace window following school exit.
+        school_exit_date = repayment_start_date - timedelta(
+            days=int(cfg.grace_period_months) * 30
+        )
+        deferment_end_date = None
+        origination_date = school_exit_date - timedelta(
+            days=int(gen.integers(180, (4 * 365) + 1))
+        )
+
+    maturity_date = add_months(repayment_start_date, term_months)
 
     return StudentLoanTerms(
         monthly_payment=payment,
         payment_day=_sample_payment_day(gen),
         servicer_acct=SERVICER_STUDENT,
-        start_date=start_date - timedelta(days=int(gen.integers(180, 3650))),
-        in_deferment=in_deferment,
+        origination_date=origination_date,
+        repayment_start_date=repayment_start_date,
+        term_months=term_months,
+        plan_type=plan_type,
+        maturity_date=maturity_date,
+        deferment_end_date=deferment_end_date,
+        late_p=cfg.late_p,
+        late_days_min=cfg.late_days_min,
+        late_days_max=cfg.late_days_max,
+        miss_p=cfg.miss_p,
+        partial_p=cfg.partial_p,
+        cure_p=cfg.cure_p,
+        cluster_mult=cfg.cluster_mult,
+        partial_min_frac=cfg.partial_min_frac,
+        partial_max_frac=cfg.partial_max_frac,
+        max_cure_cycles=cfg.max_cure_cycles,
     )
 
 
@@ -163,7 +389,6 @@ def _try_tax(
     cfg: TaxConfig,
     persona_name: str,
 ) -> TaxTerms | None:
-    # Layer 1: quarterly estimated-tax profile
     quarterly = 0.0
     if float(gen.random()) < cfg.estimated_payment_p(persona_name):
         quarterly = float(
@@ -175,7 +400,6 @@ def _try_tax(
         )
         quarterly = round(max(100.0, quarterly), 2)
 
-    # Layer 2: annual settlement profile
     refund_amount = 0.0
     refund_month = 3
 
@@ -193,7 +417,7 @@ def _try_tax(
             )
         )
         refund_amount = round(max(100.0, refund_amount), 2)
-        refund_month = int(gen.integers(2, 6))  # Feb-May
+        refund_month = int(gen.integers(2, 6))
 
     elif settlement_roll < float(cfg.refund_p) + float(cfg.balance_due_p):
         balance_due_amount = float(
@@ -204,9 +428,8 @@ def _try_tax(
             )
         )
         balance_due_amount = round(max(100.0, balance_due_amount), 2)
-        balance_due_month = 4  # filing deadline month
+        balance_due_month = 4
 
-    # No visible tax behavior at all for this filer in-window
     if quarterly <= 0.0 and refund_amount <= 0.0 and balance_due_amount <= 0.0:
         return None
 
@@ -317,14 +540,6 @@ def build_portfolios(
 ) -> PortfolioRegistry:
     """
     Assign financial products to every person in the population.
-
-    Credit card terms are extracted from the already-issued CreditCards
-    model (since issuance also creates accounts). Insurance, loans, and
-    tax profiles are sampled fresh from their config distributions.
-
-    Collateralized insurance is not sampled fully independently from the
-    financed asset: mortgage and auto-loan holders are strongly anchored
-    to matching home/auto coverage.
     """
     rng_factory = RngFactory(base_seed)
 
@@ -340,7 +555,10 @@ def build_portfolios(
         mortgage = _try_mortgage(gen, mortgage_cfg, persona_name, start_date)
         auto_loan = _try_auto_loan(gen, auto_loan_cfg, persona_name, start_date)
         student_loan = _try_student_loan(
-            gen, student_loan_cfg, persona_name, start_date
+            gen,
+            student_loan_cfg,
+            persona_name,
+            start_date,
         )
         tax = _try_tax(gen, tax_cfg, persona_name)
         insurance = _try_insurance(
