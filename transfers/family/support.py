@@ -4,6 +4,7 @@ from typing import cast
 import numpy as np
 
 from common.channels import FAMILY_SUPPORT
+from common.family_accounts import resolve_family_acct
 from common.math import as_int
 from common.persona_names import RETIRED
 from common.transactions import Transaction
@@ -11,7 +12,6 @@ from transfers.factory import TransactionDraft
 
 from .engine import GenerateRequest, Schedule
 from .helpers import (
-    resolve_family_acct,
     weighted_pick_person,
     support_capacity_weight,
     pareto_amount,

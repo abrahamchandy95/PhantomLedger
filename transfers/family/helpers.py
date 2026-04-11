@@ -1,4 +1,3 @@
-from hashlib import blake2b
 from math import pow
 from typing import cast
 
@@ -9,39 +8,6 @@ from common.math import as_int
 from common.persona_names import SALARIED
 from common.random import Rng
 from entities.personas import get_persona
-
-
-def _external_family_id(person_id: str) -> str:
-    """Deterministic external account ID derived from person_id."""
-    h = blake2b(person_id.encode("utf-8"), digest_size=4)
-    suffix = int.from_bytes(h.digest(), "little", signed=False)
-    return f"XF{suffix:08d}"
-
-
-def resolve_family_acct(
-    person_id: str,
-    primary_accounts: dict[str, str],
-    external_p: float,
-) -> str | None:
-    """
-    Resolves a family member's payment account.
-
-    Pure function — the external/internal decision is derived
-    deterministically from person_id, so the same person always
-    resolves to the same account regardless of call order or
-    which sub-generator calls this.
-    """
-    if external_p <= 0.0:
-        return primary_accounts.get(person_id)
-
-    h = blake2b(f"external_bank|{person_id}".encode("utf-8"), digest_size=8)
-    val = int.from_bytes(h.digest(), "little", signed=False)
-    coin = (val % 10000) / 10000.0
-
-    if coin < external_p:
-        return _external_family_id(person_id)
-
-    return primary_accounts.get(person_id)
 
 
 def pareto_amount(rng: Rng, *, xm: float, alpha: float) -> float:
@@ -57,7 +23,9 @@ def pick_education_payee(
 ) -> str | None:
     education_accounts = [
         acct
-        for acct, cat in zip(merchants.counterparties, merchants.categories)
+        for acct, cat in zip(
+            merchants.counterparties, merchants.categories, strict=True
+        )
         if cat == "education"
     ]
     if not education_accounts:
@@ -71,18 +39,10 @@ def support_capacity_weight(
     person_id: str,
     persona_objects: dict[str, models.Persona],
 ) -> float:
-    """
-    Returns the financial weight of a person for capacity-based
-    selection (who pays more in family support, gifts, etc.).
-
-    Uses the individualized persona object so two salaried people
-    with different weight values (e.g. 0.85 vs 1.12) contribute
-    differently, rather than both returning exactly 1.0.
-    """
     persona = persona_objects.get(person_id)
     if persona is not None:
         return float(persona.weight)
-    # Fallback to singleton for external/unknown people
+
     return float(get_persona(SALARIED).weight)
 
 
@@ -91,9 +51,6 @@ def weighted_pick_person(
     persona_objects: dict[str, models.Persona],
     gen: np.random.Generator,
 ) -> str:
-    """
-    Pick one person weighted by their individualized financial capacity.
-    """
     if len(people) == 1:
         return people[0]
 
@@ -108,7 +65,7 @@ def weighted_pick_person(
 
     u = float(gen.random()) * total
     acc = 0.0
-    for person_id, weight in zip(people, weights):
+    for person_id, weight in zip(people, weights, strict=True):
         acc += float(weight)
         if u <= acc:
             return person_id

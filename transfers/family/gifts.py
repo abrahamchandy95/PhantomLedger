@@ -21,13 +21,14 @@ from typing import cast
 import numpy as np
 
 from common.channels import PARENT_GIFT
+from common.family_accounts import resolve_family_acct
 from common.math import as_int
 from common.persona_names import SALARIED, FREELANCER, SMALLBIZ, HNW
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
 from .engine import GenerateRequest, Schedule
-from .helpers import pareto_amount, support_capacity_weight, resolve_family_acct
+from .helpers import pareto_amount, support_capacity_weight
 
 
 def _is_working_adult(persona: str) -> bool:

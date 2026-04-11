@@ -71,7 +71,7 @@ def merge(
     mark_external: bool = False,
 ) -> models.Accounts:
     """
-    Safely merges new accounts into the existing Accounts pool.
+    Safely merges new unowned accounts into the existing Accounts pool.
     """
     if not new_ids:
         return data
@@ -96,4 +96,74 @@ def merge(
         mules=data.mules,
         victims=data.victims,
         externals=new_externals,
+    )
+
+
+def merge_owned_accounts(
+    data: models.Accounts,
+    owned_accounts: dict[str, list[str]],
+    *,
+    mark_external: bool = False,
+) -> models.Accounts:
+    """
+    Merge accounts that should be represented and attributed to known people.
+
+    This is used for modeled external accounts that still belong to a known person,
+    such as a spouse/child/sibling who banks elsewhere. Those accounts must exist in
+    the global registry and remain attributable for routing and graph export.
+    """
+    if not owned_accounts:
+        return data
+
+    ids = list(data.ids)
+    known_ids = set(ids)
+
+    by_person = {person_id: list(accts) for person_id, accts in data.by_person.items()}
+    owner_map = dict(data.owner_map)
+    externals = set(data.externals)
+
+    changed = False
+
+    for person_id, account_ids in owned_accounts.items():
+        if not account_ids:
+            continue
+
+        person_accounts = by_person.setdefault(person_id, [])
+
+        for account_id in account_ids:
+            existing_owner = owner_map.get(account_id)
+            if existing_owner is not None and existing_owner != person_id:
+                raise ValueError(
+                    f"Account {account_id!r} already belongs to {existing_owner!r}, "
+                    + f"cannot reassign to {person_id!r}"
+                )
+
+            if account_id not in known_ids:
+                ids.append(account_id)
+                known_ids.add(account_id)
+                changed = True
+
+            if existing_owner is None:
+                owner_map[account_id] = person_id
+                changed = True
+
+            if account_id not in person_accounts:
+                person_accounts.append(account_id)
+                changed = True
+
+            if mark_external and account_id not in externals:
+                externals.add(account_id)
+                changed = True
+
+    if not changed:
+        return data
+
+    return models.Accounts(
+        ids=ids,
+        by_person=by_person,
+        owner_map=owner_map,
+        frauds=data.frauds,
+        mules=data.mules,
+        victims=data.victims,
+        externals=externals,
     )

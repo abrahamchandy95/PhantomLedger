@@ -1,9 +1,14 @@
 from common import config
 from common.externals import ALL as ALL_EXTERNALS
+from common.family_accounts import planned_external_family_accounts
 from common.random import Rng
 from pipeline.state import Entities
 
-from entities.accounts import build as build_accounts, merge
+from entities.accounts import (
+    build as build_accounts,
+    merge,
+    merge_owned_accounts,
+)
 from entities.counterparties import build as build_counterparties
 from entities.credit_cards import build as build_credit_cards, DEFAULT_POLICY
 from entities.merchants import build as build_merchants
@@ -18,14 +23,14 @@ def build(cfg: config.World, rng: Rng) -> Entities:
     accounts = build_accounts(cfg.accounts, rng, people)
     pii = generate_pii(people, rng)
 
-    #  Merchants & Shared Accounts
+    # Merchants & Shared Accounts
     merchants = build_merchants(cfg.merchants, cfg.population, rng)
     if merchants.internals:
         accounts = merge(accounts, merchants.internals)
     if merchants.externals:
         accounts = merge(accounts, merchants.externals, mark_external=True)
 
-    #  Employer & Landlord counterparties
+    # Employer & Landlord counterparties
     counterparty_pools = build_counterparties(cfg.population.size)
     if counterparty_pools.all_externals:
         accounts = merge(accounts, counterparty_pools.all_externals, mark_external=True)
@@ -37,12 +42,32 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         mark_external=True,
     )
 
-    #  Personas
+    # Deterministic family external accounts (XF...) for known people.
+    # These accounts belong to a known synthetic person but are serviced by
+    # another bank, so they must still be represented in the account registry.
+    primary_accounts = {
+        person_id: account_ids[0]
+        for person_id, account_ids in accounts.by_person.items()
+        if account_ids
+    }
+    family_external_accounts = planned_external_family_accounts(
+        people.ids,
+        primary_accounts,
+        float(cfg.family.external_family_p),
+    )
+    if family_external_accounts:
+        accounts = merge_owned_accounts(
+            accounts,
+            family_external_accounts,
+            mark_external=True,
+        )
+
+    # Personas
     persons = list(accounts.by_person.keys())
     persona_map = assign_personas(cfg.personas, rng, persons)
     persona_objects = build_persona_objects(persona_map, cfg.population.seed)
 
-    #  Credit Cards (must happen before portfolio building)
+    # Credit Cards (must happen before portfolio building)
     accounts, credit_cards = build_credit_cards(
         DEFAULT_POLICY,
         cfg.population.seed,
@@ -50,7 +75,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         persona_objects,
     )
 
-    #  Financial Product Portfolios
+    # Financial Product Portfolios
     portfolios = build_portfolios(
         base_seed=cfg.population.seed,
         persona_map=persona_map,

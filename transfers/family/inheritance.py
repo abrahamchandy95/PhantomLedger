@@ -17,12 +17,12 @@ from typing import cast
 import numpy as np
 
 from common.channels import INHERITANCE
+from common.family_accounts import resolve_family_acct
 from common.math import as_int, lognormal_by_median
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
 from .engine import GenerateRequest, Schedule
-from .helpers import resolve_family_acct
 
 
 def generate(

@@ -21,13 +21,13 @@ from typing import cast
 import numpy as np
 
 from common.channels import SPOUSE_TRANSFER
+from common.family_accounts import resolve_family_acct
 from common.math import as_int, lognormal_by_median
 from common.transactions import Transaction
 from entities.personas import get_persona
 from transfers.factory import TransactionDraft
 
 from .engine import GenerateRequest, Schedule
-from .helpers import resolve_family_acct
 
 
 def _earning_power(persona_name: str) -> float:

@@ -8,16 +8,14 @@ from .accounts import (
     account_number as gen_account_number,
     has_account as gen_has_account,
 )
+from .external_accounts import external_account as gen_external_account
 from .infra import (
     device as gen_device,
     has_ip as gen_has_ip,
     has_used as gen_has_used,
     ip_address as gen_ip_address,
 )
-from .merchants import (
-    external_account as gen_external_account,
-    merchant as gen_merchant,
-)
+from .merchants import merchant as gen_merchant
 from .people import person as gen_person
 from .pii import (
     email as gen_email,
@@ -39,7 +37,10 @@ def build(entities: Entities, infra: Infra) -> list[OutputTable]:
         (schema.DEVICE, gen_device(infra.devices)),
         (schema.IP_ADDRESS, gen_ip_address(infra.ips)),
         (schema.MERCHANT, gen_merchant(entities.merchants)),
-        (schema.EXTERNAL_ACCOUNT, gen_external_account(entities.merchants)),
+        (
+            schema.EXTERNAL_ACCOUNT,
+            gen_external_account(entities.accounts, entities.merchants),
+        ),
         (schema.HAS_ACCOUNT, gen_has_account(entities.accounts)),
         (schema.HAS_PHONE, gen_has_phone(entities.people.ids, entities.pii)),
         (schema.HAS_EMAIL, gen_has_email(entities.people.ids, entities.pii)),

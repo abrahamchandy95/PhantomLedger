@@ -4,13 +4,14 @@ from typing import cast
 import numpy as np
 
 from common.channels import ALLOWANCE
+from common.family_accounts import resolve_family_acct
 from common.math import as_int
 from common.persona_names import STUDENT
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
 from .engine import GenerateRequest, Schedule
-from .helpers import pareto_amount, resolve_family_acct
+from .helpers import pareto_amount
 
 
 def generate(
