@@ -21,11 +21,12 @@ Ownership conditioned on persona:
 - hnw: 5%
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Iterator
 
-from common.persona_names import STUDENT, RETIRED, SALARIED, FREELANCER, SMALLBIZ, HNW
+from common.date_math import clip_half_open, month_starts
+from common.persona_names import FREELANCER, HNW, RETIRED, SALARIED, SMALLBIZ, STUDENT
 from common.validate import between, ge, gt
 
 from .event import Direction, ObligationEvent
@@ -94,29 +95,47 @@ def scheduled_events(
     start: datetime,
     end_excl: datetime,
 ) -> Iterator[ObligationEvent]:
-    """Yield monthly student loan payments within the simulation window."""
+    """Yield monthly student loan payments within the active repayment window."""
     # Deferred loans emit no payment events
     if terms.in_deferment:
         return
 
     payment_day = min(terms.payment_day, 28)
-    current = datetime(start.year, start.month, 1)
 
-    while current < end_excl:
-        ts = current.replace(day=payment_day, hour=8, minute=0, second=0)
+    # StudentLoanTerms currently has no maturity field, so this scheduler can
+    # enforce origination timing but not a contractual end date yet.
+    active_start = terms.start_date
+    active_end_excl = None
 
-        if ts >= start and ts < end_excl:
-            yield ObligationEvent(
-                person_id=person_id,
-                direction=Direction.OUTFLOW,
-                counterparty_acct=terms.servicer_acct,
-                amount=terms.monthly_payment,
-                timestamp=ts,
-                channel=CHANNEL,
-                product_type="student_loan",
-            )
+    clipped = clip_half_open(
+        window_start=start,
+        window_end_excl=end_excl,
+        active_start=active_start,
+        active_end_excl=active_end_excl,
+    )
+    if clipped is None:
+        return
 
-        if current.month == 12:
-            current = datetime(current.year + 1, 1, 1)
-        else:
-            current = datetime(current.year, current.month + 1, 1)
+    effective_start, effective_end_excl = clipped
+
+    for current in month_starts(effective_start, effective_end_excl):
+        ts = current.replace(
+            day=payment_day,
+            hour=8,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        if ts < effective_start or ts >= effective_end_excl:
+            continue
+
+        yield ObligationEvent(
+            person_id=person_id,
+            direction=Direction.OUTFLOW,
+            counterparty_acct=terms.servicer_acct,
+            amount=terms.monthly_payment,
+            timestamp=ts,
+            channel=CHANNEL,
+            product_type="student_loan",
+        )

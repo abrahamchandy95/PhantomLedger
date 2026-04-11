@@ -22,11 +22,12 @@ Ownership is conditioned on persona:
 - hnw: 70% (larger homes, investment properties)
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Iterator
 
-from common.persona_names import STUDENT, RETIRED, SALARIED, FREELANCER, SMALLBIZ, HNW
+from common.date_math import add_months, clip_half_open, month_starts
+from common.persona_names import FREELANCER, HNW, RETIRED, SALARIED, SMALLBIZ, STUDENT
 from common.validate import between, ge, gt
 
 from .event import Direction, ObligationEvent
@@ -99,28 +100,41 @@ def scheduled_events(
     start: datetime,
     end_excl: datetime,
 ) -> Iterator[ObligationEvent]:
-    """Yield monthly mortgage payments within the simulation window."""
+    """Yield monthly mortgage payments within the active contract window."""
     payment_day = min(terms.payment_day, 28)
 
-    # Walk month by month from the window start
-    current = datetime(start.year, start.month, 1)
+    active_start = terms.start_date
+    active_end_excl = add_months(terms.start_date, terms.term_months)
 
-    while current < end_excl:
-        ts = current.replace(day=payment_day, hour=6, minute=0, second=0)
+    clipped = clip_half_open(
+        window_start=start,
+        window_end_excl=end_excl,
+        active_start=active_start,
+        active_end_excl=active_end_excl,
+    )
+    if clipped is None:
+        return
 
-        if ts >= start and ts < end_excl:
-            yield ObligationEvent(
-                person_id=person_id,
-                direction=Direction.OUTFLOW,
-                counterparty_acct=terms.lender_acct,
-                amount=terms.monthly_payment,
-                timestamp=ts,
-                channel=CHANNEL,
-                product_type="mortgage",
-            )
+    effective_start, effective_end_excl = clipped
 
-        # Advance to next month
-        if current.month == 12:
-            current = datetime(current.year + 1, 1, 1)
-        else:
-            current = datetime(current.year, current.month + 1, 1)
+    for current in month_starts(effective_start, effective_end_excl):
+        ts = current.replace(
+            day=payment_day,
+            hour=6,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        if ts < effective_start or ts >= effective_end_excl:
+            continue
+
+        yield ObligationEvent(
+            person_id=person_id,
+            direction=Direction.OUTFLOW,
+            counterparty_acct=terms.lender_acct,
+            amount=terms.monthly_payment,
+            timestamp=ts,
+            channel=CHANNEL,
+            product_type="mortgage",
+        )
