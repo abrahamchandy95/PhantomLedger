@@ -9,6 +9,7 @@ from common import config
 from common.random import Rng
 from common.transactions import Transaction
 from entities.counterparties import Pools as CounterpartyPools
+from entities.products.portfolio import PortfolioRegistry
 from infra.routing import Router
 
 
@@ -70,6 +71,7 @@ class LegitInputs:
     rng: Rng
     accounts: models.Accounts
     merchants: models.Merchants
+    portfolios: PortfolioRegistry | None = None
     government: config.Government = field(default_factory=config.Government)
 
 

@@ -35,6 +35,7 @@ def build_legit(
             rng=rng,
             accounts=entities.accounts,
             merchants=entities.merchants,
+            portfolios=entities.portfolios,
             government=cfg.government,
         ),
         overrides=Overrides(
