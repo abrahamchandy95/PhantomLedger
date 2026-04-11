@@ -84,12 +84,12 @@ def _choose_source_account(
         return rng.choice(eligible)
 
     ranked = sorted(
-        ((book.available_to_spend(acct), acct) for acct in eligible),
+        ((book.available_cash(acct), acct) for acct in eligible),
         reverse=True,
     )
 
-    for available, acct in ranked:
-        if available >= amount:
+    for available_cash, acct in ranked:
+        if available_cash >= amount:
             return acct
 
     return None
@@ -108,8 +108,8 @@ def _choose_destination_account(
     if book is None or len(destinations) == 1:
         return rng.choice(destinations)
 
-    # Prefer topping up the relatively leaner internal account.
-    ranked = sorted(destinations, key=lambda acct: book.available_to_spend(acct))
+    # Prefer topping up the relatively leaner cash account.
+    ranked = sorted(destinations, key=lambda acct: book.available_cash(acct))
     return ranked[0]
 
 

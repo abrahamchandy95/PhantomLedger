@@ -6,6 +6,7 @@ from typing import cast
 import numpy as np
 import numpy.typing as npt
 
+from common.channels import SELF_TRANSFER
 from common.ids import is_external
 from common.math import Bool, F64, I64, lognormal_by_median
 from common.persona_names import (
@@ -275,6 +276,14 @@ class Ledger:
             return float("inf")
         return self._available_liquidity(idx)
 
+    def available_cash(self, account: str) -> float:
+        idx = self._index_of(account)
+        if idx is None:
+            return 0.0
+        if idx in self.hub_indices:
+            return float("inf")
+        return float(cast(np.float64, self.balances[idx]))
+
     def set_credit_limit(self, account: str, limit_value: float) -> None:
         idx = self._index_of(account)
         if idx is None:
@@ -297,7 +306,7 @@ class Ledger:
         channel: str | None = None,
         timestamp: datetime | None = None,
     ) -> TransferDecision:
-        del channel, timestamp
+        del timestamp
 
         amt = float(amount)
         if amt <= 0.0 or not np.isfinite(amt):
@@ -332,8 +341,15 @@ class Ledger:
             return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
 
         is_hub = src_idx in hubs
-        if not is_hub and self._available_liquidity(src_idx) < amt:
-            return TransferDecision(False, REJECT_INSUFFICIENT_FUNDS)
+        if not is_hub:
+            # Self-transfers must be funded by actual cash, not protection liquidity.
+            spendable = (
+                float(cast(np.float64, balances[src_idx]))
+                if channel == SELF_TRANSFER
+                else self._available_liquidity(src_idx)
+            )
+            if spendable < amt:
+                return TransferDecision(False, REJECT_INSUFFICIENT_FUNDS)
 
         # Outbound to external.
         if dst_ext:

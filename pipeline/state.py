@@ -45,3 +45,4 @@ class Transfers:
     draft_txns: list[Transaction]
     final_txns: list[Transaction]
     drop_counts: dict[str, int] = field(default_factory=dict)
+    drop_counts_by_channel: dict[tuple[str, str], int] = field(default_factory=dict)

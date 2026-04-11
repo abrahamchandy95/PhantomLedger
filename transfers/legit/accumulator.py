@@ -131,11 +131,16 @@ class ChronoReplayAccumulator:
     policy: ReplayPolicy = field(default_factory=ReplayPolicy)
     txns: list[Transaction] = field(default_factory=list)
     drop_counts: Counter[str] = field(default_factory=Counter)
-
+    drop_counts_by_channel: Counter[tuple[str, str]] = field(default_factory=Counter)
     _next_sequence: int = field(default=0, init=False)
     _future_inbound_times: dict[str, list[datetime]] = field(
         default_factory=dict, init=False
     )
+
+    def _record_drop(self, reason: str, channel: str | None) -> None:
+        ch = channel or "none"
+        self.drop_counts[reason] += 1
+        self.drop_counts_by_channel[(ch, reason)] += 1
 
     def append(self, txn: Transaction) -> bool:
         if self.book is None:
@@ -154,7 +159,7 @@ class ChronoReplayAccumulator:
             return True
 
         if decision.reason is not None:
-            self.drop_counts[decision.reason] += 1
+            self._record_drop(decision.reason, txn.channel)
         return False
 
     def extend(self, items: Iterable[Transaction]) -> None:
@@ -197,16 +202,16 @@ class ChronoReplayAccumulator:
 
             reason = decision.reason or REJECT_INSUFFICIENT_FUNDS
             if reason != REJECT_INSUFFICIENT_FUNDS:
-                self.drop_counts[reason] += 1
+                self._record_drop(reason, txn.channel)
                 continue
 
             retry_ts = self._resolve_retry_timestamp(txn, queued.retry_count)
             if retry_ts is None:
-                self.drop_counts[self._terminal_reason(txn.channel)] += 1
+                self._record_drop(self._terminal_reason(txn.channel), txn.channel)
                 continue
 
             if queued.retry_count + 1 > self.policy.max_retries_for(txn.channel):
-                self.drop_counts["insufficient_funds_retry_exhausted"] += 1
+                self._record_drop("insufficient_funds_retry_exhausted", txn.channel)
                 continue
 
             heapq.heappush(

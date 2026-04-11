@@ -34,6 +34,14 @@ def print_summary(
         breakdown = ", ".join(f"{reason}={count}" for reason, count in top_drops)
         print(f"Dropped pre-fraud txns: {dropped_total} ({breakdown})")
 
+    if transfers.drop_counts_by_channel:
+        top_channel_drops = Counter(transfers.drop_counts_by_channel).most_common(12)
+        breakdown = ", ".join(
+            f"{channel}[{reason}]={count}"
+            for (channel, reason), count in top_channel_drops
+        )
+        print(f"Dropped pre-fraud by channel×reason: {breakdown}")
+
     # Channel breakdown — validates that fraud channels align with flags
     channel_counts: Counter[str] = Counter()
     fraud_by_channel: Counter[str] = Counter()

@@ -78,7 +78,7 @@ def build(
 
     # Report only the authoritative chronological replay drops.
     drop_counts = dict(replay_acc.drop_counts)
-
+    drop_counts_by_channel = dict(replay_acc.drop_counts_by_channel)
     # Inject the fraud logic into the drafts.
     fraud_request = build_fraud(
         cfg,
@@ -97,4 +97,5 @@ def build(
         draft_txns=draft_txns,
         final_txns=sorted(fraud_result.txns, key=key),
         drop_counts=drop_counts,
+        drop_counts_by_channel=drop_counts_by_channel,
     )
