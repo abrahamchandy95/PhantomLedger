@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from math import exp
 
 from .runtime.window import Window
 
@@ -48,9 +47,9 @@ class World:
         f = self.fraud
 
         ring_count = f.expected_ring_count(size)
-        avg_ring_size = exp(float(f.ring_size_mu))
+        avg_ring_size = f.expected_ring_size_mean()
 
-        expected_members = int(ring_count * avg_ring_size)
+        expected_members = int(round(ring_count * avg_ring_size))
         expected_solos = f.expected_solo_count(size)
         total = expected_members + expected_solos
 
@@ -60,7 +59,8 @@ class World:
             raise ValueError(
                 f"Expected fraud participants (~{total}) exceed "
                 + f"limit ({ceiling} for {size} people). "
-                + "Reduce rings_per_10k_mean, ring_size_mu, or solos_per_10k."
+                + "Reduce rings_per_10k_mean, ring_size_mu, ring_size_sigma, "
+                + "or solos_per_10k."
             )
 
         if ceiling >= size:

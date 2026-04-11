@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from math import exp
 
 from common.validate import (
     between,
@@ -12,7 +13,10 @@ class Fraud:
     rings_per_10k_mean: float = 6.0
     rings_per_10k_sigma: float = 0.4
 
-    # determined by a log normal distribution
+    # Parameters passed directly to NumPy's lognormal sampler for ring size.
+    # If X ~ LogNormal(mu, sigma^2), then:
+    #   median(X) = exp(mu)
+    #   mean(X)   = exp(mu + sigma^2 / 2)
     ring_size_mu: float = 2.0
     ring_size_sigma: float = 0.7
     ring_size_min: int = 3
@@ -40,6 +44,16 @@ class Fraud:
         return max(
             0, int(round(float(self.rings_per_10k_mean) * (int(population) / 10_000.0)))
         )
+
+    def expected_ring_size_mean(self) -> float:
+        """
+        Mean of the raw lognormal variate used by FraudSampler.ring_params().
+
+        This intentionally matches NumPy's parameterization:
+            X ~ LogNormal(mean=ring_size_mu, sigma=ring_size_sigma)
+        """
+        sigma = float(self.ring_size_sigma)
+        return exp(float(self.ring_size_mu) + (sigma * sigma) / 2.0)
 
     def max_participants(self, population: int) -> int:
         return int(float(self.max_participation_p) * int(population))
