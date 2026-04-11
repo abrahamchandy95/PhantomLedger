@@ -2,9 +2,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 import entities.models as entity_models
+import transfers.balances as balances_model
 from common.config import Events, Merchants
 from common.math import F32, F64, I16, I32
 from common.random import Rng
+from common.transactions import Transaction
 from common.validate import between, ge, gt
 from entities.credit_cards import IssuancePolicy
 from infra.routing import Router
@@ -17,8 +19,6 @@ from .dynamics import DynamicsConfig, PersonDynamics
 
 @dataclass(frozen=True, slots=True)
 class Parameters:
-    """Defines the statistical constraints and parameters for daily spending behavior."""
-
     biller_categories: tuple[str, ...] = (
         "utilities",
         "telecom",
@@ -39,13 +39,12 @@ class Parameters:
     weekend_boost: float = 1.25
     burst_boost: float = 3.25
 
-    # Stronger affordability gate tied to pay-cycle distance.
     enable_liquidity_gating: bool = True
     liquidity_relief_days: int = 2
-    liquidity_stress_start_day: int = 4
-    liquidity_stress_ramp_days: int = 7
-    liquidity_floor: float = 0.18
-    liquidity_explore_floor: float = 0.05
+    liquidity_stress_start_day: int = 3
+    liquidity_stress_ramp_days: int = 5
+    liquidity_floor: float = 0.08
+    liquidity_explore_floor: float = 0.0
 
     dynamics: DynamicsConfig = field(default_factory=DynamicsConfig)
     seasonal: SeasonalConfig = field(default_factory=SeasonalConfig)
@@ -67,7 +66,7 @@ class Parameters:
         ge("liquidity_relief_days", self.liquidity_relief_days, 0)
         ge("liquidity_stress_start_day", self.liquidity_stress_start_day, 0)
         ge("liquidity_stress_ramp_days", self.liquidity_stress_ramp_days, 1)
-        between("liquidity_floor", self.liquidity_floor, 0.05, 1.0)
+        between("liquidity_floor", self.liquidity_floor, 0.0, 1.0)
         between("liquidity_explore_floor", self.liquidity_explore_floor, 0.0, 1.0)
 
 
@@ -76,8 +75,6 @@ DEFAULT_PARAMETERS = Parameters()
 
 @dataclass(frozen=True, slots=True)
 class PopulationView:
-    """Who the people are, how to reach their accounts, and their behavior."""
-
     persons: list[str]
     people_index: dict[str, int]
     primary_accounts: dict[str, str]
@@ -88,8 +85,6 @@ class PopulationView:
 
 @dataclass(frozen=True, slots=True)
 class MerchantView:
-    """The merchant pool and per-person payee assignments."""
-
     merchants: entity_models.Merchants
     merch_cdf: F64
     biller_cdf: F64
@@ -104,8 +99,6 @@ class MerchantView:
 
 @dataclass(frozen=True, slots=True)
 class Context:
-    """Pre-computed state for daily generation."""
-
     population: PopulationView
     merchant: MerchantView
     social: Graph
@@ -115,8 +108,6 @@ class Context:
 
 @dataclass(frozen=True, slots=True)
 class BuildRequest:
-    """Parameters required to build the generation context."""
-
     events: Events
     merchants_cfg: Merchants
     rng: Rng
@@ -135,8 +126,6 @@ class BuildRequest:
 
 @dataclass(frozen=True, slots=True)
 class GenerateRequest:
-    """Parameters required to trigger a day-to-day transaction run."""
-
     events: Events
     merchants_cfg: Merchants
     rng: Rng
@@ -146,4 +135,7 @@ class GenerateRequest:
     infra: Router | None = None
     credit_policy: IssuancePolicy | None = None
     cards: dict[str, str] | None = None
+    base_txns: list[Transaction] = field(default_factory=list)
+    fixed_monthly_burden: dict[str, float] = field(default_factory=dict)
+    screen_book: balances_model.Ledger | None = None
     params: Parameters = field(default_factory=Parameters)

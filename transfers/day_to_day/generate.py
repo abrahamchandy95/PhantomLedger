@@ -11,6 +11,7 @@ from entities.personas import PERSONAS
 from math_models.seasonal import monthly_multiplier
 from math_models.timing import sample_offsets
 from transfers.factory import TransactionFactory
+from transfers.screening import advance_book_through
 
 from .channels import build_channel_cdf, route_channel_txn
 from .dynamics import advance_all_daily, evolve_all_monthly
@@ -31,7 +32,6 @@ def _is_month_boundary(
     prev_day_index: int,
     start_date: datetime,
 ) -> bool:
-    """Check if we've crossed into a new calendar month."""
     if day_index == 0:
         return False
     prev = start_date + timedelta(days=prev_day_index)
@@ -44,14 +44,10 @@ def _liquidity_multiplier(
     *,
     days_since_payday: int,
     paycheck_sensitivity: float,
+    available_cash: float,
+    baseline_cash: float,
+    fixed_monthly_burden: float,
 ) -> float:
-    """
-    Upstream affordability proxy.
-
-    We still do not have live balances here, so this remains a proxy,
-    but it should be aggressive enough to prevent replay from receiving
-    obviously unaffordable discretionary debit attempts late in the cycle.
-    """
     params = request.params
     if not params.enable_liquidity_gating:
         return 1.0
@@ -67,18 +63,25 @@ def _liquidity_multiplier(
     stress_days = max(0, days_since_payday - stress_start)
     stress = min(1.0, float(stress_days) / float(max(1, stress_ramp)))
 
-    down = stress * (0.30 + 0.85 * paycheck_sensitivity)
-    up = relief * (0.08 + 0.12 * paycheck_sensitivity)
+    cycle_down = stress * (0.35 + 0.95 * paycheck_sensitivity)
+    cycle_up = relief * (0.06 + 0.10 * paycheck_sensitivity)
 
-    floor = float(params.liquidity_floor)
-    mult = 1.0 - down + up
-    return min(1.10, max(floor, mult))
+    cycle_mult = 1.0 - cycle_down + cycle_up
+    cycle_mult = min(1.05, max(float(params.liquidity_floor), cycle_mult))
+
+    cash_ref = max(150.0, float(baseline_cash))
+    cash_ratio = max(0.0, min(2.0, float(available_cash) / cash_ref))
+    cash_mult = min(1.10, max(0.0, 0.10 + cash_ratio))
+
+    burden_ratio = max(0.0, min(2.0, float(fixed_monthly_burden) / cash_ref))
+    burden_mult = max(0.30, 1.0 - 0.35 * burden_ratio)
+
+    mult = cycle_mult * cash_mult * burden_mult
+    return min(1.10, max(0.0, mult))
 
 
 @dataclass(slots=True)
 class _Generator:
-    """Orchestrates the daily simulation loop for all spenders."""
-
     request: GenerateRequest
 
     def run(self) -> list[Transaction]:
@@ -101,8 +104,10 @@ class _Generator:
         txns: list[Transaction] = []
         days_since_payday: list[int] = [365] * num_spenders
 
+        self.request.base_txns.sort(key=lambda t: t.timestamp)
+        base_idx = 0
+
         for day_index in range(self.request.days):
-            # --- Monthly counterparty evolution at month boundaries ---
             if _is_month_boundary(day_index, day_index - 1, self.request.start_date):
                 evolve_all_monthly(
                     self.request.rng,
@@ -119,8 +124,15 @@ class _Generator:
             day = build_day(self.request, day_index)
             seasonal_mult = monthly_multiplier(day.start.month, seasonal_cfg)
 
-            # Important bug fix:
-            # advance dynamics exactly once per person per day.
+            # Seed the screening ledger with already-known prior-day activity.
+            base_idx = advance_book_through(
+                self.request.screen_book,
+                self.request.base_txns,
+                base_idx,
+                day.start,
+                inclusive=False,
+            )
+
             daily_multipliers = advance_all_daily(
                 dynamics,
                 self.request.rng,
@@ -147,10 +159,25 @@ class _Generator:
                 else:
                     days_since_payday[person_idx] += 1
 
+                if self.request.screen_book is None:
+                    available_cash = float(spender.persona.initial_balance)
+                else:
+                    available_cash = self.request.screen_book.available_to_spend(
+                        spender.deposit_acct
+                    )
+
+                fixed_burden = float(
+                    self.request.fixed_monthly_burden.get(spender.id, 0.0)
+                )
+                baseline_cash = max(150.0, float(spender.persona.initial_balance))
+
                 liquidity_mult = _liquidity_multiplier(
                     self.request,
                     days_since_payday=days_since_payday[person_idx],
                     paycheck_sensitivity=float(spender.persona.paycheck_sensitivity),
+                    available_cash=available_cash,
+                    baseline_cash=baseline_cash,
+                    fixed_monthly_burden=fixed_burden,
                 )
 
                 remaining_today = (
@@ -183,7 +210,10 @@ class _Generator:
 
                 explore_p = calculate_explore_p(self.request, spender, day)
                 explore_floor = float(self.request.params.liquidity_explore_floor)
-                explore_p *= max(explore_floor, liquidity_mult * liquidity_mult)
+                explore_p *= max(
+                    explore_floor,
+                    max(0.0, min(1.0, liquidity_mult**3)),
+                )
 
                 for i in range(txn_count):
                     offset_sec = as_int(cast(int | np.integer, offsets[i]))
@@ -203,9 +233,22 @@ class _Generator:
                         prefer_billers_p,
                     )
 
-                    if txn is not None:
-                        txns.append(txn)
-                        txns_today += 1
+                    if txn is None:
+                        continue
+
+                    if self.request.screen_book is not None:
+                        decision = self.request.screen_book.try_transfer_with_reason(
+                            txn.source,
+                            txn.target,
+                            txn.amount,
+                            channel=txn.channel,
+                            timestamp=txn.timestamp,
+                        )
+                        if not decision.accepted:
+                            continue
+
+                    txns.append(txn)
+                    txns_today += 1
 
                     if 0 < daily_limit <= txns_today:
                         break
@@ -214,5 +257,4 @@ class _Generator:
 
 
 def generate(request: GenerateRequest) -> list[Transaction]:
-    """Entry point for the day-to-day transaction simulation engine."""
     return _Generator(request).run()

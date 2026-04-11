@@ -1,44 +1,37 @@
 """
 Intra-person account transfers.
 
-People with multiple accounts at the same bank regularly move money
-between them: checking-to-savings, rebalancing, paying a credit card
-from a secondary account, etc.
-
-These appear as high-frequency, variable-amount transfers between
-accounts with the same owner — a pattern that looks superficially
-like fraud layering if not modeled as legitimate activity.
-
-Only applies to people with 2+ accounts (config max_per_person >= 2).
+This version fixes the biggest realism bug:
+- source account is no longer random when a ledger view is available
+- transfers are biased earlier in the cycle
+- unaffordable source accounts are skipped
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from common.channels import SELF_TRANSFER
+from common.math import lognormal_by_median
 from common.random import Rng
 from common.transactions import Transaction
 from common.validate import between, ge, gt
-from common.math import lognormal_by_median
+from transfers.balances import Ledger
 from transfers.factory import TransactionDraft, TransactionFactory
+from transfers.screening import advance_book_through
 
 from .plans import LegitBuildPlan
 
 
 @dataclass(frozen=True, slots=True)
 class SelfTransferConfig:
-    """Controls intra-person transfer generation."""
-
-    # Monthly probability of making self-transfers (per person with 2+ accounts)
-    active_p: float = 0.70
+    active_p: float = 0.45
 
     transfers_per_month_min: int = 1
-    transfers_per_month_max: int = 4
+    transfers_per_month_max: int = 3
 
     amount_median: float = 250.0
     amount_sigma: float = 0.8
 
-    # Probability of using a round amount ($50, $100, $200, etc)
     round_amount_p: float = 0.45
 
     def __post_init__(self) -> None:
@@ -78,14 +71,58 @@ _ROUND_AMOUNTS: tuple[float, ...] = (
 )
 
 
+def _choose_source_account(
+    rng: Rng,
+    eligible: list[str],
+    amount: float,
+    book: Ledger | None,
+) -> str | None:
+    if not eligible:
+        return None
+
+    if book is None:
+        return rng.choice(eligible)
+
+    ranked = sorted(
+        ((book.available_to_spend(acct), acct) for acct in eligible),
+        reverse=True,
+    )
+
+    for available, acct in ranked:
+        if available >= amount:
+            return acct
+
+    return None
+
+
+def _choose_destination_account(
+    rng: Rng,
+    source: str,
+    eligible: list[str],
+    book: Ledger | None,
+) -> str | None:
+    destinations = [acct for acct in eligible if acct != source]
+    if not destinations:
+        return None
+
+    if book is None or len(destinations) == 1:
+        return rng.choice(destinations)
+
+    # Prefer topping up the relatively leaner internal account.
+    ranked = sorted(destinations, key=lambda acct: book.available_to_spend(acct))
+    return ranked[0]
+
+
 def generate(
     rng: Rng,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
     accounts_by_person: dict[str, list[str]],
     cfg: SelfTransferConfig = DEFAULT_SELF_TRANSFER_CONFIG,
+    *,
+    book: Ledger | None = None,
+    base_txns: list[Transaction] | None = None,
 ) -> list[Transaction]:
-    """Generates transfers between accounts owned by the same person."""
     if not plan.paydays:
         return []
 
@@ -93,30 +130,31 @@ def generate(
     hub_set = plan.counterparties.hub_set
     txns: list[Transaction] = []
 
+    seeded = sorted(base_txns or [], key=lambda t: t.timestamp)
+    seed_idx = 0
+
+    active_people: list[tuple[str, list[str]]] = []
     for person_id in plan.persons:
         accts = accounts_by_person.get(person_id, [])
-
-        # Filter to non-hub internal accounts
         eligible = [a for a in accts if a not in hub_set]
         if len(eligible) < 2:
             continue
-
         if not rng.coin(cfg.active_p):
             continue
+        active_people.append((person_id, eligible))
 
-        for month_start in plan.paydays:
+    for month_start in plan.paydays:
+        month_candidates: list[tuple[datetime, list[str], float]] = []
+
+        for _, eligible in active_people:
             n_transfers = rng.int(
                 cfg.transfers_per_month_min,
                 cfg.transfers_per_month_max + 1,
             )
 
             for _ in range(n_transfers):
-                # Pick source and destination from the person's own accounts
-                src = rng.choice(eligible)
-                dst = rng.choice([a for a in eligible if a != src])
-
                 if rng.coin(cfg.round_amount_p):
-                    amount = rng.choice(_ROUND_AMOUNTS)
+                    amount = float(rng.choice(_ROUND_AMOUNTS))
                 else:
                     amount = float(
                         lognormal_by_median(
@@ -127,7 +165,12 @@ def generate(
                     )
                     amount = round(max(10.0, amount), 2)
 
-                day_offset = rng.int(0, 28)
+                # Bias toward shortly after the monthly deposit cadence.
+                if rng.float() < 0.70:
+                    day_offset = rng.int(0, 6)
+                else:
+                    day_offset = rng.int(6, 28)
+
                 ts = month_start + timedelta(
                     days=day_offset,
                     hours=rng.int(8, 22),
@@ -137,16 +180,45 @@ def generate(
                 if ts < plan.start_date or ts >= end_excl:
                     continue
 
-                txns.append(
-                    txf.make(
-                        TransactionDraft(
-                            source=src,
-                            destination=dst,
-                            amount=amount,
-                            timestamp=ts,
-                            channel=SELF_TRANSFER,
-                        )
+                month_candidates.append((ts, eligible, amount))
+
+        for ts, eligible, amount in sorted(month_candidates, key=lambda x: x[0]):
+            seed_idx = advance_book_through(
+                book,
+                seeded,
+                seed_idx,
+                ts,
+                inclusive=True,
+            )
+            src = _choose_source_account(rng, eligible, amount, book)
+            if src is None:
+                continue
+
+            dst = _choose_destination_account(rng, src, eligible, book)
+            if dst is None:
+                continue
+
+            if book is not None:
+                decision = book.try_transfer_with_reason(
+                    src,
+                    dst,
+                    amount,
+                    channel=SELF_TRANSFER,
+                    timestamp=ts,
+                )
+                if not decision.accepted:
+                    continue
+
+            txns.append(
+                txf.make(
+                    TransactionDraft(
+                        source=src,
+                        destination=dst,
+                        amount=amount,
+                        timestamp=ts,
+                        channel=SELF_TRANSFER,
                     )
                 )
+            )
 
     return txns

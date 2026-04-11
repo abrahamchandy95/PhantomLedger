@@ -1,4 +1,5 @@
 import relationships.social as social_model
+import transfers.balances as balances_model
 from common.transactions import Transaction
 from transfers.day_to_day import (
     BuildRequest,
@@ -37,10 +38,57 @@ def _cards_by_person(
     return {person_id: card_acct for card_acct, person_id in cards.owner_map.items()}
 
 
+def _fixed_monthly_burden_for_person(
+    request: LegitGenerationRequest,
+    person_id: str,
+) -> float:
+    portfolios = request.inputs.portfolios
+    if portfolios is None:
+        return 0.0
+
+    portfolio = portfolios.get(person_id)
+    if portfolio is None:
+        return 0.0
+
+    total = 0.0
+
+    if portfolio.mortgage is not None:
+        total += float(portfolio.mortgage.monthly_payment)
+
+    if portfolio.auto_loan is not None:
+        total += float(portfolio.auto_loan.monthly_payment)
+
+    if portfolio.student_loan is not None and not portfolio.student_loan.in_deferment:
+        total += float(portfolio.student_loan.monthly_payment)
+
+    if portfolio.insurance is not None:
+        total += float(portfolio.insurance.total_monthly_premium())
+
+    if portfolio.tax is not None:
+        total += float(portfolio.tax.quarterly_amount) / 3.0
+
+    return total
+
+
+def _fixed_monthly_burdens(
+    request: LegitGenerationRequest,
+    plan: LegitBuildPlan,
+) -> dict[str, float]:
+    if request.inputs.portfolios is None:
+        return {}
+
+    return {
+        person_id: _fixed_monthly_burden_for_person(request, person_id)
+        for person_id in plan.persons
+    }
+
+
 def generate_day_to_day_txns(
     request: LegitGenerationRequest,
     plan: LegitBuildPlan,
     base_txns: list[Transaction],
+    *,
+    screen_book: balances_model.Ledger | None = None,
 ) -> list[Transaction]:
     inputs = request.inputs
     policies = request.policies
@@ -92,5 +140,8 @@ def generate_day_to_day_txns(
                 policies.credit_issuance if credit_runtime.enabled() else None
             ),
             cards=_cards_by_person(request),
+            base_txns=base_txns,
+            screen_book=screen_book,
+            fixed_monthly_burden=_fixed_monthly_burdens(request, plan),
         )
     )

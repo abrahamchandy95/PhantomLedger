@@ -65,19 +65,11 @@ class LegitTransferBuilder:
 
         txf = TransactionFactory(rng=self.inputs.rng, infra=self.overrides.infra)
 
-        # Important: this pass builds a semantic-order candidate stream only.
-        # Several downstream generators inspect earlier generated transactions,
-        # so we preserve the existing feature order here and defer all balance
-        # enforcement to the final chronological replay in
-        # pipeline/stages/transfers.py.
         candidate_txns: list[Transaction] = []
 
         def extend(items: list[Transaction]) -> None:
             candidate_txns.extend(items)
 
-        # Base inbound flows that establish payday cadence.
-        # day_to_day inspects candidate_txns to build paydays_by_person, so
-        # salary and government deposits must already be present before it runs.
         extend(generate_salary_txns(self.inputs, self.policies, plan, txf))
         extend(
             generate_government_txns(
@@ -90,9 +82,6 @@ class LegitTransferBuilder:
             )
         )
 
-        # Payroll-adjacent internal movement. This is not itself a payday
-        # channel, but it is part of the base transaction stream that should
-        # exist before downstream derived passes run.
         extend(
             split_deposits(
                 self.inputs.rng,
@@ -103,29 +92,50 @@ class LegitTransferBuilder:
             )
         )
 
-        # Other base legitimate activity.
         extend(generate_rent_txns(self.inputs, self.policies, plan, txf))
-        extend(generate_subscription_txns(self.inputs.rng, plan, txf))
-        extend(generate_atm_txns(self.inputs.rng, plan, txf))
+
+        extend(
+            generate_subscription_txns(
+                self.inputs.rng,
+                plan,
+                txf,
+                book=None if initial_book is None else initial_book.copy(),
+                base_txns=list(candidate_txns),
+            )
+        )
+
+        extend(
+            generate_atm_txns(
+                self.inputs.rng,
+                plan,
+                txf,
+                book=None if initial_book is None else initial_book.copy(),
+                base_txns=list(candidate_txns),
+            )
+        )
+
         extend(
             generate_self_transfer_txns(
                 self.inputs.rng,
                 plan,
                 txf,
                 self.inputs.accounts.by_person,
+                book=None if initial_book is None else initial_book.copy(),
+                base_txns=list(candidate_txns),
             )
         )
 
-        # Must run after salary + government because it derives payday timing
-        # from the transaction stream passed in as base_txns.
-        extend(generate_day_to_day_txns(self.request, plan, candidate_txns))
+        extend(
+            generate_day_to_day_txns(
+                self.request,
+                plan,
+                candidate_txns,
+                screen_book=None if initial_book is None else initial_book.copy(),
+            )
+        )
 
-        # Family transfers are not payday channels, so they do not need to
-        # precede day_to_day. Keep them before credit lifecycle so the latter
-        # continues to run as a final derived pass over accumulated activity.
         extend(generate_family_txns(self.request, plan, txf))
 
-        # Final derived pass over prior activity.
         extend(
             generate_credit_lifecycle_txns(
                 self.request,

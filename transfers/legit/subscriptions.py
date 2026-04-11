@@ -1,22 +1,13 @@
 """
 Fixed-amount recurring subscription charges.
 
-Real bank data has a distinct pattern of exact-amount monthly charges
-(Netflix $15.49, gym $29.99, insurance $187.00) hitting the same
-merchant on roughly the same calendar day each month.
-
-Statistics (C+R Research 2024, Just Cancel 2026):
-- Average American has ~12 subscriptions totaling $219/month
-- Many route through credit cards; 4-8 hit checking accounts directly
-- Common price points cluster around specific values
-
-This generator assigns each person a fixed set of subscription merchants
-with exact amounts that repeat monthly. The amounts never vary — this
-is the key distinguishing signal vs randomized merchant payments.
+This version keeps the fixed recurring structure but adds an
+affordability screen using a seeded ledger view and known earlier
+candidate transactions.
 """
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import cast
 
 import numpy as np
@@ -26,49 +17,39 @@ from common.math import as_int
 from common.random import Rng, derive_seed
 from common.transactions import Transaction
 from common.validate import between, ge
+from transfers.balances import Ledger
 from transfers.factory import TransactionDraft, TransactionFactory
+from transfers.screening import advance_book_through
 
 from .plans import LegitBuildPlan
 
-
-# Realistic subscription price points drawn from actual US market prices.
-# Each person draws 4-8 of these without replacement.
 _PRICE_POOL: tuple[float, ...] = (
-    6.99,  # basic streaming tier / cloud storage
-    7.99,  # ad-supported streaming
-    9.99,  # music streaming / news
-    10.99,  # music streaming
-    11.99,  # spotify premium
-    12.99,  # cloud storage / software
-    14.99,  # standard streaming
-    15.49,  # netflix standard
-    15.99,  # streaming / gym
-    17.99,  # premium streaming
-    22.99,  # premium streaming
-    24.99,  # gym membership
-    29.99,  # gym / software
-    34.99,  # fitness class
-    39.99,  # premium gym / software
-    49.99,  # premium service
-    59.99,  # premium bundle
-    99.99,  # annual-billed monthly (insurance add-on, etc)
+    6.99,
+    7.99,
+    9.99,
+    10.99,
+    11.99,
+    12.99,
+    14.99,
+    15.49,
+    15.99,
+    17.99,
+    22.99,
+    24.99,
+    29.99,
+    34.99,
+    39.99,
+    49.99,
+    59.99,
+    99.99,
 )
 
 
 @dataclass(frozen=True, slots=True)
 class SubscriptionConfig:
-    """Controls the subscription generation."""
-
     min_per_person: int = 4
     max_per_person: int = 8
-
-    # Probability that a subscription hits the debit account
-    # vs credit card (handled elsewhere). This filters how many
-    # of a person's subscriptions show up as bank debits.
     debit_p: float = 0.55
-
-    # Day-of-month jitter: subscriptions renew on a fixed day
-    # but can vary +/- this many days across months
     day_jitter: int = 1
 
     def __post_init__(self) -> None:
@@ -83,8 +64,6 @@ DEFAULT_SUBSCRIPTION_CONFIG = SubscriptionConfig()
 
 @dataclass(frozen=True, slots=True)
 class _PersonSub:
-    """A single subscription slot for one person."""
-
     merchant_acct: str
     amount: float
     billing_day: int  # 1-28
@@ -96,7 +75,6 @@ def _assign_subscriptions(
     cfg: SubscriptionConfig,
     merchant_accts: list[str],
 ) -> list[_PersonSub]:
-    """Deterministically assign subscriptions to a person."""
     gen = np.random.default_rng(derive_seed(base_seed, "subscriptions", person_id))
 
     n_total = as_int(
@@ -106,17 +84,14 @@ def _assign_subscriptions(
         )
     )
 
-    # Filter to debit-paid subscriptions
     n_debit = sum(1 for _ in range(n_total) if float(gen.random()) < cfg.debit_p)
     if n_debit == 0:
         return []
 
-    # Pick prices without replacement from the pool
     n_pick = min(n_debit, len(_PRICE_POOL))
     price_indices = gen.choice(len(_PRICE_POOL), size=n_pick, replace=False)
     prices = [_PRICE_POOL[int(price_indices.item(i))] for i in range(n_pick)]
 
-    # Pick merchants (with replacement — multiple subs can go to same merchant)
     merchant_indices = gen.choice(len(merchant_accts), size=n_pick)
 
     subs: list[_PersonSub] = []
@@ -137,8 +112,10 @@ def generate(
     plan: LegitBuildPlan,
     txf: TransactionFactory,
     cfg: SubscriptionConfig = DEFAULT_SUBSCRIPTION_CONFIG,
+    *,
+    book: Ledger | None = None,
+    base_txns: list[Transaction] | None = None,
 ) -> list[Transaction]:
-    """Generates fixed-amount recurring subscription charges."""
     if not plan.paydays:
         return []
 
@@ -146,8 +123,13 @@ def generate(
     if not merchant_accts:
         return []
 
+    end_excl = plan.start_date + timedelta(days=plan.days)
     txns: list[Transaction] = []
 
+    seeded = sorted(base_txns or [], key=lambda t: t.timestamp)
+    seed_idx = 0
+
+    subscriptions_by_person: list[tuple[str, str, list[_PersonSub]]] = []
     for person_id in plan.persons:
         deposit_acct = plan.primary_acct_for_person.get(person_id)
         if not deposit_acct:
@@ -161,36 +143,60 @@ def generate(
             cfg,
             merchant_accts,
         )
+        if subs:
+            subscriptions_by_person.append((person_id, deposit_acct, subs))
 
-        for sub in subs:
-            for month_start in plan.paydays:
-                # Clamp billing day to the month
+    for month_start in plan.paydays:
+        month_candidates: list[tuple[datetime, str, str, float]] = []
+
+        for _, deposit_acct, subs in subscriptions_by_person:
+            for sub in subs:
                 day = min(sub.billing_day, 28)
                 jitter = rng.int(-cfg.day_jitter, cfg.day_jitter + 1)
                 day = max(1, min(28, day + jitter))
 
                 ts = month_start.replace(day=1) + timedelta(
                     days=day - 1,
-                    hours=rng.int(0, 6),  # subscriptions charge early morning
+                    hours=rng.int(0, 6),
                     minutes=rng.int(0, 60),
                 )
 
-                if ts < plan.start_date:
-                    continue
-                end_excl = plan.start_date + timedelta(days=plan.days)
-                if ts >= end_excl:
+                if ts < plan.start_date or ts >= end_excl:
                     continue
 
-                txns.append(
-                    txf.make(
-                        TransactionDraft(
-                            source=deposit_acct,
-                            destination=sub.merchant_acct,
-                            amount=sub.amount,
-                            timestamp=ts,
-                            channel=SUBSCRIPTION,
-                        )
+                month_candidates.append(
+                    (ts, deposit_acct, sub.merchant_acct, sub.amount)
+                )
+
+        for ts, src, dst, amount in sorted(month_candidates, key=lambda x: x[0]):
+            seed_idx = advance_book_through(
+                book,
+                seeded,
+                seed_idx,
+                ts,
+                inclusive=True,
+            )
+            if book is not None:
+                decision = book.try_transfer_with_reason(
+                    src,
+                    dst,
+                    amount,
+                    channel=SUBSCRIPTION,
+                    timestamp=ts,
+                )
+                if not decision.accepted:
+                    continue
+
+            txns.append(
+                txf.make(
+                    TransactionDraft(
+                        source=src,
+                        destination=dst,
+                        amount=amount,
+                        timestamp=ts,
+                        channel=SUBSCRIPTION,
                     )
                 )
+            )
 
     return txns

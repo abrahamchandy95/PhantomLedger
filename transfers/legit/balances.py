@@ -1,8 +1,6 @@
-from typing import cast
-
 import numpy as np
-import numpy.typing as npt
 
+from common.math import I64
 from common.persona_names import SALARIED
 import entities.models as models
 import transfers.balances as balances_model
@@ -17,19 +15,19 @@ def _persona_for_acct_array(
     acct_owner: dict[str, str],
     persona_for_person: dict[str, str],
     persona_names: list[str],
-) -> npt.NDArray[np.int8]:
-    persona_id_for_name = {name: int(idx) for idx, name in enumerate(persona_names)}
-    salaried_id = int(persona_id_for_name.get(SALARIED, 0))
+) -> I64:
+    persona_id_for_name = {name: idx for idx, name in enumerate(persona_names)}
+    salaried_id = persona_id_for_name.get(SALARIED, 0)
 
-    out: npt.NDArray[np.int8] = np.empty(len(accounts_list), dtype=np.int8)
+    out = np.empty(len(accounts_list), dtype=np.int64)
     for idx, acct in enumerate(accounts_list):
         person_id = acct_owner.get(acct)
         persona_name = (
-            "salaried"
+            SALARIED
             if person_id is None
             else persona_for_person.get(person_id, SALARIED)
         )
-        out[idx] = np.int8(persona_id_for_name.get(persona_name, salaried_id))
+        out[idx] = persona_id_for_name.get(persona_name, salaried_id)
 
     return out
 
@@ -40,6 +38,34 @@ def _apply_credit_card_limits(
 ) -> None:
     for card, limit_value in credit_cards.limits.items():
         book.set_credit_limit(card, limit_value)
+
+
+def _monthly_fixed_burden(
+    inputs: LegitInputs,
+    person_id: str,
+) -> float:
+    portfolios = inputs.portfolios
+    if portfolios is None:
+        return 0.0
+
+    portfolio = portfolios.get(person_id)
+    if portfolio is None:
+        return 0.0
+
+    total = 0.0
+
+    if portfolio.mortgage is not None:
+        total += float(portfolio.mortgage.monthly_payment)
+    if portfolio.auto_loan is not None:
+        total += float(portfolio.auto_loan.monthly_payment)
+    if portfolio.student_loan is not None and not portfolio.student_loan.in_deferment:
+        total += float(portfolio.student_loan.monthly_payment)
+    if portfolio.insurance is not None:
+        total += float(portfolio.insurance.total_monthly_premium())
+    if portfolio.tax is not None:
+        total += float(portfolio.tax.quarterly_amount) / 3.0
+
+    return total
 
 
 def build_balance_book(
@@ -73,10 +99,21 @@ def build_balance_book(
             accounts=plan.all_accounts,
             account_indices=account_indices,
             hub_indices=hub_indices,
-            persona_mapping=cast(npt.NDArray[np.integer], persona_mapping),
+            persona_mapping=persona_mapping,
             persona_names=plan.personas.persona_names,
         ),
     )
+
+    for person_id, acct in plan.primary_acct_for_person.items():
+        idx = account_indices.get(acct)
+        if idx is None:
+            continue
+
+        burden = _monthly_fixed_burden(inputs, person_id)
+        if burden <= 0.0:
+            continue
+
+        book.balances[idx] += 0.35 * burden
 
     cards = credit_runtime.cards
     if credit_runtime.enabled() and cards is not None:

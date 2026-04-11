@@ -59,67 +59,67 @@ class Rules:
 
     def overdraft_fraction_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 0.14,
-            RETIRED: 0.22,
-            SALARIED: 0.30,
-            FREELANCER: 0.24,
-            SMALLBIZ: 0.35,
-            HNW: 0.45,
+            STUDENT: 0.20,
+            RETIRED: 0.28,
+            SALARIED: 0.42,
+            FREELANCER: 0.34,
+            SMALLBIZ: 0.46,
+            HNW: 0.55,
         }
         return float(table.get(persona, table[SALARIED]))
 
     def overdraft_limit_median_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 250.0,
-            RETIRED: 450.0,
-            SALARIED: 600.0,
-            FREELANCER: 500.0,
-            SMALLBIZ: 1500.0,
-            HNW: 4000.0,
+            STUDENT: 350.0,
+            RETIRED: 600.0,
+            SALARIED: 900.0,
+            FREELANCER: 800.0,
+            SMALLBIZ: 2200.0,
+            HNW: 5000.0,
         }
         return float(table.get(persona, table[SALARIED]))
 
     def linked_buffer_fraction_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 0.10,
-            RETIRED: 0.24,
-            SALARIED: 0.22,
-            FREELANCER: 0.18,
-            SMALLBIZ: 0.24,
-            HNW: 0.50,
+            STUDENT: 0.16,
+            RETIRED: 0.30,
+            SALARIED: 0.32,
+            FREELANCER: 0.26,
+            SMALLBIZ: 0.34,
+            HNW: 0.60,
         }
         return float(table.get(persona, table[SALARIED]))
 
     def linked_buffer_median_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 150.0,
-            RETIRED: 350.0,
-            SALARIED: 450.0,
-            FREELANCER: 375.0,
-            SMALLBIZ: 1500.0,
-            HNW: 8000.0,
+            STUDENT: 225.0,
+            RETIRED: 500.0,
+            SALARIED: 700.0,
+            FREELANCER: 600.0,
+            SMALLBIZ: 2200.0,
+            HNW: 10000.0,
         }
         return float(table.get(persona, table[SALARIED]))
 
     def courtesy_buffer_fraction_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 0.08,
-            RETIRED: 0.12,
-            SALARIED: 0.10,
-            FREELANCER: 0.10,
-            SMALLBIZ: 0.12,
-            HNW: 0.15,
+            STUDENT: 0.12,
+            RETIRED: 0.16,
+            SALARIED: 0.18,
+            FREELANCER: 0.16,
+            SMALLBIZ: 0.20,
+            HNW: 0.22,
         }
         return float(table.get(persona, table[SALARIED]))
 
     def courtesy_buffer_median_for_persona(self, persona: str) -> float:
         table = {
-            STUDENT: 50.0,
-            RETIRED: 75.0,
-            SALARIED: 90.0,
-            FREELANCER: 80.0,
-            SMALLBIZ: 125.0,
-            HNW: 175.0,
+            STUDENT: 65.0,
+            RETIRED: 100.0,
+            SALARIED: 140.0,
+            FREELANCER: 120.0,
+            SMALLBIZ: 180.0,
+            HNW: 250.0,
         }
         return float(table.get(persona, table[SALARIED]))
 
