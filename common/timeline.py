@@ -27,7 +27,7 @@ def daily(start: datetime, days: int) -> Iterator[datetime]:
 
 
 def months(start: datetime, days: int) -> list[datetime]:
-    """Return the first day of every month touched by this range."""
+    """Return the first day of every month touched by [start, start + days)."""
     if days < 0:
         raise ValueError("days must be >= 0")
 
@@ -49,8 +49,14 @@ def months(start: datetime, days: int) -> list[datetime]:
 
 
 def active_months(start: datetime, days: int) -> list[datetime]:
-    """Return month starts that fall strictly within [start, start+days]."""
-    return [m for m in months(start, days) if m >= start]
+    """
+    Return month starts active within [start, start + days).
+
+    Important:
+    if the simulation starts mid-month, include that month's anchor so
+    monthly schedulers can still emit events later in the same month.
+    """
+    return months(start, days)
 
 
 def sample_span(rng: Rng, start: datetime, days: int) -> tuple[datetime, datetime]:

@@ -1,5 +1,9 @@
 from hashlib import blake2b
 
+_HASH_BYTES = 8
+_EXTERNAL_FAMILY_SUFFIX_DIGITS = 20
+_EXTERNAL_FAMILY_SUFFIX_LIMIT = 10**_EXTERNAL_FAMILY_SUFFIX_DIGITS
+
 
 def external_family_id(person_id: str) -> str:
     """
@@ -8,10 +12,19 @@ def external_family_id(person_id: str) -> str:
     Uses a 64-bit hash suffix instead of 32-bit to make collisions vanishingly
     unlikely even at large population sizes. The ID stays deterministic for a
     given person_id across runs.
+
+    The decimal suffix is kept explicitly fixed-width so downstream joins and
+    feature pipelines do not depend on format-specifier minimum-width behavior.
     """
-    h = blake2b(person_id.encode("utf-8"), digest_size=8)
+    h = blake2b(person_id.encode("utf-8"), digest_size=_HASH_BYTES)
     suffix = int.from_bytes(h.digest(), "little", signed=False)
-    return f"XF{suffix:020d}"
+
+    if suffix >= _EXTERNAL_FAMILY_SUFFIX_LIMIT:
+        raise ValueError(
+            "external family hash suffix exceeded fixed-width decimal budget"
+        )
+
+    return f"XF{suffix:0{_EXTERNAL_FAMILY_SUFFIX_DIGITS}d}"
 
 
 def uses_external_family_account(person_id: str, external_p: float) -> bool:
@@ -26,7 +39,7 @@ def uses_external_family_account(person_id: str, external_p: float) -> bool:
     if external_p >= 1.0:
         return True
 
-    h = blake2b(f"external_bank|{person_id}".encode("utf-8"), digest_size=8)
+    h = blake2b(f"external_bank|{person_id}".encode("utf-8"), digest_size=_HASH_BYTES)
     val = int.from_bytes(h.digest(), "little", signed=False)
     coin = (val % 10_000) / 10_000.0
     return coin < external_p
