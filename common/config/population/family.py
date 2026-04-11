@@ -71,15 +71,18 @@ class Family:
     parent_gift_pareto_alpha: float = 1.6
 
     # --- sibling transfers ---
-    # Siblings are the #1 borrower in family lending (31% of family loans,
-    # FinanceBuzz 2024). 76% have borrowed from siblings (JG Wentworth 2025).
-    # Irregular: 2-4x/year among active pairs. Median amount ~$400.
+    # Pew 2023 found only 24% of U.S. adults say siblings have at least a fair
+    # amount of responsibility to provide financial assistance to one another,
+    # so we keep sibling support relatively infrequent. Commercial 2025 surveys
+    # suggest family/friends borrowing is often in the low hundreds, while
+    # broader family-loan averages are skewed upward by large one-off loans.
+    # We therefore anchor the recurring sibling-transfer process at a modest
+    # low-hundreds median with a wide spread for occasional larger support.
     sibling_transfer_enabled: bool = True
     sibling_active_p: float = 0.15
     sibling_monthly_p: float = 0.18
     sibling_median: float = 120.0
     sibling_sigma: float = 0.90
-
     # --- grandparent gifts ---
     # 38-45% of 50+ households send money to younger generations (EBRI 2015).
     # Average ~$350/month among givers. We route from retired personas

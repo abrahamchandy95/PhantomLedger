@@ -111,7 +111,6 @@ def _process_billing_cycle(
             habits,
             lifecycle_gen,
             card=context.card,
-            credit_idx=state.credit_idx,
             purchase=purchase,
             end_excl=end_excl,
             txf=request.txf,

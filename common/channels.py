@@ -40,6 +40,7 @@ MORTGAGE_PAYMENT = "mortgage_payment"
 AUTO_LOAN_PAYMENT = "auto_loan_payment"
 STUDENT_LOAN_PAYMENT = "student_loan_payment"
 TAX_ESTIMATED_PAYMENT = "tax_estimated_payment"
+TAX_BALANCE_DUE = "tax_balance_due"
 TAX_REFUND = "tax_refund"
 
 # --- Fraud channels ---

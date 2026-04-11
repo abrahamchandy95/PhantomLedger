@@ -163,28 +163,60 @@ def _try_tax(
     cfg: TaxConfig,
     persona_name: str,
 ) -> TaxTerms | None:
-    if float(gen.random()) >= cfg.ownership_p(persona_name):
-        return None
+    # Layer 1: quarterly estimated-tax profile
+    quarterly = 0.0
+    if float(gen.random()) < cfg.estimated_payment_p(persona_name):
+        quarterly = float(
+            lognormal_by_median(
+                gen,
+                median=cfg.quarterly_median,
+                sigma=cfg.quarterly_sigma,
+            )
+        )
+        quarterly = round(max(100.0, quarterly), 2)
 
-    quarterly = float(
-        lognormal_by_median(gen, median=cfg.quarterly_median, sigma=cfg.quarterly_sigma)
-    )
-    quarterly = round(max(100.0, quarterly), 2)
-
+    # Layer 2: annual settlement profile
     refund_amount = 0.0
     refund_month = 3
-    if float(gen.random()) < cfg.refund_p:
+
+    balance_due_amount = 0.0
+    balance_due_month = 4
+
+    settlement_roll = float(gen.random())
+
+    if settlement_roll < float(cfg.refund_p):
         refund_amount = float(
-            lognormal_by_median(gen, median=cfg.refund_median, sigma=cfg.refund_sigma)
+            lognormal_by_median(
+                gen,
+                median=cfg.refund_median,
+                sigma=cfg.refund_sigma,
+            )
         )
         refund_amount = round(max(100.0, refund_amount), 2)
-        refund_month = int(gen.integers(2, 6))
+        refund_month = int(gen.integers(2, 6))  # Feb-May
+
+    elif settlement_roll < float(cfg.refund_p) + float(cfg.balance_due_p):
+        balance_due_amount = float(
+            lognormal_by_median(
+                gen,
+                median=cfg.balance_due_median,
+                sigma=cfg.balance_due_sigma,
+            )
+        )
+        balance_due_amount = round(max(100.0, balance_due_amount), 2)
+        balance_due_month = 4  # filing deadline month
+
+    # No visible tax behavior at all for this filer in-window
+    if quarterly <= 0.0 and refund_amount <= 0.0 and balance_due_amount <= 0.0:
+        return None
 
     return TaxTerms(
-        quarterly_amount=quarterly,
         treasury_acct=IRS_TREASURY,
+        quarterly_amount=quarterly,
         refund_amount=refund_amount,
         refund_month=refund_month,
+        balance_due_amount=balance_due_amount,
+        balance_due_month=balance_due_month,
     )
 
 

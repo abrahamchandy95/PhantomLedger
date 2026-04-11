@@ -19,12 +19,24 @@ class Merchants:
     explore_p: float = 0.02
 
     # Active channel mix for non-unknown day-to-day outflows only.
-    # Generic external outflows are controlled by Events.unknown_outflow_p.
-    channel_merchant_p: float = 0.68
-    channel_bills_p: float = 0.20
-    channel_p2p_p: float = 0.10
+    # These are starting calibration values, not sacred constants.
+    channel_merchant_p: float = 0.82
+    channel_bills_p: float = 0.10
+    channel_p2p_p: float = 0.08
 
-    txns_per_month: float = 18.0
+    # Target realized monthly outflow count per person for the day-to-day
+    # engine only.
+    #
+    # Important semantic note:
+    # This is NOT the raw upstream Poisson/Gamma base rate. The generator
+    # calibrates a latent per-person-day base intensity from this target
+    # after accounting for persona mix, weekday effects, seasonality,
+    # behavioral dynamics, and liquidity pressure. Replay/balance screening
+    # then feeds back online through the remaining-target calculation.
+    #
+    # Whole-ledger totals should still be validated after adding recurring
+    # modules such as salary, rent, subscriptions, ATM, and self-transfers.
+    txns_per_month: float = 40.0
 
     categories: tuple[str, ...] = (
         "grocery",

@@ -1,36 +1,28 @@
 """
-Tax withholding and estimated payment profile.
+Estimated-tax and annual-settlement profile.
 
-For W-2 earners, federal/state taxes are withheld from each
-paycheck — this is invisible in bank transaction data because
-the net deposit already reflects withholding. But for freelancers
-and small business owners, quarterly estimated tax payments are
-*visible* outflows to the IRS/state treasury.
+For W-2 earners, federal/state withholding is already netted out of the
+paycheck deposit, so it is usually invisible in bank transaction data.
+Quarterly estimated-tax payments are different: they are visible outflows
+and are mainly associated with income streams that lack withholding.
 
-Statistics:
-- ~16.5M taxpayers file Schedule C (IRS SOI 2022)
-- Quarterly estimated payments due: Apr 15, Jun 15, Sep 15, Jan 15
-- Average quarterly payment: ~$3,500 for self-employed (IRS 2023)
-- Penalty for underpayment: ~8% annual rate (IRS 2025)
+Those are two separate phenomena, so this module models them separately:
 
-Additionally, ~75% of filers receive a refund averaging $3,138
-(IRS 2024 filing season). Refunds create a visible seasonal
-inflow, typically Feb-May.
+1) estimated-tax profile
+   - quarterly outflows to Treasury
+   - ownership depends strongly on persona/income type
 
-Ownership:
-- student: 0% (no estimated payments)
-- retired: 10% (pension withholding gaps)
-- salaried: 0% (withholding handled by employer)
-- freelancer: 85%
-- smallbiz: 90%
-- hnw: 70% (investment income, K-1s)
+2) annual filing settlement
+   - refund, balance due, or no visible settlement event
+   - applies broadly across the filing population, including salaried users
 """
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
-from collections.abc import Iterator
 
-from common.persona_names import STUDENT, RETIRED, SALARIED, FREELANCER, SMALLBIZ, HNW
+from common.channels import TAX_BALANCE_DUE, TAX_ESTIMATED_PAYMENT, TAX_REFUND
+from common.persona_names import FREELANCER, HNW, RETIRED, SALARIED, SMALLBIZ, STUDENT
 from common.validate import between, ge, gt
 
 from .event import Direction, ObligationEvent
@@ -47,37 +39,61 @@ _QUARTERLY_DATES: tuple[tuple[int, int], ...] = (
 
 @dataclass(frozen=True, slots=True)
 class TaxTerms:
-    """Per-person tax payment parameters."""
+    """Per-person visible tax cash-flow parameters."""
 
-    quarterly_amount: float
     treasury_acct: str
 
-    # Refund (0.0 if none expected)
+    # Estimated tax profile (visible quarterly outflows)
+    quarterly_amount: float = 0.0
+
+    # Annual settlement profile (one of refund / balance due / none)
     refund_amount: float = 0.0
-    refund_month: int = 3  # typical: Feb-Apr
+    refund_month: int = 3  # typical: Feb-May
+
+    balance_due_amount: float = 0.0
+    balance_due_month: int = 4  # typical filing deadline month
 
     def __post_init__(self) -> None:
+        if not self.treasury_acct:
+            raise ValueError("treasury_acct must be non-empty")
+
         ge("quarterly_amount", self.quarterly_amount, 0.0)
         ge("refund_amount", self.refund_amount, 0.0)
+        ge("balance_due_amount", self.balance_due_amount, 0.0)
+
         between("refund_month", self.refund_month, 1, 12)
+        between("balance_due_month", self.balance_due_month, 1, 12)
+
+        if self.refund_amount > 0.0 and self.balance_due_amount > 0.0:
+            raise ValueError(
+                "annual settlement cannot be both a refund and a balance due"
+            )
 
 
 @dataclass(frozen=True, slots=True)
 class TaxConfig:
-    """Population-level parameters for tax profile assignment."""
+    """Population-level parameters for estimated tax and annual settlement."""
 
-    # Quarterly estimated payment (IRS 2023 self-employed avg)
+    # --- estimated tax (quarterly visible outflows) ---
+    # Anchor kept from your existing model.
     quarterly_median: float = 3500.0
     quarterly_sigma: float = 0.60
 
-    # Refund parameters (IRS 2024 filing season)
-    refund_p: float = 0.75
-    refund_median: float = 3138.0
-    refund_sigma: float = 0.50
-
+    # Persona-specific ownership of the estimated-tax profile only.
     rates: dict[str, float] | None = None
 
-    def ownership_p(self, persona: str) -> float:
+    # --- annual settlement (broad filing population) ---
+    # Based on the broader filing population, not estimated-tax ownership.
+    refund_p: float = 0.63
+    refund_median: float = 3167.0
+    refund_sigma: float = 0.45
+
+    # Remaining filers can owe, or have ~zero visible settlement.
+    balance_due_p: float = 0.27
+    balance_due_median: float = 1450.0
+    balance_due_sigma: float = 0.65
+
+    def estimated_payment_p(self, persona: str) -> float:
         defaults: dict[str, float] = {
             STUDENT: 0.00,
             RETIRED: 0.10,
@@ -90,16 +106,27 @@ class TaxConfig:
             return self.rates.get(persona, defaults.get(persona, 0.0))
         return defaults.get(persona, 0.0)
 
+    # Backward-compatible alias for any existing callers.
+    def ownership_p(self, persona: str) -> float:
+        return self.estimated_payment_p(persona)
+
     def __post_init__(self) -> None:
         gt("quarterly_median", self.quarterly_median, 0.0)
         ge("quarterly_sigma", self.quarterly_sigma, 0.0)
+
         between("refund_p", self.refund_p, 0.0, 1.0)
+        gt("refund_median", self.refund_median, 0.0)
+        ge("refund_sigma", self.refund_sigma, 0.0)
+
+        between("balance_due_p", self.balance_due_p, 0.0, 1.0)
+        gt("balance_due_median", self.balance_due_median, 0.0)
+        ge("balance_due_sigma", self.balance_due_sigma, 0.0)
+
+        if float(self.refund_p) + float(self.balance_due_p) > 1.0:
+            raise ValueError("refund_p + balance_due_p must be <= 1.0")
 
 
 DEFAULT_TAX_CONFIG = TaxConfig()
-
-CHANNEL_PAYMENT = "tax_estimated_payment"
-CHANNEL_REFUND = "tax_refund"
 
 
 def scheduled_events(
@@ -108,7 +135,7 @@ def scheduled_events(
     start: datetime,
     end_excl: datetime,
 ) -> Iterator[ObligationEvent]:
-    """Yield quarterly tax payments and annual refund within the window."""
+    """Yield quarterly estimated-tax payments and annual settlement events."""
     # Quarterly estimated payments
     if terms.quarterly_amount > 0.0:
         for year in range(start.year, end_excl.year + 1):
@@ -121,7 +148,7 @@ def scheduled_events(
                         counterparty_acct=terms.treasury_acct,
                         amount=terms.quarterly_amount,
                         timestamp=ts,
-                        channel=CHANNEL_PAYMENT,
+                        channel=TAX_ESTIMATED_PAYMENT,
                         product_type="tax",
                     )
 
@@ -136,6 +163,21 @@ def scheduled_events(
                     counterparty_acct=terms.treasury_acct,
                     amount=terms.refund_amount,
                     timestamp=ts,
-                    channel=CHANNEL_REFUND,
+                    channel=TAX_REFUND,
+                    product_type="tax",
+                )
+
+    # Annual balance due
+    if terms.balance_due_amount > 0.0:
+        for year in range(start.year, end_excl.year + 1):
+            ts = datetime(year, terms.balance_due_month, 15, 10, 0, 0)
+            if ts >= start and ts < end_excl:
+                yield ObligationEvent(
+                    person_id=person_id,
+                    direction=Direction.OUTFLOW,
+                    counterparty_acct=terms.treasury_acct,
+                    amount=terms.balance_due_amount,
+                    timestamp=ts,
+                    channel=TAX_BALANCE_DUE,
                     product_type="tax",
                 )

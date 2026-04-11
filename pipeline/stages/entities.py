@@ -75,6 +75,19 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         persona_objects,
     )
 
+    # Stable external refund-source accounts used by card refunds/chargebacks.
+    # One per issued card keeps the account universe bounded and ensures
+    # validate_transaction_accounts() sees these sources as registered.
+    refund_external_accounts: list[str] = [
+        f"XREFUND_{card_id}" for card_id in credit_cards.ids
+    ]
+    if refund_external_accounts:
+        accounts = merge(
+            accounts,
+            refund_external_accounts,
+            mark_external=True,
+        )
+
     # Financial Product Portfolios
     portfolios = build_portfolios(
         base_seed=cfg.population.seed,

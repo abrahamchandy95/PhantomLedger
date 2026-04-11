@@ -8,7 +8,7 @@ import entities.models as models
 from common.math import Scalar, as_float, as_int
 from common.persona_names import SALARIED
 from entities.personas import PERSONAS
-from math_models.counts import DEFAULT_RATES, gamma_poisson, weekday_multiplier
+from math_models.counts import DEFAULT_RATES, weekday_multiplier
 from transfers.factory import TransactionFactory
 
 from .engine import GenerateRequest
@@ -92,6 +92,24 @@ def build_spender(request: GenerateRequest, index: int) -> Spender | None:
     )
 
 
+def count_liquidity_factor(liquidity_multiplier: float) -> float:
+    """
+    Soft count-stage liquidity shaping.
+
+    This intentionally never zeroes out an entire person-day. Count
+    allocation should stay target-seeking, while true affordability is
+    enforced later by the replay/screening ledger.
+    """
+    liq = max(0.0, min(1.25, float(liquidity_multiplier)))
+
+    if liq <= 1.0:
+        softened = 0.50 + (0.50 * liq)
+    else:
+        softened = liq
+
+    return softened * softened
+
+
 def sample_txn_count(
     request: GenerateRequest,
     spender: Spender,
@@ -105,48 +123,38 @@ def sample_txn_count(
     """
     Sample the number of outbound transactions for one person-day.
 
-    dynamics_multiplier captures behavior state.
-    liquidity_multiplier captures affordability pressure and should have
-    a stronger-than-linear effect so that late-cycle stress suppresses
-    attempts before replay has to reject them.
-    """
-    liq = max(0.0, min(1.25, float(liquidity_multiplier)))
+    `base_rate` is the latent upstream intensity for this specific
+    person-day. The outer generator calibrates it from the configured
+    realized monthly target after inverting all count-stage suppressors.
 
+    We then convert the expected realized count into an integer with
+    stochastic rounding instead of adding another free Poisson layer.
+    Day-level burstiness still comes from `day.shock`.
+    """
+    dynamic_mult = max(0.0, float(dynamics_multiplier))
     rate = (
         base_rate
         * float(spender.persona.rate_multiplier)
         * float(weekday_multiplier(day.start, DEFAULT_RATES))
-        * day.shock
-        * dynamics_multiplier
-        * (liq * liq)
+        * float(day.shock)
+        * dynamic_mult
+        * count_liquidity_factor(liquidity_multiplier)
     )
 
-    # Hard suppression for highly stressed days.
-    if liq < 0.25:
+    if rate <= 0.0:
         return 0
 
-    # Probabilistic suppression in the stress band.
-    if liq < 0.45 and request.rng.float() > liq:
-        return 0
+    whole = int(rate)
+    frac = float(rate) - float(whole)
 
-    count = gamma_poisson(
-        request.rng,
-        base_rate=rate,
-        rates=DEFAULT_RATES,
-    )
-
-    if count <= 0:
-        return 0
-
-    if liq < 0.45:
-        count = min(count, 1)
-    elif liq < 0.65:
-        count = min(count, 2)
+    count = whole
+    if request.rng.float() < frac:
+        count += 1
 
     if limit is not None:
         count = min(count, max(0, limit))
 
-    return count
+    return max(0, count)
 
 
 def calculate_explore_p(

@@ -152,9 +152,9 @@ def sample_payment_time(
     )
 
 
-def _refund_source(card: str, idx: int) -> str:
+def _refund_source(card: str) -> str:
     """External source account used for credits back to the card."""
-    return f"XREFUND_{card}_{idx:04d}"
+    return f"XREFUND_{card}"
 
 
 def sample_merchant_credit(
@@ -163,7 +163,6 @@ def sample_merchant_credit(
     gen: np.random.Generator,
     *,
     card: str,
-    credit_idx: int,
     purchase: Transaction,
     end_excl: datetime,
     txf: TransactionFactory,
@@ -184,7 +183,7 @@ def sample_merchant_credit(
 
         return txf.make(
             TransactionDraft(
-                source=_refund_source(card, credit_idx),
+                source=_refund_source(card),
                 destination=card,
                 amount=float(purchase.amount),
                 timestamp=ts,
@@ -206,7 +205,7 @@ def sample_merchant_credit(
 
         return txf.make(
             TransactionDraft(
-                source=_refund_source(card, credit_idx),
+                source=_refund_source(card),
                 destination=card,
                 amount=float(purchase.amount),
                 timestamp=ts,

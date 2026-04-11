@@ -4,10 +4,12 @@ from typing import cast
 
 import numpy as np
 
+import entities.models as models
 from common.math import I32, as_int, cdf_pick
 from common.persona_names import SALARIED
 from common.transactions import Transaction
 from entities.personas import PERSONAS
+from math_models.counts import DEFAULT_RATES, weekday_multiplier
 from math_models.seasonal import monthly_multiplier
 from math_models.timing import sample_offsets
 from transfers.factory import TransactionFactory
@@ -18,9 +20,11 @@ from .dynamics import advance_all_daily, evolve_all_monthly
 from .engine import GenerateRequest
 from .state import (
     Event,
+    Spender,
     build_day,
     build_spender,
     calculate_explore_p,
+    count_liquidity_factor,
     sample_txn_count,
 )
 
@@ -80,6 +84,50 @@ def _liquidity_multiplier(
     return min(1.10, max(0.0, mult))
 
 
+def _target_total_txns(request: GenerateRequest, num_spenders: int) -> float:
+    """Configured realized day-to-day target across the current window."""
+    return (
+        float(request.merchants_cfg.txns_per_month)
+        * float(num_spenders)
+        * (float(request.days) / 30.0)
+    )
+
+
+def _latent_base_rate_for_target(
+    spender: Spender,
+    *,
+    day: datetime,
+    day_shock: float,
+    target_realized_per_day: float,
+    dynamics_multiplier: float,
+    liquidity_multiplier: float,
+) -> float:
+    """
+    Back-calibrate the latent base intensity needed to hit a realized
+    per-person-day target under today's count-stage suppressors.
+
+    This now inverts every multiplier that still affects count
+    generation: persona mix, weekday effects, day shock, behavior
+    dynamics, and soft liquidity shaping.
+    """
+    if target_realized_per_day <= 0.0:
+        return 0.0
+
+    persona: models.Persona = spender.persona
+    suppression = (
+        float(persona.rate_multiplier)
+        * float(weekday_multiplier(day, DEFAULT_RATES))
+        * float(day_shock)
+        * max(0.0, float(dynamics_multiplier))
+        * count_liquidity_factor(liquidity_multiplier)
+    )
+
+    if suppression <= 0.0:
+        return 0.0
+
+    return target_realized_per_day / suppression
+
+
 @dataclass(slots=True)
 class _Generator:
     request: GenerateRequest
@@ -91,21 +139,29 @@ class _Generator:
         txf = TransactionFactory(rng=self.request.rng, infra=self.request.infra)
         channel_cdf = build_channel_cdf(self.request)
 
-        base_per_day = float(self.request.merchants_cfg.txns_per_month) / 30.0
         prefer_billers_p = float(self.request.events.prefer_billers_p)
-        daily_limit = int(self.request.events.max_per_day)
+        per_person_daily_limit = int(self.request.events.max_per_person_per_day)
 
         dynamics_cfg = self.request.params.dynamics
         seasonal_cfg = self.request.params.seasonal
         ctx = self.request.ctx
         dynamics = ctx.person_dynamics
-        num_spenders = len(ctx.population.persons)
+        total_people = len(ctx.population.persons)
+        active_spenders = sum(
+            1
+            for person_id in ctx.population.persons
+            if ctx.population.primary_accounts.get(person_id) is not None
+        )
+        target_total_txns = _target_total_txns(self.request, active_spenders)
 
         txns: list[Transaction] = []
-        days_since_payday: list[int] = [365] * num_spenders
+        days_since_payday: list[int] = [365] * total_people
 
         self.request.base_txns.sort(key=lambda t: t.timestamp)
         base_idx = 0
+
+        total_person_days = active_spenders * self.request.days
+        processed_person_days = 0
 
         for day_index in range(self.request.days):
             if _is_month_boundary(day_index, day_index - 1, self.request.start_date):
@@ -118,13 +174,12 @@ class _Generator:
                     degree=ctx.social.degree,
                     merch_cdf=ctx.merchant.merch_cdf,
                     total_merchants=len(ctx.merchant.merchants.ids),
-                    n_people=num_spenders,
+                    n_people=total_people,
                 )
 
             day = build_day(self.request, day_index)
             seasonal_mult = monthly_multiplier(day.start.month, seasonal_cfg)
 
-            # Seed the screening ledger with already-known prior-day activity.
             base_idx = advance_book_through(
                 self.request.screen_book,
                 self.request.base_txns,
@@ -144,12 +199,7 @@ class _Generator:
                 fallback_persona=_FALLBACK_PERSONA,
             )
 
-            txns_today = 0
-
-            for person_idx in range(num_spenders):
-                if 0 < daily_limit <= txns_today:
-                    break
-
+            for person_idx in range(total_people):
                 spender = build_spender(self.request, person_idx)
                 if spender is None:
                     continue
@@ -180,33 +230,42 @@ class _Generator:
                     fixed_monthly_burden=fixed_burden,
                 )
 
-                remaining_today = (
-                    None if daily_limit <= 0 else max(0, daily_limit - txns_today)
+                person_limit = (
+                    None if per_person_daily_limit <= 0 else per_person_daily_limit
                 )
 
                 combined_mult = daily_multipliers[person_idx] * seasonal_mult
+
+                remaining_person_days = max(
+                    1, total_person_days - processed_person_days
+                )
+                remaining_target_txns = max(0.0, target_total_txns - float(len(txns)))
+                target_realized_per_day = remaining_target_txns / float(
+                    remaining_person_days
+                )
+
+                latent_base_per_day = _latent_base_rate_for_target(
+                    spender,
+                    day=day.start,
+                    day_shock=day.shock,
+                    target_realized_per_day=target_realized_per_day,
+                    dynamics_multiplier=combined_mult,
+                    liquidity_multiplier=liquidity_mult,
+                )
 
                 txn_count = sample_txn_count(
                     self.request,
                     spender,
                     day,
-                    base_per_day,
-                    remaining_today,
+                    latent_base_per_day,
+                    person_limit,
                     dynamics_multiplier=combined_mult,
                     liquidity_multiplier=liquidity_mult,
                 )
+                processed_person_days += 1
+
                 if txn_count <= 0:
                     continue
-
-                offsets: I32 = np.asarray(
-                    sample_offsets(
-                        self.request.rng,
-                        spender.persona.timing_profile,
-                        txn_count,
-                        ctx.population.timing,
-                    ),
-                    dtype=np.int32,
-                )
 
                 explore_p = calculate_explore_p(self.request, spender, day)
                 explore_floor = float(self.request.params.liquidity_explore_floor)
@@ -215,8 +274,26 @@ class _Generator:
                     max(0.0, min(1.0, liquidity_mult**3)),
                 )
 
-                for i in range(txn_count):
-                    offset_sec = as_int(cast(int | np.integer, offsets[i]))
+                # txn_count is a target number of accepted candidate
+                # transactions for this person-day. Failed routing attempts or
+                # local screen-book rejections should not consume the count.
+                accepted = 0
+                attempt_budget = max(txn_count, txn_count * 4)
+
+                while accepted < txn_count and attempt_budget > 0:
+                    attempt_budget -= 1
+
+                    offsets: I32 = np.asarray(
+                        sample_offsets(
+                            self.request.rng,
+                            spender.persona.timing_profile,
+                            1,
+                            ctx.population.timing,
+                        ),
+                        dtype=np.int32,
+                    )
+
+                    offset_sec = as_int(cast(int | np.integer, offsets[0]))
                     event = Event(
                         person_idx=person_idx,
                         spender=spender,
@@ -248,10 +325,7 @@ class _Generator:
                             continue
 
                     txns.append(txn)
-                    txns_today += 1
-
-                    if 0 < daily_limit <= txns_today:
-                        break
+                    accepted += 1
 
         return txns
 
