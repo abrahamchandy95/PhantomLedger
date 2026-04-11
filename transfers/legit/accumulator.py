@@ -35,6 +35,11 @@ from common.channels import (
     TAX_ESTIMATED_PAYMENT,
     TAX_REFUND,
     TUITION,
+    CARD_SETTLEMENT,
+    CLIENT_ACH_CREDIT,
+    INVESTMENT_INFLOW,
+    OWNER_DRAW,
+    PLATFORM_PAYOUT,
 )
 from common.ids import is_external
 from common.random import Rng
@@ -83,6 +88,11 @@ CURE_INBOUND_CHANNELS: frozenset[str] = frozenset(
         GRANDPARENT_GIFT,
         INHERITANCE,
         CC_REFUND,
+        CLIENT_ACH_CREDIT,
+        CARD_SETTLEMENT,
+        PLATFORM_PAYOUT,
+        OWNER_DRAW,
+        INVESTMENT_INFLOW,
     }
 )
 

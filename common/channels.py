@@ -17,6 +17,11 @@ CARD_PURCHASE = "card_purchase"
 BILL = "bill"
 P2P = "p2p"
 EXTERNAL_UNKNOWN = "external_unknown"
+CLIENT_ACH_CREDIT = "client_ach_credit"
+CARD_SETTLEMENT = "card_settlement"
+PLATFORM_PAYOUT = "platform_payout"
+OWNER_DRAW = "owner_draw"
+INVESTMENT_INFLOW = "investment_inflow"
 
 # --- Family channels ---
 ALLOWANCE = "allowance"
@@ -76,6 +81,11 @@ PAYDAY_INBOUND_CHANNELS: frozenset[str] = frozenset(
         GOV_SOCIAL_SECURITY,
         GOV_PENSION,
         DISABILITY,
+        CLIENT_ACH_CREDIT,
+        CARD_SETTLEMENT,
+        PLATFORM_PAYOUT,
+        OWNER_DRAW,
+        INVESTMENT_INFLOW,
     }
 )
 

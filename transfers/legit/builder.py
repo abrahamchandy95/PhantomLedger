@@ -18,6 +18,7 @@ from .models import (
     LegitPolicies,
     TransfersPayload,
 )
+from .nonpayroll_income import generate_nonpayroll_income_txns
 from .plans import build_legit_plan
 from .recurring import generate_rent_txns, generate_salary_txns
 from .self import generate as generate_self_transfer_txns
@@ -81,7 +82,7 @@ class LegitTransferBuilder:
                 primary_accounts=plan.primary_acct_for_person,
             )
         )
-
+        extend(generate_nonpayroll_income_txns(self.request, plan, txf))
         extend(
             split_deposits(
                 self.inputs.rng,

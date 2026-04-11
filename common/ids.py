@@ -23,6 +23,11 @@ MERCHANT_EXTERNAL = IdFormat(prefix="XM", width=8)
 
 EMPLOYER_EXTERNAL = IdFormat(prefix="XE", width=8)
 LANDLORD_EXTERNAL = IdFormat(prefix="XL", width=8)
+CLIENT_EXTERNAL = IdFormat(prefix="XC", width=8)
+PLATFORM_EXTERNAL = IdFormat(prefix="XP", width=8)
+PROCESSOR_EXTERNAL = IdFormat(prefix="XS", width=8)
+BUSINESS_EXTERNAL = IdFormat(prefix="XO", width=8)
+BROKERAGE_EXTERNAL = IdFormat(prefix="XB", width=8)
 
 
 def customer_id(n: int) -> str:
@@ -49,6 +54,26 @@ def landlord_external_id(n: int) -> str:
     return LANDLORD_EXTERNAL.apply(n)
 
 
+def client_external_id(n: int) -> str:
+    return CLIENT_EXTERNAL.apply(n)
+
+
+def platform_external_id(n: int) -> str:
+    return PLATFORM_EXTERNAL.apply(n)
+
+
+def processor_external_id(n: int) -> str:
+    return PROCESSOR_EXTERNAL.apply(n)
+
+
+def business_external_id(n: int) -> str:
+    return BUSINESS_EXTERNAL.apply(n)
+
+
+def brokerage_external_id(n: int) -> str:
+    return BROKERAGE_EXTERNAL.apply(n)
+
+
 def customers(count: int) -> Iterator[str]:
     """Yield Cxxxxxxx ids from 1 to count."""
     for i in range(1, count + 1):
@@ -69,7 +94,6 @@ def device_id(cust_id: str, index: int) -> str:
     if index <= 0:
         raise ValueError(f"Device index must be >= 1, got {index}")
 
-    # Strip prefix (e.g., 'C') and replace with 'D'
     return f"D{cust_id[1:]}_{index}"
 
 

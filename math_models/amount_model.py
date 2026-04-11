@@ -85,7 +85,11 @@ EXTERNAL_UNKNOWN = AmountModel(median=120.0, sigma=0.95, floor=5.0)
 ATM = AmountModel(median=80.0, sigma=0.30, floor=20.0)
 SELF_TRANSFER = AmountModel(median=250.0, sigma=0.80, floor=10.0)
 SUBSCRIPTION = AmountModel(median=15.0, sigma=0.40, floor=5.0)
-
+CLIENT_ACH_CREDIT = AmountModel(median=1500.0, sigma=0.75, floor=50.0)
+CARD_SETTLEMENT = AmountModel(median=650.0, sigma=0.60, floor=20.0)
+PLATFORM_PAYOUT = AmountModel(median=400.0, sigma=0.65, floor=10.0)
+OWNER_DRAW = AmountModel(median=2500.0, sigma=0.80, floor=100.0)
+INVESTMENT_INFLOW = AmountModel(median=5000.0, sigma=1.00, floor=100.0)
 # Fraud-specific
 FRAUD = AmountModel(median=900.0, sigma=0.70, floor=50.0)
 FRAUD_CYCLE = AmountModel(median=600.0, sigma=0.25, floor=1.0)
@@ -133,6 +137,11 @@ _CHANNEL_MODELS: dict[str, AmountModel | GammaAmountModel] = {
     "subscription": SUBSCRIPTION,
     "fraud_classic": FRAUD,
     "fraud_cycle": FRAUD_CYCLE,
+    "client_ach_credit": CLIENT_ACH_CREDIT,
+    "card_settlement": CARD_SETTLEMENT,
+    "platform_payout": PLATFORM_PAYOUT,
+    "owner_draw": OWNER_DRAW,
+    "investment_inflow": INVESTMENT_INFLOW,
 }
 
 

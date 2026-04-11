@@ -42,17 +42,18 @@ def _salary_probability_for_persona(persona: str) -> float:
     """
     Probability of receiving regular payroll-like deposits.
 
-    This is deliberately broader than strict W-2 employment because the
-    current model does not have a separate recurring business-revenue
-    generator for freelancers/small businesses.
+    Salary remains predominantly a W-2 / payroll channel. Some non-salaried
+    personas still receive payroll in edge cases (for example: part-time
+    jobs, owner-officer compensation, executive payroll), but those cases
+    should be minority behavior rather than the default.
     """
     table = {
         SALARIED: 0.98,
-        FREELANCER: 0.50,
-        SMALLBIZ: 0.55,
-        HNW: 0.30,
-        STUDENT: 0.18,
-        RETIRED: 0.04,
+        FREELANCER: 0.08,
+        SMALLBIZ: 0.04,
+        HNW: 0.12,
+        STUDENT: 0.12,
+        RETIRED: 0.02,
     }
     return float(table.get(persona, table[SALARIED]))
 

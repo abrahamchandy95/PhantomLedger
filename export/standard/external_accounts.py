@@ -9,6 +9,8 @@ _PREFIX_KIND_CATEGORY: tuple[tuple[str, str, str], ...] = (
     ("XINS", "insurance_external", "insurance"),
     ("XIRS", "tax_authority_external", "tax"),
     ("XLND", "lender_external", "lending"),
+    ("XOB", "business_operating_external", "business"),
+    ("XBR", "brokerage_custody_external", "brokerage"),
     ("XE", "employer_external", "employer"),
     ("XL", "landlord_external", "landlord"),
 )
