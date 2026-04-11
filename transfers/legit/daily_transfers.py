@@ -8,6 +8,7 @@ from transfers.day_to_day import (
     generate,
 )
 
+from .fixed_burden import monthly_fixed_burden_for_portfolio
 from .models import LegitGenerationRequest
 from .paydays import build_paydays_by_person
 from .plans import LegitBuildPlan
@@ -46,28 +47,7 @@ def _fixed_monthly_burden_for_person(
     if portfolios is None:
         return 0.0
 
-    portfolio = portfolios.get(person_id)
-    if portfolio is None:
-        return 0.0
-
-    total = 0.0
-
-    if portfolio.mortgage is not None:
-        total += float(portfolio.mortgage.monthly_payment)
-
-    if portfolio.auto_loan is not None:
-        total += float(portfolio.auto_loan.monthly_payment)
-
-    if portfolio.student_loan is not None and not portfolio.student_loan.in_deferment:
-        total += float(portfolio.student_loan.monthly_payment)
-
-    if portfolio.insurance is not None:
-        total += float(portfolio.insurance.total_monthly_premium())
-
-    if portfolio.tax is not None:
-        total += float(portfolio.tax.quarterly_amount) / 3.0
-
-    return total
+    return monthly_fixed_burden_for_portfolio(portfolios.get(person_id))
 
 
 def _fixed_monthly_burdens(

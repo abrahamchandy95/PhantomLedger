@@ -52,6 +52,12 @@ class Insurance:
     home_claim_median: float = 15750.0
     home_claim_sigma: float = 0.90
 
+    # --- financed-collateral coverage anchors ---
+    # These are intentionally high, not necessarily hard 1.0.
+    # Set to 1.0 if you want "strict lender-required" behavior.
+    mortgage_home_required_p: float = 0.998
+    auto_loan_auto_required_p: float = 0.997
+
     # --- persona ownership rates ---
     rates: dict[str, PersonaRates] = field(
         default_factory=lambda: {
@@ -77,6 +83,14 @@ class Insurance:
 
         gt("auto_claim_median", self.auto_claim_median, 0.0)
         gt("home_claim_median", self.home_claim_median, 0.0)
+
+        between("mortgage_home_required_p", self.mortgage_home_required_p, 0.0, 1.0)
+        between(
+            "auto_loan_auto_required_p",
+            self.auto_loan_auto_required_p,
+            0.0,
+            1.0,
+        )
 
     def for_persona(self, name: str) -> PersonaRates:
         return self.rates.get(name, self.rates["salaried"])

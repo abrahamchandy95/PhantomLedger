@@ -5,6 +5,7 @@ from common.persona_names import SALARIED
 import entities.models as models
 import transfers.balances as balances_model
 
+from .fixed_burden import monthly_fixed_burden_for_portfolio
 from .models import LegitCreditRuntime, LegitInputs, LegitPolicies
 from .plans import LegitBuildPlan
 
@@ -48,37 +49,7 @@ def _monthly_fixed_burden(
     if portfolios is None:
         return 0.0
 
-    portfolio = portfolios.get(person_id)
-    if portfolio is None:
-        return 0.0
-
-    total = 0.0
-
-    if portfolio.mortgage is not None:
-        total += float(portfolio.mortgage.monthly_payment)
-    if portfolio.auto_loan is not None:
-        total += float(portfolio.auto_loan.monthly_payment)
-    if portfolio.student_loan is not None and not portfolio.student_loan.in_deferment:
-        total += float(portfolio.student_loan.monthly_payment)
-
-    if portfolio.insurance is not None:
-        ins = portfolio.insurance
-
-        if ins.auto is not None:
-            total += float(ins.auto.monthly_premium)
-
-        # Mortgage monthly_payment already includes escrow.
-        # Do not add home insurance a second time for mortgaged households.
-        if ins.home is not None and portfolio.mortgage is None:
-            total += float(ins.home.monthly_premium)
-
-        if ins.life is not None:
-            total += float(ins.life.monthly_premium)
-
-    if portfolio.tax is not None:
-        total += float(portfolio.tax.quarterly_amount) / 3.0
-
-    return total
+    return monthly_fixed_burden_for_portfolio(portfolios.get(person_id))
 
 
 def build_balance_book(

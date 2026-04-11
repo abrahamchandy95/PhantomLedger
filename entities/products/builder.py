@@ -31,7 +31,6 @@ from .auto_loan import AutoLoanConfig, AutoLoanTerms, DEFAULT_AUTO_LOAN_CONFIG
 from .card_account import CardTerms, extract_all
 from .insurance import (
     InsuranceHoldings,
-    InsurancePolicy,
     auto_policy,
     home_policy,
     life_policy,
@@ -44,8 +43,6 @@ from .student_loan import (
     StudentLoanTerms,
 )
 from .tax_profile import DEFAULT_TAX_CONFIG, TaxConfig, TaxTerms
-
-_MANDATORY_COLLATERAL_COVERAGE_P = 1.0
 
 
 def _clamp01(value: float) -> float:
@@ -61,16 +58,17 @@ def _residual_policy_probability(
     *,
     target_p: float,
     anchored_population_p: float,
-    anchored_policy_p: float = _MANDATORY_COLLATERAL_COVERAGE_P,
+    anchored_policy_p: float,
 ) -> float:
     """
     Back into the policy probability for the non-anchored population.
 
     Example:
-      if 45% of a persona finances a car and financed cars are always treated
-      as insured, this returns the probability that the remaining non-financed
-      group should receive auto coverage so that the overall insurance rate
-      stays close to the target.
+      if 45% of a persona finances a car and financed cars receive
+      insurance with probability 0.997, this returns the probability
+      that the remaining non-financed group should receive auto coverage
+      so that the overall insurance rate stays close to the configured
+      persona target.
     """
     target = _clamp01(target_p)
     anchored_share = _clamp01(anchored_population_p)
@@ -203,27 +201,32 @@ def _try_insurance(
     """
     Sample insurance coverage for one person.
 
-    Home and auto coverage are anchored to the underlying financed asset:
-      - mortgage holders are always issued home insurance
-      - auto-loan holders are always issued auto insurance
+    Home and auto coverage are anchored to financed collateral:
+      - mortgage holders receive home coverage with high configurable probability
+      - auto-loan holders receive auto coverage with high configurable probability
 
-    Non-financed owners can still hold coverage, but their residual issuance
-    probability is backed out so the overall persona-level insurance rate stays
-    close to the configured target.
+    Non-financed owners can still receive coverage, but their residual issuance
+    probability is backed out so the overall persona-level rate stays close to
+    the configured target.
     """
     rates = cfg.for_persona(persona_name)
 
-    auto: InsurancePolicy | None = None
-    home: InsurancePolicy | None = None
-    life: InsurancePolicy | None = None
+    auto = None
+    home = None
+    life = None
+
+    auto_anchor_policy_p = float(cfg.auto_loan_auto_required_p)
+    home_anchor_policy_p = float(cfg.mortgage_home_required_p)
 
     if auto_loan is not None:
-        auto_issue_p = _MANDATORY_COLLATERAL_COVERAGE_P
+        auto_issue_p = auto_anchor_policy_p
     else:
         auto_issue_p = _residual_policy_probability(
             target_p=float(rates.auto),
             anchored_population_p=auto_loan_anchor_p,
+            anchored_policy_p=auto_anchor_policy_p,
         )
+
     if float(gen.random()) < auto_issue_p:
         premium = float(
             lognormal_by_median(gen, median=cfg.auto_median, sigma=cfg.auto_sigma)
@@ -235,12 +238,14 @@ def _try_insurance(
         )
 
     if mortgage is not None:
-        home_issue_p = _MANDATORY_COLLATERAL_COVERAGE_P
+        home_issue_p = home_anchor_policy_p
     else:
         home_issue_p = _residual_policy_probability(
             target_p=float(rates.home),
             anchored_population_p=mortgage_anchor_p,
+            anchored_policy_p=home_anchor_policy_p,
         )
+
     if float(gen.random()) < home_issue_p:
         premium = float(
             lognormal_by_median(gen, median=cfg.home_median, sigma=cfg.home_sigma)
@@ -285,13 +290,13 @@ def build_portfolios(
     model (since issuance also creates accounts). Insurance, loans, and
     tax profiles are sampled fresh from their config distributions.
 
-    The important realism constraint is that collateralized insurance is
-    no longer sampled fully independently from the financed asset.
+    Collateralized insurance is not sampled fully independently from the
+    financed asset: mortgage and auto-loan holders are strongly anchored
+    to matching home/auto coverage.
     """
     rng_factory = RngFactory(base_seed)
 
     card_terms_by_person: dict[str, CardTerms] = extract_all(credit_cards)
-
     portfolios: dict[str, Portfolio] = {}
 
     for person_id, persona_name in persona_map.items():
