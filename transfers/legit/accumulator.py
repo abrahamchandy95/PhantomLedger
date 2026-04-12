@@ -117,6 +117,69 @@ class ReplayPolicy:
 
 DEFAULT_REPLAY_POLICY = ReplayPolicy()
 
+type ReplaySortKey = tuple[datetime, str, str, float]
+
+
+def replay_sort_key(txn: Transaction) -> ReplaySortKey:
+    """
+    Deterministic ordering used by the authoritative pre-fraud replay.
+
+    Important:
+    This intentionally matches the existing ChronoReplayAccumulator.extend()
+    ordering exactly. Do not widen this key unless you explicitly want to
+    change replay semantics.
+    """
+    return (
+        txn.timestamp,
+        txn.source,
+        txn.target,
+        float(txn.amount),
+    )
+
+
+def sort_for_replay(items: Iterable[Transaction]) -> list[Transaction]:
+    return sorted(items, key=replay_sort_key)
+
+
+def merge_replay_sorted(
+    existing: list[Transaction],
+    new_items: Iterable[Transaction],
+) -> list[Transaction]:
+    """
+    Merge a new stage stream into an already replay-sorted prefix.
+
+    Stability matters:
+    - ties stay in `existing` before `new_items`
+    - that matches the current behavior of:
+          sorted(existing + new_items, key=replay_sort_key)
+      because Python's sort is stable and later stages are appended after
+      earlier stages.
+    """
+    new_sorted = sort_for_replay(new_items)
+    if not new_sorted:
+        return existing
+    if not existing:
+        return new_sorted
+
+    out: list[Transaction] = []
+    left = 0
+    right = 0
+
+    while left < len(existing) and right < len(new_sorted):
+        if replay_sort_key(existing[left]) <= replay_sort_key(new_sorted[right]):
+            out.append(existing[left])
+            left += 1
+        else:
+            out.append(new_sorted[right])
+            right += 1
+
+    if left < len(existing):
+        out.extend(existing[left:])
+    if right < len(new_sorted):
+        out.extend(new_sorted[right:])
+
+    return out
+
 
 @dataclass(order=True, frozen=True, slots=True)
 class _QueuedTxn:
@@ -172,11 +235,14 @@ class ChronoReplayAccumulator:
             self._record_drop(decision.reason, txn.channel)
         return False
 
-    def extend(self, items: Iterable[Transaction]) -> None:
-        ordered = sorted(
-            items,
-            key=lambda txn: (txn.timestamp, txn.source, txn.target, float(txn.amount)),
-        )
+    def extend(
+        self,
+        items: Iterable[Transaction],
+        *,
+        presorted: bool = False,
+    ) -> None:
+        ordered = list(items) if presorted else sort_for_replay(items)
+
         if self.book is None:
             self.txns.extend(ordered)
             return

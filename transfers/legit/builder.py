@@ -7,6 +7,7 @@ from common.transactions import Transaction
 from transfers.factory import TransactionFactory
 from transfers.government import generate as generate_government_txns
 
+from .accumulator import merge_replay_sorted
 from .atm import generate as generate_atm_txns
 from .balances import build_balance_book
 from .credit_card_lifecycle import generate_credit_lifecycle_txns
@@ -85,14 +86,16 @@ class LegitTransferBuilder:
 
         candidate_txns: list[Transaction] = []
         screened_prefix: list[Transaction] = []
+        replay_sorted_txns: list[Transaction] = []
 
         def extend(items: list[Transaction]) -> None:
-            nonlocal screened_prefix
+            nonlocal screened_prefix, replay_sorted_txns
             if not items:
                 return
 
             candidate_txns.extend(items)
             screened_prefix = _merge_by_timestamp(screened_prefix, items)
+            replay_sorted_txns = merge_replay_sorted(replay_sorted_txns, items)
 
         def reset_screen_book() -> balances_model.Ledger | None:
             if initial_book is None or screen_book is None:
@@ -185,4 +188,5 @@ class LegitTransferBuilder:
             biller_accounts=plan.counterparties.biller_accounts,
             employers=plan.counterparties.employers,
             initial_book=initial_book,
+            replay_sorted_txns=replay_sorted_txns,
         )

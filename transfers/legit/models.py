@@ -16,7 +16,16 @@ from infra.routing import Router
 @dataclass(frozen=True, slots=True)
 class TransfersPayload:
     """
-    Semantic-order legit candidates plus the pristine starting ledger.
+    Legit transfer artifacts.
+
+    candidate_txns:
+        Semantic generation order preserved for dependency-sensitive upstream
+        consumers.
+
+    replay_sorted_txns:
+        The same legitimate transactions arranged in the exact deterministic
+        order expected by the authoritative pre-fraud replay:
+        (timestamp, source, target, amount), with stable stage-order ties.
     """
 
     candidate_txns: list[Transaction]
@@ -24,6 +33,7 @@ class TransfersPayload:
     biller_accounts: list[str]
     employers: list[str]
     initial_book: balances_model.Ledger | None = None
+    replay_sorted_txns: list[Transaction] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)
