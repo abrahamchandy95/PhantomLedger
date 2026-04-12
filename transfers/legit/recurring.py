@@ -17,7 +17,7 @@ from math_models.amount_model import (
 import relationships.recurring as recurring_model
 from transfers.factory import TransactionDraft, TransactionFactory
 
-from .models import LegitInputs, LegitPolicies
+from .models import LegitInputs, Specifications
 from .plans import LegitBuildPlan
 
 
@@ -76,10 +76,10 @@ def _rent_probability_for_persona(persona: str) -> float:
 
 def _salary_people(
     inputs: LegitInputs,
-    policies: LegitPolicies,
+    specs: Specifications,
     plan: LegitBuildPlan,
 ) -> list[str]:
-    salary_fraction = float(policies.recurring.salary_fraction)
+    salary_fraction = float(specs.recurring.salary_fraction)
 
     out: list[str] = []
     for person_id in plan.persons:
@@ -103,13 +103,13 @@ def _salary_people(
 
 def generate_salary_txns(
     inputs: LegitInputs,
-    policies: LegitPolicies,
+    specs: Specifications,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
-    recurring_policy = policies.recurring
+    recurring_policy = specs.recurring
     rng = inputs.rng
-    salary_people = _salary_people(inputs, policies, plan)
+    salary_people = _salary_people(inputs, specs, plan)
 
     employment: dict[str, recurring_model.Employment] = {}
     txns: list[Transaction] = []
@@ -216,7 +216,7 @@ def _homeowners(inputs: LegitInputs) -> set[str]:
 
 def _rent_payers(
     inputs: LegitInputs,
-    policies: LegitPolicies,
+    policies: Specifications,
     plan: LegitBuildPlan,
 ) -> list[str]:
     rent_fraction = float(policies.recurring.rent_fraction)
@@ -243,13 +243,13 @@ def _rent_payers(
 
 def generate_rent_txns(
     inputs: LegitInputs,
-    policies: LegitPolicies,
+    specs: Specifications,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
-    recurring_policy = policies.recurring
+    recurring_policy = specs.recurring
     rng = inputs.rng
-    rent_active = _rent_payers(inputs, policies, plan)
+    rent_active = _rent_payers(inputs, specs, plan)
 
     leases: dict[str, recurring_model.Lease] = {}
     txns: list[Transaction] = []

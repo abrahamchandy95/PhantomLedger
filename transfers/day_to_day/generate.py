@@ -31,6 +31,53 @@ from .state import (
 _FALLBACK_PERSONA = PERSONAS[SALARIED]
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedSpender:
+    person_idx: int
+    spender: Spender
+    paydays: frozenset[int]
+    initial_cash: float
+    baseline_cash: float
+    fixed_burden: float
+    paycheck_sensitivity: float
+
+
+def _prepare_spenders(request: GenerateRequest) -> list[_PreparedSpender]:
+    """
+    Precompute all deterministic, per-person values used by the day-to-day engine.
+
+    This is intentionally RNG-free so it preserves exact generation behavior while
+    removing repeated dict lookups, object construction, and numeric recomputation
+    from the hot day/person loop.
+    """
+    prepared: list[_PreparedSpender] = []
+
+    paydays_by_person = request.ctx.paydays_by_person
+    fixed_monthly_burden = request.fixed_monthly_burden
+    total_people = len(request.ctx.population.persons)
+
+    for person_idx in range(total_people):
+        spender = build_spender(request, person_idx)
+        if spender is None:
+            continue
+
+        initial_cash = float(spender.persona.initial_balance)
+
+        prepared.append(
+            _PreparedSpender(
+                person_idx=person_idx,
+                spender=spender,
+                paydays=paydays_by_person[person_idx],
+                initial_cash=initial_cash,
+                baseline_cash=max(150.0, initial_cash),
+                fixed_burden=float(fixed_monthly_burden.get(spender.id, 0.0)),
+                paycheck_sensitivity=float(spender.persona.paycheck_sensitivity),
+            )
+        )
+
+    return prepared
+
+
 def _is_month_boundary(
     day_index: int,
     prev_day_index: int,
@@ -141,23 +188,25 @@ class _Generator:
 
         prefer_billers_p = float(self.request.events.prefer_billers_p)
         per_person_daily_limit = int(self.request.events.max_per_person_per_day)
+        person_limit = None if per_person_daily_limit <= 0 else per_person_daily_limit
 
         dynamics_cfg = self.request.params.dynamics
         seasonal_cfg = self.request.params.seasonal
         ctx = self.request.ctx
         dynamics = ctx.person_dynamics
         total_people = len(ctx.population.persons)
-        active_spenders = sum(
-            1
-            for person_id in ctx.population.persons
-            if ctx.population.primary_accounts.get(person_id) is not None
-        )
+
+        prepared_spenders = _prepare_spenders(self.request)
+        active_spenders = len(prepared_spenders)
         target_total_txns = _target_total_txns(self.request, active_spenders)
 
         txns: list[Transaction] = []
         days_since_payday: list[int] = [365] * total_people
 
-        self.request.base_txns.sort(key=lambda t: t.timestamp)
+        base_txns = self.request.base_txns
+        base_txns.sort(key=lambda t: t.timestamp)
+
+        screen_book = self.request.screen_book
         base_idx = 0
 
         total_person_days = active_spenders * self.request.days
@@ -181,8 +230,8 @@ class _Generator:
             seasonal_mult = monthly_multiplier(day.start.month, seasonal_cfg)
 
             base_idx = advance_book_through(
-                self.request.screen_book,
-                self.request.base_txns,
+                screen_book,
+                base_txns,
                 base_idx,
                 day.start,
                 inclusive=False,
@@ -199,39 +248,29 @@ class _Generator:
                 fallback_persona=_FALLBACK_PERSONA,
             )
 
-            for person_idx in range(total_people):
-                spender = build_spender(self.request, person_idx)
-                if spender is None:
-                    continue
+            for prepared in prepared_spenders:
+                person_idx = prepared.person_idx
+                spender = prepared.spender
 
-                if day_index in ctx.paydays_by_person[person_idx]:
+                if day_index in prepared.paydays:
                     days_since_payday[person_idx] = 0
                 else:
                     days_since_payday[person_idx] += 1
 
-                if self.request.screen_book is None:
-                    available_cash = float(spender.persona.initial_balance)
+                if screen_book is None:
+                    available_cash = prepared.initial_cash
                 else:
-                    available_cash = self.request.screen_book.available_to_spend(
+                    available_cash = screen_book.available_to_spend(
                         spender.deposit_acct
                     )
-
-                fixed_burden = float(
-                    self.request.fixed_monthly_burden.get(spender.id, 0.0)
-                )
-                baseline_cash = max(150.0, float(spender.persona.initial_balance))
 
                 liquidity_mult = _liquidity_multiplier(
                     self.request,
                     days_since_payday=days_since_payday[person_idx],
-                    paycheck_sensitivity=float(spender.persona.paycheck_sensitivity),
+                    paycheck_sensitivity=prepared.paycheck_sensitivity,
                     available_cash=available_cash,
-                    baseline_cash=baseline_cash,
-                    fixed_monthly_burden=fixed_burden,
-                )
-
-                person_limit = (
-                    None if per_person_daily_limit <= 0 else per_person_daily_limit
+                    baseline_cash=prepared.baseline_cash,
+                    fixed_monthly_burden=prepared.fixed_burden,
                 )
 
                 combined_mult = daily_multipliers[person_idx] * seasonal_mult
@@ -274,9 +313,6 @@ class _Generator:
                     max(0.0, min(1.0, liquidity_mult**3)),
                 )
 
-                # txn_count is a target number of accepted candidate
-                # transactions for this person-day. Failed routing attempts or
-                # local screen-book rejections should not consume the count.
                 accepted = 0
                 attempt_budget = max(txn_count, txn_count * 4)
 
@@ -313,8 +349,8 @@ class _Generator:
                     if txn is None:
                         continue
 
-                    if self.request.screen_book is not None:
-                        decision = self.request.screen_book.try_transfer_with_reason(
+                    if screen_book is not None:
+                        decision = screen_book.try_transfer_with_reason(
                             txn.source,
                             txn.target,
                             txn.amount,

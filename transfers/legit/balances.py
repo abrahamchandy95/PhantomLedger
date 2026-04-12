@@ -6,7 +6,7 @@ import entities.models as models
 import transfers.balances as balances_model
 
 from .fixed_burden import monthly_fixed_burden_for_portfolio
-from .models import LegitCreditRuntime, LegitInputs, LegitPolicies
+from .models import LegitCreditRuntime, LegitInputs, Specifications
 from .plans import LegitBuildPlan
 
 
@@ -54,11 +54,11 @@ def _monthly_fixed_burden(
 
 def build_balance_book(
     inputs: LegitInputs,
-    policies: LegitPolicies,
+    specs: Specifications,
     credit_runtime: LegitCreditRuntime,
     plan: LegitBuildPlan,
 ) -> balances_model.Ledger | None:
-    balance_rules = policies.balances
+    balance_rules = specs.balances
     if not balance_rules.enable_constraints:
         return None
 

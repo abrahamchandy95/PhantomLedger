@@ -27,7 +27,7 @@ class TransfersPayload:
 
 
 @dataclass(frozen=True, slots=True)
-class CreditLifecyclePolicy:
+class CreditCardProfile:
     terms: credit_cards_transfer.Terms = field(
         default_factory=credit_cards_transfer.Terms
     )
@@ -37,19 +37,17 @@ class CreditLifecyclePolicy:
 
 
 @dataclass(frozen=True, slots=True)
-class LegitPolicies:
+class Specifications:
     recurring: recurring_model.Policy = field(default_factory=recurring_model.Policy)
     social: config.Social = field(default_factory=config.Social)
     balances: balances_model.Rules = field(default_factory=balances_model.Rules)
     credit_issuance: credit_cards_entity.IssuancePolicy = field(
         default_factory=credit_cards_entity.IssuancePolicy
     )
-    credit_lifecycle: CreditLifecyclePolicy = field(
-        default_factory=CreditLifecyclePolicy
-    )
+    cc_profile: CreditCardProfile = field(default_factory=CreditCardProfile)
 
 
-DEFAULT_LEGIT_POLICIES = LegitPolicies()
+DEFAULT_LEGIT_POLICIES = Specifications()
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +86,6 @@ class LegitOverrides:
 @dataclass(frozen=True, slots=True)
 class LegitGenerationRequest:
     inputs: LegitInputs
-    policies: LegitPolicies = field(default_factory=LegitPolicies)
+    specs: Specifications = field(default_factory=Specifications)
     overrides: LegitOverrides = field(default_factory=LegitOverrides)
     credit_runtime: LegitCreditRuntime = field(default_factory=LegitCreditRuntime)

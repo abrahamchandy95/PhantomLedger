@@ -71,7 +71,7 @@ def generate_day_to_day_txns(
     screen_book: balances_model.Ledger | None = None,
 ) -> list[Transaction]:
     inputs = request.inputs
-    policies = request.policies
+    policies = request.specs
     overrides = request.overrides
     credit_runtime = request.credit_runtime
 

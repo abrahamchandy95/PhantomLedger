@@ -16,7 +16,7 @@ def generate_credit_lifecycle_txns(
     if not request.credit_runtime.enabled() or cards is None:
         return []
 
-    lifecycle = request.policies.credit_lifecycle
+    lifecycle = request.specs.cc_profile
 
     return credit_cards_transfer.generate(
         lifecycle.terms,

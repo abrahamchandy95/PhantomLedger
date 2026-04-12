@@ -15,7 +15,7 @@ from .models import (
     LegitGenerationRequest,
     LegitInputs,
     LegitOverrides,
-    LegitPolicies,
+    Specifications,
     TransfersPayload,
 )
 from .nonpayroll_income import generate_nonpayroll_income_txns
@@ -34,8 +34,8 @@ class LegitTransferBuilder:
         return self.request.inputs
 
     @property
-    def policies(self) -> LegitPolicies:
-        return self.request.policies
+    def policies(self) -> Specifications:
+        return self.request.specs
 
     @property
     def overrides(self) -> LegitOverrides:

@@ -5,14 +5,14 @@ from .models import (
     LegitGenerationRequest,
     LegitInputs,
     LegitOverrides,
-    LegitPolicies,
+    Specifications,
     TransfersPayload,
 )
 
 __all__ = [
     "DEFAULT_LEGIT_POLICIES",
     "TransfersPayload",
-    "LegitPolicies",
+    "Specifications",
     "LegitCreditRuntime",
     "LegitInputs",
     "LegitOverrides",
