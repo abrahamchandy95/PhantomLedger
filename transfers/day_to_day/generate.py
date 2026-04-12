@@ -203,8 +203,7 @@ class _Generator:
         txns: list[Transaction] = []
         days_since_payday: list[int] = [365] * total_people
 
-        base_txns = self.request.base_txns
-        base_txns.sort(key=lambda t: t.timestamp)
+        base_txns = sorted(self.request.base_txns, key=lambda t: t.timestamp)
 
         screen_book = self.request.screen_book
         base_idx = 0

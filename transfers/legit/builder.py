@@ -101,7 +101,7 @@ class LegitTransferBuilder:
                 plan,
                 txf,
                 book=None if initial_book is None else initial_book.copy(),
-                base_txns=list(candidate_txns),
+                base_txns=candidate_txns,
             )
         )
 
@@ -111,7 +111,7 @@ class LegitTransferBuilder:
                 plan,
                 txf,
                 book=None if initial_book is None else initial_book.copy(),
-                base_txns=list(candidate_txns),
+                base_txns=candidate_txns,
             )
         )
 
@@ -122,7 +122,7 @@ class LegitTransferBuilder:
                 txf,
                 self.inputs.accounts.by_person,
                 book=None if initial_book is None else initial_book.copy(),
-                base_txns=list(candidate_txns),
+                base_txns=candidate_txns,
             )
         )
 
