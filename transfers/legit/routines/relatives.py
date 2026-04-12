@@ -3,12 +3,11 @@ from common.transactions import Transaction
 from transfers.family import GenerateRequest, generate
 from transfers.factory import TransactionFactory
 
-from .models import LegitGenerationRequest
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import Blueprint, LegitBuildPlan
 
 
 def generate_family_txns(
-    request: LegitGenerationRequest,
+    request: Blueprint,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
@@ -25,15 +24,15 @@ def generate_family_txns(
 
     return generate(
         GenerateRequest(
-            window=request.inputs.window,
+            window=request.timeline.window,
             params=family_cfg,
-            rng=request.inputs.rng,
+            rng=request.timeline.rng,
             base_seed=plan.seed,
             family=family,
             personas=plan.personas.persona_for_person,
             persona_objects=plan.personas.persona_objects,
             primary_accounts=plan.primary_acct_for_person,
-            merchants=request.inputs.merchants,
+            merchants=request.network.merchants,
             txf=txf,
         )
     )

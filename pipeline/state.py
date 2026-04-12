@@ -10,7 +10,7 @@ from infra.routing import Router
 from infra.shared import SharedInfra
 
 import transfers.fraud as fraud_model
-from transfers.legit import TransfersPayload
+from transfers.legit.blueprints import TransfersPayload
 
 
 @dataclass(frozen=True, slots=True)

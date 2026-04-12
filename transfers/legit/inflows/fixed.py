@@ -17,8 +17,8 @@ from math_models.amount_model import (
 import relationships.recurring as recurring_model
 from transfers.factory import TransactionDraft, TransactionFactory
 
-from .models import LegitInputs, Specifications
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import LegitBuildPlan, Specifications
+from transfers.legit.blueprints.models import Timeline, Network
 
 
 def _scaled_probability(
@@ -75,7 +75,7 @@ def _rent_probability_for_persona(persona: str) -> float:
 
 
 def _salary_people(
-    inputs: LegitInputs,
+    timeline: Timeline,
     specs: Specifications,
     plan: LegitBuildPlan,
 ) -> list[str]:
@@ -95,21 +95,21 @@ def _salary_people(
             policy_fraction=salary_fraction,
             baseline_fraction=0.65,
         )
-        if inputs.rng.coin(p):
+        if timeline.rng.coin(p):
             out.append(person_id)
 
     return out
 
 
 def generate_salary_txns(
-    inputs: LegitInputs,
+    timeline: Timeline,
     specs: Specifications,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
     recurring_policy = specs.recurring
-    rng = inputs.rng
-    salary_people = _salary_people(inputs, specs, plan)
+    rng = timeline.rng
+    salary_people = _salary_people(timeline, specs, plan)
 
     employment: dict[str, recurring_model.Employment] = {}
     txns: list[Transaction] = []
@@ -202,8 +202,8 @@ def generate_salary_txns(
     return txns
 
 
-def _homeowners(inputs: LegitInputs) -> set[str]:
-    portfolios = inputs.portfolios
+def _homeowners(network: Network) -> set[str]:
+    portfolios = network.portfolios
     if portfolios is None:
         return set()
 
@@ -215,12 +215,13 @@ def _homeowners(inputs: LegitInputs) -> set[str]:
 
 
 def _rent_payers(
-    inputs: LegitInputs,
+    timeline: Timeline,
+    network: Network,
     policies: Specifications,
     plan: LegitBuildPlan,
 ) -> list[str]:
     rent_fraction = float(policies.recurring.rent_fraction)
-    homeowners = _homeowners(inputs)
+    homeowners = _homeowners(network)
 
     out: list[str] = []
     for person_id, acct in plan.primary_acct_for_person.items():
@@ -235,21 +236,22 @@ def _rent_payers(
             policy_fraction=rent_fraction,
             baseline_fraction=0.55,
         )
-        if inputs.rng.coin(p):
+        if timeline.rng.coin(p):
             out.append(acct)
 
     return out
 
 
 def generate_rent_txns(
-    inputs: LegitInputs,
+    timeline: Timeline,
+    network: Network,
     specs: Specifications,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
     recurring_policy = specs.recurring
-    rng = inputs.rng
-    rent_active = _rent_payers(inputs, specs, plan)
+    rng = timeline.rng
+    rent_active = _rent_payers(timeline, network, specs, plan)
 
     leases: dict[str, recurring_model.Lease] = {}
     txns: list[Transaction] = []

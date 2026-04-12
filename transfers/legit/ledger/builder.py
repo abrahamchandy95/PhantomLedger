@@ -7,26 +7,33 @@ from common.transactions import Transaction
 from transfers.factory import TransactionFactory
 from transfers.government import generate as generate_government_txns
 
-from .accumulator import merge_replay_sorted
-from .atm import generate as generate_atm_txns
-from .balances import build_balance_book
-from .credit_card_lifecycle import generate_credit_lifecycle_txns
-from .daily_transfers import generate_day_to_day_txns
-from .deposit_split import split_deposits
-from .family_transfers import generate_family_txns
-from .models import (
-    LegitCreditRuntime,
-    LegitGenerationRequest,
-    LegitInputs,
-    LegitOverrides,
+from .posting import merge_replay_sorted
+from .limits import build_balance_book
+
+from transfers.legit.blueprints import (
+    CCState,
+    Blueprint,
+    Overrides,
     Specifications,
     TransfersPayload,
+    build_legit_plan,
 )
-from .nonpayroll_income import generate_nonpayroll_income_txns
-from .plans import build_legit_plan
-from .recurring import generate_rent_txns, generate_salary_txns
-from .self import generate as generate_self_transfer_txns
-from .subscriptions import generate as generate_subscription_txns
+
+from transfers.legit.inflows import (
+    generate_nonpayroll_income_txns,
+    generate_rent_txns,
+    generate_salary_txns,
+)
+
+from transfers.legit.routines import (
+    generate_atm_txns,
+    generate_credit_lifecycle_txns,
+    generate_day_to_day_txns,
+    generate_family_txns,
+    generate_internal_txns,
+    generate_subscription_txns,
+    split_deposits,
+)
 
 
 def _merge_by_timestamp(
@@ -45,26 +52,34 @@ def _merge_by_timestamp(
 
 @dataclass(slots=True)
 class LegitTransferBuilder:
-    request: LegitGenerationRequest
+    request: Blueprint
 
     @property
-    def inputs(self) -> LegitInputs:
-        return self.request.inputs
+    def timeline(self):
+        return self.request.timeline
 
     @property
-    def policies(self) -> Specifications:
+    def network(self):
+        return self.request.network
+
+    @property
+    def macro(self):
+        return self.request.macro
+
+    @property
+    def specs(self) -> Specifications:
         return self.request.specs
 
     @property
-    def overrides(self) -> LegitOverrides:
+    def overrides(self) -> Overrides:
         return self.request.overrides
 
     @property
-    def credit_runtime(self) -> LegitCreditRuntime:
-        return self.request.credit_runtime
+    def cc_state(self) -> CCState:
+        return self.request.cc_state
 
     def build(self) -> TransfersPayload:
-        if not self.inputs.accounts.ids:
+        if not self.network.accounts.ids:
             return TransfersPayload(
                 candidate_txns=[],
                 hub_accounts=[],
@@ -73,16 +88,19 @@ class LegitTransferBuilder:
                 initial_book=None,
             )
 
-        plan = build_legit_plan(self.inputs, self.overrides)
+        # Passes the whole Blueprint (request) instead of inputs
+        plan = build_legit_plan(self.timeline, self.network, self.macro, self.overrides)
         initial_book = build_balance_book(
-            self.inputs,
-            self.policies,
-            self.credit_runtime,
+            self.timeline,
+            self.network,
+            self.specs,
+            self.cc_state,
             plan,
         )
         screen_book = None if initial_book is None else initial_book.copy()
 
-        txf = TransactionFactory(rng=self.inputs.rng, infra=self.overrides.infra)
+        # Uses timeline instead of inputs
+        txf = TransactionFactory(rng=self.timeline.rng, infra=self.overrides.infra)
 
         candidate_txns: list[Transaction] = []
         screened_prefix: list[Transaction] = []
@@ -103,33 +121,38 @@ class LegitTransferBuilder:
             screen_book.restore_from(initial_book)
             return screen_book
 
-        extend(generate_salary_txns(self.inputs, self.policies, plan, txf))
+        # --- Inbound Money ---
+        # Passes the whole Blueprint (request) instead of inputs
+        extend(generate_salary_txns(self.timeline, self.specs, plan, txf))
         extend(
             generate_government_txns(
-                self.inputs.government,
-                self.inputs.window,
-                self.inputs.rng,
+                self.macro.government,  # Extracted from macro
+                self.timeline.window,  # Extracted from timeline
+                self.timeline.rng,  # Extracted from timeline
                 txf,
                 personas=plan.personas.persona_for_person,
                 primary_accounts=plan.primary_acct_for_person,
             )
         )
         extend(generate_nonpayroll_income_txns(self.request, plan, txf))
+
+        # --- Consumer Routines ---
         extend(
             split_deposits(
-                self.inputs.rng,
+                self.timeline.rng,  # Extracted from timeline
                 plan,
                 txf,
-                self.inputs.accounts.by_person,
+                self.network.accounts.by_person,  # Extracted from network
                 candidate_txns,
             )
         )
 
-        extend(generate_rent_txns(self.inputs, self.policies, plan, txf))
+        # Passes the whole Blueprint (request) instead of inputs
+        extend(generate_rent_txns(self.timeline, self.network, self.specs, plan, txf))
 
         extend(
             generate_subscription_txns(
-                self.inputs.rng,
+                self.timeline.rng,  # Extracted from timeline
                 plan,
                 txf,
                 book=reset_screen_book(),
@@ -140,7 +163,7 @@ class LegitTransferBuilder:
 
         extend(
             generate_atm_txns(
-                self.inputs.rng,
+                self.timeline.rng,  # Extracted from timeline
                 plan,
                 txf,
                 book=reset_screen_book(),
@@ -150,11 +173,11 @@ class LegitTransferBuilder:
         )
 
         extend(
-            generate_self_transfer_txns(
-                self.inputs.rng,
+            generate_internal_txns(
+                self.timeline.rng,  # Extracted from timeline
                 plan,
                 txf,
-                self.inputs.accounts.by_person,
+                self.network.accounts.by_person,  # Extracted from network
                 book=reset_screen_book(),
                 base_txns=screened_prefix,
                 base_txns_sorted=True,

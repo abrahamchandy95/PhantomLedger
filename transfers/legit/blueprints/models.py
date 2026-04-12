@@ -14,6 +14,35 @@ from infra.routing import Router
 
 
 @dataclass(frozen=True, slots=True)
+class Timeline:
+    """The temporal and stochastic state of the simulation."""
+
+    window: config.Window
+    rng: Rng
+
+
+@dataclass(frozen=True, slots=True)
+class Network:
+    """The instantiated actors and directories in the ecosystem."""
+
+    accounts: models.Accounts
+    merchants: models.Merchants
+    portfolios: PortfolioRegistry | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Macro:
+    """The behavioral parameters and global distributions."""
+
+    pop: config.Population
+    hubs: config.Hubs
+    personas: config.Personas
+    events: config.Events
+    merchants_cfg: config.Merchants
+    government: config.Government = field(default_factory=config.Government)
+
+
+@dataclass(frozen=True, slots=True)
 class TransfersPayload:
     """
     Legit transfer artifacts.
@@ -61,7 +90,7 @@ DEFAULT_LEGIT_POLICIES = Specifications()
 
 
 @dataclass(frozen=True, slots=True)
-class LegitCreditRuntime:
+class CCState:
     cards: models.CreditCards | None = None
 
     def enabled(self) -> bool:
@@ -69,22 +98,7 @@ class LegitCreditRuntime:
 
 
 @dataclass(frozen=True, slots=True)
-class LegitInputs:
-    window: config.Window
-    pop: config.Population
-    hubs: config.Hubs
-    personas: config.Personas
-    events: config.Events
-    merchants_cfg: config.Merchants
-    rng: Rng
-    accounts: models.Accounts
-    merchants: models.Merchants
-    portfolios: PortfolioRegistry | None = None
-    government: config.Government = field(default_factory=config.Government)
-
-
-@dataclass(frozen=True, slots=True)
-class LegitOverrides:
+class Overrides:
     infra: Router | None = None
     persona_names: list[str] | None = None
     persona_for_person: dict[str, str] | None = None
@@ -94,8 +108,10 @@ class LegitOverrides:
 
 
 @dataclass(frozen=True, slots=True)
-class LegitGenerationRequest:
-    inputs: LegitInputs
+class Blueprint:
+    timeline: Timeline
+    network: Network
+    macro: Macro
     specs: Specifications = field(default_factory=Specifications)
-    overrides: LegitOverrides = field(default_factory=LegitOverrides)
-    credit_runtime: LegitCreditRuntime = field(default_factory=LegitCreditRuntime)
+    overrides: Overrides = field(default_factory=Overrides)
+    cc_state: CCState = field(default_factory=CCState)

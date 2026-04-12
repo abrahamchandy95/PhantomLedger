@@ -12,8 +12,9 @@ from .sorting import key
 from transfers.factory import TransactionFactory
 from transfers.fraud import InjectionOutput, inject as inject_fraud
 from transfers.insurance import generate as generate_insurance
-from transfers.legit import LegitTransferBuilder, TransfersPayload
-from transfers.legit.accumulator import (
+from transfers.legit.blueprints import TransfersPayload
+from transfers.legit.ledger import (
+    LegitTransferBuilder,
     ChronoReplayAccumulator,
     merge_replay_sorted,
     sort_for_replay,

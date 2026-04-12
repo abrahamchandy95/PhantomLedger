@@ -8,17 +8,19 @@ from transfers.day_to_day import (
     generate,
 )
 
-from .fixed_burden import monthly_fixed_burden_for_portfolio
-from .models import LegitGenerationRequest
-from .paydays import build_paydays_by_person
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import (
+    Blueprint,
+    LegitBuildPlan,
+    build_paydays_by_person,
+)
+from transfers.legit.ledger import monthly_fixed_burden_for_portfolio
 
 
 def _hub_people(
-    request: LegitGenerationRequest,
+    bp: Blueprint,
     plan: LegitBuildPlan,
 ) -> set[str]:
-    acct_owner = request.inputs.accounts.owner_map
+    acct_owner = bp.network.accounts.owner_map
     return {
         acct_owner[acct]
         for acct in plan.counterparties.hub_accounts
@@ -27,10 +29,10 @@ def _hub_people(
 
 
 def _cards_by_person(
-    request: LegitGenerationRequest,
+    bp: Blueprint,
 ) -> dict[str, str] | None:
-    cards = request.credit_runtime.cards
-    if not request.credit_runtime.enabled() or cards is None:
+    cards = bp.credit_runtime.cards
+    if not bp.credit_runtime.enabled() or cards is None:
         return None
 
     if hasattr(cards, "by_person"):
@@ -40,10 +42,10 @@ def _cards_by_person(
 
 
 def _fixed_monthly_burden_for_person(
-    request: LegitGenerationRequest,
+    bp: Blueprint,
     person_id: str,
 ) -> float:
-    portfolios = request.inputs.portfolios
+    portfolios = bp.network.portfolios
     if portfolios is None:
         return 0.0
 
@@ -51,57 +53,59 @@ def _fixed_monthly_burden_for_person(
 
 
 def _fixed_monthly_burdens(
-    request: LegitGenerationRequest,
+    bp: Blueprint,
     plan: LegitBuildPlan,
 ) -> dict[str, float]:
-    if request.inputs.portfolios is None:
+    if bp.network.portfolios is None:
         return {}
 
     return {
-        person_id: _fixed_monthly_burden_for_person(request, person_id)
+        person_id: _fixed_monthly_burden_for_person(bp, person_id)
         for person_id in plan.persons
     }
 
 
 def generate_day_to_day_txns(
-    request: LegitGenerationRequest,
+    request: Blueprint,
     plan: LegitBuildPlan,
     base_txns: list[Transaction],
     *,
     screen_book: balances_model.Ledger | None = None,
     base_txns_sorted: bool = False,
 ) -> list[Transaction]:
-    inputs = request.inputs
     policies = request.specs
     overrides = request.overrides
-    credit_runtime = request.credit_runtime
+    credit_state = request.credit_runtime
 
+    # Mapped rng to Timeline
     social = social_model.build(
-        inputs.rng,
+        request.timeline.rng,
         seed=plan.seed,
         people=plan.persons,
         cfg=policies.social,
         hub_people=_hub_people(request, plan),
     )
+
+    # Mapped owner_map to Network
     paydays_by_person = build_paydays_by_person(
         txns=base_txns,
-        owner_map=inputs.accounts.owner_map,
+        owner_map=request.network.accounts.owner_map,
         start_date=plan.start_date,
         days=plan.days,
     )
 
     day_ctx = build_context(
         BuildRequest(
-            events=inputs.events,
-            merchants_cfg=inputs.merchants_cfg,
-            rng=inputs.rng,
+            events=request.macro.events,  # Mapped to Macro
+            merchants_cfg=request.macro.merchants_cfg,  # Mapped to Macro
+            rng=request.timeline.rng,  # Mapped to Timeline
             start_date=plan.start_date,
             days=plan.days,
             persons=plan.persons,
             primary_accounts=plan.primary_acct_for_person,
             personas=plan.personas.persona_for_person,
             persona_objects=plan.personas.persona_objects,
-            merchants=inputs.merchants,
+            merchants=request.network.merchants,  # Mapped to Network
             social=social,
             base_seed=plan.seed,
             paydays_by_person=paydays_by_person,
@@ -110,15 +114,15 @@ def generate_day_to_day_txns(
 
     return generate(
         GenerateRequest(
-            events=inputs.events,
-            merchants_cfg=inputs.merchants_cfg,
-            rng=inputs.rng,
+            events=request.macro.events,  # Mapped to Macro
+            merchants_cfg=request.macro.merchants_cfg,  # Mapped to Macro
+            rng=request.timeline.rng,  # Mapped to Timeline
             start_date=plan.start_date,
             days=plan.days,
             ctx=day_ctx,
             infra=overrides.infra,
             credit_policy=(
-                policies.credit_issuance if credit_runtime.enabled() else None
+                policies.credit_issuance if credit_state.enabled() else None
             ),
             cards=_cards_by_person(request),
             base_txns=base_txns,

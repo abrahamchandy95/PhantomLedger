@@ -5,7 +5,7 @@ from common.timeline import active_months
 import entities.models as models
 import entities.personas as personas_mod
 
-from .models import LegitInputs, LegitOverrides
+from .models import Overrides, Timeline, Network, Macro
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,17 +47,19 @@ class LegitBuildPlan:
 
 
 def _select_hub_accounts(
-    inputs: LegitInputs,
+    timeline: Timeline,
+    network: Network,
+    macro: Macro,
 ) -> list[str]:
-    persons = list(inputs.accounts.by_person)
+    persons = list(network.accounts.by_person)
     if not persons:
         return []
 
-    n_hubs = int(inputs.pop.size * inputs.hubs.fraction)
+    n_hubs = int(macro.pop.size * macro.hubs.fraction)
     n_hubs = max(1, min(n_hubs, len(persons)))
 
-    hub_people = inputs.rng.choice_k(persons, n_hubs, replace=False)
-    return [inputs.accounts.by_person[person_id][0] for person_id in hub_people]
+    hub_people = timeline.rng.choice_k(persons, n_hubs, replace=False)
+    return [network.accounts.by_person[person_id][0] for person_id in hub_people]
 
 
 def _primary_acct_for_person(
@@ -71,14 +73,16 @@ def _primary_acct_for_person(
 
 
 def _build_counterparty_plan(
-    inputs: LegitInputs,
-    overrides: LegitOverrides,
+    timeline: Timeline,
+    network: Network,
+    macro: Macro,
+    overrides: Overrides,
 ) -> CounterpartyPlan:
-    all_accounts = inputs.accounts.ids
+    all_accounts = network.accounts.ids
     if not all_accounts:
-        raise ValueError("inputs.accounts.ids must be non-empty")
+        raise ValueError("network.accounts.ids must be non-empty")
 
-    hub_accounts = _select_hub_accounts(inputs)
+    hub_accounts = _select_hub_accounts(timeline, network, macro)
     hub_set = frozenset(hub_accounts)
 
     fallback_acct = hub_accounts[0] if hub_accounts else all_accounts[0]
@@ -113,15 +117,16 @@ def _build_counterparty_plan(
 
 
 def _build_persona_plan(
-    inputs: LegitInputs,
-    overrides: LegitOverrides,
+    timeline: Timeline,
+    macro: Macro,
+    overrides: Overrides,
     persons: list[str],
 ) -> PersonaPlan:
     persona_for_person = overrides.persona_for_person
     if persona_for_person is None:
         persona_for_person = personas_mod.assign(
-            inputs.personas,
-            inputs.rng,
+            macro.personas,
+            timeline.rng,
             persons,
         )
 
@@ -144,24 +149,26 @@ def _build_persona_plan(
 
 
 def build_legit_plan(
-    inputs: LegitInputs,
-    overrides: LegitOverrides,
+    timeline: Timeline,
+    network: Network,
+    macro: Macro,
+    overrides: Overrides,
 ) -> LegitBuildPlan:
-    start_date = inputs.window.start_date
-    days = int(inputs.window.days)
-    seed = int(inputs.pop.seed)
-    persons = list(inputs.accounts.by_person)
+    start_date = timeline.window.start_date
+    days = int(timeline.window.days)
+    seed = int(macro.pop.seed)
+    persons = list(network.accounts.by_person)
 
-    counterparties = _build_counterparty_plan(inputs, overrides)
-    personas = _build_persona_plan(inputs, overrides, persons)
-    primary_acct_for_person = _primary_acct_for_person(inputs.accounts)
+    counterparties = _build_counterparty_plan(timeline, network, macro, overrides)
+    personas = _build_persona_plan(timeline, macro, overrides, persons)
+    primary_acct_for_person = _primary_acct_for_person(network.accounts)
     month_starts = active_months(start_date, days)
 
     return LegitBuildPlan(
         start_date=start_date,
         days=days,
         seed=seed,
-        all_accounts=inputs.accounts.ids,
+        all_accounts=network.accounts.ids,
         persons=persons,
         month_starts=month_starts,
         primary_acct_for_person=primary_acct_for_person,

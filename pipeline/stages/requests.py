@@ -10,12 +10,12 @@ from transfers.fraud import (
     Runtime,
     Scenario,
 )
-from transfers.legit import (
-    LegitCreditRuntime as CreditRuntime,
-    LegitGenerationRequest as GenerationRequest,
-    LegitInputs as Inputs,
-    LegitOverrides as Overrides,
+from transfers.legit.blueprints import (
+    Blueprint,
+    CCState,
+    Overrides,
 )
+from transfers.legit.blueprints.models import Timeline, Network, Macro
 
 
 def build_legit(
@@ -23,19 +23,23 @@ def build_legit(
     rng: Rng,
     entities: Entities,
     infra: Infra,
-) -> GenerationRequest:
-    return GenerationRequest(
-        inputs=Inputs(
+) -> Blueprint:
+    return Blueprint(
+        timeline=Timeline(
             window=cfg.window,
+            rng=rng,
+        ),
+        network=Network(
+            accounts=entities.accounts,
+            merchants=entities.merchants,
+            portfolios=entities.portfolios,
+        ),
+        macro=Macro(
             pop=cfg.population,
             hubs=cfg.hubs,
             personas=cfg.personas,
             events=cfg.events,
             merchants_cfg=cfg.merchants,
-            rng=rng,
-            accounts=entities.accounts,
-            merchants=entities.merchants,
-            portfolios=entities.portfolios,
             government=cfg.government,
         ),
         overrides=Overrides(
@@ -46,7 +50,7 @@ def build_legit(
             family_cfg=cfg.family,
             counterparty_pools=entities.counterparty_pools,
         ),
-        credit_runtime=CreditRuntime(
+        cc_state=CCState(
             cards=entities.credit_cards,
         ),
     )

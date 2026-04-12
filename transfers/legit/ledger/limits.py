@@ -5,9 +5,13 @@ from common.persona_names import SALARIED
 import entities.models as models
 import transfers.balances as balances_model
 
-from .fixed_burden import monthly_fixed_burden_for_portfolio
-from .models import LegitCreditRuntime, LegitInputs, Specifications
-from .plans import LegitBuildPlan
+from .burdens import monthly_fixed_burden_for_portfolio
+from transfers.legit.blueprints import (
+    CCState,
+    LegitBuildPlan,
+    Specifications,
+)
+from transfers.legit.blueprints.models import Timeline, Network
 
 
 def _persona_for_acct_array(
@@ -42,10 +46,10 @@ def _apply_credit_card_limits(
 
 
 def _monthly_fixed_burden(
-    inputs: LegitInputs,
+    network: Network,
     person_id: str,
 ) -> float:
-    portfolios = inputs.portfolios
+    portfolios = network.portfolios
     if portfolios is None:
         return 0.0
 
@@ -53,9 +57,10 @@ def _monthly_fixed_burden(
 
 
 def build_balance_book(
-    inputs: LegitInputs,
+    timeline: Timeline,
+    network: Network,
     specs: Specifications,
-    credit_runtime: LegitCreditRuntime,
+    cc_state: CCState,
     plan: LegitBuildPlan,
 ) -> balances_model.Ledger | None:
     balance_rules = specs.balances
@@ -71,14 +76,14 @@ def build_balance_book(
 
     persona_mapping = _persona_for_acct_array(
         accounts_list=plan.all_accounts,
-        acct_owner=inputs.accounts.owner_map,
+        acct_owner=network.accounts.owner_map,
         persona_for_person=plan.personas.persona_for_person,
         persona_names=plan.personas.persona_names,
     )
 
     book = balances_model.initialize(
         balance_rules,
-        inputs.rng,
+        timeline.rng,
         balances_model.SetupParams(
             accounts=plan.all_accounts,
             account_indices=account_indices,
@@ -93,14 +98,14 @@ def build_balance_book(
         if idx is None:
             continue
 
-        burden = _monthly_fixed_burden(inputs, person_id)
+        burden = _monthly_fixed_burden(network, person_id)
         if burden <= 0.0:
             continue
 
         book.balances[idx] += 0.35 * burden
 
-    cards = credit_runtime.cards
-    if credit_runtime.enabled() and cards is not None:
+    cards = cc_state.cards
+    if cc_state.enabled() and cards is not None:
         _apply_credit_card_limits(book, cards)
 
     return book

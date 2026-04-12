@@ -14,7 +14,7 @@ from common.random import Rng
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft, TransactionFactory
 
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import LegitBuildPlan
 
 
 def split_deposits(

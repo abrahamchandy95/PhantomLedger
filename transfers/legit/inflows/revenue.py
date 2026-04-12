@@ -22,8 +22,7 @@ from common.random import derive_seed
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft, TransactionFactory
 
-from .models import LegitGenerationRequest
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import LegitBuildPlan, Blueprint
 
 
 @dataclass(frozen=True, slots=True)
@@ -512,7 +511,7 @@ def _investment_inflows(
 
 
 def generate_nonpayroll_income_txns(
-    request: LegitGenerationRequest,
+    request: Blueprint,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
@@ -522,7 +521,7 @@ def generate_nonpayroll_income_txns(
 
     end_excl = plan.start_date + timedelta(days=plan.days)
     txns: list[Transaction] = []
-    accounts_by_person = request.inputs.accounts.by_person
+    accounts_by_person = request.network.accounts.by_person
 
     for person_id in plan.persons:
         persona = plan.personas.persona_for_person.get(person_id)

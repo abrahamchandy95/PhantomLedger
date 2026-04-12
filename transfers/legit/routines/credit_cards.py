@@ -2,12 +2,11 @@ import transfers.credit_cards as credit_cards_transfer
 from common.transactions import Transaction
 from transfers.factory import TransactionFactory
 
-from .models import LegitGenerationRequest
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import Blueprint, LegitBuildPlan
 
 
 def generate_credit_lifecycle_txns(
-    request: LegitGenerationRequest,
+    request: Blueprint,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
     existing_txns: list[Transaction],
@@ -22,8 +21,8 @@ def generate_credit_lifecycle_txns(
         lifecycle.terms,
         lifecycle.habits,
         credit_cards_transfer.Request(
-            window=request.inputs.window,
-            rng=request.inputs.rng,
+            window=request.timeline.window,
+            rng=request.timeline.rng,
             base_seed=plan.seed,
             cards=cards,
             txns=existing_txns,

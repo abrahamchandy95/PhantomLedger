@@ -22,7 +22,7 @@ from transfers.balances import Ledger
 from transfers.factory import TransactionDraft, TransactionFactory
 from transfers.screening import advance_book_through
 
-from .plans import LegitBuildPlan
+from transfers.legit.blueprints import LegitBuildPlan
 
 _PRICE_POOL: tuple[float, ...] = (
     6.99,
