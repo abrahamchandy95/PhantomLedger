@@ -41,12 +41,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 
+from common.calendar_cache import WindowCalendar
 from common.channels import STUDENT_LOAN_PAYMENT
-from common.date_math import add_months, clip_half_open, month_starts
+from common.date_math import add_months
 from common.persona_names import FREELANCER, HNW, RETIRED, SALARIED, SMALLBIZ, STUDENT
 from common.validate import between, ge, gt
 
-from .event import Direction, ObligationEvent
+from .event import ObligationEvent
+from .schedule_helpers import MonthlyScheduleSpec, scheduled_monthly_events
 
 _PLAN_TYPES: frozenset[str] = frozenset({"standard", "extended", "idr_like"})
 
@@ -251,6 +253,8 @@ def scheduled_events(
     terms: StudentLoanTerms,
     start: datetime,
     end_excl: datetime,
+    *,
+    calendar: WindowCalendar | None = None,
 ) -> Iterator[ObligationEvent]:
     """
     Yield contractual monthly student-loan due events within the active repayment window.
@@ -260,43 +264,26 @@ def scheduled_events(
     - Realized payment timing variability and delinquency behavior are applied
       later by transfers/obligations.py.
     """
-    payment_day = min(terms.payment_day, 28)
-
     active_start = terms.repayment_start_date
     if terms.deferment_end_date is not None:
         active_start = max(active_start, terms.deferment_end_date)
 
-    active_end_excl = terms.contractual_end_excl
-
-    clipped = clip_half_open(
-        window_start=start,
-        window_end_excl=end_excl,
+    spec = MonthlyScheduleSpec(
         active_start=active_start,
-        active_end_excl=active_end_excl,
+        active_end_excl=terms.contractual_end_excl,
+        payment_day=terms.payment_day,
+        hour=8,
+        minute=0,
+        counterparty_acct=terms.servicer_acct,
+        amount=terms.monthly_payment,
+        channel=CHANNEL,
+        product_type="student_loan",
     )
-    if clipped is None:
-        return
 
-    effective_start, effective_end_excl = clipped
-
-    for current in month_starts(effective_start, effective_end_excl):
-        ts = current.replace(
-            day=payment_day,
-            hour=8,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-
-        if ts < effective_start or ts >= effective_end_excl:
-            continue
-
-        yield ObligationEvent(
-            person_id=person_id,
-            direction=Direction.OUTFLOW,
-            counterparty_acct=terms.servicer_acct,
-            amount=terms.monthly_payment,
-            timestamp=ts,
-            channel=CHANNEL,
-            product_type="student_loan",
-        )
+    yield from scheduled_monthly_events(
+        person_id,
+        spec,
+        start,
+        end_excl,
+        calendar,
+    )

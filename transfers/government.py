@@ -1,12 +1,10 @@
-import calendar
-from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from hashlib import blake2b
 
+from common.calendar_cache import WindowCalendar, ssa_bucket_for_birth_day
 from common.channels import DISABILITY, GOV_SOCIAL_SECURITY
 from common.config import Window
 from common.config.population.government import Government
-from common.date_math import month_starts
 from common.externals import GOV_DISABILITY, GOV_SSA
 from common.math import lognormal_by_median
 from common.persona_names import RETIRED, STUDENT
@@ -50,108 +48,23 @@ def _synthetic_birth_day(person_id: str) -> int:
     return 1 + ((x >> 16) % 28)
 
 
-def _nth_weekday_of_month(
-    year: int,
-    month: int,
-    *,
-    weekday: int,
-    occurrence: int,
-) -> date:
-    if occurrence <= 0:
-        raise ValueError(f"occurrence must be >= 1, got {occurrence}")
+def _ssa_recipient_rows(
+    recipients: dict[str, float],
+    primary_accounts: dict[str, str],
+) -> list[tuple[str, str, float, int]]:
+    rows: list[tuple[str, str, float, int]] = []
 
-    first = date(year, month, 1)
-    delta = (weekday - first.weekday()) % 7
-    candidate = first + timedelta(days=delta + 7 * (occurrence - 1))
-
-    if candidate.month != month:
-        raise ValueError(
-            f"{occurrence} occurrence of weekday {weekday} does not exist in "
-            + f"{year:04d}-{month:02d}"
+    for pid in sorted(recipients):
+        rows.append(
+            (
+                pid,
+                primary_accounts[pid],
+                recipients[pid],
+                ssa_bucket_for_birth_day(_synthetic_birth_day(pid)),
+            )
         )
 
-    return candidate
-
-
-def _last_weekday_of_month(year: int, month: int, *, weekday: int) -> date:
-    last_dom = calendar.monthrange(year, month)[1]
-    last = date(year, month, last_dom)
-    delta = (last.weekday() - weekday) % 7
-    return last - timedelta(days=delta)
-
-
-def _observed_fixed_holiday(year: int, month: int, day: int) -> date:
-    actual = date(year, month, day)
-    if actual.weekday() == 5:
-        return actual - timedelta(days=1)
-    if actual.weekday() == 6:
-        return actual + timedelta(days=1)
-    return actual
-
-
-def _us_federal_holidays(year: int) -> set[date]:
-    """
-    Federal legal holidays needed for SSA payment rollback.
-
-    SSA states that if a scheduled Wednesday payment date is a federal legal
-    holiday, payment is made on the preceding day that is not a federal holiday.
-    """
-    return {
-        _observed_fixed_holiday(year, 1, 1),  # New Year's Day
-        _nth_weekday_of_month(year, 1, weekday=0, occurrence=3),  # MLK Day
-        _nth_weekday_of_month(
-            year, 2, weekday=0, occurrence=3
-        ),  # Washington's Birthday
-        _last_weekday_of_month(year, 5, weekday=0),  # Memorial Day
-        _observed_fixed_holiday(year, 6, 19),  # Juneteenth
-        _observed_fixed_holiday(year, 7, 4),  # Independence Day
-        _nth_weekday_of_month(year, 9, weekday=0, occurrence=1),  # Labor Day
-        _nth_weekday_of_month(year, 10, weekday=0, occurrence=2),  # Columbus Day
-        _observed_fixed_holiday(year, 11, 11),  # Veterans Day
-        _nth_weekday_of_month(year, 11, weekday=3, occurrence=4),  # Thanksgiving
-        _observed_fixed_holiday(year, 12, 25),  # Christmas Day
-    }
-
-
-def _is_business_day(ts: date, holiday_cache: dict[int, set[date]]) -> bool:
-    if ts.weekday() >= 5:
-        return False
-
-    holidays = holiday_cache.setdefault(ts.year, _us_federal_holidays(ts.year))
-    return ts not in holidays
-
-
-def _ssa_cycle_payment_date(
-    year: int,
-    month: int,
-    *,
-    birth_day: int,
-    holiday_cache: dict[int, set[date]],
-) -> date:
-    """
-    Standard SSA/RSDI cohorting for post-1997 cycle payments.
-
-    Official rule:
-    - 1st-10th  -> second Wednesday
-    - 11th-20th -> third Wednesday
-    - 21st-31st -> fourth Wednesday
-
-    If the scheduled Wednesday is a federal holiday, SSA pays on the preceding
-    day that is not a federal holiday. We also keep the result on a business day.
-    """
-    if birth_day <= 10:
-        occurrence = 2
-    elif birth_day <= 20:
-        occurrence = 3
-    else:
-        occurrence = 4
-
-    pay_date = _nth_weekday_of_month(year, month, weekday=2, occurrence=occurrence)
-
-    while not _is_business_day(pay_date, holiday_cache):
-        pay_date -= timedelta(days=1)
-
-    return pay_date
+    return rows
 
 
 def _payment_timestamp(
@@ -178,12 +91,9 @@ def generate(
 
     start = window.start_date
     end_excl = _at_midnight(start) + timedelta(days=int(window.days))
+    calendar = WindowCalendar(start, end_excl)
 
-    # Cover every month touched by the simulation window so a run that starts
-    # mid-month can still include that month's scheduled benefit day.
-    months = list(month_starts(start, end_excl))
-
-    if not months:
+    if not calendar.month_anchors:
         return txns
 
     if cfg.ss_enabled:
@@ -192,7 +102,7 @@ def generate(
                 cfg,
                 rng,
                 txf,
-                months,
+                calendar,
                 start,
                 end_excl,
                 personas,
@@ -206,7 +116,7 @@ def generate(
                 cfg,
                 rng,
                 txf,
-                months,
+                calendar,
                 start,
                 end_excl,
                 personas,
@@ -221,7 +131,7 @@ def _social_security(
     cfg: Government,
     rng: Rng,
     txf: TransactionFactory,
-    months: Sequence[datetime],
+    calendar: WindowCalendar,
     start: datetime,
     end_excl: datetime,
     personas: dict[str, str],
@@ -247,19 +157,19 @@ def _social_security(
         )
         recipients[pid] = round(max(cfg.ss_floor, float(amount)), 2)
 
-    holiday_cache: dict[int, set[date]] = {}
+    rows = _ssa_recipient_rows(recipients, primary_accounts)
+    if not rows:
+        return txns
 
-    for month_start in months:
-        for pid in sorted(recipients):
-            acct = primary_accounts[pid]
-            birth_day = _synthetic_birth_day(pid)
+    pay_dates_by_bucket = {
+        0: calendar.ssa_payment_dates_for_bucket(0),
+        1: calendar.ssa_payment_dates_for_bucket(1),
+        2: calendar.ssa_payment_dates_for_bucket(2),
+    }
 
-            pay_date = _ssa_cycle_payment_date(
-                month_start.year,
-                month_start.month,
-                birth_day=birth_day,
-                holiday_cache=holiday_cache,
-            )
+    for month_idx in range(len(calendar.month_anchors)):
+        for pid, acct, amount, bucket in rows:
+            pay_date = pay_dates_by_bucket[bucket][month_idx]
             ts = _payment_timestamp(rng, pay_date)
 
             if ts < start or ts >= end_excl:
@@ -270,7 +180,7 @@ def _social_security(
                     TransactionDraft(
                         source=GOV_SSA,
                         destination=acct,
-                        amount=recipients[pid],
+                        amount=amount,
                         timestamp=ts,
                         channel=GOV_SOCIAL_SECURITY,
                     )
@@ -284,7 +194,7 @@ def _disability(
     cfg: Government,
     rng: Rng,
     txf: TransactionFactory,
-    months: Sequence[datetime],
+    calendar: WindowCalendar,
     start: datetime,
     end_excl: datetime,
     personas: dict[str, str],
@@ -312,22 +222,19 @@ def _disability(
         )
         recipients[pid] = round(max(cfg.disability_floor, float(amount)), 2)
 
-    holiday_cache: dict[int, set[date]] = {}
+    rows = _ssa_recipient_rows(recipients, primary_accounts)
+    if not rows:
+        return txns
 
-    for month_start in months:
-        for pid in sorted(recipients):
-            acct = primary_accounts[pid]
-            birth_day = _synthetic_birth_day(pid)
+    pay_dates_by_bucket = {
+        0: calendar.ssa_payment_dates_for_bucket(0),
+        1: calendar.ssa_payment_dates_for_bucket(1),
+        2: calendar.ssa_payment_dates_for_bucket(2),
+    }
 
-            # SSDI is part of SSA's RSDI payment machinery, so the post-1997
-            # birthday-cycle Wednesday rule is a better default than a random
-            # day in the first half of the month.
-            pay_date = _ssa_cycle_payment_date(
-                month_start.year,
-                month_start.month,
-                birth_day=birth_day,
-                holiday_cache=holiday_cache,
-            )
+    for month_idx in range(len(calendar.month_anchors)):
+        for pid, acct, amount, bucket in rows:
+            pay_date = pay_dates_by_bucket[bucket][month_idx]
             ts = _payment_timestamp(rng, pay_date)
 
             if ts < start or ts >= end_excl:
@@ -338,7 +245,7 @@ def _disability(
                     TransactionDraft(
                         source=GOV_DISABILITY,
                         destination=acct,
-                        amount=recipients[pid],
+                        amount=amount,
                         timestamp=ts,
                         channel=DISABILITY,
                     )

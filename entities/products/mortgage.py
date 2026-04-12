@@ -37,12 +37,14 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
 
+from common.calendar_cache import WindowCalendar
 from common.channels import MORTGAGE_PAYMENT
-from common.date_math import add_months, clip_half_open, month_starts
+from common.date_math import add_months
 from common.persona_names import FREELANCER, HNW, RETIRED, SALARIED, SMALLBIZ, STUDENT
 from common.validate import between, ge, gt
 
-from .event import Direction, ObligationEvent
+from .event import ObligationEvent
+from .schedule_helpers import MonthlyScheduleSpec, scheduled_monthly_events
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,6 +197,8 @@ def scheduled_events(
     terms: MortgageTerms,
     start: datetime,
     end_excl: datetime,
+    *,
+    calendar: WindowCalendar | None = None,
 ) -> Iterator[ObligationEvent]:
     """
     Yield contractual monthly mortgage due events within the active loan window.
@@ -204,40 +208,22 @@ def scheduled_events(
     - Realized payment timing variability and delinquency behavior are applied
       later by transfers/obligations.py.
     """
-    payment_day = min(terms.payment_day, 28)
-
-    active_start = terms.start_date
-    active_end_excl = add_months(terms.start_date, terms.term_months)
-
-    clipped = clip_half_open(
-        window_start=start,
-        window_end_excl=end_excl,
-        active_start=active_start,
-        active_end_excl=active_end_excl,
+    spec = MonthlyScheduleSpec(
+        active_start=terms.start_date,
+        active_end_excl=add_months(terms.start_date, terms.term_months),
+        payment_day=terms.payment_day,
+        hour=6,
+        minute=0,
+        counterparty_acct=terms.lender_acct,
+        amount=terms.monthly_payment,
+        channel=CHANNEL,
+        product_type="mortgage",
     )
-    if clipped is None:
-        return
 
-    effective_start, effective_end_excl = clipped
-
-    for current in month_starts(effective_start, effective_end_excl):
-        ts = current.replace(
-            day=payment_day,
-            hour=6,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-
-        if ts < effective_start or ts >= effective_end_excl:
-            continue
-
-        yield ObligationEvent(
-            person_id=person_id,
-            direction=Direction.OUTFLOW,
-            counterparty_acct=terms.lender_acct,
-            amount=terms.monthly_payment,
-            timestamp=ts,
-            channel=CHANNEL,
-            product_type="mortgage",
-        )
+    yield from scheduled_monthly_events(
+        person_id,
+        spec,
+        start,
+        end_excl,
+        calendar,
+    )
