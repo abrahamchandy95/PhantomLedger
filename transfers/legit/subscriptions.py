@@ -6,6 +6,7 @@ affordability screen using a seeded ledger view and known earlier
 candidate transactions.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import cast
@@ -114,7 +115,8 @@ def generate(
     cfg: SubscriptionConfig = DEFAULT_SUBSCRIPTION_CONFIG,
     *,
     book: Ledger | None = None,
-    base_txns: list[Transaction] | None = None,
+    base_txns: Sequence[Transaction] | None = None,
+    base_txns_sorted: bool = False,
 ) -> list[Transaction]:
     if not plan.paydays:
         return []
@@ -126,7 +128,12 @@ def generate(
     end_excl = plan.start_date + timedelta(days=plan.days)
     txns: list[Transaction] = []
 
-    seeded = sorted(base_txns or [], key=lambda t: t.timestamp)
+    if base_txns is None:
+        seeded: Sequence[Transaction] = ()
+    elif base_txns_sorted:
+        seeded = base_txns
+    else:
+        seeded = sorted(base_txns, key=lambda t: t.timestamp)
     seed_idx = 0
 
     subscriptions_by_person: list[tuple[str, str, list[_PersonSub]]] = []

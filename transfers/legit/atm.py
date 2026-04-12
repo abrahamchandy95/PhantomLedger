@@ -10,6 +10,7 @@ ledger view plus known earlier candidate transactions. It is still
 an upstream proxy, not a substitute for final replay.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -82,7 +83,8 @@ def generate(
     cfg: AtmConfig = DEFAULT_ATM_CONFIG,
     *,
     book: Ledger | None = None,
-    base_txns: list[Transaction] | None = None,
+    base_txns: Sequence[Transaction] | None = None,
+    base_txns_sorted: bool = False,
 ) -> list[Transaction]:
     if not plan.paydays:
         return []
@@ -94,7 +96,12 @@ def generate(
     end_excl = plan.start_date + timedelta(days=plan.days)
     txns: list[Transaction] = []
 
-    seeded = sorted(base_txns or [], key=lambda t: t.timestamp)
+    if base_txns is None:
+        seeded: Sequence[Transaction] = ()
+    elif base_txns_sorted:
+        seeded = base_txns
+    else:
+        seeded = sorted(base_txns, key=lambda t: t.timestamp)
     seed_idx = 0
 
     users: list[tuple[str, str]] = []

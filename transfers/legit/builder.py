@@ -1,4 +1,7 @@
 from dataclasses import dataclass
+from heapq import merge
+
+import transfers.balances as balances_model
 
 from common.transactions import Transaction
 from transfers.factory import TransactionFactory
@@ -23,6 +26,20 @@ from .plans import build_legit_plan
 from .recurring import generate_rent_txns, generate_salary_txns
 from .self import generate as generate_self_transfer_txns
 from .subscriptions import generate as generate_subscription_txns
+
+
+def _merge_by_timestamp(
+    existing: list[Transaction],
+    new_items: list[Transaction],
+) -> list[Transaction]:
+    if not new_items:
+        return existing
+
+    new_sorted = sorted(new_items, key=lambda txn: txn.timestamp)
+    if not existing:
+        return new_sorted
+
+    return list(merge(existing, new_sorted, key=lambda txn: txn.timestamp))
 
 
 @dataclass(slots=True)
@@ -56,20 +73,32 @@ class LegitTransferBuilder:
             )
 
         plan = build_legit_plan(self.inputs, self.overrides)
-        book = build_balance_book(
+        initial_book = build_balance_book(
             self.inputs,
             self.policies,
             self.credit_runtime,
             plan,
         )
-        initial_book = None if book is None else book.copy()
+        screen_book = None if initial_book is None else initial_book.copy()
 
         txf = TransactionFactory(rng=self.inputs.rng, infra=self.overrides.infra)
 
         candidate_txns: list[Transaction] = []
+        screened_prefix: list[Transaction] = []
 
         def extend(items: list[Transaction]) -> None:
+            nonlocal screened_prefix
+            if not items:
+                return
+
             candidate_txns.extend(items)
+            screened_prefix = _merge_by_timestamp(screened_prefix, items)
+
+        def reset_screen_book() -> balances_model.Ledger | None:
+            if initial_book is None or screen_book is None:
+                return None
+            screen_book.restore_from(initial_book)
+            return screen_book
 
         extend(generate_salary_txns(self.inputs, self.policies, plan, txf))
         extend(
@@ -100,8 +129,9 @@ class LegitTransferBuilder:
                 self.inputs.rng,
                 plan,
                 txf,
-                book=None if initial_book is None else initial_book.copy(),
-                base_txns=candidate_txns,
+                book=reset_screen_book(),
+                base_txns=screened_prefix,
+                base_txns_sorted=True,
             )
         )
 
@@ -110,8 +140,9 @@ class LegitTransferBuilder:
                 self.inputs.rng,
                 plan,
                 txf,
-                book=None if initial_book is None else initial_book.copy(),
-                base_txns=candidate_txns,
+                book=reset_screen_book(),
+                base_txns=screened_prefix,
+                base_txns_sorted=True,
             )
         )
 
@@ -121,8 +152,9 @@ class LegitTransferBuilder:
                 plan,
                 txf,
                 self.inputs.accounts.by_person,
-                book=None if initial_book is None else initial_book.copy(),
-                base_txns=candidate_txns,
+                book=reset_screen_book(),
+                base_txns=screened_prefix,
+                base_txns_sorted=True,
             )
         )
 
@@ -130,8 +162,9 @@ class LegitTransferBuilder:
             generate_day_to_day_txns(
                 self.request,
                 plan,
-                candidate_txns,
-                screen_book=None if initial_book is None else initial_book.copy(),
+                screened_prefix,
+                screen_book=reset_screen_book(),
+                base_txns_sorted=True,
             )
         )
 

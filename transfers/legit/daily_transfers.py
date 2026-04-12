@@ -69,6 +69,7 @@ def generate_day_to_day_txns(
     base_txns: list[Transaction],
     *,
     screen_book: balances_model.Ledger | None = None,
+    base_txns_sorted: bool = False,
 ) -> list[Transaction]:
     inputs = request.inputs
     policies = request.specs
@@ -121,6 +122,7 @@ def generate_day_to_day_txns(
             ),
             cards=_cards_by_person(request),
             base_txns=base_txns,
+            base_txns_sorted=base_txns_sorted,
             screen_book=screen_book,
             fixed_monthly_burden=_fixed_monthly_burdens(request, plan),
         )

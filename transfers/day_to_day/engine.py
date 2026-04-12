@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -135,7 +136,8 @@ class GenerateRequest:
     infra: Router | None = None
     credit_policy: IssuancePolicy | None = None
     cards: dict[str, str] | None = None
-    base_txns: list[Transaction] = field(default_factory=list)
+    base_txns: Sequence[Transaction] = field(default_factory=tuple)
+    base_txns_sorted: bool = False
     fixed_monthly_burden: dict[str, float] = field(default_factory=dict)
     screen_book: balances_model.Ledger | None = None
     params: Parameters = field(default_factory=Parameters)

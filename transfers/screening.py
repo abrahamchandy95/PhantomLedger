@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from datetime import datetime
 
 from common.transactions import Transaction
@@ -6,7 +7,7 @@ from transfers.balances import Ledger
 
 def advance_book_through(
     book: Ledger | None,
-    base_txns: list[Transaction],
+    base_txns: Sequence[Transaction],
     start_idx: int,
     until_ts: datetime,
     *,

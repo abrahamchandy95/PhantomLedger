@@ -243,7 +243,7 @@ class Ledger:
     hub_indices: set[int]
     external_indices: set[int]
 
-    def copy(self) -> "Ledger":
+    def copy(self) -> Ledger:
         return Ledger(
             balances=np.array(self.balances, copy=True, dtype=np.float64),
             overdrafts=np.array(self.overdrafts, copy=True, dtype=np.float64),
@@ -255,6 +255,23 @@ class Ledger:
             hub_indices=set(self.hub_indices),
             external_indices=set(self.external_indices),
         )
+
+    def restore_from(self, other: Ledger) -> None:
+        if self.account_indices != other.account_indices:
+            raise ValueError(
+                "cannot restore from ledger with different account indices"
+            )
+        if self.hub_indices != other.hub_indices:
+            raise ValueError("cannot restore from ledger with different hub indices")
+        if self.external_indices != other.external_indices:
+            raise ValueError(
+                "cannot restore from ledger with different external indices"
+            )
+
+        np.copyto(self.balances, other.balances)
+        np.copyto(self.overdrafts, other.overdrafts)
+        np.copyto(self.linked_buffers, other.linked_buffers)
+        np.copyto(self.courtesy_buffers, other.courtesy_buffers)
 
     def _index_of(self, account: str) -> int | None:
         return self.account_indices.get(account)

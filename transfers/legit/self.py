@@ -1,12 +1,9 @@
 """
 Intra-person account transfers.
 
-This version fixes the biggest realism bug:
-- source account is no longer random when a ledger view is available
-- transfers are biased earlier in the cycle
-- unaffordable source accounts are skipped
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -121,7 +118,8 @@ def generate(
     cfg: SelfTransferConfig = DEFAULT_SELF_TRANSFER_CONFIG,
     *,
     book: Ledger | None = None,
-    base_txns: list[Transaction] | None = None,
+    base_txns: Sequence[Transaction] | None = None,
+    base_txns_sorted: bool = False,
 ) -> list[Transaction]:
     if not plan.paydays:
         return []
@@ -130,7 +128,12 @@ def generate(
     hub_set = plan.counterparties.hub_set
     txns: list[Transaction] = []
 
-    seeded = sorted(base_txns or [], key=lambda t: t.timestamp)
+    if base_txns is None:
+        seeded: Sequence[Transaction] = ()
+    elif base_txns_sorted:
+        seeded = base_txns
+    else:
+        seeded = sorted(base_txns, key=lambda t: t.timestamp)
     seed_idx = 0
 
     active_people: list[tuple[str, list[str]]] = []

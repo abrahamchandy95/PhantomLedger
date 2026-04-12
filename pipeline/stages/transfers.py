@@ -73,7 +73,7 @@ def build(
         else legit_result.initial_book.copy(),
         rng=rng,
     )
-    replay_acc.extend(sorted(candidate_txns, key=key))
+    replay_acc.extend(candidate_txns)
 
     draft_txns = replay_acc.txns
 
