@@ -13,7 +13,11 @@ from transfers.factory import TransactionFactory
 from transfers.fraud import InjectionOutput, inject as inject_fraud
 from transfers.insurance import generate as generate_insurance
 from transfers.legit import LegitTransferBuilder, TransfersPayload
-from transfers.legit.accumulator import ChronoReplayAccumulator
+from transfers.legit.accumulator import (
+    ChronoReplayAccumulator,
+    merge_replay_sorted,
+    sort_for_replay,
+)
 from transfers.obligations import emit as emit_obligations
 
 
@@ -26,12 +30,19 @@ def build(
     legit_request = build_legit(cfg, rng, entities, infra)
     legit_result: TransfersPayload = LegitTransferBuilder(request=legit_request).build()
 
-    # Legit builder preserves semantic generation order for dependency purposes.
-    # Balance enforcement happens once, here, over the full pre-fraud candidate
-    # set in chronological order.
+    # Preserve semantic generation order for downstream dependency-sensitive
+    # consumers and generators.
     candidate_txns: list[Transaction] = list(legit_result.candidate_txns)
     biller_accounts: list[str] = legit_result.biller_accounts
     employers: list[str] = legit_result.employers
+
+    # Replay-ready chronological order using the exact authoritative replay key:
+    # (timestamp, source, target, amount).
+    replay_candidate_txns: list[Transaction] = (
+        list(legit_result.replay_sorted_txns)
+        if legit_result.replay_sorted_txns
+        else sort_for_replay(legit_result.candidate_txns)
+    )
 
     primary_accounts = {
         pid: accts[0] for pid, accts in entities.accounts.by_person.items() if accts
@@ -50,6 +61,7 @@ def build(
         primary_accounts=primary_accounts,
     )
     candidate_txns.extend(ins_txns)
+    replay_candidate_txns = merge_replay_sorted(replay_candidate_txns, ins_txns)
 
     # Financial product obligations (mortgages, loans, taxes).
     start = cfg.window.start_date
@@ -64,6 +76,10 @@ def build(
         txf=gov_txf,
     )
     candidate_txns.extend(obligation_txns)
+    replay_candidate_txns = merge_replay_sorted(
+        replay_candidate_txns,
+        obligation_txns,
+    )
 
     # Single authoritative pre-fraud balance pass from the pristine starting
     # ledger. This is the only place where balances decide keep/drop.
@@ -73,7 +89,7 @@ def build(
         else legit_result.initial_book.copy(),
         rng=rng,
     )
-    replay_acc.extend(candidate_txns)
+    replay_acc.extend(replay_candidate_txns, presorted=True)
 
     draft_txns = replay_acc.txns
 
