@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Final
 
+from common.date_math import month_starts
 from common.random import Rng
 
 ISO_FORMAT: Final = "%Y-%m-%d %H:%M:%S"
@@ -32,20 +33,7 @@ def months(start: datetime, days: int) -> list[datetime]:
         raise ValueError("days must be >= 0")
 
     end = start + timedelta(days=days)
-    curr = datetime(start.year, start.month, 1)
-    results: list[datetime] = []
-
-    while curr < end:
-        results.append(curr)
-        # Advance to first of next month
-        next_m = curr.month + 1
-        next_y = curr.year
-        if next_m > 12:
-            next_m = 1
-            next_y += 1
-        curr = datetime(next_y, next_m, 1)
-
-    return results
+    return list(month_starts(start, end))
 
 
 def active_months(start: datetime, days: int) -> list[datetime]:

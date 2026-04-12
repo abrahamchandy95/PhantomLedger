@@ -12,19 +12,18 @@ handles the temporal scheduling of premium payments and the
 stochastic generation of claim events.
 """
 
-from collections.abc import Sequence
 from datetime import date, datetime, time, timedelta
 from typing import cast
 
 import numpy as np
 
+from common.calendar_cache import WindowCalendar
 from common.channels import INSURANCE_CLAIM, INSURANCE_PREMIUM
 from common.config import Window
 from common.config.population.insurance import Insurance
 from common.externals import INS_AUTO, INS_HOME
 from common.math import lognormal_by_median
 from common.random import Rng, derive_seed
-from common.timeline import active_months
 from common.transactions import Transaction
 from entities.products.insurance import InsurancePolicy
 from entities.products.portfolio import PortfolioRegistry
@@ -56,15 +55,16 @@ def generate(
     """
     start = window.start_date
     days = int(window.days)
-    months = cast(list[date], active_months(start, days))
     start_dt = _midnight(start)
     end_dt = start_dt + timedelta(days=days)
 
-    if not months:
+    calendar = WindowCalendar(start_dt, end_dt)
+    n_months = len(calendar.month_anchors)
+
+    if n_months == 0:
         return []
 
     txns: list[Transaction] = []
-    n_months = len(months)
 
     for person_id, portfolio in portfolios.by_person.items():
         if portfolio.insurance is None:
@@ -83,7 +83,7 @@ def generate(
                 _monthly_premiums(
                     rng,
                     txf,
-                    months,
+                    calendar,
                     start_dt,
                     end_dt,
                     acct,
@@ -92,7 +92,10 @@ def generate(
             )
             if _claim_occurred(gen, holdings.auto.annual_claim_p, n_months):
                 payout = _sample_claim(
-                    gen, cfg.auto_claim_median, cfg.auto_claim_sigma, floor=500.0
+                    gen,
+                    cfg.auto_claim_median,
+                    cfg.auto_claim_sigma,
+                    floor=500.0,
                 )
                 txns.extend(
                     _claim_payout(
@@ -116,7 +119,7 @@ def generate(
                     _monthly_premiums(
                         rng,
                         txf,
-                        months,
+                        calendar,
                         start_dt,
                         end_dt,
                         acct,
@@ -126,7 +129,10 @@ def generate(
 
             if _claim_occurred(gen, holdings.home.annual_claim_p, n_months):
                 payout = _sample_claim(
-                    gen, cfg.home_claim_median, cfg.home_claim_sigma, floor=1000.0
+                    gen,
+                    cfg.home_claim_median,
+                    cfg.home_claim_sigma,
+                    floor=1000.0,
                 )
                 txns.extend(
                     _claim_payout(
@@ -147,7 +153,7 @@ def generate(
                 _monthly_premiums(
                     rng,
                     txf,
-                    months,
+                    calendar,
                     start_dt,
                     end_dt,
                     acct,
@@ -184,7 +190,7 @@ def _sample_claim(
 def _monthly_premiums(
     rng: Rng,
     txf: TransactionFactory,
-    months: Sequence[date],
+    calendar: WindowCalendar,
     start_dt: datetime,
     end_dt: datetime,
     person_acct: str,
@@ -194,15 +200,17 @@ def _monthly_premiums(
     txns: list[Transaction] = []
     day = min(28, max(1, policy.billing_day))
 
-    for month in months:
-        base = _midnight(month)
-        ts = base + timedelta(
-            days=day - 1,
+    for base_ts in calendar.iter_monthly(
+        start_dt,
+        end_dt,
+        day=day,
+        hour=0,
+        minute=0,
+    ):
+        ts = base_ts + timedelta(
             hours=rng.int(0, 6),
             minutes=rng.int(0, 60),
         )
-        if ts < start_dt or ts >= end_dt:
-            continue
 
         txns.append(
             txf.make(
