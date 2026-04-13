@@ -20,6 +20,7 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.channels import SPOUSE_TRANSFER
 from common.family_accounts import resolve_family_acct
 from common.math import as_int, lognormal_by_median
@@ -27,7 +28,7 @@ from common.transactions import Transaction
 from entities.personas import get_persona
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 
 
 def _earning_power(persona_name: str) -> float:
@@ -36,33 +37,34 @@ def _earning_power(persona_name: str) -> float:
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    transfer_cfg: pop_config.Spouses,
+    routing_cfg: pop_config.Routing,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates recurring transfers between spouses with separate accounts."""
-    params = request.params
-    if not params.spouse_transfer_enabled:
+    if not transfer_cfg.enabled:
         return []
 
     txns: list[Transaction] = []
-    external_p = float(params.external_family_p)
+    external_p = float(routing_cfg.external_p)
 
     # Deduplicate pairs: only process where person_a < person_b
     seen: set[tuple[str, str]] = set()
 
-    for person_a, person_b in request.family.spouses.items():
+    for person_a, person_b in rt.family.spouses.items():
         pair = (min(person_a, person_b), max(person_a, person_b))
         if pair in seen:
             continue
         seen.add(pair)
 
         # Check if this couple maintains separate accounts
-        if float(gen.random()) >= float(params.spouse_separate_accounts_p):
+        if float(gen.random()) >= float(transfer_cfg.separate_accounts_p):
             continue
 
-        acct_a = resolve_family_acct(person_a, request.primary_accounts, external_p)
-        acct_b = resolve_family_acct(person_b, request.primary_accounts, external_p)
+        acct_a = resolve_family_acct(person_a, rt.primary_accounts, external_p)
+        acct_b = resolve_family_acct(person_b, rt.primary_accounts, external_p)
 
         # Skip if either is missing or both are external (invisible to us)
         if not acct_a or not acct_b or acct_a == acct_b:
@@ -71,8 +73,8 @@ def generate(
             continue
 
         # Determine breadwinner direction using persona earning power
-        power_a = _earning_power(request.personas.get(person_a, "salaried"))
-        power_b = _earning_power(request.personas.get(person_b, "salaried"))
+        power_a = _earning_power(rt.personas.get(person_a, "salaried"))
+        power_b = _earning_power(rt.personas.get(person_b, "salaried"))
 
         if power_a >= power_b:
             higher_acct, lower_acct = acct_a, acct_b
@@ -84,15 +86,15 @@ def generate(
                 cast(
                     int | np.integer,
                     gen.integers(
-                        int(params.spouse_txns_per_month_min),
-                        int(params.spouse_txns_per_month_max) + 1,
+                        int(transfer_cfg.txns_per_month_min),
+                        int(transfer_cfg.txns_per_month_max) + 1,
                     ),
                 )
             )
 
             for _ in range(n_transfers):
                 # Breadwinner asymmetry: higher earner sends more often
-                if float(gen.random()) < float(params.spouse_breadwinner_flow_p):
+                if float(gen.random()) < float(transfer_cfg.breadwinner_flow_p):
                     src, dst = higher_acct, lower_acct
                 else:
                     src, dst = lower_acct, higher_acct
@@ -112,14 +114,14 @@ def generate(
                 amt = float(
                     lognormal_by_median(
                         gen,
-                        median=float(params.spouse_transfer_median),
-                        sigma=float(params.spouse_transfer_sigma),
+                        median=float(transfer_cfg.transfer_median),
+                        sigma=float(transfer_cfg.transfer_sigma),
                     )
                 )
                 amt = round(max(5.0, amt), 2)
 
                 txns.append(
-                    request.txf.make(
+                    rt.txf.make(
                         TransactionDraft(
                             source=src,
                             destination=dst,

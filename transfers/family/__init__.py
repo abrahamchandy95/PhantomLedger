@@ -1,8 +1,8 @@
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 from .generator import generate
 
 __all__ = [
-    "GenerateRequest",
+    "Runtime",
     "Schedule",
     "generate",
 ]

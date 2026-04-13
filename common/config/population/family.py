@@ -1,75 +1,125 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from common.validate import (
-    between,
-    gt,
-    ge,
-)
+from common.validate import ge, validate_metadata
 
 
 @dataclass(frozen=True, slots=True)
-class Family:
+class Households:
     # --- household structure ---
-    single_p: float = 0.29
-    zipf_alpha: float = 2.2
-    max_size: int = 6
+    single_p: float = field(default=0.29, metadata={"between": (0.0, 1.0)})
+    zipf_alpha: float = field(default=2.2, metadata={"gt": 0.0})
+    max_size: int = field(default=6, metadata={"ge": 2})
+    spouse_p: float = field(default=0.62, metadata={"between": (0.0, 1.0)})
 
-    spouse_p: float = 0.62
+    def __post_init__(self) -> None:
+        validate_metadata(self)
 
+
+@dataclass(frozen=True, slots=True)
+class Dependents:
     # --- dependency structure ---
-    student_dependent_p: float = 0.65
-    student_coresides_p: float = 0.35
-    two_parent_p: float = 0.70
+    student_dependent_p: float = field(
+        default=0.65,
+        metadata={"between": (0.0, 1.0)},
+    )
+    student_coresides_p: float = field(
+        default=0.35,
+        metadata={"between": (0.0, 1.0)},
+    )
+    two_parent_p: float = field(default=0.70, metadata={"between": (0.0, 1.0)})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class Allowances:
     # --- allowance process ---
-    allowance_enabled: bool = True
-    allowance_weekly_p: float = 0.60
-    allowance_pareto_xm: float = 15.0
-    allowance_pareto_alpha: float = 2.2
+    enabled: bool = True
+    weekly_p: float = field(default=0.60, metadata={"between": (0.0, 1.0)})
+    pareto_xm: float = field(default=15.0, metadata={"gt": 0.0})
+    pareto_alpha: float = field(default=2.2, metadata={"gt": 0.0})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class Tuition:
     # --- tuition process ---
-    tuition_enabled: bool = True
-    tuition_p: float = 0.55
-    tuition_inst_min: int = 4
-    tuition_inst_max: int = 5
-    tuition_mu: float = 8.7
-    tuition_sigma: float = 0.35
+    enabled: bool = True
+    p: float = field(default=0.55, metadata={"between": (0.0, 1.0)})
+    inst_min: int = field(default=4, metadata={"ge": 1})
+    inst_max: int = 5
+    mu: float = 8.7
+    sigma: float = field(default=0.35, metadata={"ge": 0.0})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+        ge("inst_max", self.inst_max, self.inst_min)
+
+
+@dataclass(frozen=True, slots=True)
+class RetireeSupport:
     # --- support to retirees ---
-    retiree_support_enabled: bool = True
-    retiree_has_child_p: float = 0.35
-    retiree_support_p: float = 0.35
-    retiree_coresides_p: float = 0.12
-    retiree_support_pareto_xm: float = 25.0
-    retiree_support_pareto_alpha: float = 2.4
+    enabled: bool = True
+    has_child_p: float = field(default=0.35, metadata={"between": (0.0, 1.0)})
+    support_p: float = field(default=0.35, metadata={"between": (0.0, 1.0)})
+    coresides_p: float = field(default=0.12, metadata={"between": (0.0, 1.0)})
+    pareto_xm: float = field(default=25.0, metadata={"gt": 0.0})
+    pareto_alpha: float = field(default=2.4, metadata={"gt": 0.0})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class Spouses:
     # --- spouse-to-spouse transfers ---
     # ~60% of couples have at least partially separate accounts
     # and need inter-spouse transfers (Census 2023, Bankrate 2024).
     # Couples with fully joint accounts use the shared account directly.
-    spouse_transfer_enabled: bool = True
-    spouse_separate_accounts_p: float = 0.60
-    spouse_txns_per_month_min: int = 2
-    spouse_txns_per_month_max: int = 6
+    enabled: bool = True
+    separate_accounts_p: float = field(
+        default=0.60,
+        metadata={"between": (0.0, 1.0)},
+    )
+    txns_per_month_min: int = field(default=2, metadata={"ge": 1})
+    txns_per_month_max: int = 6
 
     # Breadwinner asymmetry: 0.5 = symmetric, higher = more flow
     # from higher earner to lower earner. Pew 2023: 55% of marriages
     # have a husband as primary/sole breadwinner, 29% egalitarian,
     # 16% wife breadwinner. This skews transfer direction.
-    spouse_breadwinner_flow_p: float = 0.65
+    breadwinner_flow_p: float = field(
+        default=0.65,
+        metadata={"between": (0.0, 1.0)},
+    )
+    transfer_median: float = field(default=85.0, metadata={"gt": 0.0})
+    transfer_sigma: float = field(default=0.9, metadata={"ge": 0.0})
 
-    spouse_transfer_median: float = 85.0
-    spouse_transfer_sigma: float = 0.9
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+        ge("txns_per_month_max", self.txns_per_month_max, self.txns_per_month_min)
 
+
+@dataclass(frozen=True, slots=True)
+class ParentGifts:
     # --- parent-to-adult-child gifts ---
     # 50% of parents financially support adult children (Savings.com 2025).
     # Downward transfers outnumber upward 7:1 (HRS longitudinal data).
     # Average support: ~$1,300/month among those who give.
-    parent_gift_enabled: bool = True
-    parent_gift_p: float = 0.12
-    parent_gift_pareto_xm: float = 75.0
-    parent_gift_pareto_alpha: float = 1.6
+    enabled: bool = True
+    p: float = field(default=0.12, metadata={"between": (0.0, 1.0)})
+    pareto_xm: float = field(default=75.0, metadata={"gt": 0.0})
+    pareto_alpha: float = field(default=1.6, metadata={"gt": 0.0})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class SiblingTransfers:
     # --- sibling transfers ---
     # Pew 2023 found only 24% of U.S. adults say siblings have at least a fair
     # amount of responsibility to provide financial assistance to one another,
@@ -78,84 +128,54 @@ class Family:
     # broader family-loan averages are skewed upward by large one-off loans.
     # We therefore anchor the recurring sibling-transfer process at a modest
     # low-hundreds median with a wide spread for occasional larger support.
-    sibling_transfer_enabled: bool = True
-    sibling_active_p: float = 0.15
-    sibling_monthly_p: float = 0.18
-    sibling_median: float = 120.0
-    sibling_sigma: float = 0.90
+    enabled: bool = True
+    active_p: float = field(default=0.15, metadata={"between": (0.0, 1.0)})
+    monthly_p: float = field(default=0.18, metadata={"between": (0.0, 1.0)})
+    median: float = field(default=120.0, metadata={"gt": 0.0})
+    sigma: float = field(default=0.90, metadata={"ge": 0.0})
+
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class GrandparentGifts:
     # --- grandparent gifts ---
     # 38-45% of 50+ households send money to younger generations (EBRI 2015).
     # Average ~$350/month among givers. We route from retired personas
     # to their children's children (implicit grandchildren).
-    grandparent_gift_enabled: bool = True
-    grandparent_gift_p: float = 0.08
-    grandparent_gift_median: float = 150.0
-    grandparent_gift_sigma: float = 0.70
+    enabled: bool = True
+    p: float = field(default=0.08, metadata={"between": (0.0, 1.0)})
+    median: float = field(default=150.0, metadata={"gt": 0.0})
+    sigma: float = field(default=0.70, metadata={"ge": 0.0})
 
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class Inheritance:
     # --- inheritance (rare lump-sum) ---
     # 26% of Americans expect to leave inheritance (NW Mutual 2024).
     # Per 180-day window, ~0.15% of retirees trigger a transfer event.
     # Amounts are large and follow a heavy-tailed distribution.
-    inheritance_enabled: bool = True
-    inheritance_event_p: float = 0.0015
-    inheritance_median: float = 25000.0
-    inheritance_sigma: float = 1.0
+    enabled: bool = True
+    event_p: float = field(default=0.0015, metadata={"between": (0.0, 1.0)})
+    median: float = field(default=25000.0, metadata={"gt": 0.0})
+    sigma: float = field(default=1.0, metadata={"ge": 0.0})
+
+    def __post_init__(self) -> None:
+        validate_metadata(self)
+
+
+@dataclass(frozen=True, slots=True)
+class Routing:
     # --- external family probability ---
     # Probability that a family counterparty banks at a different institution.
     # Co-residing families overwhelmingly share a bank; non-co-residing
     # adult children/siblings are more likely to bank elsewhere.
     # Blended estimate from FDIC 2023 survey + market fragmentation data.
-    external_family_p: float = 0.18
+    external_p: float = field(default=0.18, metadata={"between": (0.0, 1.0)})
 
     def __post_init__(self) -> None:
-        between("single_p", self.single_p, 0.0, 1.0)
-        gt("zipf_alpha", self.zipf_alpha, 0.0)
-        ge("max_size", self.max_size, 2)
-
-        between("spouse_p", self.spouse_p, 0.0, 1.0)
-
-        between("student_dependent_p", self.student_dependent_p, 0.0, 1.0)
-        between("student_coresides_p", self.student_coresides_p, 0.0, 1.0)
-        between("two_parent_p", self.two_parent_p, 0.0, 1.0)
-
-        between("allowance_weekly_p", self.allowance_weekly_p, 0.0, 1.0)
-        gt("allowance_pareto_xm", self.allowance_pareto_xm, 0.0)
-        gt("allowance_pareto_alpha", self.allowance_pareto_alpha, 0.0)
-
-        between("tuition_p", self.tuition_p, 0.0, 1.0)
-        ge("tuition_inst_min", self.tuition_inst_min, 1)
-        ge("tuition_inst_max", self.tuition_inst_max, self.tuition_inst_min)
-
-        between("retiree_has_child_p", self.retiree_has_child_p, 0.0, 1.0)
-        between("retiree_support_p", self.retiree_support_p, 0.0, 1.0)
-        between("retiree_coresides_p", self.retiree_coresides_p, 0.0, 1.0)
-        gt("retiree_support_pareto_xm", self.retiree_support_pareto_xm, 0.0)
-        gt("retiree_support_pareto_alpha", self.retiree_support_pareto_alpha, 0.0)
-
-        between("spouse_separate_accounts_p", self.spouse_separate_accounts_p, 0.0, 1.0)
-        ge("spouse_txns_per_month_min", self.spouse_txns_per_month_min, 1)
-        ge(
-            "spouse_txns_per_month_max",
-            self.spouse_txns_per_month_max,
-            self.spouse_txns_per_month_min,
-        )
-        between("spouse_breadwinner_flow_p", self.spouse_breadwinner_flow_p, 0.0, 1.0)
-        gt("spouse_transfer_median", self.spouse_transfer_median, 0.0)
-        ge("spouse_transfer_sigma", self.spouse_transfer_sigma, 0.0)
-
-        between("parent_gift_p", self.parent_gift_p, 0.0, 1.0)
-        gt("parent_gift_pareto_xm", self.parent_gift_pareto_xm, 0.0)
-        gt("parent_gift_pareto_alpha", self.parent_gift_pareto_alpha, 0.0)
-        between("sibling_active_p", self.sibling_active_p, 0.0, 1.0)
-        between("sibling_monthly_p", self.sibling_monthly_p, 0.0, 1.0)
-        gt("sibling_median", self.sibling_median, 0.0)
-        ge("sibling_sigma", self.sibling_sigma, 0.0)
-
-        between("grandparent_gift_p", self.grandparent_gift_p, 0.0, 1.0)
-        gt("grandparent_gift_median", self.grandparent_gift_median, 0.0)
-        ge("grandparent_gift_sigma", self.grandparent_gift_sigma, 0.0)
-
-        between("inheritance_event_p", self.inheritance_event_p, 0.0, 1.0)
-        gt("inheritance_median", self.inheritance_median, 0.0)
-        ge("inheritance_sigma", self.inheritance_sigma, 0.0)
-        between("external_family_p", self.external_family_p, 0.0, 1.0)
+        validate_metadata(self)

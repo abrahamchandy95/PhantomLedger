@@ -20,6 +20,7 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.channels import PARENT_GIFT
 from common.family_accounts import resolve_family_acct
 from common.math import as_int
@@ -27,7 +28,7 @@ from common.persona_names import SALARIED, FREELANCER, SMALLBIZ, HNW
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 from .helpers import pareto_amount, support_capacity_weight
 
 
@@ -42,36 +43,37 @@ def _is_adult_child(persona: str) -> bool:
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    gift_cfg: pop_config.ParentGifts,
+    routing_cfg: pop_config.Routing,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates financial gifts from working parents to adult children."""
-    params = request.params
-    if not params.parent_gift_enabled:
+    if not gift_cfg.enabled:
         return []
 
     txns: list[Transaction] = []
 
-    for child_id, parent_ids in request.family.parents.items():
-        child_persona = request.personas.get(child_id, SALARIED)
+    for child_id, parent_ids in rt.family.parents.items():
+        child_persona = rt.personas.get(child_id, SALARIED)
         if not _is_adult_child(child_persona):
             continue
 
-        child_acct = request.primary_accounts.get(child_id)
+        child_acct = rt.primary_accounts.get(child_id)
         if not child_acct:
             continue
 
         giving_parents = [
             pid
             for pid in parent_ids
-            if _is_working_adult(request.personas.get(pid, SALARIED))
+            if _is_working_adult(rt.personas.get(pid, SALARIED))
         ]
         if not giving_parents:
             continue
 
         for month_start in schedule.month_starts:
-            if float(gen.random()) >= float(params.parent_gift_p):
+            if float(gen.random()) >= float(gift_cfg.p):
                 continue
 
             payer_idx = as_int(
@@ -83,8 +85,8 @@ def generate(
             payer_id = giving_parents[payer_idx]
             payer_acct = resolve_family_acct(
                 payer_id,
-                request.primary_accounts,
-                float(request.params.external_family_p),
+                rt.primary_accounts,
+                float(routing_cfg.external_p),
             )
             if not payer_acct or payer_acct == child_acct:
                 continue
@@ -102,15 +104,15 @@ def generate(
                 break
 
             base_amount = pareto_amount(
-                request.rng,
-                xm=float(params.parent_gift_pareto_xm),
-                alpha=float(params.parent_gift_pareto_alpha),
+                rt.rng,
+                xm=float(gift_cfg.pareto_xm),
+                alpha=float(gift_cfg.pareto_alpha),
             )
-            multiplier = support_capacity_weight(payer_id, request.persona_objects)
+            multiplier = support_capacity_weight(payer_id, rt.persona_objects)
             final_amount = round(max(10.0, base_amount * multiplier), 2)
 
             txns.append(
-                request.txf.make(
+                rt.txf.make(
                     TransactionDraft(
                         source=payer_acct,
                         destination=child_acct,

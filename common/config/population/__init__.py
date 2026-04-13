@@ -1,5 +1,17 @@
 from .accounts import Accounts
-from .family import Family
+from .family import (
+    Allowances,
+    Dependents,
+    GrandparentGifts,
+    Households,
+    Inheritance,
+    ParentGifts,
+    RetireeSupport,
+    Routing,
+    SiblingTransfers,
+    Spouses,
+    Tuition,
+)
 from .government import Government
 from .hubs import Hubs
 from .insurance import Insurance
@@ -14,8 +26,18 @@ __all__ = [
     "Hubs",
     "Personas",
     "Merchants",
-    "Family",
     "Social",
     "Government",
     "Insurance",
+    "Allowances",
+    "Dependents",
+    "GrandparentGifts",
+    "Households",
+    "Inheritance",
+    "ParentGifts",
+    "RetireeSupport",
+    "Routing",
+    "SiblingTransfers",
+    "Spouses",
+    "Tuition",
 ]

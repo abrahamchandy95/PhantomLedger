@@ -13,7 +13,7 @@ from transfers.legit.blueprints import (
     LegitBuildPlan,
     build_paydays_by_person,
 )
-from transfers.legit.ledger import monthly_fixed_burden_for_portfolio
+from transfers.legit.ledger.burdens import monthly_fixed_burden_for_portfolio
 
 
 def _hub_people(
@@ -31,8 +31,8 @@ def _hub_people(
 def _cards_by_person(
     bp: Blueprint,
 ) -> dict[str, str] | None:
-    cards = bp.credit_runtime.cards
-    if not bp.credit_runtime.enabled() or cards is None:
+    cards = bp.cc_state.cards
+    if not bp.cc_state.enabled() or cards is None:
         return None
 
     if hasattr(cards, "by_person"):
@@ -75,7 +75,7 @@ def generate_day_to_day_txns(
 ) -> list[Transaction]:
     policies = request.specs
     overrides = request.overrides
-    credit_state = request.credit_runtime
+    credit_state = request.cc_state
 
     # Mapped rng to Timeline
     social = social_model.build(

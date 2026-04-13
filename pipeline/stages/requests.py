@@ -47,7 +47,6 @@ def build_legit(
             persona_names=None,
             persona_for_person=entities.persona_map,
             persona_objects=entities.persona_objects,
-            family_cfg=cfg.family,
             counterparty_pools=entities.counterparty_pools,
         ),
         cc_state=CCState(
