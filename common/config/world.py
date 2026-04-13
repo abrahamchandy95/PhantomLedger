@@ -7,7 +7,19 @@ from .population.accounts import Accounts
 from .population.hubs import Hubs
 from .population.personas import Personas
 from .population.merchants import Merchants
-from .population.family import Family
+from .population.family import (
+    Allowances,
+    Dependents,
+    GrandparentGifts,
+    Households,
+    Inheritance,
+    ParentGifts,
+    RetireeSupport,
+    Routing,
+    SiblingTransfers,
+    Spouses,
+    Tuition,
+)
 from .population.government import Government
 from .population.insurance import Insurance
 
@@ -25,7 +37,19 @@ class World:
     hubs: Hubs = field(default_factory=Hubs)
     personas: Personas = field(default_factory=Personas)
     merchants: Merchants = field(default_factory=Merchants)
-    family: Family = field(default_factory=Family)
+
+    households: Households = field(default_factory=Households)
+    dependents: Dependents = field(default_factory=Dependents)
+    allowances: Allowances = field(default_factory=Allowances)
+    tuition: Tuition = field(default_factory=Tuition)
+    retiree_support: RetireeSupport = field(default_factory=RetireeSupport)
+    spouses: Spouses = field(default_factory=Spouses)
+    parent_gifts: ParentGifts = field(default_factory=ParentGifts)
+    sibling_transfers: SiblingTransfers = field(default_factory=SiblingTransfers)
+    grandparent_gifts: GrandparentGifts = field(default_factory=GrandparentGifts)
+    inheritance: Inheritance = field(default_factory=Inheritance)
+    family_routing: Routing = field(default_factory=Routing)
+
     government: Government = field(default_factory=Government)
     insurance: Insurance = field(default_factory=Insurance)
 
@@ -35,10 +59,6 @@ class World:
     patterns: Patterns = field(default_factory=Patterns)
 
     def __post_init__(self) -> None:
-        """
-        Validates the tree. Note: Sub-configs now validate themselves
-        on creation via their own __post_init__.
-        """
         self._check_fraud_limits()
 
     def _check_fraud_limits(self) -> None:

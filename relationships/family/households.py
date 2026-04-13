@@ -3,7 +3,7 @@ from typing import cast
 
 import numpy as np
 
-from common import config
+from common.config import population as pop_config
 from common.math import F64, build_cdf
 
 
@@ -22,7 +22,7 @@ def _build_size_cdf(alpha: float, max_size: int) -> F64:
 
 
 def _sample_sizes(
-    cfg: config.Family,
+    cfg: pop_config.Households,
     gen: np.random.Generator,
     cdf_2plus: F64,
     n_people: int,
@@ -47,7 +47,7 @@ def _sample_sizes(
 
 
 def build(
-    cfg: config.Family,
+    cfg: pop_config.Households,
     gen: np.random.Generator,
     *,
     people: list[str],

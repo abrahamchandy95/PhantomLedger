@@ -1,6 +1,6 @@
 import numpy as np
 
-from common import config
+from common.config import population as pop_config
 from common.random import derive_seed
 
 from .links import build as build_internal_links
@@ -10,7 +10,9 @@ from .support import build as build_support_ties
 
 
 def build(
-    cfg: config.Family,
+    households_cfg: pop_config.Households,
+    dependents_cfg: pop_config.Dependents,
+    retiree_support_cfg: pop_config.RetireeSupport,
     *,
     base_seed: int,
     people: list[str],
@@ -25,20 +27,21 @@ def build(
     gen = np.random.default_rng(derive_seed(base_seed, "family", "households"))
 
     partition = build_partition(
-        cfg,
+        households_cfg,
         gen,
         people=people,
     )
 
     internal_links = build_internal_links(
-        cfg,
+        households_cfg,
+        dependents_cfg,
         gen,
         households=partition.households,
         people=people,
         persona_map=persona_map,
     )
     support_ties = build_support_ties(
-        cfg,
+        retiree_support_cfg,
         gen,
         households=partition.households,
         household_map=partition.household_map,

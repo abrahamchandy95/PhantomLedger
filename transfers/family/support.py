@@ -3,6 +3,7 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.channels import FAMILY_SUPPORT
 from common.family_accounts import resolve_family_acct
 from common.math import as_int
@@ -10,7 +11,7 @@ from common.persona_names import RETIRED
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 from .helpers import (
     weighted_pick_person,
     support_capacity_weight,
@@ -19,45 +20,44 @@ from .helpers import (
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    transfer_cfg: pop_config.RetireeSupport,
+    routing_cfg: pop_config.Routing,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates financial support transactions from adult children to retired parents."""
-    params = request.params
-    if not params.retiree_support_enabled:
+    if not transfer_cfg.enabled:
         return []
 
     txns: list[Transaction] = []
 
     retirees = [
-        person_id
-        for person_id, persona in request.personas.items()
-        if persona == RETIRED
+        person_id for person_id, persona in rt.personas.items() if persona == RETIRED
     ]
 
     for retiree_id in retirees:
-        adult_kids = request.family.supporting_children.get(retiree_id)
+        adult_kids = rt.family.supporting_children.get(retiree_id)
         if not adult_kids:
             continue
 
-        retiree_acct = request.primary_accounts.get(retiree_id)
+        retiree_acct = rt.primary_accounts.get(retiree_id)
         if not retiree_acct:
             continue
 
         for month_start in schedule.month_starts:
-            if float(gen.random()) >= float(params.retiree_support_p):
+            if float(gen.random()) >= float(transfer_cfg.support_p):
                 continue
 
             payer_id = weighted_pick_person(
                 adult_kids,
-                request.persona_objects,
+                rt.persona_objects,
                 gen,
             )
             payer_acct = resolve_family_acct(
                 payer_id,
-                request.primary_accounts,
-                float(request.params.external_family_p),
+                rt.primary_accounts,
+                float(routing_cfg.external_p),
             )
             if not payer_acct or payer_acct == retiree_acct:
                 continue
@@ -76,15 +76,15 @@ def generate(
                 break
 
             base_amount = pareto_amount(
-                request.rng,
-                xm=float(params.retiree_support_pareto_xm),
-                alpha=float(params.retiree_support_pareto_alpha),
+                rt.rng,
+                xm=float(transfer_cfg.pareto_xm),
+                alpha=float(transfer_cfg.pareto_alpha),
             )
-            multiplier = support_capacity_weight(payer_id, request.persona_objects)
+            multiplier = support_capacity_weight(payer_id, rt.persona_objects)
             final_amount = round(max(5.0, base_amount * multiplier), 2)
 
             txns.append(
-                request.txf.make(
+                rt.txf.make(
                     TransactionDraft(
                         source=payer_acct,
                         destination=retiree_acct,

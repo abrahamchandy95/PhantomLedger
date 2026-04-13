@@ -16,22 +16,23 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.channels import GRANDPARENT_GIFT
 from common.math import as_int, lognormal_by_median
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 
 
 def _find_grandparent_pairs(
-    request: GenerateRequest,
+    rt: Runtime,
 ) -> list[tuple[str, str]]:
     """Finds (grandparent, grandchild) pairs via two-hop traversal."""
-    children_map = request.family.children
+    children_map = rt.family.children
     pairs: list[tuple[str, str]] = []
 
-    for gp_id, persona in request.personas.items():
+    for gp_id, persona in rt.personas.items():
         if persona != "retired":
             continue
 
@@ -45,37 +46,37 @@ def _find_grandparent_pairs(
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    gift_cfg: pop_config.GrandparentGifts,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates monthly gifts from grandparents to grandchildren."""
-    params = request.params
-    if not params.grandparent_gift_enabled:
+    if not gift_cfg.enabled:
         return []
 
-    pairs = _find_grandparent_pairs(request)
+    pairs = _find_grandparent_pairs(rt)
     if not pairs:
         return []
 
     txns: list[Transaction] = []
 
     for gp_id, gc_id in pairs:
-        gp_acct = request.primary_accounts.get(gp_id)
-        gc_acct = request.primary_accounts.get(gc_id)
+        gp_acct = rt.primary_accounts.get(gp_id)
+        gc_acct = rt.primary_accounts.get(gc_id)
 
         if not gp_acct or not gc_acct or gp_acct == gc_acct:
             continue
 
         for month_start in schedule.month_starts:
-            if float(gen.random()) >= float(params.grandparent_gift_p):
+            if float(gen.random()) >= float(gift_cfg.p):
                 continue
 
             amt = float(
                 lognormal_by_median(
                     gen,
-                    median=float(params.grandparent_gift_median),
-                    sigma=float(params.grandparent_gift_sigma),
+                    median=float(gift_cfg.median),
+                    sigma=float(gift_cfg.sigma),
                 )
             )
             amt = round(max(10.0, amt), 2)
@@ -93,7 +94,7 @@ def generate(
                 break
 
             txns.append(
-                request.txf.make(
+                rt.txf.make(
                     TransactionDraft(
                         source=gp_acct,
                         destination=gc_acct,

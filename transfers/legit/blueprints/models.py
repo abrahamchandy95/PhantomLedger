@@ -103,7 +103,6 @@ class Overrides:
     persona_names: list[str] | None = None
     persona_for_person: dict[str, str] | None = None
     persona_objects: dict[str, models.Persona] | None = None
-    family_cfg: config.Family | None = None
     counterparty_pools: CounterpartyPools | None = None
 
 

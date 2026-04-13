@@ -3,27 +3,28 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.persona_names import STUDENT
 from common.channels import TUITION
 from common.math import as_int
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 from .helpers import pick_education_payee
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    transfer_cfg: pop_config.Tuition,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates tuition payments from parents for their student children."""
-    params = request.params
-    if not params.tuition_enabled:
+    if not transfer_cfg.enabled:
         return []
 
-    payee = pick_education_payee(request.merchants, gen)
+    payee = pick_education_payee(rt.merchants, gen)
     if not payee:
         return []
 
@@ -31,24 +32,22 @@ def generate(
 
     # Find all students in the family
     students = [
-        person_id
-        for person_id, persona in request.personas.items()
-        if persona == STUDENT
+        person_id for person_id, persona in rt.personas.items() if persona == STUDENT
     ]
 
     for student_id in students:
-        if student_id not in request.family.parents:
+        if student_id not in rt.family.parents:
             continue
 
         # Check probability of paying tuition this cycle
-        if float(gen.random()) >= float(params.tuition_p):
+        if float(gen.random()) >= float(transfer_cfg.p):
             continue
 
         # Pick a parent to pay
-        parents = request.family.parents[student_id]
+        parents = rt.family.parents[student_id]
         payer_idx = as_int(cast(int | np.integer, gen.integers(0, len(parents))))
         payer_id = parents[payer_idx]
-        payer_acct = request.primary_accounts.get(payer_id)
+        payer_acct = rt.primary_accounts.get(payer_id)
 
         if not payer_acct:
             continue
@@ -58,16 +57,16 @@ def generate(
             cast(
                 int | np.integer,
                 gen.integers(
-                    int(params.tuition_inst_min),
-                    int(params.tuition_inst_max) + 1,
+                    int(transfer_cfg.inst_min),
+                    int(transfer_cfg.inst_max) + 1,
                 ),
             )
         )
 
         total_tuition = float(
             gen.lognormal(
-                mean=float(params.tuition_mu),
-                sigma=float(params.tuition_sigma),
+                mean=float(transfer_cfg.mu),
+                sigma=float(transfer_cfg.sigma),
             )
         )
         total_tuition = round(max(200.0, total_tuition), 2)
@@ -102,7 +101,7 @@ def generate(
             final_amount = round(max(10.0, installment_amount * (1.0 + noise)), 2)
 
             txns.append(
-                request.txf.make(
+                rt.txf.make(
                     TransactionDraft(
                         source=payer_acct,
                         destination=payee,

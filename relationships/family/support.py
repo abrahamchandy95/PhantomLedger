@@ -3,7 +3,7 @@ from typing import cast
 
 import numpy as np
 
-from common import config
+from common.config import population as pop_config
 from common.persona_names import RETIRED, SALARIED, FREELANCER, HNW, SMALLBIZ
 
 
@@ -43,7 +43,7 @@ def _sample_supporter_count(gen: np.random.Generator) -> int:
 
 
 def build(
-    cfg: config.Family,
+    cfg: pop_config.RetireeSupport,
     gen: np.random.Generator,
     *,
     households: list[list[str]],
@@ -75,7 +75,7 @@ def build(
                 continue
 
         # 2. Probability check: Does this retiree actually receive external support?
-        if float(gen.random()) >= float(cfg.retiree_has_child_p):
+        if float(gen.random()) >= float(cfg.has_child_p):
             continue
 
         # 3. Determine the pool of potential supporters
@@ -88,7 +88,7 @@ def build(
 
         # Prefer co-residing supporters if configured
         use_resident = bool(resident_supporters) and (
-            float(gen.random()) < float(cfg.retiree_coresides_p)
+            float(gen.random()) < float(cfg.coresides_p)
         )
 
         pool = resident_supporters if use_resident else supporters

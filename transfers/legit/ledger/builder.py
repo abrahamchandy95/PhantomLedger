@@ -4,6 +4,7 @@ from heapq import merge
 import transfers.balances as balances_model
 
 from common.transactions import Transaction
+from transfers.family.engine import GraphConfig, TransferConfig
 from transfers.factory import TransactionFactory
 from transfers.government import generate as generate_government_txns
 
@@ -53,6 +54,8 @@ def _merge_by_timestamp(
 @dataclass(slots=True)
 class LegitTransferBuilder:
     request: Blueprint
+    fam_graph_cfg: GraphConfig
+    fam_transfer_cfg: TransferConfig
 
     @property
     def timeline(self):
@@ -194,7 +197,11 @@ class LegitTransferBuilder:
             )
         )
 
-        extend(generate_family_txns(self.request, plan, txf))
+        extend(
+            generate_family_txns(
+                self.request, self.fam_graph_cfg, self.fam_transfer_cfg, plan, txf
+            )
+        )
 
         extend(
             generate_credit_lifecycle_txns(

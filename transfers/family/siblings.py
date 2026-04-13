@@ -18,25 +18,26 @@ from typing import cast
 
 import numpy as np
 
+from common.config import population as pop_config
 from common.channels import SIBLING_TRANSFER
 from common.family_accounts import resolve_family_acct
 from common.math import as_int, lognormal_by_median
 from common.transactions import Transaction
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest, Schedule
+from .engine import Runtime, Schedule
 
 
 def _find_sibling_pairs(
-    request: GenerateRequest,
+    rt: Runtime,
 ) -> list[tuple[str, str]]:
     """Finds adult non-spouse pairs within each household."""
-    spouses = request.family.spouses
+    spouses = rt.family.spouses
     pairs: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
-    for hh in request.family.households:
-        adults = [p for p in hh if request.personas.get(p, "salaried") != "student"]
+    for hh in rt.family.households:
+        adults = [p for p in hh if rt.personas.get(p, "salaried") != "student"]
         if len(adults) < 2:
             continue
 
@@ -54,29 +55,30 @@ def _find_sibling_pairs(
 
 
 def generate(
-    request: GenerateRequest,
+    rt: Runtime,
+    transfer_cfg: pop_config.SiblingTransfers,
+    routing_cfg: pop_config.Routing,
     schedule: Schedule,
     gen: np.random.Generator,
 ) -> list[Transaction]:
     """Generates irregular transfers between adult siblings."""
-    params = request.params
-    if not params.sibling_transfer_enabled:
+    if not transfer_cfg.enabled:
         return []
 
-    pairs = _find_sibling_pairs(request)
+    pairs = _find_sibling_pairs(rt)
     if not pairs:
         return []
 
     txns: list[Transaction] = []
-    external_p = float(params.external_family_p)
+    external_p = float(routing_cfg.external_p)
 
     for person_a, person_b in pairs:
         # Only a fraction of sibling pairs actively exchange money
-        if float(gen.random()) >= float(params.sibling_active_p):
+        if float(gen.random()) >= float(transfer_cfg.active_p):
             continue
 
-        acct_a = resolve_family_acct(person_a, request.primary_accounts, external_p)
-        acct_b = resolve_family_acct(person_b, request.primary_accounts, external_p)
+        acct_a = resolve_family_acct(person_a, rt.primary_accounts, external_p)
+        acct_b = resolve_family_acct(person_b, rt.primary_accounts, external_p)
 
         if not acct_a or not acct_b or acct_a == acct_b:
             continue
@@ -84,7 +86,7 @@ def generate(
             continue
 
         for month_start in schedule.month_starts:
-            if float(gen.random()) >= float(params.sibling_monthly_p):
+            if float(gen.random()) >= float(transfer_cfg.monthly_p):
                 continue
 
             # Direction is roughly random between siblings
@@ -96,8 +98,8 @@ def generate(
             amt = float(
                 lognormal_by_median(
                     gen,
-                    median=float(params.sibling_median),
-                    sigma=float(params.sibling_sigma),
+                    median=float(transfer_cfg.median),
+                    sigma=float(transfer_cfg.sigma),
                 )
             )
             amt = round(max(5.0, amt), 2)
@@ -115,7 +117,7 @@ def generate(
                 break
 
             txns.append(
-                request.txf.make(
+                rt.txf.make(
                     TransactionDraft(
                         source=src,
                         destination=dst,

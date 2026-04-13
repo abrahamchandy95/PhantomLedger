@@ -11,8 +11,8 @@ def generate_credit_lifecycle_txns(
     txf: TransactionFactory,
     existing_txns: list[Transaction],
 ) -> list[Transaction]:
-    cards = request.credit_runtime.cards
-    if not request.credit_runtime.enabled() or cards is None:
+    cards = request.cc_state.cards
+    if not request.cc_state.enabled() or cards is None:
         return []
 
     lifecycle = request.specs.cc_profile

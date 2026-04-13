@@ -3,7 +3,7 @@ from typing import cast
 
 import numpy as np
 
-from common import config
+from common.config import population as pop_config
 from common.persona_names import STUDENT, SALARIED
 
 
@@ -21,7 +21,8 @@ def _is_student(persona_map: dict[str, str], person_id: str) -> bool:
 
 
 def build(
-    cfg: config.Family,
+    household_cfg: pop_config.Households,
+    dependents_cfg: pop_config.Dependents,
     gen: np.random.Generator,
     *,
     households: list[list[str]],
@@ -49,7 +50,7 @@ def build(
             else:
                 adults.append(person_id)
 
-        if len(adults) >= 2 and float(gen.random()) < float(cfg.spouse_p):
+        if len(adults) >= 2 and float(gen.random()) < float(household_cfg.spouse_p):
             idx1, idx2 = cast(
                 list[int], gen.choice(len(adults), size=2, replace=False).tolist()
             )
@@ -62,11 +63,11 @@ def build(
             continue
 
         for child in students:
-            if float(gen.random()) >= float(cfg.student_dependent_p):
+            if float(gen.random()) >= float(dependents_cfg.student_dependent_p):
                 continue
 
             use_local = (len(adults) >= 1) and (
-                float(gen.random()) < float(cfg.student_coresides_p)
+                float(gen.random()) < float(dependents_cfg.student_coresides_p)
             )
             pool = adults if use_local else global_adults
 
@@ -74,7 +75,7 @@ def build(
                 continue
 
             wants_two = (len(pool) >= 2) and (
-                float(gen.random()) < float(cfg.two_parent_p)
+                float(gen.random()) < float(dependents_cfg.two_parent_p)
             )
 
             if wants_two:

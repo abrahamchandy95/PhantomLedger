@@ -5,7 +5,6 @@ from .population.accounts import Accounts
 from .population.hubs import Hubs
 from .population.personas import Personas
 from .population.merchants import Merchants
-from .population.family import Family
 from .population.social import Social
 from .population.government import Government
 from .population.insurance import Insurance
@@ -21,7 +20,6 @@ __all__ = [
     "Hubs",
     "Personas",
     "Merchants",
-    "Family",
     "Social",
     "Government",
     "Insurance",
