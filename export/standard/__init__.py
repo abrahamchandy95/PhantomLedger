@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from common.progress import maybe_tqdm, status
 from common.run import UseCase
 from common.schema import HAS_PAID, LEDGER
 from pipeline.result import SimulationResult
@@ -16,9 +17,16 @@ def export(
     result: SimulationResult,
     out_dir: Path,
     show_transactions: bool,
+    include_standard_export: bool = True,
 ) -> None:
-    has_paid_rows = list(has_paid(result.transfers.final_txns))
-    write_csv(out_dir / HAS_PAID.filename, HAS_PAID.header, has_paid_rows)
+    _ = include_standard_export
+
+    status("Export: writing standard CSV tables...")
+    write_csv(
+        out_dir / HAS_PAID.filename,
+        HAS_PAID.header,
+        has_paid(result.transfers.final_txns),
+    )
 
     if show_transactions:
         write_csv(
@@ -27,5 +35,10 @@ def export(
             ledger(result.transfers.final_txns),
         )
 
-    for spec, rows in build_tables(result.entities, result.infra):
+    for spec, rows in maybe_tqdm(
+        list(build_tables(result.entities, result.infra)),
+        desc="standard export",
+        unit="table",
+        leave=False,
+    ):
         write_csv(out_dir / spec.filename, spec.header, rows)

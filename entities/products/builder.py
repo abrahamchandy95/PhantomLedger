@@ -390,12 +390,12 @@ def _try_tax(
     persona_name: str,
 ) -> TaxTerms | None:
     quarterly = 0.0
-    if float(gen.random()) < cfg.estimated_payment_p(persona_name):
+    if float(gen.random()) < cfg.ownership_p(persona_name):
         quarterly = float(
             lognormal_by_median(
                 gen,
-                median=cfg.quarterly_median,
-                sigma=cfg.quarterly_sigma,
+                median=cfg.quarterly_amount_median,
+                sigma=cfg.quarterly_amount_sigma,
             )
         )
         quarterly = round(max(100.0, quarterly), 2)
@@ -412,8 +412,8 @@ def _try_tax(
         refund_amount = float(
             lognormal_by_median(
                 gen,
-                median=cfg.refund_median,
-                sigma=cfg.refund_sigma,
+                median=cfg.refund_amount_median,
+                sigma=cfg.refund_amount_sigma,
             )
         )
         refund_amount = round(max(100.0, refund_amount), 2)
@@ -423,8 +423,8 @@ def _try_tax(
         balance_due_amount = float(
             lognormal_by_median(
                 gen,
-                median=cfg.balance_due_median,
-                sigma=cfg.balance_due_sigma,
+                median=cfg.balance_due_amount_median,
+                sigma=cfg.balance_due_amount_sigma,
             )
         )
         balance_due_amount = round(max(100.0, balance_due_amount), 2)

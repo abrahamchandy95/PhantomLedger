@@ -1,17 +1,16 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import cast
 
-import numpy as np
 
 import entities.models as models
-from common.math import I32, as_int, cdf_pick
+from common.math import cdf_pick
 from common.persona_names import SALARIED
+from common.progress import maybe_tqdm
 from common.transactions import Transaction
 from entities.personas import PERSONAS
 from math_models.counts import DEFAULT_RATES, weekday_multiplier
 from math_models.seasonal import monthly_multiplier
-from math_models.timing import sample_offsets
+from math_models.timing import sample_offset
 from transfers.factory import TransactionFactory
 from transfers.screening import advance_book_through
 
@@ -214,7 +213,12 @@ class _Generator:
         total_person_days = active_spenders * self.request.days
         processed_person_days = 0
 
-        for day_index in range(self.request.days):
+        for day_index in maybe_tqdm(
+            range(self.request.days),
+            desc="day-to-day",
+            unit="day",
+            leave=False,
+        ):
             if _is_month_boundary(day_index, day_index - 1, self.request.start_date):
                 evolve_all_monthly(
                     self.request.rng,
@@ -320,18 +324,11 @@ class _Generator:
 
                 while accepted < txn_count and attempt_budget > 0:
                     attempt_budget -= 1
-
-                    offsets: I32 = np.asarray(
-                        sample_offsets(
-                            self.request.rng,
-                            spender.persona.timing_profile,
-                            1,
-                            ctx.population.timing,
-                        ),
-                        dtype=np.int32,
+                    offset_sec = sample_offset(
+                        self.request.rng,
+                        spender.persona.timing_profile,
+                        ctx.population.timing,
                     )
-
-                    offset_sec = as_int(cast(int | np.integer, offsets[0]))
                     event = Event(
                         person_idx=person_idx,
                         spender=spender,

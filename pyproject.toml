@@ -6,7 +6,12 @@ build-backend = "setuptools.build_meta"
 name = "PhantomLedger"
 version = "0.1.0"
 requires-python = ">=3.14"
-dependencies = ["numpy==2.4.2"]
+dependencies = [
+    "numpy==2.4.2",
+    "Faker==40.13.0",
+    "pgeocode==0.5.0",
+    "tqdm>=4.67,<5",
+]
 
 [project.optional-dependencies]
 dev = ["basedpyright==1.38.0"]

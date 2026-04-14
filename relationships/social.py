@@ -6,6 +6,7 @@ import numpy as np
 
 from common import config
 from common.math import F64, I32, build_cdf, cdf_pick
+from common.progress import maybe_tqdm
 from common.random import Rng, RngFactory
 
 DEFAULT_CONFIG = config.Social()
@@ -54,7 +55,6 @@ def _assign_communities(
     c_max: int,
 ) -> tuple[list[int], list[int], list[int]]:
     """Partitions the population into contiguous neighborhood blocks."""
-    # Strictly typed to satisfy basedpyright
     starts: list[int] = []
     ends: list[int] = []
     member_map: list[int] = [0] * n_people
@@ -244,7 +244,9 @@ def build(
     contacts = np.empty((n_people, degree), dtype=np.int32)
     rng_factory = RngFactory(seed)
 
-    for src_idx, person_id in enumerate(people):
+    for src_idx, person_id in enumerate(
+        maybe_tqdm(people, desc="social graph", unit="person", miniters=2_000)
+    ):
         prng = rng_factory.rng("p2p_contacts", person_id)
 
         # Draw base unique contacts

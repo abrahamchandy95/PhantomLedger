@@ -14,3 +14,5 @@ class RunOptions:
     usecase: UseCase = UseCase.STANDARD
     out_dir: Path = Path("out_bank_data")
     show_transactions: bool = False
+    progress: bool = False
+    include_standard_export: bool = True

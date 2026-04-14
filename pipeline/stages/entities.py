@@ -59,7 +59,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
     family_external_accounts = planned_external_family_accounts(
         people.ids,
         primary_accounts,
-        float(cfg.family.external_family_p),
+        float(cfg.family_routing.external_p),
     )
     if family_external_accounts:
         accounts = merge_owned_accounts(

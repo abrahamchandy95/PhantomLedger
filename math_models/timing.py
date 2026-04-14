@@ -148,3 +148,21 @@ def sample_offsets(
     seconds = rng.gen.integers(0, 60, size=n)
 
     return (hours * 3600 + minutes * 60 + seconds).astype(np.int32)
+
+
+def sample_offset(
+    rng: Rng,
+    profile_name: str,
+    profiles: Profiles = DEFAULT_PROFILES,
+) -> int:
+    """
+    Scalar version for the hot transaction-generation loop.
+    Avoids allocating three 1-element numpy arrays for every sampled offset.
+    """
+    p = profiles.get(profile_name)
+
+    hour = int(rng.gen.choice(24, p=p))
+    minute = int(rng.gen.integers(0, 60))
+    second = int(rng.gen.integers(0, 60))
+
+    return hour * 3600 + minute * 60 + second

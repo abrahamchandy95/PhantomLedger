@@ -135,10 +135,6 @@ ML_PARTY: Final[Table] = Table(
     header=(
         "id",
         "isFraud",
-        "isMule",
-        "isOrganizer",
-        "isVictim",
-        "isSoloFraud",
         "phoneNumber",
         "email",
         "name",
