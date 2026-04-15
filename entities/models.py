@@ -1,7 +1,7 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from common.math import F64
-from common.validate import between, ge, gt
+from common.validate import validate_metadata
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,26 +39,20 @@ class Ring:
 @dataclass(frozen=True, slots=True)
 class Persona:
     name: str
-    rate_multiplier: float
-    amount_multiplier: float
     timing_profile: str
-    initial_balance: float
-    card_prob: float
-    cc_share: float
-    credit_limit: float
-    weight: float
-    paycheck_sensitivity: float = 0.0
+
+    rate_multiplier: float = field(metadata={"gt": 0.0})
+    amount_multiplier: float = field(metadata={"gt": 0.0})
+    initial_balance: float = field(metadata={"gt": 0.0})
+    card_prob: float = field(metadata={"between": (0.0, 1.0)})
+    cc_share: float = field(metadata={"between": (0.0, 1.0)})
+    credit_limit: float = field(metadata={"gt": 0.0})
+    weight: float = field(metadata={"ge": 0.0})
+
+    paycheck_sensitivity: float = field(default=0.0, metadata={"between": (0.0, 1.0)})
 
     def __post_init__(self) -> None:
-        """Validates inputs the moment the dataclass is instantiated."""
-        gt("rate_multiplier", self.rate_multiplier, 0.0)
-        gt("amount_multiplier", self.amount_multiplier, 0.0)
-        gt("initial_balance", self.initial_balance, 0.0)
-        between("card_prob", self.card_prob, 0.0, 1.0)
-        between("cc_share", self.cc_share, 0.0, 1.0)
-        gt("credit_limit", self.credit_limit, 0.0)
-        ge("weight", self.weight, 0.0)
-        between("paycheck_sensitivity", self.paycheck_sensitivity, 0.0, 1.0)
+        validate_metadata(self)
 
 
 @dataclass(frozen=True, slots=True)

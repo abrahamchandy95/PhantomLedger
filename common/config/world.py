@@ -29,6 +29,16 @@ from .simulation.fraud import Fraud, Patterns
 
 
 @dataclass(frozen=True, slots=True)
+class MarketConditions:
+    """The overarching timeframe and macro rules for buyers of goods."""
+
+    window: Window = field(default_factory=Window)
+    outflow_rules: Events = field(default_factory=Events)
+    merchants: Merchants = field(default_factory=Merchants)
+    base_seed: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class World:
     window: Window = field(default_factory=Window)
 

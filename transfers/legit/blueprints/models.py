@@ -61,7 +61,7 @@ class TransfersPayload:
     hub_accounts: list[str]
     biller_accounts: list[str]
     employers: list[str]
-    initial_book: balances_model.Ledger | None = None
+    initial_book: balances_model.ClearingHouse | None = None
     replay_sorted_txns: list[Transaction] = field(default_factory=list)
 
 

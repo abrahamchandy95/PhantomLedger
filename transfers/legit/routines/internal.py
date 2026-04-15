@@ -12,7 +12,7 @@ from common.math import lognormal_by_median
 from common.random import Rng
 from common.transactions import Transaction
 from common.validate import between, ge, gt
-from transfers.balances import Ledger
+from transfers.balances import ClearingHouse
 from transfers.factory import TransactionDraft, TransactionFactory
 from transfers.screening import advance_book_through
 
@@ -72,7 +72,7 @@ def _choose_source_account(
     rng: Rng,
     eligible: list[str],
     amount: float,
-    book: Ledger | None,
+    book: ClearingHouse | None,
 ) -> str | None:
     if not eligible:
         return None
@@ -96,7 +96,7 @@ def _choose_destination_account(
     rng: Rng,
     source: str,
     eligible: list[str],
-    book: Ledger | None,
+    book: ClearingHouse | None,
 ) -> str | None:
     destinations = [acct for acct in eligible if acct != source]
     if not destinations:
@@ -117,7 +117,7 @@ def generate(
     accounts_by_person: dict[str, list[str]],
     cfg: SelfTransferConfig = DEFAULT_SELF_TRANSFER_CONFIG,
     *,
-    book: Ledger | None = None,
+    book: ClearingHouse | None = None,
     base_txns: Sequence[Transaction] | None = None,
     base_txns_sorted: bool = False,
 ) -> list[Transaction]:

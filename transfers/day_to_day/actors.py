@@ -7,11 +7,17 @@ import numpy as np
 import entities.models as models
 from common.math import Scalar, as_float, as_int
 from common.persona_names import SALARIED
+from common.random import Rng
 from entities.personas import PERSONAS
 from math_models.counts import DEFAULT_RATES, weekday_multiplier
 from transfers.factory import TransactionFactory
 
-from .engine import GenerateRequest
+from .environment import (
+    BurstBehavior,
+    ExplorationHabits,
+    MerchantView,
+    PopulationView,
+)
 
 
 _FALLBACK_PERSONA = PERSONAS[SALARIED]
@@ -53,12 +59,17 @@ class Event:
     explore_p: float
 
 
-def build_day(request: GenerateRequest, index: int) -> Day:
-    start = request.start_date + timedelta(days=index)
+def build_day(
+    start_date: datetime,
+    day_multiplier_shape: float,
+    rng: Rng,
+    index: int,
+) -> Day:
+    start = start_date + timedelta(days=index)
     is_weekend = start.weekday() >= 5
 
-    shape = float(request.events.day_multiplier_shape)
-    shock = float(request.rng.gen.gamma(shape=shape, scale=(1.0 / shape)))
+    shape = float(day_multiplier_shape)
+    shock = float(rng.gen.gamma(shape=shape, scale=(1.0 / shape)))
 
     return Day(
         index=index,
@@ -68,10 +79,11 @@ def build_day(request: GenerateRequest, index: int) -> Day:
     )
 
 
-def build_spender(request: GenerateRequest, index: int) -> Spender | None:
-    pop = request.ctx.population
-    merch = request.ctx.merchant
-
+def build_spender(
+    pop: PopulationView,
+    merch: MerchantView,
+    index: int,
+) -> Spender | None:
     person_id = pop.persons[index]
     deposit_acct = pop.primary_accounts.get(person_id)
     if deposit_acct is None:
@@ -111,7 +123,7 @@ def count_liquidity_factor(liquidity_multiplier: float) -> float:
 
 
 def sample_txn_count(
-    request: GenerateRequest,
+    rng: Rng,
     spender: Spender,
     day: Day,
     base_rate: float,
@@ -148,7 +160,7 @@ def sample_txn_count(
     frac = float(rate) - float(whole)
 
     count = whole
-    if request.rng.float() < frac:
+    if rng.float() < frac:
         count += 1
 
     if limit is not None:
@@ -158,17 +170,16 @@ def sample_txn_count(
 
 
 def calculate_explore_p(
-    request: GenerateRequest,
+    base_explore_p: float,
+    explore_habits: ExplorationHabits,
+    burst_behavior: BurstBehavior,
     spender: Spender,
     day: Day,
 ) -> float:
-    base_p = float(request.merchants_cfg.explore_p)
-    params = request.params
-
-    explore_p = base_p * (0.25 + 0.75 * spender.explore_prop)
+    explore_p = base_explore_p * (0.25 + 0.75 * spender.explore_prop)
 
     if day.is_weekend:
-        explore_p *= float(params.weekend_boost)
+        explore_p *= float(explore_habits.weekend_multiplier)
 
     in_burst_window = (
         spender.burst_start >= 0
@@ -177,6 +188,6 @@ def calculate_explore_p(
     )
 
     if in_burst_window:
-        explore_p *= float(params.burst_boost)
+        explore_p *= float(burst_behavior.multiplier)
 
     return min(0.50, max(0.0, explore_p))

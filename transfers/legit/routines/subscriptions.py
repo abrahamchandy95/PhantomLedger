@@ -18,7 +18,7 @@ from common.math import as_int
 from common.random import Rng, derive_seed
 from common.transactions import Transaction
 from common.validate import between, ge
-from transfers.balances import Ledger
+from transfers.balances import ClearingHouse
 from transfers.factory import TransactionDraft, TransactionFactory
 from transfers.screening import advance_book_through
 
@@ -114,7 +114,7 @@ def generate(
     txf: TransactionFactory,
     cfg: SubscriptionConfig = DEFAULT_SUBSCRIPTION_CONFIG,
     *,
-    book: Ledger | None = None,
+    book: ClearingHouse | None = None,
     base_txns: Sequence[Transaction] | None = None,
     base_txns_sorted: bool = False,
 ) -> list[Transaction]:

@@ -1,28 +1,15 @@
-from dataclasses import dataclass
-
-from common.validate import (
-    between,
-    gt,
-    ge,
-)
+from dataclasses import dataclass, field
+from common.validate import validate_metadata
 
 
 @dataclass(frozen=True, slots=True)
 class Events:
-    clearing_accounts: int = 3
+    clearing_accounts: int = field(default=3, metadata={"ge": 0})
+    unknown_outflow_p: float = field(default=0.05, metadata={"between": (0.0, 1.0)})
+    day_multiplier_shape: float = field(default=1.3, metadata={"gt": 0.0})
 
-    unknown_outflow_p: float = 0.05
-
-    day_multiplier_shape: float = 1.3
-
-    # Per-person safety valve only.
-    max_per_person_per_day: int = 0
-
-    prefer_billers_p: float = 0.55
+    max_per_person_per_day: int = field(default=0, metadata={"ge": 0})
+    prefer_billers_p: float = field(default=0.55, metadata={"between": (0.0, 1.0)})
 
     def __post_init__(self) -> None:
-        ge("clearing_accounts", self.clearing_accounts, 0)
-        between("unknown_outflow_p", self.unknown_outflow_p, 0.0, 1.0)
-        gt("day_multiplier_shape", self.day_multiplier_shape, 0.0)
-        ge("max_per_person_per_day", self.max_per_person_per_day, 0)
-        between("prefer_billers_p", self.prefer_billers_p, 0.0, 1.0)
+        validate_metadata(self)

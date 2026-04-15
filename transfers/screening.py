@@ -2,11 +2,11 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from common.transactions import Transaction
-from transfers.balances import Ledger
+from transfers.balances import ClearingHouse
 
 
 def advance_book_through(
-    book: Ledger | None,
+    book: ClearingHouse | None,
     base_txns: Sequence[Transaction],
     start_idx: int,
     until_ts: datetime,

@@ -21,6 +21,10 @@ class Profiles:
     consumer_day: np.ndarray
     business: np.ndarray
 
+    consumer_cdf: np.ndarray
+    consumer_day_cdf: np.ndarray
+    business_cdf: np.ndarray
+
     def get(self, name: str) -> np.ndarray:
         """Routes a profile string to the correct probability array."""
         if name == "consumer":
@@ -30,6 +34,22 @@ class Profiles:
         if name == "business":
             return self.business
         raise ValueError(f"unknown timing profile: {name}")
+
+    def get_cdf(self, name: str) -> np.ndarray:
+        """Routes to pre-computed CDF for faster searchsorted sampling."""
+        if name == "consumer":
+            return self.consumer_cdf
+        if name == "consumer_day":
+            return self.consumer_day_cdf
+        if name == "business":
+            return self.business_cdf
+        raise ValueError(f"unknown timing profile: {name}")
+
+
+def _make_cdf(p: np.ndarray) -> np.ndarray:
+    cdf = np.cumsum(p)
+    cdf[-1] = 1.0
+    return cdf
 
 
 def _build_defaults() -> Profiles:
@@ -121,8 +141,17 @@ def _build_defaults() -> Profiles:
         ],
         dtype=np.float64,
     )
+    cn = _normalize(c)
+    cdn = _normalize(c_day)
+    bn = _normalize(b)
+
     return Profiles(
-        consumer=_normalize(c), consumer_day=_normalize(c_day), business=_normalize(b)
+        consumer=cn,
+        consumer_day=cdn,
+        business=bn,
+        consumer_cdf=_make_cdf(cn),
+        consumer_day_cdf=_make_cdf(cdn),
+        business_cdf=_make_cdf(bn),
     )
 
 
@@ -157,12 +186,42 @@ def sample_offset(
 ) -> int:
     """
     Scalar version for the hot transaction-generation loop.
-    Avoids allocating three 1-element numpy arrays for every sampled offset.
-    """
-    p = profiles.get(profile_name)
 
-    hour = int(rng.gen.choice(24, p=p))
+    Uses pre-computed CDF with searchsorted
+    """
+    cdf = profiles.get_cdf(profile_name)
+
+    u = float(rng.gen.random())
+    hour = int(np.searchsorted(cdf, u))
+    if hour >= 24:
+        hour = 23
+
     minute = int(rng.gen.integers(0, 60))
     second = int(rng.gen.integers(0, 60))
 
     return hour * 3600 + minute * 60 + second
+
+
+def sample_offsets_batch(
+    rng: Rng,
+    profile_name: str,
+    n: int,
+    profiles: Profiles = DEFAULT_PROFILES,
+) -> np.ndarray:
+    """
+    Batch version that samples n offsets at once using
+    vectorized searchsorted, much faster than n individual calls.
+    """
+    if n <= 0:
+        return np.zeros(0, dtype=np.int32)
+
+    cdf = profiles.get_cdf(profile_name)
+
+    u = rng.gen.random(n)
+    hours = np.searchsorted(cdf, u).astype(np.int32)
+    hours = np.minimum(hours, 23)
+
+    minutes = rng.gen.integers(0, 60, size=n, dtype=np.int32)
+    seconds = rng.gen.integers(0, 60, size=n, dtype=np.int32)
+
+    return hours * 3600 + minutes * 60 + seconds

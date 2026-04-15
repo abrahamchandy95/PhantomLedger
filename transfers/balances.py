@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -32,6 +31,12 @@ type PersonaFloatLookup = Callable[[str], float]
 class TransferDecision:
     accepted: bool
     reason: str | None = None
+
+
+_DECISION_ACCEPTED = TransferDecision(True)
+_DECISION_INVALID = TransferDecision(False, REJECT_INVALID_AMOUNT)
+_DECISION_EXT_TO_EXT = TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
+_DECISION_INSUFFICIENT = TransferDecision(False, REJECT_INSUFFICIENT_FUNDS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,7 +237,7 @@ def _sample_limits_by_persona(
 
 
 @dataclass(slots=True)
-class Ledger:
+class ClearingHouse:
     """Manages account balances and available liquidity."""
 
     balances: F64
@@ -243,8 +248,8 @@ class Ledger:
     hub_indices: set[int]
     external_indices: set[int]
 
-    def copy(self) -> Ledger:
-        return Ledger(
+    def copy(self) -> ClearingHouse:
+        return ClearingHouse(
             balances=np.array(self.balances, copy=True, dtype=np.float64),
             overdrafts=np.array(self.overdrafts, copy=True, dtype=np.float64),
             linked_buffers=np.array(self.linked_buffers, copy=True, dtype=np.float64),
@@ -256,7 +261,7 @@ class Ledger:
             external_indices=set(self.external_indices),
         )
 
-    def restore_from(self, other: Ledger) -> None:
+    def restore_from(self, other: ClearingHouse) -> None:
         if self.account_indices != other.account_indices:
             raise ValueError(
                 "cannot restore from ledger with different account indices"
@@ -277,16 +282,15 @@ class Ledger:
         return self.account_indices.get(account)
 
     def _available_liquidity(self, idx: int) -> float:
-        total = (
-            cast(np.float64, self.balances[idx])
-            + cast(np.float64, self.overdrafts[idx])
-            + cast(np.float64, self.linked_buffers[idx])
-            + cast(np.float64, self.courtesy_buffers[idx])
+        return float(
+            self.balances.item(idx)
+            + self.overdrafts.item(idx)
+            + self.linked_buffers.item(idx)
+            + self.courtesy_buffers.item(idx)
         )
-        return float(total)
 
     def available_to_spend(self, account: str) -> float:
-        idx = self._index_of(account)
+        idx = self.account_indices.get(account)
         if idx is None:
             return 0.0
         if idx in self.hub_indices:
@@ -294,15 +298,15 @@ class Ledger:
         return self._available_liquidity(idx)
 
     def available_cash(self, account: str) -> float:
-        idx = self._index_of(account)
+        idx = self.account_indices.get(account)
         if idx is None:
             return 0.0
         if idx in self.hub_indices:
             return float("inf")
-        return float(cast(np.float64, self.balances[idx]))
+        return float(self.balances.item(idx))
 
     def set_credit_limit(self, account: str, limit_value: float) -> None:
-        idx = self._index_of(account)
+        idx = self.account_indices.get(account)
         if idx is None:
             return
 
@@ -327,68 +331,64 @@ class Ledger:
 
         amt = float(amount)
         if amt <= 0.0 or not np.isfinite(amt):
-            return TransferDecision(False, REJECT_INVALID_AMOUNT)
+            return _DECISION_INVALID
 
-        src_idx = self._index_of(src)
-        dst_idx = self._index_of(dst)
+        acct_idx = self.account_indices
+        ext_idx = self.external_indices
+        hub_idx = self.hub_indices
+        balances = self.balances
 
-        src_ext = src_idx is not None and src_idx in self.external_indices
-        dst_ext = dst_idx is not None and dst_idx in self.external_indices
+        src_idx = acct_idx.get(src)
+        dst_idx = acct_idx.get(dst)
 
-        if src_idx is None:
-            src_ext = True
-        if dst_idx is None:
-            dst_ext = True
+        src_ext = src_idx is None or src_idx in ext_idx
+        dst_ext = dst_idx is None or dst_idx in ext_idx
 
         if src_ext and dst_ext:
-            return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
-
-        balances = self.balances
-        hubs = self.hub_indices
+            return _DECISION_EXT_TO_EXT
 
         # Inbound from external into a known internal account.
         if src_ext:
             if dst_idx is None:
-                return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
+                return _DECISION_EXT_TO_EXT
             balances[dst_idx] += amt
-            return TransferDecision(True)
+            return _DECISION_ACCEPTED
 
         # src is internal from here onward.
         if src_idx is None:
-            return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
+            return _DECISION_EXT_TO_EXT
 
-        is_hub = src_idx in hubs
+        is_hub = src_idx in hub_idx
         if not is_hub:
             # Self-transfers must be funded by actual cash, not protection liquidity.
-            spendable = (
-                float(cast(np.float64, balances[src_idx]))
-                if channel == SELF_TRANSFER
-                else self._available_liquidity(src_idx)
-            )
+            if channel == SELF_TRANSFER:
+                spendable = float(balances.item(src_idx))
+            else:
+                spendable = self._available_liquidity(src_idx)
             if spendable < amt:
-                return TransferDecision(False, REJECT_INSUFFICIENT_FUNDS)
+                return _DECISION_INSUFFICIENT
 
         # Outbound to external.
         if dst_ext:
             if not is_hub:
                 balances[src_idx] -= amt
-            return TransferDecision(True)
+            return _DECISION_ACCEPTED
 
         # Internal transfer.
         if dst_idx is None:
-            return TransferDecision(False, REJECT_EXTERNAL_TO_EXTERNAL)
+            return _DECISION_EXT_TO_EXT
 
         if not is_hub:
             balances[src_idx] -= amt
         balances[dst_idx] += amt
-        return TransferDecision(True)
+        return _DECISION_ACCEPTED
 
 
 def initialize(
     rules: Rules,
     rng: Rng,
     params: SetupParams,
-) -> Ledger:
+) -> ClearingHouse:
     """Bootstrap a new Ledger with randomized balances and liquidity buffers."""
 
     num_accounts = len(params.accounts)
@@ -442,7 +442,7 @@ def initialize(
         idx for acct, idx in params.account_indices.items() if is_external(acct)
     }
 
-    return Ledger(
+    return ClearingHouse(
         balances=balances,
         overdrafts=overdrafts,
         linked_buffers=linked_buffers,

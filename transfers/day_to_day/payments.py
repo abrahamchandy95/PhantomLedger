@@ -4,31 +4,32 @@ import numpy as np
 
 from common.channels import BILL, EXTERNAL_UNKNOWN, P2P
 from common.math import as_int
+from common.random import Rng
 from common.transactions import Transaction
+from entities import models as entity_models
 from math_models.amount_model import (
     BILL as BILL_MODEL,
     EXTERNAL_UNKNOWN as EXTERNAL_MODEL,
     P2P as P2P_MODEL,
     merchant_amount,
 )
+from relationships.social import Graph
 from transfers.factory import TransactionDraft
 
-from .engine import GenerateRequest
+from .environment import MerchantView, PopulationView
 from .merchant import choose_merchant, draft_merchant_spec
-from .state import Event
+from .actors import Event
 
 
-def p2p(request: GenerateRequest, event: Event) -> Transaction | None:
-    ctx = request.ctx
-    pop = ctx.population
+def p2p(
+    rng: Rng, pop: PopulationView, social: Graph, event: Event
+) -> Transaction | None:
     spender = event.spender
 
     contact_idx = as_int(
         cast(
             int | np.integer,
-            ctx.social.contacts[
-                event.person_idx, request.rng.int(0, ctx.social.degree)
-            ],
+            social.contacts[event.person_idx, rng.int(0, social.degree)],
         )
     )
 
@@ -41,7 +42,7 @@ def p2p(request: GenerateRequest, event: Event) -> Transaction | None:
     if not dst_acct or dst_acct == spender.deposit_acct:
         return None
 
-    amount = P2P_MODEL.sample(request.rng) * float(spender.persona.amount_multiplier)
+    amount = P2P_MODEL.sample(rng) * float(spender.persona.amount_multiplier)
     amount = round(max(1.0, amount), 2)
 
     return event.txf.make(
@@ -56,16 +57,12 @@ def p2p(request: GenerateRequest, event: Event) -> Transaction | None:
 
 
 def bill(
-    request: GenerateRequest,
-    event: Event,
-    prefer_billers_p: float,
+    rng: Rng, merch: MerchantView, event: Event, prefer_billers_p: float
 ) -> Transaction:
-    ctx = request.ctx
-    merch = ctx.merchant
     spender = event.spender
 
-    if spender.bill_k > 0 and request.rng.coin(prefer_billers_p):
-        idx = request.rng.int(0, max(1, spender.bill_k))
+    if spender.bill_k > 0 and rng.coin(prefer_billers_p):
+        idx = rng.int(0, max(1, spender.bill_k))
         biller_idx = as_int(
             cast(int | np.integer, merch.billers_idx[event.person_idx, idx])
         )
@@ -73,14 +70,14 @@ def bill(
         biller_idx = as_int(
             cast(
                 int | np.integer,
-                np.searchsorted(merch.biller_cdf, request.rng.float(), side="right"),
+                np.searchsorted(merch.biller_cdf, rng.float(), side="right"),
             )
         )
         if biller_idx >= int(merch.biller_cdf.size):
             biller_idx = int(merch.biller_cdf.size) - 1
 
     dst_acct = merch.merchants.counterparties[biller_idx]
-    amount = BILL_MODEL.sample(request.rng)
+    amount = BILL_MODEL.sample(rng)
 
     return event.txf.make(
         TransactionDraft(
@@ -93,27 +90,22 @@ def bill(
     )
 
 
-def external(request: GenerateRequest, event: Event) -> Transaction:
+def external(rng: Rng, merchants: entity_models.Merchants, event: Event) -> Transaction:
     """
     External unknown outflow.
 
-    FIX: Previously used p2p_amount() (median $45, sigma 0.8).
-    External unknowns represent wire transfers, online bill pay to
-    unrecognized billers, and marketplace purchases — structurally
-    different from casual P2P transfers.
 
-    Now uses EXTERNAL_UNKNOWN model (median $120, sigma 0.95)
+    Uses EXTERNAL_UNKNOWN model (median $120, sigma 0.95)
     per Fed Payments Study 2024 non-card remote payment data.
     """
-    merchants = request.ctx.merchant.merchants
     spender = event.spender
 
     if merchants.externals:
-        dst_acct = request.rng.choice(merchants.externals)
+        dst_acct = rng.choice(merchants.externals)
     else:
         dst_acct = "X0000000001"
 
-    amount = EXTERNAL_MODEL.sample(request.rng)
+    amount = EXTERNAL_MODEL.sample(rng)
     amount = round(max(1.0, amount), 2)
 
     return event.txf.make(
@@ -127,17 +119,22 @@ def external(request: GenerateRequest, event: Event) -> Transaction:
     )
 
 
-def merchant(request: GenerateRequest, event: Event) -> Transaction:
-    merch = request.ctx.merchant
+def merchant(
+    rng: Rng,
+    merch: MerchantView,
+    cards: dict[str, str] | None,
+    event: Event,
+    max_retries: int,
+) -> Transaction:
     spender = event.spender
 
-    merch_idx = choose_merchant(request, event)
+    merch_idx = choose_merchant(rng, merch, event, max_retries)
     dst_acct = merch.merchants.counterparties[merch_idx]
     category = merch.merchants.categories[merch_idx]
 
-    amount = merchant_amount(request.rng, category)
+    amount = merchant_amount(rng, category)
     amount *= float(spender.persona.amount_multiplier)
     amount = round(max(1.0, amount), 2)
 
-    spec = draft_merchant_spec(request, event, amount, dst_acct)
+    spec = draft_merchant_spec(rng, cards, event, amount, dst_acct)
     return event.txf.make(spec)

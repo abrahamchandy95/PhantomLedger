@@ -1,5 +1,5 @@
 from math import log
-from typing import overload
+from typing import overload, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -26,13 +26,15 @@ def build_cdf(weights: npt.ArrayLike) -> F64:
 
 
 def cdf_pick(cdf: F64, u: float) -> int:
-    """Pick an index from a CDF using u in [0, 1]."""
-    if cdf.ndim != 1 or cdf.size == 0:
-        raise ValueError("CDF must be a non-empty 1D array")
-
+    """
+    Pick an index from a CDF using u in [0, 1].
+    """
     # searchsorted returns the index where u would be inserted
-    idx = np.searchsorted(cdf, u, side="right")
-    return int(min(idx, cdf.size - 1))
+    idx = int(np.searchsorted(cdf, u, side="right"))
+    n = cast(int, cdf.shape[0])
+    if idx >= n:
+        return n - 1
+    return idx
 
 
 @overload

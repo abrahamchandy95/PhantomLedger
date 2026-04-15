@@ -38,7 +38,7 @@ def _persona_for_acct_array(
 
 
 def _apply_credit_card_limits(
-    book: balances_model.Ledger,
+    book: balances_model.ClearingHouse,
     credit_cards: models.CreditCards,
 ) -> None:
     for card, limit_value in credit_cards.limits.items():
@@ -62,7 +62,7 @@ def build_balance_book(
     specs: Specifications,
     cc_state: CCState,
     plan: LegitBuildPlan,
-) -> balances_model.Ledger | None:
+) -> balances_model.ClearingHouse | None:
     balance_rules = specs.balances
     if not balance_rules.enable_constraints:
         return None

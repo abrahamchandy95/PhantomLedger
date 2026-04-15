@@ -1,27 +1,20 @@
 from typing import cast
 import numpy as np
 
+from common import config
 from common.math import F64, Scalar, as_float, build_cdf
-from common.transactions import Transaction
-
-from .engine import GenerateRequest
-from .payments import (
-    bill,
-    external,
-    merchant,
-    p2p,
-)
-from .state import Event
 
 
-def build_channel_cdf(request: GenerateRequest) -> F64:
-    unknown_p = min(1.0, max(0.0, float(request.events.unknown_outflow_p)))
+def build_channel_cdf(
+    events_cfg: config.Events, merchants_cfg: config.Merchants
+) -> F64:
+    unknown_p = min(1.0, max(0.0, float(events_cfg.unknown_outflow_p)))
 
     core = np.array(
         [
-            float(request.merchants_cfg.channel_merchant_p),
-            float(request.merchants_cfg.channel_bills_p),
-            float(request.merchants_cfg.channel_p2p_p),
+            float(merchants_cfg.channel_merchant_p),
+            float(merchants_cfg.channel_bills_p),
+            float(merchants_cfg.channel_p2p_p),
         ],
         dtype=np.float64,
     )
@@ -44,20 +37,3 @@ def build_channel_cdf(request: GenerateRequest) -> F64:
     )
 
     return build_cdf(shares)
-
-
-def route_channel_txn(
-    channel_idx: int,
-    request: GenerateRequest,
-    event: Event,
-    prefer_billers_p: float,
-) -> Transaction | None:
-    """Routes the generated event to the correct payment channel handler."""
-    if channel_idx == 2:
-        return p2p(request, event)
-    if channel_idx == 1:
-        return bill(request, event, prefer_billers_p)
-    if channel_idx == 3:
-        return external(request, event)
-
-    return merchant(request, event)

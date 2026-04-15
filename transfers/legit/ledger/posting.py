@@ -44,7 +44,7 @@ from common.channels import (
 from common.ids import is_external
 from common.random import Rng
 from common.transactions import Transaction
-from transfers.balances import Ledger, REJECT_INSUFFICIENT_FUNDS
+from transfers.balances import ClearingHouse, REJECT_INSUFFICIENT_FUNDS
 
 
 CARD_LIKE_CHANNELS: frozenset[str] = frozenset(
@@ -199,7 +199,7 @@ class ChronoReplayAccumulator:
     items until later incoming funds or one retry attempt.
     """
 
-    book: Ledger | None
+    book: ClearingHouse | None
     rng: Rng | None = None
     policy: ReplayPolicy = field(default_factory=ReplayPolicy)
     txns: list[Transaction] = field(default_factory=list)

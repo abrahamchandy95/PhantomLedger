@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 from heapq import merge
 
-import transfers.balances as balances_model
-
+from transfers.balances import ClearingHouse
 from common.transactions import Transaction
 from transfers.family.engine import GraphConfig, TransferConfig
 from transfers.factory import TransactionFactory
@@ -118,7 +117,7 @@ class LegitTransferBuilder:
             screened_prefix = _merge_by_timestamp(screened_prefix, items)
             replay_sorted_txns = merge_replay_sorted(replay_sorted_txns, items)
 
-        def reset_screen_book() -> balances_model.Ledger | None:
+        def reset_screen_book() -> ClearingHouse | None:
             if initial_book is None or screen_book is None:
                 return None
             screen_book.restore_from(initial_book)

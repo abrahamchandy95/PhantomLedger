@@ -19,7 +19,7 @@ from common.ids import is_external
 from common.random import Rng
 from common.transactions import Transaction
 from common.validate import between, ge
-from transfers.balances import Ledger
+from transfers.balances import ClearingHouse
 from transfers.factory import TransactionDraft, TransactionFactory
 from transfers.screening import advance_book_through
 
@@ -66,7 +66,7 @@ class AtmConfig:
 DEFAULT_ATM_CONFIG = AtmConfig()
 
 
-def _can_afford_atm(book: Ledger | None, account: str, amount: float) -> bool:
+def _can_afford_atm(book: ClearingHouse | None, account: str, amount: float) -> bool:
     if book is None:
         return True
 
@@ -82,7 +82,7 @@ def generate(
     txf: TransactionFactory,
     cfg: AtmConfig = DEFAULT_ATM_CONFIG,
     *,
-    book: Ledger | None = None,
+    book: ClearingHouse | None = None,
     base_txns: Sequence[Transaction] | None = None,
     base_txns_sorted: bool = False,
 ) -> list[Transaction]:

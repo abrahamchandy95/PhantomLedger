@@ -108,7 +108,6 @@ def _build_social_capital(
 class ContactSampler:
     """Encapsulates CDF generation and the logic for drawing random contacts."""
 
-    # Class-level annotations strictly required by basedpyright
     n_people: int
     cfg: config.Social
     starts: list[int]
@@ -116,6 +115,10 @@ class ContactSampler:
     member_map: list[int]
     global_cdf: F64
     block_cdfs: list[F64]
+
+    _block_sizes: list[int]
+    _local_p: float
+    _cross_p: float
 
     def __init__(
         self,
@@ -137,18 +140,30 @@ class ContactSampler:
             build_cdf(attract[lo:hi]) for lo, hi in zip(starts, ends, strict=True)
         ]
 
+        self._block_sizes = [hi - lo for lo, hi in zip(starts, ends, strict=True)]
+        self._local_p = float(cfg.local_prob)
+        self._cross_p = cfg.cross_prob
+
     def draw_unique(self, src_idx: int, prng: Rng) -> list[int]:
         b_idx = self.member_map[src_idx]
-        lo, hi = self.starts[b_idx], self.ends[b_idx]
-        b_size, b_cdf = hi - lo, self.block_cdfs[b_idx]
+        lo = self.starts[b_idx]
+        hi = self.ends[b_idx]
+        b_size = self._block_sizes[b_idx]
+        b_cdf = self.block_cdfs[b_idx]
+
+        # OPTIMIZATION: cache bound methods
+        prng_float = prng.float
+        n_people = self.n_people
+        global_cdf = self.global_cdf
+        local_p = self._local_p
+        cross_p = self._cross_p
 
         def draw_local() -> int:
             if b_size <= 1:
-                return _fallback_other(src_idx, self.n_people)
+                return _fallback_other(src_idx, n_people)
             tries = 0
             while True:
-                cand = lo + cdf_pick(b_cdf, prng.float())
-                # Unrolled to satisfy Ruff E701
+                cand = lo + cdf_pick(b_cdf, prng_float())
                 if cand != src_idx:
                     return cand
 
@@ -158,29 +173,27 @@ class ContactSampler:
                         return lo
                     if src_idx + 1 < hi:
                         return src_idx + 1
-                    return _fallback_other(src_idx, self.n_people)
+                    return _fallback_other(src_idx, n_people)
 
         def draw_global() -> int:
-            if self.n_people <= 1:
+            if n_people <= 1:
                 return src_idx
             tries = 0
             while True:
-                cand = cdf_pick(self.global_cdf, prng.float())
-                # Unrolled to satisfy Ruff E701
+                cand = cdf_pick(global_cdf, prng_float())
                 if cand != src_idx:
                     return cand
 
                 tries += 1
                 if tries >= 8:
-                    return _fallback_other(src_idx, self.n_people)
+                    return _fallback_other(src_idx, n_people)
 
         def draw_cross() -> int:
-            if self.n_people - b_size <= 0:
+            if n_people - b_size <= 0:
                 return draw_global()
             tries = 0
             while True:
-                cand = cdf_pick(self.global_cdf, prng.float())
-                # Unrolled to satisfy Ruff E701
+                cand = cdf_pick(global_cdf, prng_float())
                 if cand != src_idx and not (lo <= cand < hi):
                     return cand
 
@@ -188,13 +201,10 @@ class ContactSampler:
                 if tries >= 24:
                     return draw_global()
 
-        local_p = float(self.cfg.local_prob)
-        cross_p = self.cfg.cross_prob
-
         def draw_candidate() -> int:
-            if b_size > 1 and prng.float() < local_p:
+            if b_size > 1 and prng_float() < local_p:
                 return draw_local()
-            if self.n_people - b_size > 0 and prng.float() < cross_p:
+            if n_people - b_size > 0 and prng_float() < cross_p:
                 return draw_cross()
             return draw_global()
 
@@ -203,7 +213,7 @@ class ContactSampler:
 
         uniques = _choose_unique(needed=needed, draw_one=draw_candidate)
         if not uniques:
-            return [_fallback_other(src_idx, self.n_people)]
+            return [_fallback_other(src_idx, n_people)]
 
         return uniques
 
@@ -244,6 +254,8 @@ def build(
     contacts = np.empty((n_people, degree), dtype=np.int32)
     rng_factory = RngFactory(seed)
 
+    tie_strength_shape = float(cfg.tie_strength_shape)
+
     for src_idx, person_id in enumerate(
         maybe_tqdm(people, desc="social graph", unit="person", miniters=2_000)
     ):
@@ -251,21 +263,23 @@ def build(
 
         # Draw base unique contacts
         uniques = sampler.draw_unique(src_idx, prng)
+        n_uniques = len(uniques)
 
-        # Distribute tie strength via Gamma distribution
-        strength_obj = cast(
-            object,
-            prng.gen.gamma(
-                shape=float(cfg.tie_strength_shape),
+        if n_uniques == 1:
+            contacts[src_idx, :] = uniques[0]
+        else:
+            strength_raw = prng.gen.gamma(
+                shape=tie_strength_shape,
                 scale=1.0,
-                size=len(uniques),
-            ),
-        )
-        strength_cdf = build_cdf(np.asarray(strength_obj, dtype=np.float64))
+                size=n_uniques,
+            )
+            strength_cdf = build_cdf(np.asarray(strength_raw, dtype=np.float64))
 
-        # Fill the slots, allowing repeats based on tie strength
-        for slot in range(degree):
-            pick = cdf_pick(strength_cdf, prng.float())
-            contacts[src_idx, slot] = uniques[pick]
+            # Batch-sample all slots at once
+            u_values: F64 = np.asarray(prng.gen.random(degree), dtype=np.float64)
+            for slot in range(degree):
+                u = u_values.item(slot)
+                pick = cdf_pick(strength_cdf, u)
+                contacts[src_idx, slot] = uniques[pick]
 
     return Graph(contacts=contacts, degree=degree)
