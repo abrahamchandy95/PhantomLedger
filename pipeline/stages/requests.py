@@ -32,6 +32,7 @@ def build_legit(
         network=Network(
             accounts=entities.accounts,
             merchants=entities.merchants,
+            landlords=entities.landlords,
             portfolios=entities.portfolios,
         ),
         macro=Macro(
@@ -40,6 +41,7 @@ def build_legit(
             personas=cfg.personas,
             events=cfg.events,
             merchants_cfg=cfg.merchants,
+            landlords_cfg=cfg.landlords,
             government=cfg.government,
         ),
         overrides=Overrides(

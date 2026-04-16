@@ -12,6 +12,7 @@ pools for:
 
 These remain synthetic external account IDs; they exist so transaction routing,
 balance replay, and exports all recognize them as valid counterparties.
+
 """
 
 from dataclasses import dataclass
@@ -21,7 +22,6 @@ from common.ids import (
     business_external_id,
     client_external_id,
     employer_external_id,
-    landlord_external_id,
     platform_external_id,
     processor_external_id,
 )
@@ -31,7 +31,6 @@ from common.validate import ge
 @dataclass(frozen=True, slots=True)
 class PoolConfig:
     employers_per_10k: float = 25.0
-    landlords_per_10k: float = 12.0
 
     # Large pools keep counterparty reuse plausible without having to model a
     # unique business entity for every freelancer or small business.
@@ -45,7 +44,6 @@ class PoolConfig:
 
     def __post_init__(self) -> None:
         ge("employers_per_10k", self.employers_per_10k, 1.0)
-        ge("landlords_per_10k", self.landlords_per_10k, 1.0)
         ge("client_payers_per_10k", self.client_payers_per_10k, 1.0)
         ge("owner_businesses_per_10k", self.owner_businesses_per_10k, 1.0)
         ge("brokerages_per_10k", self.brokerages_per_10k, 1.0)
@@ -59,7 +57,6 @@ DEFAULT_POOL_CONFIG = PoolConfig()
 @dataclass(frozen=True, slots=True)
 class Pools:
     employer_ids: list[str]
-    landlord_ids: list[str]
     client_payer_ids: list[str]
     platform_ids: list[str]
     processor_ids: list[str]
@@ -74,9 +71,6 @@ def build(
 ) -> Pools:
     n_employers = max(
         5, int(round(cfg.employers_per_10k * (population_size / 10_000.0)))
-    )
-    n_landlords = max(
-        3, int(round(cfg.landlords_per_10k * (population_size / 10_000.0)))
     )
     n_clients = max(
         25, int(round(cfg.client_payers_per_10k * (population_size / 10_000.0)))
@@ -96,7 +90,6 @@ def build(
     )
 
     employer_ids = [employer_external_id(i) for i in range(1, n_employers + 1)]
-    landlord_ids = [landlord_external_id(i) for i in range(1, n_landlords + 1)]
     client_payer_ids = [client_external_id(i) for i in range(1, n_clients + 1)]
     platform_ids = [platform_external_id(i) for i in range(1, n_platforms + 1)]
     processor_ids = [processor_external_id(i) for i in range(1, n_processors + 1)]
@@ -107,7 +100,6 @@ def build(
 
     all_externals = (
         employer_ids
-        + landlord_ids
         + client_payer_ids
         + platform_ids
         + processor_ids
@@ -117,7 +109,6 @@ def build(
 
     return Pools(
         employer_ids=employer_ids,
-        landlord_ids=landlord_ids,
         client_payer_ids=client_payer_ids,
         platform_ids=platform_ids,
         processor_ids=processor_ids,

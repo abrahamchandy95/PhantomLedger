@@ -6,8 +6,21 @@ _HASH_BYTES = 8
 _SUFFIX_DIGITS = 20
 _SUFFIX_LIMIT = 10**_SUFFIX_DIGITS
 
-_BUSINESS_PREFIX = "XOB"
-_BROKERAGE_PREFIX = "XBR"
+# Business operating accounts and brokerage/custody accounts owned by a known
+# person are modeled as *additional internal accounts* at the same bank,
+# not as external counterparties. Chase, Bank of America, Wells Fargo, and
+# peers all actively bundle personal and business banking, so a freelancer
+# or small-business owner drawing funds into a personal account is normally
+# an internal book-to-book transfer rather than an interbank ACH.
+#
+# To keep that semantics consistent with the rest of the codebase, these
+# prefixes must NOT start with "X" — the repo uses a leading X to signal
+# external accounts (`common.ids.is_external`, export/standard typing, the
+# balance clearing house, etc.). "BOP" (business operating) and "BRK"
+# (brokerage) are distinctive enough to stay greppable while behaving as
+# ordinary internal accounts downstream.
+_BUSINESS_PREFIX = "BOP"
+_BROKERAGE_PREFIX = "BRK"
 
 
 def _stable_suffix(namespace: str, person_id: str) -> int:
@@ -49,13 +62,17 @@ def planned_owned_income_accounts(
     primary_accounts: dict[str, str],
 ) -> dict[str, list[str]]:
     """
-    Register modeled external accounts that are still owned by known people.
+    Register modeled internal secondary accounts owned by known people.
 
-    - freelancers / smallbiz: one external business operating account
-    - hnw: one external brokerage/custody account
+    - freelancers / smallbiz: one business operating account (BOP...)
+    - hnw: one brokerage / custody account (BRK...)
 
-    These are visible in the bank graph as represented external accounts but
-    remain attributable to the known person through owner_map/by_person.
+    These are in-bank accounts belonging to the same customer as the
+    primary account. They stay attributable through owner_map/by_person
+    and are NOT marked external when merged into the accounts registry.
+    Owner draws from BOP to the primary account therefore show up as
+    intra-customer book transfers, which matches how large U.S. retail
+    banks actually settle these flows.
     """
     planned: dict[str, list[str]] = {}
 

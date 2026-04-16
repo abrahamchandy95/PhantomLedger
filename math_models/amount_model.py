@@ -126,9 +126,17 @@ def merchant_amount(rng: Rng, category: str) -> float:
 # Channel registry for programmatic lookup
 # ---------------------------------------------------------------
 
+# All rent channels currently share the same RENT amount distribution.
+# The per-channel signal is carried by the channel label itself — the
+# amount shape does not need to differ to distinguish Zelle-to-individual
+# from corporate portal ACH.
 _CHANNEL_MODELS: dict[str, AmountModel | GammaAmountModel] = {
     "salary": SALARY,
     "rent": RENT,
+    "rent_ach": RENT,
+    "rent_portal": RENT,
+    "rent_p2p": RENT,
+    "rent_check": RENT,
     "p2p": P2P,
     "bill": BILL,
     "external_unknown": EXTERNAL_UNKNOWN,

@@ -3,16 +3,19 @@ from collections.abc import Iterator
 from entities import models
 from ..csv_io import Row
 
+# Order matters: more specific prefixes (XLI/XLS/XLC) must come before the
+# generic XL fallback so typed landlord externals get their proper labels.
 _PREFIX_KIND_CATEGORY: tuple[tuple[str, str, str], ...] = (
     ("XF", "family_external", "family"),
     ("XGOV", "government_external", "government"),
     ("XINS", "insurance_external", "insurance"),
     ("XIRS", "tax_authority_external", "tax"),
     ("XLND", "lender_external", "lending"),
-    ("XOB", "business_operating_external", "business"),
-    ("XBR", "brokerage_custody_external", "brokerage"),
-    ("XE", "employer_external", "employer"),
+    ("XLI", "landlord_individual_external", "landlord_individual"),
+    ("XLS", "landlord_small_llc_external", "landlord_small_llc"),
+    ("XLC", "landlord_corporate_external", "landlord_corporate"),
     ("XL", "landlord_external", "landlord"),
+    ("XE", "employer_external", "employer"),
 )
 
 
@@ -51,10 +54,10 @@ def external_account(
     Yields rows for the EXTERNAL_ACCOUNT vertex table.
     (account_id, kind, category)
 
-    Important:
-    - preserves the existing schema exactly
     - emits all represented external accounts from the registry
     - uses merchant metadata only to label XM... rows
+    - landlord externals are split by typology (XLI/XLS/XLC) so the
+      exported graph carries individual / small-LLC / corporate labels
     """
     merchant_categories = _merchant_external_categories(merchants)
 

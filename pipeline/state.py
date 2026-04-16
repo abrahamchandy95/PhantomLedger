@@ -19,6 +19,7 @@ class Entities:
     accounts: entity_models.Accounts
     pii: entity_models.Pii
     merchants: entity_models.Merchants
+    landlords: entity_models.Landlords
     persona_map: dict[str, str]
     persona_objects: dict[str, entity_models.Persona]
     credit_cards: entity_models.CreditCards

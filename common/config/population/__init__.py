@@ -15,6 +15,7 @@ from .family import (
 from .government import Government
 from .hubs import Hubs
 from .insurance import Insurance
+from .landlords import Landlords
 from .merchants import Merchants
 from .personas import Personas
 from .social import Social
@@ -26,6 +27,7 @@ __all__ = [
     "Hubs",
     "Personas",
     "Merchants",
+    "Landlords",
     "Social",
     "Government",
     "Insurance",
