@@ -12,6 +12,7 @@ from entities.accounts import (
 )
 from entities.counterparties import build as build_counterparties
 from entities.credit_cards import DEFAULT_POLICY, build as build_credit_cards
+from entities.landlords import build as build_landlords
 from entities.merchants import build as build_merchants
 from entities.people import generate as generate_people
 from entities.personas import assign as assign_personas, build_persona_objects
@@ -31,7 +32,15 @@ def build(cfg: config.World, rng: Rng) -> Entities:
     if merchants.externals:
         accounts = merge(accounts, merchants.externals, mark_external=True)
 
-    # Shared external counterparty pools
+    # Typed landlord pool (individual / small LLC / corporate). These are
+    # external counterparties but carry type metadata so downstream rent
+    # routing can vary channel and amount behavior per landlord type.
+    landlords = build_landlords(cfg.landlords, cfg.population, rng)
+    if landlords.ids:
+        accounts = merge(accounts, landlords.ids, mark_external=True)
+
+    # Shared external counterparty pools (employers, clients, platforms,
+    # processors, fallback owner-businesses, fallback brokerages).
     counterparty_pools = build_counterparties(cfg.population.size)
     if counterparty_pools.all_externals:
         accounts = merge(accounts, counterparty_pools.all_externals, mark_external=True)
@@ -45,7 +54,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
 
     # Primary personal account per known person.
     # We use the first owned account as the canonical personal account; later
-    # merge_owned_accounts(...) calls append owned external accounts and do not
+    # merge_owned_accounts(...) calls append owned extra accounts and do not
     # disturb this ordering.
     primary_accounts = {
         person_id: account_ids[0]
@@ -73,10 +82,16 @@ def build(cfg: config.World, rng: Rng) -> Entities:
     persona_map = assign_personas(cfg.personas, rng, persons)
     persona_objects = build_persona_objects(persona_map, cfg.population.seed)
 
-    # Owned external income accounts used for more realistic personal/business
-    # separation:
-    # - freelancers / smallbiz: external business operating account
-    # - hnw: external brokerage / custody account
+    # Same-bank secondary accounts owned by the same customer:
+    # - freelancers / smallbiz: BOP... business operating account
+    # - hnw: BRK... brokerage / custody account
+    #
+    # These are NOT external. Large retail banks (Chase, BoA, Wells, etc.)
+    # actively bundle personal and business banking, so an owner draw from a
+    # small-business owner's business account to their personal account is
+    # almost always an internal book-to-book transfer between two accounts
+    # at the same institution. Marking these external would destroy that
+    # signal and make owner draws indistinguishable from random outbound ACH.
     owned_income_accounts = planned_owned_income_accounts(
         person_ids=people.ids,
         persona_for_person=persona_map,
@@ -86,7 +101,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         accounts = merge_owned_accounts(
             accounts,
             owned_income_accounts,
-            mark_external=True,
+            mark_external=False,
         )
 
     # Credit cards (must happen before portfolio building)
@@ -124,6 +139,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         accounts=accounts,
         pii=pii,
         merchants=merchants,
+        landlords=landlords,
         persona_map=persona_map,
         persona_objects=persona_objects,
         credit_cards=credit_cards,

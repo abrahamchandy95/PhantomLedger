@@ -13,7 +13,16 @@ class CounterpartyPlan:
     hub_accounts: list[str]
     hub_set: frozenset[str]
     employers: list[str]
+
+    # Flat ID list used by the lease engine. When the landlords pool is
+    # empty (tiny populations, overridden config, etc.), this falls back
+    # to hub accounts so the lease sampler still has something to pick.
     landlords: list[str]
+    # acct_id -> landlord type (INDIVIDUAL / LLC_SMALL / CORPORATE). Missing
+    # entries (e.g. fallback hub IDs) mean the rent router will use its
+    # default channel.
+    landlord_type_of: dict[str, str]
+
     biller_accounts: list[str]
     issuer_acct: str
 
@@ -72,6 +81,28 @@ def _primary_acct_for_person(
     }
 
 
+def _resolve_landlords(
+    network: Network,
+    hub_accounts: list[str],
+    fallback_acct: str,
+) -> tuple[list[str], dict[str, str]]:
+    """
+    Return (landlord_ids, type_of).
+
+    Prefers the typed landlord pool built in entities/landlords.py. When that
+    pool is empty the plan falls back to hub accounts (as the pre-typology
+    code did) so the lease engine always has something to pick. Fallback
+    IDs have no type mapping, which tells the rent router to use the
+    default channel.
+    """
+    landlords = network.landlords
+    if landlords.ids:
+        return list(landlords.ids), dict(landlords.type_of)
+
+    fallback = hub_accounts if hub_accounts else [fallback_acct]
+    return fallback, {}
+
+
 def _build_counterparty_plan(
     timeline: Timeline,
     network: Network,
@@ -98,10 +129,9 @@ def _build_counterparty_plan(
             else [fallback_acct]
         )
 
-    if pools is not None and pools.landlord_ids:
-        landlords = list(pools.landlord_ids)
-    else:
-        landlords = hub_accounts if hub_accounts else [fallback_acct]
+    landlord_ids, landlord_type_of = _resolve_landlords(
+        network, hub_accounts, fallback_acct
+    )
 
     biller_accounts = hub_accounts if hub_accounts else [fallback_acct]
     issuer_acct = fallback_acct
@@ -110,7 +140,8 @@ def _build_counterparty_plan(
         hub_accounts=hub_accounts,
         hub_set=hub_set,
         employers=employers,
-        landlords=landlords,
+        landlords=landlord_ids,
+        landlord_type_of=landlord_type_of,
         biller_accounts=biller_accounts,
         issuer_acct=issuer_acct,
     )

@@ -9,6 +9,10 @@ and makes grep/refactor trivial.
 # --- Legitimate channels ---
 SALARY = "salary"
 RENT = "rent"
+RENT_ACH = "rent_ach"
+RENT_PORTAL = "rent_portal"
+RENT_P2P = "rent_p2p"
+RENT_CHECK = "rent_check"
 SUBSCRIPTION = "subscription"
 ATM = "atm_withdrawal"
 SELF_TRANSFER = "self_transfer"
@@ -74,6 +78,19 @@ DISABILITY = "gov_disability"
 # --- Insurance ---
 INSURANCE_PREMIUM = "insurance_premium"
 INSURANCE_CLAIM = "insurance_claim"
+
+# Grouped rent channels. Callers that want "any rent-flavored channel"
+# (exporters, dashboards, fraud detectors) can use this instead of hard-coding
+# every variant.
+RENT_CHANNELS: frozenset[str] = frozenset(
+    {
+        RENT,
+        RENT_ACH,
+        RENT_PORTAL,
+        RENT_P2P,
+        RENT_CHECK,
+    }
+)
 
 PAYDAY_INBOUND_CHANNELS: frozenset[str] = frozenset(
     {

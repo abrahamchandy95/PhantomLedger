@@ -27,6 +27,7 @@ class Network:
 
     accounts: models.Accounts
     merchants: models.Merchants
+    landlords: models.Landlords
     portfolios: PortfolioRegistry | None = None
 
 
@@ -39,6 +40,7 @@ class Macro:
     personas: config.Personas
     events: config.Events
     merchants_cfg: config.Merchants
+    landlords_cfg: config.Landlords = field(default_factory=config.Landlords)
     government: config.Government = field(default_factory=config.Government)
 
 

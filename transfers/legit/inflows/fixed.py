@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from common.channels import SALARY, RENT
+from common.channels import SALARY
 from common.persona_names import (
     FREELANCER,
     HNW,
@@ -18,7 +18,9 @@ import relationships.recurring as recurring_model
 from transfers.factory import TransactionDraft, TransactionFactory
 
 from transfers.legit.blueprints import LegitBuildPlan, Specifications
-from transfers.legit.blueprints.models import Timeline, Network
+from transfers.legit.blueprints.models import Timeline, Network, Macro
+
+from .rent_routing import RentRouter
 
 
 def _scaled_probability(
@@ -245,13 +247,27 @@ def _rent_payers(
 def generate_rent_txns(
     timeline: Timeline,
     network: Network,
+    macro: Macro,
     specs: Specifications,
     plan: LegitBuildPlan,
     txf: TransactionFactory,
 ) -> list[Transaction]:
+    """
+    Generate monthly rent outflows per renter.
+
+    The lease engine still owns lifecycle (move dates, rent inflation, landlord
+    rotation). This function threads a landlord-type-aware channel through the
+    TransactionDraft so individual landlords produce Zelle/check/ACH mixes and
+    corporate property-management counterparties produce near-exclusive
+    portal ACH flows.
+    """
     recurring_policy = specs.recurring
     rng = timeline.rng
     rent_active = _rent_payers(timeline, network, specs, plan)
+
+    # One router per run. Cheap to build, avoids re-CDFing per event.
+    router = RentRouter.from_config(macro.landlords_cfg)
+    landlord_type_of = plan.counterparties.landlord_type_of
 
     leases: dict[str, recurring_model.Lease] = {}
     txns: list[Transaction] = []
@@ -299,6 +315,11 @@ def generate_rent_txns(
                 pay_date=month_start,
             )
 
+            # Pick a channel per event. A fallback hub landlord returns None
+            # from the map and the router emits the generic RENT channel.
+            landlord_type = landlord_type_of.get(state.landlord_acct)
+            channel = router.pick_channel(rng, landlord_type)
+
             txns.append(
                 txf.make(
                     TransactionDraft(
@@ -306,7 +327,7 @@ def generate_rent_txns(
                         destination=state.landlord_acct,
                         amount=amount,
                         timestamp=txn_ts,
-                        channel=RENT,
+                        channel=channel,
                         is_fraud=0,
                         ring_id=-1,
                     )

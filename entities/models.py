@@ -24,7 +24,7 @@ class People:
     mules: set[str]
     victims: set[str]
     solo_frauds: set[str]
-    rings: list[Ring]
+    rings: list["Ring"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,6 +63,26 @@ class Merchants:
     weights: F64
     internals: list[str]
     externals: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class Landlord:
+    """A single landlord counterparty with its ownership type."""
+
+    account_id: str
+    type: str
+
+
+@dataclass(frozen=True, slots=True)
+class Landlords:
+    """
+    Typed landlord counterparty universe.
+    """
+
+    ids: list[str]
+    by_type: dict[str, list[str]]
+    type_of: dict[str, str]
+    records: list[Landlord]
 
 
 @dataclass(frozen=True, slots=True)
