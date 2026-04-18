@@ -1,24 +1,28 @@
 #pragma once
 
+#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/devices/identity.hpp"
 #include "phantomledger/entities/identity.hpp"
 #include "phantomledger/network/ipv4.hpp"
-#include "phantomledger/transactions/channel.hpp"
 
+#include <compare>
 #include <cstdint>
+#include <optional>
+#include <tuple>
 
 namespace PhantomLedger::transactions {
 
 struct Fraud {
   std::uint8_t flag = 0;
   std::optional<std::uint32_t> ringId;
-  auto operator<=>(const Fraud &) const = default;
+  constexpr std::strong_ordering operator<=>(const Fraud &) const = default;
 };
 
 struct Session {
   devices::Identity deviceId;
   network::Ipv4 ipAddress;
-  Channel channel = Channel::unknown;
+  channels::Tag channel = channels::none;
+  constexpr auto operator<=>(const Session &) const = default;
 };
 
 struct Transaction {
@@ -30,6 +34,20 @@ struct Transaction {
   Fraud fraud;
   Session session;
 };
+
+namespace detail {
+
+[[nodiscard]] inline auto fundsKey(const Transaction &tx) noexcept {
+  return std::tie(tx.timestamp, tx.source, tx.target, tx.amount);
+}
+
+[[nodiscard]] inline auto auditKey(const Transaction &tx) noexcept {
+  return std::tie(tx.timestamp, tx.source, tx.target, tx.amount, tx.fraud.flag,
+                  tx.fraud.ringId, tx.session.channel, tx.session.deviceId,
+                  tx.session.ipAddress);
+}
+
+} // namespace detail
 
 class Comparator {
 public:
@@ -44,32 +62,16 @@ public:
                                 const Transaction &rhs) const noexcept {
     switch (scope_) {
     case Scope::fundsTransfer:
-      return compareFundsTransfer(lhs, rhs);
+      return detail::fundsKey(lhs) < detail::fundsKey(rhs);
 
     case Scope::fullAudit:
-      return compareFullAudit(lhs, rhs);
+      return detail::auditKey(lhs) < detail::auditKey(rhs);
     }
+
     return false;
   }
 
 private:
-  [[nodiscard]] static bool
-  compareFundsTransfer(const Transaction &lhs,
-                       const Transaction &rhs) noexcept {
-    return std::tie(lhs.timestamp, lhs.source, lhs.target, lhs.amount) <
-           std::tie(rhs.timestamp, rhs.source, rhs.target, rhs.amount);
-  }
-
-  [[nodiscard]] static bool compareFullAudit(const Transaction &lhs,
-                                             const Transaction &rhs) noexcept {
-    return std::tie(lhs.timestamp, lhs.source, lhs.target, lhs.amount,
-                    lhs.fraud.flag, lhs.fraud.ringId, lhs.session.channel,
-                    lhs.session.deviceId, lhs.session.ipAddress) <
-           std::tie(rhs.timestamp, rhs.source, rhs.target, rhs.amount,
-                    rhs.fraud.flag, rhs.fraud.ringId, rhs.session.channel,
-                    rhs.session.deviceId, rhs.session.ipAddress);
-  }
-
   Scope scope_;
 };
 
