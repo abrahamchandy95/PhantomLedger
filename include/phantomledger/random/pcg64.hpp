@@ -17,7 +17,8 @@ public:
   }
 
   [[nodiscard]] double next_double() noexcept {
-    return static_cast<double>(next_u64() >> 11U) * 0x1.0p-53;
+    return static_cast<double>(next_u64() >> doubleDiscardBits_) *
+           doubleUnitScale_;
   }
 
   [[nodiscard]] std::uint64_t state_hi() const noexcept { return state_hi_; }
@@ -30,8 +31,15 @@ public:
   }
 
 private:
-  static constexpr std::uint64_t multiplier_hi_ = 2549297995355413924ULL;
-  static constexpr std::uint64_t multiplier_lo_ = 4865540595714422341ULL;
+  static constexpr std::uint64_t multiplierHi_ = 2549297995355413924ULL;
+  static constexpr std::uint64_t multiplierLo_ = 4865540595714422341ULL;
+
+  static constexpr unsigned doubleDiscardBits_ = 11U;
+  static constexpr double doubleUnitScale_ = 0x1.0p-53;
+
+  static constexpr unsigned outputRotationShift_ = 58U;
+  static constexpr unsigned rotationMask_ = 63U;
+  static constexpr std::uint64_t low32Mask_ = 0xFFFFFFFFULL;
 
   std::uint64_t state_hi_ = 0;
   std::uint64_t state_lo_ = 0;
@@ -51,19 +59,20 @@ private:
 #else
     // Portable fallback. We only need the low 128 bits because the LCG is
     // defined modulo 2^128.
-    const std::uint64_t lhs_lo_lo = lhs_lo & 0xFFFFFFFFULL;
-    const std::uint64_t lhs_lo_hi = lhs_lo >> 32U;
-    const std::uint64_t rhs_lo_lo = rhs_lo & 0xFFFFFFFFULL;
-    const std::uint64_t rhs_lo_hi = rhs_lo >> 32U;
+    const std::uint64_t lhsLoLo = lhs_lo & low32Mask_;
+    const std::uint64_t lhsLoHi = lhs_lo >> 32U;
+    const std::uint64_t rhsLoLo = rhs_lo & low32Mask_;
+    const std::uint64_t rhsLoHi = rhs_lo >> 32U;
 
-    const std::uint64_t p0 = lhs_lo_lo * rhs_lo_lo;
-    const std::uint64_t p1 = lhs_lo_lo * rhs_lo_hi;
-    const std::uint64_t p2 = lhs_lo_hi * rhs_lo_lo;
-    const std::uint64_t p3 = lhs_lo_hi * rhs_lo_hi;
+    const std::uint64_t p0 = lhsLoLo * rhsLoLo;
+    const std::uint64_t p1 = lhsLoLo * rhsLoHi;
+    const std::uint64_t p2 = lhsLoHi * rhsLoLo;
+    const std::uint64_t p3 = lhsLoHi * rhsLoHi;
 
     const std::uint64_t middle =
-        (p0 >> 32U) + (p1 & 0xFFFFFFFFULL) + (p2 & 0xFFFFFFFFULL);
-    out_lo = (p0 & 0xFFFFFFFFULL) | (middle << 32U);
+        (p0 >> 32U) + (p1 & low32Mask_) + (p2 & low32Mask_);
+
+    out_lo = (p0 & low32Mask_) | (middle << 32U);
     out_hi = p3 + (p1 >> 32U) + (p2 >> 32U) + (middle >> 32U);
     out_hi += lhs_hi * rhs_lo + lhs_lo * rhs_hi;
 #endif
@@ -80,16 +89,20 @@ private:
   void step() noexcept {
     std::uint64_t product_hi = 0;
     std::uint64_t product_lo = 0;
-    multiply_mod_2_128(state_hi_, state_lo_, multiplier_hi_, multiplier_lo_,
+
+    multiply_mod_2_128(state_hi_, state_lo_, multiplierHi_, multiplierLo_,
                        product_hi, product_lo);
+
     add_mod_2_128(product_hi, product_lo, increment_hi_, increment_lo_,
                   state_hi_, state_lo_);
   }
 
   [[nodiscard]] std::uint64_t output() const noexcept {
-    const std::uint64_t xor_value = state_hi_ ^ state_lo_;
-    const unsigned rotation = static_cast<unsigned>(state_hi_ >> 58U);
-    return (xor_value >> rotation) | (xor_value << ((-rotation) & 63U));
+    const std::uint64_t xorValue = state_hi_ ^ state_lo_;
+    const unsigned rotation =
+        static_cast<unsigned>(state_hi_ >> outputRotationShift_);
+
+    return (xorValue >> rotation) | (xorValue << ((-rotation) & rotationMask_));
   }
 };
 
