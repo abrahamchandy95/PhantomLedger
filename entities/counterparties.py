@@ -1,118 +1,175 @@
 """
-Generates external counterparty pools for recurring income and housing flows.
+Counterparty pool builder.
 
-The original repo only needed employers and landlords. To make self-employed,
-small-business, and HNW personas more realistic in bank data, we also build
-pools for:
-- client invoice payers (ACH credits)
-- platforms / marketplaces
-- merchant settlement processors
-- business operating accounts used for owner draws
-- brokerages / custodians
+Generates the external (and now partially internal) counterparty pools
+that downstream transfer generators draw from when assigning:
+  - employer payroll ACH credits
+  - freelance client invoice payments
+  - platform/gig payouts
+  - processor settlement batches
+  - business operating account draws
+  - brokerage transfers
 
-These remain synthetic external account IDs; they exist so transaction routing,
-balance replay, and exports all recognize them as valid counterparties.
+Pool sizes scale linearly with `population.size` via per-10k-people
+densities defined in `common.config.population.counterparties`.
 
+Employers and clients now support an `in_bank_p` parameter: the fraction
+of the pool that also banks at our institution, producing internal (on-us)
+counterparties alongside the traditional external ones.
 """
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
+from common import config
 from common.ids import (
     brokerage_external_id,
     business_external_id,
     client_external_id,
+    client_id,
     employer_external_id,
+    employer_id,
     platform_external_id,
     processor_external_id,
 )
-from common.validate import ge
+from common.random import Rng
+
+type IdFactory = Callable[[int], str]
 
 
-@dataclass(frozen=True, slots=True)
-class PoolConfig:
-    employers_per_10k: float = 25.0
-
-    # Large pools keep counterparty reuse plausible without having to model a
-    # unique business entity for every freelancer or small business.
-    client_payers_per_10k: float = 250.0
-    owner_businesses_per_10k: float = 200.0
-    brokerages_per_10k: float = 40.0
-
-    # A much smaller number of shared platforms and processors is realistic.
-    platforms_per_10k: float = 2.0
-    processors_per_10k: float = 1.0
-
-    def __post_init__(self) -> None:
-        ge("employers_per_10k", self.employers_per_10k, 1.0)
-        ge("client_payers_per_10k", self.client_payers_per_10k, 1.0)
-        ge("owner_businesses_per_10k", self.owner_businesses_per_10k, 1.0)
-        ge("brokerages_per_10k", self.brokerages_per_10k, 1.0)
-        ge("platforms_per_10k", self.platforms_per_10k, 1.0)
-        ge("processors_per_10k", self.processors_per_10k, 1.0)
-
-
-DEFAULT_POOL_CONFIG = PoolConfig()
+def _scale_pool(per_10k: float, population: int, floor: int) -> int:
+    """Scale a pool size linearly with population, subject to a floor."""
+    scaled = round(per_10k * (population / 10_000.0))
+    return max(floor, scaled)
 
 
 @dataclass(frozen=True, slots=True)
 class Pools:
+    """
+    All counterparty pools for a simulation world.
+
+    Employers and clients are split into internal (on-us) and external
+    (off-us) sublists. Other categories remain fully external since
+    platforms, processors, and brokerages are institutional entities
+    that bank at treasury/commercial banks rather than retail.
+    """
+
+    employer_internal_ids: list[str]
+    employer_external_ids: list[str]
     employer_ids: list[str]
+
+    client_internal_ids: list[str]
+    client_external_ids: list[str]
     client_payer_ids: list[str]
+
     platform_ids: list[str]
     processor_ids: list[str]
     owner_business_ids: list[str]
     brokerage_ids: list[str]
+
     all_externals: list[str]
+    all_internals: list[str] = field(default_factory=list)
 
 
-def build(
-    population_size: int,
-    cfg: PoolConfig = DEFAULT_POOL_CONFIG,
+def _split_pool(
+    total: int,
+    in_bank_p: float,
+    internal_factory: IdFactory,
+    external_factory: IdFactory,
+    rng: Rng,
+) -> tuple[list[str], list[str], list[str]]:
+    """
+    Generate a pool of `total` IDs, splitting each into internal or
+    external based on `in_bank_p`. Returns (internals, externals, combined).
+
+    Uses separate counters for internal and external to avoid ID collisions
+    between the two prefix families.
+    """
+    internals: list[str] = []
+    externals: list[str] = []
+    combined: list[str] = []
+    int_counter = 0
+    ext_counter = 0
+
+    for _ in range(total):
+        acct_id: str
+        if rng.coin(in_bank_p):
+            int_counter += 1
+            acct_id = internal_factory(int_counter)
+            internals.append(acct_id)
+        else:
+            ext_counter += 1
+            acct_id = external_factory(ext_counter)
+            externals.append(acct_id)
+        combined.append(acct_id)
+
+    return internals, externals, combined
+
+
+def build_pools(
+    cfg: config.Counterparties,
+    pop_cfg: config.Population,
+    rng: Rng,
 ) -> Pools:
-    n_employers = max(
-        5, int(round(cfg.employers_per_10k * (population_size / 10_000.0)))
-    )
-    n_clients = max(
-        25, int(round(cfg.client_payers_per_10k * (population_size / 10_000.0)))
-    )
-    n_platforms = max(
-        2, int(round(cfg.platforms_per_10k * (population_size / 10_000.0)))
-    )
-    n_processors = max(
-        2, int(round(cfg.processors_per_10k * (population_size / 10_000.0)))
-    )
-    n_owner_businesses = max(
-        25,
-        int(round(cfg.owner_businesses_per_10k * (population_size / 10_000.0))),
-    )
-    n_brokerages = max(
-        5, int(round(cfg.brokerages_per_10k * (population_size / 10_000.0)))
+    """
+    Build all counterparty pools scaled to population size.
+
+    Employers and clients are split into internal/external based on
+    `cfg.employer_in_bank_p` and `cfg.client_in_bank_p`. All other
+    pools remain fully external.
+    """
+    pop = int(pop_cfg.size)
+
+    # --- Employers: split by in_bank_p ---
+    n_employers = _scale_pool(cfg.employers_per_10k, pop, 5)
+    emp_int, emp_ext, emp_all = _split_pool(
+        n_employers,
+        float(cfg.employer_in_bank_p),
+        employer_id,
+        employer_external_id,
+        rng,
     )
 
-    employer_ids = [employer_external_id(i) for i in range(1, n_employers + 1)]
-    client_payer_ids = [client_external_id(i) for i in range(1, n_clients + 1)]
+    # --- Clients: split by in_bank_p ---
+    n_clients = _scale_pool(cfg.client_payers_per_10k, pop, 25)
+    cli_int, cli_ext, cli_all = _split_pool(
+        n_clients,
+        float(cfg.client_in_bank_p),
+        client_id,
+        client_external_id,
+        rng,
+    )
+
+    # --- Fully external pools ---
+    n_platforms = _scale_pool(cfg.platforms_per_10k, pop, 2)
     platform_ids = [platform_external_id(i) for i in range(1, n_platforms + 1)]
-    processor_ids = [processor_external_id(i) for i in range(1, n_processors + 1)]
-    owner_business_ids = [
-        business_external_id(i) for i in range(1, n_owner_businesses + 1)
-    ]
-    brokerage_ids = [brokerage_external_id(i) for i in range(1, n_brokerages + 1)]
 
+    n_processors = _scale_pool(cfg.processors_per_10k, pop, 2)
+    processor_ids = [processor_external_id(i) for i in range(1, n_processors + 1)]
+
+    n_biz = _scale_pool(cfg.owner_businesses_per_10k, pop, 25)
+    biz_ids = [business_external_id(i) for i in range(1, n_biz + 1)]
+
+    n_brokerages = _scale_pool(cfg.brokerages_per_10k, pop, 5)
+    brokerage_ids_list = [brokerage_external_id(i) for i in range(1, n_brokerages + 1)]
+
+    # Aggregate external and internal lists for merge convenience.
     all_externals = (
-        employer_ids
-        + client_payer_ids
-        + platform_ids
-        + processor_ids
-        + owner_business_ids
-        + brokerage_ids
+        emp_ext + cli_ext + platform_ids + processor_ids + biz_ids + brokerage_ids_list
     )
+    all_internals = emp_int + cli_int
 
     return Pools(
-        employer_ids=employer_ids,
-        client_payer_ids=client_payer_ids,
+        employer_internal_ids=emp_int,
+        employer_external_ids=emp_ext,
+        employer_ids=emp_all,
+        client_internal_ids=cli_int,
+        client_external_ids=cli_ext,
+        client_payer_ids=cli_all,
         platform_ids=platform_ids,
         processor_ids=processor_ids,
-        owner_business_ids=owner_business_ids,
-        brokerage_ids=brokerage_ids,
+        owner_business_ids=biz_ids,
+        brokerage_ids=brokerage_ids_list,
         all_externals=all_externals,
+        all_internals=all_internals,
     )

@@ -20,10 +20,12 @@ from .merchants import Merchants
 from .personas import Personas
 from .social import Social
 from .totals import Population
+from .counterparties import Counterparties
 
 __all__ = [
     "Population",
     "Accounts",
+    "Counterparties",
     "Hubs",
     "Personas",
     "Merchants",

@@ -1,3 +1,15 @@
+"""
+Entity assembly stage.
+
+Builds and assembles the full entity universe for a simulation world:
+people, accounts, PII, merchants, landlords, counterparties, personas,
+owned/external family accounts, credit cards, and portfolios.
+
+Key invariant:
+- internal counterparties are merged without `mark_external`
+- external counterparties are merged with `mark_external=True`
+"""
+
 from common import config
 from common.business_accounts import planned_owned_income_accounts
 from common.externals import ALL as ALL_EXTERNALS
@@ -10,7 +22,7 @@ from entities.accounts import (
     merge,
     merge_owned_accounts,
 )
-from entities.counterparties import build as build_counterparties
+from entities.counterparties import build_pools
 from entities.credit_cards import DEFAULT_POLICY, build as build_credit_cards
 from entities.landlords import build as build_landlords
 from entities.merchants import build as build_merchants
@@ -21,50 +33,53 @@ from entities.products import build_portfolios
 
 
 def build(cfg: config.World, rng: Rng) -> Entities:
+    """
+    Build the complete entity universe for a simulation world.
+    """
     people = generate_people(cfg.population, cfg.fraud, rng)
     accounts = build_accounts(cfg.accounts, rng, people)
     pii = generate_pii(people, rng)
 
-    # Merchants & shared merchant accounts
+    # Merchants
     merchants = build_merchants(cfg.merchants, cfg.population, rng)
     if merchants.internals:
         accounts = merge(accounts, merchants.internals)
     if merchants.externals:
         accounts = merge(accounts, merchants.externals, mark_external=True)
 
-    # Typed landlord pool (individual / small LLC / corporate). These are
-    # external counterparties but carry type metadata so downstream rent
-    # routing can vary channel and amount behavior per landlord type.
+    # Landlords
     landlords = build_landlords(cfg.landlords, cfg.population, rng)
-    if landlords.ids:
-        accounts = merge(accounts, landlords.ids, mark_external=True)
+    if landlords.internals:
+        accounts = merge(accounts, landlords.internals)
+    if landlords.externals:
+        accounts = merge(accounts, landlords.externals, mark_external=True)
 
-    # Shared external counterparty pools (employers, clients, platforms,
-    # processors, fallback owner-businesses, fallback brokerages).
-    counterparty_pools = build_counterparties(cfg.population.size)
+    # Counterparty pools
+    counterparty_pools = build_pools(cfg.counterparties, cfg.population, rng)
+    if counterparty_pools.all_internals:
+        accounts = merge(accounts, counterparty_pools.all_internals)
     if counterparty_pools.all_externals:
-        accounts = merge(accounts, counterparty_pools.all_externals, mark_external=True)
+        accounts = merge(
+            accounts,
+            counterparty_pools.all_externals,
+            mark_external=True,
+        )
 
-    # External institutional accounts (gov, insurance, lenders, IRS)
+    # External institutional accounts
     accounts = merge(
         accounts,
         list(ALL_EXTERNALS),
         mark_external=True,
     )
 
-    # Primary personal account per known person.
-    # We use the first owned account as the canonical personal account; later
-    # merge_owned_accounts(...) calls append owned extra accounts and do not
-    # disturb this ordering.
+    # Primary personal account per known person
     primary_accounts = {
         person_id: account_ids[0]
         for person_id, account_ids in accounts.by_person.items()
         if account_ids
     }
 
-    # Deterministic family external accounts (XF...) for known people.
-    # These accounts belong to a known synthetic person but are serviced by
-    # another bank, so they must still be represented in the account registry.
+    # Deterministic family external accounts for known people
     family_external_accounts = planned_external_family_accounts(
         people.ids,
         primary_accounts,
@@ -82,16 +97,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
     persona_map = assign_personas(cfg.personas, rng, persons)
     persona_objects = build_persona_objects(persona_map, cfg.population.seed)
 
-    # Same-bank secondary accounts owned by the same customer:
-    # - freelancers / smallbiz: BOP... business operating account
-    # - hnw: BRK... brokerage / custody account
-    #
-    # These are NOT external. Large retail banks (Chase, BoA, Wells, etc.)
-    # actively bundle personal and business banking, so an owner draw from a
-    # small-business owner's business account to their personal account is
-    # almost always an internal book-to-book transfer between two accounts
-    # at the same institution. Marking these external would destroy that
-    # signal and make owner draws indistinguishable from random outbound ACH.
+    # Same-bank owned business / brokerage accounts
     owned_income_accounts = planned_owned_income_accounts(
         person_ids=people.ids,
         persona_for_person=persona_map,
@@ -104,7 +110,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
             mark_external=False,
         )
 
-    # Credit cards (must happen before portfolio building)
+    # Credit cards
     accounts, credit_cards = build_credit_cards(
         DEFAULT_POLICY,
         cfg.population.seed,
@@ -112,9 +118,7 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         persona_objects,
     )
 
-    # Stable external refund-source accounts used by card refunds/chargebacks.
-    # One per issued card keeps the account universe bounded and ensures
-    # validate_transaction_accounts() sees these sources as registered.
+    # Stable external refund-source accounts
     refund_external_accounts: list[str] = [
         f"XREFUND_{card_id}" for card_id in credit_cards.ids
     ]
