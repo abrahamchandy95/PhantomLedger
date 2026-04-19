@@ -77,12 +77,18 @@ class Landlord:
 class Landlords:
     """
     Typed landlord counterparty universe.
+
+    Some landlords bank at our institution (internals) and some at other
+    banks (externals). Rent payments to internal landlords settle as
+    on-us book transfers; payments to externals go through interbank ACH.
     """
 
     ids: list[str]
     by_type: dict[str, list[str]]
     type_of: dict[str, str]
     records: list[Landlord]
+    internals: list[str]
+    externals: list[str]
 
 
 @dataclass(frozen=True, slots=True)

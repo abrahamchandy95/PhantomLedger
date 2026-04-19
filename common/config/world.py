@@ -7,6 +7,7 @@ from .population.accounts import Accounts
 from .population.hubs import Hubs
 from .population.personas import Personas
 from .population.merchants import Merchants
+from .population.counterparties import Counterparties
 from .population.landlords import Landlords
 from .population.family import (
     Allowances,
@@ -49,6 +50,7 @@ class World:
     personas: Personas = field(default_factory=Personas)
     merchants: Merchants = field(default_factory=Merchants)
     landlords: Landlords = field(default_factory=Landlords)
+    counterparties: Counterparties = field(default_factory=Counterparties)
 
     households: Households = field(default_factory=Households)
     dependents: Dependents = field(default_factory=Dependents)

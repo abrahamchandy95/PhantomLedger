@@ -4,7 +4,8 @@ Landlord pool configuration.
 Holds:
   - how dense the landlord counterparty pool is per 10,000 people,
   - the unit-weighted type distribution (RHFS 2021 anchored),
-  - the per-type payment channel mix used by rent_routing.
+  - the per-type payment channel mix used by rent_routing,
+  - the per-type in-bank probability for on-us rent payments.
 
 This is the single source of truth for "how many landlords should exist"
 and "how does each landlord type collect rent". Downstream generators
@@ -54,6 +55,38 @@ def _default_channel_mix() -> dict[str, dict[str, float]]:
     }
 
 
+def _default_in_bank_p() -> dict[str, float]:
+    """
+    Per-type probability that a landlord also banks at our institution.
+
+    When a landlord banks at the same institution as the tenant, the rent
+    payment settles as an internal book-to-book transfer rather than an
+    interbank ACH. This matters for:
+      - balance ledger accuracy (on-us transfers are immediate)
+      - mule detection (legitimate high-frequency internal transfers
+        between accounts at the same bank are common, not suspicious)
+      - realistic transaction graph density (some rent edges are internal)
+
+    Research basis (NFIB 2023, FDIC SOD 2024):
+      - 56% of small business owners keep personal and business accounts
+        at the same bank (NFIB 2023 survey).
+      - A large retail bank holds ~10-12% of US deposits (FDIC SOD 2024).
+      - Individual landlords are often personal banking customers who
+        collect rent as a side business. Geographic co-location with
+        tenants further raises the overlap. Estimate: ~6%.
+      - Small LLC landlords are more intentional about separate business
+        banking but still tend toward local institutions. Estimate: ~4%.
+      - Corporate/REIT landlords use commercial banking relationships
+        with national scope; very low overlap with any single retail
+        bank's customer base. Estimate: ~1%.
+    """
+    return {
+        INDIVIDUAL: 0.06,
+        LLC_SMALL: 0.04,
+        CORPORATE: 0.01,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class Landlords:
     # Density. Roughly matches the legacy entities/counterparties.py default
@@ -69,6 +102,9 @@ class Landlords:
     channel_mix: dict[str, dict[str, float]] = field(
         default_factory=_default_channel_mix
     )
+
+    # Per-type probability of the landlord banking at our institution.
+    in_bank_p: dict[str, float] = field(default_factory=_default_in_bank_p)
 
     def __post_init__(self) -> None:
         validate_metadata(self)
@@ -102,3 +138,7 @@ class Landlords:
             raise ValueError(
                 f"channel_mix missing entries for types: {sorted(missing)}"
             )
+
+        # Validate in_bank_p values.
+        for ltype, p in self.in_bank_p.items():
+            between(f"in_bank_p[{ltype}]", p, 0.0, 1.0)

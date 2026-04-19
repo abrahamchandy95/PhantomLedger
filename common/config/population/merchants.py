@@ -13,7 +13,19 @@ class Merchants:
     long_tail_weight_share: float = field(
         default=0.18, metadata={"between": (0.0, 0.95)}
     )
-    in_bank_p: float = field(default=0.02, metadata={"between": (0.0, 1.0)})
+
+    # Probability that a core merchant also banks at our institution.
+    #
+    # For a large retail bank (~10-12% deposit market share), geographic
+    # co-location and commercial-banking bundling push the effective
+    # overlap above the raw market share. NFIB 2023: 56% of small
+    # business owners keep personal and business at the same bank.
+    # National chains (Walmart, Amazon) bank at treasury/commercial
+    # banks, pulling the blended rate back down.
+    #
+    # Net estimate: ~5-8% of a retail customer's merchant counterparties
+    # also bank at the same large institution. 6% is the midpoint.
+    in_bank_p: float = field(default=0.06, metadata={"between": (0.0, 1.0)})
 
     size_sigma: float = field(default=1.2, metadata={"gt": 0.0})
     long_tail_size_sigma: float = field(default=1.8, metadata={"gt": 0.0})

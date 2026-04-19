@@ -8,6 +8,7 @@ from .population.merchants import Merchants
 from .population.landlords import Landlords
 from .population.social import Social
 from .population.government import Government
+from .population.counterparties import Counterparties
 from .population.insurance import Insurance
 from .simulation.events import Events
 from .simulation.infra import Infra
@@ -18,6 +19,7 @@ __all__ = [
     "Window",
     "Population",
     "Accounts",
+    "Counterparties",
     "Hubs",
     "Personas",
     "Merchants",

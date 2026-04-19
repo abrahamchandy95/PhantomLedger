@@ -21,20 +21,32 @@ ACCOUNT = IdFormat(prefix="A", width=10)
 MERCHANT = IdFormat(prefix="M", width=8)
 MERCHANT_EXTERNAL = IdFormat(prefix="XM", width=8)
 
+# --- Employers ---
+# Internal employers bank at our institution; their payroll ACH
+# originates as an on-us book transfer rather than an interbank ACH.
+EMPLOYER = IdFormat(prefix="E", width=8)
 EMPLOYER_EXTERNAL = IdFormat(prefix="XE", width=8)
 
 # Generic/legacy landlord external. Still used as a fallback label, but new
 # code should prefer one of the typed landlord prefixes below.
 LANDLORD_EXTERNAL = IdFormat(prefix="XL", width=8)
 
-# Typed landlord externals used by entities/landlords.py. Widths are chosen so
-# 10^7 distinct accounts fit per type, which comfortably covers any realistic
-# population size.
+# --- Typed landlord externals ---
 LANDLORD_INDIVIDUAL_EXTERNAL = IdFormat(prefix="XLI", width=7)
 LANDLORD_SMALL_LLC_EXTERNAL = IdFormat(prefix="XLS", width=7)
 LANDLORD_CORPORATE_EXTERNAL = IdFormat(prefix="XLC", width=7)
 
+# --- Typed landlord internals ---
+# Landlords who bank at our institution. Rent payments to these
+# counterparties settle as internal book-to-book transfers.
+LANDLORD_INDIVIDUAL = IdFormat(prefix="LI", width=7)
+LANDLORD_SMALL_LLC = IdFormat(prefix="LS", width=7)
+LANDLORD_CORPORATE = IdFormat(prefix="LC", width=7)
+
+# --- Client / platform / processor / business / brokerage ---
+CLIENT = IdFormat(prefix="IC", width=8)
 CLIENT_EXTERNAL = IdFormat(prefix="XC", width=8)
+
 PLATFORM_EXTERNAL = IdFormat(prefix="XP", width=8)
 PROCESSOR_EXTERNAL = IdFormat(prefix="XS", width=8)
 BUSINESS_EXTERNAL = IdFormat(prefix="XO", width=8)
@@ -47,6 +59,10 @@ def customer_id(n: int) -> str:
 
 def account_id(n: int) -> str:
     return ACCOUNT.apply(n)
+
+
+def employer_id(n: int) -> str:
+    return EMPLOYER.apply(n)
 
 
 def employer_external_id(n: int) -> str:
@@ -66,15 +82,31 @@ def landlord_external_id(n: int) -> str:
 
 
 def landlord_individual_id(n: int) -> str:
+    return LANDLORD_INDIVIDUAL.apply(n)
+
+
+def landlord_individual_external_id(n: int) -> str:
     return LANDLORD_INDIVIDUAL_EXTERNAL.apply(n)
 
 
 def landlord_small_llc_id(n: int) -> str:
+    return LANDLORD_SMALL_LLC.apply(n)
+
+
+def landlord_small_llc_external_id(n: int) -> str:
     return LANDLORD_SMALL_LLC_EXTERNAL.apply(n)
 
 
 def landlord_corporate_id(n: int) -> str:
+    return LANDLORD_CORPORATE.apply(n)
+
+
+def landlord_corporate_external_id(n: int) -> str:
     return LANDLORD_CORPORATE_EXTERNAL.apply(n)
+
+
+def client_id(n: int) -> str:
+    return CLIENT.apply(n)
 
 
 def client_external_id(n: int) -> str:
