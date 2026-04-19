@@ -2,7 +2,7 @@
 
 #include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/devices/identity.hpp"
-#include "phantomledger/entities/identity.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/network/ipv4.hpp"
 
 #include <compare>
@@ -26,8 +26,8 @@ struct Session {
 };
 
 struct Transaction {
-  entities::Identity source;
-  entities::Identity target;
+  entities::identifier::Key source;
+  entities::identifier::Key target;
   double amount = 0.0;
   std::int64_t timestamp = 0;
 
