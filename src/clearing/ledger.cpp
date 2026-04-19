@@ -1,5 +1,4 @@
 #include "phantomledger/clearing/ledger.hpp"
-#include "phantomledger/entities/categories.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -11,8 +10,8 @@ namespace PhantomLedger::clearing {
 namespace {
 
 [[nodiscard]] constexpr bool
-isExternalAccount(const entities::Identity &id) noexcept {
-  return id.bank == entities::BankAccount::external;
+isExternalAccount(const entities::identifier::Key &id) noexcept {
+  return id.bank == entities::identifier::Bank::external;
 }
 
 } // namespace
@@ -30,7 +29,7 @@ void Ledger::initialize(Index count) {
   internalAccounts_.reserve(count);
 }
 
-void Ledger::addAccount(const entities::Identity &id, Index idx) {
+void Ledger::addAccount(const entities::identifier::Key &id, Index idx) {
   assert(idx < size_);
   internalAccounts_.insert_or_assign(id, idx);
 }
@@ -94,15 +93,16 @@ double Ledger::availableCash(Index idx) const noexcept {
   return cash_[idx];
 }
 
-double Ledger::liquidity(const entities::Identity &identity) const {
+double Ledger::liquidity(const entities::identifier::Key &identity) const {
   return liquidity(findAccount(identity));
 }
 
-double Ledger::availableCash(const entities::Identity &identity) const {
+double Ledger::availableCash(const entities::identifier::Key &identity) const {
   return availableCash(findAccount(identity));
 }
 
-Ledger::Index Ledger::findAccount(const entities::Identity &identity) const {
+Ledger::Index
+Ledger::findAccount(const entities::identifier::Key &identity) const {
   const auto it = internalAccounts_.find(identity);
   return it == internalAccounts_.end() ? invalid : it->second;
 }
@@ -115,9 +115,9 @@ void Ledger::setOverdraftOnly(Index idx, double limit) noexcept {
   courtesy_[idx] = 0.0;
 }
 
-TransferDecision Ledger::transfer(const entities::Identity &src,
-                                  const entities::Identity &dst, double amount,
-                                  std::string_view channel) {
+TransferDecision Ledger::transfer(const entities::identifier::Key &src,
+                                  const entities::identifier::Key &dst,
+                                  double amount, std::string_view channel) {
   if (amount <= 0.0 || !std::isfinite(amount)) {
     return TransferDecision::reject(RejectReason::invalid);
   }

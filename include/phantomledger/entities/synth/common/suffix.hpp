@@ -1,0 +1,65 @@
+#pragma once
+
+#include "phantomledger/crypto/blake2b.hpp"
+#include "phantomledger/entities/identifier/make.hpp"
+#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifier/role.hpp"
+#include "phantomledger/ids/format.hpp"
+
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <stdexcept>
+#include <string_view>
+
+namespace PhantomLedger::entities::synth::common {
+
+[[nodiscard]] inline std::uint64_t
+readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
+  std::uint64_t value = 0;
+  for (std::size_t i = 0; i < bytes.size(); ++i) {
+    value |= static_cast<std::uint64_t>(bytes[i]) << (i * 8U);
+  }
+  return value;
+}
+
+[[nodiscard]] inline std::uint64_t suffix(std::string_view scope,
+                                          identifier::PersonId person) {
+  std::array<char, 64> buffer{};
+  std::size_t pos = 0;
+
+  std::memcpy(buffer.data() + pos, scope.data(), scope.size());
+  pos += scope.size();
+  buffer[pos++] = '|';
+
+  pos += ids::write(buffer.data() + pos,
+                    identifier::make(identifier::Role::customer,
+                                     identifier::Bank::internal, person));
+
+  std::array<std::uint8_t, 8> digest{};
+  const bool ok =
+      crypto::blake2b::digest(buffer.data(), pos, digest.data(), digest.size());
+  if (!ok) {
+    throw std::runtime_error("blake2b digest failed");
+  }
+
+  return readLe64(digest);
+}
+
+[[nodiscard]] inline std::uint64_t familySuffix(identifier::PersonId person) {
+  std::array<char, 64> buffer{};
+  const auto written = ids::write(
+      buffer.data(), identifier::make(identifier::Role::customer,
+                                      identifier::Bank::internal, person));
+
+  std::array<std::uint8_t, 8> digest{};
+  const bool ok = crypto::blake2b::digest(buffer.data(), written, digest.data(),
+                                          digest.size());
+  if (!ok) {
+    throw std::runtime_error("blake2b digest failed");
+  }
+
+  return readLe64(digest);
+}
+
+} // namespace PhantomLedger::entities::synth::common

@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include "phantomledger/random/rng.hpp"

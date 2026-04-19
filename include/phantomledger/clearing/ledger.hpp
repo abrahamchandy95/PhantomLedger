@@ -1,5 +1,5 @@
 #pragma once
-#include "phantomledger/entities/identity.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -67,7 +67,7 @@ public:
 
   void initialize(Index count);
 
-  void addAccount(const entities::Identity &id, Index idx);
+  void addAccount(const entities::identifier::Key &id, Index idx);
   void createHub(Index idx) noexcept;
 
   [[nodiscard]] double &cash(Index idx) noexcept;
@@ -77,16 +77,16 @@ public:
 
   [[nodiscard]] double liquidity(Index idx) const noexcept;
   [[nodiscard]] double availableCash(Index idx) const noexcept;
-  [[nodiscard]] double liquidity(const entities::Identity &identity) const;
-  [[nodiscard]] double availableCash(const entities::Identity &identity) const;
+  [[nodiscard]] double liquidity(const entities::identifier::Key &id) const;
+  [[nodiscard]] double availableCash(const entities::identifier::Key &id) const;
 
-  [[nodiscard]] Index findAccount(const entities::Identity &identity) const;
+  [[nodiscard]] Index findAccount(const entities::identifier::Key &id) const;
   [[nodiscard]] Index size() const noexcept { return size_; }
 
   void setOverdraftOnly(Index idx, double limit) noexcept;
 
-  [[nodiscard]] TransferDecision transfer(const entities::Identity &src,
-                                          const entities::Identity &dst,
+  [[nodiscard]] TransferDecision transfer(const entities::identifier::Key &src,
+                                          const entities::identifier::Key &dst,
                                           double amount,
                                           std::string_view channel = "");
 
@@ -109,7 +109,7 @@ private:
   std::vector<double> linked_;
   std::vector<double> courtesy_;
   std::vector<std::uint8_t> flags_;
-  std::unordered_map<entities::Identity, Index> internalAccounts_;
+  std::unordered_map<entities::identifier::Key, Index> internalAccounts_;
 };
 
 } // namespace PhantomLedger::clearing
