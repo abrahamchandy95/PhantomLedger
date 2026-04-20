@@ -6,6 +6,7 @@
 #include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/synth/counterparties/config.hpp"
 #include "phantomledger/entities/synth/counterparties/scale.hpp"
+#include "phantomledger/random/rng.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -13,8 +14,9 @@
 namespace PhantomLedger::entities::synth::counterparties {
 namespace detail {
 
-inline void append(std::vector<identifier::Key> &out, identifier::Role role,
-                   int count) {
+/// Append `count` purely external IDs to `out`.
+inline void appendExternal(std::vector<identifier::Key> &out,
+                           identifier::Role role, int count) {
   out.reserve(out.size() + static_cast<std::size_t>(count));
   for (int i = 1; i <= count; ++i) {
     out.push_back(identifier::make(role, identifier::Bank::external,
@@ -22,38 +24,90 @@ inline void append(std::vector<identifier::Key> &out, identifier::Role role,
   }
 }
 
+/// Split a pool of `total` IDs into internal and external based on
+/// `inBankP`. Uses separate serial counters for internal and external
+/// to avoid ID collisions between the two prefix families.
+///
+/// Returns the number of internals generated.
+inline int splitPool(random::Rng &rng, identifier::Role role, int total,
+                     double inBankP, std::vector<identifier::Key> &internals,
+                     std::vector<identifier::Key> &externals,
+                     std::vector<identifier::Key> &combined) {
+  internals.reserve(internals.size() + static_cast<std::size_t>(total));
+  externals.reserve(externals.size() + static_cast<std::size_t>(total));
+  combined.reserve(combined.size() + static_cast<std::size_t>(total));
+
+  std::uint64_t intCounter = 0;
+  std::uint64_t extCounter = 0;
+
+  for (int i = 0; i < total; ++i) {
+    identifier::Key id;
+    if (rng.coin(inBankP)) {
+      ++intCounter;
+      id = identifier::make(role, identifier::Bank::internal, intCounter);
+      internals.push_back(id);
+    } else {
+      ++extCounter;
+      id = identifier::make(role, identifier::Bank::external, extCounter);
+      externals.push_back(id);
+    }
+    combined.push_back(id);
+  }
+
+  return static_cast<int>(intCounter);
+}
+
 } // namespace detail
 
+/// Build all counterparty pools scaled to population size.
+///
+/// Employers and clients are split into internal/external based on
+/// `cfg.employerInBankP` and `cfg.clientInBankP`. All other pools
+/// remain fully external (platforms, processors, businesses, and
+/// brokerages use treasury/commercial banking, not retail).
 [[nodiscard]] inline entities::counterparties::Pool
-makePool(int population, const Config &cfg = {}) {
+makePool(random::Rng &rng, int population, const Config &cfg = {}) {
   entities::counterparties::Pool out;
 
-  detail::append(out.employerIds, identifier::Role::employer,
-                 scale(cfg.perTenK.employers, population, cfg.floor.employers));
-  detail::append(
-      out.clientPayerIds, identifier::Role::client,
-      scale(cfg.perTenK.clientPayers, population, cfg.floor.clientPayers));
-  detail::append(out.platformIds, identifier::Role::platform,
-                 scale(cfg.perTenK.platforms, population, cfg.floor.platforms));
-  detail::append(
+  // --- Employers: split by in_bank_p ---
+  const int nEmployers =
+      scale(cfg.perTenK.employers, population, cfg.floor.employers);
+  detail::splitPool(rng, identifier::Role::employer, nEmployers,
+                    cfg.employerInBankP, out.employerInternalIds,
+                    out.employerExternalIds, out.employerIds);
+
+  // --- Clients: split by in_bank_p ---
+  const int nClients =
+      scale(cfg.perTenK.clientPayers, population, cfg.floor.clientPayers);
+  detail::splitPool(rng, identifier::Role::client, nClients, cfg.clientInBankP,
+                    out.clientInternalIds, out.clientExternalIds,
+                    out.clientPayerIds);
+
+  // --- Fully external pools ---
+  detail::appendExternal(
+      out.platformIds, identifier::Role::platform,
+      scale(cfg.perTenK.platforms, population, cfg.floor.platforms));
+  detail::appendExternal(
       out.processorIds, identifier::Role::processor,
       scale(cfg.perTenK.processors, population, cfg.floor.processors));
-  detail::append(out.ownerBusinessIds, identifier::Role::business,
-                 scale(cfg.perTenK.ownerBusinesses, population,
-                       cfg.floor.ownerBusinesses));
-  detail::append(
+  detail::appendExternal(out.ownerBusinessIds, identifier::Role::business,
+                         scale(cfg.perTenK.ownerBusinesses, population,
+                               cfg.floor.ownerBusinesses));
+  detail::appendExternal(
       out.brokerageIds, identifier::Role::brokerage,
       scale(cfg.perTenK.brokerages, population, cfg.floor.brokerages));
 
-  out.allExternals.reserve(out.employerIds.size() + out.clientPayerIds.size() +
-                           out.platformIds.size() + out.processorIds.size() +
-                           out.ownerBusinessIds.size() +
-                           out.brokerageIds.size());
+  // --- Aggregate external and internal lists ---
+  out.allExternals.reserve(
+      out.employerExternalIds.size() + out.clientExternalIds.size() +
+      out.platformIds.size() + out.processorIds.size() +
+      out.ownerBusinessIds.size() + out.brokerageIds.size());
 
-  out.allExternals.insert(out.allExternals.end(), out.employerIds.begin(),
-                          out.employerIds.end());
-  out.allExternals.insert(out.allExternals.end(), out.clientPayerIds.begin(),
-                          out.clientPayerIds.end());
+  out.allExternals.insert(out.allExternals.end(),
+                          out.employerExternalIds.begin(),
+                          out.employerExternalIds.end());
+  out.allExternals.insert(out.allExternals.end(), out.clientExternalIds.begin(),
+                          out.clientExternalIds.end());
   out.allExternals.insert(out.allExternals.end(), out.platformIds.begin(),
                           out.platformIds.end());
   out.allExternals.insert(out.allExternals.end(), out.processorIds.begin(),
@@ -62,6 +116,14 @@ makePool(int population, const Config &cfg = {}) {
                           out.ownerBusinessIds.end());
   out.allExternals.insert(out.allExternals.end(), out.brokerageIds.begin(),
                           out.brokerageIds.end());
+
+  out.allInternals.reserve(out.employerInternalIds.size() +
+                           out.clientInternalIds.size());
+  out.allInternals.insert(out.allInternals.end(),
+                          out.employerInternalIds.begin(),
+                          out.employerInternalIds.end());
+  out.allInternals.insert(out.allInternals.end(), out.clientInternalIds.begin(),
+                          out.clientInternalIds.end());
 
   return out;
 }

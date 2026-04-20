@@ -22,11 +22,11 @@ enum class BankMode : std::uint8_t {
     return BankMode::internalOnly;
 
   case Role::merchant:
-    return BankMode::either;
-
   case Role::employer:
   case Role::landlord:
   case Role::client:
+    return BankMode::either;
+
   case Role::platform:
   case Role::processor:
   case Role::business:

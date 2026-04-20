@@ -1,5 +1,5 @@
 #include "phantomledger/counterparties/accounts.hpp"
-#include "phantomledger/ids/format.hpp"
+#include "phantomledger/entities/encoding/external.hpp"
 
 #include "test_support.hpp"
 
@@ -66,7 +66,7 @@ void testNames() {
 
 void testAllAreExternal() {
   for (auto account : counterparties::kAll) {
-    PL_CHECK(ids::isExternal(account.value));
+    PL_CHECK(encoding::isExternal(account.value));
   }
   std::printf("  PASS: all ids are external\n");
 }

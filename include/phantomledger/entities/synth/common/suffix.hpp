@@ -1,10 +1,10 @@
 #pragma once
 
 #include "phantomledger/crypto/blake2b.hpp"
+#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
 #include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entities/identifier/role.hpp"
-#include "phantomledger/ids/format.hpp"
 
 #include <array>
 #include <cstdint>
@@ -32,9 +32,9 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
   pos += scope.size();
   buffer[pos++] = '|';
 
-  pos += ids::write(buffer.data() + pos,
-                    identifier::make(identifier::Role::customer,
-                                     identifier::Bank::internal, person));
+  pos += encoding::write(buffer.data() + pos,
+                         identifier::make(identifier::Role::customer,
+                                          identifier::Bank::internal, person));
 
   std::array<std::uint8_t, 8> digest{};
   const bool ok =
@@ -48,7 +48,7 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
 
 [[nodiscard]] inline std::uint64_t familySuffix(identifier::PersonId person) {
   std::array<char, 64> buffer{};
-  const auto written = ids::write(
+  const auto written = encoding::write(
       buffer.data(), identifier::make(identifier::Role::customer,
                                       identifier::Bank::internal, person));
 
