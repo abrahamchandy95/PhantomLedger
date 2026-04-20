@@ -12,25 +12,14 @@
 
 #include <array>
 #include <cstdint>
-#include <stdexcept>
 #include <vector>
 
 namespace PhantomLedger::entities::synth::landlords {
 namespace detail {
 
-[[nodiscard]] inline std::size_t classIndex(entities::landlords::Class kind) {
-  switch (kind) {
-  case entities::landlords::Class::individual:
-    return 0;
-  case entities::landlords::Class::llcSmall:
-    return 1;
-  case entities::landlords::Class::corporate:
-    return 2;
-  case entities::landlords::Class::unspecified:
-    break;
-  }
-
-  throw std::invalid_argument("unsupported landlord class");
+[[nodiscard]] constexpr std::size_t
+classIndex(entities::landlords::Class kind) noexcept {
+  return static_cast<std::size_t>(kind);
 }
 
 } // namespace detail

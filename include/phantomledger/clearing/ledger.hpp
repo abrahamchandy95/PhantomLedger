@@ -1,9 +1,12 @@
 #pragma once
+
+#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
 
 #include <cstdint>
 #include <limits>
-#include <string_view>
+#include <optional>
+#include <stdexcept>
 #include <unordered_map>
 #include <vector>
 
@@ -56,8 +59,6 @@ private:
   std::optional<RejectReason> reason_;
 };
 
-inline constexpr std::string_view self_transfer_channel = "self_transfer";
-
 class Ledger {
 public:
   using Index = std::uint32_t;
@@ -85,10 +86,17 @@ public:
 
   void setOverdraftOnly(Index idx, double limit) noexcept;
 
+  [[nodiscard]] TransferDecision
+  transfer(const entities::identifier::Key &src,
+           const entities::identifier::Key &dst, double amount,
+           channels::Tag channel = channels::none);
+
+  template <channels::ChannelEnum Enum>
   [[nodiscard]] TransferDecision transfer(const entities::identifier::Key &src,
                                           const entities::identifier::Key &dst,
-                                          double amount,
-                                          std::string_view channel = "");
+                                          double amount, Enum channel) {
+    return transfer(src, dst, amount, channels::tag(channel));
+  }
 
   [[nodiscard]] Ledger clone() const;
   void restore(const Ledger &other);

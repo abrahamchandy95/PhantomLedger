@@ -19,25 +19,17 @@ struct Share {
 ///   llcSmall:   ~4%  (intentional separate business banking)
 ///   corporate:  ~1%  (commercial banking, national scope)
 struct InBankProbability {
-  double individual = 0.06;
-  double llcSmall = 0.04;
-  double corporate = 0.01;
+  std::array<double, 3> byClass{
+      0.06, // individual
+      0.04, // llcSmall
+      0.01, // corporate
+  };
 
-  [[nodiscard]] double forClass(entities::landlords::Class kind) const {
-    switch (kind) {
-    case entities::landlords::Class::individual:
-      return individual;
-    case entities::landlords::Class::llcSmall:
-      return llcSmall;
-    case entities::landlords::Class::corporate:
-      return corporate;
-    case entities::landlords::Class::unspecified:
-      return individual;
-    }
-    return 0.0;
+  [[nodiscard]] constexpr double
+  forClass(entities::landlords::Class kind) const noexcept {
+    return byClass[entities::landlords::classIndex(kind)];
   }
 };
-
 struct Config {
   double perTenK = 12.0;
   int floor = 3;

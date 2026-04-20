@@ -117,7 +117,7 @@ void Ledger::setOverdraftOnly(Index idx, double limit) noexcept {
 
 TransferDecision Ledger::transfer(const entities::identifier::Key &src,
                                   const entities::identifier::Key &dst,
-                                  double amount, std::string_view channel) {
+                                  double amount, channels::Tag channel) {
   if (amount <= 0.0 || !std::isfinite(amount)) {
     return TransferDecision::reject(RejectReason::invalid);
   }
@@ -148,7 +148,8 @@ TransferDecision Ledger::transfer(const entities::identifier::Key &src,
   const bool srcHub = isHub(srcIdx);
 
   if (!srcHub) {
-    const bool selfTransfer = channel == self_transfer_channel;
+    const bool selfTransfer =
+        channels::is(channel, channels::Legit::selfTransfer);
     const double spendable =
         selfTransfer ? cash_[srcIdx] : totalLiquidity(srcIdx);
 

@@ -5,32 +5,37 @@
 #include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
 
+#include <array>
 #include <cstdint>
 #include <string>
 
 namespace PhantomLedger::encoding {
 
+namespace detail {
+
+inline constexpr std::array<Layout, entities::landlords::kClassCount>
+    kLandlordExternalLayouts{
+        kLandlordIndividual,
+        kLandlordSmallLlc,
+        kLandlordCorporate,
+    };
+
+inline constexpr std::array<Layout, entities::landlords::kClassCount>
+    kLandlordInternalLayouts{
+        kLandlordIndividualInternal,
+        kLandlordSmallLlcInternal,
+        kLandlordCorporateInternal,
+    };
+
+} // namespace detail
+
 [[nodiscard]] constexpr Layout
 layout(entities::landlords::Class kind,
        entities::identifier::Bank bank) noexcept {
-  using Bank = entities::identifier::Bank;
-
-  switch (kind) {
-  case entities::landlords::Class::unspecified:
-    return bank == Bank::internal ? kLandlordIndividualInternal
-                                  : kLandlordExternal;
-  case entities::landlords::Class::individual:
-    return bank == Bank::internal ? kLandlordIndividualInternal
-                                  : kLandlordIndividual;
-  case entities::landlords::Class::llcSmall:
-    return bank == Bank::internal ? kLandlordSmallLlcInternal
-                                  : kLandlordSmallLlc;
-  case entities::landlords::Class::corporate:
-    return bank == Bank::internal ? kLandlordCorporateInternal
-                                  : kLandlordCorporate;
-  }
-
-  return kLandlordExternal;
+  const auto index = entities::landlords::classIndex(kind);
+  return bank == entities::identifier::Bank::internal
+             ? detail::kLandlordInternalLayouts[index]
+             : detail::kLandlordExternalLayouts[index];
 }
 
 [[nodiscard]] constexpr Layout
@@ -44,9 +49,9 @@ layout(entities::landlords::Class kind) noexcept {
   return render(layout(kind, bank), number);
 }
 
+/// Generic external landlord id, not tied to a specific landlord class.
 [[nodiscard]] inline std::string landlordExternalId(std::uint64_t number) {
-  return landlordId(number, entities::landlords::Class::unspecified,
-                    entities::identifier::Bank::external);
+  return render(kLandlordExternal, number);
 }
 
 [[nodiscard]] inline std::string landlordIndividualId(std::uint64_t number) {
@@ -93,4 +98,5 @@ inline std::size_t write(char *out, entities::landlords::Class kind,
                          std::uint64_t number) {
   return write(out, layout(kind, bank), number);
 }
+
 } // namespace PhantomLedger::encoding
