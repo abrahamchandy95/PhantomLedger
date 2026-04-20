@@ -10,6 +10,7 @@
 #include "phantomledger/entities/synth/landlords/scale.hpp"
 #include "phantomledger/random/rng.hpp"
 
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
@@ -38,10 +39,9 @@ namespace detail {
                                    const Config &cfg = {}) {
   const int total = scale(cfg.perTenK, population, cfg.floor);
 
-  std::vector<double> weights;
-  weights.reserve(cfg.mix.size());
-  for (const auto &entry : cfg.mix) {
-    weights.push_back(entry.weight);
+  std::array<double, 3> weights{};
+  for (std::size_t i = 0; i < cfg.mix.size(); ++i) {
+    weights[i] = cfg.mix[i].weight;
   }
 
   const auto cdf = distributions::buildCdf(weights);
@@ -49,19 +49,42 @@ namespace detail {
   Pack out;
   out.roster.records.reserve(static_cast<std::size_t>(total));
 
-  std::uint64_t serial = 0;
+  // Single serial counter per bank so that Keys are unique.
+  // Since Key{landlord, bank, N} doesn't encode the landlord Class,
+  // separate per-type counters would produce duplicate Keys
+  // (e.g. individual #1 and llcSmall #1 would both be {landlord, internal, 1}).
+  // The landlord Class is preserved in the Record for typed formatting.
+  std::uint64_t internalSerial = 0;
+  std::uint64_t externalSerial = 0;
+
   for (int i = 0; i < total; ++i) {
     const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
     const auto kind = cfg.mix[idx].kind;
-    const auto id = identifier::make(identifier::Role::landlord,
-                                     identifier::Bank::external, ++serial);
+    const auto classIdx = detail::classIndex(kind);
+
+    // Determine banking relationship.
+    const double inBankP = cfg.inBankP.forClass(kind);
+    const bool isInternal = rng.coin(inBankP);
+    const auto bank =
+        isInternal ? identifier::Bank::internal : identifier::Bank::external;
+
+    const std::uint64_t serial =
+        isInternal ? ++internalSerial : ++externalSerial;
+
+    const auto id = identifier::make(identifier::Role::landlord, bank, serial);
 
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
     out.roster.records.push_back(entities::landlords::Record{
         .accountId = id,
         .type = kind,
     });
-    out.index.byClass[detail::classIndex(kind)].push_back(recIx);
+    out.index.byClass[classIdx].push_back(recIx);
+
+    if (isInternal) {
+      out.internals.push_back(id);
+    } else {
+      out.externals.push_back(id);
+    }
   }
 
   return out;
