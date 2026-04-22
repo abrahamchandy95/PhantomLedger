@@ -11,7 +11,7 @@ def register_all() -> None:
 
     from . import standard
     from . import mule_ml
-    from . import aml
+    from .aml import exporter
 
     _registered = True
 

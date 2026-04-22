@@ -69,12 +69,12 @@ def add_routines(
         generate_rent_txns(
             timeline,
             request.network,
+            request.macro,
             request.specs,
             plan,
             txf,
         )
     )
-
     streams.add(
         generate_subscription_txns(
             timeline.rng,

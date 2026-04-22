@@ -10,6 +10,7 @@ from infra.routing import Router
 from infra.shared import SharedInfra
 
 import transfers.fraud as fraud_model
+import transfers.balances as balances_model
 from transfers.legit.blueprints import TransfersPayload
 
 
@@ -37,13 +38,10 @@ class Infra:
 
 @dataclass(frozen=True, slots=True)
 class Transfers:
-    """
-    End-to-end transfer artifacts.
-    """
-
     legit: TransfersPayload
     fraud: fraud_model.InjectionOutput
     draft_txns: list[Transaction]
     final_txns: list[Transaction]
+    final_book: balances_model.ClearingHouse | None = None
     drop_counts: dict[str, int] = field(default_factory=dict)
     drop_counts_by_channel: dict[tuple[str, str], int] = field(default_factory=dict)
