@@ -40,82 +40,6 @@ struct Employment {
 /// Source callback for the initial annual salary draw.
 using SalarySource = std::function<double()>;
 
-/// Narrow policy view used by employment logic.
-struct EmploymentRules {
-  const TenurePolicy &tenure;
-  const InflationPolicy &inflation;
-  const RaisePolicy &raises;
-  const PayrollPolicy &payroll;
-};
-
-struct EmploymentInitInput {
-  std::string_view personId;
-  time::TimePoint startDate;
-  std::span<const entities::identifier::Key> employers;
-  SalarySource salarySource;
-};
-
-struct EmploymentAdvanceInput {
-  std::string_view personId;
-  time::TimePoint now;
-  std::span<const entities::identifier::Key> employers;
-  const Employment &previous;
-};
-
-struct SalaryQuery {
-  std::string_view personId;
-  const Employment &state;
-  time::TimePoint payDate;
-};
-
-namespace detail {
-
-struct SalaryGrowthInput {
-  std::string_view personId;
-  time::TimePoint start;
-  time::TimePoint now;
-};
-
-[[nodiscard]] inline double salaryRealRaise(const random::RngFactory &factory,
-                                            const RaisePolicy &raises,
-                                            std::string_view key, int year) {
-  auto rng = factory.rng({"salary_real_raise", key, std::to_string(year)});
-  return growth::sampleNormalClamped(rng, raises.salary.mu, raises.salary.sigma,
-                                     raises.salary.floor);
-}
-
-[[nodiscard]] inline double jobSwitchBump(const random::RngFactory &factory,
-                                          const RaisePolicy &raises,
-                                          std::string_view personId,
-                                          int switchIndex) {
-  auto rng =
-      factory.rng({"job_switch_bump", personId, std::to_string(switchIndex)});
-  return growth::sampleNormalClamped(
-      rng, raises.jobBump.mu, raises.jobBump.sigma, raises.jobBump.floor);
-}
-
-[[nodiscard]] inline double compoundSalary(const EmploymentRules &rules,
-                                           const random::RngFactory &factory,
-                                           const SalaryGrowthInput &input) {
-  const int years = growth::anniversariesPassed(input.start, input.now);
-  if (years <= 0) {
-    return 1.0;
-  }
-
-  const auto startCal = time::toCalendarDate(input.start);
-  double growthFactor = 1.0;
-
-  for (int i = 0; i < years; ++i) {
-    const double realRaise = salaryRealRaise(factory, rules.raises,
-                                             input.personId, startCal.year + i);
-    growthFactor *= (1.0 + rules.inflation.annual + realRaise);
-  }
-
-  return growthFactor;
-}
-
-} // namespace detail
-
 /// Sample a payroll profile for an employer account.
 [[nodiscard]] inline PayrollProfile
 samplePayrollProfile(const PayrollPolicy &payrollPolicy,
@@ -148,7 +72,12 @@ samplePayrollProfile(const PayrollPolicy &payrollPolicy,
     weekday = (weekday == 4) ? 3 : 4;
   }
 
-  auto anchor = nextWeekdayOnOrAfter(time::makeTime(2025, 1, 1), weekday);
+  auto anchor = nextWeekdayOnOrAfter(time::makeTime(time::CalendarDate{
+                                         .year = 2025,
+                                         .month = 1,
+                                         .day = 1,
+                                     }),
+                                     weekday);
   if (cadence == PayCadence::biweekly && rng.coin(0.5)) {
     anchor = time::addDays(anchor, 7);
   }
@@ -176,84 +105,185 @@ samplePayrollProfile(const PayrollPolicy &payrollPolicy,
   return profile;
 }
 
-/// Bootstrap the initial employment state for a person.
-[[nodiscard]] inline Employment
-initializeEmployment(const EmploymentRules &rules,
-                     const random::RngFactory &factory,
-                     const EmploymentInitInput &input) {
-  auto rng = factory.rng({"employment_init", input.personId});
+class SalaryGrowthModel {
+public:
+  SalaryGrowthModel(const InflationPolicy &inflationPolicy,
+                    const RaisePolicy &raisePolicy,
+                    const random::RngFactory &factory)
+      : inflationPolicy_(inflationPolicy), raisePolicy_(raisePolicy),
+        factory_(factory) {}
 
-  const auto employer = growth::pickOne(rng, input.employers);
-  const auto payroll = samplePayrollProfile(rules.payroll, factory, employer);
-  const auto [jobStart, jobEnd] = growth::sampleBackdatedInterval(
-      rng, input.startDate, rules.tenure.job.min, rules.tenure.job.max);
+  [[nodiscard]] double compound(std::string_view personId,
+                                time::TimePoint start,
+                                time::TimePoint now) const {
+    const int years = growth::anniversariesPassed(start, now);
+    if (years <= 0) {
+      return 1.0;
+    }
 
-  const double baseSalary =
-      input.salarySource() * growth::sampleLognormalMultiplier(rng, 0.03);
+    const auto startCal = time::toCalendarDate(start);
+    double growthFactor = 1.0;
 
-  return Employment{
-      .employerAcct = employer,
-      .payroll = payroll,
-      .start = jobStart,
-      .end = jobEnd,
-      .annualSalary = baseSalary,
-      .switchIndex = 0,
+    for (int i = 0; i < years; ++i) {
+      const double realRaise = salaryRealRaise(personId, startCal.year + i);
+      growthFactor *= (1.0 + inflationPolicy_.annual + realRaise);
+    }
+
+    return growthFactor;
+  }
+
+  [[nodiscard]] double jobSwitchBump(std::string_view personId,
+                                     int switchIndex) const {
+    auto rng = factory_.rng(
+        {"job_switch_bump", personId, std::to_string(switchIndex)});
+    return growth::sampleNormalClamped(rng, raisePolicy_.jobBump.mu,
+                                       raisePolicy_.jobBump.sigma,
+                                       raisePolicy_.jobBump.floor);
+  }
+
+private:
+  [[nodiscard]] double salaryRealRaise(std::string_view personId,
+                                       int year) const {
+    auto rng =
+        factory_.rng({"salary_real_raise", personId, std::to_string(year)});
+    return growth::sampleNormalClamped(rng, raisePolicy_.salary.mu,
+                                       raisePolicy_.salary.sigma,
+                                       raisePolicy_.salary.floor);
+  }
+
+  const InflationPolicy &inflationPolicy_;
+  const RaisePolicy &raisePolicy_;
+  const random::RngFactory &factory_;
+};
+
+class EmploymentInitializer {
+public:
+  EmploymentInitializer(const TenurePolicy &tenurePolicy,
+                        const PayrollPolicy &payrollPolicy,
+                        const random::RngFactory &factory)
+      : tenurePolicy_(tenurePolicy), payrollPolicy_(payrollPolicy),
+        factory_(factory) {}
+
+  [[nodiscard]] Employment
+  operator()(std::string_view personId, time::TimePoint startDate,
+             std::span<const entities::identifier::Key> employers,
+             const SalarySource &salarySource) const {
+    auto rng = factory_.rng({"employment_init", personId});
+
+    const auto employer = pickInitialEmployer(rng, employers);
+    const auto payroll =
+        samplePayrollProfile(payrollPolicy_, factory_, employer);
+    const auto interval =
+        sampleInitialJobInterval(rng, startDate, tenurePolicy_.job);
+    const double annualSalary = sampleInitialAnnualSalary(rng, salarySource);
+
+    return Employment{
+        .employerAcct = employer,
+        .payroll = payroll,
+        .start = interval.start,
+        .end = interval.end,
+        .annualSalary = annualSalary,
+        .switchIndex = 0,
+    };
+  }
+
+private:
+  struct JobInterval {
+    time::TimePoint start;
+    time::TimePoint end;
   };
-}
 
-/// Transition to a new job with tenure, cadence, and salary bump.
-[[nodiscard]] inline Employment
-advanceEmployment(const EmploymentRules &rules,
-                  const random::RngFactory &factory, random::Rng &rng,
-                  const EmploymentAdvanceInput &input) {
-  const auto employer =
-      growth::pickDifferent(rng, input.employers, input.previous.employerAcct);
-  const auto payroll = samplePayrollProfile(rules.payroll, factory, employer);
-  const auto [start, end] = growth::sampleForwardInterval(
-      rng, input.now, rules.tenure.job.min, rules.tenure.job.max);
+  [[nodiscard]] static entities::identifier::Key
+  pickInitialEmployer(random::Rng &rng,
+                      std::span<const entities::identifier::Key> employers) {
+    return growth::pickOne(rng, employers);
+  }
 
-  const double currentSalary =
-      input.previous.annualSalary *
-      detail::compoundSalary(rules, factory,
-                             detail::SalaryGrowthInput{
-                                 .personId = input.personId,
-                                 .start = input.previous.start,
-                                 .now = input.now,
-                             });
+  [[nodiscard]] static JobInterval
+  sampleInitialJobInterval(random::Rng &rng, time::TimePoint startDate,
+                           const Range &jobTenure) {
+    const auto [start, end] = growth::sampleBackdatedInterval(
+        rng, startDate, jobTenure.min, jobTenure.max);
+    return JobInterval{.start = start, .end = end};
+  }
 
-  const double bump = detail::jobSwitchBump(
-      factory, rules.raises, input.personId, input.previous.switchIndex + 1);
+  [[nodiscard]] static double
+  sampleInitialAnnualSalary(random::Rng &rng,
+                            const SalarySource &salarySource) {
+    return salarySource() * growth::sampleLognormalMultiplier(rng, 0.03);
+  }
 
-  const double newSalary = currentSalary * (1.0 + bump);
+  const TenurePolicy &tenurePolicy_;
+  const PayrollPolicy &payrollPolicy_;
+  const random::RngFactory &factory_;
+};
 
-  return Employment{
-      .employerAcct = employer,
-      .payroll = payroll,
-      .start = start,
-      .end = end,
-      .annualSalary = newSalary,
-      .switchIndex = input.previous.switchIndex + 1,
-  };
-}
+class EmploymentAdvancer {
+public:
+  EmploymentAdvancer(const TenurePolicy &tenurePolicy,
+                     const PayrollPolicy &payrollPolicy,
+                     const SalaryGrowthModel &salaryGrowth,
+                     const random::RngFactory &factory)
+      : tenurePolicy_(tenurePolicy), payrollPolicy_(payrollPolicy),
+        salaryGrowth_(salaryGrowth), factory_(factory) {}
 
-/// Calculate the exact paycheck amount for a given pay date.
-[[nodiscard]] inline double calculateSalary(const EmploymentRules &rules,
-                                            const random::RngFactory &factory,
-                                            const SalaryQuery &query) {
-  const double annual = query.state.annualSalary *
-                        detail::compoundSalary(rules, factory,
-                                               detail::SalaryGrowthInput{
-                                                   .personId = query.personId,
-                                                   .start = query.state.start,
-                                                   .now = query.payDate,
-                                               });
+  [[nodiscard]] Employment
+  operator()(random::Rng &rng, std::string_view personId, time::TimePoint now,
+             std::span<const entities::identifier::Key> employers,
+             const Employment &previous) const {
+    const auto employer =
+        growth::pickDifferent(rng, employers, previous.employerAcct);
+    const auto payroll =
+        samplePayrollProfile(payrollPolicy_, factory_, employer);
+    const auto [start, end] = growth::sampleForwardInterval(
+        rng, now, tenurePolicy_.job.min, tenurePolicy_.job.max);
 
-  const auto cal = time::toCalendarDate(query.payDate);
-  const int periods = payPeriodsInYear(query.state.payroll, cal.year);
+    const double currentSalary =
+        previous.annualSalary *
+        salaryGrowth_.compound(personId, previous.start, now);
 
-  return math::roundMoney(
-      std::max(50.0, annual / static_cast<double>(periods)));
-}
+    const double bump =
+        salaryGrowth_.jobSwitchBump(personId, previous.switchIndex + 1);
+
+    return Employment{
+        .employerAcct = employer,
+        .payroll = payroll,
+        .start = start,
+        .end = end,
+        .annualSalary = currentSalary * (1.0 + bump),
+        .switchIndex = previous.switchIndex + 1,
+    };
+  }
+
+private:
+  const TenurePolicy &tenurePolicy_;
+  const PayrollPolicy &payrollPolicy_;
+  const SalaryGrowthModel &salaryGrowth_;
+  const random::RngFactory &factory_;
+};
+
+class SalaryCalculator {
+public:
+  explicit SalaryCalculator(const SalaryGrowthModel &salaryGrowth)
+      : salaryGrowth_(salaryGrowth) {}
+
+  [[nodiscard]] double operator()(std::string_view personId,
+                                  const Employment &state,
+                                  time::TimePoint payDate) const {
+    const double annual =
+        state.annualSalary *
+        salaryGrowth_.compound(personId, state.start, payDate);
+
+    const auto cal = time::toCalendarDate(payDate);
+    const int periods = payPeriodsInYear(state.payroll, cal.year);
+
+    return math::roundMoney(
+        std::max(50.0, annual / static_cast<double>(periods)));
+  }
+
+private:
+  const SalaryGrowthModel &salaryGrowth_;
+};
 
 /// Get pay dates within the employment's active window intersected with
 /// the simulation window.

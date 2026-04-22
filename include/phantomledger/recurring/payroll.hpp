@@ -84,11 +84,16 @@ finalizePayDate(time::TimePoint ts, const PayrollProfile &profile) {
 [[nodiscard]] inline time::TimePoint nextWeekdayOnOrAfter(time::TimePoint ts,
                                                           int weekday) {
   const auto cal = time::toCalendarDate(ts);
-  auto midnight = time::makeTime(cal.year, cal.month, cal.day);
+
+  const auto midnight = time::makeTime(time::CalendarDate{
+      .year = cal.year,
+      .month = cal.month,
+      .day = cal.day,
+  });
+
   const int delta = (weekday - time::weekday(midnight) + 7) % 7;
   return time::addDays(midnight, delta);
 }
-
 [[nodiscard]] inline std::array<int, 2>
 sortedSemimonthlyDays(const PayrollProfile &profile) {
   auto days = profile.semimonthlyDays;
@@ -143,7 +148,7 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
 
   case PayCadence::semimonthly: {
     int year = startCal.year;
-    auto month = startCal.month;
+    unsigned month = startCal.month;
     const auto days = sortedSemimonthlyDays(profile);
 
     while (true) {
@@ -153,8 +158,12 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
         const unsigned clampedDay = std::min(static_cast<unsigned>(day),
                                              time::daysInMonth(year, month));
 
-        const auto payDate =
-            finalizePayDate(time::makeTime(year, month, clampedDay), profile);
+        const auto payDate = finalizePayDate(time::makeTime(time::CalendarDate{
+                                                 .year = year,
+                                                 .month = month,
+                                                 .day = clampedDay,
+                                             }),
+                                             profile);
 
         if (payDate >= endExcl) {
           done = true;
@@ -182,15 +191,19 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
 
   case PayCadence::monthly: {
     int year = startCal.year;
-    auto month = startCal.month;
+    unsigned month = startCal.month;
 
     while (true) {
       const unsigned clampedDay =
           std::min(static_cast<unsigned>(profile.monthlyDay),
                    time::daysInMonth(year, month));
 
-      const auto payDate =
-          finalizePayDate(time::makeTime(year, month, clampedDay), profile);
+      const auto payDate = finalizePayDate(time::makeTime(time::CalendarDate{
+                                               .year = year,
+                                               .month = month,
+                                               .day = clampedDay,
+                                           }),
+                                           profile);
 
       if (payDate >= endExcl) {
         break;
@@ -213,21 +226,30 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
 
   return out;
 }
-
 /// Count pay periods in a calendar year.
 [[nodiscard]] inline int payPeriodsInYear(const PayrollProfile &profile,
                                           int year) {
   if (profile.cadence == PayCadence::semimonthly) {
     return 24;
   }
+
   if (profile.cadence == PayCadence::monthly) {
     return 12;
   }
 
-  const auto start = time::makeTime(year, 1, 1);
-  const auto end = time::makeTime(year + 1, 1, 1);
+  const auto start = time::makeTime(time::CalendarDate{
+      .year = year,
+      .month = 1,
+      .day = 1,
+  });
+
+  const auto end = time::makeTime(time::CalendarDate{
+      .year = year + 1,
+      .month = 1,
+      .day = 1,
+  });
+
   const auto dates = paydatesForProfile(profile, start, end);
   return std::max(1, static_cast<int>(dates.size()));
 }
-
 } // namespace PhantomLedger::recurring
