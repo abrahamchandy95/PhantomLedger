@@ -2,15 +2,14 @@
 
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/merchants/label.hpp"
-
-#include <cstdint>
+#include "phantomledger/taxonomies/merchants/types.hpp"
 
 namespace PhantomLedger::entities::merchants {
 
 struct Record {
   Label label;
   identifier::Key counterpartyId;
-  std::uint16_t categoryIndex = 0;
+  taxonomies::merchants::Category category;
   double weight = 0.0;
 };
 

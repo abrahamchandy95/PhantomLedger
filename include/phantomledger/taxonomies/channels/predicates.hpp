@@ -1,6 +1,5 @@
 #pragma once
 /*
- * Design note:
  * Channel families are classified by the high nibble of the tag byte.
  *
  *   0x00 -> Legit
@@ -13,7 +12,7 @@
  *   0x70 -> Fraud
  *   0x80 -> Camouflage
  *
- * This means each group is intentionally limited to a single 16-value block.
+ * Each group is limited to a single 16-value block.
  * If a family ever needs to grow beyond one block, this file will need to be
  * redesigned to use an explicit byte-to-family lookup table instead.
  *
@@ -22,7 +21,7 @@
  * it is not considered Rent unless it is explicitly registered.
  */
 
-#include "phantomledger/channels/names.hpp"
+#include "phantomledger/taxonomies/channels/names.hpp"
 
 namespace PhantomLedger::channels {
 namespace detail {

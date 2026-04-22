@@ -10,6 +10,7 @@
 #include "phantomledger/entities/synth/merchants/weights.hpp"
 #include "phantomledger/math/sampling.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/merchants/names.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -63,7 +64,8 @@ namespace detail {
   Pack out;
   out.catalog.records.reserve(static_cast<std::size_t>(total));
 
-  constexpr std::size_t categoryCount = defaultCategories.size();
+  constexpr std::size_t categoryCount =
+      taxonomies::merchants::kDefaultCategories.size();
 
   for (int i = 0; i < total; ++i) {
     const auto categoryIndex =

@@ -11,13 +11,13 @@
  *   - investments  → INVESTMENT_INFLOW
  */
 
-#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/inflows/revenue/clock.hpp"
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/inflows/revenue/profiles.hpp"
 #include "phantomledger/math/sampling.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/time/calendar.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"

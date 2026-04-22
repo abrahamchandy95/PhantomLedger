@@ -1,13 +1,13 @@
 #pragma once
 
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <vector>
 
 namespace PhantomLedger::entities::behavior {
 
 struct Assignment {
-  std::vector<personas::Kind> byPerson; // index = personId - 1
+  std::vector<personas::Type> byPerson; // index = personId - 1
 };
 
 } // namespace PhantomLedger::entities::behavior

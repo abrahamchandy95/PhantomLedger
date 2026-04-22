@@ -6,8 +6,8 @@
 #include "phantomledger/entities/behavior/payday.hpp"
 #include "phantomledger/entities/behavior/persona.hpp"
 #include "phantomledger/math/sampling.hpp"
-#include "phantomledger/personas/archetypes.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/personas/archetypes.hpp"
 
 #include <algorithm>
 
@@ -35,14 +35,14 @@ inline double perturbProb(random::Rng &rng, double p) {
 } // namespace detail
 
 [[nodiscard]] inline entities::behavior::Persona
-profile(random::Rng &rng, ::PhantomLedger::personas::Kind kind) {
-  const auto &arch = ::PhantomLedger::personas::archetype(kind);
-  const auto beta = ::PhantomLedger::personas::paycheckSensitivityBeta(kind);
+profile(random::Rng &rng, ::PhantomLedger::personas::Type type) {
+  const auto &arch = ::PhantomLedger::personas::archetype(type);
+  const auto beta = ::PhantomLedger::personas::paycheckSensitivityBeta(type);
 
   return entities::behavior::Persona{
       .archetype =
           entities::behavior::Archetype{
-              .kind = kind,
+              .type = type,
               .timing = arch.timing,
               .weight = std::max(0.01, detail::perturbMedian(rng, arch.weight)),
           },

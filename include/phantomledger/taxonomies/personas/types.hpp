@@ -5,7 +5,7 @@
 
 namespace PhantomLedger::personas {
 
-enum class Kind : std::uint8_t {
+enum class Type : std::uint8_t {
   student = 0,
   retiree = 1,
   freelancer = 2,
@@ -21,12 +21,12 @@ enum class Timing : std::uint8_t {
 };
 
 inline constexpr std::size_t kKindCount =
-    static_cast<std::size_t>(Kind::salaried) + 1;
+    static_cast<std::size_t>(Type::salaried) + 1;
 
-inline constexpr Kind kDefaultKind = Kind::salaried;
+inline constexpr Type kDefaultType = Type::salaried;
 
-[[nodiscard]] constexpr std::size_t indexOf(Kind kind) noexcept {
-  return static_cast<std::size_t>(kind);
+[[nodiscard]] constexpr std::size_t indexOf(Type type) noexcept {
+  return static_cast<std::size_t>(type);
 }
 
 [[nodiscard]] constexpr std::size_t indexOf(Timing timing) noexcept {

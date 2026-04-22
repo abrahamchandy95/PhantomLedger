@@ -1,9 +1,9 @@
 #pragma once
 
-#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/devices/identity.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/network/ipv4.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <compare>
 #include <cstdint>

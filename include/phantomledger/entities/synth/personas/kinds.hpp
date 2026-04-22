@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/personas/archetypes.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/personas/archetypes.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,25 +15,25 @@ struct Mix {
       ::PhantomLedger::personas::kDefaultFractions;
 };
 
-[[nodiscard]] inline std::vector<::PhantomLedger::personas::Kind>
+[[nodiscard]] inline std::vector<::PhantomLedger::personas::Type>
 assign(random::Rng &rng, std::uint32_t people, const Mix &mix = {}) {
-  std::vector<::PhantomLedger::personas::Kind> out(
+  std::vector<::PhantomLedger::personas::Type> out(
       static_cast<std::size_t>(people),
-      ::PhantomLedger::personas::Kind::salaried);
+      ::PhantomLedger::personas::Type::salaried);
 
   if (people == 0) {
     return out;
   }
 
   struct Slice {
-    ::PhantomLedger::personas::Kind kind;
+    ::PhantomLedger::personas::Type type;
     int count;
   };
 
   std::vector<Slice> slices;
   for (std::size_t i = 0; i < ::PhantomLedger::personas::kKindCount; ++i) {
-    const auto kind = static_cast<::PhantomLedger::personas::Kind>(i);
-    if (kind == ::PhantomLedger::personas::Kind::salaried) {
+    const auto kind = static_cast<::PhantomLedger::personas::Type>(i);
+    if (kind == ::PhantomLedger::personas::Type::salaried) {
       continue;
     }
 
@@ -66,7 +66,7 @@ assign(random::Rng &rng, std::uint32_t people, const Mix &mix = {}) {
 
     for (auto idx : chosen) {
       const auto person = remaining[idx];
-      out[person - 1] = slice.kind;
+      out[person - 1] = slice.type;
       remaining[idx] = remaining.back();
       remaining.pop_back();
     }

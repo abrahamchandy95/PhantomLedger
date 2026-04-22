@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/channels/taxonomy.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <array>
 #include <optional>

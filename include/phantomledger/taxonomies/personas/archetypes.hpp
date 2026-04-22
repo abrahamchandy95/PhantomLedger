@@ -7,7 +7,7 @@
  * spending behavior.
  */
 
-#include "phantomledger/personas/names.hpp"
+#include "phantomledger/taxonomies/personas/names.hpp"
 
 #include <array>
 #include <string_view>
@@ -51,23 +51,23 @@ inline constexpr std::array<Archetype, kKindCount> kArchetypesTable{{
 [[nodiscard]] consteval std::array<double, kKindCount> buildDefaultFractions() {
   std::array<double, kKindCount> fractions{};
 
-  fractions[indexOf(Kind::student)] = 0.12;
-  fractions[indexOf(Kind::retiree)] = 0.10;
-  fractions[indexOf(Kind::freelancer)] = 0.10;
-  fractions[indexOf(Kind::smallBusiness)] = 0.06;
-  fractions[indexOf(Kind::highNetWorth)] = 0.02;
+  fractions[indexOf(Type::student)] = 0.12;
+  fractions[indexOf(Type::retiree)] = 0.10;
+  fractions[indexOf(Type::freelancer)] = 0.10;
+  fractions[indexOf(Type::smallBusiness)] = 0.06;
+  fractions[indexOf(Type::highNetWorth)] = 0.02;
 
-  const double assigned = fractions[indexOf(Kind::student)] +
-                          fractions[indexOf(Kind::retiree)] +
-                          fractions[indexOf(Kind::freelancer)] +
-                          fractions[indexOf(Kind::smallBusiness)] +
-                          fractions[indexOf(Kind::highNetWorth)];
+  const double assigned = fractions[indexOf(Type::student)] +
+                          fractions[indexOf(Type::retiree)] +
+                          fractions[indexOf(Type::freelancer)] +
+                          fractions[indexOf(Type::smallBusiness)] +
+                          fractions[indexOf(Type::highNetWorth)];
 
   if (assigned > 1.0) {
     throw "persona fractions exceed 1.0";
   }
 
-  fractions[indexOf(Kind::salaried)] = 1.0 - assigned;
+  fractions[indexOf(Type::salaried)] = 1.0 - assigned;
   return fractions;
 }
 
@@ -88,8 +88,8 @@ inline constexpr auto kDefaultFractions = detail::buildDefaultFractions();
 inline constexpr auto kPaycheckSensitivityBetas =
     detail::kPaycheckSensitivityBetasTable;
 
-[[nodiscard]] constexpr const Archetype &archetype(Kind kind) noexcept {
-  return kArchetypes[indexOf(kind)];
+[[nodiscard]] constexpr const Archetype &archetype(Type type) noexcept {
+  return kArchetypes[indexOf(type)];
 }
 
 [[nodiscard]] constexpr const Archetype &
@@ -97,12 +97,12 @@ archetype(std::string_view s) noexcept {
   return archetype(fromString(s));
 }
 
-[[nodiscard]] constexpr double defaultFraction(Kind kind) noexcept {
-  return kDefaultFractions[indexOf(kind)];
+[[nodiscard]] constexpr double defaultFraction(Type type) noexcept {
+  return kDefaultFractions[indexOf(type)];
 }
 
-[[nodiscard]] constexpr BetaParams paycheckSensitivityBeta(Kind kind) noexcept {
-  return kPaycheckSensitivityBetas[indexOf(kind)];
+[[nodiscard]] constexpr BetaParams paycheckSensitivityBeta(Type type) noexcept {
+  return kPaycheckSensitivityBetas[indexOf(type)];
 }
 
 } // namespace PhantomLedger::personas

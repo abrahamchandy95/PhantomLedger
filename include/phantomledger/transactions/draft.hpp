@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <cstdint>
 

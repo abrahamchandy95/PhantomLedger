@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
 
@@ -18,13 +18,13 @@ inline constexpr std::array<bool, kKindCount> kHasEarnedIncome{{
 
 } // namespace detail
 
-[[nodiscard]] constexpr bool hasEarnedIncome(Kind kind) noexcept {
-  return detail::kHasEarnedIncome[indexOf(kind)];
+[[nodiscard]] constexpr bool hasEarnedIncome(Type type) noexcept {
+  return detail::kHasEarnedIncome[indexOf(type)];
 }
 
 // Compatibility alias if you want to keep older call sites unchanged.
-[[nodiscard]] constexpr bool isEarner(Kind kind) noexcept {
-  return hasEarnedIncome(kind);
+[[nodiscard]] constexpr bool isEarner(Type type) noexcept {
+  return hasEarnedIncome(type);
 }
 
 } // namespace PhantomLedger::personas

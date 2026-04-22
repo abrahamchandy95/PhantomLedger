@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
 #include <optional>
@@ -11,16 +11,16 @@ namespace detail {
 
 struct NamedKind {
   std::string_view name;
-  Kind kind;
+  Type type;
 };
 
 inline constexpr std::array<NamedKind, kKindCount> kNamedKinds{{
-    {"student", Kind::student},
-    {"retired", Kind::retiree},
-    {"freelancer", Kind::freelancer},
-    {"smallbiz", Kind::smallBusiness},
-    {"hnw", Kind::highNetWorth},
-    {"salaried", Kind::salaried},
+    {"student", Type::student},
+    {"retired", Type::retiree},
+    {"freelancer", Type::freelancer},
+    {"smallbiz", Type::smallBusiness},
+    {"hnw", Type::highNetWorth},
+    {"salaried", Type::salaried},
 }};
 
 template <std::size_t N>
@@ -48,7 +48,7 @@ buildKindNames(const std::array<NamedKind, N> &arr) {
       throw "empty persona name";
     }
 
-    const auto index = indexOf(entry.kind);
+    const auto index = indexOf(entry.type);
     if (!names[index].empty()) {
       throw "duplicate persona enum";
     }
@@ -87,15 +87,15 @@ inline constexpr std::array<std::string_view, 3> kTimingNames{{
 
 } // namespace detail
 
-[[nodiscard]] constexpr std::string_view name(Kind kind) noexcept {
-  return detail::kKindNames[indexOf(kind)];
+[[nodiscard]] constexpr std::string_view name(Type type) noexcept {
+  return detail::kKindNames[indexOf(type)];
 }
 
-[[nodiscard]] constexpr std::string_view toString(Kind kind) noexcept {
-  return name(kind);
+[[nodiscard]] constexpr std::string_view toString(Type type) noexcept {
+  return name(type);
 }
 
-[[nodiscard]] constexpr std::optional<Kind> parse(std::string_view s) noexcept {
+[[nodiscard]] constexpr std::optional<Type> parse(std::string_view s) noexcept {
   std::size_t lo = 0;
   std::size_t hi = detail::kNamedKindsByName.size();
 
@@ -108,22 +108,22 @@ inline constexpr std::array<std::string_view, 3> kTimingNames{{
     } else if (entry.name > s) {
       hi = mid;
     } else {
-      return entry.kind;
+      return entry.type;
     }
   }
 
   return std::nullopt;
 }
 
-[[nodiscard]] constexpr Kind
-parseOrDefault(std::string_view s, Kind fallback = kDefaultKind) noexcept {
+[[nodiscard]] constexpr Type
+parseOrDefault(std::string_view s, Type fallback = kDefaultType) noexcept {
   if (const auto parsed = parse(s)) {
     return *parsed;
   }
   return fallback;
 }
 
-[[nodiscard]] constexpr Kind fromString(std::string_view s) noexcept {
+[[nodiscard]] constexpr Type fromString(std::string_view s) noexcept {
   return parseOrDefault(s);
 }
 

@@ -1,10 +1,10 @@
 #pragma once
 
-#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/inflows/selection.hpp"
 #include "phantomledger/inflows/timestamps.hpp"
 #include "phantomledger/inflows/types.hpp"
 #include "phantomledger/recurring/employment.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -32,8 +32,8 @@ struct ProbabilityTable {
       0.98, // salaried
   }};
 
-  [[nodiscard]] static constexpr double forKind(personas::Kind kind) noexcept {
-    return table[personas::indexOf(kind)];
+  [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
+    return table[personas::indexOf(type)];
   }
 };
 

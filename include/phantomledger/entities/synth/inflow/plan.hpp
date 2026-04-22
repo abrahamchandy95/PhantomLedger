@@ -4,7 +4,7 @@
 #include "phantomledger/entities/behavior/assignment.hpp"
 #include "phantomledger/entities/people/roster.hpp"
 #include "phantomledger/entities/synth/inflow/ids.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <vector>
 
@@ -25,10 +25,10 @@ planInflowIds(const people::Roster &people,
     }
 
     const auto kind = assignment.byPerson[person - 1];
-    if (kind == personas::Kind::freelancer ||
-        kind == personas::Kind::smallBusiness) {
+    if (kind == personas::Type::freelancer ||
+        kind == personas::Type::smallBusiness) {
       out[person].push_back(businessId(person));
-    } else if (kind == personas::Kind::highNetWorth) {
+    } else if (kind == personas::Type::highNetWorth) {
       out[person].push_back(brokerageId(person));
     }
   }

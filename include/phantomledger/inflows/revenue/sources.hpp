@@ -18,8 +18,8 @@
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/inflows/revenue/profiles.hpp"
 #include "phantomledger/inflows/types.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <optional>
 #include <span>
@@ -66,7 +66,7 @@ struct Sources {
 
 struct Plan {
   PersonId person = 0;
-  personas::Kind persona = personas::kDefaultKind;
+  personas::Type persona = personas::kDefaultType;
   const RevenuePersonaProfile *profile = nullptr;
   Accounts accounts{};
   Sources sources{};
@@ -82,7 +82,7 @@ namespace detail {
 
 [[nodiscard]] inline Accounts accountsFor(const Population &population,
                                           PersonId person,
-                                          personas::Kind persona,
+                                          personas::Type persona,
                                           const Key &personal) {
   const auto businessKey = entities::synth::inflow::businessId(person);
   const auto brokerageKey = entities::synth::inflow::brokerageId(person);
@@ -97,8 +97,8 @@ namespace detail {
     brokerage = brokerageKey;
   }
 
-  const Key revenueDst = ((persona == personas::Kind::freelancer ||
-                           persona == personas::Kind::smallBusiness) &&
+  const Key revenueDst = ((persona == personas::Type::freelancer ||
+                           persona == personas::Type::smallBusiness) &&
                           business.has_value())
                              ? *business
                              : personal;
@@ -140,7 +140,7 @@ source(random::Rng &rng, std::span<const Key> pool,
   return pickOne(rng, pool);
 }
 
-inline void applyFallback(personas::Kind persona, random::Rng &rng,
+inline void applyFallback(personas::Type persona, random::Rng &rng,
                           const entities::counterparties::Pool &pools,
                           const Accounts &accounts, Sources &sources) {
   if (sources.any()) {
@@ -148,19 +148,19 @@ inline void applyFallback(personas::Kind persona, random::Rng &rng,
   }
 
   switch (persona) {
-  case personas::Kind::freelancer:
+  case personas::Type::freelancer:
     if (!pools.clientPayerIds.empty()) {
       sources.clients = choiceK(rng, pools.clientPayerIds, 1, 2);
     }
     break;
 
-  case personas::Kind::smallBusiness:
+  case personas::Type::smallBusiness:
     if (!accounts.business.has_value() && !pools.ownerBusinessIds.empty()) {
       sources.drawSrc = pickOne(rng, pools.ownerBusinessIds);
     }
     break;
 
-  case personas::Kind::highNetWorth:
+  case personas::Type::highNetWorth:
     if (accounts.brokerage.has_value()) {
       sources.investmentSrc = accounts.brokerage;
     } else if (!pools.brokerageIds.empty()) {

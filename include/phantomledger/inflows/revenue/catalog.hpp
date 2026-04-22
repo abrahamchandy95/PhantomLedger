@@ -6,7 +6,7 @@
  */
 
 #include "phantomledger/inflows/revenue/profiles.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
 #include <optional>
@@ -118,12 +118,12 @@ namespace detail {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
 
-  table[personas::indexOf(personas::Kind::freelancer)] = freelancerProfile();
+  table[personas::indexOf(personas::Type::freelancer)] = freelancerProfile();
 
-  table[personas::indexOf(personas::Kind::smallBusiness)] =
+  table[personas::indexOf(personas::Type::smallBusiness)] =
       smallBusinessProfile();
 
-  table[personas::indexOf(personas::Kind::highNetWorth)] =
+  table[personas::indexOf(personas::Type::highNetWorth)] =
       highNetWorthProfile();
 
   return table;
@@ -137,8 +137,8 @@ inline constexpr auto kCatalog = buildCatalog();
 /// Returns nullopt for kinds that have no non-payroll revenue
 /// (student, retiree, salaried).
 [[nodiscard]] inline constexpr const std::optional<RevenuePersonaProfile> &
-archetypeFor(personas::Kind kind) noexcept {
-  return detail::kCatalog[personas::indexOf(kind)];
+archetypeFor(personas::Type type) noexcept {
+  return detail::kCatalog[personas::indexOf(type)];
 }
 
 } // namespace PhantomLedger::inflows::revenue

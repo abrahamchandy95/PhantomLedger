@@ -8,10 +8,10 @@
  * portal ACH.
  */
 
-#include "phantomledger/channels/taxonomy.hpp"
 #include "phantomledger/distributions/cdf.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
 #include "phantomledger/random/rng.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <array>
 #include <optional>

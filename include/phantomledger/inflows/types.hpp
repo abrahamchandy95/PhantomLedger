@@ -18,9 +18,9 @@
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
 #include "phantomledger/random/factory.hpp"
 #include "phantomledger/recurring/policy.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/time/calendar.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -128,7 +128,7 @@ struct Population {
     return hubs.contains(primary(person));
   }
 
-  [[nodiscard]] personas::Kind persona(PersonId person) const noexcept {
+  [[nodiscard]] personas::Type persona(PersonId person) const noexcept {
     assert(personas != nullptr);
     assert(exists(person));
     assert(static_cast<std::size_t>(person - 1) < personas->byPerson.size());
