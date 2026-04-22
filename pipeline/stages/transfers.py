@@ -8,7 +8,6 @@ from pipeline.invariants import validate_transaction_accounts
 from pipeline.state import Entities, Infra, Transfers
 
 from .requests import build_fraud, build_legit
-from .sorting import key
 
 from transfers.family.engine import GraphConfig, TransferConfig
 from transfers.factory import TransactionFactory
@@ -141,7 +140,16 @@ def build(
     status("Transfers: injecting fraud scenarios...")
     fraud_result: InjectionOutput = inject_fraud(fraud_request)
 
-    final_txns = sorted(fraud_result.txns, key=key)
+    status("Transfers: replaying post-fraud chronological balances...")
+    final_replay = ChronoReplayAccumulator(
+        book=None
+        if legit_result.initial_book is None
+        else legit_result.initial_book.copy(),
+        rng=rng,
+    )
+    final_replay.extend(sort_for_replay(fraud_result.txns), presorted=True)
+
+    final_txns = final_replay.txns
     validate_transaction_accounts(entities.accounts, final_txns)
 
     return Transfers(
@@ -149,6 +157,7 @@ def build(
         fraud=fraud_result,
         draft_txns=draft_txns,
         final_txns=final_txns,
+        final_book=final_replay.book,
         drop_counts=drop_counts,
         drop_counts_by_channel=drop_counts_by_channel,
     )
