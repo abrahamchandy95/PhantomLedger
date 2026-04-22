@@ -41,32 +41,35 @@ struct TimeOfDay {
 // Construction
 // -------------------------------------------------------------------
 
-[[nodiscard]] inline TimePoint makeTime(int year, unsigned month, unsigned day,
-                                        int hour = 0, int minute = 0,
-                                        int second = 0) {
-  const std::chrono::year_month_day ymd{
-      std::chrono::year{year},
-      std::chrono::month{month},
-      std::chrono::day{day},
+[[nodiscard]] inline TimePoint makeTime(CalendarDate date,
+                                        TimeOfDay time = {0, 0, 0}) {
+  const auto ymd = std::chrono::year_month_day{
+      std::chrono::year{date.year},
+      std::chrono::month{date.month},
+      std::chrono::day{date.day},
   };
+
   if (!ymd.ok()) {
     throw std::invalid_argument("invalid calendar date");
   }
-  const auto sysDay = std::chrono::sys_days{ymd};
-  return std::chrono::time_point_cast<Seconds>(sysDay) + Hours{hour} +
-         Minutes{minute} + Seconds{second};
+
+  return std::chrono::time_point_cast<Seconds>(std::chrono::sys_days{ymd}) +
+         Hours{time.hour} + Minutes{time.minute} + Seconds{time.second};
 }
 
 [[nodiscard]] inline TimePoint parseYmd(std::string_view s) {
   if (s.size() != 10 || s[4] != '-' || s[7] != '-') {
     throw std::invalid_argument("date must be YYYY-MM-DD");
   }
-  const int y = std::stoi(std::string(s.substr(0, 4)));
-  const auto m = static_cast<unsigned>(std::stoi(std::string(s.substr(5, 2))));
-  const auto d = static_cast<unsigned>(std::stoi(std::string(s.substr(8, 2))));
-  return makeTime(y, m, d);
-}
 
+  const CalendarDate date{
+      .year = std::stoi(std::string(s.substr(0, 4))),
+      .month = static_cast<unsigned>(std::stoi(std::string(s.substr(5, 2)))),
+      .day = static_cast<unsigned>(std::stoi(std::string(s.substr(8, 2)))),
+  };
+
+  return makeTime(date);
+}
 // -------------------------------------------------------------------
 // Component extraction
 // -------------------------------------------------------------------
@@ -120,27 +123,39 @@ struct TimeOfDay {
 /// Return midnight of the first day of tp's month.
 [[nodiscard]] inline TimePoint monthStart(TimePoint tp) {
   const auto cal = toCalendarDate(tp);
-  return makeTime(cal.year, cal.month, 1);
+  return makeTime(CalendarDate{
+      .year = cal.year,
+      .month = cal.month,
+      .day = 1,
+  });
 }
 
 /// Add calendar months, clamping the day to the target month's range.
 /// Preserves time-of-day.
 [[nodiscard]] inline TimePoint addMonths(TimePoint tp, int months) {
-  if (months < 0) {
-    throw std::invalid_argument("addMonths: months must be >= 0");
-  }
-  const auto cal = toCalendarDate(tp);
-  const int rawMonth = (static_cast<int>(cal.month) - 1) + months;
-  const int newYear = cal.year + rawMonth / 12;
-  const auto newMonth = static_cast<unsigned>((rawMonth % 12) + 1);
-  const unsigned maxDay = daysInMonth(newYear, newMonth);
-  const unsigned newDay = std::min(cal.day, maxDay);
+  const auto date = toCalendarDate(tp);
+  const auto dayPoint = std::chrono::floor<Days>(tp);
+  const auto timeOfDay = tp - dayPoint;
 
-  // Preserve time-of-day.
-  const auto dp = std::chrono::floor<Days>(tp);
-  const auto dayPart = tp - dp;
-  return makeTime(newYear, newMonth, newDay) +
-         std::chrono::duration_cast<Seconds>(dayPart);
+  const auto first = std::chrono::year{date.year} /
+                     std::chrono::month{date.month} / std::chrono::day{1};
+
+  const auto shifted =
+      std::chrono::year_month_day{first + std::chrono::months{months}};
+  if (!shifted.ok()) {
+    throw std::invalid_argument("addMonths: invalid shifted month");
+  }
+
+  const auto year = static_cast<int>(shifted.year());
+  const auto month = static_cast<unsigned>(shifted.month());
+  const auto day = std::min(date.day, daysInMonth(year, month));
+
+  return makeTime(CalendarDate{
+             .year = year,
+             .month = month,
+             .day = day,
+         }) +
+         timeOfDay;
 }
 
 /// Add days.
