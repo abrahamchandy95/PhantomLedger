@@ -2,14 +2,17 @@
 
 #include "phantomledger/entities/encoding/layout.hpp"
 #include "phantomledger/entities/encoding/render.hpp"
-#include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <array>
 #include <cstdint>
 #include <string>
 
 namespace PhantomLedger::encoding {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
 
 namespace detail {
 
@@ -29,23 +32,20 @@ inline constexpr std::array<Layout, entities::landlords::kClassCount>
 
 } // namespace detail
 
-[[nodiscard]] constexpr Layout
-layout(entities::landlords::Class kind,
-       entities::identifier::Bank bank) noexcept {
+[[nodiscard]] constexpr Layout layout(entities::landlords::Class kind,
+                                      Bank bank) noexcept {
   const auto index = entities::landlords::classIndex(kind);
-  return bank == entities::identifier::Bank::internal
-             ? detail::kLandlordInternalLayouts[index]
-             : detail::kLandlordExternalLayouts[index];
+  return bank == Bank::internal ? detail::kLandlordInternalLayouts[index]
+                                : detail::kLandlordExternalLayouts[index];
 }
 
 [[nodiscard]] constexpr Layout
 layout(entities::landlords::Class kind) noexcept {
-  return layout(kind, entities::identifier::Bank::external);
+  return layout(kind, Bank::external);
 }
 
-[[nodiscard]] inline std::string landlordId(std::uint64_t number,
-                                            entities::landlords::Class kind,
-                                            entities::identifier::Bank bank) {
+[[nodiscard]] inline std::string
+landlordId(std::uint64_t number, entities::landlords::Class kind, Bank bank) {
   return render(layout(kind, bank), number);
 }
 
@@ -56,45 +56,43 @@ layout(entities::landlords::Class kind) noexcept {
 
 [[nodiscard]] inline std::string landlordIndividualId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::individual,
-                    entities::identifier::Bank::external);
+                    Bank::external);
 }
 
 [[nodiscard]] inline std::string
 landlordIndividualInternalId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::individual,
-                    entities::identifier::Bank::internal);
+                    Bank::internal);
 }
 
 [[nodiscard]] inline std::string landlordSmallLlcId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::llcSmall,
-                    entities::identifier::Bank::external);
+                    Bank::external);
 }
 
 [[nodiscard]] inline std::string
 landlordSmallLlcInternalId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::llcSmall,
-                    entities::identifier::Bank::internal);
+                    Bank::internal);
 }
 
 [[nodiscard]] inline std::string landlordCorporateId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::corporate,
-                    entities::identifier::Bank::external);
+                    Bank::external);
 }
 
 [[nodiscard]] inline std::string
 landlordCorporateInternalId(std::uint64_t number) {
   return landlordId(number, entities::landlords::Class::corporate,
-                    entities::identifier::Bank::internal);
+                    Bank::internal);
 }
 
 [[nodiscard]] constexpr std::size_t
-renderedSize(entities::landlords::Class kind, entities::identifier::Bank bank,
-             std::uint64_t number) {
+renderedSize(entities::landlords::Class kind, Bank bank, std::uint64_t number) {
   return renderedSize(layout(kind, bank), number);
 }
 
-inline std::size_t write(char *out, entities::landlords::Class kind,
-                         entities::identifier::Bank bank,
+inline std::size_t write(char *out, entities::landlords::Class kind, Bank bank,
                          std::uint64_t number) {
   return write(out, layout(kind, bank), number);
 }

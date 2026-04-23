@@ -1,8 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/bank.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/primitives/hashing/combine.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <compare>
 #include <cstddef>
@@ -10,6 +9,9 @@
 #include <functional>
 
 namespace PhantomLedger::entities::identifier {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
 
 struct Key {
   Role role{};

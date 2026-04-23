@@ -3,8 +3,8 @@
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
 #include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entropy/crypto/blake2b.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <array>
 #include <cstdint>
@@ -13,6 +13,9 @@
 #include <string_view>
 
 namespace PhantomLedger::entities::synth::common {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
 
 [[nodiscard]] inline std::uint64_t
 readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
@@ -32,9 +35,9 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
   pos += scope.size();
   buffer[pos++] = '|';
 
-  pos += encoding::write(buffer.data() + pos,
-                         identifier::make(identifier::Role::customer,
-                                          identifier::Bank::internal, person));
+  pos +=
+      encoding::write(buffer.data() + pos,
+                      identifier::make(Role::customer, Bank::internal, person));
 
   std::array<std::uint8_t, 8> digest{};
   const bool ok =
@@ -49,8 +52,7 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
 [[nodiscard]] inline std::uint64_t familySuffix(identifier::PersonId person) {
   std::array<char, 64> buffer{};
   const auto written = encoding::write(
-      buffer.data(), identifier::make(identifier::Role::customer,
-                                      identifier::Bank::internal, person));
+      buffer.data(), identifier::make(Role::customer, Bank::internal, person));
 
   std::array<std::uint8_t, 8> digest{};
   const bool ok = crypto::blake2b::digest(buffer.data(), written, digest.data(),

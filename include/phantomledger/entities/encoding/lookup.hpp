@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/encoding/layout.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <array>
 #include <cstddef>
@@ -9,19 +10,20 @@
 
 namespace PhantomLedger::encoding {
 
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
+
 inline constexpr std::size_t kRoleCount =
-    static_cast<std::size_t>(entities::identifier::Role::brokerage) + 1;
+    static_cast<std::size_t>(Role::brokerage) + 1;
 
 inline constexpr std::size_t kBankCount =
-    static_cast<std::size_t>(entities::identifier::Bank::external) + 1;
+    static_cast<std::size_t>(Bank::external) + 1;
 
-[[nodiscard]] constexpr std::size_t
-toIndex(entities::identifier::Role role) noexcept {
+[[nodiscard]] constexpr std::size_t toIndex(Role role) noexcept {
   return static_cast<std::size_t>(role);
 }
 
-[[nodiscard]] constexpr std::size_t
-toIndex(entities::identifier::Bank bank) noexcept {
+[[nodiscard]] constexpr std::size_t toIndex(Bank bank) noexcept {
   return static_cast<std::size_t>(bank);
 }
 

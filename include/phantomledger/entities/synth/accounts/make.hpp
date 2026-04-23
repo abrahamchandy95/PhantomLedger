@@ -2,9 +2,7 @@
 
 #include "phantomledger/entities/accounts/flags.hpp"
 #include "phantomledger/entities/accounts/record.hpp"
-#include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/people/flags.hpp"
 #include "phantomledger/entities/people/roster.hpp"
 #include "phantomledger/entities/synth/accounts/counts.hpp"
@@ -14,6 +12,9 @@
 #include <numeric>
 
 namespace PhantomLedger::entities::synth::accounts {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
 
 [[nodiscard]] inline Pack
 makePack(random::Rng &rng, const people::Roster &people, int maxPerPerson = 3) {
@@ -38,8 +39,7 @@ makePack(random::Rng &rng, const people::Roster &people, int maxPerPerson = 3) {
     for (int i = 0; i < perPerson[person - 1]; ++i) {
       const auto recIx =
           static_cast<std::uint32_t>(out.registry.records.size());
-      const auto id = identifier::make(identifier::Role::account,
-                                       identifier::Bank::internal, serial++);
+      const auto id = identifier::make(Role::account, Bank::internal, serial++);
 
       out.registry.records.push_back(entities::accounts::Record{
           .id = id,

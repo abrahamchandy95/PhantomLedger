@@ -1,19 +1,11 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/bank.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
-#include <cstdint>
 #include <optional>
 #include <utility>
 
-namespace PhantomLedger::entities::identifier {
-
-enum class BankMode : std::uint8_t {
-  internalOnly,
-  externalOnly,
-  either,
-};
+namespace PhantomLedger::taxonomies::identifiers {
 
 [[nodiscard]] constexpr BankMode bankMode(Role role) noexcept {
   switch (role) {
@@ -72,4 +64,4 @@ enum class BankMode : std::uint8_t {
   std::unreachable();
 }
 
-} // namespace PhantomLedger::entities::identifier
+} // namespace PhantomLedger::taxonomies::identifiers

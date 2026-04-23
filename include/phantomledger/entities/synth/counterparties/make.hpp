@@ -1,26 +1,28 @@
 #pragma once
 
 #include "phantomledger/entities/counterparties/pool.hpp"
-#include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/synth/counterparties/config.hpp"
 #include "phantomledger/entities/synth/counterparties/scale.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::entities::synth::counterparties {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
 namespace detail {
 
 /// Append `count` purely external IDs to `out`.
-inline void appendExternal(std::vector<identifier::Key> &out,
-                           identifier::Role role, int count) {
+inline void appendExternal(std::vector<identifier::Key> &out, Role role,
+                           int count) {
   out.reserve(out.size() + static_cast<std::size_t>(count));
   for (int i = 1; i <= count; ++i) {
-    out.push_back(identifier::make(role, identifier::Bank::external,
-                                   static_cast<std::uint64_t>(i)));
+    out.push_back(
+        identifier::make(role, Bank::external, static_cast<std::uint64_t>(i)));
   }
 }
 
@@ -29,8 +31,8 @@ inline void appendExternal(std::vector<identifier::Key> &out,
 /// to avoid ID collisions between the two prefix families.
 ///
 /// Returns the number of internals generated.
-inline int splitPool(random::Rng &rng, identifier::Role role, int total,
-                     double inBankP, std::vector<identifier::Key> &internals,
+inline int splitPool(random::Rng &rng, Role role, int total, double inBankP,
+                     std::vector<identifier::Key> &internals,
                      std::vector<identifier::Key> &externals,
                      std::vector<identifier::Key> &combined) {
   internals.reserve(internals.size() + static_cast<std::size_t>(total));
@@ -44,11 +46,11 @@ inline int splitPool(random::Rng &rng, identifier::Role role, int total,
     identifier::Key id;
     if (rng.coin(inBankP)) {
       ++intCounter;
-      id = identifier::make(role, identifier::Bank::internal, intCounter);
+      id = identifier::make(role, Bank::internal, intCounter);
       internals.push_back(id);
     } else {
       ++extCounter;
-      id = identifier::make(role, identifier::Bank::external, extCounter);
+      id = identifier::make(role, Bank::external, extCounter);
       externals.push_back(id);
     }
     combined.push_back(id);
@@ -72,29 +74,29 @@ makePool(random::Rng &rng, int population, const Config &cfg = {}) {
   // --- Employers: split by in_bank_p ---
   const int nEmployers =
       scale(cfg.perTenK.employers, population, cfg.floor.employers);
-  detail::splitPool(rng, identifier::Role::employer, nEmployers,
-                    cfg.employerInBankP, out.employerInternalIds,
-                    out.employerExternalIds, out.employerIds);
+  detail::splitPool(rng, Role::employer, nEmployers, cfg.employerInBankP,
+                    out.employerInternalIds, out.employerExternalIds,
+                    out.employerIds);
 
   // --- Clients: split by in_bank_p ---
   const int nClients =
       scale(cfg.perTenK.clientPayers, population, cfg.floor.clientPayers);
-  detail::splitPool(rng, identifier::Role::client, nClients, cfg.clientInBankP,
+  detail::splitPool(rng, Role::client, nClients, cfg.clientInBankP,
                     out.clientInternalIds, out.clientExternalIds,
                     out.clientPayerIds);
 
   // --- Fully external pools ---
   detail::appendExternal(
-      out.platformIds, identifier::Role::platform,
+      out.platformIds, Role::platform,
       scale(cfg.perTenK.platforms, population, cfg.floor.platforms));
   detail::appendExternal(
-      out.processorIds, identifier::Role::processor,
+      out.processorIds, Role::processor,
       scale(cfg.perTenK.processors, population, cfg.floor.processors));
-  detail::appendExternal(out.ownerBusinessIds, identifier::Role::business,
+  detail::appendExternal(out.ownerBusinessIds, Role::business,
                          scale(cfg.perTenK.ownerBusinesses, population,
                                cfg.floor.ownerBusinesses));
   detail::appendExternal(
-      out.brokerageIds, identifier::Role::brokerage,
+      out.brokerageIds, Role::brokerage,
       scale(cfg.perTenK.brokerages, population, cfg.floor.brokerages));
 
   // --- Aggregate external and internal lists ---

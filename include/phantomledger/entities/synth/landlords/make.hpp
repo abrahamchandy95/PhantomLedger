@@ -1,8 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/landlords/record.hpp"
 #include "phantomledger/entities/synth/landlords/config.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
@@ -15,6 +13,10 @@
 #include <vector>
 
 namespace PhantomLedger::entities::synth::landlords {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
+
 namespace detail {
 
 [[nodiscard]] constexpr std::size_t
@@ -54,13 +56,12 @@ classIndex(entities::landlords::Class kind) noexcept {
     // Determine banking relationship.
     const double inBankP = cfg.inBankP.forClass(kind);
     const bool isInternal = rng.coin(inBankP);
-    const auto bank =
-        isInternal ? identifier::Bank::internal : identifier::Bank::external;
+    const auto bank = isInternal ? Bank::internal : Bank::external;
 
     const std::uint64_t serial =
         isInternal ? ++internalSerial : ++externalSerial;
 
-    const auto id = identifier::make(identifier::Role::landlord, bank, serial);
+    const auto id = identifier::make(Role::landlord, bank, serial);
 
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
     out.roster.records.push_back(entities::landlords::Record{

@@ -1,8 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/merchants/label.hpp"
 #include "phantomledger/entities/merchants/record.hpp"
 #include "phantomledger/entities/synth/merchants/config.hpp"
@@ -19,14 +17,16 @@
 #include <vector>
 
 namespace PhantomLedger::entities::synth::merchants {
+
+using taxonomies::identifiers::Bank;
+using taxonomies::identifiers::Role;
+
 namespace detail {
 
 [[nodiscard]] inline identifier::Key makeId(bool internal,
                                             std::uint64_t serial) {
-  return identifier::make(identifier::Role::merchant,
-                          internal ? identifier::Bank::internal
-                                   : identifier::Bank::external,
-                          serial);
+  return identifier::make(Role::merchant,
+                          internal ? Bank::internal : Bank::external, serial);
 }
 
 } // namespace detail
