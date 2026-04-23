@@ -38,8 +38,8 @@ struct ProbabilityTable {
       0.62, // salaried
   }};
 
-  [[nodiscard]] static constexpr double forKind(personas::Kind kind) noexcept {
-    return table[personas::indexOf(kind)];
+  [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
+    return table[personas::indexOf(type)];
   }
 };
 

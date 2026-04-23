@@ -1,5 +1,5 @@
-#include "phantomledger/channels/names.hpp"
-#include "phantomledger/channels/predicates.hpp"
+#include "phantomledger/taxonomies/channels/names.hpp"
+#include "phantomledger/taxonomies/channels/predicates.hpp"
 
 #include "test_support.hpp"
 

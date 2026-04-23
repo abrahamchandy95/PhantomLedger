@@ -1,9 +1,9 @@
 #pragma once
 
-#include "phantomledger/devices/identity.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/network/ipv4.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/transactions/devices/identity.hpp"
+#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <compare>
 #include <cstdint>

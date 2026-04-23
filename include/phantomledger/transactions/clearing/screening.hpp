@@ -7,7 +7,7 @@
  * affordability against a seeded balance state.
  */
 
-#include "phantomledger/clearing/ledger.hpp"
+#include "ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstddef>

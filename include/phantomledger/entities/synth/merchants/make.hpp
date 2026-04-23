@@ -8,9 +8,10 @@
 #include "phantomledger/entities/synth/merchants/config.hpp"
 #include "phantomledger/entities/synth/merchants/pack.hpp"
 #include "phantomledger/entities/synth/merchants/weights.hpp"
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
+#include "phantomledger/taxonomies/merchants/types.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -45,7 +46,7 @@ namespace detail {
 
   std::vector<double> coreRaw(static_cast<std::size_t>(coreCount));
   for (double &value : coreRaw) {
-    value = math::lognormal(rng, 0.0, cfg.core.sizeSigma);
+    value = probability::distributions::lognormal(rng, 0.0, cfg.core.sizeSigma);
   }
   const auto coreWeights = normalize(coreRaw);
 
@@ -53,7 +54,8 @@ namespace detail {
   if (tailCount > 0) {
     std::vector<double> tailRaw(static_cast<std::size_t>(tailCount));
     for (double &value : tailRaw) {
-      value = math::lognormal(rng, -0.75, cfg.tail.sizeSigma);
+      value =
+          probability::distributions::lognormal(rng, -0.75, cfg.tail.sizeSigma);
     }
     tailWeights = normalize(tailRaw);
   }
@@ -64,12 +66,11 @@ namespace detail {
   Pack out;
   out.catalog.records.reserve(static_cast<std::size_t>(total));
 
-  constexpr std::size_t categoryCount =
-      taxonomies::merchants::kDefaultCategories.size();
-
   for (int i = 0; i < total; ++i) {
-    const auto categoryIndex =
-        static_cast<std::uint16_t>(rng.choiceIndex(categoryCount));
+    const auto category =
+        taxonomies::merchants::kDefaultCategories[rng.choiceIndex(
+            taxonomies::merchants::kCategoryCount)];
+
     const auto serial = static_cast<std::uint64_t>(i + 1);
     const bool internal = i < coreCount && rng.coin(cfg.banking.internalP);
 
@@ -81,7 +82,7 @@ namespace detail {
     out.catalog.records.push_back(entities::merchants::Record{
         .label = entities::merchants::Label{serial},
         .counterpartyId = detail::makeId(internal, serial),
-        .categoryIndex = categoryIndex,
+        .category = category,
         .weight = weight,
     });
   }

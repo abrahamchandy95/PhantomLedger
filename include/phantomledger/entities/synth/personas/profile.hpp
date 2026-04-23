@@ -5,8 +5,10 @@
 #include "phantomledger/entities/behavior/cash.hpp"
 #include "phantomledger/entities/behavior/payday.hpp"
 #include "phantomledger/entities/behavior/persona.hpp"
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/beta.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/probability/distributions/normal.hpp"
 #include "phantomledger/taxonomies/personas/archetypes.hpp"
 
 #include <algorithm>
@@ -19,7 +21,7 @@ inline double perturbMedian(random::Rng &rng, double median,
   if (median <= 0.0) {
     return median;
   }
-  return math::lognormalByMedian(rng, median, sigma);
+  return probability::distributions::lognormalByMedian(rng, median, sigma);
 }
 
 inline double perturbProb(random::Rng &rng, double p) {
@@ -29,7 +31,8 @@ inline double perturbProb(random::Rng &rng, double p) {
   if (p >= 1.0) {
     return 1.0;
   }
-  return std::clamp(math::normal(rng, p, 0.08), 0.01, 0.99);
+  return std::clamp(probability::distributions::normal(rng, p, 0.08), 0.01,
+                    0.99);
 }
 
 } // namespace detail
@@ -64,7 +67,8 @@ profile(random::Rng &rng, ::PhantomLedger::personas::Type type) {
           },
       .payday =
           entities::behavior::Payday{
-              .sensitivity = math::beta(rng, beta.alpha, beta.beta),
+              .sensitivity =
+                  probability::distributions::beta(rng, beta.alpha, beta.beta),
           },
   };
 }

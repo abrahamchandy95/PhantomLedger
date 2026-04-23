@@ -5,11 +5,11 @@
  * occasionally switches with a configured probability.
  */
 
-#include "phantomledger/devices/identity.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/network/ipv4.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/transactions/devices/identity.hpp"
+#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <optional>
 #include <unordered_map>

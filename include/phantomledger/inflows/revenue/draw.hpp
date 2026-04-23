@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 
 #include <algorithm>
 #include <cstddef>

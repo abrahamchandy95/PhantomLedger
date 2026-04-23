@@ -14,11 +14,11 @@
 #include "phantomledger/entities/counterparties/pool.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/synth/inflow/ids.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/inflows/revenue/catalog.hpp"
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/inflows/revenue/profiles.hpp"
 #include "phantomledger/inflows/types.hpp"
-#include "phantomledger/random/rng.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <optional>

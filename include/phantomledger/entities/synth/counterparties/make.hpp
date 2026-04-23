@@ -6,7 +6,7 @@
 #include "phantomledger/entities/identifier/role.hpp"
 #include "phantomledger/entities/synth/counterparties/config.hpp"
 #include "phantomledger/entities/synth/counterparties/scale.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 
 #include <cstdint>
 #include <vector>

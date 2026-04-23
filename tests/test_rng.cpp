@@ -1,5 +1,6 @@
-#include "phantomledger/random/factory.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 
 #include "test_support.hpp"
 
@@ -133,9 +134,8 @@ void testWeightedIndex() {
   std::vector<double> cdf = {0.1, 0.3, 0.6, 1.0};
   int counts[4] = {};
   const int N = 100000;
-
   for (int i = 0; i < N; ++i) {
-    auto idx = rng.weightedIndex(cdf);
+    auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
     PL_CHECK(idx < 4);
     ++counts[idx];
   }

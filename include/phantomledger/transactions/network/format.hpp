@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/network/ipv4.hpp"
+#include "ipv4.hpp"
 
 #include <string>
 

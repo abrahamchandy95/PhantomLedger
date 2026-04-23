@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/network/format.hpp"
-#include "phantomledger/network/ipv4.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "format.hpp"
+#include "ipv4.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 
 #include <cstdint>
 #include <string>

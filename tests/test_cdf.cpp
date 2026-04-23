@@ -1,4 +1,4 @@
-#include "phantomledger/distributions/cdf.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 
 #include "test_support.hpp"
 

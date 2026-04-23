@@ -2,8 +2,8 @@
 #include "phantomledger/entities/encoding/external.hpp"
 #include "phantomledger/entities/encoding/landlord.hpp"
 #include "phantomledger/entities/encoding/named.hpp"
-#include "phantomledger/network/random.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/transactions/network/random.hpp"
 
 #include "test_support.hpp"
 

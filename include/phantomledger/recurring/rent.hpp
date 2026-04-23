@@ -8,9 +8,9 @@
  * portal ACH.
  */
 
-#include "phantomledger/distributions/cdf.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <array>

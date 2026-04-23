@@ -1,13 +1,11 @@
 #pragma once
 
-#include "phantomledger/distributions/cdf.hpp"
-#include "phantomledger/random/pcg64.hpp"
+#include "pcg64.hpp"
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <numeric>
-#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -99,15 +97,6 @@ public:
 
     pool.resize(k);
     return pool;
-  }
-
-  /// CDF-weighted index selection.
-  [[nodiscard]] std::size_t weightedIndex(std::span<const double> cdf) {
-    if (cdf.empty()) {
-      throw std::invalid_argument("weightedIndex: cdf must be non-empty");
-    }
-
-    return distributions::sampleIndex(cdf, nextDouble());
   }
 
 private:

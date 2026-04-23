@@ -1,4 +1,4 @@
-#include "phantomledger/validate/checks.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "test_support.hpp"
 
 #include <cstdio>
