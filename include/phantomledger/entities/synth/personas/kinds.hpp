@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/taxonomies/personas/archetypes.hpp"
 
 #include <algorithm>

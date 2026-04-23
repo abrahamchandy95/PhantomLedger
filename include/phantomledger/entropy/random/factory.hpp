@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/random/rng.hpp"
-#include "phantomledger/random/seed.hpp"
+#include "rng.hpp"
+#include "seed.hpp"
 
 #include <concepts>
 #include <cstdint>

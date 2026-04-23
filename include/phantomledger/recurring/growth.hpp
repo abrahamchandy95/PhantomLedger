@@ -7,10 +7,12 @@
  * and counterparty selection.
  */
 
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/factory.hpp"
-#include "phantomledger/random/rng.hpp"
-#include "phantomledger/time/calendar.hpp"
+#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/probability/distributions/normal.hpp"
+#include "phantomledger/probability/distributions/uniform.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -61,20 +63,21 @@ inline constexpr double kDaysPerYear = 365.25;
     return std::max(1, yearsToDays(yearsMin));
   }
 
-  const double years = math::uniform(rng, yearsMin, yearsMax);
+  const double years =
+      probability::distributions::uniform(rng, yearsMin, yearsMax);
   return std::max(1, yearsToDays(years));
 }
 
 /// Normal draw clamped to a floor.
 [[nodiscard]] inline double sampleNormalClamped(random::Rng &rng, double mu,
                                                 double sigma, double floor) {
-  return std::max(floor, math::normal(rng, mu, sigma));
+  return std::max(floor, probability::distributions::normal(rng, mu, sigma));
 }
 
 /// Lognormal multiplier centered at 1.0.
 [[nodiscard]] inline double sampleLognormalMultiplier(random::Rng &rng,
                                                       double sigma) {
-  return math::lognormal(rng, 0.0, sigma);
+  return probability::distributions::lognormal(rng, 0.0, sigma);
 }
 
 // ---------------------------------------------------------------

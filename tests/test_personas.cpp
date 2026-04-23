@@ -1,7 +1,7 @@
-#include "phantomledger/personas/archetypes.hpp"
-#include "phantomledger/personas/names.hpp"
-#include "phantomledger/personas/predicates.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
+#include "phantomledger/taxonomies/personas/archetypes.hpp"
+#include "phantomledger/taxonomies/personas/names.hpp"
+#include "phantomledger/taxonomies/personas/predicates.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include "test_support.hpp"
 
@@ -16,47 +16,47 @@ namespace {
 constexpr double eps = 1e-10;
 
 void testKindEnum() {
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::student), 0);
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::retiree), 1);
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::freelancer), 2);
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::smallBusiness), 3);
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::highNetWorth), 4);
-  PL_CHECK_EQ(static_cast<int>(personas::Kind::salaried), 5);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::student), 0);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::retiree), 1);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::freelancer), 2);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::smallBusiness), 3);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::highNetWorth), 4);
+  PL_CHECK_EQ(static_cast<int>(personas::Type::salaried), 5);
 
   PL_CHECK_EQ(personas::kKindCount, 6U);
-  PL_CHECK(personas::kDefaultKind == personas::Kind::salaried);
+  PL_CHECK(personas::kDefaultType == personas::Type::salaried);
 
   std::printf("  PASS: Kind enum values\n");
 }
 
 void testKindNames() {
-  PL_CHECK_EQ(personas::name(personas::Kind::student),
+  PL_CHECK_EQ(personas::name(personas::Type::student),
               std::string_view("student"));
-  PL_CHECK_EQ(personas::name(personas::Kind::retiree),
+  PL_CHECK_EQ(personas::name(personas::Type::retiree),
               std::string_view("retired"));
-  PL_CHECK_EQ(personas::name(personas::Kind::smallBusiness),
+  PL_CHECK_EQ(personas::name(personas::Type::smallBusiness),
               std::string_view("smallbiz"));
-  PL_CHECK_EQ(personas::name(personas::Kind::highNetWorth),
+  PL_CHECK_EQ(personas::name(personas::Type::highNetWorth),
               std::string_view("hnw"));
-  PL_CHECK_EQ(personas::toString(personas::Kind::salaried),
+  PL_CHECK_EQ(personas::toString(personas::Type::salaried),
               std::string_view("salaried"));
 
   std::printf("  PASS: Kind names\n");
 }
 
 void testParseKind() {
-  PL_CHECK(personas::parse("student") == personas::Kind::student);
-  PL_CHECK(personas::parse("retired") == personas::Kind::retiree);
-  PL_CHECK(personas::parse("freelancer") == personas::Kind::freelancer);
-  PL_CHECK(personas::parse("smallbiz") == personas::Kind::smallBusiness);
-  PL_CHECK(personas::parse("hnw") == personas::Kind::highNetWorth);
-  PL_CHECK(personas::parse("salaried") == personas::Kind::salaried);
+  PL_CHECK(personas::parse("student") == personas::Type::student);
+  PL_CHECK(personas::parse("retired") == personas::Type::retiree);
+  PL_CHECK(personas::parse("freelancer") == personas::Type::freelancer);
+  PL_CHECK(personas::parse("smallbiz") == personas::Type::smallBusiness);
+  PL_CHECK(personas::parse("hnw") == personas::Type::highNetWorth);
+  PL_CHECK(personas::parse("salaried") == personas::Type::salaried);
 
   PL_CHECK(!personas::parse("unknown").has_value());
   PL_CHECK(!personas::parse("").has_value());
 
-  PL_CHECK(personas::fromString("unknown") == personas::Kind::salaried);
-  PL_CHECK(personas::fromString("") == personas::Kind::salaried);
+  PL_CHECK(personas::fromString("unknown") == personas::Type::salaried);
+  PL_CHECK(personas::fromString("") == personas::Type::salaried);
 
   std::printf("  PASS: Kind parsing\n");
 }
@@ -82,22 +82,22 @@ void testTimingNames() {
 }
 
 void testHasEarnedIncome() {
-  PL_CHECK(!personas::hasEarnedIncome(personas::Kind::student));
-  PL_CHECK(!personas::hasEarnedIncome(personas::Kind::retiree));
-  PL_CHECK(personas::hasEarnedIncome(personas::Kind::freelancer));
-  PL_CHECK(personas::hasEarnedIncome(personas::Kind::smallBusiness));
-  PL_CHECK(personas::hasEarnedIncome(personas::Kind::highNetWorth));
-  PL_CHECK(personas::hasEarnedIncome(personas::Kind::salaried));
+  PL_CHECK(!personas::hasEarnedIncome(personas::Type::student));
+  PL_CHECK(!personas::hasEarnedIncome(personas::Type::retiree));
+  PL_CHECK(personas::hasEarnedIncome(personas::Type::freelancer));
+  PL_CHECK(personas::hasEarnedIncome(personas::Type::smallBusiness));
+  PL_CHECK(personas::hasEarnedIncome(personas::Type::highNetWorth));
+  PL_CHECK(personas::hasEarnedIncome(personas::Type::salaried));
 
   // Compatibility alias
-  PL_CHECK(!personas::isEarner(personas::Kind::student));
-  PL_CHECK(personas::isEarner(personas::Kind::salaried));
+  PL_CHECK(!personas::isEarner(personas::Type::student));
+  PL_CHECK(personas::isEarner(personas::Type::salaried));
 
   std::printf("  PASS: hasEarnedIncome / isEarner\n");
 }
 
 void testArchetypeValues() {
-  const auto &sal = personas::archetype(personas::Kind::salaried);
+  const auto &sal = personas::archetype(personas::Type::salaried);
   PL_CHECK(std::abs(sal.rateMultiplier - 1.0) < eps);
   PL_CHECK(std::abs(sal.amountMultiplier - 1.0) < eps);
   PL_CHECK(sal.timing == personas::Timing::consumer);
@@ -108,22 +108,22 @@ void testArchetypeValues() {
   PL_CHECK(std::abs(sal.weight - 1.0) < eps);
   PL_CHECK(std::abs(sal.paycheckSensitivity - 0.40) < eps);
 
-  const auto &stu = personas::archetype(personas::Kind::student);
+  const auto &stu = personas::archetype(personas::Type::student);
   PL_CHECK(std::abs(stu.rateMultiplier - 0.7) < eps);
   PL_CHECK(std::abs(stu.initialBalance - 200.0) < eps);
   PL_CHECK(std::abs(stu.cardProb - 0.25) < eps);
 
-  const auto &sb = personas::archetype(personas::Kind::smallBusiness);
+  const auto &sb = personas::archetype(personas::Type::smallBusiness);
   PL_CHECK(std::abs(sb.rateMultiplier - 2.4) < eps);
   PL_CHECK(std::abs(sb.amountMultiplier - 1.8) < eps);
   PL_CHECK(sb.timing == personas::Timing::business);
   PL_CHECK(std::abs(sb.initialBalance - 8000.0) < eps);
 
-  const auto &hnw = personas::archetype(personas::Kind::highNetWorth);
+  const auto &hnw = personas::archetype(personas::Type::highNetWorth);
   PL_CHECK(std::abs(hnw.amountMultiplier - 2.8) < eps);
   PL_CHECK(std::abs(hnw.creditLimit - 15000.0) < eps);
 
-  const auto &ret = personas::archetype(personas::Kind::retiree);
+  const auto &ret = personas::archetype(personas::Type::retiree);
   PL_CHECK(ret.timing == personas::Timing::consumerDay);
   PL_CHECK(std::abs(ret.initialBalance - 1500.0) < eps);
 
@@ -149,17 +149,17 @@ void testDefaultFractions() {
     total += fraction;
   }
 
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::student) - 0.12) <
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::student) - 0.12) <
            eps);
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::retiree) - 0.10) <
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::retiree) - 0.10) <
            eps);
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::freelancer) -
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::freelancer) -
                     0.10) < eps);
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::smallBusiness) -
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::smallBusiness) -
                     0.06) < eps);
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::highNetWorth) -
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::highNetWorth) -
                     0.02) < eps);
-  PL_CHECK(std::abs(personas::defaultFraction(personas::Kind::salaried) -
+  PL_CHECK(std::abs(personas::defaultFraction(personas::Type::salaried) -
                     0.60) < eps);
 
   PL_CHECK(std::abs(total - 1.0) < eps);
@@ -168,15 +168,15 @@ void testDefaultFractions() {
 }
 
 void testPaycheckSensitivityBeta() {
-  auto student = personas::paycheckSensitivityBeta(personas::Kind::student);
+  auto student = personas::paycheckSensitivityBeta(personas::Type::student);
   PL_CHECK(std::abs(student.alpha - 4.0) < eps);
   PL_CHECK(std::abs(student.beta - 2.0) < eps);
 
-  auto hnw = personas::paycheckSensitivityBeta(personas::Kind::highNetWorth);
+  auto hnw = personas::paycheckSensitivityBeta(personas::Type::highNetWorth);
   PL_CHECK(std::abs(hnw.alpha - 1.0) < eps);
   PL_CHECK(std::abs(hnw.beta - 8.0) < eps);
 
-  auto sal = personas::paycheckSensitivityBeta(personas::Kind::salaried);
+  auto sal = personas::paycheckSensitivityBeta(personas::Type::salaried);
   PL_CHECK(std::abs(sal.alpha - 2.0) < eps);
   PL_CHECK(std::abs(sal.beta - 3.0) < eps);
 
@@ -185,7 +185,7 @@ void testPaycheckSensitivityBeta() {
 
 void testArchetypeArrayCompleteness() {
   for (std::size_t i = 0; i < personas::kKindCount; ++i) {
-    auto kind = static_cast<personas::Kind>(i);
+    auto kind = static_cast<personas::Type>(i);
     const auto &a = personas::archetype(kind);
 
     PL_CHECK(a.rateMultiplier > 0.0);

@@ -1,5 +1,5 @@
 #pragma once
-#include "phantomledger/hashing/combine.hpp"
+#include "phantomledger/primitives/hashing/combine.hpp"
 
 #include <cstdint>
 #include <functional>

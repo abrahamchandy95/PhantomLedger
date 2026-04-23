@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/hashing/constants.hpp"
+#include "constants.hpp"
 
 #include <cstddef>
 #include <functional>

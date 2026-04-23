@@ -8,10 +8,10 @@
  * probability, falling back to personal infra.
  */
 
-#include "phantomledger/infra/router.hpp"
-#include "phantomledger/infra/shared.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/transactions/draft.hpp"
+#include "phantomledger/transactions/infra/router.hpp"
+#include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 namespace PhantomLedger::transactions {

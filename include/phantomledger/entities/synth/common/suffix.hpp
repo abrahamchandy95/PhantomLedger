@@ -1,10 +1,10 @@
 #pragma once
 
-#include "phantomledger/crypto/blake2b.hpp"
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
 #include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entities/identifier/role.hpp"
+#include "phantomledger/entropy/crypto/blake2b.hpp"
 
 #include <array>
 #include <cstdint>

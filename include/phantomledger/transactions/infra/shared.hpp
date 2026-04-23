@@ -10,8 +10,8 @@
  * signal that GraphSAGE needs to detect mule accounts.
  */
 
-#include "phantomledger/devices/identity.hpp"
-#include "phantomledger/network/ipv4.hpp"
+#include "phantomledger/transactions/devices/identity.hpp"
+#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <cstdint>
 #include <optional>

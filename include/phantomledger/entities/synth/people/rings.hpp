@@ -2,8 +2,10 @@
 
 #include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/beta.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/probability/distributions/poisson.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -29,7 +31,7 @@ struct TempRing {
   if (cfg.rings.perTenKSigma > 0.0) {
     const double sigma = cfg.rings.perTenKSigma;
     const double mu = std::log(rate) - (sigma * sigma) / 2.0;
-    rate = math::lognormal(rng, mu, sigma);
+    rate = probability::distributions::lognormal(rng, mu, sigma);
   }
 
   return std::max(0, static_cast<int>(std::round(
@@ -43,23 +45,25 @@ struct TempRing {
     return false;
   }
 
-  int ringSize = static_cast<int>(
-      std::round(math::lognormal(rng, cfg.size.mu, cfg.size.sigma)));
+  int ringSize = static_cast<int>(std::round(
+      probability::distributions::lognormal(rng, cfg.size.mu, cfg.size.sigma)));
   ringSize = std::clamp(ringSize, cfg.size.min, cfg.size.max);
   ringSize = std::min(ringSize, remainingBudget);
   if (ringSize < cfg.size.min) {
     return false;
   }
 
-  double muleFrac = math::beta(rng, cfg.mules.alpha, cfg.mules.beta);
+  double muleFrac =
+      probability::distributions::beta(rng, cfg.mules.alpha, cfg.mules.beta);
   muleFrac = std::clamp(muleFrac, cfg.mules.minFrac, cfg.mules.maxFrac);
 
   int muleCount =
       std::max(1, static_cast<int>(std::round(muleFrac * ringSize)));
   muleCount = std::min(muleCount, ringSize - 1);
 
-  int victimCount = static_cast<int>(
-      std::round(math::lognormal(rng, cfg.victims.mu, cfg.victims.sigma)));
+  int victimCount =
+      static_cast<int>(std::round(probability::distributions::lognormal(
+          rng, cfg.victims.mu, cfg.victims.sigma)));
   victimCount = std::clamp(victimCount, cfg.victims.min, cfg.victims.max);
   victimCount = std::min(victimCount, std::max(0, eligibleVictims));
 
@@ -75,7 +79,8 @@ struct TempRing {
     return 0;
   }
 
-  const int count = static_cast<int>(math::poisson(rng, rate));
+  const int count =
+      static_cast<int>(probability::distributions::poisson(rng, rate));
   return std::min(count, std::max(0, remainingBudget));
 }
 

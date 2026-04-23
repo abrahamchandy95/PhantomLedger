@@ -8,14 +8,15 @@
  * has exactly one Employment state at any time.
  */
 
-#include "phantomledger/distributions/cdf.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/random/factory.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/recurring/growth.hpp"
 #include "phantomledger/recurring/payroll.hpp"
 #include "phantomledger/recurring/policy.hpp"
-#include "phantomledger/time/calendar.hpp"
 
 #include <algorithm>
 #include <array>
@@ -64,7 +65,8 @@ samplePayrollProfile(const PayrollPolicy &payrollPolicy,
   };
 
   const auto cdf = distributions::buildCdf(cadenceWeights);
-  const auto cadence = cadences[rng.weightedIndex(cdf)];
+  const auto cadence =
+      cadences[distributions::sampleIndex(cdf, rng.nextDouble())];
 
   int weekday = payrollPolicy.defaultWeekday;
   if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&
@@ -277,7 +279,7 @@ public:
     const auto cal = time::toCalendarDate(payDate);
     const int periods = payPeriodsInYear(state.payroll, cal.year);
 
-    return math::roundMoney(
+    return primitives::utils::roundMoney(
         std::max(50.0, annual / static_cast<double>(periods)));
   }
 

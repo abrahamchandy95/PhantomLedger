@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/binomial.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -20,7 +20,9 @@ namespace PhantomLedger::entities::synth::accounts {
 
   const std::int64_t trials = static_cast<std::int64_t>(maxPerPerson - 1);
   for (auto &count : out) {
-    count = static_cast<int>(math::binomial(rng, trials, 0.25)) + 1;
+    count = static_cast<int>(
+                probability::distributions::binomial(rng, trials, 0.25)) +
+            1;
   }
 
   return out;

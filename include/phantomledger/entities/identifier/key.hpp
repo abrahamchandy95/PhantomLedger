@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/role.hpp"
-#include "phantomledger/hashing/combine.hpp"
+#include "phantomledger/primitives/hashing/combine.hpp"
 
 #include <compare>
 #include <cstddef>

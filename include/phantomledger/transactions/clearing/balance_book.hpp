@@ -9,13 +9,14 @@
  * the one-time setup that precedes the simulation loop.
  */
 
-#include "phantomledger/clearing/ledger.hpp"
+#include "ledger.hpp"
 #include "phantomledger/entities/accounts/ownership.hpp"
 #include "phantomledger/entities/accounts/registry.hpp"
 #include "phantomledger/entities/behavior/table.hpp"
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/personas/taxonomy.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -48,23 +49,23 @@ struct PersonaBufferProfile {
 
 /// Look up the buffer profile for a persona kind.
 [[nodiscard]] constexpr PersonaBufferProfile
-bufferProfile(personas::Kind kind) noexcept {
-  switch (kind) {
-  case personas::Kind::student:
+bufferProfile(personas::Type type) noexcept {
+  switch (type) {
+  case personas::Type::student:
     return {200.0, 0.20, 350.0, 0.16, 225.0, 0.12, 65.0};
-  case personas::Kind::retiree:
+  case personas::Type::retiree:
     return {1500.0, 0.28, 600.0, 0.30, 500.0, 0.16, 100.0};
-  case personas::Kind::freelancer:
+  case personas::Type::freelancer:
     return {900.0, 0.34, 800.0, 0.26, 600.0, 0.16, 120.0};
-  case personas::Kind::smallBusiness:
+  case personas::Type::smallBusiness:
     return {8000.0, 0.46, 2200.0, 0.34, 2200.0, 0.20, 180.0};
-  case personas::Kind::highNetWorth:
+  case personas::Type::highNetWorth:
     return {25000.0, 0.55, 5000.0, 0.60, 10000.0, 0.22, 250.0};
-  case personas::Kind::salaried:
+  case personas::Type::salaried:
     return {1200.0, 0.42, 900.0, 0.32, 700.0, 0.18, 140.0};
   }
 
-  return bufferProfile(personas::Kind::salaried);
+  return bufferProfile(personas::Type::salaried);
 }
 
 /// Configuration knobs for the balance sampling distributions.
@@ -95,8 +96,9 @@ inline constexpr double kHubCash = 1e18;
                                         bool enableConstraints) {
   const double safeMedian = enableConstraints ? std::max(median, 0.01) : median;
   const double safeSigma = clampSigma(sigma, enableConstraints);
-  return math::floorAndRound(
-      math::lognormalByMedian(rng, safeMedian, safeSigma), floor);
+  return primitives::utils::floorAndRound(
+      probability::distributions::lognormalByMedian(rng, safeMedian, safeSigma),
+      floor);
 }
 
 [[nodiscard]] inline const entities::behavior::Persona &
@@ -180,7 +182,7 @@ bootstrap(Ledger &ledger, random::Rng &rng,
     }
 
     const auto &persona = detail::personaFor(personas, record.owner);
-    const auto profile = bufferProfile(persona.archetype.kind);
+    const auto profile = bufferProfile(persona.archetype.type);
 
     ledger.cash(idx) = detail::sampleMoney(rng, profile.balanceMedian,
                                            rules.initialBalanceSigma, 1.0,
@@ -245,7 +247,8 @@ inline void addBurdenBuffer(Ledger &ledger,
 
     const double burden = monthlyBurdens[burdenIndex];
     if (burden > 0.0) {
-      ledger.cash(idx) = math::roundMoney(ledger.cash(idx) + fraction * burden);
+      ledger.cash(idx) =
+          primitives::utils::roundMoney(ledger.cash(idx) + fraction * burden);
     }
   }
 }

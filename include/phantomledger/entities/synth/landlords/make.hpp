@@ -1,6 +1,5 @@
 #pragma once
 
-#include "phantomledger/distributions/cdf.hpp"
 #include "phantomledger/entities/identifier/bank.hpp"
 #include "phantomledger/entities/identifier/make.hpp"
 #include "phantomledger/entities/identifier/role.hpp"
@@ -8,7 +7,8 @@
 #include "phantomledger/entities/synth/landlords/config.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/landlords/scale.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 
 #include <array>
 #include <cstdint>

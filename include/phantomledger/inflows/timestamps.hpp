@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/random/rng.hpp"
-#include "phantomledger/time/calendar.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
 
 namespace PhantomLedger::inflows::timestamps {
 

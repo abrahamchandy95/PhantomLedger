@@ -8,11 +8,12 @@
  */
 
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/random/factory.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/recurring/growth.hpp"
 #include "phantomledger/recurring/policy.hpp"
-#include "phantomledger/time/calendar.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -164,7 +165,7 @@ struct RentGrowthInput {
                                                  .now = query.payDate,
                                              });
 
-  return math::roundMoney(std::max(1.0, amount));
+  return primitives::utils::roundMoney(std::max(1.0, amount));
 }
 
 } // namespace PhantomLedger::recurring

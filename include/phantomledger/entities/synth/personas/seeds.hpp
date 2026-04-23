@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/hashing/combine.hpp"
+#include "phantomledger/primitives/hashing/combine.hpp"
 
 #include <cstdint>
 
