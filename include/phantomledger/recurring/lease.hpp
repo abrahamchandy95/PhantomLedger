@@ -25,7 +25,7 @@ namespace PhantomLedger::recurring {
 
 /// Mutable lease state for one person.
 struct Lease {
-  entities::identifier::Key landlordAcct;
+  entity::Key landlordAcct;
   time::TimePoint start;
   time::TimePoint end;
   double baseRent = 0.0;
@@ -45,14 +45,14 @@ struct LeaseRules {
 struct LeaseInitInput {
   std::string_view payerKey;
   time::TimePoint startDate;
-  std::span<const entities::identifier::Key> landlords;
+  std::span<const entity::Key> landlords;
   RentSource rentSource;
 };
 
 struct LeaseAdvanceInput {
   std::string_view payerKey;
   time::TimePoint now;
-  std::span<const entities::identifier::Key> landlords;
+  std::span<const entity::Key> landlords;
   const Lease &previous;
   RentSource resetRentSource;
 };

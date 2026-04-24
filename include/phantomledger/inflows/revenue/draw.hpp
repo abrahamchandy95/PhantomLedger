@@ -11,7 +11,7 @@
 
 namespace PhantomLedger::inflows::revenue {
 
-using Key = entities::identifier::Key;
+using Key = entity::Key;
 
 /// Uniform integer in [low, highExclusive).
 [[nodiscard]] inline int randInt(random::Rng &rng, int low, int highExclusive) {

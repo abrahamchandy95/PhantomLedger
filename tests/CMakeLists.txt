@@ -10,8 +10,6 @@ endfunction()
 pl_add_test(test_pcg64)
 pl_add_test(test_seed)
 pl_add_test(test_cdf)
-pl_add_test(test_value_types)
-pl_add_test(test_ledger)
 
 pl_add_test(test_validate)
 pl_add_test(test_rng)

@@ -1,18 +1,12 @@
 #pragma once
-/*
- persona behavioral parameters.
- *
- * Archetypes carry rate/amount multipliers, card probabilities,
- * and paycheck sensitivity used by downstream generators to shape
- * spending behavior.
- */
 
-#include "phantomledger/taxonomies/personas/names.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
-#include <string_view>
 
 namespace PhantomLedger::personas {
+
+// --- Archetypes --------------------------------------------------
 
 struct Archetype {
   double rateMultiplier;
@@ -31,78 +25,89 @@ struct BetaParams {
   double beta;
 };
 
-namespace detail {
+// Named switch rather than a positional array: the value-to-persona
+// mapping is checked by the compiler via the case labels, so future
+// enum reorderings cannot silently shift the table.
+[[nodiscard]] constexpr Archetype archetype(Type t) noexcept {
+  switch (t) {
+  case Type::student:
+    return {0.7, 0.7, Timing::consumer, 200.0, 0.25, 0.55, 800.0, 0.18, 0.67};
 
-inline constexpr std::array<Archetype, kKindCount> kArchetypesTable{{
-    // student
-    {0.7, 0.7, Timing::consumer, 200.0, 0.25, 0.55, 800.0, 0.18, 0.67},
-    // retiree
-    {0.6, 0.9, Timing::consumerDay, 1500.0, 0.55, 0.55, 2500.0, 0.30, 0.50},
-    // freelancer
-    {1.1, 1.1, Timing::consumer, 900.0, 0.65, 0.65, 4000.0, 0.95, 0.33},
-    // smallBusiness
-    {2.4, 1.8, Timing::business, 8000.0, 0.80, 0.75, 7000.0, 1.50, 0.29},
-    // highNetWorth
-    {1.3, 2.8, Timing::consumer, 25000.0, 0.92, 0.80, 15000.0, 2.20, 0.11},
-    // salaried
-    {1.0, 1.0, Timing::consumer, 1200.0, 0.70, 0.70, 3000.0, 1.00, 0.40},
-}};
+  case Type::retiree:
+    return {0.6,  0.9, Timing::consumerDay, 1500.0, 0.55, 0.55, 2500.0,
+            0.30, 0.50};
 
-[[nodiscard]] consteval std::array<double, kKindCount> buildDefaultFractions() {
-  std::array<double, kKindCount> fractions{};
+  case Type::freelancer:
+    return {1.1, 1.1, Timing::consumer, 900.0, 0.65, 0.65, 4000.0, 0.95, 0.33};
 
-  fractions[indexOf(Type::student)] = 0.12;
-  fractions[indexOf(Type::retiree)] = 0.10;
-  fractions[indexOf(Type::freelancer)] = 0.10;
-  fractions[indexOf(Type::smallBusiness)] = 0.06;
-  fractions[indexOf(Type::highNetWorth)] = 0.02;
+  case Type::smallBusiness:
+    return {2.4, 1.8, Timing::business, 8000.0, 0.80, 0.75, 7000.0, 1.50, 0.29};
 
-  const double assigned = fractions[indexOf(Type::student)] +
-                          fractions[indexOf(Type::retiree)] +
-                          fractions[indexOf(Type::freelancer)] +
-                          fractions[indexOf(Type::smallBusiness)] +
-                          fractions[indexOf(Type::highNetWorth)];
+  case Type::highNetWorth:
+    return {1.3,  2.8, Timing::consumer, 25000.0, 0.92, 0.80, 15000.0,
+            2.20, 0.11};
 
-  if (assigned > 1.0) {
-    throw "persona fractions exceed 1.0";
+  case Type::salaried:
+    return {1.0, 1.0, Timing::consumer, 1200.0, 0.70, 0.70, 3000.0, 1.00, 0.40};
   }
 
-  fractions[indexOf(Type::salaried)] = 1.0 - assigned;
-  return fractions;
+  return {};
 }
 
-inline constexpr std::array<BetaParams, kKindCount>
-    kPaycheckSensitivityBetasTable{{
-        {4.0, 2.0}, // student
-        {3.0, 3.0}, // retiree
-        {2.0, 4.0}, // freelancer
-        {2.0, 5.0}, // smallBusiness
-        {1.0, 8.0}, // highNetWorth
-        {2.0, 3.0}, // salaried
-    }};
+[[nodiscard]] constexpr BetaParams paycheckBeta(Type t) noexcept {
+  switch (t) {
+  case Type::student:
+    return {4.0, 2.0};
 
-} // namespace detail
+  case Type::retiree:
+    return {3.0, 3.0};
 
-inline constexpr auto kArchetypes = detail::kArchetypesTable;
-inline constexpr auto kDefaultFractions = detail::buildDefaultFractions();
-inline constexpr auto kPaycheckSensitivityBetas =
-    detail::kPaycheckSensitivityBetasTable;
+  case Type::freelancer:
+    return {2.0, 4.0};
 
-[[nodiscard]] constexpr const Archetype &archetype(Type type) noexcept {
-  return kArchetypes[indexOf(type)];
+  case Type::smallBusiness:
+    return {2.0, 5.0};
+
+  case Type::highNetWorth:
+    return {1.0, 8.0};
+
+  case Type::salaried:
+    return {2.0, 3.0};
+  }
+
+  return {2.0, 3.0};
 }
 
-[[nodiscard]] constexpr const Archetype &
-archetype(std::string_view s) noexcept {
-  return archetype(fromString(s));
+// Default population share per persona. Computed at compile time so
+// any imbalance is caught before runtime.
+[[nodiscard]] consteval std::array<double, kKindCount> buildShares() {
+  std::array<double, kKindCount> out{};
+
+  out[slot(Type::student)] = 0.12;
+  out[slot(Type::retiree)] = 0.10;
+  out[slot(Type::freelancer)] = 0.10;
+  out[slot(Type::smallBusiness)] = 0.06;
+  out[slot(Type::highNetWorth)] = 0.02;
+
+  double assigned = 0.0;
+  for (std::size_t i = 0; i < kKindCount; ++i) {
+    if (i != slot(Type::salaried)) {
+      assigned += out[i];
+    }
+  }
+
+  if (assigned > 1.0) {
+    throw "default persona shares exceed 1.0";
+  }
+
+  out[slot(Type::salaried)] = 1.0 - assigned;
+  return out;
 }
 
-[[nodiscard]] constexpr double defaultFraction(Type type) noexcept {
-  return kDefaultFractions[indexOf(type)];
-}
+inline constexpr auto kShares = buildShares();
 
-[[nodiscard]] constexpr BetaParams paycheckSensitivityBeta(Type type) noexcept {
-  return kPaycheckSensitivityBetas[indexOf(type)];
+[[nodiscard]] constexpr double share(Type t) noexcept {
+  return kShares[slot(t)];
 }
 
 } // namespace PhantomLedger::personas

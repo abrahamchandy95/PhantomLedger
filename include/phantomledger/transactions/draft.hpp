@@ -12,8 +12,8 @@ namespace PhantomLedger::transactions {
 /// The factory converts this into a full `Transaction` by attaching
 /// device/IP from the routing layer.
 struct Draft {
-  entities::identifier::Key source;
-  entities::identifier::Key destination;
+  entity::Key source;
+  entity::Key destination;
   double amount = 0.0;
   std::int64_t timestamp = 0;
 

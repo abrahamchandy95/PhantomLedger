@@ -24,70 +24,66 @@
 
 #include "phantomledger/taxonomies/channels/names.hpp"
 
+#include <cstdint>
+
 namespace PhantomLedger::channels {
 namespace detail {
 
-[[nodiscard]] constexpr std::uint8_t tagGroupByte(Tag t) noexcept {
+[[nodiscard]] constexpr std::uint8_t groupByte(Tag t) noexcept {
   return static_cast<std::uint8_t>(t.value & 0xF0);
 }
 
-[[nodiscard]] constexpr bool isKnownGroup(Tag t,
-                                          std::uint8_t groupByte) noexcept {
-  return kKnownTags[t.value] && tagGroupByte(t) == groupByte;
+[[nodiscard]] constexpr bool inGroup(Tag t, std::uint8_t group) noexcept {
+  return kKnown[t.value] && groupByte(t) == group;
 }
 
 } // namespace detail
 
 [[nodiscard]] constexpr bool isLegit(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x00);
+  return detail::inGroup(t, 0x00);
 }
 
 [[nodiscard]] constexpr bool isRent(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x10);
+  return detail::inGroup(t, 0x10);
 }
 
 [[nodiscard]] constexpr bool isFamily(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x20);
+  return detail::inGroup(t, 0x20);
 }
 
 [[nodiscard]] constexpr bool isCredit(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x30);
+  return detail::inGroup(t, 0x30);
 }
 
 [[nodiscard]] constexpr bool isProduct(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x40);
+  return detail::inGroup(t, 0x40);
 }
 
 [[nodiscard]] constexpr bool isGovernment(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x50);
+  return detail::inGroup(t, 0x50);
 }
 
 [[nodiscard]] constexpr bool isInsurance(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x60);
+  return detail::inGroup(t, 0x60);
 }
 
 [[nodiscard]] constexpr bool isFraud(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x70);
+  return detail::inGroup(t, 0x70);
 }
 
 [[nodiscard]] constexpr bool isCamouflage(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x80);
+  return detail::inGroup(t, 0x80);
 }
 
-/// Liquidity events are ledger-emitted fee/interest transfers. The
-/// ledger bypasses its insufficient-funds check for any channel in this
-/// family so that fee collection and LOC interest can run against
-/// accounts that are already overdrawn.
 [[nodiscard]] constexpr bool isLiquidity(Tag t) noexcept {
-  return detail::isKnownGroup(t, 0x90);
+  return detail::inGroup(t, 0x90);
 }
 
 [[nodiscard]] constexpr bool isKnown(Tag t) noexcept {
-  return detail::kKnownTags[t.value];
+  return detail::kKnown[t.value];
 }
 
 [[nodiscard]] constexpr bool isPaydayInbound(Tag t) noexcept {
-  return detail::kPaydayInboundTags[t.value];
+  return detail::kPaydayInbound[t.value];
 }
-
 } // namespace PhantomLedger::channels

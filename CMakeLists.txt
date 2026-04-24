@@ -12,9 +12,14 @@ option(PL_BUILD_PYTHON "Build pybind11 Python module" OFF)
 
 add_library(phantomledger_core STATIC
     src/transactions/clearing/ledger.cpp
+    src/transactions/clearing/loc_accrual.cpp
     src/entropy/crypto/blake2b.cpp
     src/primitives/time/calendar.cpp
     src/entropy/random/rng.cpp
+    src/primitives/time/window_calendar.cpp
+    src/transfers/government.cpp
+    src/transfers/obligations.cpp
+    src/transfers/insurance.cpp
 )
 
 target_include_directories(phantomledger_core PUBLIC include)

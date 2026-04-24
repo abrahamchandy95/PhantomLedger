@@ -10,8 +10,8 @@
 
 namespace PhantomLedger::encoding {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
 inline constexpr std::size_t kRoleCount =
     static_cast<std::size_t>(Role::brokerage) + 1;
@@ -44,12 +44,11 @@ inline constexpr std::array<std::array<Layout, kBankCount>, kRoleCount>
         /* brokerage  */ {kBrokerageInternal, kBrokerageExternal},
     }};
 
-[[nodiscard]] constexpr Layout
-layout(const entities::identifier::Key &id) noexcept {
+[[nodiscard]] constexpr Layout layout(const entity::Key &id) noexcept {
   return kIdentityLayouts[toIndex(id.role)][toIndex(id.bank)];
 }
 
-[[nodiscard]] inline Layout checkedLayout(const entities::identifier::Key &id) {
+[[nodiscard]] inline Layout checkedLayout(const entity::Key &id) {
   const auto spec = layout(id);
   if (spec.prefix.empty()) {
     throw std::invalid_argument("invalid role/bank combination");

@@ -118,13 +118,11 @@ namespace detail {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
 
-  table[personas::indexOf(personas::Type::freelancer)] = freelancerProfile();
+  table[personas::slot(personas::Type::freelancer)] = freelancerProfile();
 
-  table[personas::indexOf(personas::Type::smallBusiness)] =
-      smallBusinessProfile();
+  table[personas::slot(personas::Type::smallBusiness)] = smallBusinessProfile();
 
-  table[personas::indexOf(personas::Type::highNetWorth)] =
-      highNetWorthProfile();
+  table[personas::slot(personas::Type::highNetWorth)] = highNetWorthProfile();
 
   return table;
 }
@@ -138,7 +136,7 @@ inline constexpr auto kCatalog = buildCatalog();
 /// (student, retiree, salaried).
 [[nodiscard]] inline constexpr const std::optional<RevenuePersonaProfile> &
 archetypeFor(personas::Type type) noexcept {
-  return detail::kCatalog[personas::indexOf(type)];
+  return detail::kCatalog[personas::slot(type)];
 }
 
 } // namespace PhantomLedger::inflows::revenue

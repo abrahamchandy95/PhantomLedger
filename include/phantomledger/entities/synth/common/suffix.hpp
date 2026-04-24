@@ -1,8 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/encoding/render.hpp"
-#include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entropy/crypto/blake2b.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
@@ -14,8 +13,8 @@
 
 namespace PhantomLedger::entities::synth::common {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
 [[nodiscard]] inline std::uint64_t
 readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
@@ -27,7 +26,7 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
 }
 
 [[nodiscard]] inline std::uint64_t suffix(std::string_view scope,
-                                          identifier::PersonId person) {
+                                          entity::PersonId person) {
   std::array<char, 64> buffer{};
   std::size_t pos = 0;
 
@@ -37,7 +36,7 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
 
   pos +=
       encoding::write(buffer.data() + pos,
-                      identifier::make(Role::customer, Bank::internal, person));
+                      entity::makeKey(Role::customer, Bank::internal, person));
 
   std::array<std::uint8_t, 8> digest{};
   const bool ok =
@@ -49,10 +48,10 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
   return readLe64(digest);
 }
 
-[[nodiscard]] inline std::uint64_t familySuffix(identifier::PersonId person) {
+[[nodiscard]] inline std::uint64_t familySuffix(entity::PersonId person) {
   std::array<char, 64> buffer{};
   const auto written = encoding::write(
-      buffer.data(), identifier::make(Role::customer, Bank::internal, person));
+      buffer.data(), entity::makeKey(Role::customer, Bank::internal, person));
 
   std::array<std::uint8_t, 8> digest{};
   const bool ok = crypto::blake2b::digest(buffer.data(), written, digest.data(),

@@ -42,7 +42,6 @@ Note on seasonality and mule detection:
 
 from dataclasses import dataclass
 
-
 from common.validate import ge
 
 

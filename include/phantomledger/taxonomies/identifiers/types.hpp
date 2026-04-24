@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::taxonomies::identifiers {
+namespace PhantomLedger::identifiers {
 
 enum class Role : std::uint16_t {
   customer,
@@ -29,4 +29,4 @@ enum class BankMode : std::uint8_t {
   either,
 };
 
-} // namespace PhantomLedger::taxonomies::identifiers
+} // namespace PhantomLedger::identifiers

@@ -6,10 +6,9 @@
 
 namespace PhantomLedger::encoding {
 
-using taxonomies::identifiers::Bank;
+using identifiers::Bank;
 
-[[nodiscard]] constexpr bool
-isExternal(const entities::identifier::Key &id) noexcept {
+[[nodiscard]] constexpr bool isExternal(const entity::Key &id) noexcept {
   return id.bank == Bank::external;
 }
 

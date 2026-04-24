@@ -29,8 +29,8 @@
 namespace PhantomLedger::clearing {
 
 struct LiquidityEvent {
-  channels::Tag channel;              // overdraftFee or locInterest
-  entities::identifier::Key payerKey; // the account being debited
+  channels::Tag channel; // overdraftFee or locInterest
+  entity::Key payerKey;  // the account being debited
   double amount = 0.0;
   std::int64_t timestamp = 0;
 };

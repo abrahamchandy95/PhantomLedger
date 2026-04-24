@@ -53,10 +53,10 @@ inline void writeUnsignedToEnd(char *end, std::uint64_t value) noexcept {
   return out;
 }
 
-[[nodiscard]] inline std::string
-deviceId(const entities::identifier::Key &customer, std::uint32_t index) {
-  if (customer.role != entities::identifier::Role::customer ||
-      customer.bank != entities::identifier::Bank::internal) {
+[[nodiscard]] inline std::string deviceId(const entity::Key &customer,
+                                          std::uint32_t index) {
+  if (customer.role != entity::Role::customer ||
+      customer.bank != entity::Bank::internal) {
     throw std::invalid_argument(
         "deviceId expects an internal customer identity");
   }

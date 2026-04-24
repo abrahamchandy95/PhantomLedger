@@ -1,6 +1,6 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
-
 #include "phantomledger/taxonomies/channels/predicates.hpp"
+#include "phantomledger/transactions/clearing/overdraft_fee_policy.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -12,19 +12,9 @@ namespace PhantomLedger::clearing {
 
 namespace {
 
-[[nodiscard]] constexpr bool
-isExternalAccount(const entities::identifier::Key &id) noexcept {
-  return id.bank == entities::identifier::Bank::external;
+[[nodiscard]] constexpr bool isExternalAccount(const entity::Key &id) noexcept {
+  return id.bank == entity::Bank::external;
 }
-
-// Seconds in a 365.25-day year. Used to convert APR * dollar-seconds
-// into a dollar interest amount.
-constexpr double kYearSeconds = 365.25 * 86400.0;
-
-// Default LOC billing period. Matches a typical monthly statement
-// cycle. Accounts become eligible for interest emission once this
-// many seconds have elapsed since the previous billing.
-constexpr std::int64_t kLocBillingPeriodSeconds = 30 * 86400;
 
 } // namespace
 
@@ -39,23 +29,19 @@ void Ledger::initialize(Index count) {
 
   internalAccounts_.clear();
   internalAccounts_.reserve(count);
-  accountKeys_.assign(count, entities::identifier::Key{});
+  accountKeys_.assign(count, entity::Key{});
 
   protectionType_.assign(count, ProtectionType::none);
   bankTier_.assign(count, BankTier::zeroFee);
   overdraftFeeAmount_.assign(count, 0.0);
 
-  locApr_.assign(count, 0.0);
-  locBillingDay_.assign(count, 0);
-  locDollarSecondsIntegral_.assign(count, 0.0);
-  locLastUpdateTs_.assign(count, 0);
-  locLastBillingTs_.assign(count, 0);
+  locTracker_.initialize(count);
 
   emitLiquidity_ = true;
   liquiditySink_ = nullptr;
 }
 
-void Ledger::addAccount(const entities::identifier::Key &id, Index idx) {
+void Ledger::addAccount(const entity::Key &id, Index idx) {
   assert(idx < size_);
   internalAccounts_.insert_or_assign(id, idx);
   accountKeys_[idx] = id;
@@ -120,16 +106,15 @@ double Ledger::availableCash(Index idx) const noexcept {
   return cash_[idx];
 }
 
-double Ledger::liquidity(const entities::identifier::Key &identity) const {
+double Ledger::liquidity(const entity::Key &identity) const {
   return liquidity(findAccount(identity));
 }
 
-double Ledger::availableCash(const entities::identifier::Key &identity) const {
+double Ledger::availableCash(const entity::Key &identity) const {
   return availableCash(findAccount(identity));
 }
 
-Ledger::Index
-Ledger::findAccount(const entities::identifier::Key &identity) const {
+Ledger::Index Ledger::findAccount(const entity::Key &identity) const {
   const auto it = internalAccounts_.find(identity);
   return it == internalAccounts_.end() ? invalid : it->second;
 }
@@ -140,18 +125,18 @@ void Ledger::setOverdraftOnly(Index idx, double limit) noexcept {
   overdrafts_[idx] = limit;
   linked_[idx] = 0.0;
   courtesy_[idx] = 0.0;
+  // Transitioning to courtesy, so make sure LOC tracking is off.
+  locTracker_.disable(idx);
   protectionType_[idx] =
       limit > 0.0 ? ProtectionType::courtesy : ProtectionType::none;
 }
 
-// --- Protection / tier / LOC setters ---
+// --- Protection / tier / LOC setup ---
 
 void Ledger::setProtection(Index idx, ProtectionType type,
                            double bufferAmount) noexcept {
   assert(idx < size_);
 
-  // Clear all buffer slots to enforce mutual exclusivity, then write
-  // the new buffer into the slot that matches the protection type.
   overdrafts_[idx] = 0.0;
   linked_[idx] = 0.0;
   courtesy_[idx] = 0.0;
@@ -160,19 +145,25 @@ void Ledger::setProtection(Index idx, ProtectionType type,
 
   switch (type) {
   case ProtectionType::none:
+    locTracker_.disable(idx);
     break;
   case ProtectionType::courtesy:
     courtesy_[idx] = bufferAmount;
+    locTracker_.disable(idx);
     break;
   case ProtectionType::linked:
     linked_[idx] = bufferAmount;
+    locTracker_.disable(idx);
     break;
   case ProtectionType::loc:
-    // LOC credit limit lives in the overdraft slot so it feeds
-    // totalLiquidity() and the funding check through the existing
-    // code path without a special case. The APR / billingDay live
-    // in the dedicated LOC vectors and are set via setLoc().
+    // LOC credit limit lives in the overdraft slot so totalLiquidity()
+    // and the funding check see it through the existing code path.
+    // APR + billingDay arrive later via setLoc().
     overdrafts_[idx] = bufferAmount;
+    // Register with the tracker at zero APR/day 0; setLoc() fills in
+    // the real values. This keeps the tracker's enabled-flag in sync
+    // with the protection type even if the caller forgets setLoc.
+    locTracker_.enable(idx, 0.0, 0);
     break;
   }
 }
@@ -185,8 +176,10 @@ void Ledger::setBankTier(Index idx, BankTier tier, double feeAmount) noexcept {
 
 void Ledger::setLoc(Index idx, double apr, int billingDay) noexcept {
   assert(idx < size_);
-  locApr_[idx] = apr;
-  locBillingDay_[idx] = static_cast<std::int32_t>(billingDay);
+  if (protectionType_[idx] != ProtectionType::loc) {
+    return;
+  }
+  locTracker_.enable(idx, apr, billingDay);
 }
 
 ProtectionType Ledger::protectionType(Index idx) const noexcept {
@@ -204,7 +197,7 @@ double Ledger::overdraftFeeAmount(Index idx) const noexcept {
   return overdraftFeeAmount_[idx];
 }
 
-// --- Liquidity sink & mode ---
+// --- Liquidity sink / mode ---
 
 void Ledger::setLiquiditySink(LiquiditySink sink) noexcept {
   liquiditySink_ = std::move(sink);
@@ -230,7 +223,6 @@ TransferDecision Ledger::applyTransfer(Index srcIdx, Index dstIdx,
     return TransferDecision::reject(RejectReason::unbooked);
   }
 
-  // External source -> internal destination: credit only.
   if (srcExternal) {
     cash_[dstIdx] += amount;
     return TransferDecision::accept();
@@ -239,9 +231,6 @@ TransferDecision Ledger::applyTransfer(Index srcIdx, Index dstIdx,
   const bool srcHub = isHub(srcIdx);
   srcCashBefore = cash_[srcIdx];
 
-  // Funding check. Bypassed for hubs (infinite cash) and for channels
-  // in the Liquidity block (ledger-emitted fee/interest transfers
-  // that must be applicable against already-overdrawn accounts).
   if (!srcHub && !channels::isLiquidity(channel)) {
     const bool selfTransfer =
         channels::is(channel, channels::Legit::selfTransfer);
@@ -252,7 +241,6 @@ TransferDecision Ledger::applyTransfer(Index srcIdx, Index dstIdx,
     }
   }
 
-  // Internal source -> external destination: debit only.
   if (dstExternal) {
     if (!srcHub) {
       cash_[srcIdx] -= amount;
@@ -260,7 +248,6 @@ TransferDecision Ledger::applyTransfer(Index srcIdx, Index dstIdx,
     return TransferDecision::accept();
   }
 
-  // Both internal.
   if (!srcHub) {
     cash_[srcIdx] -= amount;
   }
@@ -274,9 +261,9 @@ TransferDecision Ledger::transfer(Index srcIdx, Index dstIdx, double amount,
   return applyTransfer(srcIdx, dstIdx, amount, channel, srcCashBefore);
 }
 
-TransferDecision Ledger::transfer(const entities::identifier::Key &src,
-                                  const entities::identifier::Key &dst,
-                                  double amount, channels::Tag channel) {
+TransferDecision Ledger::transfer(const entity::Key &src,
+                                  const entity::Key &dst, double amount,
+                                  channels::Tag channel) {
   const bool srcExternal = isExternalAccount(src);
   const bool dstExternal = isExternalAccount(dst);
 
@@ -293,36 +280,17 @@ TransferDecision Ledger::transfer(const entities::identifier::Key &src,
   return transfer(srcIdx, dstIdx, amount, channel);
 }
 
-// --- Full-replay transfer ---
-
-void Ledger::updateLocAccrual(Index idx, std::int64_t timestamp) noexcept {
-  if (protectionType_[idx] != ProtectionType::loc) {
-    return;
-  }
-
-  const auto lastTs = locLastUpdateTs_[idx];
-  if (lastTs != 0 && timestamp > lastTs && cash_[idx] < 0.0) {
-    const double elapsed = static_cast<double>(timestamp - lastTs);
-    locDollarSecondsIntegral_[idx] += (-cash_[idx]) * elapsed;
-  }
-  locLastUpdateTs_[idx] = timestamp;
-}
-
-void Ledger::emitOverdraftFee(Index idx, std::int64_t timestamp) {
-  const double fee = overdraftFeeAmount_[idx];
-  if (fee <= 0.0) {
-    return;
-  }
-
-  // Bypass funding check: fee collection must apply even when the
-  // account is already overdrawn.
-  cash_[idx] -= fee;
+void Ledger::debitAndEmit(Index idx, double amount, channels::Tag channel,
+                          std::int64_t timestamp) {
+  // Bypass the funding check: fee collection / interest must apply
+  // against already-negative balances.
+  cash_[idx] -= amount;
 
   if (liquiditySink_) {
     liquiditySink_(LiquidityEvent{
-        .channel = channels::tag(channels::Liquidity::overdraftFee),
+        .channel = channel,
         .payerKey = accountKeys_[idx],
-        .amount = fee,
+        .amount = amount,
         .timestamp = timestamp,
     });
   }
@@ -331,95 +299,48 @@ void Ledger::emitOverdraftFee(Index idx, std::int64_t timestamp) {
 TransferDecision Ledger::transferAt(Index srcIdx, Index dstIdx, double amount,
                                     channels::Tag channel,
                                     std::int64_t timestamp) noexcept {
-  // Accrue LOC dollar-seconds on both legs up to `timestamp` BEFORE
-  // applying the transfer, so the integral reflects the balance
-  // during the pre-transfer period. The post-transfer balance is
-  // captured on the next call touching this account.
+  // Roll LOC integrals forward on both legs using pre-transfer cash.
   if (isValid(srcIdx)) {
-    updateLocAccrual(srcIdx, timestamp);
+    locTracker_.update(srcIdx, cash_[srcIdx], timestamp);
   }
   if (isValid(dstIdx)) {
-    updateLocAccrual(dstIdx, timestamp);
+    locTracker_.update(dstIdx, cash_[dstIdx], timestamp);
   }
 
   double srcCashBefore = 0.0;
   const auto decision =
       applyTransfer(srcIdx, dstIdx, amount, channel, srcCashBefore);
 
-  if (decision.rejected()) {
+  if (decision.rejected() || !emitLiquidity_ || srcIdx == invalid) {
     return decision;
   }
 
-  // Overdraft-crossing detection. Only meaningful for an internal
-  // source account with COURTESY or LINKED protection: LOC uses
-  // interest accrual instead, NONE has no fee infrastructure, and
-  // external sources can't overdraft.
-  if (!emitLiquidity_ || srcIdx == invalid) {
-    return decision;
-  }
-
-  const auto protection = protectionType_[srcIdx];
-  if (protection != ProtectionType::courtesy &&
-      protection != ProtectionType::linked) {
-    return decision;
-  }
-
-  // Don't recursively fee a liquidity-event transfer.
-  if (channels::isLiquidity(channel)) {
-    return decision;
-  }
-
-  const bool crossedIntoNegative =
-      (srcCashBefore >= 0.0) && (cash_[srcIdx] < 0.0);
-  if (crossedIntoNegative) {
-    emitOverdraftFee(srcIdx, timestamp);
+  const auto fee =
+      assessOverdraftFee(protectionType_[srcIdx], channel, srcCashBefore,
+                         cash_[srcIdx], overdraftFeeAmount_[srcIdx]);
+  if (fee) {
+    debitAndEmit(srcIdx, fee.amount,
+                 channels::tag(channels::Liquidity::overdraftFee), timestamp);
   }
 
   return decision;
 }
 
 void Ledger::accrueLocInterestThrough(std::int64_t timestamp) noexcept {
-  for (Index idx = 0; idx < size_; ++idx) {
-    if (protectionType_[idx] != ProtectionType::loc) {
-      continue;
-    }
+  // Pull matured accruals out of the tracker, then turn each into a
+  // debit + emission here. Keeping the tracker ignorant of Ledger /
+  // LiquiditySink means the tracker stays independently testable.
+  std::vector<InterestAccrual> matured;
+  locTracker_.sweep(
+      timestamp, [this](Index idx) noexcept { return cash_[idx]; }, matured);
 
-    // Roll the integral forward to `timestamp` so any interest we
-    // emit reflects debit balance held right up to this moment.
-    updateLocAccrual(idx, timestamp);
+  if (!emitLiquidity_) {
+    return;
+  }
 
-    const auto lastBilling = locLastBillingTs_[idx];
-    if (lastBilling == 0) {
-      // First sweep for this account: anchor the billing clock and
-      // let interest start accruing from here.
-      locLastBillingTs_[idx] = timestamp;
-      continue;
-    }
-
-    if (timestamp - lastBilling < kLocBillingPeriodSeconds) {
-      continue;
-    }
-
-    const double interest =
-        locDollarSecondsIntegral_[idx] * locApr_[idx] / kYearSeconds;
-
-    if (interest > 0.0 && emitLiquidity_) {
-      // Bypass funding check: LOC interest must apply against a
-      // balance that is presumably already negative.
-      cash_[idx] -= interest;
-
-      if (liquiditySink_) {
-        liquiditySink_(LiquidityEvent{
-            .channel = channels::tag(channels::Liquidity::locInterest),
-            .payerKey = accountKeys_[idx],
-            .amount = interest,
-            .timestamp = timestamp,
-        });
-      }
-    }
-
-    locDollarSecondsIntegral_[idx] = 0.0;
-    locLastBillingTs_[idx] = timestamp;
+  const auto channel = channels::tag(channels::Liquidity::locInterest);
+  for (const auto &a : matured) {
+    debitAndEmit(a.accountIndex, a.interest, channel, a.timestamp);
   }
 }
 
@@ -434,15 +355,11 @@ void Ledger::restore(const Ledger &other) {
   std::copy(other.linked_.begin(), other.linked_.end(), linked_.begin());
   std::copy(other.courtesy_.begin(), other.courtesy_.end(), courtesy_.begin());
 
-  // LOC accrual state also needs to be restored so the next replay
-  // starts from the same dollar-seconds integral.
-  std::copy(other.locDollarSecondsIntegral_.begin(),
-            other.locDollarSecondsIntegral_.end(),
-            locDollarSecondsIntegral_.begin());
-  std::copy(other.locLastUpdateTs_.begin(), other.locLastUpdateTs_.end(),
-            locLastUpdateTs_.begin());
-  std::copy(other.locLastBillingTs_.begin(), other.locLastBillingTs_.end(),
-            locLastBillingTs_.begin());
+  // LOC tracker integrals + timestamps must be restored so the next
+  // replay starts from the same integration state. The prior
+  // implementation only copied three vectors and silently drifted if
+  // the billing clock had already been anchored in the first pass.
+  locTracker_.copyStateFrom(other.locTracker_);
 }
 
 } // namespace PhantomLedger::clearing

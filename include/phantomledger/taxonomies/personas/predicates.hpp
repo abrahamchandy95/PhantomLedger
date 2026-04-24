@@ -2,29 +2,24 @@
 
 #include "phantomledger/taxonomies/personas/types.hpp"
 
-#include <array>
-
 namespace PhantomLedger::personas {
-namespace detail {
 
-inline constexpr std::array<bool, kKindCount> kHasEarnedIncome{{
-    false, // student
-    false, // retiree
-    true,  // freelancer
-    true,  // smallBusiness
-    true,  // highNetWorth
-    true,  // salaried
-}};
+// --- Predicates --------------------------------------------------
 
-} // namespace detail
+[[nodiscard]] constexpr bool hasEarnedIncome(Type t) noexcept {
+  switch (t) {
+  case Type::student:
+  case Type::retiree:
+    return false;
 
-[[nodiscard]] constexpr bool hasEarnedIncome(Type type) noexcept {
-  return detail::kHasEarnedIncome[indexOf(type)];
-}
+  case Type::freelancer:
+  case Type::smallBusiness:
+  case Type::highNetWorth:
+  case Type::salaried:
+    return true;
+  }
 
-// Compatibility alias if you want to keep older call sites unchanged.
-[[nodiscard]] constexpr bool isEarner(Type type) noexcept {
-  return hasEarnedIncome(type);
+  return false;
 }
 
 } // namespace PhantomLedger::personas

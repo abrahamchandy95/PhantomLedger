@@ -6,7 +6,7 @@
 namespace PhantomLedger::entities::landlords {
 
 struct Record {
-  identifier::Key accountId;
+  entity::Key accountId;
   Class type = Class::individual;
 };
 

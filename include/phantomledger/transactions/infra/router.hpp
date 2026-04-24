@@ -24,7 +24,6 @@
  */
 
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"
@@ -51,16 +50,13 @@ public:
   /// devicesByPerson:  person ID -> list of device identities
   /// ipsByPerson:      person ID -> list of IP addresses
   /// switchP:          probability of switching to an alternate device/ip
-  static Router build(double switchP,
-                      std::unordered_map<entities::identifier::Key,
-                                         entities::identifier::PersonId>
-                          ownerOf,
-                      std::unordered_map<entities::identifier::PersonId,
-                                         std::vector<devices::Identity>>
-                          devicesByPerson,
-                      std::unordered_map<entities::identifier::PersonId,
-                                         std::vector<network::Ipv4>>
-                          ipsByPerson) {
+  static Router
+  build(double switchP,
+        std::unordered_map<entity::Key, entity::PersonId> ownerOf,
+        std::unordered_map<entity::PersonId, std::vector<devices::Identity>>
+            devicesByPerson,
+        std::unordered_map<entity::PersonId, std::vector<network::Ipv4>>
+            ipsByPerson) {
     Router r;
     r.switchP_ = switchP;
     r.ownerOf_ = std::move(ownerOf);
@@ -86,8 +82,8 @@ public:
 
   /// Resolve the owner of a source account without drawing any RNG.
   /// Callers that need both device and IP can resolve once and reuse.
-  [[nodiscard]] std::optional<entities::identifier::PersonId>
-  ownerOf(const entities::identifier::Key &srcAcct) const {
+  [[nodiscard]] std::optional<entity::PersonId>
+  ownerOf(const entity::Key &srcAcct) const {
     const auto it = ownerOf_.find(srcAcct);
     if (it == ownerOf_.end()) {
       return std::nullopt;
@@ -97,23 +93,21 @@ public:
 
   /// Route a device for a pre-resolved person.
   [[nodiscard]] std::optional<devices::Identity>
-  routeDeviceFor(random::Rng &rng,
-                 entities::identifier::PersonId person) const {
+  routeDeviceFor(random::Rng &rng, entity::PersonId person) const {
     return routeFromPool(rng, person, devicesByPerson_, currentDeviceIdx_);
   }
 
   /// Route an IP for a pre-resolved person.
   [[nodiscard]] std::optional<network::Ipv4>
-  routeIpFor(random::Rng &rng, entities::identifier::PersonId person) const {
+  routeIpFor(random::Rng &rng, entity::PersonId person) const {
     return routeFromPool(rng, person, ipsByPerson_, currentIpIdx_);
   }
 
   /// Legacy convenience: resolve owner and route both legs. Retained
   /// for callers that genuinely need both every time and benefit from
   /// the single hash lookup. Prefer the split API when possible.
-  [[nodiscard]] InfraAttribution
-  routeSource(random::Rng &rng,
-              const entities::identifier::Key &srcAcct) const {
+  [[nodiscard]] InfraAttribution routeSource(random::Rng &rng,
+                                             const entity::Key &srcAcct) const {
     const auto person = ownerOf(srcAcct);
     if (!person.has_value()) {
       return {};
@@ -127,11 +121,9 @@ public:
 private:
   template <typename T>
   [[nodiscard]] std::optional<T> routeFromPool(
-      random::Rng &rng, entities::identifier::PersonId person,
-      const std::unordered_map<entities::identifier::PersonId, std::vector<T>>
-          &pool,
-      std::unordered_map<entities::identifier::PersonId, std::size_t> &current)
-      const {
+      random::Rng &rng, entity::PersonId person,
+      const std::unordered_map<entity::PersonId, std::vector<T>> &pool,
+      std::unordered_map<entity::PersonId, std::size_t> &current) const {
     const auto poolIt = pool.find(person);
     if (poolIt == pool.end() || poolIt->second.empty()) {
       return std::nullopt;
@@ -164,20 +156,15 @@ private:
 
   double switchP_ = 0.05;
 
-  std::unordered_map<entities::identifier::Key, entities::identifier::PersonId>
-      ownerOf_;
-  std::unordered_map<entities::identifier::PersonId,
-                     std::vector<devices::Identity>>
+  std::unordered_map<entity::Key, entity::PersonId> ownerOf_;
+  std::unordered_map<entity::PersonId, std::vector<devices::Identity>>
       devicesByPerson_;
-  std::unordered_map<entities::identifier::PersonId, std::vector<network::Ipv4>>
-      ipsByPerson_;
+  std::unordered_map<entity::PersonId, std::vector<network::Ipv4>> ipsByPerson_;
 
   // Sticky state as indices into the owning pool vectors. Mutable so
   // routing can stay logically const while updating the cache.
-  mutable std::unordered_map<entities::identifier::PersonId, std::size_t>
-      currentDeviceIdx_;
-  mutable std::unordered_map<entities::identifier::PersonId, std::size_t>
-      currentIpIdx_;
+  mutable std::unordered_map<entity::PersonId, std::size_t> currentDeviceIdx_;
+  mutable std::unordered_map<entity::PersonId, std::size_t> currentIpIdx_;
 };
 
 } // namespace PhantomLedger::infra

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/make.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/landlords/record.hpp"
 #include "phantomledger/entities/synth/landlords/config.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
@@ -14,8 +14,8 @@
 
 namespace PhantomLedger::entities::synth::landlords {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
 namespace detail {
 
@@ -61,7 +61,7 @@ classIndex(entities::landlords::Class kind) noexcept {
     const std::uint64_t serial =
         isInternal ? ++internalSerial : ++externalSerial;
 
-    const auto id = identifier::make(Role::landlord, bank, serial);
+    const auto id = entity::makeKey(Role::landlord, bank, serial);
 
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
     out.roster.records.push_back(entities::landlords::Record{

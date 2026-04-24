@@ -1,15 +1,13 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/lookup.hpp"
-#include "phantomledger/entities/accounts/ownership.hpp"
-#include "phantomledger/entities/accounts/registry.hpp"
+#include "phantomledger/entities/accounts/account.hpp"
 
 namespace PhantomLedger::entities::synth::accounts {
 
 struct Pack {
-  entities::accounts::Registry registry;
-  entities::accounts::Ownership ownership;
-  entities::accounts::Lookup lookup;
+  entity::account::Registry registry;
+  entity::account::Ownership ownership;
+  entity::account::Lookup lookup;
 };
 
 } // namespace PhantomLedger::entities::synth::accounts

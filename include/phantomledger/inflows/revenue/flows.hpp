@@ -12,13 +12,14 @@
  */
 
 #include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/inflows/revenue/clock.hpp"
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/inflows/revenue/profiles.hpp"
-#include "phantomledger/math/sampling.hpp"
-#include "phantomledger/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/time/calendar.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -30,7 +31,7 @@
 
 namespace PhantomLedger::inflows::revenue::flow {
 
-using Key = entities::identifier::Key;
+using Key = entity::Key;
 
 // ---------------------------------------------------------------
 // Cycle — one month of flow drafting
@@ -64,7 +65,7 @@ public:
     txns_.push_back(txf_.make(transactions::Draft{
         .source = src,
         .destination = dst,
-        .amount = math::roundMoney(amount),
+        .amount = primitives::utils::roundMoney(amount),
         .timestamp = time::toEpochSeconds(timestamp),
         .isFraud = 0,
         .ringId = -1,
@@ -95,7 +96,8 @@ struct Rule {
 
 [[nodiscard]] inline double amount(random::Rng &rng, double median,
                                    double sigma, double floor) {
-  return std::max(floor, math::lognormalByMedian(rng, median, sigma));
+  return std::max(
+      floor, probability::distributions::lognormalByMedian(rng, median, sigma));
 }
 
 inline void counterparty(Cycle &cycle,

@@ -14,11 +14,11 @@ struct Pack {
 
   /// Landlords who bank at our institution. Rent payments to these
   /// counterparties settle as internal book-to-book transfers.
-  std::vector<identifier::Key> internals;
+  std::vector<entity::Key> internals;
 
   /// Landlords who bank elsewhere. Rent payments go through
   /// interbank ACH.
-  std::vector<identifier::Key> externals;
+  std::vector<entity::Key> externals;
 };
 
 } // namespace PhantomLedger::entities::synth::landlords

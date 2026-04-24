@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"
@@ -15,10 +15,10 @@
 namespace PhantomLedger::entities::synth::people {
 
 struct TempRing {
-  std::vector<identifier::PersonId> members;
-  std::vector<identifier::PersonId> frauds;
-  std::vector<identifier::PersonId> mules;
-  std::vector<identifier::PersonId> victims;
+  std::vector<entity::PersonId> members;
+  std::vector<entity::PersonId> frauds;
+  std::vector<entity::PersonId> mules;
+  std::vector<entity::PersonId> victims;
 };
 
 [[nodiscard]] inline int sampleRingCount(random::Rng &rng, const Fraud &cfg,
@@ -92,13 +92,13 @@ struct TempRing {
 inline void injectMultiRingMules(random::Rng &rng, const Fraud &cfg,
                                  std::vector<TempRing> &rings,
                                  std::vector<std::vector<std::uint32_t>> &home,
-                                 identifier::PersonId people) {
+                                 entity::PersonId people) {
   const auto ringCount = static_cast<std::uint32_t>(rings.size());
   if (ringCount < 2) {
     return;
   }
 
-  for (identifier::PersonId mule = 1; mule <= people; ++mule) {
+  for (entity::PersonId mule = 1; mule <= people; ++mule) {
     auto &homes = home[mule];
     if (homes.empty() || !rng.coin(cfg.mules.multiRingP) ||
         homes.size() >= ringCount) {

@@ -11,8 +11,8 @@
 
 namespace PhantomLedger::encoding {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
 namespace detail {
 

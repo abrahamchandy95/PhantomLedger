@@ -5,6 +5,7 @@
  * Composes smaller policy types so each one owns a single concern:
  * activation, tenure, inflation, raises, and payroll behavior.
  */
+#include "phantomledger/primitives/validate/checks.hpp"
 
 namespace PhantomLedger::recurring {
 
@@ -92,6 +93,15 @@ struct PayrollWeights {
     return detail::nonNegative(weekly) && detail::nonNegative(biweekly) &&
            detail::nonNegative(semimonthly) && detail::nonNegative(monthly) &&
            total() > 0.0;
+  }
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::nonNegative("weekly", weekly); });
+    r.check([&] { v::nonNegative("biweekly", biweekly); });
+    r.check([&] { v::nonNegative("semimonthly", semimonthly); });
+    r.check([&] { v::nonNegative("monthly", monthly); });
+    r.check([&] { v::gt("total", total(), 0.0); });
   }
 };
 

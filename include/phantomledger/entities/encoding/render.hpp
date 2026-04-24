@@ -27,8 +27,7 @@ namespace PhantomLedger::encoding {
   return layout.prefix.size() + paddedDigits;
 }
 
-[[nodiscard]] inline std::size_t
-renderedSize(const entities::identifier::Key &id) {
+[[nodiscard]] inline std::size_t renderedSize(const entity::Key &id) {
   const auto spec = checkedLayout(id);
   return renderedSize(spec, id.number);
 }
@@ -60,7 +59,7 @@ inline std::size_t write(char *out, Layout layout, std::uint64_t number) {
   return layout.prefix.size() + paddedDigits;
 }
 
-inline std::size_t write(char *out, const entities::identifier::Key &id) {
+inline std::size_t write(char *out, const entity::Key &id) {
   const auto spec = checkedLayout(id);
   return write(out, spec, id.number);
 }
@@ -72,7 +71,7 @@ inline std::size_t write(char *out, const entities::identifier::Key &id) {
   return out;
 }
 
-[[nodiscard]] inline std::string format(const entities::identifier::Key &id) {
+[[nodiscard]] inline std::string format(const entity::Key &id) {
   const auto spec = checkedLayout(id);
   return render(spec, id.number);
 }

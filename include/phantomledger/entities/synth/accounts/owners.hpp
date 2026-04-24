@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 
 #include <cstdint>
@@ -13,7 +13,7 @@ inline void rebuild(Pack &pack, std::uint32_t people) {
   std::vector<std::uint32_t> counts(static_cast<std::size_t>(people), 0);
 
   for (const auto &record : pack.registry.records) {
-    if (record.owner == identifier::invalidPerson) {
+    if (record.owner == entity::invalidPerson) {
       continue;
     }
     if (record.owner > people) {
@@ -24,7 +24,7 @@ inline void rebuild(Pack &pack, std::uint32_t people) {
 
   pack.ownership.byPersonOffset.assign(static_cast<std::size_t>(people) + 1, 0);
 
-  for (identifier::PersonId person = 1; person <= people; ++person) {
+  for (entity::PersonId person = 1; person <= people; ++person) {
     pack.ownership.byPersonOffset[person] =
         pack.ownership.byPersonOffset[person - 1] + counts[person - 1];
   }
@@ -36,7 +36,7 @@ inline void rebuild(Pack &pack, std::uint32_t people) {
        recIx < static_cast<std::uint32_t>(pack.registry.records.size());
        ++recIx) {
     const auto owner = pack.registry.records[recIx].owner;
-    if (owner == identifier::invalidPerson) {
+    if (owner == entity::invalidPerson) {
       continue;
     }
 

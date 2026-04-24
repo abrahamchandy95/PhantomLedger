@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/lookup.hpp"
 
 #include <array>
 #include <optional>
@@ -9,12 +10,9 @@
 namespace PhantomLedger::channels {
 namespace detail {
 
-struct NamedTag {
-  std::string_view name;
-  Tag tag;
-};
+// --- Name table --------------------------------------------------
 
-inline constexpr std::array<NamedTag, 59> kNamedTags{{
+inline constexpr std::array<lookup::Entry<Tag>, 59> kEntries{{
     {"salary", tag(Legit::salary)},
     {"merchant", tag(Legit::merchant)},
     {"card_purchase", tag(Legit::cardPurchase)},
@@ -85,113 +83,52 @@ inline constexpr std::array<NamedTag, 59> kNamedTags{{
     {"loc_interest", tag(Liquidity::locInterest)},
 }};
 
-template <std::size_t N>
-[[nodiscard]] consteval std::array<NamedTag, N>
-sortByName(std::array<NamedTag, N> arr) {
-  for (std::size_t i = 1; i < N; ++i) {
-    auto key = arr[i];
-    std::size_t j = i;
-    while (j > 0 && arr[j - 1].name > key.name) {
-      arr[j] = arr[j - 1];
-      --j;
-    }
-    arr[j] = key;
-  }
-  return arr;
-}
+inline constexpr auto kSorted = lookup::sorted(kEntries);
 
-template <std::size_t N>
-[[nodiscard]] consteval std::array<std::string_view, 256>
-buildNames(const std::array<NamedTag, N> &arr) {
-  std::array<std::string_view, 256> names{};
+// Every byte value is a valid Tag slot.
+inline constexpr auto kNames =
+    lookup::reverseTable<256>(kEntries, [](Tag t) { return t.value; });
 
-  for (const auto &entry : arr) {
-    if (entry.name.empty()) {
-      throw "empty channel name";
-    }
-    if (!names[entry.tag.value].empty()) {
-      throw "duplicate channel tag";
-    }
-    names[entry.tag.value] = entry.name;
-  }
+inline constexpr auto kKnown =
+    lookup::presenceTable<256>(kEntries, [](Tag t) { return t.value; });
 
-  return names;
-}
-
-template <std::size_t N>
-[[nodiscard]] consteval std::array<bool, 256>
-buildKnownTagTable(const std::array<NamedTag, N> &tags) {
-  std::array<bool, 256> known{};
-
-  for (const auto &entry : tags) {
-    known[entry.tag.value] = true;
-  }
-
-  return known;
-}
-
+// Subset of tags that represent inbound payday events.
 [[nodiscard]] consteval std::array<bool, 256> buildPaydayInboundTable() {
-  std::array<bool, 256> paydayInbound{};
+  std::array<bool, 256> out{};
 
-  paydayInbound[tag(Legit::salary).value] = true;
-  paydayInbound[tag(Legit::clientAchCredit).value] = true;
-  paydayInbound[tag(Legit::cardSettlement).value] = true;
-  paydayInbound[tag(Legit::platformPayout).value] = true;
-  paydayInbound[tag(Legit::ownerDraw).value] = true;
-  paydayInbound[tag(Legit::investmentInflow).value] = true;
+  out[tag(Legit::salary).value] = true;
+  out[tag(Legit::clientAchCredit).value] = true;
+  out[tag(Legit::cardSettlement).value] = true;
+  out[tag(Legit::platformPayout).value] = true;
+  out[tag(Legit::ownerDraw).value] = true;
+  out[tag(Legit::investmentInflow).value] = true;
 
-  paydayInbound[tag(Government::socialSecurity).value] = true;
-  paydayInbound[tag(Government::pension).value] = true;
-  paydayInbound[tag(Government::disability).value] = true;
+  out[tag(Government::socialSecurity).value] = true;
+  out[tag(Government::pension).value] = true;
+  out[tag(Government::disability).value] = true;
 
-  return paydayInbound;
+  return out;
 }
 
-template <std::size_t N>
-consteval void validateUniqueNames(const std::array<NamedTag, N> &arr) {
-  auto sorted = sortByName(arr);
-  for (std::size_t i = 1; i < N; ++i) {
-    if (sorted[i - 1].name == sorted[i].name) {
-      throw "duplicate channel name";
-    }
-  }
-}
+inline constexpr auto kPaydayInbound = buildPaydayInboundTable();
 
-inline constexpr auto kNames = buildNames(kNamedTags);
-inline constexpr auto kKnownTags = buildKnownTagTable(kNamedTags);
-inline constexpr auto kPaydayInboundTags = buildPaydayInboundTable();
-inline constexpr auto kNamedTagsByName = sortByName(kNamedTags);
-inline constexpr bool kValidated = (validateUniqueNames(kNamedTags), true);
+// Compile-time validation.
+inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
 } // namespace detail
+
+// --- Public API --------------------------------------------------
 
 [[nodiscard]] constexpr std::string_view name(Tag t) noexcept {
   return detail::kNames[t.value];
 }
 
-template <ChannelEnum Enum>
-[[nodiscard]] constexpr std::string_view name(Enum v) noexcept {
+template <Enum E> [[nodiscard]] constexpr std::string_view name(E v) noexcept {
   return name(tag(v));
 }
 
 [[nodiscard]] constexpr std::optional<Tag> parse(std::string_view s) noexcept {
-  std::size_t lo = 0;
-  std::size_t hi = detail::kNamedTagsByName.size();
-
-  while (lo < hi) {
-    const std::size_t mid = lo + (hi - lo) / 2;
-    const auto &entry = detail::kNamedTagsByName[mid];
-
-    if (entry.name < s) {
-      lo = mid + 1;
-    } else if (entry.name > s) {
-      hi = mid;
-    } else {
-      return entry.tag;
-    }
-  }
-
-  return std::nullopt;
+  return lookup::find(detail::kSorted, s);
 }
 
 } // namespace PhantomLedger::channels

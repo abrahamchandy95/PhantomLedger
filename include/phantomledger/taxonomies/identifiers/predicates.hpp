@@ -5,7 +5,7 @@
 #include <optional>
 #include <utility>
 
-namespace PhantomLedger::taxonomies::identifiers {
+namespace PhantomLedger::identifiers {
 
 [[nodiscard]] constexpr BankMode bankMode(Role role) noexcept {
   switch (role) {
@@ -64,4 +64,4 @@ namespace PhantomLedger::taxonomies::identifiers {
   std::unreachable();
 }
 
-} // namespace PhantomLedger::taxonomies::identifiers
+} // namespace PhantomLedger::identifiers

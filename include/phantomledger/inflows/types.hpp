@@ -2,21 +2,25 @@
 /*
  * inflows/types.hpp — shared inflow data and helpers.
  *
- * This file keeps the inflow module's shared types separated by role:
- *
+ * Structure:
  *   - Timeframe      : simulation dates / month anchors
  *   - Entropy        : deterministic RNG inputs
- *   - Population     : person/account/persona lookups
+ *   - Population     : person/account/persona lookups (refs, not ptrs)
  *   - Counterparties : employers, landlords, and external pools
  *   - InflowSnapshot : composed read-only inflow state
+ *
+ * Population change vs. prior revision: the three backing tables
+ * (Registry, Ownership, Assignment) are references instead of raw
+ * pointers. This removes ~10 `assert(x != nullptr)` checks across
+ * the struct and pushes the invariant to the type system. The cost
+ * is that callers must construct Population with the tables already
+ * in scope, which every current call site already does.
  */
 
-#include "phantomledger/entities/accounts/ownership.hpp"
-#include "phantomledger/entities/accounts/registry.hpp"
-#include "phantomledger/entities/behavior/assignment.hpp"
+#include "phantomledger/entities/accounts/account.hpp"
+#include "phantomledger/entities/behavior/behavior.hpp"
 #include "phantomledger/entities/counterparties/pool.hpp"
 #include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/identifier/person.hpp"
 #include "phantomledger/entities/landlords/class.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -35,8 +39,8 @@
 
 namespace PhantomLedger::inflows {
 
-using Key = entities::identifier::Key;
-using PersonId = entities::identifier::PersonId;
+using Key = entity::Key;
+using PersonId = entity::PersonId;
 using TimePoint = time::TimePoint;
 
 // ---------------------------------------------------------------
@@ -79,48 +83,53 @@ struct Entropy {
 // Population
 // ---------------------------------------------------------------
 
-struct Population {
-  std::uint32_t count = 0;
+class Population {
+public:
+  Population(std::uint32_t count, const entity::account::Registry &accounts,
+             const entity::account::Ownership &ownership,
+             const entity::behavior::Assignment &personas,
+             HubAccounts hubs = {}) noexcept
+      : count(count), hubs(std::move(hubs)), accounts_(accounts),
+        ownership_(ownership), personas_(personas) {}
 
-  const entities::accounts::Registry *accounts = nullptr;
-  const entities::accounts::Ownership *ownership = nullptr;
-  const entities::behavior::Assignment *personas = nullptr;
-
-  HubAccounts hubs;
+  [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
+    return accounts_;
+  }
+  [[nodiscard]] const entity::account::Ownership &ownership() const noexcept {
+    return ownership_;
+  }
+  [[nodiscard]] const entity::behavior::Assignment &personas() const noexcept {
+    return personas_;
+  }
 
   [[nodiscard]] bool exists(PersonId person) const noexcept {
     return person >= 1 && person <= count;
   }
 
   [[nodiscard]] bool hasAccount(PersonId person) const noexcept {
-    assert(ownership != nullptr);
     assert(exists(person));
-    assert(static_cast<std::size_t>(person) < ownership->byPersonOffset.size());
+    assert(static_cast<std::size_t>(person) < ownership_.byPersonOffset.size());
 
-    const auto start = ownership->byPersonOffset[person - 1];
-    const auto end = ownership->byPersonOffset[person];
+    const auto start = ownership_.byPersonOffset[person - 1];
+    const auto end = ownership_.byPersonOffset[person];
     return start != end;
   }
 
   [[nodiscard]] std::span<const std::uint32_t>
   accountIndices(PersonId person) const noexcept {
-    assert(ownership != nullptr);
     assert(exists(person));
-    assert(static_cast<std::size_t>(person) < ownership->byPersonOffset.size());
+    assert(static_cast<std::size_t>(person) < ownership_.byPersonOffset.size());
 
-    const auto start = ownership->byPersonOffset[person - 1];
-    const auto end = ownership->byPersonOffset[person];
-    return {ownership->byPersonIndex.data() + start, end - start};
+    const auto start = ownership_.byPersonOffset[person - 1];
+    const auto end = ownership_.byPersonOffset[person];
+    return {ownership_.byPersonIndex.data() + start, end - start};
   }
 
   [[nodiscard]] Key primary(PersonId person) const noexcept {
-    assert(accounts != nullptr);
-    assert(ownership != nullptr);
     assert(hasAccount(person));
-
-    const auto ix = ownership->primaryIndex(person);
-    assert(ix < accounts->records.size());
-    return accounts->records[ix].id;
+    const auto ix = ownership_.primaryIndex(person);
+    assert(ix < accounts_.records.size());
+    return accounts_.records[ix].id;
   }
 
   [[nodiscard]] bool isHub(PersonId person) const noexcept {
@@ -129,25 +138,40 @@ struct Population {
   }
 
   [[nodiscard]] personas::Type persona(PersonId person) const noexcept {
-    assert(personas != nullptr);
     assert(exists(person));
-    assert(static_cast<std::size_t>(person - 1) < personas->byPerson.size());
-
-    return personas->byPerson[person - 1];
+    assert(static_cast<std::size_t>(person - 1) < personas_.byPerson.size());
+    return personas_.byPerson[person - 1];
   }
 
   [[nodiscard]] bool owns(PersonId person, const Key &id) const noexcept {
-    assert(accounts != nullptr);
-
     for (const auto ix : accountIndices(person)) {
-      assert(ix < accounts->records.size());
-      if (accounts->records[ix].id == id) {
+      assert(ix < accounts_.records.size());
+      if (accounts_.records[ix].id == id) {
         return true;
       }
     }
-
     return false;
   }
+
+  // Member ordering note:
+  //   C++ initializes members in declaration order, not
+  //   initializer-list order. The constructor's initializer list
+  //   therefore runs `count, hubs, accounts_, ownership_, personas_`
+  //   to match the order of the declarations below. If you change
+  //   either side, keep them in sync or clang will warn with
+  //   -Wreorder-ctor.
+  //
+  //   `count` and `hubs` stay public because existing call sites
+  //   read them directly and there is no invariant between them and
+  //   the refs.
+
+  std::uint32_t count = 0;
+  HubAccounts hubs;
+
+private:
+  const entity::account::Registry &accounts_;
+  const entity::account::Ownership &ownership_;
+  const entity::behavior::Assignment &personas_;
 };
 
 // ---------------------------------------------------------------
@@ -169,12 +193,10 @@ struct Counterparties {
     if (landlordTypes == nullptr) {
       return std::nullopt;
     }
-
     const auto it = landlordTypes->find(landlord);
     if (it == landlordTypes->end()) {
       return std::nullopt;
     }
-
     return it->second;
   }
 };

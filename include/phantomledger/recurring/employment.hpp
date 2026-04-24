@@ -30,7 +30,7 @@ namespace PhantomLedger::recurring {
 
 /// Mutable employment state for one person.
 struct Employment {
-  entities::identifier::Key employerAcct;
+  entity::Key employerAcct;
   PayrollProfile payroll;
   time::TimePoint start;
   time::TimePoint end;
@@ -45,7 +45,7 @@ using SalarySource = std::function<double()>;
 [[nodiscard]] inline PayrollProfile
 samplePayrollProfile(const PayrollPolicy &payrollPolicy,
                      const random::RngFactory &factory,
-                     const entities::identifier::Key &employerAcct) {
+                     const entity::Key &employerAcct) {
   const auto key = std::to_string(employerAcct.number);
   auto rng = factory.rng({"employer_payroll_profile", key});
 
@@ -166,10 +166,10 @@ public:
       : tenurePolicy_(tenurePolicy), payrollPolicy_(payrollPolicy),
         factory_(factory) {}
 
-  [[nodiscard]] Employment
-  operator()(std::string_view personId, time::TimePoint startDate,
-             std::span<const entities::identifier::Key> employers,
-             const SalarySource &salarySource) const {
+  [[nodiscard]] Employment operator()(std::string_view personId,
+                                      time::TimePoint startDate,
+                                      std::span<const entity::Key> employers,
+                                      const SalarySource &salarySource) const {
     auto rng = factory_.rng({"employment_init", personId});
 
     const auto employer = pickInitialEmployer(rng, employers);
@@ -195,9 +195,9 @@ private:
     time::TimePoint end;
   };
 
-  [[nodiscard]] static entities::identifier::Key
+  [[nodiscard]] static entity::Key
   pickInitialEmployer(random::Rng &rng,
-                      std::span<const entities::identifier::Key> employers) {
+                      std::span<const entity::Key> employers) {
     return growth::pickOne(rng, employers);
   }
 
@@ -229,10 +229,11 @@ public:
       : tenurePolicy_(tenurePolicy), payrollPolicy_(payrollPolicy),
         salaryGrowth_(salaryGrowth), factory_(factory) {}
 
-  [[nodiscard]] Employment
-  operator()(random::Rng &rng, std::string_view personId, time::TimePoint now,
-             std::span<const entities::identifier::Key> employers,
-             const Employment &previous) const {
+  [[nodiscard]] Employment operator()(random::Rng &rng,
+                                      std::string_view personId,
+                                      time::TimePoint now,
+                                      std::span<const entity::Key> employers,
+                                      const Employment &previous) const {
     const auto employer =
         growth::pickDifferent(rng, employers, previous.employerAcct);
     const auto payroll =

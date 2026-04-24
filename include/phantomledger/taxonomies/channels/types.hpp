@@ -6,12 +6,16 @@
 
 namespace PhantomLedger::channels {
 
+// --- Tag ---------------------------------------------------------
+
 struct Tag {
   std::uint8_t value = 0;
   constexpr std::strong_ordering operator<=>(const Tag &) const = default;
 };
 
 inline constexpr Tag none{0};
+
+// --- Enum groups byte-packed by high nibble ----------------------
 
 enum class Legit : std::uint8_t {
   salary = 0x01,
@@ -97,35 +101,29 @@ enum class Camouflage : std::uint8_t {
   salary = 0x82,
 };
 
-// Liquidity events emitted BY the ledger (not injected by a generator).
-// These are the fee/interest transfers that result from overdraft and
-// line-of-credit usage during replay. They live in the 0x90 block and
-// bypass the insufficient-funds check in Ledger::transferAt() so a fee
-// collection can run against an account that's already overdrawn.
 enum class Liquidity : std::uint8_t {
   overdraftFee = 0x90,
   locInterest = 0x91,
 };
 
+// --- Concept & tag conversion ------------------------------------
+
 template <class T, class... Ts>
-concept ChannelType = (std::same_as<T, Ts> || ...);
+concept OneOf = (std::same_as<T, Ts> || ...);
 
 template <class T>
-concept ChannelEnum =
-    ChannelType<T, Legit, Rent, Family, Credit, Product, Government, Insurance,
-                Fraud, Camouflage, Liquidity>;
+concept Enum = OneOf<T, Legit, Rent, Family, Credit, Product, Government,
+                     Insurance, Fraud, Camouflage, Liquidity>;
 
-template <ChannelEnum Enum>
-[[nodiscard]] constexpr std::uint8_t toByte(Enum v) noexcept {
+template <Enum E> [[nodiscard]] constexpr std::uint8_t byte(E v) noexcept {
   return static_cast<std::uint8_t>(v);
 }
 
-template <ChannelEnum Enum> [[nodiscard]] constexpr Tag tag(Enum v) noexcept {
-  return Tag{toByte(v)};
+template <Enum E> [[nodiscard]] constexpr Tag tag(E v) noexcept {
+  return Tag{byte(v)};
 }
 
-template <ChannelEnum Enum>
-[[nodiscard]] constexpr bool is(Tag c, Enum v) noexcept {
+template <Enum E> [[nodiscard]] constexpr bool is(Tag c, E v) noexcept {
   return c == tag(v);
 }
 } // namespace PhantomLedger::channels

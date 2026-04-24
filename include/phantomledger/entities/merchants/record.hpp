@@ -8,8 +8,8 @@ namespace PhantomLedger::entities::merchants {
 
 struct Record {
   Label label;
-  identifier::Key counterpartyId;
-  taxonomies::merchants::Category category;
+  entity::Key counterpartyId;
+  ::PhantomLedger::merchants::Category category;
   double weight = 0.0;
 };
 

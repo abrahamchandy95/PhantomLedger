@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/make.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entities/merchants/label.hpp"
 #include "phantomledger/entities/merchants/record.hpp"
 #include "phantomledger/entities/synth/merchants/config.hpp"
@@ -18,15 +18,14 @@
 
 namespace PhantomLedger::entities::synth::merchants {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
 namespace detail {
 
-[[nodiscard]] inline identifier::Key makeId(bool internal,
-                                            std::uint64_t serial) {
-  return identifier::make(Role::merchant,
-                          internal ? Bank::internal : Bank::external, serial);
+[[nodiscard]] inline entity::Key makeId(bool internal, std::uint64_t serial) {
+  return entity::makeKey(Role::merchant,
+                         internal ? Bank::internal : Bank::external, serial);
 }
 
 } // namespace detail
@@ -67,9 +66,8 @@ namespace detail {
   out.catalog.records.reserve(static_cast<std::size_t>(total));
 
   for (int i = 0; i < total; ++i) {
-    const auto category =
-        taxonomies::merchants::kDefaultCategories[rng.choiceIndex(
-            taxonomies::merchants::kCategoryCount)];
+    const auto category = ::PhantomLedger::merchants::kAll[rng.choiceIndex(
+        ::PhantomLedger::merchants::kCategoryCount)];
 
     const auto serial = static_cast<std::uint64_t>(i + 1);
     const bool internal = i < coreCount && rng.coin(cfg.banking.internalP);

@@ -5,6 +5,8 @@
 
 namespace PhantomLedger::personas {
 
+// --- Types -------------------------------------------------------
+
 enum class Type : std::uint8_t {
   student = 0,
   retiree = 1,
@@ -20,17 +22,15 @@ enum class Timing : std::uint8_t {
   business = 2,
 };
 
-inline constexpr std::size_t kKindCount =
-    static_cast<std::size_t>(Type::salaried) + 1;
-
+inline constexpr std::size_t kKindCount = 6;
 inline constexpr Type kDefaultType = Type::salaried;
 
-[[nodiscard]] constexpr std::size_t indexOf(Type type) noexcept {
-  return static_cast<std::size_t>(type);
+[[nodiscard]] constexpr std::size_t slot(Type t) noexcept {
+  return static_cast<std::size_t>(t);
 }
 
-[[nodiscard]] constexpr std::size_t indexOf(Timing timing) noexcept {
-  return static_cast<std::size_t>(timing);
+[[nodiscard]] constexpr std::size_t slot(Timing t) noexcept {
+  return static_cast<std::size_t>(t);
 }
 
 } // namespace PhantomLedger::personas

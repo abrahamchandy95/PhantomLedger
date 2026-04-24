@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/taxonomies/personas/archetypes.hpp"
 
@@ -12,7 +12,7 @@ namespace PhantomLedger::entities::synth::personas {
 
 struct Mix {
   std::array<double, ::PhantomLedger::personas::kKindCount> fractions =
-      ::PhantomLedger::personas::kDefaultFractions;
+      ::PhantomLedger::personas::kShares;
 };
 
 [[nodiscard]] inline std::vector<::PhantomLedger::personas::Type>
@@ -44,9 +44,9 @@ assign(random::Rng &rng, std::uint32_t people, const Mix &mix = {}) {
     }
   }
 
-  std::vector<identifier::PersonId> remaining;
+  std::vector<entity::PersonId> remaining;
   remaining.reserve(people);
-  for (identifier::PersonId person = 1; person <= people; ++person) {
+  for (entity::PersonId person = 1; person <= people; ++person) {
     remaining.push_back(person);
   }
 

@@ -29,8 +29,8 @@
 
 namespace PhantomLedger::inflows::revenue::source {
 
-using Key = entities::identifier::Key;
-using PersonId = entities::identifier::PersonId;
+using Key = entity::Key;
+using PersonId = entity::PersonId;
 
 // ---------------------------------------------------------------
 // Accounts

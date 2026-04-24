@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/entities/people/flags.hpp"
+#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/people/people.hpp"
 #include "phantomledger/entities/synth/people/flags.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
@@ -55,8 +55,8 @@ namespace PhantomLedger::entities::synth::people {
     ringPeople += size;
   }
 
-  std::vector<identifier::PersonId> ringPool;
-  std::vector<identifier::PersonId> nonRing;
+  std::vector<entity::PersonId> ringPool;
+  std::vector<entity::PersonId> nonRing;
 
   if (ringPeople > 0) {
     if (ringPeople >= population) {
@@ -71,22 +71,20 @@ namespace PhantomLedger::entities::synth::people {
 
     ringPool.reserve(pool.size());
     for (const auto idx : pool) {
-      const auto person = static_cast<identifier::PersonId>(idx + 1);
+      const auto person = static_cast<entity::PersonId>(idx + 1);
       ringPool.push_back(person);
       inRing[person] = 1;
     }
 
     nonRing.reserve(static_cast<std::size_t>(population - ringPeople));
-    for (identifier::PersonId person = 1; person <= out.roster.count;
-         ++person) {
+    for (entity::PersonId person = 1; person <= out.roster.count; ++person) {
       if (!inRing[person]) {
         nonRing.push_back(person);
       }
     }
   } else {
     nonRing.reserve(static_cast<std::size_t>(population));
-    for (identifier::PersonId person = 1; person <= out.roster.count;
-         ++person) {
+    for (entity::PersonId person = 1; person <= out.roster.count; ++person) {
       nonRing.push_back(person);
     }
   }
@@ -96,7 +94,7 @@ namespace PhantomLedger::entities::synth::people {
 
   std::vector<std::vector<std::uint32_t>> muleHomes(
       static_cast<std::size_t>(population) + 1);
-  std::vector<identifier::PersonId> priorVictims;
+  std::vector<entity::PersonId> priorVictims;
   int cursor = 0;
 
   for (std::size_t rid = 0; rid < sizes.size(); ++rid) {
@@ -153,13 +151,13 @@ namespace PhantomLedger::entities::synth::people {
                         ring.victims.end());
 
     for (const auto person : ring.frauds) {
-      set(out.roster.flags, person, entities::people::Flag::fraud);
+      set(out.roster.flags, person, entity::people::Flag::fraud);
     }
     for (const auto person : ring.mules) {
-      set(out.roster.flags, person, entities::people::Flag::mule);
+      set(out.roster.flags, person, entity::people::Flag::mule);
     }
     for (const auto person : ring.victims) {
-      set(out.roster.flags, person, entities::people::Flag::victim);
+      set(out.roster.flags, person, entity::people::Flag::victim);
     }
 
     rings.push_back(std::move(ring));
@@ -178,10 +176,9 @@ namespace PhantomLedger::entities::synth::people {
       }
     }
 
-    std::vector<identifier::PersonId> eligible;
+    std::vector<entity::PersonId> eligible;
     eligible.reserve(static_cast<std::size_t>(population));
-    for (identifier::PersonId person = 1; person <= out.roster.count;
-         ++person) {
+    for (entity::PersonId person = 1; person <= out.roster.count; ++person) {
       if (!inRing[person]) {
         eligible.push_back(person);
       }
@@ -193,8 +190,8 @@ namespace PhantomLedger::entities::synth::people {
           eligible.size(), static_cast<std::size_t>(soloCount), false);
       for (const auto idx : soloIdx) {
         const auto person = eligible[idx];
-        set(out.roster.flags, person, entities::people::Flag::fraud);
-        set(out.roster.flags, person, entities::people::Flag::soloFraud);
+        set(out.roster.flags, person, entity::people::Flag::fraud);
+        set(out.roster.flags, person, entity::people::Flag::soloFraud);
       }
     }
   }

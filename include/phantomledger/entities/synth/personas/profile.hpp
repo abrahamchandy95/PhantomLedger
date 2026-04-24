@@ -1,10 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/behavior/archetype.hpp"
-#include "phantomledger/entities/behavior/card.hpp"
-#include "phantomledger/entities/behavior/cash.hpp"
-#include "phantomledger/entities/behavior/payday.hpp"
-#include "phantomledger/entities/behavior/persona.hpp"
+#include "phantomledger/entities/behavior/behavior.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
@@ -37,20 +33,20 @@ inline double perturbProb(random::Rng &rng, double p) {
 
 } // namespace detail
 
-[[nodiscard]] inline entities::behavior::Persona
+[[nodiscard]] inline entity::behavior::Persona
 profile(random::Rng &rng, ::PhantomLedger::personas::Type type) {
-  const auto &arch = ::PhantomLedger::personas::archetype(type);
-  const auto beta = ::PhantomLedger::personas::paycheckSensitivityBeta(type);
+  const auto arch = ::PhantomLedger::personas::archetype(type);
+  const auto beta = ::PhantomLedger::personas::paycheckBeta(type);
 
-  return entities::behavior::Persona{
+  return entity::behavior::Persona{
       .archetype =
-          entities::behavior::Archetype{
+          entity::behavior::Archetype{
               .type = type,
               .timing = arch.timing,
               .weight = std::max(0.01, detail::perturbMedian(rng, arch.weight)),
           },
       .cash =
-          entities::behavior::Cash{
+          entity::behavior::Cash{
               .rateMultiplier = std::max(
                   0.1, detail::perturbMedian(rng, arch.rateMultiplier)),
               .amountMultiplier = std::max(
@@ -59,14 +55,14 @@ profile(random::Rng &rng, ::PhantomLedger::personas::Type type) {
                   10.0, detail::perturbMedian(rng, arch.initialBalance)),
           },
       .card =
-          entities::behavior::Card{
+          entity::behavior::Card{
               .prob = detail::perturbProb(rng, arch.cardProb),
               .share = detail::perturbProb(rng, arch.ccShare),
               .limit =
                   std::max(200.0, detail::perturbMedian(rng, arch.creditLimit)),
           },
       .payday =
-          entities::behavior::Payday{
+          entity::behavior::Payday{
               .sensitivity =
                   probability::distributions::beta(rng, beta.alpha, beta.beta),
           },

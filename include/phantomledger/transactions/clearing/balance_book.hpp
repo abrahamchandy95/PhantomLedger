@@ -20,9 +20,8 @@
  * transferAt() fires an OVERDRAFT_FEE liquidity event.
  */
 
-#include "phantomledger/entities/accounts/ownership.hpp"
-#include "phantomledger/entities/accounts/registry.hpp"
-#include "phantomledger/entities/behavior/table.hpp"
+#include "phantomledger/entities/accounts/account.hpp"
+#include "phantomledger/entities/behavior/behavior.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
@@ -110,10 +109,9 @@ inline constexpr double kHubCash = 1e18;
       floor);
 }
 
-[[nodiscard]] inline const entities::behavior::Persona &
-personaFor(const entities::behavior::Table &personas,
-           entities::identifier::PersonId owner) {
-  if (owner == entities::identifier::invalidPerson) {
+[[nodiscard]] inline const entity::behavior::Persona &
+personaFor(const entity::behavior::Table &personas, entity::PersonId owner) {
+  if (owner == entity::invalidPerson) {
     throw std::invalid_argument("personaFor: invalid owner id");
   }
 
@@ -126,9 +124,9 @@ personaFor(const entities::behavior::Table &personas,
 }
 
 [[nodiscard]] inline bool
-hasPrimaryAccount(const entities::accounts::Ownership &ownership,
-                  entities::identifier::PersonId person) noexcept {
-  if (person == entities::identifier::invalidPerson) {
+hasPrimaryAccount(const entity::account::Ownership &ownership,
+                  entity::PersonId person) noexcept {
+  if (person == entity::invalidPerson) {
     return false;
   }
 
@@ -225,9 +223,9 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
 /// ZERO_FEE tier. External accounts are skipped entirely.
 inline void
 bootstrap(Ledger &ledger, random::Rng &rng,
-          const entities::accounts::Registry &registry,
-          [[maybe_unused]] const entities::accounts::Ownership &ownership,
-          const entities::behavior::Table &personas,
+          const entity::account::Registry &registry,
+          [[maybe_unused]] const entity::account::Ownership &ownership,
+          const entity::behavior::Table &personas,
           const std::unordered_set<Ledger::Index> &hubIndices,
           const BalanceRules &rules = {}) {
   const auto count = static_cast<Ledger::Index>(registry.records.size());
@@ -243,7 +241,7 @@ bootstrap(Ledger &ledger, random::Rng &rng,
   for (Ledger::Index idx = 0; idx < count; ++idx) {
     const auto &record = registry.records[idx];
 
-    if (record.owner == entities::identifier::invalidPerson) {
+    if (record.owner == entity::invalidPerson) {
       continue; // unowned / external
     }
 
@@ -295,14 +293,14 @@ bootstrap(Ledger &ledger, random::Rng &rng,
 /// month's obligations from immediately overdrawing a newly
 /// bootstrapped ledger.
 inline void addBurdenBuffer(Ledger &ledger,
-                            const entities::accounts::Ownership &ownership,
+                            const entity::account::Ownership &ownership,
                             const std::vector<double> &monthlyBurdens,
                             std::uint32_t people, double fraction = 0.35) {
   if (fraction <= 0.0) {
     return;
   }
 
-  for (entities::identifier::PersonId person = 1; person <= people; ++person) {
+  for (entity::PersonId person = 1; person <= people; ++person) {
     const auto burdenIndex = static_cast<std::size_t>(person - 1);
     if (burdenIndex >= monthlyBurdens.size()) {
       continue;
