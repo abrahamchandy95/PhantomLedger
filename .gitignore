@@ -1,4 +1,5 @@
 .venv/
+.cache/
 venv/
 env/
 # python bytecode / caches
