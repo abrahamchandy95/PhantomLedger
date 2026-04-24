@@ -3,8 +3,13 @@ from collections.abc import Iterator
 from entities import models
 from ..csv_io import Row
 
-# Order matters: more specific prefixes (XLI/XLS/XLC) must come before the
-# generic XL fallback so typed landlord externals get their proper labels.
+# Order matters: more specific prefixes (XLI/XLS/XLC, XBNK) must come before
+# the generic XL / XB fallbacks so typed externals get their proper labels.
+#
+# XBNK* accounts are the bank's own servicing books for fee collection
+# (BANK_FEE_COLLECTION) and line-of-credit interest (BANK_OD_LOC). They
+# are not customer-facing institutions but are emitted as external
+# counterparties so the transaction graph stays balanced.
 _PREFIX_KIND_CATEGORY: tuple[tuple[str, str, str], ...] = (
     ("XF", "family_external", "family"),
     ("XGOV", "government_external", "government"),
@@ -16,6 +21,7 @@ _PREFIX_KIND_CATEGORY: tuple[tuple[str, str, str], ...] = (
     ("XLC", "landlord_corporate_external", "landlord_corporate"),
     ("XL", "landlord_external", "landlord"),
     ("XE", "employer_external", "employer"),
+    ("XBNK", "bank_servicing_external", "bank_servicing"),
 )
 
 
@@ -58,6 +64,7 @@ def external_account(
     - uses merchant metadata only to label XM... rows
     - landlord externals are split by typology (XLI/XLS/XLC) so the
       exported graph carries individual / small-LLC / corporate labels
+    - XBNK... rows carry the bank's own fee / LOC servicing books
     """
     merchant_categories = _merchant_external_categories(merchants)
 

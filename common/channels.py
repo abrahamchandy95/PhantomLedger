@@ -52,6 +52,23 @@ TAX_ESTIMATED_PAYMENT = "tax_estimated_payment"
 TAX_BALANCE_DUE = "tax_balance_due"
 TAX_REFUND = "tax_refund"
 
+# --- Deposit-account liquidity events ---
+#
+# Emitted by the authoritative chronological replay when a debit taps the
+# account's overdraft protection. They appear as visible outflows from the
+# customer's account to the bank's servicing counterparty.
+#
+# OVERDRAFT_FEE: ~$27 flat fee charged per item that overdraws a courtesy-
+#                protected checking account. Capped at 3 items per day.
+#                Source: Bankrate 2025, avg $26.95 industry fee.
+#
+# LOC_INTEREST:  Monthly interest accrual on the negative balance of an
+#                overdraft line-of-credit (LOC) account. APR ~18-25%,
+#                billed on the account's cycle day using a dollar-days
+#                integral over the billing period.
+OVERDRAFT_FEE = "overdraft_fee"
+LOC_INTEREST = "loc_interest"
+
 # --- Fraud channels ---
 FRAUD_CLASSIC = "fraud_classic"
 FRAUD_CYCLE = "fraud_cycle"
@@ -103,6 +120,18 @@ PAYDAY_INBOUND_CHANNELS: frozenset[str] = frozenset(
         PLATFORM_PAYOUT,
         OWNER_DRAW,
         INVESTMENT_INFLOW,
+    }
+)
+
+# Liquidity-event channels are emitted by the balance replay itself rather
+# than by any upstream transfer generator. The balance ledger uses this set
+# to break recursion: a courtesy tap on an OVERDRAFT_FEE debit does not
+# itself trigger another fee, and an LOC_INTEREST posting never pays its
+# own interest.
+LIQUIDITY_EVENT_CHANNELS: frozenset[str] = frozenset(
+    {
+        OVERDRAFT_FEE,
+        LOC_INTEREST,
     }
 )
 

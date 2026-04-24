@@ -152,22 +152,28 @@ def sample_payment_time(
     )
 
 
-def _refund_source(card: str) -> str:
-    """External source account used for credits back to the card."""
-    return f"XREFUND_{card}"
-
-
 def sample_merchant_credit(
     terms: Terms,
     habits: Habits,
     gen: np.random.Generator,
     *,
-    card: str,
     purchase: Transaction,
     end_excl: datetime,
     txf: TransactionFactory,
 ) -> Transaction | None:
-    """Probabilistically schedule either a refund, a chargeback, or nothing."""
+    """
+    Probabilistically schedule either a refund, a chargeback, or nothing.
+
+    Refunds and chargebacks flow from the merchant that originally received
+    the purchase back to the card that paid for it. This matches how card
+    networks actually settle reversals: the acquiring merchant (or their
+    settlement bank) credits the cardholder's account.
+
+    When the merchant is an internal account at our institution, the refund
+    posts as an on-us book transfer. When the merchant is external, it posts
+    as an inbound external credit. Either way, no synthetic "refund source"
+    counterparty is required.
+    """
     u = float(gen.random())
 
     if u < float(habits.refund_p):
@@ -183,8 +189,8 @@ def sample_merchant_credit(
 
         return txf.make(
             TransactionDraft(
-                source=_refund_source(card),
-                destination=card,
+                source=purchase.target,
+                destination=purchase.source,
                 amount=float(purchase.amount),
                 timestamp=ts,
                 channel=CC_REFUND,
@@ -205,8 +211,8 @@ def sample_merchant_credit(
 
         return txf.make(
             TransactionDraft(
-                source=_refund_source(card),
-                destination=card,
+                source=purchase.target,
+                destination=purchase.source,
                 amount=float(purchase.amount),
                 timestamp=ts,
                 channel=CC_CHARGEBACK,

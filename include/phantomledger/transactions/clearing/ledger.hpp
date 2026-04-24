@@ -62,6 +62,13 @@ private:
 class Ledger {
 public:
   using Index = std::uint32_t;
+
+  // Sentinel with dual meaning depending on API entry point:
+  //   - In the Key-based transfer(): returned by findAccount() to signal
+  //     "not registered". The Key-based path distinguishes external
+  //     from unbooked via the Key's bank field.
+  //   - In the Index-based transfer(): caller passes `invalid` to mean
+  //     "this leg is external". Caller is responsible for correctness.
   static constexpr Index invalid = std::numeric_limits<Index>::max();
 
   Ledger() = default;
@@ -86,6 +93,8 @@ public:
 
   void setOverdraftOnly(Index idx, double limit) noexcept;
 
+  // Key-based transfer: does two hash lookups (one per leg) to resolve
+  // indices. Preferred for one-shot or debug code paths.
   [[nodiscard]] TransferDecision
   transfer(const entities::identifier::Key &src,
            const entities::identifier::Key &dst, double amount,
@@ -96,6 +105,21 @@ public:
                                           const entities::identifier::Key &dst,
                                           double amount, Enum channel) {
     return transfer(src, dst, amount, channels::tag(channel));
+  }
+
+  // Index-based fast-path transfer. The caller is responsible for
+  // having already resolved each leg via findAccount() and must pass
+  // `Ledger::invalid` for external accounts. Use this from the hot
+  // simulation loops where the same source account is drawn against
+  // many times per timestep.
+  [[nodiscard]] TransferDecision transfer(Index srcIdx, Index dstIdx,
+                                          double amount,
+                                          channels::Tag channel) noexcept;
+
+  template <channels::ChannelEnum Enum>
+  [[nodiscard]] TransferDecision
+  transfer(Index srcIdx, Index dstIdx, double amount, Enum channel) noexcept {
+    return transfer(srcIdx, dstIdx, amount, channels::tag(channel));
   }
 
   [[nodiscard]] Ledger clone() const;

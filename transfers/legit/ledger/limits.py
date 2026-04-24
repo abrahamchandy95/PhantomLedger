@@ -56,6 +56,17 @@ def _monthly_fixed_burden(
     return monthly_fixed_burden_for_portfolio(portfolios.get(person_id))
 
 
+def _card_account_ids(cc_state: CCState) -> frozenset[str]:
+    """
+    IDs of every credit-card account that should be excluded from personal
+    overdraft-protection assignment. `set_credit_limit` then repurposes
+    their `overdrafts` slot as the credit line.
+    """
+    if not cc_state.enabled() or cc_state.cards is None:
+        return frozenset()
+    return frozenset(cc_state.cards.ids)
+
+
 def build_balance_book(
     timeline: Timeline,
     network: Network,
@@ -81,6 +92,13 @@ def build_balance_book(
         persona_names=plan.personas.persona_names,
     )
 
+    # Merchant internals get a business-checking balance overlay in
+    # `balances.initialize`. Card internals are excluded from personal
+    # protection here and then have their `overdrafts` slot repurposed
+    # as a credit limit by `_apply_credit_card_limits` below.
+    merchant_internals = frozenset(network.merchants.internals)
+    card_internals = _card_account_ids(cc_state)
+
     book = balances_model.initialize(
         balance_rules,
         timeline.rng,
@@ -90,6 +108,8 @@ def build_balance_book(
             hub_indices=hub_indices,
             persona_mapping=persona_mapping,
             persona_names=plan.personas.persona_names,
+            merchant_internals=merchant_internals,
+            card_internals=card_internals,
         ),
     )
 

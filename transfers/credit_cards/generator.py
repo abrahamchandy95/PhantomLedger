@@ -110,7 +110,6 @@ def _process_billing_cycle(
             terms,
             habits,
             lifecycle_gen,
-            card=context.card,
             purchase=purchase,
             end_excl=end_excl,
             txf=request.txf,

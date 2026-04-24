@@ -109,7 +109,10 @@ def build(
     )
 
     # Single authoritative pre-fraud balance pass from the pristine starting
-    # ledger. This is the only place where balances decide keep/drop.
+    # ledger. This is the only place where balances decide keep/drop AND the
+    # only place that emits liquidity events (overdraft fees, LOC interest).
+    # Those emitted events become part of the draft ledger and are carried
+    # through fraud injection and the post-fraud replay as ordinary txns.
     replay_acc = ChronoReplayAccumulator(
         book=None
         if legit_result.initial_book is None
@@ -140,12 +143,18 @@ def build(
     status("Transfers: injecting fraud scenarios...")
     fraud_result: InjectionOutput = inject_fraud(fraud_request)
 
+    # Post-fraud replay: re-runs the balance pass with fraud injected, but
+    # must NOT emit liquidity events again — the pre-fraud replay already
+    # produced authoritative overdraft fees and LOC interest postings, and
+    # those are already present in fraud_result.txns as ordinary records.
+    # Passing them through a second emitter would double-debit the ledger.
     status("Transfers: replaying post-fraud chronological balances...")
     final_replay = ChronoReplayAccumulator(
         book=None
         if legit_result.initial_book is None
         else legit_result.initial_book.copy(),
         rng=rng,
+        emit_liquidity_events=False,
     )
     final_replay.extend(sort_for_replay(fraud_result.txns), presorted=True)
 

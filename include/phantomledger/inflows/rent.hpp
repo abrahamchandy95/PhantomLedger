@@ -21,7 +21,7 @@
 #include <array>
 #include <functional>
 #include <string>
-#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::inflows {
@@ -92,6 +92,18 @@ selectPayers(const InflowSnapshot &snapshot, random::Rng &rng, double scale,
   return out;
 }
 
+// Per-payer state carried across months. payerKey is precomputed once
+// in the init pass and reused on every month iteration, saving one
+// std::to_string() allocation per payer per month. The lease lives
+// inline instead of in an unordered_map<Key, Lease>, so the month
+// loop iterates contiguous memory and does zero hash lookups.
+struct PayerState {
+  PersonId person;
+  Key account;
+  std::string payerKey;
+  recurring::Lease lease;
+};
+
 } // namespace rent
 
 [[nodiscard]] inline std::vector<transactions::Transaction>
@@ -133,47 +145,52 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
   const RentRouter router;
 
-  std::unordered_map<Key, Lease, std::hash<Key>> leases;
-  leases.reserve(rentPayers.size());
+  // Initialize per-payer state in one pass. payerKey is materialized
+  // here and reused by every subsequent month.
+  std::vector<rent::PayerState> states;
+  states.reserve(rentPayers.size());
 
   for (const auto &payer : rentPayers) {
-    const auto payerKey =
-        std::to_string(static_cast<unsigned>(payer.account.number));
+    rent::PayerState ps;
+    ps.person = payer.person;
+    ps.account = payer.account;
+    ps.payerKey = std::to_string(static_cast<unsigned>(payer.account.number));
 
-    auto initRng = snapshot.entropy.factory.rng({"lease_init", payerKey});
+    auto initRng = snapshot.entropy.factory.rng({"lease_init", ps.payerKey});
 
-    leases[payer.account] =
+    ps.lease =
         initializeLease(rules, snapshot.entropy.factory, initRng,
                         LeaseInitInput{
-                            .payerKey = payerKey,
+                            .payerKey = ps.payerKey,
                             .startDate = snapshot.timeframe.startDate,
                             .landlords = snapshot.counterparties.landlords,
                             .rentSource = rentModel,
                         });
+
+    states.push_back(std::move(ps));
   }
 
   std::vector<transactions::Transaction> txns;
-  txns.reserve(rentPayers.size() * snapshot.timeframe.monthStarts.size());
+  txns.reserve(states.size() * snapshot.timeframe.monthStarts.size());
 
   for (const auto &monthStart : snapshot.timeframe.monthStarts) {
-    for (const auto &payer : rentPayers) {
-      auto &state = leases[payer.account];
-
-      const auto payerKey =
-          std::to_string(static_cast<unsigned>(payer.account.number));
-
-      while (monthStart >= state.end) {
+    for (auto &ps : states) {
+      // Advance lease if it has expired by this month. Lease renewals
+      // are rare (tenure 2-10 years), so the std::to_string inside the
+      // factory call is cold and not worth hoisting further.
+      while (monthStart >= ps.lease.end) {
         auto advRng = snapshot.entropy.factory.rng(
-            {"lease_advance", payerKey, std::to_string(state.moveIndex)});
+            {"lease_advance", ps.payerKey, std::to_string(ps.lease.moveIndex)});
 
-        state = advanceLease(rules, snapshot.entropy.factory, advRng,
-                             LeaseAdvanceInput{
-                                 .payerKey = payerKey,
-                                 .now = state.end,
-                                 .landlords = snapshot.counterparties.landlords,
-                                 .previous = state,
-                                 .resetRentSource = rentModel,
-                             });
+        ps.lease =
+            advanceLease(rules, snapshot.entropy.factory, advRng,
+                         LeaseAdvanceInput{
+                             .payerKey = ps.payerKey,
+                             .now = ps.lease.end,
+                             .landlords = snapshot.counterparties.landlords,
+                             .previous = ps.lease,
+                             .resetRentSource = rentModel,
+                         });
       }
 
       const auto txnTs = timestamps::jittered(
@@ -185,17 +202,17 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
       const double amount = calculateRent(rules, snapshot.entropy.factory,
                                           RentQuery{
-                                              .payerKey = payerKey,
-                                              .state = state,
+                                              .payerKey = ps.payerKey,
+                                              .state = ps.lease,
                                               .payDate = monthStart,
                                           });
 
       const auto channel = router.pick(
-          rng, snapshot.counterparties.landlordClass(state.landlordAcct));
+          rng, snapshot.counterparties.landlordClass(ps.lease.landlordAcct));
 
       txns.push_back(txf.make(transactions::Draft{
-          .source = payer.account,
-          .destination = state.landlordAcct,
+          .source = ps.account,
+          .destination = ps.lease.landlordAcct,
           .amount = amount,
           .timestamp = time::toEpochSeconds(txnTs),
           .isFraud = 0,

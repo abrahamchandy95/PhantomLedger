@@ -11,7 +11,10 @@ option(PL_BUILD_TESTS  "Build C++ tests" ON)
 option(PL_BUILD_PYTHON "Build pybind11 Python module" OFF)
 
 add_library(phantomledger_core STATIC
-    src/clearing/ledger.cpp
+    src/transactions/clearing/ledger.cpp
+    src/entropy/crypto/blake2b.cpp
+    src/primitives/time/calendar.cpp
+    src/entropy/random/rng.cpp
 )
 
 target_include_directories(phantomledger_core PUBLIC include)

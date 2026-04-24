@@ -115,49 +115,46 @@ void Ledger::setOverdraftOnly(Index idx, double limit) noexcept {
   courtesy_[idx] = 0.0;
 }
 
-TransferDecision Ledger::transfer(const entities::identifier::Key &src,
-                                  const entities::identifier::Key &dst,
-                                  double amount, channels::Tag channel) {
+// Hot-path transfer operating on pre-resolved indices.
+// Semantics:
+//   - srcIdx == invalid  -> source is external (credit only)
+//   - dstIdx == invalid  -> destination is external (debit only)
+//   - both invalid       -> reject as unbooked
+//   - both valid         -> internal book-to-book transfer
+// Noexcept because the implementation is pure arithmetic plus array
+// reads/writes, with no allocations and no map accesses.
+TransferDecision Ledger::transfer(Index srcIdx, Index dstIdx, double amount,
+                                  channels::Tag channel) noexcept {
   if (amount <= 0.0 || !std::isfinite(amount)) {
     return TransferDecision::reject(RejectReason::invalid);
   }
 
-  const bool srcExternal = isExternalAccount(src);
-  const bool dstExternal = isExternalAccount(dst);
-
-  const Index srcIdx = srcExternal ? invalid : findAccount(src);
-  const Index dstIdx = dstExternal ? invalid : findAccount(dst);
-
-  if (!srcExternal && !isValid(srcIdx)) {
-    return TransferDecision::reject(RejectReason::unbooked);
-  }
-
-  if (!dstExternal && !isValid(dstIdx)) {
-    return TransferDecision::reject(RejectReason::unbooked);
-  }
+  const bool srcExternal = (srcIdx == invalid);
+  const bool dstExternal = (dstIdx == invalid);
 
   if (srcExternal && dstExternal) {
     return TransferDecision::reject(RejectReason::unbooked);
   }
 
+  // External source -> internal destination: credit only.
   if (srcExternal) {
     cash_[dstIdx] += amount;
     return TransferDecision::accept();
   }
 
+  // Source is internal; check funding unless it's a hub (infinite cash).
   const bool srcHub = isHub(srcIdx);
-
   if (!srcHub) {
     const bool selfTransfer =
         channels::is(channel, channels::Legit::selfTransfer);
     const double spendable =
         selfTransfer ? cash_[srcIdx] : totalLiquidity(srcIdx);
-
     if (spendable < amount) {
       return TransferDecision::reject(RejectReason::unfunded);
     }
   }
 
+  // Internal source -> external destination: debit only.
   if (dstExternal) {
     if (!srcHub) {
       cash_[srcIdx] -= amount;
@@ -165,12 +162,36 @@ TransferDecision Ledger::transfer(const entities::identifier::Key &src,
     return TransferDecision::accept();
   }
 
+  // Both internal.
   if (!srcHub) {
     cash_[srcIdx] -= amount;
   }
   cash_[dstIdx] += amount;
-
   return TransferDecision::accept();
+}
+
+TransferDecision Ledger::transfer(const entities::identifier::Key &src,
+                                  const entities::identifier::Key &dst,
+                                  double amount, channels::Tag channel) {
+  const bool srcExternal = isExternalAccount(src);
+  const bool dstExternal = isExternalAccount(dst);
+
+  // Resolve internal legs. External legs skip the map.
+  const Index srcIdx = srcExternal ? invalid : findAccount(src);
+  const Index dstIdx = dstExternal ? invalid : findAccount(dst);
+
+  // Distinguish unbooked-internal from legitimate-external.
+  // The Index-based fast path can't make this distinction and assumes
+  // the caller has validated; we make it here to preserve the original
+  // Key-based error semantics.
+  if (!srcExternal && srcIdx == invalid) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+  if (!dstExternal && dstIdx == invalid) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+
+  return transfer(srcIdx, dstIdx, amount, channel);
 }
 
 Ledger Ledger::clone() const { return *this; }

@@ -111,23 +111,17 @@ def build(cfg: config.World, rng: Rng) -> Entities:
         )
 
     # Credit cards
+    #
+    # Refunds and chargebacks on these cards flow back from the actual
+    # merchant that originally received the purchase, not from a synthetic
+    # per-card "refund source" counterparty. See
+    # transfers/credit_cards/statement.py::sample_merchant_credit.
     accounts, credit_cards = build_credit_cards(
         DEFAULT_POLICY,
         cfg.population.seed,
         accounts,
         persona_objects,
     )
-
-    # Stable external refund-source accounts
-    refund_external_accounts: list[str] = [
-        f"XREFUND_{card_id}" for card_id in credit_cards.ids
-    ]
-    if refund_external_accounts:
-        accounts = merge(
-            accounts,
-            refund_external_accounts,
-            mark_external=True,
-        )
 
     # Financial product portfolios
     portfolios = build_portfolios(
