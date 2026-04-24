@@ -97,12 +97,23 @@ enum class Camouflage : std::uint8_t {
   salary = 0x82,
 };
 
+// Liquidity events emitted BY the ledger (not injected by a generator).
+// These are the fee/interest transfers that result from overdraft and
+// line-of-credit usage during replay. They live in the 0x90 block and
+// bypass the insufficient-funds check in Ledger::transferAt() so a fee
+// collection can run against an account that's already overdrawn.
+enum class Liquidity : std::uint8_t {
+  overdraftFee = 0x90,
+  locInterest = 0x91,
+};
+
 template <class T, class... Ts>
 concept ChannelType = (std::same_as<T, Ts> || ...);
 
 template <class T>
-concept ChannelEnum = ChannelType<T, Legit, Rent, Family, Credit, Product,
-                                  Government, Insurance, Fraud, Camouflage>;
+concept ChannelEnum =
+    ChannelType<T, Legit, Rent, Family, Credit, Product, Government, Insurance,
+                Fraud, Camouflage, Liquidity>;
 
 template <ChannelEnum Enum>
 [[nodiscard]] constexpr std::uint8_t toByte(Enum v) noexcept {

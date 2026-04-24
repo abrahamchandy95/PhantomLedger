@@ -11,6 +11,7 @@
  *   0x60 -> Insurance
  *   0x70 -> Fraud
  *   0x80 -> Camouflage
+ *   0x90 -> Liquidity (ledger-emitted: overdraft fees, LOC interest)
  *
  * Each group is limited to a single 16-value block.
  * If a family ever needs to grow beyond one block, this file will need to be
@@ -71,6 +72,14 @@ namespace detail {
 
 [[nodiscard]] constexpr bool isCamouflage(Tag t) noexcept {
   return detail::isKnownGroup(t, 0x80);
+}
+
+/// Liquidity events are ledger-emitted fee/interest transfers. The
+/// ledger bypasses its insufficient-funds check for any channel in this
+/// family so that fee collection and LOC interest can run against
+/// accounts that are already overdrawn.
+[[nodiscard]] constexpr bool isLiquidity(Tag t) noexcept {
+  return detail::isKnownGroup(t, 0x90);
 }
 
 [[nodiscard]] constexpr bool isKnown(Tag t) noexcept {

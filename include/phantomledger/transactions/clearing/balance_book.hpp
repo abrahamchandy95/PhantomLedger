@@ -2,23 +2,37 @@
 /*
  * Balance book initialization.
  *
- * Bootstraps the Ledger with per-persona randomized balances and
- * liquidity protection buffers (overdraft, linked-account sweep,
- * courtesy cushion).
- * The Ledger itself handles transfer mechanics. This module handles
- * the one-time setup that precedes the simulation loop.
+ * Bootstraps the Ledger with per-persona randomized balances,
+ * protection type (NONE / COURTESY / LINKED / LOC), bank tier
+ * (ZERO_FEE / REDUCED_FEE / STANDARD_FEE), overdraft fee amount, and
+ * LOC parameters (APR, billing day).
+ *
+ * The previous revision sampled overdraft / linked / courtesy buffers
+ * with three independent coin flips, which could produce an account
+ * that held all three simultaneously. The Python reference treats
+ * protection types as mutually exclusive; this revision enforces that
+ * invariant via a single 4-way categorical draw over
+ * {courtesy, linked, loc, none}.
+ *
+ * Bank tier is an independent draw from the 15/10/75 tier weights.
+ * The overdraft fee amount is drawn once per account from the
+ * tier-specific lognormal, stored on the ledger, and used later when
+ * transferAt() fires an OVERDRAFT_FEE liquidity event.
  */
 
-#include "ledger.hpp"
 #include "phantomledger/entities/accounts/ownership.hpp"
 #include "phantomledger/entities/accounts/registry.hpp"
 #include "phantomledger/entities/behavior/table.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
+#include "phantomledger/transactions/clearing/ledger.hpp"
+#include "phantomledger/transactions/clearing/protection.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <unordered_set>
@@ -26,43 +40,40 @@
 
 namespace PhantomLedger::clearing {
 
-/// Per-persona parameters for buffer sampling.
-///
-/// These model what fraction of a persona's accounts receive each
-/// protection type and the median dollar amount for those that do.
+/// Per-persona sampling parameters. Replaces the previous per-buffer
+/// fraction set. Each of courtesy / linked / loc is the unconditional
+/// probability an account receives that protection type. The remainder
+/// (1 - sum) is NONE. Medians are sampled from lognormal around them.
 struct PersonaBufferProfile {
-  // Initial cash balance.
-  double balanceMedian = 1200.0;
+  double balanceMedian;
 
-  // Overdraft line.
-  double overdraftFraction = 0.42;
-  double overdraftMedian = 900.0;
+  // Protection shares (sum must be <= 1.0).
+  PersonaProtectionShares shares;
 
-  // Linked-account protection / sweep buffer.
-  double linkedFraction = 0.32;
-  double linkedMedian = 700.0;
-
-  // Courtesy cushion.
-  double courtesyFraction = 0.18;
-  double courtesyMedian = 140.0;
+  // Conditional buffer medians.
+  double courtesyMedian;
+  double linkedMedian;
+  double locCreditLimitMedian;
 };
 
-/// Look up the buffer profile for a persona kind.
+/// Persona-indexed table. Values approximately preserve the character
+/// of the previous balance_book (low-end students, mid salaried,
+/// high-end HNW) while respecting mutual exclusivity.
 [[nodiscard]] constexpr PersonaBufferProfile
 bufferProfile(personas::Type type) noexcept {
   switch (type) {
   case personas::Type::student:
-    return {200.0, 0.20, 350.0, 0.16, 225.0, 0.12, 65.0};
+    return {200.0, {0.12, 0.08, 0.02}, 65.0, 225.0, 800.0};
   case personas::Type::retiree:
-    return {1500.0, 0.28, 600.0, 0.30, 500.0, 0.16, 100.0};
+    return {1500.0, {0.16, 0.22, 0.04}, 100.0, 500.0, 2500.0};
   case personas::Type::freelancer:
-    return {900.0, 0.34, 800.0, 0.26, 600.0, 0.16, 120.0};
+    return {900.0, {0.16, 0.18, 0.12}, 120.0, 600.0, 4000.0};
   case personas::Type::smallBusiness:
-    return {8000.0, 0.46, 2200.0, 0.34, 2200.0, 0.20, 180.0};
+    return {8000.0, {0.20, 0.24, 0.20}, 180.0, 2200.0, 7000.0};
   case personas::Type::highNetWorth:
-    return {25000.0, 0.55, 5000.0, 0.60, 10000.0, 0.22, 250.0};
+    return {25000.0, {0.22, 0.30, 0.28}, 250.0, 10000.0, 15000.0};
   case personas::Type::salaried:
-    return {1200.0, 0.42, 900.0, 0.32, 700.0, 0.18, 140.0};
+    return {1200.0, {0.18, 0.24, 0.12}, 140.0, 700.0, 3000.0};
   }
 
   return bufferProfile(personas::Type::salaried);
@@ -72,19 +83,17 @@ bufferProfile(personas::Type type) noexcept {
 struct BalanceRules {
   bool enableConstraints = true;
   double initialBalanceSigma = 1.00;
-  double overdraftSigma = 0.60;
-  double linkedSigma = 0.90;
   double courtesySigma = 0.45;
+  double linkedSigma = 0.90;
+  double locCreditLimitSigma = 0.60;
+
+  TierWeights tierWeights{};
+  LocDefaults locDefaults{};
 };
 
 namespace detail {
 
 inline constexpr double kHubCash = 1e18;
-
-[[nodiscard]] inline double clampProbability(double p,
-                                             bool enableConstraints) noexcept {
-  return enableConstraints ? std::clamp(p, 0.0, 1.0) : p;
-}
 
 [[nodiscard]] inline double clampSigma(double sigma,
                                        bool enableConstraints) noexcept {
@@ -133,22 +142,87 @@ hasPrimaryAccount(const entities::accounts::Ownership &ownership,
   return begin < end && begin < ownership.byPersonIndex.size();
 }
 
+[[nodiscard]] inline BankTier sampleTier(random::Rng &rng,
+                                         const TierWeights &weights) {
+  const std::array<double, 3> w = {
+      weights.zeroFee,
+      weights.reducedFee,
+      weights.standardFee,
+  };
+  const auto cdf = distributions::buildCdf(w);
+  const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+  return static_cast<BankTier>(idx);
+}
+
+[[nodiscard]] inline double sampleOverdraftFee(random::Rng &rng, BankTier tier,
+                                               bool enableConstraints) {
+  const auto profile = tierFeeProfile(tier);
+  if (profile.median <= 0.0) {
+    return 0.0;
+  }
+  return sampleMoney(rng, profile.median, profile.sigma, 0.0,
+                     enableConstraints);
+}
+
+[[nodiscard]] inline ProtectionType
+sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
+  // Four-way categorical over courtesy / linked / loc / none.
+  const std::array<double, 4> w = {
+      shares.courtesy,
+      shares.linked,
+      shares.loc,
+      shares.none(),
+  };
+  const auto cdf = distributions::buildCdf(w);
+  const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+
+  switch (idx) {
+  case 0:
+    return ProtectionType::courtesy;
+  case 1:
+    return ProtectionType::linked;
+  case 2:
+    return ProtectionType::loc;
+  default:
+    return ProtectionType::none;
+  }
+}
+
+[[nodiscard]] inline double sampleBufferAmount(random::Rng &rng,
+                                               ProtectionType type,
+                                               const PersonaBufferProfile &prof,
+                                               const BalanceRules &rules) {
+  switch (type) {
+  case ProtectionType::none:
+    return 0.0;
+  case ProtectionType::courtesy:
+    return sampleMoney(rng, prof.courtesyMedian, rules.courtesySigma, 0.0,
+                       rules.enableConstraints);
+  case ProtectionType::linked:
+    return sampleMoney(rng, prof.linkedMedian, rules.linkedSigma, 0.0,
+                       rules.enableConstraints);
+  case ProtectionType::loc:
+    return sampleMoney(rng, prof.locCreditLimitMedian,
+                       rules.locCreditLimitSigma, 0.0, rules.enableConstraints);
+  }
+  return 0.0;
+}
+
 } // namespace detail
 
-/// Bootstrap a Ledger with randomized balances and protection buffers.
+/// Bootstrap a Ledger with randomized balances, protection, tier, and
+/// LOC parameters.
 ///
-/// For each account, looks up the owner's persona and samples:
-///   - initial cash balance (lognormal around persona median)
-///   - overdraft limit (lognormal, assigned to a fraction of accounts)
-///   - linked-account buffer (lognormal, assigned to a fraction)
-///   - courtesy cushion (lognormal, assigned to a fraction)
+/// For each internal account with an owner:
+///   1. Sample cash balance (lognormal around persona median).
+///   2. Sample bank tier from the 15/10/75 weights.
+///   3. Sample overdraft fee amount from the tier's lognormal.
+///   4. Sample protection type from the persona's 4-way categorical.
+///   5. Sample buffer amount conditional on protection type.
+///   6. For LOC accounts, sample APR and billing day.
 ///
-/// Hub accounts get effectively infinite cash. External accounts
-/// are not booked into the ledger.
-///
-/// After initial balances are set, each person with financial-product
-/// obligations gets a 35% monthly-burden buffer added to cash to
-/// prevent immediate overdraft from the first mortgage/loan payment.
+/// Hub accounts get effectively infinite cash, NONE protection, and
+/// ZERO_FEE tier. External accounts are skipped entirely.
 inline void
 bootstrap(Ledger &ledger, random::Rng &rng,
           const entities::accounts::Registry &registry,
@@ -175,52 +249,51 @@ bootstrap(Ledger &ledger, random::Rng &rng,
 
     if (hubIndices.contains(idx)) {
       ledger.cash(idx) = detail::kHubCash;
-      ledger.overdraft(idx) = 0.0;
-      ledger.linked(idx) = 0.0;
-      ledger.courtesy(idx) = 0.0;
+      ledger.setProtection(idx, ProtectionType::none, 0.0);
+      ledger.setBankTier(idx, BankTier::zeroFee, 0.0);
       continue;
     }
 
     const auto &persona = detail::personaFor(personas, record.owner);
     const auto profile = bufferProfile(persona.archetype.type);
 
+    // 1. Cash balance.
     ledger.cash(idx) = detail::sampleMoney(rng, profile.balanceMedian,
                                            rules.initialBalanceSigma, 1.0,
                                            rules.enableConstraints);
 
-    ledger.overdraft(idx) = 0.0;
-    ledger.linked(idx) = 0.0;
-    ledger.courtesy(idx) = 0.0;
+    // 2-3. Bank tier and overdraft fee amount.
+    const auto tier = detail::sampleTier(rng, rules.tierWeights);
+    const double fee =
+        detail::sampleOverdraftFee(rng, tier, rules.enableConstraints);
+    ledger.setBankTier(idx, tier, fee);
 
-    if (rng.coin(detail::clampProbability(profile.overdraftFraction,
-                                          rules.enableConstraints))) {
-      ledger.overdraft(idx) = detail::sampleMoney(rng, profile.overdraftMedian,
-                                                  rules.overdraftSigma, 0.0,
-                                                  rules.enableConstraints);
-    }
+    // 4-5. Protection type (mutually exclusive) and buffer amount.
+    const auto protection = detail::sampleProtectionType(rng, profile.shares);
+    const double buffer =
+        detail::sampleBufferAmount(rng, protection, profile, rules);
+    ledger.setProtection(idx, protection, buffer);
 
-    if (rng.coin(detail::clampProbability(profile.linkedFraction,
-                                          rules.enableConstraints))) {
-      ledger.linked(idx) =
-          detail::sampleMoney(rng, profile.linkedMedian, rules.linkedSigma, 0.0,
-                              rules.enableConstraints);
-    }
-
-    if (rng.coin(detail::clampProbability(profile.courtesyFraction,
-                                          rules.enableConstraints))) {
-      ledger.courtesy(idx) =
-          detail::sampleMoney(rng, profile.courtesyMedian, rules.courtesySigma,
-                              0.0, rules.enableConstraints);
+    // 6. LOC-specific parameters.
+    if (protection == ProtectionType::loc) {
+      const double apr = std::max(
+          0.0, probability::distributions::normal(
+                   rng, rules.locDefaults.aprMean, rules.locDefaults.aprSigma));
+      const int billingDay =
+          static_cast<int>(rng.uniformInt(rules.locDefaults.billingDayMin,
+                                          rules.locDefaults.billingDayMax + 1));
+      ledger.setLoc(idx, apr, billingDay);
     }
   }
 }
 
 /// Add a burden buffer to each person's primary account.
 ///
-/// Adds 35% of the person's estimated monthly fixed obligation burden
-/// (mortgage + auto loan + student loan + insurance + tax) to their
-/// primary account's cash balance. This prevents the first month's
-/// obligations from immediately overdrawing a newly bootstrapped ledger.
+/// Adds `fraction` of the person's estimated monthly fixed obligation
+/// burden (mortgage + auto loan + student loan + insurance + tax) to
+/// their primary account's cash balance. This prevents the first
+/// month's obligations from immediately overdrawing a newly
+/// bootstrapped ledger.
 inline void addBurdenBuffer(Ledger &ledger,
                             const entities::accounts::Ownership &ownership,
                             const std::vector<double> &monthlyBurdens,

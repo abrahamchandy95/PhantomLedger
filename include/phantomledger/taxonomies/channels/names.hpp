@@ -14,7 +14,7 @@ struct NamedTag {
   Tag tag;
 };
 
-inline constexpr std::array<NamedTag, 57> kNamedTags{{
+inline constexpr std::array<NamedTag, 59> kNamedTags{{
     {"salary", tag(Legit::salary)},
     {"merchant", tag(Legit::merchant)},
     {"card_purchase", tag(Legit::cardPurchase)},
@@ -80,6 +80,9 @@ inline constexpr std::array<NamedTag, 57> kNamedTags{{
     {"camouflage_bill", tag(Camouflage::bill)},
     {"camouflage_p2p", tag(Camouflage::p2p)},
     {"camouflage_salary", tag(Camouflage::salary)},
+
+    {"overdraft_fee", tag(Liquidity::overdraftFee)},
+    {"loc_interest", tag(Liquidity::locInterest)},
 }};
 
 template <std::size_t N>
