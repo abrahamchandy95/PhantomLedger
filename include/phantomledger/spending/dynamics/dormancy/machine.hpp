@@ -7,12 +7,12 @@
 
 namespace PhantomLedger::spending::dynamics::dormancy {
 
-inline void advanceAll(random::Rng &rng, const Config &cfg,
+inline void accumulate(random::Rng &rng, const Config &cfg,
                        std::span<State> states,
-                       std::span<double> outMultipliers) noexcept {
+                       std::span<double> outAccum) noexcept {
   const auto n = states.size();
   for (std::size_t i = 0; i < n; ++i) {
-    outMultipliers[i] = states[i].advance(rng, cfg);
+    outAccum[i] *= states[i].advance(rng, cfg);
   }
 }
 

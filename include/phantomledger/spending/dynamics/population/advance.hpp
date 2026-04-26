@@ -8,6 +8,7 @@
 #include "phantomledger/spending/dynamics/momentum/update.hpp"
 #include "phantomledger/spending/dynamics/paycheck/boost.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -38,15 +39,15 @@ public:
   void advanceAll(random::Rng &rng, const Config &cfg,
                   std::span<const std::uint32_t> paydayPersonIndices,
                   std::span<const double> sensitivities,
-                  std::span<double> outMomentumMult,
-                  std::span<double> outDormancyMult,
-                  std::span<double> outPaycheckMult) {
-    momentum::advanceAll(rng, cfg.momentum, momentum_, outMomentumMult);
-    dormancy::advanceAll(rng, cfg.dormancy, dormancy_, outDormancyMult);
+                  std::span<double> outDailyMult) {
+    std::fill(outDailyMult.begin(), outDailyMult.end(), 1.0);
+
+    momentum::accumulate(rng, cfg.momentum, momentum_, outDailyMult);
+    dormancy::accumulate(rng, cfg.dormancy, dormancy_, outDailyMult);
 
     paycheck::triggerForPaydays(cfg.paycheck, paycheck_, sensitivities,
                                 paydayPersonIndices);
-    paycheck::advanceAll(paycheck_, outPaycheckMult);
+    paycheck::accumulate(paycheck_, outDailyMult);
   }
 
 private:

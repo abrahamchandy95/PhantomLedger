@@ -1,5 +1,6 @@
 #include "phantomledger/spending/simulator/day.hpp"
 
+#include "phantomledger/math/counts.hpp"
 #include "phantomledger/math/seasonal.hpp"
 #include "phantomledger/math/timing.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -7,17 +8,19 @@
 #include "phantomledger/spending/actors/day.hpp"
 #include "phantomledger/spending/actors/event.hpp"
 #include "phantomledger/spending/actors/explore.hpp"
-#include "phantomledger/spending/dynamics/daily/compose.hpp"
+#include "phantomledger/spending/clearing/parallel_ledger_view.hpp"
 #include "phantomledger/spending/dynamics/monthly/evolution.hpp"
 #include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/liquidity/snapshot.hpp"
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/dispatch.hpp"
+#include "phantomledger/spending/routing/emission_result.hpp"
+#include "phantomledger/spending/simulator/state.hpp"
+#include "phantomledger/spending/simulator/thread_runner.hpp"
 #include "phantomledger/spending/spenders/targets.hpp"
 #include "phantomledger/transactions/clearing/screening.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 
 namespace PhantomLedger::spending::simulator {
@@ -36,35 +39,144 @@ namespace {
   return currCal.month != prevCal.month || currCal.year != prevCal.year;
 }
 
-void buildPaydayIndices(const RunPlan &plan, std::uint32_t dayIndex,
-                        std::vector<std::uint32_t> &out) {
-  out.clear();
-  const auto &spenders = plan.preparedSpenders;
-  for (std::size_t i = 0; i < spenders.size(); ++i) {
-    const auto &paydays = spenders[i].paydays;
-    if (std::binary_search(paydays.begin(), paydays.end(), dayIndex)) {
-      out.push_back(spenders[i].spender.personIndex);
-    }
-  }
-}
+/// Bundle of read-only inputs the per-spender loop needs. Same in
+/// serial and parallel modes — only the (rng, factory, txns) trio
+/// changes per worker.
+struct DayContext {
+  const market::Market &market;
+  const RunPlan &plan;
+  RunState &sharedState;
+  const actors::Day &day;
+  double weekdayMult;
+  double seasonalMult;
+  std::span<const double> dailyMultBuffer;
+  const config::BurstBehavior &burst;
+  const config::ExplorationHabits &exploration;
+  const config::LiquidityConstraints &liquidity;
+  const routing::ResolvedAccounts &resolved;
+  ParallelLedgerView ledgerView;
+};
 
-double availableCashFor(const market::Market & /*market*/,
-                        clearing::Ledger *ledger,
+double availableCashFor(ParallelLedgerView &ledgerView,
                         const spenders::PreparedSpender &prepared) {
-  if (ledger == nullptr) {
+  if (ledgerView.empty()) {
     return prepared.initialCash;
   }
-  return ledger->availableCash(prepared.spender.depositAccount);
+  const auto idx = prepared.spender.depositAccountIdx;
+  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
+    return prepared.initialCash;
+  }
+  return ledgerView.availableCash(idx);
 }
 
-bool tryEmitWithLedger(clearing::Ledger *ledger,
-                       const transactions::Transaction &txn) {
-  if (ledger == nullptr) {
-    return true;
-  }
-  return ledger
-      ->transfer(txn.source, txn.target, txn.amount, txn.session.channel)
+bool tryEmitWithLedger(ParallelLedgerView &ledgerView,
+                       const routing::EmissionResult &er) {
+  return ledgerView
+      .transfer(er.srcIdx, er.dstIdx, er.transaction.amount,
+                er.transaction.session.channel)
       .accepted();
+}
+
+/// Run one chunk of the per-spender loop. Same body for serial and
+/// parallel: the only things that differ are the `Rng` instance, the
+/// `Factory` instance, and the destination `txns` vector. Everything
+/// else comes from `ctx`.
+void runSpenderRange(DayContext &ctx, std::size_t begin, std::size_t end,
+                     random::Rng &rng, const transactions::Factory &factory,
+                     std::vector<transactions::Transaction> &outTxns) {
+  const double explorationFloor = ctx.liquidity.explorationFloor;
+  const auto &spenders = ctx.plan.preparedSpenders;
+
+  for (std::size_t i = begin; i < end; ++i) {
+    const auto &prepared = spenders[i];
+    const auto personIndex = prepared.spender.personIndex;
+    const auto &spender = prepared.spender;
+
+    // a. Liquidity snapshot — uses the pre-resolved deposit index.
+    const double availableCash = availableCashFor(ctx.ledgerView, prepared);
+    const liquidity::Snapshot liqSnap{
+        .daysSincePayday = ctx.sharedState.daysSincePayday(personIndex),
+        .paycheckSensitivity = prepared.paycheckSensitivity,
+        .availableCash = availableCash,
+        .baselineCash = prepared.baselineCash,
+        .fixedMonthlyBurden = prepared.fixedBurden,
+    };
+    const double liquidityMult = liquidity::multiplier(ctx.liquidity, liqSnap);
+
+    // b. Combined dynamics multiplier (already fused).
+    const double combinedMult =
+        ctx.dailyMultBuffer[personIndex] * ctx.seasonalMult;
+
+    // c. Plan-budget targeting using the running counters. In parallel
+    // mode these are atomic; reads are slightly stale across threads,
+    // which biases the per-day target rate by fractions of a percent —
+    // well within the 5% reserve already baked into the target.
+    const std::uint64_t remainingPersonDays =
+        std::max<std::uint64_t>(1u, ctx.sharedState.remainingPersonDays());
+    const double targetRealizedPerDay =
+        ctx.sharedState.remainingTargetTxns() /
+        static_cast<double>(remainingPersonDays);
+
+    const double latentBaseRate = spenders::baseRateForTarget(
+        spender, ctx.day.shock, ctx.weekdayMult, targetRealizedPerDay,
+        combinedMult, liquidityMult);
+
+    // d. Sample the integer count.
+    const auto txnCount = actors::sampleTxnCount(
+        rng, spender, ctx.day, latentBaseRate, ctx.weekdayMult,
+        ctx.plan.personLimit, combinedMult, liquidityMult);
+
+    ctx.sharedState.consumeOnePersonDay();
+
+    if (txnCount == 0) {
+      continue;
+    }
+
+    // e. exploreP with liquidity-cubed dampening.
+    double exploreP = actors::calculateExploreP(
+        ctx.plan.baseExploreP, ctx.exploration, ctx.burst, spender, ctx.day);
+    const double cubed =
+        std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);
+    exploreP *= std::max(explorationFloor, cubed);
+
+    // f. Attempt loop.
+    std::uint32_t accepted = 0;
+    std::uint32_t attemptBudget = txnCount * 4u;
+
+    while (accepted < txnCount && attemptBudget > 0) {
+      --attemptBudget;
+
+      const std::int32_t offsetSec =
+          math::timing::sampleOffset(rng, spender.timing);
+
+      actors::Event event{};
+      event.spender = &spender;
+      event.factory = &factory;
+      event.ts = ctx.day.start + time::Seconds{offsetSec};
+      event.exploreP = exploreP;
+
+      const routing::Slot slot =
+          routing::pickSlot(ctx.plan.channelCdf, rng.nextDouble());
+
+      auto maybeResult = routing::routeTxn(
+          rng, ctx.market, ctx.plan.routePolicy, ctx.resolved, slot, event);
+      if (!maybeResult.has_value()) {
+        continue;
+      }
+
+      // Index-based ledger transfer through the parallel-aware view.
+      // In serial mode this is unsynchronised (matches Phase 2). In
+      // parallel mode the view acquires the per-account spinlock(s).
+      if (!tryEmitWithLedger(ctx.ledgerView, *maybeResult)) {
+        continue;
+      }
+
+      outTxns.push_back(std::move(maybeResult->transaction));
+      ++accepted;
+    }
+
+    ctx.sharedState.recordAccepted(accepted);
+  }
 }
 
 } // namespace
@@ -75,142 +187,97 @@ void runDay(const market::Market &market, Engine &engine, const RunPlan &plan,
             const config::BurstBehavior &burst,
             const config::ExplorationHabits &exploration,
             const config::LiquidityConstraints &liquidity,
-            const math::seasonal::Config &seasonal, std::uint32_t dayIndex) {
-  random::Rng &rng = *engine.rng;
+            const math::seasonal::Config &seasonal,
+            std::span<double> dailyMultBuffer, std::uint32_t dayIndex,
+            std::span<ThreadLocalState> threadStates,
+            primitives::concurrent::AccountLockArray *lockArray) {
+  random::Rng &dynRng = *engine.rng;
 
-  // --- 1. Month-boundary evolution --------------------------------
+  // --- 1. Month-boundary evolution (serial) -------------------------------
   if (isMonthBoundary(dayIndex, market.bounds().startDate)) {
-    // Note: const_cast only acceptable here because the simulator
-    // owns the run and the kernel is the only writer to commerce
-    // during the run loop. Marked clearly to flag the scope.
     auto &mutCommerce = const_cast<market::Market &>(market).commerceMutable();
     dynamics::monthly::evolveAll(
-        rng, dynamicsCfg.evolution, mutCommerce, mutCommerce.merchCdf(),
+        dynRng, dynamicsCfg.evolution, mutCommerce, mutCommerce.merchCdf(),
         static_cast<std::uint32_t>(mutCommerce.merchCdf().size()),
         market.population().count());
   }
 
-  // --- 2. Build the Day frame -------------------------------------
+  // --- 2. Day frame + per-day scalar multipliers (serial) -----------------
   const auto day = actors::buildDay(market.bounds().startDate,
-                                    plan.dayShockShape, rng, dayIndex);
-  // `dailyMultiplier` accepts a TimePoint directly; the previous
-  // `monthlyMultiplier(time::month(...))` form fabricated a missing
-  // helper.
+                                    plan.dayShockShape, dynRng, dayIndex);
   const double seasonalMult =
       math::seasonal::dailyMultiplier(day.start, seasonal);
+  const double weekdayMult = math::counts::weekdayMultiplier(day.start);
 
-  // --- 3. Advance the screening ledger to today's start -----------
+  // --- 3. Advance the screening ledger to today's start (serial) ----------
   const auto newBaseIdx = clearing::advanceBookThrough(
       engine.ledger, plan.baseTxns, state.baseIdx(),
       time::toEpochSeconds(day.start), /*inclusive=*/false);
   state.setBaseIdx(newBaseIdx);
 
-  // --- 4. Batched dynamics advance --------------------------------
-  static thread_local std::vector<std::uint32_t> paydayIdxScratch;
-  buildPaydayIndices(plan, dayIndex, paydayIdxScratch);
-
-  std::vector<double> momentumMult(market.population().count());
-  std::vector<double> dormancyMult(market.population().count());
-  std::vector<double> paycheckMult(market.population().count());
-
-  cohort.advanceAll(rng, dynamicsCfg, paydayIdxScratch, plan.sensitivities,
-                    momentumMult, dormancyMult, paycheckMult);
-
-  // --- 5. Per-spender attempt loop --------------------------------
-  for (const auto &prepared : plan.preparedSpenders) {
-    const auto personIndex = prepared.spender.personIndex;
-
-    // a. days_since_payday update.
-    const bool isPayday = std::binary_search(prepared.paydays.begin(),
-                                             prepared.paydays.end(), dayIndex);
-    if (isPayday) {
-      state.resetDaysSincePayday(personIndex);
-    } else {
-      state.incrementDaysSincePayday(personIndex);
-    }
-
-    // b. liquidity multiplier.
-    const double availableCash =
-        availableCashFor(market, engine.ledger, prepared);
-    const liquidity::Snapshot liqSnap{
-        .daysSincePayday = state.daysSincePayday(personIndex),
-        .paycheckSensitivity = prepared.paycheckSensitivity,
-        .availableCash = availableCash,
-        .baselineCash = prepared.baselineCash,
-        .fixedMonthlyBurden = prepared.fixedBurden,
-    };
-    const double liquidityMult = liquidity::multiplier(liquidity, liqSnap);
-
-    // c. combined dynamics multiplier.
-    const double combinedMult = momentumMult[personIndex] *
-                                dormancyMult[personIndex] *
-                                paycheckMult[personIndex] * seasonalMult;
-
-    const std::uint64_t remainingPersonDays = std::max<std::uint64_t>(
-        1u, plan.totalPersonDays - state.processedPersonDays());
-    const double remainingTargetTxns = std::max(
-        0.0, plan.targetTotalTxns - static_cast<double>(state.txns().size()));
-    const double targetRealizedPerDay =
-        remainingTargetTxns / static_cast<double>(remainingPersonDays);
-
-    const double latentBaseRate = spenders::baseRateForTarget(
-        prepared.spender, day.shock, day.start, targetRealizedPerDay,
-        combinedMult, liquidityMult);
-
-    // d. sample count.
-    const auto txnCount =
-        actors::sampleTxnCount(rng, prepared.spender, day, latentBaseRate,
-                               plan.personLimit, combinedMult, liquidityMult);
-
-    state.incrementProcessedPersonDays();
-
-    if (txnCount == 0) {
-      continue;
-    }
-
-    // e. explore_p with liquidity-cubed dampening.
-    double exploreP = actors::calculateExploreP(plan.baseExploreP, exploration,
-                                                burst, prepared.spender, day);
-    const double cubed =
-        std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);
-    exploreP *= std::max(liquidity.explorationFloor, cubed);
-
-    // f. attempt loop.
-    std::uint32_t accepted = 0;
-    std::uint32_t attemptBudget = std::max(txnCount, txnCount * 4u);
-
-    while (accepted < txnCount && attemptBudget > 0) {
-      --attemptBudget;
-
-      // `sampleOffset` reads its CDF from `personas::Timing` directly.
-      // The previous three-arg form was based on a `Profiles` type
-      // that does not exist.
-      const std::int32_t offsetSec = math::timing::sampleOffset(
-          rng, prepared.spender.persona->archetype.timing);
-
-      actors::Event event{};
-      event.spender = &prepared.spender;
-      event.factory = engine.factory;
-      event.ts = day.start + time::Seconds{offsetSec};
-      event.exploreP = exploreP;
-
-      const routing::Slot slot =
-          routing::pickSlot(plan.channelCdf, rng.nextDouble());
-
-      auto maybeTxn =
-          routing::routeTxn(rng, market, plan.routePolicy, slot, event);
-      if (!maybeTxn.has_value()) {
-        continue;
-      }
-
-      if (!tryEmitWithLedger(engine.ledger, *maybeTxn)) {
-        continue;
-      }
-
-      state.txns().push_back(*maybeTxn);
-      ++accepted;
-    }
+  // --- 4. Days-since-payday update (serial vector sweep) ------------------
+  state.bumpAllDaysSincePayday();
+  const auto paydayPersons = plan.paydayIndex.personsOn(dayIndex);
+  for (const auto idx : paydayPersons) {
+    state.resetDaysSincePayday(idx);
   }
+
+  // --- 5. Batched dynamics advance (serial; uses engine.rng) --------------
+  cohort.advanceAll(dynRng, dynamicsCfg, paydayPersons, plan.sensitivities,
+                    dailyMultBuffer);
+
+  // --- 6. Per-spender attempt loop ----------------------------------------
+  const routing::ResolvedAccounts resolved{
+      .personPrimaryIdx =
+          std::span<const ::PhantomLedger::clearing::Ledger::Index>(
+              plan.personPrimaryIdx),
+      .merchantCounterpartyIdx =
+          std::span<const ::PhantomLedger::clearing::Ledger::Index>(
+              plan.merchantCounterpartyIdx),
+      .externalUnknownIdx = plan.externalUnknownIdx,
+  };
+
+  DayContext ctx{
+      .market = market,
+      .plan = plan,
+      .sharedState = state,
+      .day = day,
+      .weekdayMult = weekdayMult,
+      .seasonalMult = seasonalMult,
+      .dailyMultBuffer = std::span<const double>(dailyMultBuffer.data(),
+                                                 dailyMultBuffer.size()),
+      .burst = burst,
+      .exploration = exploration,
+      .liquidity = liquidity,
+      .resolved = resolved,
+      .ledgerView = ParallelLedgerView{engine.ledger, lockArray},
+  };
+
+  const std::size_t spenderCount = plan.preparedSpenders.size();
+
+  if (engine.threadCount <= 1) {
+    // Serial path — uses engine.rng and engine.factory directly,
+    // pushes straight into the shared state's txn buffer. Bit-identical
+    // to the Phase 2 behaviour when threadCount == 1.
+    runSpenderRange(ctx, 0, spenderCount, *engine.rng, *engine.factory,
+                    state.txns());
+    return;
+  }
+
+  // Parallel path — each worker thread handles a contiguous chunk of
+  // spenders using its own RNG, its own rebound Factory, and its own
+  // txn buffer. The buffers are merged at end-of-run in the driver.
+  runParallel(engine.threadCount, [&](std::uint32_t threadIdx) {
+    const auto range =
+        partitionRange(spenderCount, engine.threadCount, threadIdx);
+    if (range.size() == 0) {
+      return;
+    }
+    auto &ts = threadStates[threadIdx];
+    const auto threadFactory = engine.factory->rebound(ts.rng);
+    runSpenderRange(ctx, range.begin, range.end, ts.rng, threadFactory,
+                    ts.txns);
+  });
 }
 
 } // namespace PhantomLedger::spending::simulator

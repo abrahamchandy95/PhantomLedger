@@ -2,12 +2,19 @@
 
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/simulator/day.hpp"
+#include "phantomledger/spending/simulator/payday_index.hpp"
+#include "phantomledger/spending/simulator/state.hpp"
 #include "phantomledger/spending/spenders/prepare.hpp"
 #include "phantomledger/spending/spenders/targets.hpp"
+#include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <cstddef>
+#include <stdexcept>
+#include <string_view>
 
 namespace PhantomLedger::spending::simulator {
 
@@ -16,10 +23,54 @@ namespace {
 constexpr double kTxnReserveSlack = 1.05;
 
 void sortChronological(std::vector<transactions::Transaction> &txns) {
-  // Sort by (timestamp, source, target, amount) — the canonical key.
   std::sort(
       txns.begin(), txns.end(),
       transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
+}
+
+/// Build the per-personIndex Ledger::Index table for population
+/// primary accounts. Used by P2P routing on the recipient side.
+void resolvePersonPrimaryIdx(
+    const market::Market &market,
+    const ::PhantomLedger::clearing::Ledger &ledger,
+    std::vector<::PhantomLedger::clearing::Ledger::Index> &out) {
+  const auto &pop = market.population();
+  const auto count = pop.count();
+  out.assign(count, ::PhantomLedger::clearing::Ledger::invalid);
+
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const auto person = static_cast<entity::PersonId>(i + 1);
+    const auto key = pop.primary(person);
+    if (entity::valid(key)) {
+      out[i] = ledger.findAccount(key);
+    }
+  }
+}
+
+void resolveMerchantCounterpartyIdx(
+    const market::Market &market,
+    const ::PhantomLedger::clearing::Ledger &ledger,
+    std::vector<::PhantomLedger::clearing::Ledger::Index> &out) {
+  const auto *catalog = market.commerce().catalog();
+  if (catalog == nullptr) {
+    out.clear();
+    return;
+  }
+  out.assign(catalog->records.size(),
+             ::PhantomLedger::clearing::Ledger::invalid);
+  for (std::size_t i = 0; i < catalog->records.size(); ++i) {
+    out[i] = ledger.findAccount(catalog->records[i].counterpartyId);
+  }
+}
+
+/// Render a non-negative integer to decimal in a small stack buffer.
+/// Used for the per-thread RNG seed tag.
+[[nodiscard]] std::string_view renderUInt(std::array<char, 16> &buf,
+                                          std::uint32_t value) noexcept {
+  auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
+  (void)ec;
+  return std::string_view(buf.data(),
+                          static_cast<std::size_t>(ptr - buf.data()));
 }
 
 } // namespace
@@ -48,26 +99,21 @@ Simulator::Simulator(const market::Market &market, Engine &engine,
       cohort_(market.population().count()) {
   const auto n = market.population().count();
 
-  // Per-person paycheck sensitivity: drawn here from each persona.
-  // `entity::behavior::Persona` nests this under `payday.sensitivity`;
-  // the previous flat `paycheckSensitivity` accessor doesn't exist.
   sensitivities_.resize(n);
   for (std::uint32_t i = 0; i < n; ++i) {
     const auto person = static_cast<entity::PersonId>(i + 1);
     sensitivities_[i] = market.population().object(person).payday.sensitivity;
   }
 
-  paydayPersonIndicesScratch_.reserve(n);
-  momentumMultBuffer_.resize(n);
-  dormancyMultBuffer_.resize(n);
-  paycheckMultBuffer_.resize(n);
   dailyMultBuffer_.resize(n);
 }
 
 RunPlan Simulator::buildPlan() const {
   RunPlan plan{};
 
-  plan.preparedSpenders = spenders::prepareSpenders(market_, obligations_);
+  plan.preparedSpenders =
+      spenders::prepareSpenders(market_, obligations_, engine_.ledger);
+
   const std::uint32_t activeSpenders =
       static_cast<std::uint32_t>(plan.preparedSpenders.size());
 
@@ -79,6 +125,9 @@ RunPlan Simulator::buildPlan() const {
 
   plan.baseTxns = obligations_.baseTxns;
   plan.sensitivities = std::span<const double>(sensitivities_);
+
+  plan.paydayIndex =
+      PaydayIndex::build(market_.population().paydays(), market_.bounds().days);
 
   if (personDailyLimit_ > 0) {
     plan.personLimit = personDailyLimit_;
@@ -95,7 +144,81 @@ RunPlan Simulator::buildPlan() const {
   plan.baseExploreP = baseExploreP_;
   plan.dayShockShape = dayShockShape_;
 
+  // Phase 2 pre-resolved index tables.
+  if (engine_.ledger != nullptr) {
+    resolvePersonPrimaryIdx(market_, *engine_.ledger, plan.personPrimaryIdx);
+    resolveMerchantCounterpartyIdx(market_, *engine_.ledger,
+                                   plan.merchantCounterpartyIdx);
+
+    const entity::Key externalKey =
+        entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
+    plan.externalUnknownIdx = engine_.ledger->findAccount(externalKey);
+  }
+
   return plan;
+}
+
+void Simulator::prepareThreadStates() {
+  threadStates_.clear();
+  if (engine_.threadCount <= 1) {
+    return;
+  }
+
+  if (engine_.rngFactory == nullptr) {
+    throw std::runtime_error(
+        "spending::Simulator: threadCount > 1 requires engine.rngFactory");
+  }
+  if (engine_.factory == nullptr) {
+    throw std::runtime_error(
+        "spending::Simulator: threadCount > 1 requires engine.factory "
+        "(per-thread Factory is built via factory->rebound)");
+  }
+
+  threadStates_.reserve(engine_.threadCount);
+
+  // Pre-reserve each thread's txn buffer to avoid reallocations during
+  // the run. Conservative estimate: each thread will produce roughly
+  // (target / threadCount) txns. Add slack for noise.
+  const auto perThreadReserve = static_cast<std::size_t>(
+      (static_cast<double>(market_.bounds().days) *
+       (static_cast<double>(market_.population().count()) / 30.0) *
+       txnsPerMonth_ * kTxnReserveSlack) /
+      static_cast<double>(engine_.threadCount));
+
+  std::array<char, 16> idBuf{};
+  for (std::uint32_t t = 0; t < engine_.threadCount; ++t) {
+    const auto idStr = renderUInt(idBuf, t);
+    auto threadRng = engine_.rngFactory->rng({"spending_thread", idStr});
+    threadStates_.emplace_back(std::move(threadRng));
+    threadStates_.back().txns.reserve(perThreadReserve);
+  }
+}
+
+void Simulator::prepareLockArray() {
+  if (engine_.threadCount <= 1 || engine_.ledger == nullptr) {
+    lockArray_.resize(0);
+    return;
+  }
+  lockArray_.resize(static_cast<std::size_t>(engine_.ledger->size()));
+}
+
+void Simulator::mergeThreadTxns(RunState &state) {
+  if (threadStates_.empty()) {
+    return;
+  }
+  // Sum first so we can reserve once and avoid repeated growth on the
+  // shared vector.
+  std::size_t total = state.txns().size();
+  for (const auto &ts : threadStates_) {
+    total += ts.txns.size();
+  }
+  state.txns().reserve(total);
+  for (auto &ts : threadStates_) {
+    state.txns().insert(state.txns().end(),
+                        std::make_move_iterator(ts.txns.begin()),
+                        std::make_move_iterator(ts.txns.end()));
+    ts.txns.clear();
+  }
 }
 
 std::vector<transactions::Transaction> Simulator::run() {
@@ -105,17 +228,35 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   RunPlan plan = buildPlan();
 
-  // Reserve up front: target * 1.05 covers Poisson overshoot.
+  // In parallel mode the shared RunState's txn buffer stays empty
+  // during the day loop (workers push into per-thread buffers) and
+  // only fills at end-of-run via mergeThreadTxns. Reserving on the
+  // shared buffer is therefore wasted at high thread counts; we only
+  // reserve when running serially.
   const std::size_t reserveCapacity =
-      static_cast<std::size_t>(plan.targetTotalTxns * kTxnReserveSlack);
+      engine_.threadCount <= 1
+          ? static_cast<std::size_t>(plan.targetTotalTxns * kTxnReserveSlack)
+          : 0;
 
-  RunState state(market_.population().count(), reserveCapacity);
+  RunState state(market_.population().count(), reserveCapacity,
+                 plan.totalPersonDays, plan.targetTotalTxns);
+
+  // Phase 4 setup. No-ops when threadCount == 1.
+  prepareThreadStates();
+  prepareLockArray();
+
+  primitives::concurrent::AccountLockArray *lockArrayPtr =
+      engine_.threadCount > 1 ? &lockArray_ : nullptr;
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
     runDay(market_, engine_, plan, state, cohort_, dynamicsCfg_, burst_,
-           exploration_, liquidity_, seasonal_, dayIndex);
+           exploration_, liquidity_, seasonal_, dailyMultBuffer_, dayIndex,
+           std::span<ThreadLocalState>(threadStates_), lockArrayPtr);
   }
+
+  // Drain per-thread buffers and sort the result chronologically.
+  mergeThreadTxns(state);
 
   auto txns = std::move(state.txns());
   sortChronological(txns);

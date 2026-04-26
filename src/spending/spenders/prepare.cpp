@@ -12,21 +12,35 @@ namespace {
 constexpr double kBaselineCashFloor = 150.0;
 
 actors::Spender buildSpender(const market::Market &market,
+                             const clearing::Ledger *ledger,
                              entity::PersonId person,
                              std::uint32_t personIndex) {
   const auto &pop = market.population();
   const auto &commerce = market.commerce();
+  const auto &persona = pop.object(person);
 
   actors::Spender s{};
   s.person = person;
   s.personIndex = personIndex;
   s.depositAccount = pop.primary(person);
   s.personaType = pop.kind(person);
-  s.persona = &pop.object(person);
+  s.persona = &persona;
+
+  s.rateMultiplier = persona.cash.rateMultiplier;
+  s.amountMultiplier = persona.cash.amountMultiplier;
+  s.cardShare = persona.card.share;
+  s.timing = persona.archetype.timing;
 
   if (market.cards().hasCard(person)) {
     s.hasCard = true;
     s.card = market.cards().card(person);
+  }
+
+  if (ledger != nullptr) {
+    s.depositAccountIdx = ledger->findAccount(s.depositAccount);
+    if (s.hasCard) {
+      s.cardIdx = ledger->findAccount(s.card);
+    }
   }
 
   // Per-person merchant pool counts come from CSR row sizes.
@@ -46,7 +60,8 @@ actors::Spender buildSpender(const market::Market &market,
 
 std::vector<PreparedSpender>
 prepareSpenders(const market::Market &market,
-                const obligations::Snapshot &obligations) {
+                const obligations::Snapshot &obligations,
+                const clearing::Ledger *ledger) {
   const auto &pop = market.population();
   const auto count = pop.count();
 
@@ -63,13 +78,10 @@ prepareSpenders(const market::Market &market,
     }
 
     PreparedSpender ps{};
-    ps.spender = buildSpender(market, person, i);
+    ps.spender = buildSpender(market, ledger, person, i);
     ps.paydays = std::span<const std::uint32_t>(
         pop.paydays().personView(i).first, pop.paydays().personView(i).size());
 
-    // `entity::behavior::Persona` is nested: cash fields live under
-    // `cash`, payday fields under `payday`. The previous flat-field
-    // accessors don't exist on the real type.
     const double initialCash = ps.spender.persona->cash.initialBalance;
     ps.initialCash = initialCash;
     ps.baselineCash = std::max(kBaselineCashFloor, initialCash);

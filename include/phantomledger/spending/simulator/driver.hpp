@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/math/seasonal.hpp"
+#include "phantomledger/primitives/concurrent/account_lock_array.hpp"
 #include "phantomledger/spending/config/burst.hpp"
 #include "phantomledger/spending/config/exploration.hpp"
 #include "phantomledger/spending/config/liquidity.hpp"
@@ -14,6 +15,7 @@
 #include "phantomledger/spending/simulator/state.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::spending::simulator {
@@ -42,6 +44,12 @@ public:
 private:
   RunPlan buildPlan() const;
 
+  void prepareThreadStates();
+
+  void prepareLockArray();
+
+  void mergeThreadTxns(RunState &state);
+
   // References to externally-owned inputs.
   const market::Market &market_;
   Engine &engine_;
@@ -64,14 +72,14 @@ private:
   double preferBillersP_;
   std::uint32_t personDailyLimit_;
 
-  // Owned per-run buffers.
+  // Owned per-run buffers reused across days.
   dynamics::population::Cohort cohort_;
   std::vector<double> sensitivities_;
-  std::vector<std::uint32_t> paydayPersonIndicesScratch_;
-  std::vector<double> momentumMultBuffer_;
-  std::vector<double> dormancyMultBuffer_;
-  std::vector<double> paycheckMultBuffer_;
   std::vector<double> dailyMultBuffer_;
+
+  std::vector<ThreadLocalState> threadStates_;
+
+  primitives::concurrent::AccountLockArray lockArray_;
 };
 
 } // namespace PhantomLedger::spending::simulator

@@ -3,28 +3,29 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/spending/actors/event.hpp"
 #include "phantomledger/spending/market/market.hpp"
+#include "phantomledger/spending/routing/emission_result.hpp"
 #include "phantomledger/spending/routing/policy.hpp"
-#include "phantomledger/transactions/record.hpp"
 
 #include <optional>
 
 namespace PhantomLedger::spending::routing {
 
-[[nodiscard]] transactions::Transaction emitBill(random::Rng &rng,
-                                                 const market::Market &market,
-                                                 const Policy &policy,
-                                                 const actors::Event &event);
+[[nodiscard]] EmissionResult
+emitBill(random::Rng &rng, const market::Market &market, const Policy &policy,
+         const ResolvedAccounts &resolved, const actors::Event &event);
 
-[[nodiscard]] transactions::Transaction
-emitExternal(random::Rng &rng, const market::Market &market,
+[[nodiscard]] EmissionResult emitExternal(random::Rng &rng,
+                                          const market::Market &market,
+                                          const ResolvedAccounts &resolved,
+                                          const actors::Event &event);
+
+[[nodiscard]] std::optional<EmissionResult>
+emitMerchant(random::Rng &rng, const market::Market &market,
+             const Policy &policy, const ResolvedAccounts &resolved,
              const actors::Event &event);
 
-[[nodiscard]] std::optional<transactions::Transaction>
-emitMerchant(random::Rng &rng, const market::Market &market,
-             const Policy &policy, const actors::Event &event);
-
-[[nodiscard]] std::optional<transactions::Transaction>
+[[nodiscard]] std::optional<EmissionResult>
 emitP2p(random::Rng &rng, const market::Market &market,
-        const actors::Event &event);
+        const ResolvedAccounts &resolved, const actors::Event &event);
 
 } // namespace PhantomLedger::spending::routing
