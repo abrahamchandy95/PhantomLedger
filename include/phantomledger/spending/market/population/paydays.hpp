@@ -1,13 +1,16 @@
 #pragma once
 
+#include "phantomledger/primitives/utils/csr.hpp"
+
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <span>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::spending::market::population {
 
+// Per-person payday CSR.
 class Paydays {
 public:
   struct PersonView {
@@ -25,14 +28,14 @@ public:
 
   Paydays() = default;
 
-  Paydays(std::vector<std::uint32_t> offsets, std::vector<std::uint32_t> flat)
-      : offsets_(std::move(offsets)), flat_(std::move(flat)) {}
+  Paydays(std::vector<std::uint32_t> offsets,
+          std::vector<std::uint32_t> flat) noexcept
+      : csr_(std::move(offsets), std::move(flat)) {}
 
   [[nodiscard]] PersonView
   personView(std::uint32_t personIndex) const noexcept {
-    const auto begin = offsets_[personIndex];
-    const auto end = offsets_[personIndex + 1];
-    return PersonView{flat_.data() + begin, flat_.data() + end};
+    const auto row = csr_.rowOf(personIndex);
+    return PersonView{row.data(), row.data() + row.size()};
   }
 
   [[nodiscard]] bool isPayday(std::uint32_t personIndex,
@@ -41,12 +44,15 @@ public:
   }
 
   [[nodiscard]] std::size_t personCount() const noexcept {
-    return offsets_.empty() ? 0 : offsets_.size() - 1;
+    return csr_.rowCount();
+  }
+
+  [[nodiscard]] std::size_t totalEntries() const noexcept {
+    return csr_.totalEntries();
   }
 
 private:
-  std::vector<std::uint32_t> offsets_;
-  std::vector<std::uint32_t> flat_;
+  primitives::utils::Csr<std::uint32_t, std::uint32_t> csr_;
 };
 
 } // namespace PhantomLedger::spending::market::population

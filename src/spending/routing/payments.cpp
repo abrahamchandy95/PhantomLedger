@@ -60,29 +60,31 @@ pickMerchantIndex(random::Rng &rng, const market::commerce::View &commerce,
 }
 
 struct PaymentRoute {
-  entity::Key source{};
+  entity::Key srcKey{};
+  clearing::Ledger::Index srcIdx = clearing::Ledger::invalid;
   channels::Tag channel{};
 };
 
 [[nodiscard]] PaymentRoute selectPaymentRoute(random::Rng &rng,
                                               const actors::Spender &spender) {
   if (!spender.hasCard) {
-    return {spender.depositAccount, kMerchantChannel};
+    return {spender.depositAccount, spender.depositAccountIdx,
+            kMerchantChannel};
   }
-  if (rng.coin(spender.persona->card.share)) {
-    return {spender.card, kCardChannel};
+  // Reads cached `cardShare` directly instead of `persona->card.share`.
+  if (rng.coin(spender.cardShare)) {
+    return {spender.card, spender.cardIdx, kCardChannel};
   }
-  return {spender.depositAccount, kMerchantChannel};
+  return {spender.depositAccount, spender.depositAccountIdx, kMerchantChannel};
 }
 
 } // namespace
 
 // ----------------------------- Bill --------------------------------
 
-transactions::Transaction emitBill(random::Rng &rng,
-                                   const market::Market &market,
-                                   const Policy &policy,
-                                   const actors::Event &event) {
+EmissionResult emitBill(random::Rng &rng, const market::Market &market,
+                        const Policy &policy, const ResolvedAccounts &resolved,
+                        const actors::Event &event) {
   const auto &commerce = market.commerce();
   const auto billerRow = commerce.billers().rowOf(event.spender->personIndex);
 
@@ -99,9 +101,18 @@ transactions::Transaction emitBill(random::Rng &rng,
   const auto *catalog = commerce.catalog();
   const entity::Key dst = catalog->records[billerIdx].counterpartyId;
 
+  // Pre-resolved destination index. Falls back to `invalid` (external)
+  // when the table is empty (no ledger configured) or the slot is
+  // out-of-range — the latter shouldn't happen in practice but the
+  // bounds check is free.
+  const auto dstIdx = billerIdx < resolved.merchantCounterpartyIdx.size()
+                          ? resolved.merchantCounterpartyIdx[billerIdx]
+                          : clearing::Ledger::invalid;
+
   const double amount = math::amounts::kBill.sample(rng);
 
-  return event.factory->make(transactions::Draft{
+  EmissionResult result;
+  result.transaction = event.factory->make(transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -110,19 +121,21 @@ transactions::Transaction emitBill(random::Rng &rng,
       .ringId = -1,
       .channel = kBillChannel,
   });
+  result.srcIdx = event.spender->depositAccountIdx;
+  result.dstIdx = dstIdx;
+  return result;
 }
 
 // --------------------------- External ------------------------------
 
-transactions::Transaction emitExternal(random::Rng &rng,
-                                       const market::Market &market,
-                                       const actors::Event &event) {
-  // The merchant catalog does not currently expose an externals
-  // roster (the Python `Merchants.externals` field has no analogue
-  // on `entity::merchant::Catalog`). Route everything to the
-  // documented sentinel destination until the entity layer adds it
-  // back, optionally surfaced through `commerce::View`.
-  (void)market; // reserved for the future View-routed path
+EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
+                            const ResolvedAccounts &resolved,
+                            const actors::Event &event) {
+  // The merchant catalog does not currently expose an externals roster
+  // (the Python `Merchants.externals` field has no analogue on
+  // `entity::merchant::Catalog`). Route everything to the documented
+  // sentinel destination until the entity layer adds it back.
+  (void)market;
   const entity::Key dst =
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
@@ -130,7 +143,8 @@ transactions::Transaction emitExternal(random::Rng &rng,
       math::amounts::kExternalUnknown.sample(rng),
       /*floor=*/1.0);
 
-  return event.factory->make(transactions::Draft{
+  EmissionResult result;
+  result.transaction = event.factory->make(transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -139,13 +153,17 @@ transactions::Transaction emitExternal(random::Rng &rng,
       .ringId = -1,
       .channel = kExternalChannel,
   });
+  result.srcIdx = event.spender->depositAccountIdx;
+  result.dstIdx = resolved.externalUnknownIdx;
+  return result;
 }
 
 // ----------------------------- P2P ---------------------------------
 
-std::optional<transactions::Transaction> emitP2p(random::Rng &rng,
-                                                 const market::Market &market,
-                                                 const actors::Event &event) {
+std::optional<EmissionResult> emitP2p(random::Rng &rng,
+                                      const market::Market &market,
+                                      const ResolvedAccounts &resolved,
+                                      const actors::Event &event) {
   const auto &commerce = market.commerce();
   const auto contactRow = commerce.contacts().rowOf(event.spender->personIndex);
 
@@ -168,11 +186,18 @@ std::optional<transactions::Transaction> emitP2p(random::Rng &rng,
     return std::nullopt;
   }
 
-  const double raw = math::amounts::kP2P.sample(rng) *
-                     event.spender->persona->cash.amountMultiplier;
+  // Reads cached `amountMultiplier` directly.
+  const double raw =
+      math::amounts::kP2P.sample(rng) * event.spender->amountMultiplier;
   const double amount = primitives::utils::floorAndRound(raw, /*floor=*/1.0);
 
-  return event.factory->make(transactions::Draft{
+  // Pre-resolved destination index for the recipient.
+  const auto dstIdx = contactPersonIndex < resolved.personPrimaryIdx.size()
+                          ? resolved.personPrimaryIdx[contactPersonIndex]
+                          : clearing::Ledger::invalid;
+
+  EmissionResult result;
+  result.transaction = event.factory->make(transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -181,13 +206,18 @@ std::optional<transactions::Transaction> emitP2p(random::Rng &rng,
       .ringId = -1,
       .channel = kP2pChannel,
   });
+  result.srcIdx = event.spender->depositAccountIdx;
+  result.dstIdx = dstIdx;
+  return result;
 }
 
 // --------------------------- Merchant ------------------------------
 
-std::optional<transactions::Transaction>
-emitMerchant(random::Rng &rng, const market::Market &market,
-             const Policy &policy, const actors::Event &event) {
+std::optional<EmissionResult> emitMerchant(random::Rng &rng,
+                                           const market::Market &market,
+                                           const Policy &policy,
+                                           const ResolvedAccounts &resolved,
+                                           const actors::Event &event) {
   const auto &commerce = market.commerce();
   const auto *catalog = commerce.catalog();
   if (catalog == nullptr) {
@@ -202,14 +232,20 @@ emitMerchant(random::Rng &rng, const market::Market &market,
   const auto category = record.category;
 
   const double rawAmount = math::amounts::merchantAmount(rng, category) *
-                           event.spender->persona->cash.amountMultiplier;
+                           event.spender->amountMultiplier;
   const double amount =
       primitives::utils::floorAndRound(rawAmount, /*floor=*/1.0);
 
   const auto route = selectPaymentRoute(rng, *event.spender);
 
-  return event.factory->make(transactions::Draft{
-      .source = route.source,
+  // Pre-resolved destination index for the merchant counterparty.
+  const auto dstIdx = merchantIdx < resolved.merchantCounterpartyIdx.size()
+                          ? resolved.merchantCounterpartyIdx[merchantIdx]
+                          : clearing::Ledger::invalid;
+
+  EmissionResult result;
+  result.transaction = event.factory->make(transactions::Draft{
+      .source = route.srcKey,
       .destination = dst,
       .amount = amount,
       .timestamp = time::toEpochSeconds(event.ts),
@@ -217,6 +253,9 @@ emitMerchant(random::Rng &rng, const market::Market &market,
       .ringId = -1,
       .channel = route.channel,
   });
+  result.srcIdx = route.srcIdx;
+  result.dstIdx = dstIdx;
+  return result;
 }
 
 } // namespace PhantomLedger::spending::routing

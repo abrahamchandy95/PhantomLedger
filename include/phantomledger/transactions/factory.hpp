@@ -22,6 +22,10 @@ public:
           const infra::SharedInfra *ringInfra = nullptr)
       : rng_(rng), router_(router), ringInfra_(ringInfra) {}
 
+  [[nodiscard]] Factory rebound(random::Rng &newRng) const noexcept {
+    return Factory(newRng, router_, ringInfra_);
+  }
+
   [[nodiscard]] Transaction make(const Draft &draft) const {
     Transaction txn;
     txn.source = draft.source;

@@ -1,8 +1,6 @@
 #pragma once
 
-#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/spending/actors/spender.hpp"
-#include "phantomledger/spending/market/market.hpp"
 
 #include <cstdint>
 
@@ -13,8 +11,7 @@ namespace PhantomLedger::spending::spenders {
                                      std::uint32_t days) noexcept;
 
 [[nodiscard]] double baseRateForTarget(const actors::Spender &spender,
-                                       double dayShock,
-                                       time::TimePoint dayStart,
+                                       double dayShock, double weekdayMult,
                                        double targetRealizedPerDay,
                                        double dynamicsMultiplier,
                                        double liquidityMultiplier) noexcept;
