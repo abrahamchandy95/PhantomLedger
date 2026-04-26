@@ -11,7 +11,7 @@
  *   - investments  → INVESTMENT_INFLOW
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/inflows/revenue/clock.hpp"
 #include "phantomledger/inflows/revenue/draw.hpp"

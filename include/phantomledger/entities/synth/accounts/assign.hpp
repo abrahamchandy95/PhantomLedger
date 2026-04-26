@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/account.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/accounts/owners.hpp"
 
 #include <cstdint>

@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/account.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/people/people.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/accounts/counts.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 
@@ -15,7 +15,7 @@ using identifiers::Bank;
 using identifiers::Role;
 
 [[nodiscard]] inline Pack makePack(random::Rng &rng,
-                                   const entity::people::Roster &people,
+                                   const entity::person::Roster &people,
                                    int maxPerPerson = 3) {
   const auto perPerson =
       counts(rng, static_cast<int>(people.count), maxPerPerson);
@@ -57,13 +57,13 @@ using identifiers::Role;
   for (entity::PersonId person = 1; person <= people.count; ++person) {
     auto &primary = out.registry.records[out.ownership.primaryIndex(person)];
 
-    if (people.has(person, entity::people::Flag::fraud)) {
+    if (people.has(person, entity::person::Flag::fraud)) {
       primary.flags |= entity::account::bit(entity::account::Flag::fraud);
     }
-    if (people.has(person, entity::people::Flag::mule)) {
+    if (people.has(person, entity::person::Flag::mule)) {
       primary.flags |= entity::account::bit(entity::account::Flag::mule);
     }
-    if (people.has(person, entity::people::Flag::victim)) {
+    if (people.has(person, entity::person::Flag::victim)) {
       primary.flags |= entity::account::bit(entity::account::Flag::victim);
     }
   }

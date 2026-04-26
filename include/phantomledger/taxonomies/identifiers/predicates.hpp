@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/taxonomies/identifiers/types.hpp"
+#include "types.hpp"
 
 #include <optional>
 #include <utility>
@@ -11,6 +11,7 @@ namespace PhantomLedger::identifiers {
   switch (role) {
   case Role::customer:
   case Role::account:
+  case Role::card:
     return BankMode::internalOnly;
 
   case Role::merchant:

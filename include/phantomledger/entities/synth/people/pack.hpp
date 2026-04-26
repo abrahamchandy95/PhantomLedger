@@ -1,12 +1,12 @@
 #pragma once
 
-#include "phantomledger/entities/people/people.hpp"
+#include "phantomledger/entities/people.hpp"
 
 namespace PhantomLedger::entities::synth::people {
 
 struct Pack {
-  entity::people::Roster roster;
-  entity::people::Topology topology;
+  entity::person::Roster roster;
+  entity::person::Topology topology;
 };
 
 } // namespace PhantomLedger::entities::synth::people

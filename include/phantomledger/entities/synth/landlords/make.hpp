@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/landlords/record.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entities/synth/landlords/config.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/landlords/scale.hpp"
@@ -20,7 +20,7 @@ using identifiers::Role;
 namespace detail {
 
 [[nodiscard]] constexpr std::size_t
-classIndex(entities::landlords::Class kind) noexcept {
+classIndex(entity::landlord::Class kind) noexcept {
   return static_cast<std::size_t>(kind);
 }
 
@@ -41,10 +41,6 @@ classIndex(entities::landlords::Class kind) noexcept {
   out.roster.records.reserve(static_cast<std::size_t>(total));
 
   // Single serial counter per bank so that Keys are unique.
-  // Since Key{landlord, bank, N} doesn't encode the landlord Class,
-  // separate per-type counters would produce duplicate Keys
-  // (e.g. individual #1 and llcSmall #1 would both be {landlord, internal, 1}).
-  // The landlord Class is preserved in the Record for typed formatting.
   std::uint64_t internalSerial = 0;
   std::uint64_t externalSerial = 0;
 
@@ -64,7 +60,7 @@ classIndex(entities::landlords::Class kind) noexcept {
     const auto id = entity::makeKey(Role::landlord, bank, serial);
 
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
-    out.roster.records.push_back(entities::landlords::Record{
+    out.roster.records.push_back(entity::landlord::Record{
         .accountId = id,
         .type = kind,
     });

@@ -2,19 +2,7 @@
 
 /*
  * Insurance policy product adapter.
- *
- * The ownership decision and premium amount sampling happen in the
- * product builder. This header only defines the shape of the data
- * that transfers::insurance::generate() consumes.
- *
- * Unlike loan products, insurance does not implement scheduled_events();
- * the insurance transfer generator schedules its own premium and claim
- * events directly from a WindowCalendar. These types exist so:
- *   - The portfolio is complete (every product a person holds is visible)
- *   - Downstream consumers (ML features, analytics) can check policy
- *     presence
- *   - Future life events can reference and modify coverage
- *
+
  * Statistics the defaults are tuned against:
  *   - Auto: 92% of US households own a vehicle (Census 2024)
  *   - Home: avg $163/month premium (Ramsey 2025)
@@ -24,7 +12,7 @@
  *   - Home claims: ~5-6% of policies/year (Triple-I 2024)
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -39,12 +27,6 @@ enum class PolicyType : std::uint8_t {
 };
 
 /// A single active insurance policy for one coverage type.
-///
-/// `billingDay` is the day-of-month the monthly premium is debited;
-/// it is clamped to [1, 28] so February wrap behavior is irrelevant.
-/// `annualClaimP` is the probability of a claim per policy-year; the
-/// transfer generator converts this into a window probability using
-/// a Bernoulli-per-year approximation.
 struct InsurancePolicy {
   PolicyType policyType = PolicyType::auto_;
   entity::Key carrierAcct{};

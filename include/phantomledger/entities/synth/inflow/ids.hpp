@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/common/suffix.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 

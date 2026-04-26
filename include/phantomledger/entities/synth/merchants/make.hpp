@@ -1,8 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/merchants/label.hpp"
-#include "phantomledger/entities/merchants/record.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/synth/merchants/config.hpp"
 #include "phantomledger/entities/synth/merchants/pack.hpp"
 #include "phantomledger/entities/synth/merchants/weights.hpp"
@@ -77,8 +76,8 @@ namespace detail {
             ? coreWeights[static_cast<std::size_t>(i)] * coreShare
             : tailWeights[static_cast<std::size_t>(i - coreCount)] * tailShare;
 
-    out.catalog.records.push_back(entities::merchants::Record{
-        .label = entities::merchants::Label{serial},
+    out.catalog.records.push_back(entity::merchant::Record{
+        .label = entity::merchant::Label{serial},
         .counterpartyId = detail::makeId(internal, serial),
         .category = category,
         .weight = weight,

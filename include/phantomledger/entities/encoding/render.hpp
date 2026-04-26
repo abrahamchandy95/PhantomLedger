@@ -3,7 +3,7 @@
 #include "phantomledger/entities/encoding/layout.hpp"
 #include "phantomledger/entities/encoding/lookup.hpp"
 #include "phantomledger/entities/encoding/numeric.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 
 #include <cstddef>
 #include <cstdint>

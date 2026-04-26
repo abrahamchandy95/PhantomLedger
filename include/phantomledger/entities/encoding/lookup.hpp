@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/encoding/layout.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <array>
@@ -14,7 +14,7 @@ using identifiers::Bank;
 using identifiers::Role;
 
 inline constexpr std::size_t kRoleCount =
-    static_cast<std::size_t>(Role::brokerage) + 1;
+    static_cast<std::size_t>(Role::card) + 1;
 
 inline constexpr std::size_t kBankCount =
     static_cast<std::size_t>(Bank::external) + 1;
@@ -42,6 +42,7 @@ inline constexpr std::array<std::array<Layout, kBankCount>, kRoleCount>
         /* family     */ {kInvalid, kFamilyExternal},
         /* business   */ {kBusinessInternal, kBusinessExternal},
         /* brokerage  */ {kBrokerageInternal, kBrokerageExternal},
+        /* card       */ {kCardLiability, kInvalid},
     }};
 
 [[nodiscard]] constexpr Layout layout(const entity::Key &id) noexcept {

@@ -3,27 +3,9 @@
  * Routes a transaction to a specific (device, ip) pair based on the
  * account owner. Uses a "sticky current device/ip" per person that
  * occasionally switches with a configured probability.
- *
- * Design notes vs. the previous revision:
- *
- *   1. routeSource() is split into ownerOf() + routeDeviceFor() +
- *      routeIpFor(). The transaction factory is now free to skip the
- *      IP resolution when shared ring IP already covered it (and vice
- *      versa), saving one RNG draw and one hash lookup per such
- *      transaction. For a workload that routes both legs on every
- *      call the two shapes are equivalent; for the fraud-ring path
- *      that typically resolves one leg via shared infra, the split
- *      is a clear win.
- *
- *   2. The sticky "current" pointer stores an *index* into the pool
- *      vector, not the item value. This fixes a silent fallthrough
- *      where the 8-try switch loop could exit without switching
- *      while having consumed RNG draws. The new switch path draws
- *      one index uniformly from the n-1 alternatives and adjusts,
- *      which is both correct and cheaper.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"

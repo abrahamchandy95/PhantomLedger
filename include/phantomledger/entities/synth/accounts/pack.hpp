@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/account.hpp"
+#include "phantomledger/entities/accounts.hpp"
 
 namespace PhantomLedger::entities::synth::accounts {
 

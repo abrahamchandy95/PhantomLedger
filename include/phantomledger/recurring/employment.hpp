@@ -8,7 +8,7 @@
  * has exactly one Employment state at any time.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

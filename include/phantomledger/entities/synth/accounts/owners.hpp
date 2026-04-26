@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 
 #include <cstdint>

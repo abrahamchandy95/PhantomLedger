@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/encoding/render.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 
 #include <cstdint>
 #include <string>
@@ -26,6 +26,11 @@ namespace PhantomLedger::encoding {
 [[nodiscard]] inline std::string merchantExternalId(std::uint64_t number) {
   return format(
       entity::makeKey(entity::Role::merchant, entity::Bank::external, number));
+}
+
+[[nodiscard]] inline std::string cardLiabilityId(std::uint64_t number) {
+  return format(
+      entity::makeKey(entity::Role::card, entity::Bank::internal, number));
 }
 
 [[nodiscard]] inline std::string employerId(std::uint64_t number) {

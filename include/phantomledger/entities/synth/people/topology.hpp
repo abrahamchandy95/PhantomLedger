@@ -1,12 +1,12 @@
 #pragma once
 
-#include "phantomledger/entities/people/people.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/people/rings.hpp"
 
 namespace PhantomLedger::entities::synth::people {
 
 inline void flatten(const std::vector<TempRing> &rings,
-                    entity::people::Topology &out) {
+                    entity::person::Topology &out) {
   out.rings.reserve(rings.size());
 
   std::size_t memberTotal = 0;
@@ -30,35 +30,35 @@ inline void flatten(const std::vector<TempRing> &rings,
        ringId < static_cast<std::uint32_t>(rings.size()); ++ringId) {
     const auto &src = rings[ringId];
 
-    const entity::people::Slice members{
+    const entity::person::Slice members{
         .offset = static_cast<std::uint32_t>(out.memberStore.size()),
         .size = static_cast<std::uint32_t>(src.members.size()),
     };
     out.memberStore.insert(out.memberStore.end(), src.members.begin(),
                            src.members.end());
 
-    const entity::people::Slice frauds{
+    const entity::person::Slice frauds{
         .offset = static_cast<std::uint32_t>(out.fraudStore.size()),
         .size = static_cast<std::uint32_t>(src.frauds.size()),
     };
     out.fraudStore.insert(out.fraudStore.end(), src.frauds.begin(),
                           src.frauds.end());
 
-    const entity::people::Slice mules{
+    const entity::person::Slice mules{
         .offset = static_cast<std::uint32_t>(out.muleStore.size()),
         .size = static_cast<std::uint32_t>(src.mules.size()),
     };
     out.muleStore.insert(out.muleStore.end(), src.mules.begin(),
                          src.mules.end());
 
-    const entity::people::Slice victims{
+    const entity::person::Slice victims{
         .offset = static_cast<std::uint32_t>(out.victimStore.size()),
         .size = static_cast<std::uint32_t>(src.victims.size()),
     };
     out.victimStore.insert(out.victimStore.end(), src.victims.begin(),
                            src.victims.end());
 
-    out.rings.push_back(entity::people::Ring{
+    out.rings.push_back(entity::person::Ring{
         .id = ringId,
         .members = members,
         .frauds = frauds,

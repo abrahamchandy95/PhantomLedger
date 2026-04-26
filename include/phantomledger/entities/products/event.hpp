@@ -1,18 +1,9 @@
 #pragma once
 /*
  * Obligation events emitted by financial products.
- *
- * Every product (mortgage, auto loan, insurance policy, tax profile,
- * etc.) exposes a stream of ObligationEvents. These are pure data —
- * no infrastructure routing, no fraud flags, no device/IP. The
- * transfer emitters consume them, resolve primary accounts, attach
- * infra, and produce final Transactions.
- *
- * This separation means adding a new product type never touches the
- * transaction pipeline — it just yields more ObligationEvents.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 
@@ -27,9 +18,6 @@ enum class Direction : std::uint8_t {
   inflow = 1,
 };
 
-/// Compact enum describing which product generated the event. This
-/// is used by the obligations emitter to look up the right terms in
-/// the portfolio without doing a string comparison.
 enum class ProductType : std::uint8_t {
   unknown = 0,
   mortgage = 1,

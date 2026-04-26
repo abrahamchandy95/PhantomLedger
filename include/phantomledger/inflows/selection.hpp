@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 
 #include <algorithm>
@@ -10,26 +10,14 @@
 
 namespace PhantomLedger::inflows::selection {
 
-using PersonId = entities::identifier::PersonId;
+using PersonId = entity::PersonId;
 
 // Selector<CandidateFn, BaseFn>
 //
-// Two user-supplied callbacks:
+// Two callbacks:
 //   - candidate(PersonId) -> bool:  is this person eligible at all?
 //   - baseProbability(PersonId) -> double:  base p before scale
-//
-// fitScale() binary-searches a multiplier `s` such that the average
-// of clamp(baseProbability(p) * s, 0, 1) over all eligible people
-// matches a target fraction.
-//
-// Previous implementation paid the functor-call cost twice per person
-// per bisection iteration: 40 iters * O(N) callbacks = 80*N virtual
-// calls. For N=1M that is 80M std::function invocations and 80M
-// candidate evaluations that produce the same answer every time.
-//
-// This version materializes the eligible baseProbability list once,
-// then bisects over a dense std::vector<double>. The inner sum is
-// vectorizable, cache-friendly, and free of indirect calls.
+
 template <class CandidateFn, class BaseFn> class Selector {
 public:
   Selector(CandidateFn candidate, BaseFn baseProbability)
@@ -90,15 +78,11 @@ public:
     }
 
     // Rearrange comparison to avoid a per-iteration division:
-    //   paidShare < target
-    //   <=> total / count < target
-    //   <=> total < target * count
+
     const double countD = static_cast<double>(baseProbs.size());
     const double targetTotal = target * countD;
 
     // 30 iterations of bisection gives ~1e-9 relative resolution on
-    // doubles, which is well beyond what the downstream coin flips
-    // care about. The previous 40 was overkill.
     const double hiMax = 1.0 / minBase;
     double lo = 0.0;
     double hi = hiMax;

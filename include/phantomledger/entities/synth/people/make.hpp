@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/people/people.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/people/flags.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
@@ -151,13 +151,13 @@ namespace PhantomLedger::entities::synth::people {
                         ring.victims.end());
 
     for (const auto person : ring.frauds) {
-      set(out.roster.flags, person, entity::people::Flag::fraud);
+      set(out.roster.flags, person, entity::person::Flag::fraud);
     }
     for (const auto person : ring.mules) {
-      set(out.roster.flags, person, entity::people::Flag::mule);
+      set(out.roster.flags, person, entity::person::Flag::mule);
     }
     for (const auto person : ring.victims) {
-      set(out.roster.flags, person, entity::people::Flag::victim);
+      set(out.roster.flags, person, entity::person::Flag::victim);
     }
 
     rings.push_back(std::move(ring));
@@ -190,8 +190,8 @@ namespace PhantomLedger::entities::synth::people {
           eligible.size(), static_cast<std::size_t>(soloCount), false);
       for (const auto idx : soloIdx) {
         const auto person = eligible[idx];
-        set(out.roster.flags, person, entity::people::Flag::fraud);
-        set(out.roster.flags, person, entity::people::Flag::soloFraud);
+        set(out.roster.flags, person, entity::person::Flag::fraud);
+        set(out.roster.flags, person, entity::person::Flag::soloFraud);
       }
     }
   }

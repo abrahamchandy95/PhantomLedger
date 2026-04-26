@@ -6,7 +6,10 @@
 #include <stdexcept>
 #include <string>
 
-using namespace PhantomLedger;
+// `validate::*` lives at `PhantomLedger::primitives::validate::*` — the
+// older test assumed a top-level `validate::` namespace which doesn't
+// exist. Pull in the right one.
+namespace validate = PhantomLedger::primitives::validate;
 
 namespace {
 

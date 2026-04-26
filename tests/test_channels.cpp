@@ -125,12 +125,13 @@ void testKnown() {
 }
 
 void testByteLayout() {
-  PL_CHECK_EQ(channels::toByte(channels::Legit::salary), std::uint8_t{0x01});
-  PL_CHECK_EQ(channels::toByte(channels::Rent::generic), std::uint8_t{0x10});
-  PL_CHECK_EQ(channels::toByte(channels::Family::allowance),
+  PL_CHECK_EQ(channels::tag(channels::Legit::salary).value, std::uint8_t{0x01});
+  PL_CHECK_EQ(channels::tag(channels::Rent::generic).value, std::uint8_t{0x10});
+  PL_CHECK_EQ(channels::tag(channels::Family::allowance).value,
               std::uint8_t{0x20});
-  PL_CHECK_EQ(channels::toByte(channels::Fraud::classic), std::uint8_t{0x70});
-  PL_CHECK_EQ(channels::toByte(channels::Camouflage::salary),
+  PL_CHECK_EQ(channels::tag(channels::Fraud::classic).value,
+              std::uint8_t{0x70});
+  PL_CHECK_EQ(channels::tag(channels::Camouflage::salary).value,
               std::uint8_t{0x82});
 
   std::printf("  PASS: byte layout\n");

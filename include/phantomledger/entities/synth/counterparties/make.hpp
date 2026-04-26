@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/counterparties/pool.hpp"
-#include "phantomledger/entities/identifier/make.hpp"
+#include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/counterparties/config.hpp"
 #include "phantomledger/entities/synth/counterparties/scale.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
@@ -12,29 +12,24 @@
 
 namespace PhantomLedger::entities::synth::counterparties {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 namespace detail {
 
 /// Append `count` purely external IDs to `out`.
-inline void appendExternal(std::vector<identifier::Key> &out, Role role,
+inline void appendExternal(std::vector<entity::Key> &out, Role role,
                            int count) {
   out.reserve(out.size() + static_cast<std::size_t>(count));
   for (int i = 1; i <= count; ++i) {
     out.push_back(
-        identifier::make(role, Bank::external, static_cast<std::uint64_t>(i)));
+        entity::makeKey(role, Bank::external, static_cast<std::uint64_t>(i)));
   }
 }
 
-/// Split a pool of `total` IDs into internal and external based on
-/// `inBankP`. Uses separate serial counters for internal and external
-/// to avoid ID collisions between the two prefix families.
-///
-/// Returns the number of internals generated.
 inline int splitPool(random::Rng &rng, Role role, int total, double inBankP,
-                     std::vector<identifier::Key> &internals,
-                     std::vector<identifier::Key> &externals,
-                     std::vector<identifier::Key> &combined) {
+                     std::vector<entity::Key> &internals,
+                     std::vector<entity::Key> &externals,
+                     std::vector<entity::Key> &combined) {
   internals.reserve(internals.size() + static_cast<std::size_t>(total));
   externals.reserve(externals.size() + static_cast<std::size_t>(total));
   combined.reserve(combined.size() + static_cast<std::size_t>(total));
@@ -43,14 +38,14 @@ inline int splitPool(random::Rng &rng, Role role, int total, double inBankP,
   std::uint64_t extCounter = 0;
 
   for (int i = 0; i < total; ++i) {
-    identifier::Key id;
+    entity::Key id;
     if (rng.coin(inBankP)) {
       ++intCounter;
-      id = identifier::make(role, Bank::internal, intCounter);
+      id = entity::makeKey(role, Bank::internal, intCounter);
       internals.push_back(id);
     } else {
       ++extCounter;
-      id = identifier::make(role, Bank::external, extCounter);
+      id = entity::makeKey(role, Bank::external, extCounter);
       externals.push_back(id);
     }
     combined.push_back(id);
@@ -67,9 +62,9 @@ inline int splitPool(random::Rng &rng, Role role, int total, double inBankP,
 /// `cfg.employerInBankP` and `cfg.clientInBankP`. All other pools
 /// remain fully external (platforms, processors, businesses, and
 /// brokerages use treasury/commercial banking, not retail).
-[[nodiscard]] inline entities::counterparties::Pool
+[[nodiscard]] inline entity::counterparty::Pool
 makePool(random::Rng &rng, int population, const Config &cfg = {}) {
-  entities::counterparties::Pool out;
+  entity::counterparty::Pool out;
 
   // --- Employers: split by in_bank_p ---
   const int nEmployers =

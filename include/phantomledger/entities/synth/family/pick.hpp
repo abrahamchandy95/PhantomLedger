@@ -1,10 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/ownership.hpp"
-#include "phantomledger/entities/accounts/registry.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/identifier/person.hpp"
-#include "phantomledger/entities/people/roster.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/common/suffix.hpp"
 #include "phantomledger/entities/synth/family/ids.hpp"
 
@@ -13,7 +11,7 @@
 
 namespace PhantomLedger::entities::synth::family {
 
-[[nodiscard]] inline bool usesExternal(identifier::PersonId person,
+[[nodiscard]] inline bool usesExternal(entity::PersonId person,
                                        double externalP) {
   if (externalP <= 0.0) {
     return false;
@@ -27,11 +25,10 @@ namespace PhantomLedger::entities::synth::family {
   return coin < externalP;
 }
 
-[[nodiscard]] inline std::optional<identifier::Key>
-pickMemberId(identifier::PersonId person,
-             const entities::accounts::Registry &registry,
-             const entities::accounts::Ownership &ownership, double externalP) {
-  if (person == identifier::invalidPerson ||
+[[nodiscard]] inline std::optional<entity::Key>
+pickMemberId(entity::PersonId person, const entity::account::Registry &registry,
+             const entity::account::Ownership &ownership, double externalP) {
+  if (person == entity::invalidPerson ||
       static_cast<std::size_t>(person) >= ownership.byPersonOffset.size()) {
     return std::nullopt;
   }
@@ -49,17 +46,17 @@ pickMemberId(identifier::PersonId person,
   return registry.records[ownership.byPersonIndex[start]].id;
 }
 
-[[nodiscard]] inline std::vector<std::vector<identifier::Key>>
-plan(const people::Roster &people,
-     const entities::accounts::Ownership &ownership, double externalP) {
-  std::vector<std::vector<identifier::Key>> out(
+[[nodiscard]] inline std::vector<std::vector<entity::Key>>
+plan(const entity::person::Roster &people,
+     const entity::account::Ownership &ownership, double externalP) {
+  std::vector<std::vector<entity::Key>> out(
       static_cast<std::size_t>(people.count) + 1);
 
   if (externalP <= 0.0) {
     return out;
   }
 
-  for (identifier::PersonId person = 1; person <= people.count; ++person) {
+  for (entity::PersonId person = 1; person <= people.count; ++person) {
     const auto start = ownership.byPersonOffset[person - 1];
     const auto end = ownership.byPersonOffset[person];
     if (start == end) {

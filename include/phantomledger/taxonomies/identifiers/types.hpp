@@ -16,6 +16,7 @@ enum class Role : std::uint16_t {
   family,
   business,
   brokerage,
+  card,
 };
 
 enum class Bank : std::uint8_t {

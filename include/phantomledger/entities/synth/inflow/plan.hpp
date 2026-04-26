@@ -1,8 +1,9 @@
 #pragma once
 
-#include "phantomledger/entities/accounts/ownership.hpp"
-#include "phantomledger/entities/behavior/assignment.hpp"
-#include "phantomledger/entities/people/roster.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/behaviors.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/inflow/ids.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
@@ -10,14 +11,14 @@
 
 namespace PhantomLedger::entities::synth::inflow {
 
-[[nodiscard]] inline std::vector<std::vector<identifier::Key>>
-planInflowIds(const people::Roster &people,
-              const behavior::Assignment &assignment,
-              const entities::accounts::Ownership &ownership) {
-  std::vector<std::vector<identifier::Key>> out(
+[[nodiscard]] inline std::vector<std::vector<entity::Key>>
+planInflowIds(const entity::person::Roster &people,
+              const entity::behavior::Assignment &assignment,
+              const entity::account::Ownership &ownership) {
+  std::vector<std::vector<entity::Key>> out(
       static_cast<std::size_t>(people.count) + 1);
 
-  for (identifier::PersonId person = 1; person <= people.count; ++person) {
+  for (entity::PersonId person = 1; person <= people.count; ++person) {
     const auto start = ownership.byPersonOffset[person - 1];
     const auto end = ownership.byPersonOffset[person];
     if (start == end) {

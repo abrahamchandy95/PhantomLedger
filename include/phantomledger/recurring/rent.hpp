@@ -8,7 +8,7 @@
  * portal ACH.
  */
 
-#include "phantomledger/entities/landlords/class.hpp"
+#include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -74,8 +74,8 @@ public:
   /// Returns the generic rent channel if the landlord class is unknown.
   [[nodiscard]] channels::Tag
   pick(random::Rng &rng,
-       std::optional<entities::landlords::Class> landlordClass) const {
-    using Class = entities::landlords::Class;
+       std::optional<entity::landlord::Class> landlordClass) const {
+    using Class = entity::landlord::Class;
 
     if (!landlordClass.has_value()) {
       return detail::kFallbackChannel;

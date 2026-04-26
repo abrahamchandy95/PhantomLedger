@@ -6,17 +6,6 @@
  * infrastructure routing (device_id, ip_address). During fraud
  * transactions, the factory uses shared ring infra with high
  * probability, falling back to personal infra.
- *
- * Performance notes:
- *
- *   - One owner-lookup per transaction instead of one-per-leg. The
- *     router now exposes ownerOf() separately from the per-leg route
- *     functions, so we resolve the source account's owner once and
- *     reuse it for both device and IP.
- *
- *   - RNG draws for personal infra are skipped when shared-ring infra
- *     has already resolved that leg. Under the previous revision the
- *     router always drew for both legs even if only one was needed.
  */
 
 #include "phantomledger/entropy/random/rng.hpp"
@@ -49,9 +38,7 @@ public:
     bool deviceResolved = false;
     bool ipResolved = false;
 
-    // Try shared ring infra first for fraud transactions. Short-circuit
-    // around the coin flip when the ring doesn't have shared infra for
-    // that leg, so we don't consume RNG we don't use.
+    // Try shared ring infra first for fraud transactions.
     if (draft.ringId >= 0 && ringInfra_ != nullptr) {
       const auto sharedDevice = ringInfra_->deviceForRing(draft.ringId);
       if (sharedDevice.has_value() && rng_.coin(ringInfra_->useSharedDeviceP)) {

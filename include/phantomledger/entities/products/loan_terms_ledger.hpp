@@ -13,7 +13,7 @@
  * one source of truth.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
 #include "phantomledger/entities/products/installment_terms.hpp"
 

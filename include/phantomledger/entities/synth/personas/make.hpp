@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/people/people.hpp"
+#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/personas/kinds.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/personas/profile.hpp"
@@ -28,7 +28,7 @@ namespace PhantomLedger::entities::synth::personas {
 }
 
 [[nodiscard]] inline Pack makePlan(random::Rng &rng,
-                                   const entity::people::Roster &people,
+                                   const entity::person::Roster &people,
                                    std::uint64_t baseSeed,
                                    const Mix &mix = {}) {
   return makePack(rng, people.count, baseSeed, mix);

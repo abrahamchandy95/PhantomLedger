@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/behavior/behavior.hpp"
+#include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"

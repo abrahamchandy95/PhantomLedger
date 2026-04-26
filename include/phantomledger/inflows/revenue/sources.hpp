@@ -1,18 +1,10 @@
 #pragma once
 /*
  * inflows/revenue/sources.hpp — persona-aware revenue source assignment.
- *
- * For each eligible person, determines:
- *   - which account receives revenue
- *   - which external counterparties act as clients, platforms, etc.
- *   - whether owner draws come from an owned business account or
- *     from the external business pool
- *   - whether investment inflows come from an owned brokerage or
- *     the external brokerage pool
  */
 
-#include "phantomledger/entities/counterparties/pool.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/inflow/ids.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/inflows/revenue/catalog.hpp"
@@ -141,7 +133,7 @@ source(random::Rng &rng, std::span<const Key> pool,
 }
 
 inline void applyFallback(personas::Type persona, random::Rng &rng,
-                          const entities::counterparties::Pool &pools,
+                          const entity::counterparty::Pool &pools,
                           const Accounts &accounts, Sources &sources) {
   if (sources.any()) {
     return;

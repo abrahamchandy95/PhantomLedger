@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"

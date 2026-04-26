@@ -2,10 +2,8 @@
 
 #include <chrono>
 #include <cstdint>
-#include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace PhantomLedger::time {
 
@@ -28,11 +26,6 @@ struct TimeOfDay {
   int second;
 };
 
-struct HalfOpenInterval {
-  TimePoint start;
-  TimePoint endExcl;
-};
-
 // Construction.
 [[nodiscard]] TimePoint makeTime(CalendarDate date, TimeOfDay time = {0, 0, 0});
 [[nodiscard]] TimePoint parseYmd(std::string_view s);
@@ -53,16 +46,6 @@ struct HalfOpenInterval {
 [[nodiscard]] inline TimePoint addDays(TimePoint tp, int days) {
   return tp + Days{days};
 }
-
-// Iteration.
-[[nodiscard]] std::vector<TimePoint> monthStarts(TimePoint start,
-                                                 TimePoint endExcl);
-
-// Half-open interval intersection.
-[[nodiscard]] std::optional<HalfOpenInterval>
-clipHalfOpen(TimePoint windowStart, TimePoint windowEndExcl,
-             TimePoint activeStart,
-             std::optional<TimePoint> activeEndExcl = std::nullopt);
 
 // Epoch conversion.
 [[nodiscard]] inline std::int64_t toEpochSeconds(TimePoint tp) {

@@ -7,21 +7,14 @@
  * (ZERO_FEE / REDUCED_FEE / STANDARD_FEE), overdraft fee amount, and
  * LOC parameters (APR, billing day).
  *
- * The previous revision sampled overdraft / linked / courtesy buffers
- * with three independent coin flips, which could produce an account
- * that held all three simultaneously. The Python reference treats
- * protection types as mutually exclusive; this revision enforces that
- * invariant via a single 4-way categorical draw over
- * {courtesy, linked, loc, none}.
- *
  * Bank tier is an independent draw from the 15/10/75 tier weights.
  * The overdraft fee amount is drawn once per account from the
  * tier-specific lognormal, stored on the ledger, and used later when
  * transferAt() fires an OVERDRAFT_FEE liquidity event.
  */
 
-#include "phantomledger/entities/accounts/account.hpp"
-#include "phantomledger/entities/behavior/behavior.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
@@ -39,10 +32,7 @@
 
 namespace PhantomLedger::clearing {
 
-/// Per-persona sampling parameters. Replaces the previous per-buffer
-/// fraction set. Each of courtesy / linked / loc is the unconditional
-/// probability an account receives that protection type. The remainder
-/// (1 - sum) is NONE. Medians are sampled from lognormal around them.
+/// Per-persona sampling parameters.
 struct PersonaBufferProfile {
   double balanceMedian;
 
@@ -55,9 +45,7 @@ struct PersonaBufferProfile {
   double locCreditLimitMedian;
 };
 
-/// Persona-indexed table. Values approximately preserve the character
-/// of the previous balance_book (low-end students, mid salaried,
-/// high-end HNW) while respecting mutual exclusivity.
+/// Persona-indexed table.
 [[nodiscard]] constexpr PersonaBufferProfile
 bufferProfile(personas::Type type) noexcept {
   switch (type) {

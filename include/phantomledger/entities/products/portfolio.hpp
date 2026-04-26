@@ -13,7 +13,7 @@
  * type.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
 #include "phantomledger/entities/products/insurance_ledger.hpp"
 #include "phantomledger/entities/products/loan_terms_ledger.hpp"

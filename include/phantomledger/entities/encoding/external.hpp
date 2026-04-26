@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 
 #include <string_view>
 

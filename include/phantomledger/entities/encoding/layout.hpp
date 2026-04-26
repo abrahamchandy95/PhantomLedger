@@ -13,10 +13,11 @@ struct Layout {
 
 inline constexpr Layout kInvalid{};
 
-inline constexpr Layout kCustomer{"C", 10};
+inline constexpr Layout kCustomer{"C", 11};
 inline constexpr Layout kAccount{"A", 10};
 inline constexpr Layout kMerchant{"M", 8};
 inline constexpr Layout kMerchantExternal{"XM", 8};
+inline constexpr Layout kCardLiability{"L", 9};
 
 inline constexpr Layout kEmployer{"E", 8};
 inline constexpr Layout kEmployerExternal{"XE", 8};

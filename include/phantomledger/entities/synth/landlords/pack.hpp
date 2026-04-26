@@ -1,16 +1,15 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/landlords/index.hpp"
-#include "phantomledger/entities/landlords/roster.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/landlords.hpp"
 
 #include <vector>
 
 namespace PhantomLedger::entities::synth::landlords {
 
 struct Pack {
-  entities::landlords::Roster roster;
-  entities::landlords::Index index;
+  entity::landlord::Roster roster;
+  entity::landlord::Index index;
 
   /// Landlords who bank at our institution. Rent payments to these
   /// counterparties settle as internal book-to-book transfers.

@@ -1,4 +1,5 @@
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 
 #include <algorithm>
 #include <cstdio>

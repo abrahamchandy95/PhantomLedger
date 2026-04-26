@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"

@@ -8,7 +8,7 @@
  * or scheduled obligation events.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/insurance.hpp"
 
 #include <unordered_map>

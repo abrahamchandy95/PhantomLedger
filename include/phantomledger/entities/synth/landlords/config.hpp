@@ -1,13 +1,13 @@
 #pragma once
 
-#include "phantomledger/entities/landlords/class.hpp"
+#include "phantomledger/entities/landlords.hpp"
 
 #include <array>
 
 namespace PhantomLedger::entities::synth::landlords {
 
 struct Share {
-  entities::landlords::Class kind = entities::landlords::Class::individual;
+  entity::landlord::Class kind = entity::landlord::Class::individual;
   double weight = 0.0;
 };
 
@@ -26,8 +26,8 @@ struct InBankProbability {
   };
 
   [[nodiscard]] constexpr double
-  forClass(entities::landlords::Class kind) const noexcept {
-    return byClass[entities::landlords::classIndex(kind)];
+  forClass(entity::landlord::Class kind) const noexcept {
+    return byClass[entity::landlord::classIndex(kind)];
   }
 };
 struct Config {
@@ -35,9 +35,9 @@ struct Config {
   int floor = 3;
 
   std::array<Share, 3> mix{{
-      {entities::landlords::Class::individual, 0.38},
-      {entities::landlords::Class::llcSmall, 0.15},
-      {entities::landlords::Class::corporate, 0.47},
+      {entity::landlord::Class::individual, 0.38},
+      {entity::landlord::Class::llcSmall, 0.15},
+      {entity::landlord::Class::corporate, 0.47},
   }};
 
   InBankProbability inBankP;

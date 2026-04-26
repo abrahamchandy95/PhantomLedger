@@ -1,4 +1,5 @@
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 
 #include "test_support.hpp"
 
@@ -64,7 +65,7 @@ void testMakeTimeInvalidDate() {
 }
 
 void testMakeTimeLeapYear() {
-  auto tp = at(2024, 2, 29); // 2024 is a leap year
+  auto tp = at(2024, 2, 29);
   auto cal = time::toCalendarDate(tp);
   PL_CHECK_EQ(cal.day, 29U);
   std::printf("  PASS: makeTime accepts Feb 29 on leap year\n");
@@ -84,22 +85,11 @@ void testParseYmd() {
 }
 
 void testWeekday() {
-  // 2025-01-01 is a Wednesday
-  auto wed = at(2025, 1, 1);
-  PL_CHECK_EQ(time::weekday(wed), 2); // Mon=0, Wed=2
-
-  // 2025-01-04 is a Saturday
-  auto sat = at(2025, 1, 4);
-  PL_CHECK_EQ(time::weekday(sat), 5);
-
-  // 2025-01-05 is a Sunday
-  auto sun = at(2025, 1, 5);
-  PL_CHECK_EQ(time::weekday(sun), 6);
-
-  // 2025-01-06 is a Monday
-  auto mon = at(2025, 1, 6);
-  PL_CHECK_EQ(time::weekday(mon), 0);
-
+  // 2025-01-01 is a Wednesday; weekday is Mon=0..Sun=6.
+  PL_CHECK_EQ(time::weekday(at(2025, 1, 1)), 2);
+  PL_CHECK_EQ(time::weekday(at(2025, 1, 4)), 5); // Sat
+  PL_CHECK_EQ(time::weekday(at(2025, 1, 5)), 6); // Sun
+  PL_CHECK_EQ(time::weekday(at(2025, 1, 6)), 0); // Mon
   std::printf("  PASS: weekday (Mon=0..Sun=6)\n");
 }
 
@@ -139,28 +129,33 @@ void testMonthStart() {
 void testAddMonths() {
   auto base = at(2025, 1, 31, 10, 0, 0);
 
-  // Jan 31 + 1 month -> Feb 28 (clamped, non-leap)
+  // Jan 31 + 1 month -> Feb 28 (clamped, non-leap).
   auto feb = time::addMonths(base, 1);
   auto cal = time::toCalendarDate(feb);
   PL_CHECK_EQ(cal.month, 2U);
   PL_CHECK_EQ(cal.day, 28U);
-  PL_CHECK_EQ(time::toTimeOfDay(feb).hour, 10); // time preserved
+  PL_CHECK_EQ(time::toTimeOfDay(feb).hour, 10); // time-of-day preserved
 
-  // Jan 31 + 12 months -> Jan 31 next year
+  // Jan 31 + 12 months -> Jan 31 next year.
   auto next = time::addMonths(base, 12);
   cal = time::toCalendarDate(next);
   PL_CHECK_EQ(cal.year, 2026);
   PL_CHECK_EQ(cal.month, 1U);
   PL_CHECK_EQ(cal.day, 31U);
 
-  // Jan 31 + 0 months -> unchanged
-  auto same = time::addMonths(base, 0);
-  PL_CHECK(same == base);
+  // Jan 31 + 0 months -> unchanged.
+  PL_CHECK(time::addMonths(base, 0) == base);
 
-  // Keep this only if your implementation rejects negative months:
-  PL_CHECK_THROWS(time::addMonths(base, -1));
+  // Negative months step backward (the current implementation uses
+  // chrono::months arithmetic, which accepts signed values; it does
+  // not throw on a valid prior month).
+  auto prev = time::addMonths(base, -1);
+  cal = time::toCalendarDate(prev);
+  PL_CHECK_EQ(cal.year, 2024);
+  PL_CHECK_EQ(cal.month, 12U);
+  PL_CHECK_EQ(cal.day, 31U);
 
-  std::printf("  PASS: addMonths with day clamping\n");
+  std::printf("  PASS: addMonths with day clamping (and signed delta)\n");
 }
 
 void testAddDays() {
@@ -229,7 +224,6 @@ void testEpochConversion() {
   PL_CHECK(roundTrip == tp);
 
   PL_CHECK_EQ(epoch, 1735689600LL); // 2025-01-01 00:00:00 UTC
-
   std::printf("  PASS: toEpochSeconds / fromEpochSeconds\n");
 }
 

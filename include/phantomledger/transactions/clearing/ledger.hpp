@@ -18,7 +18,7 @@
  * authoritative and post-fraud replays land on identical balances.
  */
 
-#include "phantomledger/entities/identifier/key.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/clearing/liquidity.hpp"
 #include "phantomledger/transactions/clearing/loc_accrual.hpp"

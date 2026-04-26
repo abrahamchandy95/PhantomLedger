@@ -8,20 +8,13 @@
  *   - Population     : person/account/persona lookups (refs, not ptrs)
  *   - Counterparties : employers, landlords, and external pools
  *   - InflowSnapshot : composed read-only inflow state
- *
- * Population change vs. prior revision: the three backing tables
- * (Registry, Ownership, Assignment) are references instead of raw
- * pointers. This removes ~10 `assert(x != nullptr)` checks across
- * the struct and pushes the invariant to the type system. The cost
- * is that callers must construct Population with the tables already
- * in scope, which every current call site already does.
  */
 
-#include "phantomledger/entities/accounts/account.hpp"
-#include "phantomledger/entities/behavior/behavior.hpp"
-#include "phantomledger/entities/counterparties/pool.hpp"
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/landlords/class.hpp"
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/behaviors.hpp"
+#include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/recurring/policy.hpp"
@@ -48,7 +41,7 @@ using TimePoint = time::TimePoint;
 // ---------------------------------------------------------------
 
 using LandlordTypes =
-    std::unordered_map<Key, entities::landlords::Class, std::hash<Key>>;
+    std::unordered_map<Key, entity::landlord::Class, std::hash<Key>>;
 
 using HubAccounts = std::unordered_set<Key, std::hash<Key>>;
 
@@ -153,18 +146,6 @@ public:
     return false;
   }
 
-  // Member ordering note:
-  //   C++ initializes members in declaration order, not
-  //   initializer-list order. The constructor's initializer list
-  //   therefore runs `count, hubs, accounts_, ownership_, personas_`
-  //   to match the order of the declarations below. If you change
-  //   either side, keep them in sync or clang will warn with
-  //   -Wreorder-ctor.
-  //
-  //   `count` and `hubs` stay public because existing call sites
-  //   read them directly and there is no invariant between them and
-  //   the refs.
-
   std::uint32_t count = 0;
   HubAccounts hubs;
 
@@ -179,7 +160,7 @@ private:
 // ---------------------------------------------------------------
 
 struct Counterparties {
-  const entities::counterparties::Pool *pools = nullptr;
+  const entity::counterparty::Pool *pools = nullptr;
 
   std::span<const Key> employers;
   std::span<const Key> landlords;
@@ -188,7 +169,7 @@ struct Counterparties {
 
   [[nodiscard]] bool hasPools() const noexcept { return pools != nullptr; }
 
-  [[nodiscard]] std::optional<entities::landlords::Class>
+  [[nodiscard]] std::optional<entity::landlord::Class>
   landlordClass(const Key &landlord) const noexcept {
     if (landlordTypes == nullptr) {
       return std::nullopt;

@@ -1,19 +1,17 @@
 #pragma once
 
-#include "phantomledger/entities/identifier/key.hpp"
-#include "phantomledger/entities/identifier/make.hpp"
-#include "phantomledger/entities/identifier/person.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/common/suffix.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
 namespace PhantomLedger::entities::synth::family {
 
-using taxonomies::identifiers::Bank;
-using taxonomies::identifiers::Role;
+using identifiers::Bank;
+using identifiers::Role;
 
-[[nodiscard]] inline identifier::Key id(identifier::PersonId person) {
-  return identifier::make(Role::family, Bank::external,
-                          common::familySuffix(person));
+[[nodiscard]] inline entity::Key id(entity::PersonId person) {
+  return entity::makeKey(Role::family, Bank::external,
+                         common::familySuffix(person));
 }
 
 } // namespace PhantomLedger::entities::synth::family
