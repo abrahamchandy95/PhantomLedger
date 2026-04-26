@@ -1,21 +1,18 @@
 #pragma once
 
-#include "phantomledger/math/seasonal.hpp"
 #include "phantomledger/primitives/concurrent/account_lock_array.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
-#include "phantomledger/spending/config/picking.hpp"
-#include "phantomledger/spending/dynamics/config.hpp"
+#include "phantomledger/spending/actors/day.hpp"
 #include "phantomledger/spending/dynamics/population/advance.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/obligations/snapshot.hpp"
+#include "phantomledger/spending/simulator/config.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace PhantomLedger::spending::simulator {
@@ -24,15 +21,7 @@ class Simulator {
 public:
   Simulator(const market::Market &market, Engine &engine,
             const obligations::Snapshot &obligations,
-            const dynamics::Config &dynamicsCfg,
-            const config::BurstBehavior &burst,
-            const config::ExplorationHabits &exploration,
-            const config::LiquidityConstraints &liquidity,
-            const config::MerchantPickRules &picking,
-            const math::seasonal::Config &seasonal, double txnsPerMonth,
-            double channelMerchantP, double channelBillsP, double channelP2pP,
-            double unknownOutflowP, double baseExploreP, double dayShockShape,
-            double preferBillersP, std::uint32_t personDailyLimit);
+            const SimulatorConfig &config);
 
   Simulator(const Simulator &) = delete;
   Simulator &operator=(const Simulator &) = delete;
@@ -42,43 +31,43 @@ public:
   [[nodiscard]] std::vector<transactions::Transaction> run();
 
 private:
-  RunPlan buildPlan() const;
+  [[nodiscard]] RunPlan buildPlan() const;
 
   void prepareThreadStates();
-
   void prepareLockArray();
-
   void mergeThreadTxns(RunState &state);
 
-  // References to externally-owned inputs.
+  void runDay(const RunPlan &plan, RunState &state, std::uint32_t dayIndex);
+
+  void evolveCommerceIfNeeded(std::uint32_t dayIndex);
+
+  [[nodiscard]] actors::DayFrame buildDayFrame(const RunPlan &plan,
+                                               std::uint32_t dayIndex);
+
+  void advanceLedgerToDay(const RunPlan &plan, RunState &state,
+                          const actors::DayFrame &frame);
+
+  [[nodiscard]] std::span<const std::uint32_t>
+  updatePaydayState(const RunPlan &plan, RunState &state,
+                    std::uint32_t dayIndex);
+
+  void advanceDynamics(const RunPlan &plan,
+                       std::span<const std::uint32_t> paydayPersons);
+
+  void draftSpenderTransactions(const RunPlan &plan, RunState &state,
+                                const actors::DayFrame &frame);
+
   const market::Market &market_;
   Engine &engine_;
   const obligations::Snapshot &obligations_;
-  const dynamics::Config &dynamicsCfg_;
-  const config::BurstBehavior &burst_;
-  const config::ExplorationHabits &exploration_;
-  const config::LiquidityConstraints &liquidity_;
-  const config::MerchantPickRules &picking_;
-  const math::seasonal::Config &seasonal_;
 
-  // Plan-build inputs flattened to scalars.
-  double txnsPerMonth_;
-  double channelMerchantP_;
-  double channelBillsP_;
-  double channelP2pP_;
-  double unknownOutflowP_;
-  double baseExploreP_;
-  double dayShockShape_;
-  double preferBillersP_;
-  std::uint32_t personDailyLimit_;
+  SimulatorConfig config_;
 
-  // Owned per-run buffers reused across days.
   dynamics::population::Cohort cohort_;
   std::vector<double> sensitivities_;
   std::vector<double> dailyMultBuffer_;
 
   std::vector<ThreadLocalState> threadStates_;
-
   primitives::concurrent::AccountLockArray lockArray_;
 };
 

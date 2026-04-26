@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/primitives/utils/stochastic_round.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/spending/actors/day.hpp"
 #include "phantomledger/spending/actors/spender.hpp"
 #include "phantomledger/spending/liquidity/factor.hpp"
@@ -12,15 +12,22 @@
 
 namespace PhantomLedger::spending::actors {
 
+struct RatePieces {
+  double baseRate = 0.0;
+  double weekdayMult = 1.0;
+  double dynamicsMultiplier = 1.0;
+  double liquidityMultiplier = 1.0;
+};
+
 [[nodiscard]] inline std::uint32_t
-sampleTxnCount(random::Rng &rng, const Spender &spender, const Day &day,
-               double baseRate, double weekdayMult,
-               std::optional<std::uint32_t> personLimit,
-               double dynamicsMultiplier, double liquidityMultiplier) noexcept {
-  const double dyn = std::max(0.0, dynamicsMultiplier);
-  const double rate = baseRate * spender.rateMultiplier * weekdayMult *
-                      day.shock * dyn *
-                      liquidity::countFactor(liquidityMultiplier);
+sampleTransactionCount(random::Rng &rng, const Spender &spender,
+                       const DayFrame &frame, const RatePieces &ratePieces,
+                       std::optional<std::uint32_t> personLimit) noexcept {
+  const double dyn = std::max(0.0, ratePieces.dynamicsMultiplier);
+
+  const double rate = ratePieces.baseRate * spender.rateMultiplier *
+                      ratePieces.weekdayMult * frame.day.shock * dyn *
+                      liquidity::countFactor(ratePieces.liquidityMultiplier);
 
   if (rate <= 0.0) {
     return 0;
@@ -32,6 +39,7 @@ sampleTxnCount(random::Rng &rng, const Spender &spender, const Day &day,
   if (personLimit.has_value()) {
     count = std::min(count, *personLimit);
   }
+
   return count;
 }
 

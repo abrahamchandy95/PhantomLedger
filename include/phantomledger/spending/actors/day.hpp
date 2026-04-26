@@ -10,9 +10,15 @@ namespace PhantomLedger::spending::actors {
 struct Day {
   std::uint32_t dayIndex = 0;
   time::TimePoint start{};
-  std::uint8_t weekday = 0; // 0 = Monday, ..., 6 = Sunday
+  std::uint8_t weekday = 0;
   bool isWeekend = false;
-  double shock = 1.0; // multiplicative noise around the day's expectation
+  double shock = 1.0;
+};
+
+struct DayFrame {
+  Day day{};
+  double weekdayMult = 1.0;
+  double seasonalMult = 1.0;
 };
 
 [[nodiscard]] Day buildDay(time::TimePoint windowStart, double dayShockShape,

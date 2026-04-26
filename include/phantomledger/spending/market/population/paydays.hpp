@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/primitives/utils/csr.hpp"
+#include "phantomledger/primitives/utils/groups.hpp"
 
 #include <algorithm>
 #include <cstddef>

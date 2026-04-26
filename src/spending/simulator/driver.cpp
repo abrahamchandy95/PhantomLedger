@@ -1,7 +1,6 @@
 #include "phantomledger/spending/simulator/driver.hpp"
 
 #include "phantomledger/spending/routing/channel.hpp"
-#include "phantomledger/spending/simulator/day.hpp"
 #include "phantomledger/spending/simulator/payday_index.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
 #include "phantomledger/spending/spenders/prepare.hpp"
@@ -28,8 +27,6 @@ void sortChronological(std::vector<transactions::Transaction> &txns) {
       transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
 }
 
-/// Build the per-personIndex Ledger::Index table for population
-/// primary accounts. Used by P2P routing on the recipient side.
 void resolvePersonPrimaryIdx(
     const market::Market &market,
     const ::PhantomLedger::clearing::Ledger &ledger,
@@ -56,8 +53,10 @@ void resolveMerchantCounterpartyIdx(
     out.clear();
     return;
   }
+
   out.assign(catalog->records.size(),
              ::PhantomLedger::clearing::Ledger::invalid);
+
   for (std::size_t i = 0; i < catalog->records.size(); ++i) {
     out[i] = ledger.findAccount(catalog->records[i].counterpartyId);
   }
@@ -77,26 +76,9 @@ void resolveMerchantCounterpartyIdx(
 
 Simulator::Simulator(const market::Market &market, Engine &engine,
                      const obligations::Snapshot &obligations,
-                     const dynamics::Config &dynamicsCfg,
-                     const config::BurstBehavior &burst,
-                     const config::ExplorationHabits &exploration,
-                     const config::LiquidityConstraints &liquidity,
-                     const config::MerchantPickRules &picking,
-                     const math::seasonal::Config &seasonal,
-                     double txnsPerMonth, double channelMerchantP,
-                     double channelBillsP, double channelP2pP,
-                     double unknownOutflowP, double baseExploreP,
-                     double dayShockShape, double preferBillersP,
-                     std::uint32_t personDailyLimit)
+                     const SimulatorConfig &config)
     : market_(market), engine_(engine), obligations_(obligations),
-      dynamicsCfg_(dynamicsCfg), burst_(burst), exploration_(exploration),
-      liquidity_(liquidity), picking_(picking), seasonal_(seasonal),
-      txnsPerMonth_(txnsPerMonth), channelMerchantP_(channelMerchantP),
-      channelBillsP_(channelBillsP), channelP2pP_(channelP2pP),
-      unknownOutflowP_(unknownOutflowP), baseExploreP_(baseExploreP),
-      dayShockShape_(dayShockShape), preferBillersP_(preferBillersP),
-      personDailyLimit_(personDailyLimit),
-      cohort_(market.population().count()) {
+      config_(config), cohort_(market.population().count()) {
   const auto n = market.population().count();
 
   sensitivities_.resize(n);
@@ -111,48 +93,50 @@ Simulator::Simulator(const market::Market &market, Engine &engine,
 RunPlan Simulator::buildPlan() const {
   RunPlan plan{};
 
-  plan.preparedSpenders =
+  plan.population.spenders =
       spenders::prepareSpenders(market_, obligations_, engine_.ledger);
 
-  const std::uint32_t activeSpenders =
-      static_cast<std::uint32_t>(plan.preparedSpenders.size());
+  const std::uint32_t activeSpenders = plan.population.activeCount();
 
-  plan.targetTotalTxns = spenders::totalTargetTxns(
-      txnsPerMonth_, activeSpenders, market_.bounds().days);
+  plan.budget.targetTotalTxns = spenders::totalTargetTxns(
+      config_.txnsPerMonth, activeSpenders, market_.bounds().days);
 
-  plan.totalPersonDays =
+  plan.budget.totalPersonDays =
       static_cast<std::uint64_t>(activeSpenders) * market_.bounds().days;
 
-  plan.baseTxns = obligations_.baseTxns;
-  plan.sensitivities = std::span<const double>(sensitivities_);
+  plan.baseLedger.txns = obligations_.baseTxns;
+  plan.population.sensitivities = std::span<const double>(sensitivities_);
 
-  plan.paydayIndex =
+  plan.payday.index =
       PaydayIndex::build(market_.population().paydays(), market_.bounds().days);
 
-  if (personDailyLimit_ > 0) {
-    plan.personLimit = personDailyLimit_;
+  if (config_.personDailyLimit > 0) {
+    plan.budget.personLimit = config_.personDailyLimit;
   }
 
-  plan.channelCdf = routing::buildChannelCdf(channelMerchantP_, channelBillsP_,
-                                             channelP2pP_, unknownOutflowP_);
+  plan.routing.channelCdf = routing::buildChannelCdf(
+      config_.channels.merchantP, config_.channels.billsP,
+      config_.channels.p2pP, config_.channels.externalUnknownP);
 
-  plan.routePolicy = routing::Policy{
-      .preferBillersP = preferBillersP_,
-      .maxRetries = picking_.maxRetries,
+  plan.routing.policy = routing::Policy{
+      .preferBillersP = config_.preferBillersP,
+      .maxRetries = config_.picking.maxRetries,
   };
 
-  plan.baseExploreP = baseExploreP_;
-  plan.dayShockShape = dayShockShape_;
+  plan.activity.baseExploreP = config_.baseExploreP;
+  plan.activity.dayShockShape = config_.dayShockShape;
 
-  // Phase 2 pre-resolved index tables.
   if (engine_.ledger != nullptr) {
-    resolvePersonPrimaryIdx(market_, *engine_.ledger, plan.personPrimaryIdx);
+    resolvePersonPrimaryIdx(market_, *engine_.ledger,
+                            plan.routing.personPrimaryIdx);
+
     resolveMerchantCounterpartyIdx(market_, *engine_.ledger,
-                                   plan.merchantCounterpartyIdx);
+                                   plan.routing.merchantCounterpartyIdx);
 
     const entity::Key externalKey =
         entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
-    plan.externalUnknownIdx = engine_.ledger->findAccount(externalKey);
+
+    plan.routing.externalUnknownIdx = engine_.ledger->findAccount(externalKey);
   }
 
   return plan;
@@ -182,7 +166,7 @@ void Simulator::prepareThreadStates() {
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market_.bounds().days) *
        (static_cast<double>(market_.population().count()) / 30.0) *
-       txnsPerMonth_ * kTxnReserveSlack) /
+       config_.txnsPerMonth * kTxnReserveSlack) /
       static_cast<double>(engine_.threadCount));
 
   std::array<char, 16> idBuf{};
@@ -199,6 +183,7 @@ void Simulator::prepareLockArray() {
     lockArray_.resize(0);
     return;
   }
+
   lockArray_.resize(static_cast<std::size_t>(engine_.ledger->size()));
 }
 
@@ -206,12 +191,14 @@ void Simulator::mergeThreadTxns(RunState &state) {
   if (threadStates_.empty()) {
     return;
   }
+
   // Sum first so we can reserve once and avoid repeated growth on the
   // shared vector.
   std::size_t total = state.txns().size();
   for (const auto &ts : threadStates_) {
     total += ts.txns.size();
   }
+
   state.txns().reserve(total);
   for (auto &ts : threadStates_) {
     state.txns().insert(state.txns().end(),
@@ -228,31 +215,20 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   RunPlan plan = buildPlan();
 
-  // In parallel mode the shared RunState's txn buffer stays empty
-  // during the day loop (workers push into per-thread buffers) and
-  // only fills at end-of-run via mergeThreadTxns. Reserving on the
-  // shared buffer is therefore wasted at high thread counts; we only
-  // reserve when running serially.
   const std::size_t reserveCapacity =
       engine_.threadCount <= 1
-          ? static_cast<std::size_t>(plan.targetTotalTxns * kTxnReserveSlack)
+          ? static_cast<std::size_t>(plan.budget.targetTotalTxns *
+                                     kTxnReserveSlack)
           : 0;
 
   RunState state(market_.population().count(), reserveCapacity,
-                 plan.totalPersonDays, plan.targetTotalTxns);
-
-  // Phase 4 setup. No-ops when threadCount == 1.
+                 plan.budget.totalPersonDays, plan.budget.targetTotalTxns);
   prepareThreadStates();
   prepareLockArray();
 
-  primitives::concurrent::AccountLockArray *lockArrayPtr =
-      engine_.threadCount > 1 ? &lockArray_ : nullptr;
-
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
-    runDay(market_, engine_, plan, state, cohort_, dynamicsCfg_, burst_,
-           exploration_, liquidity_, seasonal_, dailyMultBuffer_, dayIndex,
-           std::span<ThreadLocalState>(threadStates_), lockArrayPtr);
+    runDay(plan, state, dayIndex);
   }
 
   // Drain per-thread buffers and sort the result chronologically.

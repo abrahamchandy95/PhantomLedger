@@ -79,6 +79,7 @@ set(PL_SPENDING_SOURCES
     src/spending/market/bootstrap.cpp
     src/spending/routing/payments.cpp
     src/spending/simulator/day.cpp
+    src/spending/simulator/loop.cpp
     src/spending/simulator/driver.cpp
     src/spending/simulator/run.cpp
     src/spending/spenders/prepare.cpp

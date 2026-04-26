@@ -19,15 +19,11 @@ public:
 
   [[nodiscard]] bool empty() const noexcept { return ledger_ == nullptr; }
 
-  /// Index-based transfer with per-account locking. Bypasses lock
-  /// acquisition when no lock array is provided (serial mode).
   [[nodiscard]] ::PhantomLedger::clearing::TransferDecision
   transfer(::PhantomLedger::clearing::Ledger::Index srcIdx,
            ::PhantomLedger::clearing::Ledger::Index dstIdx, double amount,
            ::PhantomLedger::channels::Tag channel) noexcept {
     if (ledger_ == nullptr) {
-      // No-ledger mode — accept everything, matching the existing
-      // `tryEmitWithLedger(nullptr, ...)` behaviour.
       return ::PhantomLedger::clearing::TransferDecision::accept();
     }
 
@@ -50,8 +46,6 @@ public:
     return decision;
   }
 
-  /// Unlocked read of the deposit account's available cash. See class
-  /// docstring for the rationale.
   [[nodiscard]] double
   availableCash(::PhantomLedger::clearing::Ledger::Index idx) const noexcept {
     if (ledger_ == nullptr ||
