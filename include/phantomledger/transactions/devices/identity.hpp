@@ -9,6 +9,7 @@ namespace PhantomLedger::devices {
 enum class OwnerType : std::uint8_t {
   person,
   ring,
+  legitShared,
 };
 
 struct Identity {
@@ -28,6 +29,11 @@ struct Identity {
     return Identity{OwnerType::ring, ringId, slot};
   }
 };
+
+[[nodiscard]] static constexpr Identity
+legitShared(std::uint64_t groupId, std::uint32_t slot = 0) noexcept {
+  return Identity{OwnerType::legitShared, groupId, slot};
+}
 
 [[nodiscard]] inline std::size_t hashValue(const Identity &value) noexcept {
   return PhantomLedger::hashing::make(

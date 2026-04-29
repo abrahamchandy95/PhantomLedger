@@ -85,7 +85,68 @@ set(PL_SPENDING_SOURCES
     src/spending/spenders/prepare.cpp
     src/spending/spenders/targets.cpp
 )
+set(PL_FRAUD_SOURCES
+    src/transfers/fraud/engine.cpp
+    src/transfers/fraud/rings.cpp
+    src/transfers/fraud/schedule.cpp
+    src/transfers/fraud/camouflage.cpp
+    src/transfers/fraud/injector.cpp
+    src/transfers/fraud/typologies/classic.cpp
+    src/transfers/fraud/typologies/dispatch.cpp
+    src/transfers/fraud/typologies/funnel.cpp
+    src/transfers/fraud/typologies/invoice.cpp
+    src/transfers/fraud/typologies/layering.cpp
+    src/transfers/fraud/typologies/mule.cpp
+    src/transfers/fraud/typologies/structuring.cpp
+)
 
+set(PL_LEGIT_SOURCES
+    src/transfers/legit/blueprints/paydays.cpp
+    src/transfers/legit/blueprints/plans.cpp
+    src/transfers/legit/blueprints/models.cpp
+    src/transfers/legit/ledger/screenbook.cpp
+    src/transfers/legit/ledger/streams.cpp
+    src/transfers/legit/ledger/burdens.cpp
+    src/transfers/legit/ledger/limits.cpp
+    src/transfers/legit/ledger/posting.cpp
+    src/transfers/legit/ledger/builder.cpp
+    src/transfers/legit/ledger/passes.cpp
+    src/transfers/legit/routines/credit_cards.cpp
+    src/transfers/legit/routines/paychecks.cpp
+    src/transfers/legit/routines/relatives.cpp
+    src/transfers/legit/routines/family/allowances.cpp
+    src/transfers/legit/routines/family/support.cpp
+    src/transfers/legit/routines/family/tuition.cpp
+    src/transfers/legit/routines/family/parent_gifts.cpp
+    src/transfers/legit/routines/family/siblings.cpp
+    src/transfers/legit/routines/family/grandparent_gifts.cpp
+    src/transfers/legit/routines/family/spouse.cpp
+    src/transfers/legit/routines/family/inheritance.cpp
+    src/transfers/legit/routines/atm.cpp
+    src/transfers/legit/routines/internal.cpp
+    src/transfers/legit/routines/spending.cpp
+    src/transfers/legit/routines/subscriptions.cpp
+)
+
+set(PL_RELATIONSHIPS_SOURCES
+    src/relationships/family/partition.cpp
+    src/relationships/family/links.cpp
+    src/relationships/family/support.cpp
+    src/relationships/family/builder.cpp
+    src/relationships/social/communities.cpp
+    src/relationships/social/sampler.cpp
+    src/relationships/social/builder.cpp
+)
+
+set(PL_EXPORTER_SOURCES
+    src/exporter/csv.cpp
+)
+
+set(PL_INFRA_SYNTH_SOURCES
+    src/infra/synth/rings.cpp
+    src/infra/synth/devices.cpp
+    src/infra/synth/ips.cpp
+)
 # ---------------------------------------------------------------------
 # Library target
 # ---------------------------------------------------------------------
@@ -97,6 +158,11 @@ add_library(phantomledger_core STATIC
     ${PL_ENTITIES_SOURCES}
     ${PL_TRANSFERS_SOURCES}
     ${PL_SPENDING_SOURCES}
+    ${PL_FRAUD_SOURCES}
+    ${PL_LEGIT_SOURCES}
+    ${PL_RELATIONSHIPS_SOURCES}
+    ${PL_EXPORTER_SOURCES}
+    ${PL_INFRA_SYNTH_SOURCES}
 )
 
 target_include_directories(phantomledger_core PUBLIC include)

@@ -33,7 +33,7 @@ struct ProbabilityTable {
   }};
 
   [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
-    return table[personas::indexOf(type)];
+    return table[personas::slot(type)];
   }
 };
 

@@ -1,0 +1,260 @@
+#include "phantomledger/transfers/legit/ledger/passes.hpp"
+
+#include "phantomledger/inflows/rent.hpp"
+#include "phantomledger/inflows/revenue/generate.hpp"
+#include "phantomledger/inflows/salary.hpp"
+#include "phantomledger/inflows/types.hpp"
+#include "phantomledger/math/amounts.hpp"
+#include "phantomledger/transfers/government/disability.hpp"
+#include "phantomledger/transfers/government/recipients.hpp"
+#include "phantomledger/transfers/government/retirement.hpp"
+#include "phantomledger/transfers/legit/routines/atm.hpp"
+#include "phantomledger/transfers/legit/routines/credit_cards.hpp"
+#include "phantomledger/transfers/legit/routines/internal.hpp"
+#include "phantomledger/transfers/legit/routines/paychecks.hpp"
+#include "phantomledger/transfers/legit/routines/relatives.hpp"
+#include "phantomledger/transfers/legit/routines/spending.hpp"
+#include "phantomledger/transfers/legit/routines/subscriptions.hpp"
+
+#include <cstdint>
+#include <functional>
+#include <span>
+#include <stdexcept>
+
+namespace PhantomLedger::transfers::legit::ledger::passes {
+
+namespace {
+
+namespace pl_gov = ::PhantomLedger::transfers::government;
+namespace pl_inflows = ::PhantomLedger::inflows;
+namespace pl_simulator = ::PhantomLedger::spending::simulator;
+
+[[nodiscard]] std::uint32_t
+populationCount(const blueprints::LegitBuildPlan &plan) {
+  if (plan.personas.pack == nullptr) {
+    throw std::invalid_argument("passes requires a populated PersonaPlan.pack");
+  }
+
+  return static_cast<std::uint32_t>(plan.personas.pack->table.byPerson.size());
+}
+
+[[nodiscard]] pl_inflows::HubAccounts
+buildHubAccounts(const blueprints::LegitBuildPlan &plan) {
+  pl_inflows::HubAccounts hubs;
+  hubs.reserve(plan.counterparties.hubSet.size());
+  hubs.insert(plan.counterparties.hubSet.begin(),
+              plan.counterparties.hubSet.end());
+  return hubs;
+}
+
+[[nodiscard]] pl_inflows::Counterparties
+buildInflowCounterparties(const blueprints::Blueprint &request,
+                          const blueprints::LegitBuildPlan &plan) {
+  pl_inflows::Counterparties counterparties{};
+  counterparties.pools = request.overrides.counterpartyPools;
+
+  counterparties.employers =
+      std::span<const entity::Key>(plan.counterparties.employers.data(),
+                                   plan.counterparties.employers.size());
+
+  counterparties.landlords =
+      std::span<const entity::Key>(plan.counterparties.landlords.data(),
+                                   plan.counterparties.landlords.size());
+
+  counterparties.landlordTypes = &plan.counterparties.landlordTypeOf;
+  return counterparties;
+}
+
+[[nodiscard]] pl_inflows::InflowSnapshot
+buildInflowSnapshot(const blueprints::Blueprint &request,
+                    const blueprints::LegitBuildPlan &plan,
+                    const entity::account::Ownership &ownership,
+                    const entity::account::Registry &registry) {
+  return pl_inflows::InflowSnapshot{
+      .timeframe =
+          pl_inflows::Timeframe{
+              .startDate = plan.startDate,
+              .days = plan.days,
+              .monthStarts = plan.monthStarts,
+          },
+      .entropy =
+          pl_inflows::Entropy{
+              .seed = plan.seed,
+              .factory = random::RngFactory{plan.seed},
+          },
+      .population =
+          pl_inflows::Population{
+              populationCount(plan),
+              registry,
+              ownership,
+              plan.personas.pack->assignment,
+              buildHubAccounts(plan),
+          },
+      .counterparties = buildInflowCounterparties(request, plan),
+      .recurringPolicy = request.specs.recurringPolicy,
+  };
+}
+
+[[nodiscard]] pl_gov::Population
+buildGovernmentPopulation(const blueprints::LegitBuildPlan &plan,
+                          const entity::account::Ownership &ownership,
+                          const entity::account::Registry &registry) {
+  return pl_gov::Population{
+      .count = populationCount(plan),
+      .personas = &plan.personas.pack->assignment,
+      .accounts = &registry,
+      .ownership = &ownership,
+  };
+}
+
+} // namespace
+
+bool GovernmentCounterparties::valid() const noexcept {
+  const entity::Key sentinel{};
+  return !(ssa == sentinel) && !(disability == sentinel);
+}
+
+// ---------------------------------------------------------------------------
+// addIncome
+// ---------------------------------------------------------------------------
+
+void addIncome(const blueprints::Blueprint &request,
+               const blueprints::LegitBuildPlan &plan,
+               const transactions::Factory &txf, TxnStreams &streams,
+               const GovernmentCounterparties &govCps) {
+  if (request.timeline.rng == nullptr) {
+    throw std::invalid_argument(
+        "passes::addIncome requires a non-null timeline.rng");
+  }
+
+  if (request.network.accounts == nullptr ||
+      request.network.ownership == nullptr) {
+    throw std::invalid_argument(
+        "passes::addIncome requires accounts and ownership");
+  }
+
+  auto &mainRng = *request.timeline.rng;
+
+  const auto snap = buildInflowSnapshot(
+      request, plan, *request.network.ownership, *request.network.accounts);
+
+  if (request.specs.recurringPolicy != nullptr) {
+    const auto targetPaidFraction =
+        request.specs.recurringPolicy->activation.salary;
+
+    const std::function<double()> salaryModel = [&mainRng]() -> double {
+      return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
+    };
+
+    streams.add(pl_inflows::generateSalaryTxns(
+        snap, mainRng, txf, targetPaidFraction, salaryModel));
+  }
+
+  if (govCps.valid() && request.macro.government != nullptr) {
+    const auto govPopulation = buildGovernmentPopulation(
+        plan, *request.network.ownership, *request.network.accounts);
+
+    streams.add(pl_gov::retirementBenefits(request.macro.government->retirement,
+                                           request.timeline.window, mainRng,
+                                           txf, govPopulation, govCps.ssa));
+
+    streams.add(pl_gov::disabilityBenefits(
+        request.macro.government->disability, request.timeline.window, mainRng,
+        txf, govPopulation, govCps.disability));
+  }
+
+  streams.add(pl_inflows::revenue::generate(snap, txf));
+}
+
+// ---------------------------------------------------------------------------
+// addRoutines
+// ---------------------------------------------------------------------------
+
+void addRoutines(const blueprints::Blueprint &request,
+                 const blueprints::LegitBuildPlan &plan,
+                 const entity::account::Ownership &ownership,
+                 const entity::account::Registry &registry,
+                 const transactions::Factory &txf, TxnStreams &streams,
+                 ScreenBook &screen) {
+  if (request.timeline.rng == nullptr) {
+    throw std::invalid_argument(
+        "passes::addRoutines requires a non-null timeline.rng");
+  }
+
+  auto &rng = *request.timeline.rng;
+
+  streams.add(routines::paychecks::splitDeposits(
+      rng, plan, txf, ownership, registry,
+      std::span<const transactions::Transaction>(streams.candidates())));
+
+  const auto snap = buildInflowSnapshot(request, plan, ownership, registry);
+
+  if (request.specs.recurringPolicy != nullptr) {
+    const auto targetRentFraction =
+        request.specs.recurringPolicy->activation.rent;
+
+    const std::function<double()> rentModel = [&rng]() -> double {
+      return ::PhantomLedger::math::amounts::kRent.sample(rng);
+    };
+
+    streams.add(pl_inflows::generateRentTxns(snap, rng, txf, targetRentFraction,
+                                             rentModel));
+  }
+
+  streams.add(routines::subscriptions::generate(
+      rng, plan, txf, registry,
+      /*book=*/screen.fresh(),
+      /*baseTxns=*/
+      std::span<const transactions::Transaction>(streams.screened()),
+      /*baseTxnsSorted=*/true));
+
+  streams.add(routines::atm::generate(
+      rng, plan, txf, ownership, registry,
+      /*book=*/screen.fresh(),
+      /*baseTxns=*/
+      std::span<const transactions::Transaction>(streams.screened()),
+      /*baseTxnsSorted=*/true));
+
+  streams.add(routines::internal_xfer::generate(
+      rng, plan, txf, ownership, registry,
+      /*book=*/screen.fresh(),
+      /*baseTxns=*/
+      std::span<const transactions::Transaction>(streams.screened()),
+      /*baseTxnsSorted=*/true));
+
+  const pl_simulator::SimulatorConfig spendingCfg{};
+
+  streams.add(routines::spending::generateDayToDayTxns(
+      request, plan, ownership, registry,
+      /*baseTxns=*/
+      std::span<const transactions::Transaction>(streams.screened()),
+      /*screenBook=*/screen.fresh(),
+      /*baseTxnsSorted=*/true, spendingCfg));
+}
+
+// ---------------------------------------------------------------------------
+// addFamily
+// ---------------------------------------------------------------------------
+
+void addFamily(const blueprints::Blueprint &request,
+               const blueprints::LegitBuildPlan &plan,
+               const transactions::Factory &txf, TxnStreams &streams,
+               const family::GraphConfig &graphCfg,
+               const family::TransferConfig &transferCfg) {
+  streams.add(routines::relatives::generateFamilyTxns(request, graphCfg,
+                                                      transferCfg, plan, txf));
+}
+
+// ---------------------------------------------------------------------------
+// addCredit
+// ---------------------------------------------------------------------------
+
+void addCredit(const blueprints::Blueprint &request,
+               const blueprints::LegitBuildPlan &plan,
+               const transactions::Factory &txf, TxnStreams &streams) {
+  streams.add(routines::credit_cards::generateLifecycle(
+      request, plan, txf,
+      std::span<const transactions::Transaction>(streams.candidates())));
+}
+
+} // namespace PhantomLedger::transfers::legit::ledger::passes
