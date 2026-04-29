@@ -23,8 +23,6 @@ struct Population {
       nullptr;
 };
 
-/// Emit monthly premium transactions for every active policy in the
-/// portfolio that overlaps the window. Sorted by timestamp on return.
 [[nodiscard]] std::vector<transactions::Transaction>
 premiums(const time::Window &window, random::Rng &rng,
          const transactions::Factory &txf,

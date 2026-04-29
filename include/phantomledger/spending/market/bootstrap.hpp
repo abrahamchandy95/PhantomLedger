@@ -4,6 +4,7 @@
 #include "phantomledger/spending/config/exploration.hpp"
 #include "phantomledger/spending/config/picking.hpp"
 #include "phantomledger/spending/market/bounds.hpp"
+#include "phantomledger/spending/market/cards.hpp"
 #include "phantomledger/spending/market/commerce/network.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/market/population/census.hpp"
@@ -16,6 +17,8 @@ struct BootstrapInputs {
   Bounds bounds{};
   population::Census census{};
   commerce::Network network{};
+  Cards cards{};
+
   config::MerchantPickRules picking{};
   config::BurstBehavior burst{};
   config::ExplorationHabits exploration{};
@@ -28,6 +31,6 @@ struct BootstrapInputs {
   std::uint16_t billerMax = 6;
 };
 
-[[nodiscard]] Market buildMarket(const BootstrapInputs &inputs);
+[[nodiscard]] Market buildMarket(BootstrapInputs inputs);
 
 } // namespace PhantomLedger::spending::market

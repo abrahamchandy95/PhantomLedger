@@ -1,12 +1,6 @@
 #pragma once
 /*
  * inflows/rent.hpp — rent transaction generator.
- *
- * Iterates the lease state machine month-by-month across the
- * simulation window. Each rent event is routed through
- * RentRouter::pick() so individual landlords produce
- * Zelle/check/ACH mixes while corporate property managers get
- * near-exclusive portal ACH.
  */
 
 #include "phantomledger/inflows/selection.hpp"
@@ -39,7 +33,7 @@ struct ProbabilityTable {
   }};
 
   [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
-    return table[personas::indexOf(type)];
+    return table[personas::slot(type)];
   }
 };
 
