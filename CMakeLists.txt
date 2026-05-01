@@ -177,6 +177,10 @@ set(PL_ALL_SOURCES
     ${PL_PIPELINE_SOURCES}
 )
 
+# ---------------------------------------------------------------------
+# Source-list audit
+# ---------------------------------------------------------------------
+
 file(GLOB_RECURSE PL_DISCOVERED_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
@@ -217,6 +221,10 @@ if(NOT PL_ALL_SOURCES STREQUAL PL_DISCOVERED_SOURCES_REL)
     )
 endif()
 
+# ---------------------------------------------------------------------
+# Library target
+# ---------------------------------------------------------------------
+
 add_library(phantomledger_core STATIC ${PL_ALL_SOURCES})
 
 target_include_directories(phantomledger_core PUBLIC include)
@@ -233,6 +241,50 @@ else()
     endif()
 endif()
 
+# ---------------------------------------------------------------------
+# Header IDE target
+#
+# CMake's compile_commands.json only contains entries for .cpp files.
+# When clangd opens a project header (.hpp under include/), it has no
+# matching entry and falls back to whatever .cpp seems related — which,
+# with faker-cxx in the dependency tree, lands on faker source files
+# whose include paths don't cover our include/ tree.
+#
+# Adding every .hpp to a real CMake target makes CMake emit explicit
+# compile_commands entries for them with our project's include path.
+# clangd no longer has to guess.
+#
+# EXCLUDE_FROM_ALL keeps these out of `make` / `make build` so the
+# normal build doesn't try to compile headers as translation units.
+# The compile_commands entries are still emitted regardless.
+# ---------------------------------------------------------------------
+
+file(GLOB_RECURSE PL_PROJECT_HEADERS CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.hpp"
+)
+
+if(PL_PROJECT_HEADERS)
+    add_library(phantomledger_headers OBJECT EXCLUDE_FROM_ALL
+        ${PL_PROJECT_HEADERS}
+    )
+    set_target_properties(phantomledger_headers PROPERTIES
+        LINKER_LANGUAGE CXX
+    )
+    # Treat .hpp files as C++ sources so CMake actually compiles them
+    # and writes compile_commands.json entries. Without this, CMake
+    # ignores .hpp inputs entirely.
+    set_source_files_properties(${PL_PROJECT_HEADERS} PROPERTIES
+        LANGUAGE CXX
+    )
+    # Inherit phantomledger_core's include paths and compile features
+    # so the entries match real build flags exactly.
+    target_link_libraries(phantomledger_headers PRIVATE phantomledger_core)
+endif()
+
+# ---------------------------------------------------------------------
+# Executable
+# ---------------------------------------------------------------------
+
 add_executable(phantomledger src/main.cpp)
 target_link_libraries(phantomledger PRIVATE phantomledger_core)
 
@@ -246,10 +298,18 @@ else()
     endif()
 endif()
 
+# ---------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------
+
 if(PL_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+# ---------------------------------------------------------------------
+# Install
+# ---------------------------------------------------------------------
 
 include(GNUInstallDirs)
 
