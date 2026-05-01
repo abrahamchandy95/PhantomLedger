@@ -7,30 +7,26 @@
 #include "phantomledger/entities/synth/landlords/scale.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace PhantomLedger::entities::synth::landlords {
 
 using identifiers::Bank;
 using identifiers::Role;
 
-namespace detail {
-
-[[nodiscard]] constexpr std::size_t
-classIndex(entity::landlord::Class kind) noexcept {
-  return static_cast<std::size_t>(kind);
-}
-
-} // namespace detail
+using namespace ::PhantomLedger::entity::landlord;
+using namespace ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] inline Pack makePack(random::Rng &rng, int population,
                                    const Config &cfg = {}) {
   const int total = scale(cfg.perTenK, population, cfg.floor);
 
-  std::array<double, 3> weights{};
+  std::array<double, kTypeCount> weights{};
+
   for (std::size_t i = 0; i < cfg.mix.size(); ++i) {
     weights[i] = cfg.mix[i].weight;
   }
@@ -46,11 +42,10 @@ classIndex(entity::landlord::Class kind) noexcept {
 
   for (int i = 0; i < total; ++i) {
     const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
-    const auto kind = cfg.mix[idx].kind;
-    const auto classIdx = detail::classIndex(kind);
+    const auto type = cfg.mix[idx].type;
+    const auto typeIdx = toIndex(type);
 
-    // Determine banking relationship.
-    const double inBankP = cfg.inBankP.forClass(kind);
+    const double inBankP = cfg.inBankP.forType(type);
     const bool isInternal = rng.coin(inBankP);
     const auto bank = isInternal ? Bank::internal : Bank::external;
 
@@ -58,13 +53,14 @@ classIndex(entity::landlord::Class kind) noexcept {
         isInternal ? ++internalSerial : ++externalSerial;
 
     const auto id = entity::makeKey(Role::landlord, bank, serial);
-
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
-    out.roster.records.push_back(entity::landlord::Record{
+
+    out.roster.records.push_back(Record{
         .accountId = id,
-        .type = kind,
+        .type = type,
     });
-    out.index.byClass[classIdx].push_back(recIx);
+
+    out.index.byClass[typeIdx].push_back(recIx);
 
     if (isInternal) {
       out.internals.push_back(id);

@@ -27,7 +27,7 @@ struct CounterpartyPlan {
 
   std::vector<entity::Key> landlords;
 
-  std::unordered_map<entity::Key, entity::landlord::Class> landlordTypeOf;
+  std::unordered_map<entity::Key, entity::landlord::Type> landlordTypeOf;
 
   std::vector<entity::Key> billerAccounts;
   entity::Key issuerAcct{};

@@ -3,7 +3,7 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/accounts.hpp"
-#include "phantomledger/exporter/standard/external_accounts.hpp"
+#include "phantomledger/exporter/standard/counterparties.hpp"
 #include "phantomledger/exporter/standard/infra.hpp"
 #include "phantomledger/exporter/standard/merchants.hpp"
 #include "phantomledger/exporter/standard/people.hpp"
@@ -11,7 +11,6 @@
 #include "phantomledger/exporter/standard/transfers.hpp"
 
 #include <filesystem>
-#include <utility>
 
 namespace PhantomLedger::exporter::standard {
 
@@ -41,30 +40,37 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(outDir, schema::kPerson);
     writePersonRows(w, entities.people.roster);
   }
+
   {
     auto w = openTable(outDir, schema::kAccountNumber);
     writeAccountNumberRows(w, entities.accounts.registry);
   }
+
   {
     auto w = openTable(outDir, schema::kPhone);
     writePhoneRows(w, entities.pii);
   }
+
   {
     auto w = openTable(outDir, schema::kEmail);
     writeEmailRows(w, entities.pii);
   }
+
   {
     auto w = openTable(outDir, schema::kDevice);
     writeDeviceRows(w, infra.devices);
   }
+
   {
     auto w = openTable(outDir, schema::kIpAddress);
     writeIpAddressRows(w, infra.ips);
   }
+
   {
     auto w = openTable(outDir, schema::kMerchant);
     writeMerchantRows(w, entities.merchants.catalog);
   }
+
   {
     auto w = openTable(outDir, schema::kExternalAccount);
     writeExternalAccountRows(w, entities.accounts.registry,
@@ -76,22 +82,27 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(outDir, schema::kHasAccount);
     writeHasAccountRows(w, entities.accounts.registry);
   }
+
   {
     auto w = openTable(outDir, schema::kHasPhone);
     writeHasPhoneRows(w, entities.pii);
   }
+
   {
     auto w = openTable(outDir, schema::kHasEmail);
     writeHasEmailRows(w, entities.pii);
   }
+
   {
     auto w = openTable(outDir, schema::kHasUsed);
     writeHasUsedRows(w, infra.devices);
   }
+
   {
     auto w = openTable(outDir, schema::kHasIp);
     writeHasIpRows(w, infra.ips);
   }
+
   {
     auto w = openTable(outDir, schema::kHasPaid);
     writeHasPaidRows(w, transfers.finalTxns);

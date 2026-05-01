@@ -42,7 +42,8 @@ inline constexpr auto kProbabilityByPersona = buildProbabilityTable();
 } // namespace detail
 
 [[nodiscard]] constexpr double probability(personas::Type type) noexcept {
-  return detail::kProbabilityByPersona[detail::toIndex(type)];
+  return detail::kProbabilityByPersona
+      [::PhantomLedger::taxonomies::enums::toIndex(type)];
 }
 
 using HomeownerCheck = std::function<bool(PersonId)>;
@@ -66,17 +67,21 @@ struct RentPayer {
   return probability(population.persona(person));
 }
 
+[[nodiscard]] inline auto makePayerSelector(const InflowSnapshot &snapshot,
+                                            const HomeownerCheck &isHomeowner) {
+  return selection::makeSelector(
+      [&snapshot, &isHomeowner](PersonId person) {
+        return candidate(snapshot.population, person, isHomeowner);
+      },
+      [&snapshot](PersonId person) {
+        return baseProbability(snapshot.population, person);
+      });
+}
+
+template <class Selector>
 [[nodiscard]] inline std::vector<RentPayer>
 selectPayers(const InflowSnapshot &snapshot, random::Rng &rng, double scale,
-             const HomeownerCheck &isHomeowner) {
-  const auto selector = selection::makeSelector(
-      [&](PersonId person) {
-        return rent::candidate(snapshot.population, person, isHomeowner);
-      },
-      [&](PersonId person) {
-        return rent::baseProbability(snapshot.population, person);
-      });
-
+             const Selector &selector) {
   std::vector<RentPayer> out;
   out.reserve(snapshot.population.count);
 
@@ -94,11 +99,6 @@ selectPayers(const InflowSnapshot &snapshot, random::Rng &rng, double scale,
   return out;
 }
 
-// Per-payer state carried across months. payerKey is precomputed once
-// in the init pass and reused on every month iteration, saving one
-// std::to_string() allocation per payer per month. The lease lives
-// inline instead of in an unordered_map<Key, Lease>, so the month
-// loop iterates contiguous memory and does zero hash lookups.
 struct PayerState {
   PersonId person;
   Key account;
@@ -120,14 +120,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     return {};
   }
 
-  const auto selector = selection::makeSelector(
-      [&](PersonId person) {
-        return rent::candidate(snapshot.population, person, isHomeowner);
-      },
-      [&](PersonId person) {
-        return rent::baseProbability(snapshot.population, person);
-      });
-
+  const auto selector = rent::makePayerSelector(snapshot, isHomeowner);
   const double scale =
       selector.fitScale(snapshot.population.count, targetRentFraction);
 
@@ -135,7 +128,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     return {};
   }
 
-  const auto rentPayers = rent::selectPayers(snapshot, rng, scale, isHomeowner);
+  const auto rentPayers = rent::selectPayers(snapshot, rng, scale, selector);
   if (rentPayers.empty()) {
     return {};
   }
@@ -206,7 +199,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
                                           });
 
       const auto channel = router.pick(
-          rng, snapshot.counterparties.landlordClass(ps.lease.landlordAcct));
+          rng, snapshot.counterparties.landlordType(ps.lease.landlordAcct));
 
       txns.push_back(txf.make(transactions::Draft{
           .source = ps.account,

@@ -1,14 +1,4 @@
 #pragma once
-/*
- * inflows/types.hpp — shared inflow data and helpers.
- *
- * Structure:
- *   - Timeframe      : simulation dates / month anchors
- *   - Entropy        : deterministic RNG inputs
- *   - Population     : person/account/persona lookups (refs, not ptrs)
- *   - Counterparties : employers, landlords, and external pools
- *   - InflowSnapshot : composed read-only inflow state
- */
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/behaviors.hpp"
@@ -41,7 +31,7 @@ using TimePoint = time::TimePoint;
 // ---------------------------------------------------------------
 
 using LandlordTypes =
-    std::unordered_map<Key, entity::landlord::Class, std::hash<Key>>;
+    std::unordered_map<Key, entity::landlord::Type, std::hash<Key>>;
 
 using HubAccounts = std::unordered_set<Key, std::hash<Key>>;
 
@@ -88,9 +78,11 @@ public:
   [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
     return accounts_;
   }
+
   [[nodiscard]] const entity::account::Ownership &ownership() const noexcept {
     return ownership_;
   }
+
   [[nodiscard]] const entity::behavior::Assignment &personas() const noexcept {
     return personas_;
   }
@@ -120,29 +112,35 @@ public:
 
   [[nodiscard]] Key primary(PersonId person) const noexcept {
     assert(hasAccount(person));
+
     const auto ix = ownership_.primaryIndex(person);
     assert(ix < accounts_.records.size());
+
     return accounts_.records[ix].id;
   }
 
   [[nodiscard]] bool isHub(PersonId person) const noexcept {
     assert(hasAccount(person));
+
     return hubs.contains(primary(person));
   }
 
   [[nodiscard]] personas::Type persona(PersonId person) const noexcept {
     assert(exists(person));
     assert(static_cast<std::size_t>(person - 1) < personas_.byPerson.size());
+
     return personas_.byPerson[person - 1];
   }
 
   [[nodiscard]] bool owns(PersonId person, const Key &id) const noexcept {
     for (const auto ix : accountIndices(person)) {
       assert(ix < accounts_.records.size());
+
       if (accounts_.records[ix].id == id) {
         return true;
       }
     }
+
     return false;
   }
 
@@ -169,15 +167,18 @@ struct Counterparties {
 
   [[nodiscard]] bool hasPools() const noexcept { return pools != nullptr; }
 
-  [[nodiscard]] std::optional<entity::landlord::Class>
-  landlordClass(const Key &landlord) const noexcept {
+  [[nodiscard]] std::optional<entity::landlord::Type>
+  landlordType(const Key &landlord) const noexcept {
     if (landlordTypes == nullptr) {
       return std::nullopt;
     }
+
     const auto it = landlordTypes->find(landlord);
+
     if (it == landlordTypes->end()) {
       return std::nullopt;
     }
+
     return it->second;
   }
 };
@@ -199,6 +200,7 @@ struct InflowSnapshot {
 
   [[nodiscard]] const recurring::Policy &policy() const noexcept {
     assert(recurringPolicy != nullptr);
+
     return *recurringPolicy;
   }
 };

@@ -1,12 +1,4 @@
 #pragma once
-/*
- * Rent payment channel routing.
- *
- * Given a landlord type, picks a payment channel using the per-type
- * distribution from the landlord config. Individual landlords get
- * Zelle/check/ACH mixes; corporate property managers get near-exclusive
- * portal ACH.
- */
 
 #include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
@@ -70,23 +62,21 @@ inline constexpr ChannelTable<2> kCorporateChannels{
 class RentRouter {
 public:
   /// Pick a channel for one rent event.
-  ///
-  /// Returns the generic rent channel if the landlord class is unknown.
   [[nodiscard]] channels::Tag
   pick(random::Rng &rng,
-       std::optional<entity::landlord::Class> landlordClass) const {
-    using Class = entity::landlord::Class;
+       std::optional<entity::landlord::Type> landlordType) const {
+    using Type = entity::landlord::Type;
 
-    if (!landlordClass.has_value()) {
+    if (!landlordType.has_value()) {
       return detail::kFallbackChannel;
     }
 
-    switch (*landlordClass) {
-    case Class::individual:
+    switch (*landlordType) {
+    case Type::individual:
       return detail::kIndividualChannels.pick(rng);
-    case Class::llcSmall:
+    case Type::llcSmall:
       return detail::kLlcSmallChannels.pick(rng);
-    case Class::corporate:
+    case Type::corporate:
       return detail::kCorporateChannels.pick(rng);
     }
 

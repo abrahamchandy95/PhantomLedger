@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 
+#include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -100,7 +101,7 @@ primaryAcctRecordIxByPerson(const Network &network) {
 
 struct LandlordResolution {
   std::vector<entity::Key> ids;
-  std::unordered_map<entity::Key, entity::landlord::Class> typeOf;
+  std::unordered_map<entity::Key, entity::landlord::Type> typeOf;
 };
 
 [[nodiscard]] LandlordResolution
