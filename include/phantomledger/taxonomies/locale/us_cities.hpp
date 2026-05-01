@@ -622,7 +622,8 @@ static_assert(cityRangesAreValid());
 
 [[nodiscard]] constexpr std::span<const std::string_view>
 citiesFor(State state) noexcept {
-  const auto range = detail::kStateCityRanges[toIndex(state)];
+  const auto range =
+      detail::kStateCityRanges[taxonomies::enums::toIndex(state)];
   return std::span<const std::string_view>{
       detail::kAllUsCities.data() + range.offset, range.count};
 }

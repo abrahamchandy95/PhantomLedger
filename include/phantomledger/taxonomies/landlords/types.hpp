@@ -8,7 +8,7 @@
 
 namespace PhantomLedger::landlords {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 enum class Type : std::uint8_t {
   individual = 0,
@@ -24,6 +24,6 @@ inline constexpr auto kTypes = std::to_array<Type>({
 
 inline constexpr std::size_t kTypeCount = kTypes.size();
 
-static_assert(isIndexable(kTypes));
+static_assert(enumTax::isIndexable(kTypes));
 
 } // namespace PhantomLedger::landlords

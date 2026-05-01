@@ -1,40 +1,18 @@
 #pragma once
-/*
- * Payroll profile and pay cadence.
- *
- * Defines how an employer pays its employees: weekly, biweekly,
- * semimonthly, or monthly, along with anchor dates, weekend roll
- * conventions, and posting lag.
- */
 
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/taxonomies/recurring/types.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::recurring {
 
-enum class PayCadence : std::uint8_t {
-  weekly = 0,
-  biweekly = 1,
-  semimonthly = 2,
-  monthly = 3,
-};
-
-inline constexpr std::size_t kPayCadenceCount = 4;
-
-enum class WeekendRoll : std::uint8_t {
-  previousBusinessDay = 0,
-  nextBusinessDay = 1,
-  none = 2,
-};
-
 struct PayrollProfile {
   PayCadence cadence = PayCadence::biweekly;
   time::TimePoint anchorDate{};
-  int weekday = 4; // Friday (Mon=0)
+  int weekday = 4;
 
   // Semimonthly only.
   std::array<int, 2> semimonthlyDays = {15, 31};

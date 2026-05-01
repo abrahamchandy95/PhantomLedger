@@ -1,17 +1,4 @@
 #pragma once
-/*
- * Balance book initialization.
- *
- * Bootstraps the Ledger with per-persona randomized balances,
- * protection type (NONE / COURTESY / LINKED / LOC), bank tier
- * (ZERO_FEE / REDUCED_FEE / STANDARD_FEE), overdraft fee amount, and
- * LOC parameters (APR, billing day).
- *
- * Bank tier is an independent draw from the 15/10/75 tier weights.
- * The overdraft fee amount is drawn once per account from the
- * tier-specific lognormal, stored on the ledger, and used later when
- * transferAt() fires an OVERDRAFT_FEE liquidity event.
- */
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/behaviors.hpp"
@@ -19,6 +6,8 @@
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/taxonomies/clearing/types.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/clearing/protection.hpp"
@@ -34,36 +23,95 @@ namespace PhantomLedger::clearing {
 
 /// Per-persona sampling parameters.
 struct PersonaBufferProfile {
-  double balanceMedian;
+  double balanceMedian = 0.0;
 
-  // Protection shares (sum must be <= 1.0).
-  PersonaProtectionShares shares;
+  // Protection shares must sum to <= 1.0.
+  PersonaProtectionShares shares{};
 
   // Conditional buffer medians.
-  double courtesyMedian;
-  double linkedMedian;
-  double locCreditLimitMedian;
+  double courtesyMedian = 0.0;
+  double linkedMedian = 0.0;
+  double locCreditLimitMedian = 0.0;
 };
+
+namespace detail {
+
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
+
+static_assert(enumTax::isIndexable(personas::kTypes));
+
+inline constexpr std::array<PersonaBufferProfile, personas::kTypeCount>
+    kBufferProfiles{{
+        // personas::Type::student
+        {
+            .balanceMedian = 200.0,
+            .shares = {.courtesy = 0.12, .linked = 0.08, .loc = 0.02},
+            .courtesyMedian = 65.0,
+            .linkedMedian = 225.0,
+            .locCreditLimitMedian = 800.0,
+        },
+
+        // personas::Type::retiree
+        {
+            .balanceMedian = 1500.0,
+            .shares = {.courtesy = 0.16, .linked = 0.22, .loc = 0.04},
+            .courtesyMedian = 100.0,
+            .linkedMedian = 500.0,
+            .locCreditLimitMedian = 2500.0,
+        },
+
+        // personas::Type::freelancer
+        {
+            .balanceMedian = 900.0,
+            .shares = {.courtesy = 0.16, .linked = 0.18, .loc = 0.12},
+            .courtesyMedian = 120.0,
+            .linkedMedian = 600.0,
+            .locCreditLimitMedian = 4000.0,
+        },
+
+        // personas::Type::smallBusiness
+        {
+            .balanceMedian = 8000.0,
+            .shares = {.courtesy = 0.20, .linked = 0.24, .loc = 0.20},
+            .courtesyMedian = 180.0,
+            .linkedMedian = 2200.0,
+            .locCreditLimitMedian = 7000.0,
+        },
+
+        // personas::Type::highNetWorth
+        {
+            .balanceMedian = 25000.0,
+            .shares = {.courtesy = 0.22, .linked = 0.30, .loc = 0.28},
+            .courtesyMedian = 250.0,
+            .linkedMedian = 10000.0,
+            .locCreditLimitMedian = 15000.0,
+        },
+
+        // personas::Type::salaried
+        {
+            .balanceMedian = 1200.0,
+            .shares = {.courtesy = 0.18, .linked = 0.24, .loc = 0.12},
+            .courtesyMedian = 140.0,
+            .linkedMedian = 700.0,
+            .locCreditLimitMedian = 3000.0,
+        },
+    }};
+
+static_assert(kBufferProfiles.size() == personas::kTypeCount);
+
+} // namespace detail
 
 /// Persona-indexed table.
 [[nodiscard]] constexpr PersonaBufferProfile
 bufferProfile(personas::Type type) noexcept {
-  switch (type) {
-  case personas::Type::student:
-    return {200.0, {0.12, 0.08, 0.02}, 65.0, 225.0, 800.0};
-  case personas::Type::retiree:
-    return {1500.0, {0.16, 0.22, 0.04}, 100.0, 500.0, 2500.0};
-  case personas::Type::freelancer:
-    return {900.0, {0.16, 0.18, 0.12}, 120.0, 600.0, 4000.0};
-  case personas::Type::smallBusiness:
-    return {8000.0, {0.20, 0.24, 0.20}, 180.0, 2200.0, 7000.0};
-  case personas::Type::highNetWorth:
-    return {25000.0, {0.22, 0.30, 0.28}, 250.0, 10000.0, 15000.0};
-  case personas::Type::salaried:
-    return {1200.0, {0.18, 0.24, 0.12}, 140.0, 700.0, 3000.0};
+  const auto index = detail::enumTax::toIndex(type);
+
+  if (index >= detail::kBufferProfiles.size()) {
+    return detail::kBufferProfiles[detail::enumTax::toIndex(
+        personas::Type::salaried)];
   }
 
-  return bufferProfile(personas::Type::salaried);
+  return detail::kBufferProfiles[index];
 }
 
 /// Configuration knobs for the balance sampling distributions.
@@ -82,6 +130,18 @@ namespace detail {
 
 inline constexpr double kHubCash = 1e18;
 
+static_assert(kBankTiers.size() == kBankTierCount);
+
+inline constexpr std::array<ProtectionType, kProtectionTypeCount>
+    kProtectionSamplingOrder{
+        ProtectionType::courtesy,
+        ProtectionType::linked,
+        ProtectionType::loc,
+        ProtectionType::none,
+    };
+
+static_assert(kProtectionSamplingOrder.size() == kProtectionTypeCount);
+
 [[nodiscard]] inline double clampSigma(double sigma,
                                        bool enableConstraints) noexcept {
   return enableConstraints ? std::max(0.0, sigma) : sigma;
@@ -92,6 +152,7 @@ inline constexpr double kHubCash = 1e18;
                                         bool enableConstraints) {
   const double safeMedian = enableConstraints ? std::max(median, 0.01) : median;
   const double safeSigma = clampSigma(sigma, enableConstraints);
+
   return primitives::utils::floorAndRound(
       probability::distributions::lognormalByMedian(rng, safeMedian, safeSigma),
       floor);
@@ -125,53 +186,49 @@ hasPrimaryAccount(const entity::account::Ownership &ownership,
 
   const auto begin = ownership.byPersonOffset[personIndex];
   const auto end = ownership.byPersonOffset[personIndex + 1];
+
   return begin < end && begin < ownership.byPersonIndex.size();
 }
 
 [[nodiscard]] inline BankTier sampleTier(random::Rng &rng,
                                          const TierWeights &weights) {
-  const std::array<double, 3> w = {
+  const std::array<double, kBankTierCount> tierWeights = {
       weights.zeroFee,
       weights.reducedFee,
       weights.standardFee,
   };
-  const auto cdf = distributions::buildCdf(w);
+
+  const auto cdf = distributions::buildCdf(tierWeights);
   const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
-  return static_cast<BankTier>(idx);
+
+  return kBankTiers[idx];
 }
 
 [[nodiscard]] inline double sampleOverdraftFee(random::Rng &rng, BankTier tier,
                                                bool enableConstraints) {
   const auto profile = tierFeeProfile(tier);
+
   if (profile.median <= 0.0) {
     return 0.0;
   }
+
   return sampleMoney(rng, profile.median, profile.sigma, 0.0,
                      enableConstraints);
 }
 
 [[nodiscard]] inline ProtectionType
 sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
-  // Four-way categorical over courtesy / linked / loc / none.
-  const std::array<double, 4> w = {
+  const std::array<double, kProtectionSamplingOrder.size()> weights = {
       shares.courtesy,
       shares.linked,
       shares.loc,
       shares.none(),
   };
-  const auto cdf = distributions::buildCdf(w);
+
+  const auto cdf = distributions::buildCdf(weights);
   const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
 
-  switch (idx) {
-  case 0:
-    return ProtectionType::courtesy;
-  case 1:
-    return ProtectionType::linked;
-  case 2:
-    return ProtectionType::loc;
-  default:
-    return ProtectionType::none;
-  }
+  return kProtectionSamplingOrder[idx];
 }
 
 [[nodiscard]] inline double sampleBufferAmount(random::Rng &rng,
@@ -181,34 +238,25 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
   switch (type) {
   case ProtectionType::none:
     return 0.0;
+
   case ProtectionType::courtesy:
     return sampleMoney(rng, prof.courtesyMedian, rules.courtesySigma, 0.0,
                        rules.enableConstraints);
+
   case ProtectionType::linked:
     return sampleMoney(rng, prof.linkedMedian, rules.linkedSigma, 0.0,
                        rules.enableConstraints);
+
   case ProtectionType::loc:
     return sampleMoney(rng, prof.locCreditLimitMedian,
                        rules.locCreditLimitSigma, 0.0, rules.enableConstraints);
   }
+
   return 0.0;
 }
 
 } // namespace detail
 
-/// Bootstrap a Ledger with randomized balances, protection, tier, and
-/// LOC parameters.
-///
-/// For each internal account with an owner:
-///   1. Sample cash balance (lognormal around persona median).
-///   2. Sample bank tier from the 15/10/75 weights.
-///   3. Sample overdraft fee amount from the tier's lognormal.
-///   4. Sample protection type from the persona's 4-way categorical.
-///   5. Sample buffer amount conditional on protection type.
-///   6. For LOC accounts, sample APR and billing day.
-///
-/// Hub accounts get effectively infinite cash, NONE protection, and
-/// ZERO_FEE tier. External accounts are skipped entirely.
 inline void
 bootstrap(Ledger &ledger, random::Rng &rng,
           const entity::account::Registry &registry,
@@ -217,6 +265,7 @@ bootstrap(Ledger &ledger, random::Rng &rng,
           const std::unordered_set<Ledger::Index> &hubIndices,
           const BalanceRules &rules = {}) {
   const auto count = static_cast<Ledger::Index>(registry.records.size());
+
   if (count == 0) {
     return;
   }
@@ -254,7 +303,7 @@ bootstrap(Ledger &ledger, random::Rng &rng,
         detail::sampleOverdraftFee(rng, tier, rules.enableConstraints);
     ledger.setBankTier(idx, tier, fee);
 
-    // 4-5. Protection type (mutually exclusive) and buffer amount.
+    // 4-5. Protection type and buffer amount.
     const auto protection = detail::sampleProtectionType(rng, profile.shares);
     const double buffer =
         detail::sampleBufferAmount(rng, protection, profile, rules);
@@ -265,21 +314,16 @@ bootstrap(Ledger &ledger, random::Rng &rng,
       const double apr = std::max(
           0.0, probability::distributions::normal(
                    rng, rules.locDefaults.aprMean, rules.locDefaults.aprSigma));
+
       const int billingDay =
           static_cast<int>(rng.uniformInt(rules.locDefaults.billingDayMin,
                                           rules.locDefaults.billingDayMax + 1));
+
       ledger.setLoc(idx, apr, billingDay);
     }
   }
 }
 
-/// Add a burden buffer to each person's primary account.
-///
-/// Adds `fraction` of the person's estimated monthly fixed obligation
-/// burden (mortgage + auto loan + student loan + insurance + tax) to
-/// their primary account's cash balance. This prevents the first
-/// month's obligations from immediately overdrawing a newly
-/// bootstrapped ledger.
 inline void addBurdenBuffer(Ledger &ledger,
                             const entity::account::Ownership &ownership,
                             const std::vector<double> &monthlyBurdens,
@@ -290,6 +334,7 @@ inline void addBurdenBuffer(Ledger &ledger,
 
   for (entity::PersonId person = 1; person <= people; ++person) {
     const auto burdenIndex = static_cast<std::size_t>(person - 1);
+
     if (burdenIndex >= monthlyBurdens.size()) {
       continue;
     }
@@ -299,12 +344,14 @@ inline void addBurdenBuffer(Ledger &ledger,
     }
 
     const auto idx = ownership.primaryIndex(person);
+
     if (idx >= ledger.size()) {
       throw std::out_of_range(
           "addBurdenBuffer: primary account index exceeds ledger size");
     }
 
     const double burden = monthlyBurdens[burdenIndex];
+
     if (burden > 0.0) {
       ledger.cash(idx) =
           primitives::utils::roundMoney(ledger.cash(idx) + fraction * burden);

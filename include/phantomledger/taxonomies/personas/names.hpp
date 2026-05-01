@@ -11,12 +11,12 @@
 
 namespace PhantomLedger::personas {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 namespace detail {
 
-static_assert(isIndexable(kTypes));
-static_assert(isIndexable(kTimings));
+static_assert(enumTax::isIndexable(kTypes));
+static_assert(enumTax::isIndexable(kTimings));
 
 inline constexpr auto kTypeEntries = std::to_array<lookup::Entry<Type>>({
     {"student", Type::student},
@@ -40,10 +40,10 @@ inline constexpr auto kSortedTypes = lookup::sorted(kTypeEntries);
 inline constexpr auto kSortedTimings = lookup::sorted(kTimingEntries);
 
 inline constexpr auto kTypeNames = lookup::reverseTableDense<kTypeCount>(
-    kTypeEntries, [](Type type) { return toIndex(type); });
+    kTypeEntries, [](Type type) { return enumTax::toIndex(type); });
 
 inline constexpr auto kTimingNames = lookup::reverseTableDense<kTimingCount>(
-    kTimingEntries, [](Timing timing) { return toIndex(timing); });
+    kTimingEntries, [](Timing timing) { return enumTax::toIndex(timing); });
 
 inline constexpr bool kValidated =
     (lookup::requireUniqueNames(kSortedTypes),
@@ -52,11 +52,11 @@ inline constexpr bool kValidated =
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view name(Type type) noexcept {
-  return detail::kTypeNames[toIndex(type)];
+  return detail::kTypeNames[enumTax::toIndex(type)];
 }
 
 [[nodiscard]] constexpr std::string_view name(Timing timing) noexcept {
-  return detail::kTimingNames[toIndex(timing)];
+  return detail::kTimingNames[enumTax::toIndex(timing)];
 }
 
 [[nodiscard]] constexpr std::optional<Type>

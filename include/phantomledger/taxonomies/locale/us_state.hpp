@@ -10,7 +10,7 @@
 
 namespace PhantomLedger::locale::us {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 enum class State : std::uint8_t {
   al = 0,
@@ -82,7 +82,7 @@ inline constexpr std::size_t kStateCount = kStates.size();
 
 namespace detail {
 
-static_assert(isIndexable(kStates));
+static_assert(enumTax::isIndexable(kStates));
 
 inline constexpr auto kStateAbbrev = std::to_array<std::string_view>({
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI",
@@ -118,11 +118,11 @@ static_assert(kStateName.size() == kStateCount);
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view abbrev(State state) noexcept {
-  return detail::kStateAbbrev[toIndex(state)];
+  return detail::kStateAbbrev[enumTax::toIndex(state)];
 }
 
 [[nodiscard]] constexpr std::string_view fullName(State state) noexcept {
-  return detail::kStateName[toIndex(state)];
+  return detail::kStateName[enumTax::toIndex(state)];
 }
 
 [[nodiscard]] constexpr std::optional<State>
@@ -208,7 +208,7 @@ static_assert(kStateZipRanges.size() == kStateCount);
 } // namespace detail
 
 [[nodiscard]] constexpr ZipRange zipRangeFor(State state) noexcept {
-  return detail::kStateZipRanges[toIndex(state)];
+  return detail::kStateZipRanges[enumTax::toIndex(state)];
 }
 
 // --- Population weights ------------------------------------------
@@ -228,7 +228,7 @@ static_assert(kStatePopulationBp.size() == kStateCount);
 
 [[nodiscard]] constexpr std::uint16_t
 populationBasisPoints(State state) noexcept {
-  return detail::kStatePopulationBp[toIndex(state)];
+  return detail::kStatePopulationBp[enumTax::toIndex(state)];
 }
 
 } // namespace PhantomLedger::locale::us

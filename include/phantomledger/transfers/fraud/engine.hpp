@@ -8,6 +8,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
+#include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
@@ -24,15 +25,7 @@ namespace PhantomLedger::transfers::fraud {
 // ---------------------------------------------------------------------------
 // Typology selection
 // ---------------------------------------------------------------------------
-
-enum class Typology : std::uint8_t {
-  classic = 0,
-  layering = 1,
-  funnel = 2,
-  structuring = 3,
-  invoice = 4,
-  mule = 5,
-};
+using ::PhantomLedger::fraud::Typology;
 
 struct TypologyWeights {
   double classic = 0.30;

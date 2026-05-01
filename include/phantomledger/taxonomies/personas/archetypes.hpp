@@ -8,7 +8,7 @@
 
 namespace PhantomLedger::personas {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 // --- Archetypes --------------------------------------------------
 
@@ -31,7 +31,7 @@ struct BetaParams {
 
 namespace detail {
 
-static_assert(isIndexable(kTypes));
+static_assert(enumTax::isIndexable(kTypes));
 
 inline constexpr auto kArchetypes = std::to_array<Archetype>({
     {0.7, 0.7, Timing::consumer, 200.0, 0.25, 0.55, 800.0, 0.18, 0.67},
@@ -57,26 +57,26 @@ static_assert(kPaycheckBetas.size() == kTypeCount);
 } // namespace detail
 
 [[nodiscard]] constexpr Archetype archetype(Type type) noexcept {
-  return detail::kArchetypes[toIndex(type)];
+  return detail::kArchetypes[enumTax::toIndex(type)];
 }
 
 [[nodiscard]] constexpr BetaParams paycheckBeta(Type type) noexcept {
-  return detail::kPaycheckBetas[toIndex(type)];
+  return detail::kPaycheckBetas[enumTax::toIndex(type)];
 }
 
 // Default population share per persona.
 [[nodiscard]] consteval std::array<double, kTypeCount> buildShares() {
   std::array<double, kTypeCount> out{};
 
-  out[toIndex(Type::student)] = 0.12;
-  out[toIndex(Type::retiree)] = 0.10;
-  out[toIndex(Type::freelancer)] = 0.10;
-  out[toIndex(Type::smallBusiness)] = 0.06;
-  out[toIndex(Type::highNetWorth)] = 0.02;
+  out[enumTax::toIndex(Type::student)] = 0.12;
+  out[enumTax::toIndex(Type::retiree)] = 0.10;
+  out[enumTax::toIndex(Type::freelancer)] = 0.10;
+  out[enumTax::toIndex(Type::smallBusiness)] = 0.06;
+  out[enumTax::toIndex(Type::highNetWorth)] = 0.02;
 
   double assigned = 0.0;
   for (std::size_t index = 0; index < kTypeCount; ++index) {
-    if (index != toIndex(Type::salaried)) {
+    if (index != enumTax::toIndex(Type::salaried)) {
       assigned += out[index];
     }
   }
@@ -85,14 +85,14 @@ static_assert(kPaycheckBetas.size() == kTypeCount);
     throw "default persona shares exceed 1.0";
   }
 
-  out[toIndex(Type::salaried)] = 1.0 - assigned;
+  out[enumTax::toIndex(Type::salaried)] = 1.0 - assigned;
   return out;
 }
 
 inline constexpr auto kShares = buildShares();
 
 [[nodiscard]] constexpr double share(Type type) noexcept {
-  return kShares[toIndex(type)];
+  return kShares[enumTax::toIndex(type)];
 }
 
 } // namespace PhantomLedger::personas
