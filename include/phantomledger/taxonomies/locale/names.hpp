@@ -8,11 +8,11 @@
 
 namespace PhantomLedger::locale {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 namespace detail {
 
-static_assert(isIndexable(kCountries));
+static_assert(enumTax::isIndexable(kCountries));
 
 inline constexpr auto kCountryCodes = std::to_array<std::string_view>({
     "US",
@@ -38,7 +38,7 @@ static_assert(kCountryCodes.size() == kCountryCount);
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view code(Country country) noexcept {
-  return detail::kCountryCodes[toIndex(country)];
+  return detail::kCountryCodes[enumTax::toIndex(country)];
 }
 
 [[nodiscard]] constexpr std::string_view

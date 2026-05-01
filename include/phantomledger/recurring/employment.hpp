@@ -1,12 +1,4 @@
 #pragma once
-/*
- * Employment state machine.
- *
- * Tracks the lifecycle of a person's job: employer assignment,
- * payroll cadence, salary with compounding raises, and job
- * transitions (switch to new employer with bump). Each person
- * has exactly one Employment state at any time.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
@@ -17,6 +9,7 @@
 #include "phantomledger/recurring/growth.hpp"
 #include "phantomledger/recurring/payroll.hpp"
 #include "phantomledger/recurring/policy.hpp"
+#include "phantomledger/taxonomies/recurring/types.hpp"
 
 #include <algorithm>
 #include <array>
@@ -49,13 +42,6 @@ samplePayrollProfile(const PayrollPolicy &payrollPolicy,
   const auto key = std::to_string(employerAcct.number);
   auto rng = factory.rng({"employer_payroll_profile", key});
 
-  const std::array<PayCadence, kPayCadenceCount> cadences = {
-      PayCadence::weekly,
-      PayCadence::biweekly,
-      PayCadence::semimonthly,
-      PayCadence::monthly,
-  };
-
   const auto &weights = payrollPolicy.weights;
   const std::array<double, kPayCadenceCount> cadenceWeights = {
       weights.weekly,
@@ -66,8 +52,7 @@ samplePayrollProfile(const PayrollPolicy &payrollPolicy,
 
   const auto cdf = distributions::buildCdf(cadenceWeights);
   const auto cadence =
-      cadences[distributions::sampleIndex(cdf, rng.nextDouble())];
-
+      kPayCadences[distributions::sampleIndex(cdf, rng.nextDouble())];
   int weekday = payrollPolicy.defaultWeekday;
   if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&
       rng.coin(0.25)) {

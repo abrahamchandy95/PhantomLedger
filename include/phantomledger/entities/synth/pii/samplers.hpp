@@ -19,7 +19,8 @@
 
 namespace PhantomLedger::entities::synth::pii {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace pii = ::PhantomLedger::entity::pii;
+
 namespace detail {
 
 [[nodiscard]] constexpr std::size_t digits10(std::uint64_t v) noexcept {
@@ -78,15 +79,16 @@ inline void copyTruncate(char *dest, std::size_t bufSize,
 
 [[nodiscard]] inline entity::pii::Email
 sampleEmail(entity::PersonId person) noexcept {
-  using namespace entity::pii;
 
-  Email out{};
-  std::memcpy(out.bytes.data(), kEmailPrefix.data(), kEmailPrefix.size());
-  detail::writeZeroPadded(out.bytes.data() + kEmailPrefix.size(),
+  pii::Email out{};
+  std::memcpy(out.bytes.data(), pii::kEmailPrefix.data(),
+              pii::kEmailPrefix.size());
+  detail::writeZeroPadded(out.bytes.data() + pii::kEmailPrefix.size(),
                           static_cast<std::uint64_t>(person),
-                          kCustomerDigitWidth);
-  std::memcpy(out.bytes.data() + kEmailPrefix.size() + kCustomerDigitWidth,
-              kEmailSuffix.data(), kEmailSuffix.size());
+                          pii::kCustomerDigitWidth);
+  std::memcpy(out.bytes.data() + pii::kEmailPrefix.size() +
+                  pii::kCustomerDigitWidth,
+              pii::kEmailSuffix.data(), pii::kEmailSuffix.size());
   return out;
 }
 
@@ -141,7 +143,6 @@ struct PhoneShape {
 
 [[nodiscard]] inline entity::pii::Phone samplePhone(random::Rng &rng,
                                                     locale::Country country) {
-  using namespace entity::pii;
   const auto shape = detail::phoneShape(country);
 
   std::array<char, 15> digitBuf{};
@@ -151,7 +152,7 @@ struct PhoneShape {
         static_cast<char>('0' + rng.uniformInt(0, 10));
   }
 
-  Phone out{};
+  pii::Phone out{};
   std::memcpy(out.bytes.data(), shape.callingCode.data(),
               shape.callingCode.size());
   std::memcpy(out.bytes.data() + shape.callingCode.size(), digitBuf.data(),
@@ -181,7 +182,6 @@ struct PhoneShape {
 
 [[nodiscard]] inline entity::pii::Ssn sampleSsn(random::Rng &rng,
                                                 locale::Country country) {
-  using namespace entity::pii;
 
   // Buffer we'll truncate-copy into the fixed-width Ssn at the end.
   std::array<char, 16> tmp{};
@@ -256,7 +256,7 @@ struct PhoneShape {
     break;
   }
 
-  Ssn out{};
+  pii::Ssn out{};
   detail::copyTruncate(out.bytes.data(), out.bytes.size(),
                        std::string_view{tmp.data(), len});
   return out;
@@ -370,29 +370,29 @@ struct LocaleMix {
 
   [[nodiscard]] static constexpr LocaleMix usOnly() noexcept {
     LocaleMix m{};
-    m.weights[toIndex(locale::Country::us)] = 1.0;
+    m.weights[enumTax::toIndex(locale::Country::us)] = 1.0;
     return m;
   }
 
   [[nodiscard]] static constexpr LocaleMix usBankDefault() noexcept {
     LocaleMix m{};
     using locale::Country;
-    m.weights[toIndex(Country::us)] = 96.00;
-    m.weights[toIndex(Country::mx)] = 1.00;
-    m.weights[toIndex(Country::in)] = 0.60;
-    m.weights[toIndex(Country::cn)] = 0.50;
-    m.weights[toIndex(Country::kr)] = 0.30;
-    m.weights[toIndex(Country::gb)] = 0.40;
-    m.weights[toIndex(Country::ca)] = 0.40;
-    m.weights[toIndex(Country::br)] = 0.20;
-    m.weights[toIndex(Country::de)] = 0.10;
-    m.weights[toIndex(Country::jp)] = 0.10;
-    m.weights[toIndex(Country::fr)] = 0.10;
-    m.weights[toIndex(Country::es)] = 0.10;
-    m.weights[toIndex(Country::it)] = 0.10;
-    m.weights[toIndex(Country::nl)] = 0.05;
-    m.weights[toIndex(Country::au)] = 0.05;
-    m.weights[toIndex(Country::ru)] = 0.05;
+    m.weights[enumTax::toIndex(Country::us)] = 96.00;
+    m.weights[enumTax::toIndex(Country::mx)] = 1.00;
+    m.weights[enumTax::toIndex(Country::in)] = 0.60;
+    m.weights[enumTax::toIndex(Country::cn)] = 0.50;
+    m.weights[enumTax::toIndex(Country::kr)] = 0.30;
+    m.weights[enumTax::toIndex(Country::gb)] = 0.40;
+    m.weights[enumTax::toIndex(Country::ca)] = 0.40;
+    m.weights[enumTax::toIndex(Country::br)] = 0.20;
+    m.weights[enumTax::toIndex(Country::de)] = 0.10;
+    m.weights[enumTax::toIndex(Country::jp)] = 0.10;
+    m.weights[enumTax::toIndex(Country::fr)] = 0.10;
+    m.weights[enumTax::toIndex(Country::es)] = 0.10;
+    m.weights[enumTax::toIndex(Country::it)] = 0.10;
+    m.weights[enumTax::toIndex(Country::nl)] = 0.05;
+    m.weights[enumTax::toIndex(Country::au)] = 0.05;
+    m.weights[enumTax::toIndex(Country::ru)] = 0.05;
     return m;
   }
 };

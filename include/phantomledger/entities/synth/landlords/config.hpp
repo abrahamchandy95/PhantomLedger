@@ -7,27 +7,27 @@
 
 namespace PhantomLedger::entities::synth::landlords {
 
-using namespace ::PhantomLedger::taxonomies::enums;
-using namespace ::PhantomLedger::entity::landlord;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
+namespace landlord = ::PhantomLedger::entity::landlord;
 
 struct Share {
-  Type type = Type::individual;
+  landlord::Type type = landlord::Type::individual;
   double weight = 0.0;
 };
 
 struct Rate {
-  Type type = Type::individual;
+  landlord::Type type = landlord::Type::individual;
   double value = 0.0;
 };
 
 namespace detail {
 
-[[nodiscard]] constexpr std::array<double, kTypeCount>
-rates(std::array<Rate, kTypeCount> entries) noexcept {
-  std::array<double, kTypeCount> out{};
+[[nodiscard]] constexpr std::array<double, landlord::kTypeCount>
+rates(std::array<Rate, landlord::kTypeCount> entries) noexcept {
+  std::array<double, landlord::kTypeCount> out{};
 
   for (const auto &entry : entries) {
-    out[toIndex(entry.type)] = entry.value;
+    out[enumTax::toIndex(entry.type)] = entry.value;
   }
 
   return out;
@@ -36,14 +36,14 @@ rates(std::array<Rate, kTypeCount> entries) noexcept {
 } // namespace detail
 
 struct InBankProbability {
-  std::array<double, kTypeCount> byType = detail::rates({{
-      {Type::individual, 0.06},
-      {Type::llcSmall, 0.04},
-      {Type::corporate, 0.01},
+  std::array<double, landlord::kTypeCount> byType = detail::rates({{
+      {landlord::Type::individual, 0.06},
+      {landlord::Type::llcSmall, 0.04},
+      {landlord::Type::corporate, 0.01},
   }});
 
-  [[nodiscard]] constexpr double forType(Type type) const noexcept {
-    return byType[toIndex(type)];
+  [[nodiscard]] constexpr double forType(landlord::Type type) const noexcept {
+    return byType[enumTax::toIndex(type)];
   }
 };
 
@@ -51,10 +51,10 @@ struct Config {
   double perTenK = 12.0;
   int floor = 3;
 
-  std::array<Share, kTypeCount> mix{{
-      {Type::individual, 0.38},
-      {Type::llcSmall, 0.15},
-      {Type::corporate, 0.47},
+  std::array<Share, landlord::kTypeCount> mix{{
+      {landlord::Type::individual, 0.38},
+      {landlord::Type::llcSmall, 0.15},
+      {landlord::Type::corporate, 0.47},
   }};
 
   InBankProbability inBankP;

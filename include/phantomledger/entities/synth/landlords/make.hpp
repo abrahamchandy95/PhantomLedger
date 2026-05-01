@@ -18,14 +18,14 @@ namespace PhantomLedger::entities::synth::landlords {
 using identifiers::Bank;
 using identifiers::Role;
 
-using namespace ::PhantomLedger::entity::landlord;
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace landlord = ::PhantomLedger::entity::landlord;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] inline Pack makePack(random::Rng &rng, int population,
                                    const Config &cfg = {}) {
   const int total = scale(cfg.perTenK, population, cfg.floor);
 
-  std::array<double, kTypeCount> weights{};
+  std::array<double, landlord::kTypeCount> weights{};
 
   for (std::size_t i = 0; i < cfg.mix.size(); ++i) {
     weights[i] = cfg.mix[i].weight;
@@ -43,7 +43,7 @@ using namespace ::PhantomLedger::taxonomies::enums;
   for (int i = 0; i < total; ++i) {
     const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
     const auto type = cfg.mix[idx].type;
-    const auto typeIdx = toIndex(type);
+    const auto typeIdx = enumTax::toIndex(type);
 
     const double inBankP = cfg.inBankP.forType(type);
     const bool isInternal = rng.coin(inBankP);
@@ -55,7 +55,7 @@ using namespace ::PhantomLedger::taxonomies::enums;
     const auto id = entity::makeKey(Role::landlord, bank, serial);
     const auto recIx = static_cast<std::uint32_t>(out.roster.records.size());
 
-    out.roster.records.push_back(Record{
+    out.roster.records.push_back(landlord::Record{
         .accountId = id,
         .type = type,
     });

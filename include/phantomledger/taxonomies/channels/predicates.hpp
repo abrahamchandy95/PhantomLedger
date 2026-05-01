@@ -8,7 +8,7 @@
 namespace PhantomLedger::channels {
 namespace detail {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 inline constexpr std::uint8_t kGroupMask = 0xF0;
 
@@ -18,7 +18,7 @@ inline constexpr std::uint8_t kGroupMask = 0xF0;
 
 template <ChannelEnum E>
 [[nodiscard]] constexpr std::uint8_t groupByte(E value) noexcept {
-  return static_cast<std::uint8_t>(toByte(value) & kGroupMask);
+  return static_cast<std::uint8_t>(enumTax::toByte(value) & kGroupMask);
 }
 
 template <ChannelEnum E>

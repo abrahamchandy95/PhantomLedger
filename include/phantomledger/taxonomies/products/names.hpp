@@ -10,13 +10,13 @@
 
 namespace PhantomLedger::products {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 namespace detail {
 
-static_assert(isIndexable(kDirections));
-static_assert(isIndexable(kProductTypes));
-static_assert(isIndexable(kPolicyTypes));
+static_assert(enumTax::isIndexable(kDirections));
+static_assert(enumTax::isIndexable(kProductTypes));
+static_assert(enumTax::isIndexable(kPolicyTypes));
 
 inline constexpr auto kDirectionEntries =
     std::to_array<lookup::Entry<Direction>>({
@@ -52,15 +52,17 @@ inline constexpr auto kSortedPolicyTypes = lookup::sorted(kPolicyTypeEntries);
 inline constexpr auto kDirectionNames =
     lookup::reverseTableDense<kDirectionCount>(
         kDirectionEntries,
-        [](Direction direction) { return toIndex(direction); });
+        [](Direction direction) { return enumTax::toIndex(direction); });
 
 inline constexpr auto kProductTypeNames =
     lookup::reverseTableDense<kProductTypeCount>(
-        kProductTypeEntries, [](ProductType type) { return toIndex(type); });
+        kProductTypeEntries,
+        [](ProductType type) { return enumTax::toIndex(type); });
 
 inline constexpr auto kPolicyTypeNames =
     lookup::reverseTableDense<kPolicyTypeCount>(
-        kPolicyTypeEntries, [](PolicyType type) { return toIndex(type); });
+        kPolicyTypeEntries,
+        [](PolicyType type) { return enumTax::toIndex(type); });
 
 inline constexpr bool kValidated =
     (lookup::requireUniqueNames(kSortedDirections),
@@ -70,15 +72,15 @@ inline constexpr bool kValidated =
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view name(Direction direction) noexcept {
-  return detail::kDirectionNames[toIndex(direction)];
+  return detail::kDirectionNames[enumTax::toIndex(direction)];
 }
 
 [[nodiscard]] constexpr std::string_view name(ProductType type) noexcept {
-  return detail::kProductTypeNames[toIndex(type)];
+  return detail::kProductTypeNames[enumTax::toIndex(type)];
 }
 
 [[nodiscard]] constexpr std::string_view name(PolicyType type) noexcept {
-  return detail::kPolicyTypeNames[toIndex(type)];
+  return detail::kPolicyTypeNames[enumTax::toIndex(type)];
 }
 
 [[nodiscard]] constexpr std::optional<Direction>

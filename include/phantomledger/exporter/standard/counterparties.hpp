@@ -20,7 +20,7 @@ namespace PhantomLedger::exporter::standard {
 
 namespace detail {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 namespace ent = ::PhantomLedger::entity;
 namespace merch = ::PhantomLedger::entity::merchant;
@@ -41,13 +41,18 @@ inline constexpr RowLabel kLandlord{"landlord_external", "landlord"};
 
   out.fill(kUnknown);
 
-  out[toIndex(ids::Role::employer)] = {"employer_external", "employer"};
-  out[toIndex(ids::Role::client)] = {"client_external", "client"};
-  out[toIndex(ids::Role::platform)] = {"platform_external", "platform"};
-  out[toIndex(ids::Role::processor)] = {"processor_external", "processor"};
-  out[toIndex(ids::Role::family)] = {"family_external", "family"};
-  out[toIndex(ids::Role::business)] = {"business_external", "business"};
-  out[toIndex(ids::Role::brokerage)] = {"brokerage_external", "brokerage"};
+  out[enumTax::toIndex(ids::Role::employer)] = {"employer_external",
+                                                "employer"};
+  out[enumTax::toIndex(ids::Role::client)] = {"client_external", "client"};
+  out[enumTax::toIndex(ids::Role::platform)] = {"platform_external",
+                                                "platform"};
+  out[enumTax::toIndex(ids::Role::processor)] = {"processor_external",
+                                                 "processor"};
+  out[enumTax::toIndex(ids::Role::family)] = {"family_external", "family"};
+  out[enumTax::toIndex(ids::Role::business)] = {"business_external",
+                                                "business"};
+  out[enumTax::toIndex(ids::Role::brokerage)] = {"brokerage_external",
+                                                 "brokerage"};
 
   return out;
 }
@@ -60,7 +65,7 @@ inline constexpr auto kRoleLabels = roleLabels();
     return kUnknown;
   }
 
-  return kRoleLabels[toIndex(role)];
+  return kRoleLabels[enumTax::toIndex(role)];
 }
 
 [[nodiscard]] inline std::string landlordCategory(ll::Type type) {

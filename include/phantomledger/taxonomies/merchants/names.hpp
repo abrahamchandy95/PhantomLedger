@@ -10,7 +10,7 @@
 
 namespace PhantomLedger::merchants {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 namespace detail {
 
@@ -27,20 +27,20 @@ inline constexpr auto kEntries = std::to_array<lookup::Entry<Category>>({
     {"education", Category::education},
 });
 
-static_assert(isIndexable(kCategories));
+static_assert(enumTax::isIndexable(kCategories));
 static_assert(kEntries.size() == kCategoryCount);
 
 inline constexpr auto kSorted = lookup::sorted(kEntries);
 
 inline constexpr auto kNames = lookup::reverseTableDense<kCategoryCount>(
-    kEntries, [](Category category) { return toIndex(category); });
+    kEntries, [](Category category) { return enumTax::toIndex(category); });
 
 inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view name(Category category) noexcept {
-  return detail::kNames[toIndex(category)];
+  return detail::kNames[enumTax::toIndex(category)];
 }
 
 [[nodiscard]] constexpr std::optional<Category>

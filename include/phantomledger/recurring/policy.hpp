@@ -1,10 +1,5 @@
 #pragma once
-/*
- * Recurring relationship policy parameters.
- *
- * Composes smaller policy types so each one owns a single concern:
- * activation, tenure, inflation, raises, and payroll behavior.
- */
+
 #include "phantomledger/primitives/validate/checks.hpp"
 
 namespace PhantomLedger::recurring {

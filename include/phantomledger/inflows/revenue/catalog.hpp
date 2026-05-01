@@ -11,7 +11,7 @@ namespace PhantomLedger::inflows::revenue {
 
 namespace detail {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
   return RevenuePersonaProfile{
@@ -110,15 +110,14 @@ using namespace ::PhantomLedger::taxonomies::enums;
   };
 }
 
-/// Build the per-persona profile table at compile time.
-/// Only three personas have revenue profiles; the rest are nullopt.
 [[nodiscard]] inline constexpr auto buildCatalog() {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
 
-  table[toIndex(personas::Type::freelancer)] = freelancerProfile();
-  table[toIndex(personas::Type::smallBusiness)] = smallBusinessProfile();
-  table[toIndex(personas::Type::highNetWorth)] = highNetWorthProfile();
+  table[enumTax::toIndex(personas::Type::freelancer)] = freelancerProfile();
+  table[enumTax::toIndex(personas::Type::smallBusiness)] =
+      smallBusinessProfile();
+  table[enumTax::toIndex(personas::Type::highNetWorth)] = highNetWorthProfile();
 
   return table;
 }
@@ -127,12 +126,9 @@ inline constexpr auto kCatalog = buildCatalog();
 
 } // namespace detail
 
-/// Look up the revenue profile for a persona type.
-/// Returns nullopt for personas that have no non-payroll revenue
-/// (student, retiree, salaried).
 [[nodiscard]] inline constexpr const std::optional<RevenuePersonaProfile> &
 archetypeFor(personas::Type type) noexcept {
-  return detail::kCatalog[detail::toIndex(type)];
+  return detail::kCatalog[detail::enumTax::toIndex(type)];
 }
 
 } // namespace PhantomLedger::inflows::revenue

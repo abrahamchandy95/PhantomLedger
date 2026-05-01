@@ -1,11 +1,4 @@
 #pragma once
-/*
- * Growth and lifecycle sampling helpers.
- *
- * Shared utilities for the employment and lease state machines:
- * compound growth over anniversary boundaries, tenure sampling,
- * and counterparty selection.
- */
 
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
@@ -162,7 +155,6 @@ sampleBackdatedInterval(random::Rng &rng, time::TimePoint anchorDate,
 // ---------------------------------------------------------------
 
 /// Callback type for per-year real raise sampling.
-/// Signature: double(const random::RngFactory&, std::string_view key, int year)
 using AnnualRaiseSource = double (*)(const random::RngFactory &,
                                      std::string_view, int);
 

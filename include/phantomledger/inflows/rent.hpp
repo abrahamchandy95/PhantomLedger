@@ -22,17 +22,17 @@ namespace rent {
 
 namespace detail {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] consteval auto buildProbabilityTable() {
   std::array<double, personas::kKindCount> table{};
 
-  table[toIndex(personas::Type::student)] = 0.50;
-  table[toIndex(personas::Type::retiree)] = 0.18;
-  table[toIndex(personas::Type::freelancer)] = 0.58;
-  table[toIndex(personas::Type::smallBusiness)] = 0.35;
-  table[toIndex(personas::Type::highNetWorth)] = 0.10;
-  table[toIndex(personas::Type::salaried)] = 0.62;
+  table[enumTax::toIndex(personas::Type::student)] = 0.50;
+  table[enumTax::toIndex(personas::Type::retiree)] = 0.18;
+  table[enumTax::toIndex(personas::Type::freelancer)] = 0.58;
+  table[enumTax::toIndex(personas::Type::smallBusiness)] = 0.35;
+  table[enumTax::toIndex(personas::Type::highNetWorth)] = 0.10;
+  table[enumTax::toIndex(personas::Type::salaried)] = 0.62;
 
   return table;
 }
@@ -113,7 +113,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
                  const transactions::Factory &txf, double targetRentFraction,
                  const std::function<double()> &rentModel,
                  const rent::HomeownerCheck &isHomeowner = rent::noHomeowners) {
-  using namespace recurring;
+  namespace recur = ::PhantomLedger::recurring;
 
   if (!snapshot.hasRecurringPolicy() ||
       snapshot.counterparties.landlords.empty()) {
@@ -133,13 +133,13 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     return {};
   }
 
-  const LeaseRules rules{
+  const recur::LeaseRules rules{
       .tenure = snapshot.policy().tenure,
       .inflation = snapshot.policy().inflation,
       .raises = snapshot.policy().raises,
   };
 
-  const RentRouter router;
+  const recur::RentRouter router;
 
   std::vector<rent::PayerState> states;
   states.reserve(rentPayers.size());
@@ -154,7 +154,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
     ps.lease =
         initializeLease(rules, snapshot.entropy.factory, initRng,
-                        LeaseInitInput{
+                        recur::LeaseInitInput{
                             .payerKey = ps.payerKey,
                             .startDate = snapshot.timeframe.startDate,
                             .landlords = snapshot.counterparties.landlords,
@@ -175,7 +175,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
         ps.lease =
             advanceLease(rules, snapshot.entropy.factory, advRng,
-                         LeaseAdvanceInput{
+                         recur::LeaseAdvanceInput{
                              .payerKey = ps.payerKey,
                              .now = ps.lease.end,
                              .landlords = snapshot.counterparties.landlords,
@@ -192,7 +192,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
       }
 
       const double amount = calculateRent(rules, snapshot.entropy.factory,
-                                          RentQuery{
+                                          recur::RentQuery{
                                               .payerKey = ps.payerKey,
                                               .state = ps.lease,
                                               .payDate = monthStart,

@@ -2,9 +2,9 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/clearing/types.hpp"
 #include "phantomledger/transactions/clearing/liquidity.hpp"
 #include "phantomledger/transactions/clearing/loc_accrual.hpp"
-#include "phantomledger/transactions/clearing/protection.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -14,12 +14,6 @@
 #include <vector>
 
 namespace PhantomLedger::clearing {
-
-enum class RejectReason : std::uint8_t {
-  invalid,
-  unbooked,
-  unfunded,
-};
 
 class TransferDecision {
 public:

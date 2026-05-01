@@ -10,11 +10,11 @@
 
 namespace PhantomLedger::landlords {
 
-using namespace ::PhantomLedger::taxonomies::enums;
-
 namespace detail {
 
-static_assert(isIndexable(kTypes));
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
+
+static_assert(enumTax::isIndexable(kTypes));
 
 inline constexpr auto kEntries = std::to_array<lookup::Entry<Type>>({
     {"individual", Type::individual},
@@ -27,14 +27,14 @@ static_assert(kEntries.size() == kTypeCount);
 inline constexpr auto kSorted = lookup::sorted(kEntries);
 
 inline constexpr auto kNames = lookup::reverseTableDense<kTypeCount>(
-    kEntries, [](Type type) { return toIndex(type); });
+    kEntries, [](Type type) { return enumTax::toIndex(type); });
 
 inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
 } // namespace detail
 
 [[nodiscard]] constexpr std::string_view name(Type type) noexcept {
-  return detail::kNames[toIndex(type)];
+  return detail::kNames[enumTax::toIndex(type)];
 }
 
 [[nodiscard]] constexpr std::optional<Type>

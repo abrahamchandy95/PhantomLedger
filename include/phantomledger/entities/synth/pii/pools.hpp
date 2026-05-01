@@ -12,7 +12,7 @@
 
 namespace PhantomLedger::entities::synth::pii {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 struct PoolSizes {
   std::size_t firstNames = 50'000;
@@ -38,7 +38,7 @@ struct PoolSet {
   std::array<LocalePool, locale::kCountryCount> byCountry{};
 
   [[nodiscard]] const LocalePool &forCountry(locale::Country c) const noexcept {
-    return byCountry[toIndex(c)];
+    return byCountry[enumTax::toIndex(c)];
   }
 };
 

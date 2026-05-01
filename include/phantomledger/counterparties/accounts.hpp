@@ -12,7 +12,7 @@
 
 namespace PhantomLedger::counterparties {
 
-using namespace ::PhantomLedger::taxonomies::enums;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 struct AccountId {
   std::string_view value{};
@@ -31,7 +31,8 @@ template <class T> using Bare = std::remove_cvref_t<T>;
 
 template <class T>
 concept AccountEnum =
-    OneOf<Bare<T>, Government, Insurance, Lending, Tax> && ByteEnum<Bare<T>>;
+    enumTax::OneOf<Bare<T>, Government, Insurance, Lending, Tax> &&
+    enumTax::ByteEnum<Bare<T>>;
 
 namespace detail {
 
@@ -142,12 +143,12 @@ inline constexpr bool kValidated =
 
 template <AccountEnum Enum>
 [[nodiscard]] constexpr AccountId id(Enum value) noexcept {
-  return detail::Tables<Bare<Enum>>::entries()[toIndex(value)].id;
+  return detail::Tables<Bare<Enum>>::entries()[enumTax::toIndex(value)].id;
 }
 
 template <AccountEnum Enum>
 [[nodiscard]] constexpr std::string_view name(Enum value) noexcept {
-  return detail::Tables<Bare<Enum>>::entries()[toIndex(value)].name;
+  return detail::Tables<Bare<Enum>>::entries()[enumTax::toIndex(value)].name;
 }
 
 template <AccountEnum Enum>
