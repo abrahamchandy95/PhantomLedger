@@ -71,8 +71,6 @@ prepareSpenders(const market::Market &market,
   for (std::uint32_t i = 0; i < count; ++i) {
     const auto person = static_cast<entity::PersonId>(i + 1);
 
-    // Skip persons without a valid primary account — matches Python's
-    // `primary_accounts.get(...)` returning None.
     if (!entity::valid(pop.primary(person))) {
       continue;
     }

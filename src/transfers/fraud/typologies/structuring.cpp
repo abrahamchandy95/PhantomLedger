@@ -48,9 +48,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       continue;
     }
 
-    // Python: rng.int(splits_min, splits_max + 1) treated inclusively on min
-    // and exclusively on max+1, i.e. range [min, max] in half-open form is
-    // [min, max + 1).
     const auto splits = static_cast<std::int32_t>(rng.uniformInt(
         rules.splitsMin, static_cast<std::int64_t>(rules.splitsMax) + 1));
 

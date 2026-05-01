@@ -131,10 +131,6 @@ EmissionResult emitBill(random::Rng &rng, const market::Market &market,
 EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
                             const ResolvedAccounts &resolved,
                             const actors::Event &event) {
-  // The merchant catalog does not currently expose an externals roster
-  // (the Python `Merchants.externals` field has no analogue on
-  // `entity::merchant::Catalog`). Route everything to the documented
-  // sentinel destination until the entity layer adds it back.
   (void)market;
   const entity::Key dst =
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);

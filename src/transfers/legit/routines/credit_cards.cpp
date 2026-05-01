@@ -2,8 +2,6 @@
 
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/transfers/credit_cards/lifecycle.hpp"
-#include "phantomledger/transfers/credit_cards/policy/behavior.hpp"
-#include "phantomledger/transfers/credit_cards/policy/issuer.hpp"
 
 #include <stdexcept>
 #include <unordered_map>
@@ -34,7 +32,6 @@ generateLifecycle(const blueprints::Blueprint &request,
                   const blueprints::LegitBuildPlan &plan,
                   const transactions::Factory &txf,
                   std::span<const transactions::Transaction> existingTxns) {
-  // Empty short-circuit, mirrors Python `if not enabled or cards is None`.
   if (!request.ccState.enabled() || request.ccState.cards == nullptr) {
     return {};
   }

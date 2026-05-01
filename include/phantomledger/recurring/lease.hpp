@@ -115,7 +115,6 @@ struct RentGrowthInput {
   const double baseRent =
       input.rentSource() * growth::sampleLognormalMultiplier(initRng, 0.05);
 
-  // Advance the shared RNG to maintain determinism (mirrors Python).
   (void)rng.nextDouble();
 
   return Lease{

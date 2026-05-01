@@ -86,7 +86,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     const auto &src = chain[i];
     const auto &dst = chain[i + 1];
 
-    // Python: rng.int(1, 4) → [1, 5).
     const auto edgeReps = static_cast<std::int32_t>(rng.uniformInt(1, 5));
     for (std::int32_t r = 0; r < edgeReps; ++r) {
       if (static_cast<std::int32_t>(out.size()) >= budget) {

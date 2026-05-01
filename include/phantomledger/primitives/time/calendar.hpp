@@ -34,7 +34,6 @@ struct TimeOfDay {
 [[nodiscard]] CalendarDate toCalendarDate(TimePoint tp);
 [[nodiscard]] TimeOfDay toTimeOfDay(TimePoint tp);
 
-/// Monday=0 .. Sunday=6 (matches Python weekday()).
 [[nodiscard]] int weekday(TimePoint tp);
 [[nodiscard]] bool isWeekend(TimePoint tp);
 

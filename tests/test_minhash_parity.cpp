@@ -48,10 +48,8 @@ int main() {
              "murmurhash2('John Smith')");
   checkEqU32(mh::murmurhash2(bytesOf("")), 0U, "murmurhash2('')");
 
-  // ────────── MinHash signature against Python reference ──────────
   {
     const auto sig = mh::signature("john smith");
-    // First four band signatures, computed against the Python ref.
     checkEqU32(sig[0], 155955233U, "signature('john smith')[0]");
     checkEqU32(sig[1], 53916894U, "signature('john smith')[1]");
     checkEqU32(sig[2], 563570025U, "signature('john smith')[2]");

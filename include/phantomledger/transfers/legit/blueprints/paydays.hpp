@@ -63,10 +63,6 @@ buildPaydaysByPerson(std::span<const transactions::Transaction> txns,
     out[personIdx].push_back(static_cast<std::uint32_t>(rawDay));
   }
 
-  // Per-person sort + unique. The Python returns a frozenset, so we mirror
-  // its dedup semantics here. In-place sort + erase keeps the inner storage
-  // contiguous — important because callers will slice these into spans for
-  // the Census.
   for (auto &days_ : out) {
     if (days_.empty()) {
       continue;

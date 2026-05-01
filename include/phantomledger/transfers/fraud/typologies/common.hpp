@@ -32,8 +32,6 @@ template <class T>
   return items[rng.choiceIndex(items.size())];
 }
 
-/// Pick `k` distinct elements from `items` (or up to `items.size()` if k is
-/// larger). Mirrors Python's rng.choice_k(items, k, replace=False).
 template <class T>
 [[nodiscard]] inline std::vector<T>
 pickK(random::Rng &rng, const std::vector<T> &items, std::size_t k) {

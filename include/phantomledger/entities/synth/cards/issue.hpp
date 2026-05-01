@@ -29,7 +29,6 @@ sampleAutopay(random::Rng &rng, const Policy &policy) noexcept {
 
 [[nodiscard]] inline entity::Key
 makeKey(std::uint32_t issuanceOrdinal) noexcept {
-  // 1-indexed; matches Python L{i:09d} starting at i=1.
   return entity::makeKey(entity::Role::card, entity::Bank::internal,
                          issuanceOrdinal);
 }
