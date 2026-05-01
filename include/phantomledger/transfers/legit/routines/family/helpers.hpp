@@ -82,7 +82,6 @@ weightedPickPerson(std::span<const entity::PersonId> pool,
   }
 
   if (total <= 0.0) {
-    // Uniform fallback — matches Python.
     const auto idx = static_cast<std::size_t>(
         rng.uniformInt(0, static_cast<std::int64_t>(pool.size())));
     return pool[idx];

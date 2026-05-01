@@ -12,12 +12,6 @@ struct Share {
 };
 
 /// Per-type probability that a landlord also banks at our institution.
-/// Matches Python common/config/population/landlords.py _default_in_bank_p().
-///
-/// Research basis (NFIB 2023, FDIC SOD 2024):
-///   individual: ~6%  (local personal banking customer)
-///   llcSmall:   ~4%  (intentional separate business banking)
-///   corporate:  ~1%  (commercial banking, national scope)
 struct InBankProbability {
   std::array<double, 3> byClass{
       0.06, // individual

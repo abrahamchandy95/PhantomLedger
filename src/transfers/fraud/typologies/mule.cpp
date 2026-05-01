@@ -50,7 +50,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       break;
     }
 
-    // Python: rng.int(8, 26) → [8, 26).
     const auto inboundCount = static_cast<std::int32_t>(rng.uniformInt(8, 26));
 
     std::vector<entity::Key> sourcePool;
@@ -59,7 +58,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                       plan.victimAccounts.end());
 
     if (!ctx.billerAccounts.empty()) {
-      // Python: rng.int(3, 10) → [3, 10).
       const auto extraCap = static_cast<std::size_t>(rng.uniformInt(3, 10));
       const auto nExtra = std::min(extraCap, ctx.billerAccounts.size());
       const auto extraIdx = rng.choiceIndices(ctx.billerAccounts.size(), nExtra,

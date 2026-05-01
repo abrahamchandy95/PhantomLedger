@@ -14,7 +14,6 @@ struct Inputs {
 
   double switchP = 0.05;
 
-  /// Per-builder configs. Each defaults to the Python defaults.
   ::PhantomLedger::infra::synth::rings::Config ringsCfg{};
   ::PhantomLedger::infra::synth::devices::Config devicesCfg{};
   ::PhantomLedger::infra::synth::ips::Config ipsCfg{};

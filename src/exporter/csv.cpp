@@ -143,7 +143,6 @@ Writer &Writer::cell(double v) {
 
 Writer &Writer::cell(bool v) {
   writeSeparatorIfNeeded();
-  // Python's csv module writes bools via str(True)/str(False).
   static constexpr std::string_view kTrue{"True"};
   static constexpr std::string_view kFalse{"False"};
   const auto s = v ? kTrue : kFalse;

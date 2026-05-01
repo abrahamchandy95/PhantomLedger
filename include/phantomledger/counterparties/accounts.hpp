@@ -1,17 +1,22 @@
 #pragma once
 
+#include "phantomledger/taxonomies/counterparties/types.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
+#include "phantomledger/taxonomies/lookup.hpp"
+
 #include <array>
 #include <compare>
-#include <concepts>
 #include <cstddef>
-#include <cstdint>
 #include <string_view>
 #include <type_traits>
 
 namespace PhantomLedger::counterparties {
 
+using namespace ::PhantomLedger::taxonomies::enums;
+
 struct AccountId {
   std::string_view value{};
+
   constexpr std::strong_ordering operator<=>(const AccountId &) const = default;
 };
 
@@ -22,59 +27,48 @@ struct Entry {
 
 inline constexpr AccountId none{};
 
-enum class Government : std::uint8_t {
-  ssa = 0,
-  disability = 1,
-};
-
-enum class Insurance : std::uint8_t {
-  autoCarrier = 0,
-  homeCarrier = 1,
-  lifeCarrier = 2,
-};
-
-enum class Lending : std::uint8_t {
-  mortgage = 0,
-  autoLoan = 1,
-  studentServicer = 2,
-};
-
-enum class Tax : std::uint8_t {
-  irsTreasury = 0,
-};
-
-template <class T, class... Ts>
-concept AccountType = (std::same_as<std::remove_cvref_t<T>, Ts> || ...);
+template <class T> using Bare = std::remove_cvref_t<T>;
 
 template <class T>
-concept AccountEnum = AccountType<T, Government, Insurance, Lending, Tax>;
+concept AccountEnum =
+    OneOf<Bare<T>, Government, Insurance, Lending, Tax> && ByteEnum<Bare<T>>;
 
 namespace detail {
 
-template <class Enum>
-[[nodiscard]] constexpr std::size_t toIndex(Enum v) noexcept {
-  return static_cast<std::size_t>(v);
+template <std::size_t N>
+[[nodiscard]] consteval std::array<lookup::Entry<AccountId>, N>
+byNameEntries(const std::array<Entry, N> &entries) {
+  std::array<lookup::Entry<AccountId>, N> out{};
+
+  for (std::size_t i = 0; i < N; ++i) {
+    out[i] = lookup::Entry<AccountId>{
+        .name = entries[i].name,
+        .value = entries[i].id,
+    };
+  }
+
+  return out;
+}
+
+template <std::size_t N>
+[[nodiscard]] consteval std::array<lookup::Entry<std::string_view>, N>
+byIdEntries(const std::array<Entry, N> &entries) {
+  std::array<lookup::Entry<std::string_view>, N> out{};
+
+  for (std::size_t i = 0; i < N; ++i) {
+    out[i] = lookup::Entry<std::string_view>{
+        .name = entries[i].id.value,
+        .value = entries[i].name,
+    };
+  }
+
+  return out;
 }
 
 template <std::size_t N>
 consteval void validateEntries(const std::array<Entry, N> &entries) {
-  for (std::size_t i = 0; i < N; ++i) {
-    if (entries[i].id.value.empty()) {
-      throw "empty counterparty account id";
-    }
-    if (entries[i].name.empty()) {
-      throw "empty counterparty account name";
-    }
-
-    for (std::size_t j = i + 1; j < N; ++j) {
-      if (entries[i].id == entries[j].id) {
-        throw "duplicate counterparty account id";
-      }
-      if (entries[i].name == entries[j].name) {
-        throw "duplicate counterparty account name";
-      }
-    }
-  }
+  lookup::requireUniqueNames(lookup::sorted(byNameEntries(entries)));
+  lookup::requireUniqueNames(lookup::sorted(byIdEntries(entries)));
 }
 
 template <class Enum> struct Tables;
@@ -102,11 +96,19 @@ inline constexpr std::array<Entry, 1> kTax{{
     {AccountId{"XIRS00000001"}, "irs_treasury"},
 }};
 
+static_assert(kGovernment.size() == kGovernmentAccountCount);
+static_assert(kInsurance.size() == kInsuranceAccountCount);
+static_assert(kLending.size() == kLendingAccountCount);
+static_assert(kTax.size() == kTaxAccountCount);
+
 inline constexpr std::array<AccountId, 9> kAll{
     kGovernment[0].id, kGovernment[1].id, kInsurance[0].id,
     kInsurance[1].id,  kInsurance[2].id,  kLending[0].id,
     kLending[1].id,    kLending[2].id,    kTax[0].id,
 };
+
+static_assert(kAll.size() == kGovernmentAccountCount + kInsuranceAccountCount +
+                                 kLendingAccountCount + kTaxAccountCount);
 
 namespace detail {
 
@@ -139,22 +141,18 @@ inline constexpr bool kValidated =
 } // namespace detail
 
 template <AccountEnum Enum>
-[[nodiscard]] constexpr AccountId id(Enum v) noexcept {
-  return detail::Tables<std::remove_cvref_t<Enum>>::entries()[detail::toIndex(
-                                                                  v)]
-      .id;
+[[nodiscard]] constexpr AccountId id(Enum value) noexcept {
+  return detail::Tables<Bare<Enum>>::entries()[toIndex(value)].id;
 }
 
 template <AccountEnum Enum>
-[[nodiscard]] constexpr std::string_view name(Enum v) noexcept {
-  return detail::Tables<std::remove_cvref_t<Enum>>::entries()[detail::toIndex(
-                                                                  v)]
-      .name;
+[[nodiscard]] constexpr std::string_view name(Enum value) noexcept {
+  return detail::Tables<Bare<Enum>>::entries()[toIndex(value)].name;
 }
 
 template <AccountEnum Enum>
-[[nodiscard]] constexpr bool is(AccountId account, Enum v) noexcept {
-  return account == id(v);
+[[nodiscard]] constexpr bool is(AccountId account, Enum value) noexcept {
+  return account == id(value);
 }
 
 } // namespace PhantomLedger::counterparties

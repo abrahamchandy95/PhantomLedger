@@ -369,7 +369,6 @@ std::int64_t ChronoReplayAccumulator::findFutureCure(
   const auto upper =
       txn.timestamp + static_cast<std::int64_t>(cureHours) * 3600;
 
-  // Strictly future: `bisect_right(times, txn.timestamp)` in the Python.
   const auto &times = it->second;
   auto pos = std::upper_bound(times.begin(), times.end(), txn.timestamp);
   if (pos == times.end()) {
@@ -461,8 +460,6 @@ void ChronoReplayAccumulator::onLiquidityEvent(
           ? bankFeeCollectionKey()
           : bankOdLocKey();
 
-  // Stamp device/IP from the active source txn when we have one.
-  // Matches the Python `device_id=txn.device_id, ip_address=txn.ip_address`.
   transactions::Transaction tx{};
   tx.source = event.payerKey;
   tx.target = target;

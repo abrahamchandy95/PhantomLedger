@@ -119,7 +119,6 @@ generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
     const std::int64_t monthAnchorEpoch = time::toEpochSeconds(monthAnchor);
 
     for (const auto &depositAcct : activeUsers) {
-      // Python: rng.int(min, max + 1) → inclusive.
       const auto nWithdrawals = static_cast<std::int32_t>(rng.uniformInt(
           cfg.withdrawalsPerMonthMin,
           static_cast<std::int64_t>(cfg.withdrawalsPerMonthMax) + 1));
