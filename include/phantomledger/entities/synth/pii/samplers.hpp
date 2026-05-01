@@ -262,6 +262,8 @@ struct PhoneShape {
 
 // --- DOB ---------------------------------------------------------
 
+using PersonaType = ::PhantomLedger::personas::Type;
+
 namespace detail {
 
 struct AgeBand {
@@ -269,19 +271,19 @@ struct AgeBand {
   int max = 0;
 };
 
-[[nodiscard]] constexpr AgeBand bandFor(personas::Type t) noexcept {
+[[nodiscard]] constexpr AgeBand bandFor(PersonaType t) noexcept {
   switch (t) {
-  case personas::Type::student:
+  case PersonaType::student:
     return {16, 34};
-  case personas::Type::retiree:
+  case PersonaType::retiree:
     return {65, 99};
-  case personas::Type::freelancer:
+  case PersonaType::freelancer:
     return {25, 65};
-  case personas::Type::smallBusiness:
+  case PersonaType::smallBusiness:
     return {30, 70};
-  case personas::Type::highNetWorth:
+  case PersonaType::highNetWorth:
     return {35, 80};
-  case personas::Type::salaried:
+  case PersonaType::salaried:
     return {22, 65};
   }
   return {25, 65};
@@ -290,7 +292,7 @@ struct AgeBand {
 } // namespace detail
 
 [[nodiscard]] inline entity::pii::Dob
-sampleDob(random::Rng &rng, personas::Type persona, time::TimePoint simStart) {
+sampleDob(random::Rng &rng, PersonaType persona, time::TimePoint simStart) {
   const auto band = detail::bandFor(persona);
   const auto age = static_cast<int>(
       rng.uniformInt(band.min, static_cast<std::int64_t>(band.max) + 1));

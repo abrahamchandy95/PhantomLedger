@@ -17,13 +17,13 @@
 #include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
-#include "phantomledger/transfers/legit/blueprints/plans.hpp"
+#include "phantomledger/transfers/legit/blueprints/models.hpp"
+#include "phantomledger/transfers/legit/ledger/posting.hpp"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace PhantomLedger::pipeline {
@@ -58,26 +58,14 @@ struct Transfers {
 
   std::unique_ptr<clearing::Ledger> finalBook;
 
-  std::unordered_map<std::string, std::uint64_t> dropCounts;
+  std::unordered_map<std::string, std::uint32_t> dropCounts;
 
-  struct ChannelReason {
-    std::string channel;
-    std::string reason;
+  using ChannelReasonKey = ::PhantomLedger::transfers::legit::ledger::
+      ChronoReplayAccumulator::ChannelReasonKey;
+  using ChannelReasonHash = ::PhantomLedger::transfers::legit::ledger::
+      ChronoReplayAccumulator::ChannelReasonHash;
 
-    bool operator==(const ChannelReason &other) const noexcept {
-      return channel == other.channel && reason == other.reason;
-    }
-  };
-
-  struct ChannelReasonHash {
-    std::size_t operator()(const ChannelReason &k) const noexcept {
-      const std::size_t h1 = std::hash<std::string>{}(k.channel);
-      const std::size_t h2 = std::hash<std::string>{}(k.reason);
-      return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
-    }
-  };
-
-  std::unordered_map<ChannelReason, std::uint64_t, ChannelReasonHash>
+  std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
       dropCountsByChannel;
 };
 

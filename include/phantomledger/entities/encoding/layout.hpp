@@ -42,5 +42,6 @@ inline constexpr Layout kBrokerageInternal{"BRK", 7};
 inline constexpr Layout kBrokerageExternal{"XB", 8};
 
 inline constexpr Layout kFraudDevice{"FD", 4, true};
+inline constexpr Layout kLegitDevice{"LD", 4};
 
 } // namespace PhantomLedger::encoding

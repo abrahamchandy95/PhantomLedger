@@ -118,7 +118,8 @@ Output build(random::Rng &rng, time::Window window,
       peers.push_back(remaining[i]);
     }
 
-    const auto sharedId = DeviceIdentity::legitShared(legitSharedCounter, 0);
+    const auto sharedId =
+        ::PhantomLedger::devices::legitShared(legitSharedCounter, 0);
     ++legitSharedCounter;
 
     const auto kind = sampleKind(rng);

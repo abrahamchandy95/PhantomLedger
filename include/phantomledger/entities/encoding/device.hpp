@@ -84,4 +84,8 @@ inline void writeUnsignedToEnd(char *end, std::uint64_t value) noexcept {
   return render(kFraudDevice, ringId);
 }
 
+[[nodiscard]] inline std::string legitDeviceId(std::uint64_t groupId) {
+  return render(kLegitDevice, groupId);
+}
+
 } // namespace PhantomLedger::encoding

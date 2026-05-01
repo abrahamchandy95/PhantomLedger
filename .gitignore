@@ -35,4 +35,5 @@ Thumbs.db
 .vscode/
 .idea/
 out_bank_data/
+.clangd
 .gitignore
