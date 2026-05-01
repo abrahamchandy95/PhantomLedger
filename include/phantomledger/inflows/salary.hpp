@@ -5,6 +5,7 @@
 #include "phantomledger/inflows/types.hpp"
 #include "phantomledger/recurring/employment.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <functional>
 #include <string_view>
 #include <vector>
@@ -20,7 +22,9 @@ namespace PhantomLedger::inflows {
 
 namespace salary {
 
-inline constexpr channels::Tag channel = channels::tag(channels::Legit::salary);
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
+
+inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
 struct ProbabilityTable {
   static constexpr std::array<double, personas::kKindCount> table{{
@@ -33,7 +37,7 @@ struct ProbabilityTable {
   }};
 
   [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
-    return table[personas::slot(type)];
+    return table[enumTax::toIndex(type)];
   }
 };
 
@@ -47,7 +51,9 @@ struct NumText {
     len = static_cast<std::size_t>(ptr - buf.data());
   }
 
-  std::string_view str() const noexcept { return {buf.data(), len}; }
+  [[nodiscard]] std::string_view str() const noexcept {
+    return {buf.data(), len};
+  }
 };
 
 [[nodiscard]] inline bool candidate(const Population &population,
@@ -183,6 +189,7 @@ generateSalaryTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
   const double scale =
       selector.fitScale(snapshot.population.count, targetPaidFraction);
+
   if (scale <= 0.0) {
     return {};
   }
@@ -201,6 +208,7 @@ generateSalaryTxns(const InflowSnapshot &snapshot, random::Rng &rng,
   }
 
   sortTransfers(txns);
+
   return txns;
 }
 

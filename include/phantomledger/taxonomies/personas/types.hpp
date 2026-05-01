@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -22,15 +23,27 @@ enum class Timing : std::uint8_t {
   business = 2,
 };
 
-inline constexpr std::size_t kKindCount = 6;
+inline constexpr auto kTypes = std::to_array<Type>({
+    Type::student,
+    Type::retiree,
+    Type::freelancer,
+    Type::smallBusiness,
+    Type::highNetWorth,
+    Type::salaried,
+});
+
+inline constexpr auto kTimings = std::to_array<Timing>({
+    Timing::consumer,
+    Timing::consumerDay,
+    Timing::business,
+});
+
+inline constexpr std::size_t kTypeCount = kTypes.size();
+inline constexpr std::size_t kTimingCount = kTimings.size();
+
+// Compatibility alias if other files still use kKindCount.
+inline constexpr std::size_t kKindCount = kTypeCount;
+
 inline constexpr Type kDefaultType = Type::salaried;
-
-[[nodiscard]] constexpr std::size_t slot(Type t) noexcept {
-  return static_cast<std::size_t>(t);
-}
-
-[[nodiscard]] constexpr std::size_t slot(Timing t) noexcept {
-  return static_cast<std::size_t>(t);
-}
 
 } // namespace PhantomLedger::personas

@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/insurance/claims.hpp"
 
+#include "phantomledger/entities/products/insurance.hpp"
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -11,6 +12,7 @@
 #include <cmath>
 #include <cstddef>
 #include <string>
+#include <vector>
 
 namespace PhantomLedger::transfers::insurance {
 namespace {
@@ -19,12 +21,16 @@ using entity::Key;
 using entity::PersonId;
 using time::TimePoint;
 
+namespace product = entity::product;
+
 [[nodiscard]] double windowClaimProbability(double annualP,
                                             std::size_t months) noexcept {
   if (annualP <= 0.0 || months == 0) {
     return 0.0;
   }
+
   const double years = static_cast<double>(months) / 12.0;
+
   return 1.0 - std::pow(1.0 - annualP, years);
 }
 
@@ -32,6 +38,7 @@ using time::TimePoint;
                                   double floor) {
   const auto raw =
       probability::distributions::lognormalByMedian(rng, median, sigma);
+
   return primitives::utils::floorAndRound(raw, floor);
 }
 
@@ -48,6 +55,7 @@ void postClaim(random::Rng &rng, const transactions::Factory &txf,
   const auto minute = rng.uniformInt(0, 60);
   const auto ts =
       start + time::Days{dayOff} + time::Hours{hour} + time::Minutes{minute};
+
   if (ts >= endExcl) {
     return;
   }
@@ -61,6 +69,29 @@ void postClaim(random::Rng &rng, const transactions::Factory &txf,
   }));
 }
 
+void tryPostClaim(random::Rng &claimRng, random::Rng &timestampRng,
+                  const transactions::Factory &txf,
+                  const product::InsuranceHoldings &holdings,
+                  product::PolicyType policyType, TimePoint start,
+                  TimePoint endExcl, int days, const Key &payer, double median,
+                  double sigma, double floor, std::size_t months,
+                  std::vector<transactions::Transaction> &out) {
+  const auto *policy = holdings.get(policyType);
+  if (policy == nullptr) {
+    return;
+  }
+
+  const double claimP = windowClaimProbability(policy->annualClaimP, months);
+  if (!claimRng.coin(claimP)) {
+    return;
+  }
+
+  const double amount = sampleAmount(claimRng, median, sigma, floor);
+
+  postClaim(timestampRng, txf, start, endExcl, days, policy->carrierAcct, payer,
+            amount, out);
+}
+
 } // namespace
 
 std::vector<transactions::Transaction>
@@ -72,6 +103,7 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
 
   time::Almanac almanac{window};
   const auto months = almanac.monthAnchors().size();
+
   if (months == 0) {
     return out;
   }
@@ -79,35 +111,28 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
   const auto endExcl = window.endExcl();
 
   portfolios.forEachInsuredPerson(
-      [&](PersonId person, const entity::product::InsuranceHoldings &h) {
+      [&](PersonId person, const product::InsuranceHoldings &holdings) {
         const auto acctIt = population.primaryAccounts->find(person);
         if (acctIt == population.primaryAccounts->end()) {
           return;
         }
+
         const Key payer = acctIt->second;
 
-        // Per-person sub-RNG isolates claim events from the main
-        // stream so callers can re-run claims without perturbing
-        // premiums or other generators.
+        // Per-person sub-RNG isolates claim occurrence and amount sampling.
         auto personRng =
             factory.rng({"insurance_claims",
                          std::to_string(static_cast<unsigned>(person))});
 
-        if (h.auto_ && personRng.coin(windowClaimProbability(
-                           h.auto_->annualClaimP, months))) {
-          const double amt = sampleAmount(personRng, rates.autoMedian,
-                                          rates.autoSigma, rates.autoFloor);
-          postClaim(rng, txf, window.start, endExcl, window.days,
-                    h.auto_->carrierAcct, payer, amt, out);
-        }
+        tryPostClaim(personRng, rng, txf, holdings, product::PolicyType::auto_,
+                     window.start, endExcl, window.days, payer,
+                     rates.autoMedian, rates.autoSigma, rates.autoFloor, months,
+                     out);
 
-        if (h.home && personRng.coin(windowClaimProbability(
-                          h.home->annualClaimP, months))) {
-          const double amt = sampleAmount(personRng, rates.homeMedian,
-                                          rates.homeSigma, rates.homeFloor);
-          postClaim(rng, txf, window.start, endExcl, window.days,
-                    h.home->carrierAcct, payer, amt, out);
-        }
+        tryPostClaim(personRng, rng, txf, holdings, product::PolicyType::home,
+                     window.start, endExcl, window.days, payer,
+                     rates.homeMedian, rates.homeSigma, rates.homeFloor, months,
+                     out);
 
         // Life insurance: death events are not modeled.
       });
@@ -115,6 +140,7 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
   std::sort(
       out.begin(), out.end(),
       transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
+
   return out;
 }
 

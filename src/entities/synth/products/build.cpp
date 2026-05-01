@@ -9,12 +9,16 @@
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/probability/distributions/normal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
+#include "phantomledger/taxonomies/products/types.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 
 namespace PhantomLedger::entities::synth::products {
 
@@ -22,6 +26,8 @@ namespace {
 
 namespace product = ::PhantomLedger::entity::product;
 namespace personas = ::PhantomLedger::personas;
+namespace channels = ::PhantomLedger::channels;
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] constexpr double clamp01(double v) noexcept {
   return std::max(0.0, std::min(1.0, v));
@@ -34,7 +40,7 @@ namespace personas = ::PhantomLedger::personas;
       ::PhantomLedger::probability::distributions::lognormalByMedian(
           rng, median, sigma);
   const double clamped = std::max(floor, raw);
-  // Round to cents.
+
   return std::round(clamped * 100.0) / 100.0;
 }
 
@@ -42,9 +48,11 @@ namespace personas = ::PhantomLedger::personas;
                                 double mode, double right) {
   const double u = rng.nextDouble();
   const double fc = (mode - left) / (right - left);
+
   if (u < fc) {
     return left + std::sqrt(u * (right - left) * (mode - left));
   }
+
   return right - std::sqrt((1.0 - u) * (right - left) * (right - mode));
 }
 
@@ -57,6 +65,7 @@ sampleMortgagePaymentDay(::PhantomLedger::random::Rng &rng) {
   if (rng.coin(0.85)) {
     return 1;
   }
+
   return static_cast<std::int32_t>(rng.uniformInt(2, 6));
 }
 
@@ -64,6 +73,7 @@ sampleMortgagePaymentDay(::PhantomLedger::random::Rng &rng) {
 sampleMortgageAgeDays(::PhantomLedger::random::Rng &rng) {
   const double rawYears = triangular(rng, 0.5, 5.0, 10.0);
   const auto days = static_cast<std::int32_t>(std::round(rawYears * 365.0));
+
   return std::max<std::int32_t>(30, days);
 }
 
@@ -75,6 +85,7 @@ sampleAutoTermMonths(::PhantomLedger::random::Rng &rng,
   const double raw =
       ::PhantomLedger::probability::distributions::normal(rng, mean, sigma);
   const auto term = static_cast<std::int32_t>(std::round(raw));
+
   return std::clamp(term, cfg.termMinMonths, cfg.termMaxMonths);
 }
 
@@ -83,6 +94,7 @@ perPersonRng(std::uint64_t baseSeed, ::PhantomLedger::entity::PersonId person) {
   constexpr std::uint64_t kPortfolioSalt = 0xD0E550F150F1C0DEULL;
   const auto seed = ::PhantomLedger::hashing::make(
       baseSeed, kPortfolioSalt, static_cast<std::uint64_t>(person));
+
   return ::PhantomLedger::random::Rng::fromSeed(seed);
 }
 
@@ -96,55 +108,123 @@ perPersonRng(std::uint64_t baseSeed, ::PhantomLedger::entity::PersonId person) {
   if (target <= 0.0) {
     return 0.0;
   }
+
   if (anchoredShare >= 1.0) {
     return anchoredPolicy;
   }
 
   const double residual =
       (target - anchoredShare * anchoredPolicy) / (1.0 - anchoredShare);
+
   return clamp01(residual);
 }
 
 struct DelinquencyKnobs {
-  double lateP, missP, partialP, cureP, clusterMult;
-  std::int32_t lateDaysMin, lateDaysMax;
-  double partialMinFrac, partialMaxFrac;
+  double lateP;
+  double missP;
+  double partialP;
+  double cureP;
+  double clusterMult;
+
+  std::int32_t lateDaysMin;
+  std::int32_t lateDaysMax;
+
+  double partialMinFrac;
+  double partialMaxFrac;
 };
 
-[[nodiscard]] product::InstallmentTerms
-makeInstallmentTerms(const DelinquencyKnobs &k) {
-  product::InstallmentTerms t{};
-  t.lateP = k.lateP;
-  t.lateDaysMin = k.lateDaysMin;
-  t.lateDaysMax = k.lateDaysMax;
-  t.missP = k.missP;
-  t.partialP = k.partialP;
-  t.cureP = k.cureP;
-  t.partialMinFrac = k.partialMinFrac;
-  t.partialMaxFrac = k.partialMaxFrac;
-  t.clusterMult = k.clusterMult;
-  return t;
+template <class Config>
+[[nodiscard]] constexpr DelinquencyKnobs
+delinquencyKnobs(const Config &cfg) noexcept {
+  return {
+      .lateP = cfg.lateP,
+      .missP = cfg.missP,
+      .partialP = cfg.partialP,
+      .cureP = cfg.cureP,
+      .clusterMult = cfg.clusterMult,
+      .lateDaysMin = cfg.lateDaysMin,
+      .lateDaysMax = cfg.lateDaysMax,
+      .partialMinFrac = cfg.partialMinFrac,
+      .partialMaxFrac = cfg.partialMaxFrac,
+  };
 }
 
-[[nodiscard]] constexpr ::PhantomLedger::channels::Tag
-channelForInstallment(product::ProductType productType) {
-  using ProductChannel = ::PhantomLedger::channels::Product;
+[[nodiscard]] product::InstallmentTerms
+makeInstallmentTerms(const DelinquencyKnobs &knobs) {
+  product::InstallmentTerms terms{};
+  terms.lateP = knobs.lateP;
+  terms.lateDaysMin = knobs.lateDaysMin;
+  terms.lateDaysMax = knobs.lateDaysMax;
+  terms.missP = knobs.missP;
+  terms.partialP = knobs.partialP;
+  terms.cureP = knobs.cureP;
+  terms.partialMinFrac = knobs.partialMinFrac;
+  terms.partialMaxFrac = knobs.partialMaxFrac;
+  terms.clusterMult = knobs.clusterMult;
 
-  switch (productType) {
-  case product::ProductType::mortgage:
-    return ::PhantomLedger::channels::tag(ProductChannel::mortgage);
-  case product::ProductType::autoLoan:
-    return ::PhantomLedger::channels::tag(ProductChannel::autoLoan);
-  case product::ProductType::studentLoan:
-    return ::PhantomLedger::channels::tag(ProductChannel::studentLoan);
-  case product::ProductType::unknown:
-  case product::ProductType::insurance:
-  case product::ProductType::tax:
-    break;
+  return terms;
+}
+
+[[nodiscard]] constexpr auto makeInstallmentChannelTable() noexcept {
+  using ProductChannel = channels::Product;
+
+  std::array<channels::Tag, ::PhantomLedger::products::kProductTypeCount> out{};
+
+  out[enumTax::toIndex(product::ProductType::mortgage)] =
+      channels::tag(ProductChannel::mortgage);
+  out[enumTax::toIndex(product::ProductType::autoLoan)] =
+      channels::tag(ProductChannel::autoLoan);
+  out[enumTax::toIndex(product::ProductType::studentLoan)] =
+      channels::tag(ProductChannel::studentLoan);
+
+  return out;
+}
+
+inline constexpr auto kInstallmentChannels = makeInstallmentChannelTable();
+
+[[nodiscard]] channels::Tag
+channelForInstallment(product::ProductType productType) {
+  const auto index = enumTax::toIndex(productType);
+
+  if (index >= kInstallmentChannels.size() ||
+      !::PhantomLedger::products::isInstallmentLoan(productType)) {
+    throw std::invalid_argument(
+        "emitInstallmentSchedule requires an installment product type");
   }
 
-  throw std::invalid_argument(
-      "emitInstallmentSchedule requires an installment product type");
+  return kInstallmentChannels[index];
+}
+
+[[nodiscard]] ::PhantomLedger::time::TimePoint midday(int year, unsigned month,
+                                                      unsigned day) {
+  return ::PhantomLedger::time::makeTime(
+      ::PhantomLedger::time::CalendarDate{year, month, day},
+      ::PhantomLedger::time::TimeOfDay{12, 0, 0});
+}
+
+[[nodiscard]] bool inWindow(::PhantomLedger::time::TimePoint value,
+                            ::PhantomLedger::time::Window window) {
+  return value >= window.start && value < window.endExcl();
+}
+
+void appendObligation(product::ObligationStream &stream,
+                      ::PhantomLedger::entity::PersonId person,
+                      product::Direction direction,
+                      ::PhantomLedger::entity::Key counterparty, double amount,
+                      ::PhantomLedger::time::TimePoint timestamp,
+                      channels::Tag channel, product::ProductType productType,
+                      std::uint32_t productId = 0) {
+  product::ObligationEvent ev{};
+  ev.personId = person;
+  ev.direction = direction;
+  ev.counterpartyAcct = counterparty;
+  ev.amount = amount;
+  ev.timestamp = timestamp;
+  ev.channel = channel;
+  ev.productType = productType;
+  ev.productId = productId;
+
+  stream.append(ev);
 }
 
 void emitInstallmentSchedule(product::ObligationStream &stream,
@@ -155,35 +235,35 @@ void emitInstallmentSchedule(product::ObligationStream &stream,
                              std::int32_t termMonths, std::int32_t paymentDay,
                              double monthlyPayment,
                              ::PhantomLedger::time::Window window) {
-  const auto windowStart = window.start;
-  const auto windowEndExcl = window.endExcl();
+  const auto channel = channelForInstallment(productType);
 
   for (std::int32_t cycle = 0; cycle < termMonths; ++cycle) {
     const auto cycleAnchor = ::PhantomLedger::time::addMonths(loanStart, cycle);
-    // Project to the configured payment day of that month.
-    const auto dueDate = ::PhantomLedger::time::makeTime(
-        ::PhantomLedger::time::CalendarDate{
-            ::PhantomLedger::time::toCalendarDate(cycleAnchor).year,
-            ::PhantomLedger::time::toCalendarDate(cycleAnchor).month,
-            static_cast<unsigned>(paymentDay)},
-        ::PhantomLedger::time::TimeOfDay{12, 0, 0});
+    const auto cycleDate = ::PhantomLedger::time::toCalendarDate(cycleAnchor);
 
-    if (dueDate < windowStart || dueDate >= windowEndExcl) {
+    const auto dueDate = midday(cycleDate.year, cycleDate.month,
+                                static_cast<unsigned>(paymentDay));
+
+    if (!inWindow(dueDate, window)) {
       continue;
     }
 
-    product::ObligationEvent ev{};
-    ev.personId = person;
-    ev.direction = product::Direction::outflow;
-    ev.counterpartyAcct = counterparty;
-    ev.amount = monthlyPayment;
-    ev.timestamp = dueDate;
-    ev.channel = channelForInstallment(productType);
-    ev.productType = productType;
-    ev.productId = 0;
-
-    stream.append(ev);
+    appendObligation(stream, person, product::Direction::outflow, counterparty,
+                     monthlyPayment, dueDate, channel, productType);
   }
+}
+
+void addInstallmentProduct(
+    product::PortfolioRegistry &out, ::PhantomLedger::entity::PersonId person,
+    product::ProductType productType, ::PhantomLedger::entity::Key counterparty,
+    ::PhantomLedger::time::TimePoint start, std::int32_t termMonths,
+    std::int32_t paymentDay, double monthlyPayment,
+    ::PhantomLedger::time::Window window, DelinquencyKnobs knobs) {
+  out.loans().set(person, productType, makeInstallmentTerms(knobs));
+
+  emitInstallmentSchedule(out.obligations(), person, counterparty, productType,
+                          start, termMonths, paymentDay, monthlyPayment,
+                          window);
 }
 
 bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageConfig &cfg,
@@ -196,6 +276,7 @@ bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageConfig &cfg,
   if (rng.nextDouble() >= cfg.ownership.at(personaType)) {
     return false;
   }
+
   outIssued = true;
 
   const double payment =
@@ -205,26 +286,12 @@ bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageConfig &cfg,
   const std::int32_t ageDays = sampleMortgageAgeDays(rng);
   const auto loanStart = window.start - ::PhantomLedger::time::Days{ageDays};
 
-  // Mortgages are 30-year products.
   constexpr std::int32_t kMortgageTermMonths = 360;
 
-  out.loans().set(person, product::ProductType::mortgage,
-                  makeInstallmentTerms({
-                      .lateP = cfg.lateP,
-                      .missP = cfg.missP,
-                      .partialP = cfg.partialP,
-                      .cureP = cfg.cureP,
-                      .clusterMult = cfg.clusterMult,
-                      .lateDaysMin = cfg.lateDaysMin,
-                      .lateDaysMax = cfg.lateDaysMax,
-                      .partialMinFrac = cfg.partialMinFrac,
-                      .partialMaxFrac = cfg.partialMaxFrac,
-                  }));
-
-  emitInstallmentSchedule(out.obligations(), person,
-                          institutional::mortgageLender(),
-                          product::ProductType::mortgage, loanStart,
-                          kMortgageTermMonths, paymentDay, payment, window);
+  addInstallmentProduct(out, person, product::ProductType::mortgage,
+                        institutional::mortgageLender(), loanStart,
+                        kMortgageTermMonths, paymentDay, payment, window,
+                        delinquencyKnobs(cfg));
 
   return true;
 }
@@ -239,6 +306,7 @@ bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanConfig &cfg,
   if (rng.nextDouble() >= cfg.ownership.at(personaType)) {
     return false;
   }
+
   outIssued = true;
 
   const bool isNew = rng.nextDouble() < cfg.newVehicleShare;
@@ -255,23 +323,10 @@ bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanConfig &cfg,
 
   const auto loanStart = window.start - ::PhantomLedger::time::Days{ageDays};
 
-  out.loans().set(person, product::ProductType::autoLoan,
-                  makeInstallmentTerms({
-                      .lateP = cfg.lateP,
-                      .missP = cfg.missP,
-                      .partialP = cfg.partialP,
-                      .cureP = cfg.cureP,
-                      .clusterMult = cfg.clusterMult,
-                      .lateDaysMin = cfg.lateDaysMin,
-                      .lateDaysMax = cfg.lateDaysMax,
-                      .partialMinFrac = cfg.partialMinFrac,
-                      .partialMaxFrac = cfg.partialMaxFrac,
-                  }));
-
-  emitInstallmentSchedule(out.obligations(), person,
-                          institutional::autoLender(),
-                          product::ProductType::autoLoan, loanStart, termMonths,
-                          samplePaymentDay(rng), payment, window);
+  addInstallmentProduct(out, person, product::ProductType::autoLoan,
+                        institutional::autoLender(), loanStart, termMonths,
+                        samplePaymentDay(rng), payment, window,
+                        delinquencyKnobs(cfg));
 
   return true;
 }
@@ -284,9 +339,11 @@ bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanConfig &cfg,
   if (u < cfg.standardPlanP) {
     return cfg.standardTermMonths;
   }
+
   if (u < cfg.standardPlanP + cfg.extendedPlanP) {
     return cfg.extendedTermMonths;
   }
+
   return rng.coin(cfg.idr20YearP) ? cfg.idr20YearTermMonths
                                   : cfg.idr25YearTermMonths;
 }
@@ -305,7 +362,7 @@ bool tryStudentLoan(::PhantomLedger::random::Rng &rng,
 
   const std::int32_t termMonths = sampleStudentTerm(rng, cfg);
 
-  std::int32_t repaymentAgeMonths;
+  std::int32_t repaymentAgeMonths = 0;
   if (personaType == personas::Type::student) {
     if (rng.coin(cfg.studentDefermentP)) {
       repaymentAgeMonths = -static_cast<std::int32_t>(rng.uniformInt(1, 13));
@@ -320,23 +377,10 @@ bool tryStudentLoan(::PhantomLedger::random::Rng &rng,
   const auto repaymentStart =
       ::PhantomLedger::time::addMonths(window.start, -repaymentAgeMonths);
 
-  out.loans().set(person, product::ProductType::studentLoan,
-                  makeInstallmentTerms({
-                      .lateP = cfg.lateP,
-                      .missP = cfg.missP,
-                      .partialP = cfg.partialP,
-                      .cureP = cfg.cureP,
-                      .clusterMult = cfg.clusterMult,
-                      .lateDaysMin = cfg.lateDaysMin,
-                      .lateDaysMax = cfg.lateDaysMax,
-                      .partialMinFrac = cfg.partialMinFrac,
-                      .partialMaxFrac = cfg.partialMaxFrac,
-                  }));
-
-  emitInstallmentSchedule(out.obligations(), person,
-                          institutional::studentServicer(),
-                          product::ProductType::studentLoan, repaymentStart,
-                          termMonths, samplePaymentDay(rng), payment, window);
+  addInstallmentProduct(out, person, product::ProductType::studentLoan,
+                        institutional::studentServicer(), repaymentStart,
+                        termMonths, samplePaymentDay(rng), payment, window,
+                        delinquencyKnobs(cfg));
 
   return true;
 }
@@ -348,44 +392,31 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
   if (quarterlyAmount <= 0.0) {
     return;
   }
+
   static constexpr std::array<std::pair<unsigned, unsigned>, 4> kDueDates{{
       {4, 15},
       {6, 15},
       {9, 15},
-      {1, 15}, // Jan of the following year
+      {1, 15},
   }};
 
-  const auto windowStart = window.start;
-  const auto windowEndExcl = window.endExcl();
-  const auto startCal = ::PhantomLedger::time::toCalendarDate(windowStart);
-  const auto endCal = ::PhantomLedger::time::toCalendarDate(windowEndExcl);
+  const auto startCal = ::PhantomLedger::time::toCalendarDate(window.start);
+  const auto endCal = ::PhantomLedger::time::toCalendarDate(window.endExcl());
 
   for (int year = startCal.year; year <= endCal.year + 1; ++year) {
-    for (std::size_t i = 0; i < kDueDates.size(); ++i) {
-      const auto [month, day] = kDueDates[i];
-      // Slot 3 (Jan 15) belongs to the following tax year, so emit it
-      // against year+1 of the calendar.
-      const int actualYear = (i == 3) ? (year + 1) : year;
+    for (std::size_t index = 0; index < kDueDates.size(); ++index) {
+      const auto [month, day] = kDueDates[index];
+      const int actualYear = index == 3 ? year + 1 : year;
+      const auto due = midday(actualYear, month, day);
 
-      const auto due = ::PhantomLedger::time::makeTime(
-          ::PhantomLedger::time::CalendarDate{actualYear, month, day},
-          ::PhantomLedger::time::TimeOfDay{12, 0, 0});
-
-      if (due < windowStart || due >= windowEndExcl) {
+      if (!inWindow(due, window)) {
         continue;
       }
 
-      product::ObligationEvent ev{};
-      ev.personId = person;
-      ev.direction = product::Direction::outflow;
-      ev.counterpartyAcct = institutional::irsTreasury();
-      ev.amount = quarterlyAmount;
-      ev.timestamp = due;
-      ev.channel = ::PhantomLedger::channels::tag(
-          ::PhantomLedger::channels::Product::taxEstimated);
-      ev.productType = product::ProductType::tax;
-      ev.productId = 0;
-      stream.append(ev);
+      appendObligation(stream, person, product::Direction::outflow,
+                       institutional::irsTreasury(), quarterlyAmount, due,
+                       channels::tag(channels::Product::taxEstimated),
+                       product::ProductType::tax);
     }
   }
 }
@@ -396,48 +427,30 @@ void emitAnnualTaxSettlement(product::ObligationStream &stream,
                              double balanceDueAmount,
                              std::int32_t balanceDueMonth,
                              ::PhantomLedger::time::Window window) {
-  const auto windowStart = window.start;
-  const auto windowEndExcl = window.endExcl();
-  const auto startCal = ::PhantomLedger::time::toCalendarDate(windowStart);
-  const auto endCal = ::PhantomLedger::time::toCalendarDate(windowEndExcl);
+  const auto startCal = ::PhantomLedger::time::toCalendarDate(window.start);
+  const auto endCal = ::PhantomLedger::time::toCalendarDate(window.endExcl());
 
   for (int year = startCal.year; year <= endCal.year; ++year) {
     if (refundAmount > 0.0) {
-      const auto due = ::PhantomLedger::time::makeTime(
-          ::PhantomLedger::time::CalendarDate{
-              year, static_cast<unsigned>(refundMonth), 15U},
-          ::PhantomLedger::time::TimeOfDay{12, 0, 0});
-      if (due >= windowStart && due < windowEndExcl) {
-        product::ObligationEvent ev{};
-        ev.personId = person;
-        ev.direction = product::Direction::inflow;
-        ev.counterpartyAcct = institutional::irsTreasury();
-        ev.amount = refundAmount;
-        ev.timestamp = due;
-        ev.channel = ::PhantomLedger::channels::tag(
-            ::PhantomLedger::channels::Product::taxRefund);
-        ev.productType = product::ProductType::tax;
-        ev.productId = 1; // disambiguate from quarterlies
-        stream.append(ev);
+      const auto due = midday(year, static_cast<unsigned>(refundMonth), 15U);
+
+      if (inWindow(due, window)) {
+        appendObligation(stream, person, product::Direction::inflow,
+                         institutional::irsTreasury(), refundAmount, due,
+                         channels::tag(channels::Product::taxRefund),
+                         product::ProductType::tax, 1);
       }
     }
+
     if (balanceDueAmount > 0.0) {
-      const auto due = ::PhantomLedger::time::makeTime(
-          ::PhantomLedger::time::CalendarDate{
-              year, static_cast<unsigned>(balanceDueMonth), 15U},
-          ::PhantomLedger::time::TimeOfDay{12, 0, 0});
-      if (due >= windowStart && due < windowEndExcl) {
-        product::ObligationEvent ev{};
-        ev.personId = person;
-        ev.direction = product::Direction::outflow;
-        ev.counterpartyAcct = institutional::irsTreasury();
-        ev.amount = balanceDueAmount;
-        ev.timestamp = due;
-        ev.channel = ::PhantomLedger::channels::tag(
-            ::PhantomLedger::channels::Product::taxBalanceDue);
-        ev.productType = product::ProductType::tax;
-        ev.productId = 2;
-        stream.append(ev);
+      const auto due =
+          midday(year, static_cast<unsigned>(balanceDueMonth), 15U);
+
+      if (inWindow(due, window)) {
+        appendObligation(stream, person, product::Direction::outflow,
+                         institutional::irsTreasury(), balanceDueAmount, due,
+                         channels::tag(channels::Product::taxBalanceDue),
+                         product::ProductType::tax, 2);
       }
     }
   }
@@ -447,7 +460,6 @@ bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
             personas::Type personaType, ::PhantomLedger::time::Window window,
             ::PhantomLedger::entity::PersonId person,
             product::PortfolioRegistry &out) {
-  // Quarterlies — gated on persona ownership probability.
   double quarterly = 0.0;
   if (rng.nextDouble() < cfg.ownership.at(personaType)) {
     const double raw =
@@ -456,7 +468,6 @@ bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
     quarterly = std::round(std::max(100.0, raw) * 100.0) / 100.0;
   }
 
-  // Annual settlement — refund vs. balance-due is mutually exclusive.
   double refundAmount = 0.0;
   std::int32_t refundMonth = 3;
   double balanceDueAmount = 0.0;
@@ -484,6 +495,7 @@ bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
   emitTaxQuarterlies(out.obligations(), person, quarterly, window);
   emitAnnualTaxSettlement(out.obligations(), person, refundAmount, refundMonth,
                           balanceDueAmount, balanceDueMonth, window);
+
   return true;
 }
 
@@ -493,7 +505,6 @@ bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
                   double autoLoanAnchorP,
                   ::PhantomLedger::entity::PersonId person,
                   product::PortfolioRegistry &out) {
-  // ---- AUTO ----
   const double autoAnchorPolicyP = cfg.autoLoanAutoRequiredP;
   const double autoIssueP =
       hasAutoLoan
@@ -509,7 +520,6 @@ bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
                                   samplePaymentDay(rng), cfg.autoClaimAnnualP);
   }
 
-  // ---- HOME ----
   const double homeAnchorPolicyP = cfg.mortgageHomeRequiredP;
   const double homeIssueP =
       hasMortgage
@@ -525,7 +535,6 @@ bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
                                   samplePaymentDay(rng), cfg.homeClaimAnnualP);
   }
 
-  // ---- LIFE ----
   std::optional<product::InsurancePolicy> lifePol;
   if (rng.nextDouble() < cfg.targets.lifeP.at(personaType)) {
     const double premium =
@@ -538,14 +547,14 @@ bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
     return false;
   }
 
-  product::InsuranceHoldings holdings{};
-  holdings.auto_ = autoPol;
-  holdings.home = homePol;
-  holdings.life = lifePol;
-  out.insurance().set(person, std::move(holdings));
+  out.insurance().set(person, product::InsuranceHoldings{
+                                  std::move(autoPol),
+                                  std::move(homePol),
+                                  std::move(lifePol),
+                              });
+
   return true;
 }
-
 } // namespace
 
 ::PhantomLedger::entity::product::PortfolioRegistry
@@ -553,6 +562,7 @@ build(::PhantomLedger::random::Rng & /*rng*/, const Inputs &in) {
   if (in.personas == nullptr) {
     throw std::invalid_argument("products::build: personas is required");
   }
+
   if (in.creditCards == nullptr) {
     throw std::invalid_argument("products::build: creditCards is required");
   }

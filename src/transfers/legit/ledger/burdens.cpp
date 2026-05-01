@@ -1,33 +1,26 @@
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/taxonomies/products/predicates.hpp"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
 namespace PhantomLedger::transfers::legit::ledger {
 
 namespace {
 
-[[nodiscard]] bool
-contributesToBurden(entity::product::ProductType type) noexcept {
-  using entity::product::ProductType;
-  switch (type) {
-  case ProductType::mortgage:
-  case ProductType::autoLoan:
-  case ProductType::studentLoan:
-  case ProductType::tax:
-    return true;
-  case ProductType::insurance: // walked separately
-  case ProductType::unknown:
-    return false;
-  }
-  return false;
+namespace products = ::PhantomLedger::products;
+
+[[nodiscard]] bool contributesToBurden(products::ProductType type) noexcept {
+  return products::isInstallmentLoan(type) ||
+         type == products::ProductType::tax;
 }
 
-[[nodiscard]] time::TimePoint addMonths(time::TimePoint tp,
+[[nodiscard]] time::TimePoint addMonths(time::TimePoint timePoint,
                                         int months) noexcept {
-
-  return time::addDays(tp, months * 30);
+  return time::addDays(timePoint, months * 30);
 }
 
 } // namespace
@@ -48,38 +41,44 @@ buildMonthlyBurdens(const entity::product::PortfolioRegistry &registry,
     if (event.direction != entity::product::Direction::outflow) {
       continue;
     }
+
     if (!contributesToBurden(event.productType)) {
       continue;
     }
+
     const auto personIdx = static_cast<std::size_t>(event.personId) - 1;
     if (personIdx >= burdens.size()) {
       continue;
     }
+
     burdens[personIdx] += event.amount;
   }
 
   // Three-month window normalised back to a per-month figure.
-  for (auto &b : burdens) {
-    b /= static_cast<double>(kBurdenWindowMonths);
+  for (auto &burden : burdens) {
+    burden /= static_cast<double>(kBurdenWindowMonths);
   }
 
   // ---- Pass 2: insurance premiums (skip home if person has mortgage) ----
   registry.forEachInsuredPerson(
       [&](entity::PersonId person,
-          const entity::product::InsuranceHoldings &h) {
+          const entity::product::InsuranceHoldings &holdings) {
         const auto idx = static_cast<std::size_t>(person) - 1;
         if (idx >= burdens.size()) {
           return;
         }
 
-        if (h.auto_.has_value()) {
-          burdens[idx] += h.auto_->monthlyPremium;
+        if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
+          burdens[idx] += policy->monthlyPremium;
         }
-        if (h.life.has_value()) {
-          burdens[idx] += h.life->monthlyPremium;
+
+        if (const auto &policy = holdings.lifePolicy(); policy.has_value()) {
+          burdens[idx] += policy->monthlyPremium;
         }
-        if (h.home.has_value() && !registry.hasMortgage(person)) {
-          burdens[idx] += h.home->monthlyPremium;
+
+        if (const auto &policy = holdings.homePolicy();
+            policy.has_value() && !registry.hasMortgage(person)) {
+          burdens[idx] += policy->monthlyPremium;
         }
       });
 

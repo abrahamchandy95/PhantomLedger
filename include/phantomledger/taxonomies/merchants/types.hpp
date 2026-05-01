@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -18,10 +19,20 @@ enum class Category : std::uint8_t {
   education,
 };
 
-inline constexpr std::size_t kCategoryCount = 10;
+// Ordered list of all categories — stable for iteration / sampling.
+inline constexpr auto kCategories = std::to_array<Category>({
+    Category::grocery,
+    Category::fuel,
+    Category::utilities,
+    Category::telecom,
+    Category::ecommerce,
+    Category::restaurant,
+    Category::pharmacy,
+    Category::retailOther,
+    Category::insurance,
+    Category::education,
+});
 
-[[nodiscard]] constexpr std::size_t slot(Category c) noexcept {
-  return static_cast<std::size_t>(c);
-}
+inline constexpr std::size_t kCategoryCount = kCategories.size();
 
 } // namespace PhantomLedger::merchants

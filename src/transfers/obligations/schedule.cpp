@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/obligations/schedule.hpp"
 
+#include "phantomledger/taxonomies/products/predicates.hpp"
 #include "phantomledger/transfers/obligations/delinquency.hpp"
 #include "phantomledger/transfers/obligations/installments.hpp"
 #include "phantomledger/transfers/obligations/plain.hpp"
@@ -25,7 +26,7 @@ scheduledPayments(const entity::product::PortfolioRegistry &registry,
 
     const bool routeThroughStateMachine =
         event.direction == entity::product::Direction::outflow &&
-        entity::product::isInstallmentLoan(event.productType);
+        ::PhantomLedger::products::isInstallmentLoan(event.productType);
 
     if (routeThroughStateMachine &&
         registry.installmentTerms(event.personId, event.productType) !=

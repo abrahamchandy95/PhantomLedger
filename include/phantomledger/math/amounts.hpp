@@ -5,10 +5,12 @@
 #include "phantomledger/probability/distributions/gamma.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <stdexcept>
 
@@ -22,20 +24,21 @@ struct AmountModel {
   };
 
   Kind kind = Kind::invalid;
-  // LogNormal: p0=median,  p1=sigma
-  // Gamma:     p0=shape,   p1=scale,  p2=add
+
+  // LogNormal: p0 = median, p1 = sigma
+  // Gamma:     p0 = shape,  p1 = scale, p2 = add
   double p0 = 0.0;
   double p1 = 0.0;
   double p2 = 0.0;
   double floor = 1.0;
 
   [[nodiscard]] static constexpr AmountModel
-  lognormal(double median, double sigma, double floor_ = 1.0) {
+  lognormal(double median, double sigma, double floor_ = 1.0) noexcept {
     return {Kind::logNormal, median, sigma, 0.0, floor_};
   }
 
   [[nodiscard]] static constexpr AmountModel
-  gamma(double shape, double scale, double add, double floor_ = 1.0) {
+  gamma(double shape, double scale, double add, double floor_ = 1.0) noexcept {
     return {Kind::gamma, shape, scale, add, floor_};
   }
 
@@ -50,18 +53,21 @@ struct AmountModel {
           probability::distributions::lognormalByMedian(rng, p0, p1);
       return primitives::utils::roundMoney(std::max(floor, raw));
     }
+
     case Kind::gamma: {
       const double raw = probability::distributions::gamma(rng, p0, p1) + p2;
       return primitives::utils::roundMoney(std::max(floor, raw));
     }
+
     case Kind::invalid:
       break;
     }
+
     return floor;
   }
 };
 
-// --- Named constants (stable names for direct use by generators) ------
+// --- Named constants ---------------------------------------------------
 
 inline constexpr auto kSalary = AmountModel::lognormal(3000.0, 0.35, 50.0);
 inline constexpr auto kRent = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);
@@ -88,90 +94,120 @@ inline constexpr auto kFraudBoostCycle =
 
 namespace detail {
 
-[[nodiscard]] consteval std::array<AmountModel, 256> buildChannelTable() {
-  std::array<AmountModel, 256> t{};
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
+
+[[nodiscard]] constexpr std::size_t channelIndex(channels::Tag tag) noexcept {
+  return static_cast<std::size_t>(tag.value);
+}
+
+[[nodiscard]] constexpr std::size_t
+merchantIndex(merchants::Category category) noexcept {
+  return enumTax::toIndex(category);
+}
+
+inline void setChannel(std::array<AmountModel, 256> &table, channels::Tag tag,
+                       AmountModel model) noexcept {
+  table[channelIndex(tag)] = model;
+}
+
+inline void
+setMerchant(std::array<AmountModel, merchants::kCategoryCount> &table,
+            merchants::Category category, AmountModel model) noexcept {
+  table[merchantIndex(category)] = model;
+}
+
+[[nodiscard]] inline std::array<AmountModel, 256> buildChannelTable() {
+  std::array<AmountModel, 256> table{};
+
   using L = channels::Legit;
   using R = channels::Rent;
   using F = channels::Fraud;
 
-  t[channels::tag(L::salary).value] = kSalary;
-  t[channels::tag(L::p2p).value] = kP2P;
-  t[channels::tag(L::bill).value] = kBill;
-  t[channels::tag(L::externalUnknown).value] = kExternalUnknown;
-  t[channels::tag(L::atm).value] = kAtm;
-  t[channels::tag(L::selfTransfer).value] = kSelfTransfer;
-  t[channels::tag(L::subscription).value] = kSubscription;
-  t[channels::tag(L::clientAchCredit).value] = kClientAchCredit;
-  t[channels::tag(L::cardSettlement).value] = kCardSettlement;
-  t[channels::tag(L::platformPayout).value] = kPlatformPayout;
-  t[channels::tag(L::ownerDraw).value] = kOwnerDraw;
-  t[channels::tag(L::investmentInflow).value] = kInvestmentInflow;
+  setChannel(table, channels::tag(L::salary), kSalary);
+  setChannel(table, channels::tag(L::p2p), kP2P);
+  setChannel(table, channels::tag(L::bill), kBill);
+  setChannel(table, channels::tag(L::externalUnknown), kExternalUnknown);
+  setChannel(table, channels::tag(L::atm), kAtm);
+  setChannel(table, channels::tag(L::selfTransfer), kSelfTransfer);
+  setChannel(table, channels::tag(L::subscription), kSubscription);
+  setChannel(table, channels::tag(L::clientAchCredit), kClientAchCredit);
+  setChannel(table, channels::tag(L::cardSettlement), kCardSettlement);
+  setChannel(table, channels::tag(L::platformPayout), kPlatformPayout);
+  setChannel(table, channels::tag(L::ownerDraw), kOwnerDraw);
+  setChannel(table, channels::tag(L::investmentInflow), kInvestmentInflow);
 
-  // All rent variants share the RENT gamma. The per-channel signal
-  // is carried by the tag itself; the amount shape does not need to
-  // differ to distinguish Zelle-to-individual from corporate portal.
-  t[channels::tag(R::generic).value] = kRent;
-  t[channels::tag(R::ach).value] = kRent;
-  t[channels::tag(R::portal).value] = kRent;
-  t[channels::tag(R::p2p).value] = kRent;
-  t[channels::tag(R::check).value] = kRent;
+  // All rent variants share the rent distribution. The channel tag
+  // still carries the behavioral signal.
+  setChannel(table, channels::tag(R::generic), kRent);
+  setChannel(table, channels::tag(R::ach), kRent);
+  setChannel(table, channels::tag(R::portal), kRent);
+  setChannel(table, channels::tag(R::p2p), kRent);
+  setChannel(table, channels::tag(R::check), kRent);
 
-  t[channels::tag(F::classic).value] = kFraud;
-  t[channels::tag(F::cycle).value] = kFraudCycle;
+  setChannel(table, channels::tag(F::classic), kFraud);
+  setChannel(table, channels::tag(F::cycle), kFraudCycle);
 
-  return t;
+  return table;
 }
 
-[[nodiscard]] consteval std::array<AmountModel, merchants::kCategoryCount>
+[[nodiscard]] inline std::array<AmountModel, merchants::kCategoryCount>
 buildMerchantTable() {
-  std::array<AmountModel, merchants::kCategoryCount> t{};
+  std::array<AmountModel, merchants::kCategoryCount> table{};
+
   using C = merchants::Category;
-  t[merchants::slot(C::grocery)] = AmountModel::lognormal(50.0, 0.55, 1.0);
-  t[merchants::slot(C::fuel)] = AmountModel::lognormal(45.0, 0.35, 1.0);
-  t[merchants::slot(C::restaurant)] = AmountModel::lognormal(28.0, 0.60, 1.0);
-  t[merchants::slot(C::pharmacy)] = AmountModel::lognormal(25.0, 0.65, 1.0);
-  t[merchants::slot(C::ecommerce)] = AmountModel::lognormal(85.0, 0.70, 1.0);
-  t[merchants::slot(C::retailOther)] = AmountModel::lognormal(45.0, 0.75, 1.0);
-  t[merchants::slot(C::utilities)] = AmountModel::lognormal(120.0, 0.40, 1.0);
-  t[merchants::slot(C::telecom)] = AmountModel::lognormal(75.0, 0.30, 1.0);
-  t[merchants::slot(C::insurance)] = AmountModel::lognormal(150.0, 0.35, 1.0);
-  t[merchants::slot(C::education)] = AmountModel::lognormal(200.0, 0.60, 1.0);
-  return t;
+
+  setMerchant(table, C::grocery, AmountModel::lognormal(50.0, 0.55, 1.0));
+  setMerchant(table, C::fuel, AmountModel::lognormal(45.0, 0.35, 1.0));
+  setMerchant(table, C::restaurant, AmountModel::lognormal(28.0, 0.60, 1.0));
+  setMerchant(table, C::pharmacy, AmountModel::lognormal(25.0, 0.65, 1.0));
+  setMerchant(table, C::ecommerce, AmountModel::lognormal(85.0, 0.70, 1.0));
+  setMerchant(table, C::retailOther, AmountModel::lognormal(45.0, 0.75, 1.0));
+  setMerchant(table, C::utilities, AmountModel::lognormal(120.0, 0.40, 1.0));
+  setMerchant(table, C::telecom, AmountModel::lognormal(75.0, 0.30, 1.0));
+  setMerchant(table, C::insurance, AmountModel::lognormal(150.0, 0.35, 1.0));
+  setMerchant(table, C::education, AmountModel::lognormal(200.0, 0.60, 1.0));
+
+  return table;
 }
 
-inline constexpr auto kChannelTable = buildChannelTable();
-inline constexpr auto kMerchantTable = buildMerchantTable();
+inline const auto kChannelTable = buildChannelTable();
+inline const auto kMerchantTable = buildMerchantTable();
 
 inline constexpr AmountModel kDefaultMerchant =
     AmountModel::lognormal(45.0, 0.70, 1.0);
 
 } // namespace detail
 
-/// O(1) lookup by tag. Returned reference is valid for program lifetime.
-[[nodiscard]] inline constexpr const AmountModel &
-forChannel(channels::Tag t) noexcept {
-  return detail::kChannelTable[t.value];
+/// O(1) lookup by channel tag. Returned reference is valid for program
+/// lifetime.
+[[nodiscard]] inline const AmountModel &forChannel(channels::Tag tag) noexcept {
+  return detail::kChannelTable[detail::channelIndex(tag)];
 }
 
 /// Sample an amount for the given channel. Throws if the channel has
-/// no registered model — matches Python's KeyError. Intentional loud
-/// failure prevents silent fallthrough to a wrong distribution.
-[[nodiscard]] inline double sample(random::Rng &rng, channels::Tag t) {
-  const auto &m = detail::kChannelTable[t.value];
-  if (!m.valid()) {
+/// no registered model.
+[[nodiscard]] inline double sample(random::Rng &rng, channels::Tag tag) {
+  const auto &model = forChannel(tag);
+
+  if (!model.valid()) {
     throw std::out_of_range(
         "amounts::sample: no amount model registered for channel");
   }
-  return m.sample(rng);
+
+  return model.sample(rng);
 }
 
 /// Sample a merchant-category amount. Unknown categories fall back
-/// to a default lognormal rather than throwing — categories are a
-/// smaller fixed enum and partial coverage is acceptable.
+/// to a default lognormal model.
 [[nodiscard]] inline double merchantAmount(random::Rng &rng,
-                                           merchants::Category c) {
-  const auto &m = detail::kMerchantTable[merchants::slot(c)];
-  return m.valid() ? m.sample(rng) : detail::kDefaultMerchant.sample(rng);
+                                           merchants::Category category) {
+  const auto &model = detail::kMerchantTable[detail::merchantIndex(category)];
+
+  if (model.valid()) {
+    return model.sample(rng);
+  }
+
+  return detail::kDefaultMerchant.sample(rng);
 }
 
 } // namespace PhantomLedger::math::amounts

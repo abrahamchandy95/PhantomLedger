@@ -17,7 +17,7 @@ struct CityRange {
 
 namespace detail {
 
-inline constexpr std::array<std::string_view, 470> kAllUsCities{
+inline constexpr auto kAllUsCities = std::to_array<std::string_view>({
     // AL  [0, 10)
     "Birmingham",
     "Montgomery",
@@ -541,7 +541,7 @@ inline constexpr std::array<std::string_view, 470> kAllUsCities{
     "Anacostia",
     "Foggy Bottom",
     "Adams Morgan",
-};
+});
 
 /// Per-state slice into `kAllUsCities`, indexed by `slot(state)`.
 inline constexpr std::array<CityRange, kStateCount> kStateCityRanges{{
@@ -597,16 +597,32 @@ inline constexpr std::array<CityRange, kStateCount> kStateCityRanges{{
     {456, 8},  // WY
     {464, 6},  // DC
 }};
+static_assert(kStateCityRanges.size() == kStateCount);
 
+consteval bool cityRangesAreValid() {
+  std::size_t offset = 0;
+
+  for (const auto range : kStateCityRanges) {
+    if (range.offset != offset) {
+      return false;
+    }
+
+    offset += range.count;
+
+    if (offset > kAllUsCities.size()) {
+      return false;
+    }
+  }
+
+  return offset == kAllUsCities.size();
+}
+
+static_assert(cityRangesAreValid());
 } // namespace detail
 
-/// Span of major-city names for `state`. Returned span is at least
-/// 6 entries long for every state, up to 10 for the populous ones.
-/// Pointers are into static-storage string literals — safe to hold
-/// indefinitely, no lifetime concerns.
 [[nodiscard]] constexpr std::span<const std::string_view>
 citiesFor(State state) noexcept {
-  const auto range = detail::kStateCityRanges[slot(state)];
+  const auto range = detail::kStateCityRanges[toIndex(state)];
   return std::span<const std::string_view>{
       detail::kAllUsCities.data() + range.offset, range.count};
 }

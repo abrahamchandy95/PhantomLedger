@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/synth/pii/geonames.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <array>
@@ -10,6 +11,8 @@
 #include <vector>
 
 namespace PhantomLedger::entities::synth::pii {
+
+using namespace ::PhantomLedger::taxonomies::enums;
 
 struct PoolSizes {
   std::size_t firstNames = 50'000;
@@ -35,7 +38,7 @@ struct PoolSet {
   std::array<LocalePool, locale::kCountryCount> byCountry{};
 
   [[nodiscard]] const LocalePool &forCountry(locale::Country c) const noexcept {
-    return byCountry[locale::slot(c)];
+    return byCountry[toIndex(c)];
   }
 };
 

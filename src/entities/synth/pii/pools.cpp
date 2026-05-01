@@ -42,7 +42,7 @@ namespace {
     return Locale::pt_BR;
   case Country::mx:
     return Locale::es_MX;
-  case Country::in_:
+  case Country::in:
     return Locale::en_IN;
   case Country::jp:
     return Locale::ja_JP;

@@ -7,6 +7,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/run/options.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <cstdint>
@@ -195,7 +196,7 @@ buildDefaultPoolSet(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
   const auto derived = static_cast<std::uint32_t>(seed ^ 0xA5A5A5A5ULL);
-  poolSet.byCountry[pl::locale::slot(pl::locale::Country::us)] =
+  poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
       pl::entities::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
                                                 derived);
   return poolSet;

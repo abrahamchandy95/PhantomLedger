@@ -1,17 +1,4 @@
 #pragma once
-/*
- * PortfolioRegistry — thin facade that composes three concerns:
- *
- *   - InsuranceLedger   (insurance holdings per person)
- *   - LoanTermsLedger   (installment terms per (person, product))
- *   - ObligationStream  (time-sorted event stream)
- *
- * Kept as a single type so existing call sites that take
- * `const PortfolioRegistry&` still compile — but internally each
- * operation lives on the piece that owns it. Transfer generators
- * that only touch one concern should prefer to take the narrower
- * type.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
@@ -47,12 +34,6 @@ public:
   [[nodiscard]] const ObligationStream &obligations() const noexcept {
     return obligations_;
   }
-
-  // --- Convenience passthroughs ---
-  //
-  // Kept tight: just enough so the existing transfer generators
-  // don't have to rewrite at call sites. New code should reach
-  // through .insurance() / .loans() / .obligations() directly.
 
   void setInsurance(entity::PersonId person, InsuranceHoldings holdings) {
     insurance_.set(person, std::move(holdings));

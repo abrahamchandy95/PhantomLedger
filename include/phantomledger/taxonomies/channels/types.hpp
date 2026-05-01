@@ -1,21 +1,22 @@
 #pragma once
 
+#include "phantomledger/taxonomies/enums.hpp"
+
 #include <compare>
-#include <concepts>
 #include <cstdint>
+#include <type_traits>
 
 namespace PhantomLedger::channels {
 
-// --- Tag ---------------------------------------------------------
+namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 struct Tag {
   std::uint8_t value = 0;
+
   constexpr std::strong_ordering operator<=>(const Tag &) const = default;
 };
 
 inline constexpr Tag none{0};
-
-// --- Enum groups byte-packed by high nibble ----------------------
 
 enum class Legit : std::uint8_t {
   salary = 0x01,
@@ -106,24 +107,21 @@ enum class Liquidity : std::uint8_t {
   locInterest = 0x91,
 };
 
-// --- Concept & tag conversion ------------------------------------
-
-template <class T, class... Ts>
-concept OneOf = (std::same_as<T, Ts> || ...);
+template <class T> using Bare = std::remove_cvref_t<T>;
 
 template <class T>
-concept Enum = OneOf<T, Legit, Rent, Family, Credit, Product, Government,
-                     Insurance, Fraud, Camouflage, Liquidity>;
+concept ChannelEnum =
+    enumTax::OneOf<Bare<T>, Legit, Rent, Family, Credit, Product, Government,
+                   Insurance, Fraud, Camouflage, Liquidity> &&
+    enumTax::ByteEnum<Bare<T>>;
 
-template <Enum E> [[nodiscard]] constexpr std::uint8_t byte(E v) noexcept {
-  return static_cast<std::uint8_t>(v);
+template <ChannelEnum E> [[nodiscard]] constexpr Tag tag(E value) noexcept {
+  return Tag{enumTax::toByte(static_cast<Bare<E>>(value))};
 }
 
-template <Enum E> [[nodiscard]] constexpr Tag tag(E v) noexcept {
-  return Tag{byte(v)};
+template <ChannelEnum E>
+[[nodiscard]] constexpr bool is(Tag current, E expected) noexcept {
+  return current == tag(expected);
 }
 
-template <Enum E> [[nodiscard]] constexpr bool is(Tag c, E v) noexcept {
-  return c == tag(v);
-}
 } // namespace PhantomLedger::channels

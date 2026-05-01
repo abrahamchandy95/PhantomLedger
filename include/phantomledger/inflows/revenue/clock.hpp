@@ -1,15 +1,9 @@
 #pragma once
-/*
- * inflows/revenue/clock.hpp — business-day timestamp sampling.
- *
- * Given a month anchor, samples a timestamp on a weekday within
- * the month, retrying up to 16 times to avoid weekends. If all
- * retries land on weekends, rolls forward to the next Monday.
- */
 
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <algorithm>
 
@@ -21,10 +15,15 @@ struct BusinessDayWindow {
   int startDay = 0;
   int endDayExclusive = 28;
 
-  [[nodiscard]] constexpr bool valid() const noexcept {
-    return earliestHour >= 0 && earliestHour <= latestHour &&
-           latestHour <= 23 && startDay >= 0 && startDay <= 27 &&
-           endDayExclusive >= startDay + 1 && endDayExclusive <= 28;
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::between("earliestHour", earliestHour, 0, 23); });
+    r.check([&] { v::between("latestHour", latestHour, earliestHour, 23); });
+    r.check([&] { v::between("startDay", startDay, 0, 27); });
+    r.check([&] {
+      v::between("endDayExclusive", endDayExclusive, startDay + 1, 28);
+    });
   }
 };
 

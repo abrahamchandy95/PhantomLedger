@@ -1,15 +1,8 @@
 #pragma once
-/*
- * InsuranceLedger — per-person insurance holdings.
- *
- * One of the three concerns split out of the old PortfolioRegistry.
- * This class is responsible for storing which insurance policies a
- * person holds and for iterating them. It knows nothing about loans
- * or scheduled obligation events.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/insurance.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <unordered_map>
 #include <utility>
@@ -21,6 +14,7 @@ public:
   InsuranceLedger() = default;
 
   void set(entity::PersonId person, InsuranceHoldings holdings) {
+    primitives::validate::require(holdings);
     byPerson_.insert_or_assign(person, std::move(holdings));
   }
 
@@ -30,8 +24,6 @@ public:
     return it == byPerson_.end() ? nullptr : &it->second;
   }
 
-  /// Visit every insured person in arbitrary order. `visit` is called
-  /// with `(PersonId, const InsuranceHoldings&)`.
   template <typename F> void forEach(F &&visit) const {
     for (const auto &[person, holdings] : byPerson_) {
       visit(person, holdings);

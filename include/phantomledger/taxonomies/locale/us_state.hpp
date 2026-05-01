@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/taxonomies/enums.hpp"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -7,6 +9,8 @@
 #include <string_view>
 
 namespace PhantomLedger::locale::us {
+
+using namespace ::PhantomLedger::taxonomies::enums;
 
 enum class State : std::uint8_t {
   al = 0,
@@ -62,26 +66,33 @@ enum class State : std::uint8_t {
   dc,
 };
 
-inline constexpr std::size_t kStateCount = 51;
+inline constexpr auto kStates = std::to_array<State>({
+    State::al,  State::ak, State::az, State::ar, State::ca, State::co,
+    State::ct,  State::de, State::fl, State::ga, State::hi, State::id,
+    State::il,  State::in, State::ia, State::ks, State::ky, State::la,
+    State::me,  State::md, State::ma, State::mi, State::mn, State::ms,
+    State::mo,  State::mt, State::ne, State::nv, State::nh, State::nj,
+    State::nm,  State::ny, State::nc, State::nd, State::oh, State::ok,
+    State::or_, State::pa, State::ri, State::sc, State::sd, State::tn,
+    State::tx,  State::ut, State::vt, State::va, State::wa, State::wv,
+    State::wi,  State::wy, State::dc,
+});
 
-[[nodiscard]] constexpr std::size_t slot(State s) noexcept {
-  return static_cast<std::size_t>(s);
-}
+inline constexpr std::size_t kStateCount = kStates.size();
 
 namespace detail {
 
-/// USPS two-letter abbreviation per State, indexed by `slot(state)`.
-inline constexpr std::array<std::string_view, kStateCount> kStateAbbrev{
+static_assert(isIndexable(kStates));
+
+inline constexpr auto kStateAbbrev = std::to_array<std::string_view>({
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI",
     "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI",
     "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC",
     "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT",
     "VT", "VA", "WA", "WV", "WI", "WY", "DC",
-};
+});
 
-/// Full state name per State, indexed by `slot(state)`. Provided
-/// for CSV exports that prefer "California" to "CA".
-inline constexpr std::array<std::string_view, kStateCount> kStateName{
+inline constexpr auto kStateName = std::to_array<std::string_view>({
     "Alabama",        "Alaska",        "Arizona",
     "Arkansas",       "California",    "Colorado",
     "Connecticut",    "Delaware",      "Florida",
@@ -99,16 +110,19 @@ inline constexpr std::array<std::string_view, kStateCount> kStateName{
     "Texas",          "Utah",          "Vermont",
     "Virginia",       "Washington",    "West Virginia",
     "Wisconsin",      "Wyoming",       "District of Columbia",
-};
+});
+
+static_assert(kStateAbbrev.size() == kStateCount);
+static_assert(kStateName.size() == kStateCount);
 
 } // namespace detail
 
-[[nodiscard]] constexpr std::string_view abbrev(State s) noexcept {
-  return detail::kStateAbbrev[slot(s)];
+[[nodiscard]] constexpr std::string_view abbrev(State state) noexcept {
+  return detail::kStateAbbrev[toIndex(state)];
 }
 
-[[nodiscard]] constexpr std::string_view fullName(State s) noexcept {
-  return detail::kStateName[slot(s)];
+[[nodiscard]] constexpr std::string_view fullName(State state) noexcept {
+  return detail::kStateName[toIndex(state)];
 }
 
 [[nodiscard]] constexpr std::optional<State>
@@ -116,15 +130,17 @@ parseStateCode(std::string_view code) noexcept {
   if (code.size() != 2) {
     return std::nullopt;
   }
-  for (std::size_t i = 0; i < kStateCount; ++i) {
-    if (detail::kStateAbbrev[i] == code) {
-      return static_cast<State>(i);
+
+  for (std::size_t index = 0; index < kStateCount; ++index) {
+    if (detail::kStateAbbrev[index] == code) {
+      return kStates[index];
     }
   }
+
   return std::nullopt;
 }
 
-// --- Embedded ZIP-range table (synthetic data path) ---------------
+// --- Embedded ZIP-range table ------------------------------------
 
 struct ZipRange {
   std::uint32_t low;
@@ -133,11 +149,11 @@ struct ZipRange {
 
 namespace detail {
 
-inline constexpr std::array<ZipRange, kStateCount> kStateZipRanges{{
+inline constexpr auto kStateZipRanges = std::to_array<ZipRange>({
     {35004, 36925}, // AL
     {99501, 99950}, // AK
     {85001, 86556}, // AZ
-    {71601, 72959}, // AR  (union of two real spans)
+    {71601, 72959}, // AR
     {90001, 96162}, // CA
     {80001, 81658}, // CO
     {6001, 6928},   // CT
@@ -176,7 +192,7 @@ inline constexpr std::array<ZipRange, kStateCount> kStateZipRanges{{
     {29001, 29945}, // SC
     {57001, 57799}, // SD
     {37010, 38589}, // TN
-    {73301, 88589}, // TX  (large span, includes some non-TX gaps)
+    {73301, 88589}, // TX
     {84001, 84791}, // UT
     {5001, 5907},   // VT
     {20040, 24658}, // VA
@@ -185,80 +201,34 @@ inline constexpr std::array<ZipRange, kStateCount> kStateZipRanges{{
     {53001, 54990}, // WI
     {82001, 83128}, // WY
     {20001, 20599}, // DC
-}};
+});
+
+static_assert(kStateZipRanges.size() == kStateCount);
 
 } // namespace detail
 
-[[nodiscard]] constexpr ZipRange zipRangeFor(State s) noexcept {
-  return detail::kStateZipRanges[slot(s)];
+[[nodiscard]] constexpr ZipRange zipRangeFor(State state) noexcept {
+  return detail::kStateZipRanges[toIndex(state)];
 }
 
-// --- Population weights for realistic state distribution ----------
+// --- Population weights ------------------------------------------
 
 namespace detail {
 
-inline constexpr std::array<std::uint16_t, kStateCount> kStatePopulationBp{
-    150,  //  AL
-    22,   //  AK
-    218,  //  AZ
-    91,   //  AR
-    1170, //  CA
-    173,  //  CO
-    108,  //  CT
-    31,   //  DE
-    664,  //  FL
-    326,  //  GA
-    43,   //  HI
-    58,   //  ID
-    379,  //  IL
-    202,  //  IN
-    96,   //  IA
-    88,   //  KS
-    136,  //  KY
-    138,  //  LA
-    41,   //  ME
-    184,  //  MD
-    207,  //  MA
-    301,  //  MI
-    173,  //  MN
-    89,   //  MS
-    185,  //  MO
-    33,   //  MT
-    59,   //  NE
-    94,   //  NV
-    41,   //  NH
-    276,  //  NJ
-    63,   //  NM
-    591,  //  NY
-    322,  //  NC
-    23,   //  ND
-    354,  //  OH
-    120,  //  OK
-    127,  //  OR
-    389,  //  PA
-    33,   //  RI
-    155,  //  SC
-    27,   //  SD
-    208,  //  TN
-    896,  //  TX
-    99,   //  UT
-    20,   //  VT
-    258,  //  VA
-    232,  //  WA
-    54,   //  WV
-    176,  //  WI
-    17,   //  WY
-    20,   //  DC
-};
+inline constexpr auto kStatePopulationBp = std::to_array<std::uint16_t>({
+    150, 22, 218, 91,  1170, 173, 108, 31,  664, 326, 43,  58,  379,
+    202, 96, 88,  136, 138,  41,  184, 207, 301, 173, 89,  185, 33,
+    59,  94, 41,  276, 63,   591, 322, 23,  354, 120, 127, 389, 33,
+    155, 27, 208, 896, 99,   20,  258, 232, 54,  176, 17,  20,
+});
+
+static_assert(kStatePopulationBp.size() == kStateCount);
 
 } // namespace detail
 
-/// Per-state population share in basis points (1/10000). Pass these
-/// to a CDF sampler to draw states proportional to their share of
-/// US population — CA at ~1170 (11.7%), WY at ~17 (0.17%). The
-/// table sums to ~10000 (100%) modulo rounding.
-[[nodiscard]] constexpr std::uint16_t populationBasisPoints(State s) noexcept {
-  return detail::kStatePopulationBp[slot(s)];
+[[nodiscard]] constexpr std::uint16_t
+populationBasisPoints(State state) noexcept {
+  return detail::kStatePopulationBp[toIndex(state)];
 }
 
 } // namespace PhantomLedger::locale::us

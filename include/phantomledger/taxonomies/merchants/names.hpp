@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/lookup.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
@@ -9,7 +10,11 @@
 
 namespace PhantomLedger::merchants {
 
-inline constexpr std::array<lookup::Entry<Category>, kCategoryCount> kEntries{{
+using namespace ::PhantomLedger::taxonomies::enums;
+
+namespace detail {
+
+inline constexpr auto kEntries = std::to_array<lookup::Entry<Category>>({
     {"grocery", Category::grocery},
     {"fuel", Category::fuel},
     {"utilities", Category::utilities},
@@ -20,30 +25,27 @@ inline constexpr std::array<lookup::Entry<Category>, kCategoryCount> kEntries{{
     {"retail_other", Category::retailOther},
     {"insurance", Category::insurance},
     {"education", Category::education},
-}};
+});
+
+static_assert(isIndexable(kCategories));
+static_assert(kEntries.size() == kCategoryCount);
 
 inline constexpr auto kSorted = lookup::sorted(kEntries);
 
 inline constexpr auto kNames = lookup::reverseTableDense<kCategoryCount>(
-    kEntries, [](Category c) { return slot(c); });
+    kEntries, [](Category category) { return toIndex(category); });
 
 inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
-[[nodiscard]] constexpr std::string_view name(Category c) noexcept {
-  return kNames[slot(c)];
+} // namespace detail
+
+[[nodiscard]] constexpr std::string_view name(Category category) noexcept {
+  return detail::kNames[toIndex(category)];
 }
 
 [[nodiscard]] constexpr std::optional<Category>
-parse(std::string_view s) noexcept {
-  return lookup::find(kSorted, s);
+parse(std::string_view value) noexcept {
+  return lookup::find(detail::kSorted, value);
 }
-
-// Ordered list of all categories — stable for iteration / sampling.
-inline constexpr std::array<Category, kCategoryCount> kAll{
-    Category::grocery,   Category::fuel,        Category::utilities,
-    Category::telecom,   Category::ecommerce,   Category::restaurant,
-    Category::pharmacy,  Category::retailOther, Category::insurance,
-    Category::education,
-};
 
 } // namespace PhantomLedger::merchants

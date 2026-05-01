@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -17,18 +18,34 @@ enum class Country : std::uint8_t {
   nl,     ///< Netherlands
   br,     ///< Brazil
   mx,     ///< Mexico
-  in_,    ///< India (`in` is a C++ alternative-token keyword)
+  in,     ///< India
   jp,     ///< Japan
   cn,     ///< China
   kr,     ///< South Korea
   ru,     ///< Russia
 };
 
-inline constexpr std::size_t kCountryCount = 16;
-inline constexpr Country kDefaultCountry = Country::us;
+inline constexpr auto kCountries = std::to_array<Country>({
+    Country::us,
+    Country::gb,
+    Country::ca,
+    Country::au,
+    Country::de,
+    Country::fr,
+    Country::es,
+    Country::it,
+    Country::nl,
+    Country::br,
+    Country::mx,
+    Country::in,
+    Country::jp,
+    Country::cn,
+    Country::kr,
+    Country::ru,
+});
 
-[[nodiscard]] constexpr std::size_t slot(Country c) noexcept {
-  return static_cast<std::size_t>(c);
-}
+inline constexpr std::size_t kCountryCount = kCountries.size();
+
+inline constexpr Country kDefaultCountry = Country::us;
 
 } // namespace PhantomLedger::locale

@@ -1,13 +1,11 @@
 #pragma once
-/*
- * inflows/rent.hpp — rent transaction generator.
- */
 
 #include "phantomledger/inflows/selection.hpp"
 #include "phantomledger/inflows/timestamps.hpp"
 #include "phantomledger/inflows/types.hpp"
 #include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/recurring/rent.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -22,20 +20,30 @@ namespace PhantomLedger::inflows {
 
 namespace rent {
 
-struct ProbabilityTable {
-  static constexpr std::array<double, personas::kKindCount> table{{
-      0.50, // student
-      0.18, // retiree
-      0.58, // freelancer
-      0.35, // smallBusiness
-      0.10, // highNetWorth
-      0.62, // salaried
-  }};
+namespace detail {
 
-  [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
-    return table[personas::slot(type)];
-  }
-};
+using namespace ::PhantomLedger::taxonomies::enums;
+
+[[nodiscard]] consteval auto buildProbabilityTable() {
+  std::array<double, personas::kKindCount> table{};
+
+  table[toIndex(personas::Type::student)] = 0.50;
+  table[toIndex(personas::Type::retiree)] = 0.18;
+  table[toIndex(personas::Type::freelancer)] = 0.58;
+  table[toIndex(personas::Type::smallBusiness)] = 0.35;
+  table[toIndex(personas::Type::highNetWorth)] = 0.10;
+  table[toIndex(personas::Type::salaried)] = 0.62;
+
+  return table;
+}
+
+inline constexpr auto kProbabilityByPersona = buildProbabilityTable();
+
+} // namespace detail
+
+[[nodiscard]] constexpr double probability(personas::Type type) noexcept {
+  return detail::kProbabilityByPersona[detail::toIndex(type)];
+}
 
 using HomeownerCheck = std::function<bool(PersonId)>;
 
@@ -55,7 +63,7 @@ struct RentPayer {
 
 [[nodiscard]] inline double baseProbability(const Population &population,
                                             PersonId person) {
-  return ProbabilityTable::forKind(population.persona(person));
+  return probability(population.persona(person));
 }
 
 [[nodiscard]] inline std::vector<RentPayer>
@@ -122,6 +130,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
   const double scale =
       selector.fitScale(snapshot.population.count, targetRentFraction);
+
   if (scale <= 0.0) {
     return {};
   }
@@ -139,8 +148,6 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
   const RentRouter router;
 
-  // Initialize per-payer state in one pass. payerKey is materialized
-  // here and reused by every subsequent month.
   std::vector<rent::PayerState> states;
   states.reserve(rentPayers.size());
 
@@ -169,9 +176,6 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
 
   for (const auto &monthStart : snapshot.timeframe.monthStarts) {
     for (auto &ps : states) {
-      // Advance lease if it has expired by this month. Lease renewals
-      // are rare (tenure 2-10 years), so the std::to_string inside the
-      // factory call is cold and not worth hoisting further.
       while (monthStart >= ps.lease.end) {
         auto advRng = snapshot.entropy.factory.rng(
             {"lease_advance", ps.payerKey, std::to_string(ps.lease.moveIndex)});
@@ -217,6 +221,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
   }
 
   sortTransfers(txns);
+
   return txns;
 }
 

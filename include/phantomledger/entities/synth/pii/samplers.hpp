@@ -5,6 +5,7 @@
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/taxonomies/locale/us_state.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
@@ -18,6 +19,7 @@
 
 namespace PhantomLedger::entities::synth::pii {
 
+using namespace ::PhantomLedger::taxonomies::enums;
 namespace detail {
 
 [[nodiscard]] constexpr std::size_t digits10(std::uint64_t v) noexcept {
@@ -121,7 +123,7 @@ struct PhoneShape {
     return {"+55", 11};
   case Country::mx:
     return {"+52", 10};
-  case Country::in_:
+  case Country::in:
     return {"+91", 10};
   case Country::jp:
     return {"+81", 10};
@@ -226,7 +228,7 @@ struct PhoneShape {
     addLetter();
     break;
 
-  case locale::Country::in_:
+  case locale::Country::in:
     // Aadhaar: 12 digits, grouped "NNNN NNNN NNNN".
     addDigits(4);
     add(' ');
@@ -368,30 +370,29 @@ struct LocaleMix {
 
   [[nodiscard]] static constexpr LocaleMix usOnly() noexcept {
     LocaleMix m{};
-    m.weights[locale::slot(locale::Country::us)] = 1.0;
+    m.weights[toIndex(locale::Country::us)] = 1.0;
     return m;
   }
 
   [[nodiscard]] static constexpr LocaleMix usBankDefault() noexcept {
     LocaleMix m{};
     using locale::Country;
-    using locale::slot;
-    m.weights[slot(Country::us)] = 96.00; // dominant
-    m.weights[slot(Country::mx)] = 1.00;  // largest US foreign-born group
-    m.weights[slot(Country::in_)] = 0.60;
-    m.weights[slot(Country::cn)] = 0.50;
-    m.weights[slot(Country::kr)] = 0.30;
-    m.weights[slot(Country::gb)] = 0.40; // expats / snowbirds
-    m.weights[slot(Country::ca)] = 0.40; // cross-border
-    m.weights[slot(Country::br)] = 0.20;
-    m.weights[slot(Country::de)] = 0.10;
-    m.weights[slot(Country::jp)] = 0.10;
-    m.weights[slot(Country::fr)] = 0.10;
-    m.weights[slot(Country::es)] = 0.10;
-    m.weights[slot(Country::it)] = 0.10;
-    m.weights[slot(Country::nl)] = 0.05;
-    m.weights[slot(Country::au)] = 0.05;
-    m.weights[slot(Country::ru)] = 0.05;
+    m.weights[toIndex(Country::us)] = 96.00;
+    m.weights[toIndex(Country::mx)] = 1.00;
+    m.weights[toIndex(Country::in)] = 0.60;
+    m.weights[toIndex(Country::cn)] = 0.50;
+    m.weights[toIndex(Country::kr)] = 0.30;
+    m.weights[toIndex(Country::gb)] = 0.40;
+    m.weights[toIndex(Country::ca)] = 0.40;
+    m.weights[toIndex(Country::br)] = 0.20;
+    m.weights[toIndex(Country::de)] = 0.10;
+    m.weights[toIndex(Country::jp)] = 0.10;
+    m.weights[toIndex(Country::fr)] = 0.10;
+    m.weights[toIndex(Country::es)] = 0.10;
+    m.weights[toIndex(Country::it)] = 0.10;
+    m.weights[toIndex(Country::nl)] = 0.05;
+    m.weights[toIndex(Country::au)] = 0.05;
+    m.weights[toIndex(Country::ru)] = 0.05;
     return m;
   }
 };

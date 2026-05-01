@@ -1,32 +1,21 @@
 #pragma once
 
-/*
- * Insurance policy product adapter.
-
- * Statistics the defaults are tuned against:
- *   - Auto: 92% of US households own a vehicle (Census 2024)
- *   - Home: avg $163/month premium (Ramsey 2025)
- *   - Auto: avg $225/month premium (Bankrate 2026)
- *   - Life: 52% of Americans have coverage (NW Mutual 2024)
- *   - Auto claims: ~4.2 per 100 drivers/year (III 2024)
- *   - Home claims: ~5-6% of policies/year (Triple-I 2024)
- */
-
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/taxonomies/products/types.hpp"
 
-#include <cassert>
 #include <cstdint>
 #include <optional>
+#include <source_location>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace PhantomLedger::entity::product {
 
-enum class PolicyType : std::uint8_t {
-  auto_ = 0,
-  home = 1,
-  life = 2,
-};
+using ::PhantomLedger::products::PolicyType;
 
-/// A single active insurance policy for one coverage type.
+/// A single active insurance policy per coverage type.
 struct InsurancePolicy {
   PolicyType policyType = PolicyType::auto_;
   entity::Key carrierAcct{};
@@ -34,44 +23,121 @@ struct InsurancePolicy {
   std::int32_t billingDay = 1;
   double annualClaimP = 0.0;
 
-  [[nodiscard]] constexpr bool ok() const noexcept {
-    return monthlyPremium > 0.0 && billingDay >= 1 && billingDay <= 28 &&
-           annualClaimP >= 0.0 && annualClaimP <= 1.0;
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::positive("monthlyPremium", monthlyPremium); });
+    r.check([&] { v::between("billingDay", billingDay, 1, 28); });
+    r.check([&] { v::unit("annualClaimP", annualClaimP); });
   }
 };
 
-/// Complete insurance coverage for one person.
-///
-/// Any subset of the three slots may be empty. Ordering of the slots
-/// is fixed so the transfer generator can iterate deterministically
-/// without constructing an intermediate list.
-struct InsuranceHoldings {
-  std::optional<InsurancePolicy> auto_;
-  std::optional<InsurancePolicy> home;
-  std::optional<InsurancePolicy> life;
+class InsuranceHoldings {
+public:
+  InsuranceHoldings() = default;
 
-  [[nodiscard]] constexpr int activeCount() const noexcept {
-    return (auto_.has_value() ? 1 : 0) + (home.has_value() ? 1 : 0) +
-           (life.has_value() ? 1 : 0);
+  InsuranceHoldings(std::optional<InsurancePolicy> autoPolicy,
+                    std::optional<InsurancePolicy> homePolicy,
+                    std::optional<InsurancePolicy> lifePolicy)
+      : autoPolicy_(std::move(autoPolicy)), homePolicy_(std::move(homePolicy)),
+        lifePolicy_(std::move(lifePolicy)) {}
+
+  [[nodiscard]] const std::optional<InsurancePolicy> &
+  autoPolicy() const noexcept {
+    return autoPolicy_;
   }
 
-  [[nodiscard]] constexpr double totalMonthlyPremium() const noexcept {
-    double t = 0.0;
-    if (auto_.has_value()) {
-      t += auto_->monthlyPremium;
-    }
-    if (home.has_value()) {
-      t += home->monthlyPremium;
-    }
-    if (life.has_value()) {
-      t += life->monthlyPremium;
-    }
-    return t;
+  [[nodiscard]] const std::optional<InsurancePolicy> &
+  homePolicy() const noexcept {
+    return homePolicy_;
   }
 
-  [[nodiscard]] constexpr bool hasAny() const noexcept {
-    return activeCount() > 0;
+  [[nodiscard]] const std::optional<InsurancePolicy> &
+  lifePolicy() const noexcept {
+    return lifePolicy_;
   }
+
+  [[nodiscard]] const InsurancePolicy *get(PolicyType type) const noexcept {
+    switch (type) {
+    case PolicyType::auto_:
+      return autoPolicy_ ? &*autoPolicy_ : nullptr;
+
+    case PolicyType::home:
+      return homePolicy_ ? &*homePolicy_ : nullptr;
+
+    case PolicyType::life:
+      return lifePolicy_ ? &*lifePolicy_ : nullptr;
+    }
+
+    std::unreachable();
+  }
+
+  [[nodiscard]] bool has(PolicyType type) const noexcept {
+    return get(type) != nullptr;
+  }
+
+  template <class F> void forEach(F &&visit) const {
+    if (autoPolicy_) {
+      visit(*autoPolicy_);
+    }
+    if (homePolicy_) {
+      visit(*homePolicy_);
+    }
+    if (lifePolicy_) {
+      visit(*lifePolicy_);
+    }
+  }
+
+  void validate(primitives::validate::Report &r) const {
+    validateSlot(r, "autoPolicy", autoPolicy_, PolicyType::auto_);
+    validateSlot(r, "homePolicy", homePolicy_, PolicyType::home);
+    validateSlot(r, "lifePolicy", lifePolicy_, PolicyType::life);
+  }
+
+  [[nodiscard]] int activeCount() const noexcept {
+    return (autoPolicy_.has_value() ? 1 : 0) +
+           (homePolicy_.has_value() ? 1 : 0) +
+           (lifePolicy_.has_value() ? 1 : 0);
+  }
+
+  [[nodiscard]] double totalMonthlyPremium() const noexcept {
+    double total = 0.0;
+
+    forEach(
+        [&](const InsurancePolicy &policy) { total += policy.monthlyPremium; });
+
+    return total;
+  }
+
+  [[nodiscard]] bool hasAny() const noexcept { return activeCount() > 0; }
+
+private:
+  static void validateSlot(primitives::validate::Report &r,
+                           std::string_view field,
+                           const std::optional<InsurancePolicy> &policy,
+                           PolicyType expected) {
+    if (!policy.has_value()) {
+      return;
+    }
+
+    policy->validate(r);
+
+    r.check([&] {
+      if (policy->policyType != expected) {
+        std::string message;
+        message.reserve(field.size() + 32);
+        message.append(field);
+        message.append(" has mismatched policyType");
+
+        throw primitives::validate::Error(std::move(message),
+                                          std::source_location::current());
+      }
+    });
+  }
+
+  std::optional<InsurancePolicy> autoPolicy_;
+  std::optional<InsurancePolicy> homePolicy_;
+  std::optional<InsurancePolicy> lifePolicy_;
 };
 
 // --- Constructor helpers ---

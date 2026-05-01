@@ -1,22 +1,4 @@
 #pragma once
-/*
- * Ledger — core double-entry bookkeeping.
- *
- * Post-refactor, Ledger owns:
- *   - per-account cash balances
- *   - protection buffer slots (overdraft / linked / courtesy)
- *   - protection-type classification
- *   - bank tier + per-account overdraft fee amount
- *   - the key <-> index map
- *
- * Ledger delegates:
- *   - LOC interest accrual -> LocAccrualTracker
- *   - overdraft fee decision -> OverdraftFeePolicy (free function)
- *   - emission of LiquidityEvents -> LiquiditySink (caller-provided)
- *
- * The clone/restore path now restores LOC tracker state too, so
- * authoritative and post-fraud replays land on identical balances.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -44,6 +26,7 @@ public:
   [[nodiscard]] static constexpr TransferDecision accept() noexcept {
     return TransferDecision{};
   }
+
   [[nodiscard]] static constexpr TransferDecision
   reject(RejectReason reason) noexcept {
     return TransferDecision{reason};
@@ -52,9 +35,11 @@ public:
   [[nodiscard]] constexpr bool accepted() const noexcept {
     return !reason_.has_value();
   }
+
   [[nodiscard]] constexpr bool rejected() const noexcept {
     return reason_.has_value();
   }
+
   [[nodiscard]] constexpr std::optional<RejectReason>
   rejectReason() const noexcept {
     return reason_;
@@ -65,11 +50,13 @@ public:
       throw std::logic_error(
           "accepted transfer does not carry a reject reason");
     }
+
     return *reason_;
   }
 
 private:
   constexpr TransferDecision() noexcept = default;
+
   constexpr explicit TransferDecision(RejectReason reason) noexcept
       : reason_(reason) {}
 
@@ -80,9 +67,6 @@ class Ledger {
 public:
   using Index = std::uint32_t;
 
-  // Dual-meaning sentinel: findAccount() returns this for unknown
-  // keys; callers pass it to the Index-based transfer API to mark a
-  // leg as external.
   static constexpr Index invalid = std::numeric_limits<Index>::max();
 
   Ledger() = default;
@@ -96,13 +80,10 @@ public:
 
   void setProtection(Index idx, ProtectionType type,
                      double bufferAmount) noexcept;
+
   void setBankTier(Index idx, BankTier tier,
                    double overdraftFeeAmount) noexcept;
 
-  /// Set LOC terms. Must be called after `setProtection(idx, loc, ...)`,
-  /// because setProtection is what registers the account with the
-  /// LOC tracker. Passing LOC terms to a non-LOC account has no effect
-  /// beyond asserting in debug.
   void setLoc(Index idx, double apr, int billingDay) noexcept;
 
   [[nodiscard]] ProtectionType protectionType(Index idx) const noexcept;
@@ -130,6 +111,7 @@ public:
 
   void setLiquiditySink(LiquiditySink sink) noexcept;
   void setEmitLiquidity(bool emit) noexcept;
+
   [[nodiscard]] bool emitLiquidity() const noexcept { return emitLiquidity_; }
 
   // --- Transfer API ---
@@ -138,10 +120,10 @@ public:
   transfer(const entity::Key &src, const entity::Key &dst, double amount,
            channels::Tag channel = channels::none);
 
-  template <channels::Enum E>
+  template <channels::ChannelEnum Channel>
   [[nodiscard]] TransferDecision transfer(const entity::Key &src,
                                           const entity::Key &dst, double amount,
-                                          E channel) {
+                                          Channel channel) {
     return transfer(src, dst, amount, channels::tag(channel));
   }
 
@@ -149,9 +131,10 @@ public:
                                           double amount,
                                           channels::Tag channel) noexcept;
 
-  template <channels::Enum E>
+  template <channels::ChannelEnum Channel>
   [[nodiscard]] TransferDecision transfer(Index srcIdx, Index dstIdx,
-                                          double amount, E channel) noexcept {
+                                          double amount,
+                                          Channel channel) noexcept {
     return transfer(srcIdx, dstIdx, amount, channels::tag(channel));
   }
 
@@ -160,17 +143,14 @@ public:
                                             channels::Tag channel,
                                             std::int64_t timestamp) noexcept;
 
-  template <channels::Enum E>
+  template <channels::ChannelEnum Channel>
   [[nodiscard]] TransferDecision transferAt(Index srcIdx, Index dstIdx,
-                                            double amount, E channel,
+                                            double amount, Channel channel,
                                             std::int64_t timestamp) noexcept {
     return transferAt(srcIdx, dstIdx, amount, channels::tag(channel),
                       timestamp);
   }
-  /// Run the LOC billing sweep through `timestamp`. Any matured
-  /// account has its interest debited from cash (bypassing the
-  /// funding check) and a LOC_INTEREST event fired at the sink when
-  /// emitLiquidity_ is true.
+
   void accrueLocInterestThrough(std::int64_t timestamp) noexcept;
 
   [[nodiscard]] Ledger clone() const;
@@ -203,7 +183,7 @@ private:
   std::vector<std::uint8_t> flags_;
 
   std::unordered_map<entity::Key, Index> internalAccounts_;
-  std::vector<entity::Key> accountKeys_; ///< reverse lookup
+  std::vector<entity::Key> accountKeys_;
 
   std::vector<ProtectionType> protectionType_;
   std::vector<BankTier> bankTier_;

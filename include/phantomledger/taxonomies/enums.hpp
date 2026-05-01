@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -25,4 +26,14 @@ template <ByteEnum E>
   return static_cast<std::size_t>(std::to_underlying(value));
 }
 
+template <ByteEnum E, std::size_t N>
+[[nodiscard]] consteval bool isIndexable(std::array<E, N> values) noexcept {
+  for (std::size_t index = 0; index < values.size(); ++index) {
+    if (toIndex(values[index]) != index) {
+      return false;
+    }
+  }
+
+  return true;
+}
 } // namespace PhantomLedger::taxonomies::enums

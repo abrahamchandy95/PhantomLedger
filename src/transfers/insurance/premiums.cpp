@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/insurance/premiums.hpp"
 
+#include "phantomledger/entities/products/insurance.hpp"
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -7,6 +8,7 @@
 #include "phantomledger/transactions/draft.hpp"
 
 #include <algorithm>
+#include <vector>
 
 namespace PhantomLedger::transfers::insurance {
 namespace {
@@ -55,25 +57,27 @@ premiums(const time::Window &window, random::Rng &rng,
   const auto endExcl = window.endExcl();
 
   portfolios.forEachInsuredPerson(
-      [&](PersonId person, const entity::product::InsuranceHoldings &h) {
+      [&](PersonId person, const entity::product::InsuranceHoldings &holdings) {
         const auto acctIt = population.primaryAccounts->find(person);
         if (acctIt == population.primaryAccounts->end()) {
           return;
         }
+
         const Key payer = acctIt->second;
 
-        if (h.auto_) {
-          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *h.auto_,
+        if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
+          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *policy,
                      out);
         }
 
-        if (h.home && !portfolios.hasMortgage(person)) {
-          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *h.home,
+        if (const auto &policy = holdings.homePolicy();
+            policy.has_value() && !portfolios.hasMortgage(person)) {
+          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *policy,
                      out);
         }
 
-        if (h.life) {
-          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *h.life,
+        if (const auto &policy = holdings.lifePolicy(); policy.has_value()) {
+          postPolicy(rng, txf, almanac, window.start, endExcl, payer, *policy,
                      out);
         }
       });
@@ -81,6 +85,7 @@ premiums(const time::Window &window, random::Rng &rng,
   std::sort(
       out.begin(), out.end(),
       transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
+
   return out;
 }
 

@@ -12,7 +12,7 @@ namespace detail {
 
 // --- Name table --------------------------------------------------
 
-inline constexpr std::array<lookup::Entry<Tag>, 59> kEntries{{
+inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
     {"salary", tag(Legit::salary)},
     {"merchant", tag(Legit::merchant)},
     {"card_purchase", tag(Legit::cardPurchase)},
@@ -81,31 +81,33 @@ inline constexpr std::array<lookup::Entry<Tag>, 59> kEntries{{
 
     {"overdraft_fee", tag(Liquidity::overdraftFee)},
     {"loc_interest", tag(Liquidity::locInterest)},
-}};
+});
 
 inline constexpr auto kSorted = lookup::sorted(kEntries);
 
 // Every byte value is a valid Tag slot.
 inline constexpr auto kNames =
-    lookup::reverseTable<256>(kEntries, [](Tag t) { return t.value; });
+    lookup::reverseTable<256>(kEntries, [](Tag tag) { return tag.value; });
 
 inline constexpr auto kKnown =
-    lookup::presenceTable<256>(kEntries, [](Tag t) { return t.value; });
+    lookup::presenceTable<256>(kEntries, [](Tag tag) { return tag.value; });
 
 // Subset of tags that represent inbound payday events.
 [[nodiscard]] consteval std::array<bool, 256> buildPaydayInboundTable() {
   std::array<bool, 256> out{};
 
-  out[tag(Legit::salary).value] = true;
-  out[tag(Legit::clientAchCredit).value] = true;
-  out[tag(Legit::cardSettlement).value] = true;
-  out[tag(Legit::platformPayout).value] = true;
-  out[tag(Legit::ownerDraw).value] = true;
-  out[tag(Legit::investmentInflow).value] = true;
+  auto mark = [&out](Tag tag) { out[tag.value] = true; };
 
-  out[tag(Government::socialSecurity).value] = true;
-  out[tag(Government::pension).value] = true;
-  out[tag(Government::disability).value] = true;
+  mark(tag(Legit::salary));
+  mark(tag(Legit::clientAchCredit));
+  mark(tag(Legit::cardSettlement));
+  mark(tag(Legit::platformPayout));
+  mark(tag(Legit::ownerDraw));
+  mark(tag(Legit::investmentInflow));
+
+  mark(tag(Government::socialSecurity));
+  mark(tag(Government::pension));
+  mark(tag(Government::disability));
 
   return out;
 }
@@ -119,16 +121,18 @@ inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
 // --- Public API --------------------------------------------------
 
-[[nodiscard]] constexpr std::string_view name(Tag t) noexcept {
-  return detail::kNames[t.value];
+[[nodiscard]] constexpr std::string_view name(Tag tag) noexcept {
+  return detail::kNames[tag.value];
 }
 
-template <Enum E> [[nodiscard]] constexpr std::string_view name(E v) noexcept {
-  return name(tag(v));
+template <ChannelEnum E>
+[[nodiscard]] constexpr std::string_view name(E value) noexcept {
+  return name(tag(value));
 }
 
-[[nodiscard]] constexpr std::optional<Tag> parse(std::string_view s) noexcept {
-  return lookup::find(detail::kSorted, s);
+[[nodiscard]] constexpr std::optional<Tag>
+parse(std::string_view name) noexcept {
+  return lookup::find(detail::kSorted, name);
 }
 
 } // namespace PhantomLedger::channels

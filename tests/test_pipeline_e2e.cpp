@@ -6,6 +6,7 @@
 #include "phantomledger/pipeline/simulate.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <chrono>
@@ -70,7 +71,7 @@ void expectNonEmptyFile(const fs::path &path) {
   // generates a synthetic pool — enough for a smoke test.
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
-  poolSet.byCountry[pl::locale::slot(pl::locale::Country::us)] =
+  poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
       pl::entities::synth::pii::buildLocalePool(
           pl::locale::Country::us, sizes, static_cast<std::uint32_t>(seed));
 

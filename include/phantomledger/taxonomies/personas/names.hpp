@@ -1,69 +1,81 @@
 #pragma once
 
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/lookup.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
+#include <cstddef>
 #include <optional>
 #include <string_view>
 
 namespace PhantomLedger::personas {
+
+using namespace ::PhantomLedger::taxonomies::enums;
+
 namespace detail {
 
-// --- Names -------------------------------------------------------
+static_assert(isIndexable(kTypes));
+static_assert(isIndexable(kTimings));
 
-inline constexpr std::array<lookup::Entry<Type>, kKindCount> kEntries{{
+inline constexpr auto kTypeEntries = std::to_array<lookup::Entry<Type>>({
     {"student", Type::student},
     {"retired", Type::retiree},
     {"freelancer", Type::freelancer},
     {"smallbiz", Type::smallBusiness},
     {"hnw", Type::highNetWorth},
     {"salaried", Type::salaried},
-}};
+});
 
-inline constexpr auto kSorted = lookup::sorted(kEntries);
+inline constexpr auto kTimingEntries = std::to_array<lookup::Entry<Timing>>({
+    {"consumer", Timing::consumer},
+    {"consumer_day", Timing::consumerDay},
+    {"business", Timing::business},
+});
 
-inline constexpr auto kNames = lookup::reverseTableDense<kKindCount>(
-    kEntries, [](Type t) { return slot(t); });
+static_assert(kTypeEntries.size() == kTypeCount);
+static_assert(kTimingEntries.size() == kTimingCount);
 
-inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
+inline constexpr auto kSortedTypes = lookup::sorted(kTypeEntries);
+inline constexpr auto kSortedTimings = lookup::sorted(kTimingEntries);
 
-inline constexpr std::array<std::string_view, 3> kTimingNames{
-    "consumer",
-    "consumer_day",
-    "business",
-};
+inline constexpr auto kTypeNames = lookup::reverseTableDense<kTypeCount>(
+    kTypeEntries, [](Type type) { return toIndex(type); });
+
+inline constexpr auto kTimingNames = lookup::reverseTableDense<kTimingCount>(
+    kTimingEntries, [](Timing timing) { return toIndex(timing); });
+
+inline constexpr bool kValidated =
+    (lookup::requireUniqueNames(kSortedTypes),
+     lookup::requireUniqueNames(kSortedTimings), true);
 
 } // namespace detail
 
-[[nodiscard]] constexpr std::string_view name(Type t) noexcept {
-  return detail::kNames[slot(t)];
+[[nodiscard]] constexpr std::string_view name(Type type) noexcept {
+  return detail::kTypeNames[toIndex(type)];
 }
 
-[[nodiscard]] constexpr std::string_view name(Timing t) noexcept {
-  return detail::kTimingNames[slot(t)];
+[[nodiscard]] constexpr std::string_view name(Timing timing) noexcept {
+  return detail::kTimingNames[toIndex(timing)];
 }
 
-[[nodiscard]] constexpr std::optional<Type> parse(std::string_view s) noexcept {
-  return lookup::find(detail::kSorted, s);
+[[nodiscard]] constexpr std::optional<Type>
+parse(std::string_view value) noexcept {
+  return lookup::find(detail::kSortedTypes, value);
 }
 
-[[nodiscard]] constexpr Type parseOr(std::string_view s,
+[[nodiscard]] constexpr Type parseOr(std::string_view value,
                                      Type fallback = kDefaultType) noexcept {
-  if (const auto v = parse(s)) {
-    return *v;
+  if (const auto parsed = parse(value)) {
+    return *parsed;
   }
+
   return fallback;
 }
 
 [[nodiscard]] constexpr std::optional<Timing>
-parseTiming(std::string_view s) noexcept {
-  for (std::size_t i = 0; i < detail::kTimingNames.size(); ++i) {
-    if (detail::kTimingNames[i] == s) {
-      return static_cast<Timing>(i);
-    }
-  }
-  return std::nullopt;
+parseTiming(std::string_view value) noexcept {
+  return lookup::find(detail::kSortedTimings, value);
 }
 
 } // namespace PhantomLedger::personas

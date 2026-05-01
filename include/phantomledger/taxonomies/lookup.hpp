@@ -1,4 +1,5 @@
 #pragma once
+
 #include <array>
 #include <cstddef>
 #include <optional>
@@ -11,108 +12,116 @@ template <class Value> struct Entry {
   Value value;
 };
 
-// Insertion sort in a consteval context — std::sort isn't constexpr
-// until C++26, and the tables here are tiny enough that asymptotic
-// complexity is irrelevant.
 template <class Value, std::size_t N>
 [[nodiscard]] consteval std::array<Entry<Value>, N>
 sorted(std::array<Entry<Value>, N> entries) {
-  for (std::size_t i = 1; i < N; ++i) {
-    auto key = entries[i];
-    std::size_t j = i;
-    while (j > 0 && entries[j - 1].name > key.name) {
-      entries[j] = entries[j - 1];
-      --j;
+  for (std::size_t index = 1; index < N; ++index) {
+    const auto key = entries[index];
+
+    auto cursor = index;
+    while (cursor > 0 && entries[cursor - 1].name > key.name) {
+      entries[cursor] = entries[cursor - 1];
+      --cursor;
     }
-    entries[j] = key;
+
+    entries[cursor] = key;
   }
+
   return entries;
 }
 
-// Fires a compile-time error via `throw` if any two entries share a
-// name. Pair with `sorted(...)` — the check only inspects adjacent
-// entries.
 template <class Value, std::size_t N>
-consteval void requireUniqueNames(const std::array<Entry<Value>, N> &sorted) {
-  for (std::size_t i = 1; i < N; ++i) {
-    if (sorted[i - 1].name == sorted[i].name) {
-      throw "duplicate name in lookup table";
-    }
-  }
-  for (const auto &entry : sorted) {
+consteval void requireUniqueNames(const std::array<Entry<Value>, N> &entries) {
+  for (const auto &entry : entries) {
     if (entry.name.empty()) {
       throw "empty name in lookup table";
     }
   }
-}
 
-// Binary search by name. Safe at runtime; constexpr-friendly.
-template <class Value, std::size_t N>
-[[nodiscard]] constexpr std::optional<Value>
-find(const std::array<Entry<Value>, N> &sorted,
-     std::string_view name) noexcept {
-  std::size_t lo = 0;
-  std::size_t hi = N;
-  while (lo < hi) {
-    const auto mid = lo + (hi - lo) / 2;
-    if (sorted[mid].name < name) {
-      lo = mid + 1;
-    } else if (sorted[mid].name > name) {
-      hi = mid;
-    } else {
-      return sorted[mid].value;
+  for (std::size_t index = 1; index < N; ++index) {
+    if (entries[index - 1].name > entries[index].name) {
+      throw "lookup table must be sorted before validation";
+    }
+
+    if (entries[index - 1].name == entries[index].name) {
+      throw "duplicate name in lookup table";
     }
   }
+}
+
+template <class Value, std::size_t N>
+[[nodiscard]] constexpr std::optional<Value>
+find(const std::array<Entry<Value>, N> &entries,
+     std::string_view name) noexcept {
+  std::size_t low = 0;
+  std::size_t high = N;
+
+  while (low < high) {
+    const auto middle = low + (high - low) / 2;
+
+    if (entries[middle].name < name) {
+      low = middle + 1;
+    } else if (entries[middle].name > name) {
+      high = middle;
+    } else {
+      return entries[middle].value;
+    }
+  }
+
   return std::nullopt;
 }
 
-// Build a value→name table with SlotCount entries, using Indexer to
-// place each entry. Empty slots indicate values not present in the
-// input; the caller can decide whether that's an error.
-template <std::size_t SlotCount, class Value, std::size_t N, class Indexer>
-[[nodiscard]] consteval std::array<std::string_view, SlotCount>
-reverseTable(const std::array<Entry<Value>, N> &entries, Indexer idx) {
-  std::array<std::string_view, SlotCount> out{};
+template <std::size_t IndexCount, class Value, std::size_t N, class Indexer>
+[[nodiscard]] consteval std::array<std::string_view, IndexCount>
+reverseTable(const std::array<Entry<Value>, N> &entries, Indexer indexOf) {
+  std::array<std::string_view, IndexCount> out{};
+
   for (const auto &entry : entries) {
-    const auto slot = idx(entry.value);
-    if (slot >= SlotCount) {
+    const auto idx = static_cast<std::size_t>(indexOf(entry.value));
+
+    if (idx >= IndexCount) {
       throw "reverse-table slot out of range";
     }
-    if (!out[slot].empty()) {
+
+    if (!out[idx].empty()) {
       throw "duplicate reverse-table slot";
     }
-    out[slot] = entry.name;
+
+    out[idx] = entry.name;
   }
+
   return out;
 }
 
-// Variant of reverseTable that additionally demands every slot be
-// filled. Use for enums where there's one entry per value.
-template <std::size_t SlotCount, class Value, std::size_t N, class Indexer>
-[[nodiscard]] consteval std::array<std::string_view, SlotCount>
-reverseTableDense(const std::array<Entry<Value>, N> &entries, Indexer idx) {
-  auto out = reverseTable<SlotCount>(entries, idx);
+template <std::size_t IndexCount, class Value, std::size_t N, class Indexer>
+[[nodiscard]] consteval std::array<std::string_view, IndexCount>
+reverseTableDense(const std::array<Entry<Value>, N> &entries, Indexer indexOf) {
+  auto out = reverseTable<IndexCount>(entries, indexOf);
+
   for (const auto &name : out) {
     if (name.empty()) {
       throw "missing reverse-table slot";
     }
   }
+
   return out;
 }
 
-// Build a "known" bitmap of size SlotCount, slotted by the same
-// Indexer. Used by channels to separate registered tags from
-// fallthrough byte values.
-template <std::size_t SlotCount, class Value, std::size_t N, class Indexer>
-[[nodiscard]] consteval std::array<bool, SlotCount>
-presenceTable(const std::array<Entry<Value>, N> &entries, Indexer idx) {
-  std::array<bool, SlotCount> out{};
+template <std::size_t IndexCount, class Value, std::size_t N, class Indexer>
+[[nodiscard]] consteval std::array<bool, IndexCount>
+presenceTable(const std::array<Entry<Value>, N> &entries, Indexer indexOf) {
+  std::array<bool, IndexCount> out{};
+
   for (const auto &entry : entries) {
-    const auto slot = idx(entry.value);
-    if (slot < SlotCount) {
-      out[slot] = true;
+    const auto idx = static_cast<std::size_t>(indexOf(entry.value));
+
+    if (idx >= IndexCount) {
+      throw "presence-table slot out of range";
     }
+
+    out[idx] = true;
   }
+
   return out;
 }
 

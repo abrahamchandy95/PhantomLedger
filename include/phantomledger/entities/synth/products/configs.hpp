@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
@@ -7,12 +8,16 @@
 
 namespace PhantomLedger::entities::synth::products {
 
-struct PerPersonaP {
-  std::array<double, ::PhantomLedger::personas::kKindCount> byType{};
+namespace personas = ::PhantomLedger::personas;
+namespace enums = ::PhantomLedger::taxonomies::enums;
 
-  [[nodiscard]] constexpr double
-  at(::PhantomLedger::personas::Type t) const noexcept {
-    return byType[::PhantomLedger::personas::slot(t)];
+static_assert(enums::isIndexable(personas::kTypes));
+
+struct PerPersonaP {
+  std::array<double, personas::kTypeCount> byType{};
+
+  [[nodiscard]] constexpr double at(personas::Type type) const noexcept {
+    return byType[enums::toIndex(type)];
   }
 };
 

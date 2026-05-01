@@ -1,11 +1,7 @@
 #pragma once
-/*
- * Only freelancers, small-business owners, and HNW personas have
- * non-payroll revenue streams. The profiles here are baked at
- * compile time and indexed by personas::Kind.
- */
 
 #include "phantomledger/inflows/revenue/profiles.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
@@ -14,6 +10,8 @@
 namespace PhantomLedger::inflows::revenue {
 
 namespace detail {
+
+using namespace ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
   return RevenuePersonaProfile{
@@ -112,17 +110,15 @@ namespace detail {
   };
 }
 
-/// Build the per-Kind profile table at compile time.
-/// Only three kinds have revenue profiles; the rest are nullopt.
+/// Build the per-persona profile table at compile time.
+/// Only three personas have revenue profiles; the rest are nullopt.
 [[nodiscard]] inline constexpr auto buildCatalog() {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
 
-  table[personas::slot(personas::Type::freelancer)] = freelancerProfile();
-
-  table[personas::slot(personas::Type::smallBusiness)] = smallBusinessProfile();
-
-  table[personas::slot(personas::Type::highNetWorth)] = highNetWorthProfile();
+  table[toIndex(personas::Type::freelancer)] = freelancerProfile();
+  table[toIndex(personas::Type::smallBusiness)] = smallBusinessProfile();
+  table[toIndex(personas::Type::highNetWorth)] = highNetWorthProfile();
 
   return table;
 }
@@ -131,12 +127,12 @@ inline constexpr auto kCatalog = buildCatalog();
 
 } // namespace detail
 
-/// Look up the revenue profile for a persona kind.
-/// Returns nullopt for kinds that have no non-payroll revenue
+/// Look up the revenue profile for a persona type.
+/// Returns nullopt for personas that have no non-payroll revenue
 /// (student, retiree, salaried).
 [[nodiscard]] inline constexpr const std::optional<RevenuePersonaProfile> &
 archetypeFor(personas::Type type) noexcept {
-  return detail::kCatalog[personas::slot(type)];
+  return detail::kCatalog[detail::toIndex(type)];
 }
 
 } // namespace PhantomLedger::inflows::revenue

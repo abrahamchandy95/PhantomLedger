@@ -1,21 +1,9 @@
 #pragma once
-/*
- * LoanTermsLedger — installment-loan behavior terms per (person,
- * productType).
- *
- * Replaces two concerns from the old PortfolioRegistry:
- *
- *   1. installmentByKey_                — stored here
- *   2. hasMortgage_ (std::unordered_set) — derived here
- *
- * The separate hasMortgage_ set was redundant — a mortgage exists iff
- * there are installment terms under (person, mortgage). This keeps
- * one source of truth.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
 #include "phantomledger/entities/products/installment_terms.hpp"
+#include "phantomledger/taxonomies/products/predicates.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -51,7 +39,7 @@ public:
 
   void set(entity::PersonId person, ProductType productType,
            InstallmentTerms terms) {
-    assert(isInstallmentLoan(productType));
+    assert(::PhantomLedger::products::isInstallmentLoan(productType));
     byKey_.insert_or_assign({person, productType}, terms);
   }
 
@@ -61,10 +49,6 @@ public:
     return it == byKey_.end() ? nullptr : &it->second;
   }
 
-  /// Derived flag: true iff the person has an active mortgage term
-  /// registered. The insurance generator checks this to avoid
-  /// double-emitting home-insurance premiums that are already
-  /// escrowed into the mortgage payment.
   [[nodiscard]] bool hasMortgage(entity::PersonId person) const noexcept {
     return byKey_.contains({person, ProductType::mortgage});
   }
