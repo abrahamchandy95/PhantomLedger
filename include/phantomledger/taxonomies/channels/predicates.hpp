@@ -1,26 +1,4 @@
 #pragma once
-/*
- * Channel families are classified by the high nibble of the tag byte.
- *
- *   0x00 -> Legit
- *   0x10 -> Rent
- *   0x20 -> Family
- *   0x30 -> Credit
- *   0x40 -> Product
- *   0x50 -> Government
- *   0x60 -> Insurance
- *   0x70 -> Fraud
- *   0x80 -> Camouflage
- *   0x90 -> Liquidity (ledger-emitted: overdraft fees, LOC interest)
- *
- * Each group is limited to a single 16-value block.
- * If a family ever needs to grow beyond one block, this file will need to be
- * redesigned to use an explicit byte-to-family lookup table instead.
- *
- * We still consult kKnownTags so that unused values inside a block do not get
- * classified as valid channels. For example, 0x15 shares the Rent block, but
- * it is not considered Rent unless it is explicitly registered.
- */
 
 #include "phantomledger/taxonomies/channels/names.hpp"
 

@@ -1,27 +1,20 @@
 cmake_minimum_required(VERSION 3.23)
 project(phantomledger VERSION 0.1.0 LANGUAGES CXX)
 
-# ---------------------------------------------------------------------
-# Global build settings
-# ---------------------------------------------------------------------
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-option(PL_BUILD_TESTS  "Build C++ tests"            ON)
+option(PL_BUILD_TESTS "Build C++ tests" ON)
 option(PL_BUILD_PYTHON "Build pybind11 Python module" OFF)
-
-# ---------------------------------------------------------------------
-# Third-party dependencies
-# ---------------------------------------------------------------------
+option(PL_ENABLE_NATIVE_OPTIMIZATION "Enable -march=native on supported compilers" OFF)
 
 include(FetchContent)
 
 set(FAKER_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING       OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     faker-cxx
@@ -30,13 +23,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(faker-cxx)
 
-# Re-enable testing so our own tests subdirectory can register cases.
 set(BUILD_TESTING ON CACHE BOOL "" FORCE)
-
-# ---------------------------------------------------------------------
-# Source lists, grouped by subsystem.
-# Keep these in alphabetical order within each group.
-# ---------------------------------------------------------------------
 
 set(PL_ENTROPY_SOURCES
     src/entropy/crypto/blake2b.cpp
@@ -79,18 +66,19 @@ set(PL_SPENDING_SOURCES
     src/spending/market/bootstrap.cpp
     src/spending/routing/payments.cpp
     src/spending/simulator/day.cpp
-    src/spending/simulator/loop.cpp
     src/spending/simulator/driver.cpp
+    src/spending/simulator/loop.cpp
     src/spending/simulator/run.cpp
     src/spending/spenders/prepare.cpp
     src/spending/spenders/targets.cpp
 )
+
 set(PL_FRAUD_SOURCES
+    src/transfers/fraud/camouflage.cpp
     src/transfers/fraud/engine.cpp
+    src/transfers/fraud/injector.cpp
     src/transfers/fraud/rings.cpp
     src/transfers/fraud/schedule.cpp
-    src/transfers/fraud/camouflage.cpp
-    src/transfers/fraud/injector.cpp
     src/transfers/fraud/typologies/classic.cpp
     src/transfers/fraud/typologies/dispatch.cpp
     src/transfers/fraud/typologies/funnel.cpp
@@ -100,58 +88,79 @@ set(PL_FRAUD_SOURCES
     src/transfers/fraud/typologies/structuring.cpp
 )
 
+set(PL_PRODUCTS_SOURCES
+    src/entities/synth/products/build.cpp
+)
+
 set(PL_LEGIT_SOURCES
+    src/transfers/legit/blueprints/models.cpp
     src/transfers/legit/blueprints/paydays.cpp
     src/transfers/legit/blueprints/plans.cpp
-    src/transfers/legit/blueprints/models.cpp
-    src/transfers/legit/ledger/screenbook.cpp
-    src/transfers/legit/ledger/streams.cpp
+    src/transfers/legit/ledger/builder.cpp
     src/transfers/legit/ledger/burdens.cpp
     src/transfers/legit/ledger/limits.cpp
-    src/transfers/legit/ledger/posting.cpp
-    src/transfers/legit/ledger/builder.cpp
     src/transfers/legit/ledger/passes.cpp
+    src/transfers/legit/ledger/posting.cpp
+    src/transfers/legit/ledger/screenbook.cpp
+    src/transfers/legit/ledger/streams.cpp
+    src/transfers/legit/routines/atm.cpp
     src/transfers/legit/routines/credit_cards.cpp
-    src/transfers/legit/routines/paychecks.cpp
-    src/transfers/legit/routines/relatives.cpp
     src/transfers/legit/routines/family/allowances.cpp
-    src/transfers/legit/routines/family/support.cpp
-    src/transfers/legit/routines/family/tuition.cpp
+    src/transfers/legit/routines/family/grandparent_gifts.cpp
+    src/transfers/legit/routines/family/inheritance.cpp
     src/transfers/legit/routines/family/parent_gifts.cpp
     src/transfers/legit/routines/family/siblings.cpp
-    src/transfers/legit/routines/family/grandparent_gifts.cpp
     src/transfers/legit/routines/family/spouse.cpp
-    src/transfers/legit/routines/family/inheritance.cpp
-    src/transfers/legit/routines/atm.cpp
+    src/transfers/legit/routines/family/support.cpp
+    src/transfers/legit/routines/family/tuition.cpp
     src/transfers/legit/routines/internal.cpp
+    src/transfers/legit/routines/paychecks.cpp
+    src/transfers/legit/routines/relatives.cpp
     src/transfers/legit/routines/spending.cpp
     src/transfers/legit/routines/subscriptions.cpp
 )
 
 set(PL_RELATIONSHIPS_SOURCES
-    src/relationships/family/partition.cpp
-    src/relationships/family/links.cpp
-    src/relationships/family/support.cpp
     src/relationships/family/builder.cpp
+    src/relationships/family/links.cpp
+    src/relationships/family/partition.cpp
+    src/relationships/family/support.cpp
+    src/relationships/social/builder.cpp
     src/relationships/social/communities.cpp
     src/relationships/social/sampler.cpp
-    src/relationships/social/builder.cpp
+)
+
+set(PL_RUN_SOURCES
+    src/run/progress.cpp
 )
 
 set(PL_EXPORTER_SOURCES
     src/exporter/csv.cpp
+    src/exporter/standard/export.cpp
+    src/exporter/mule_ml/canonical.cpp
+    src/exporter/mule_ml/export.cpp
+    src/exporter/aml/minhash.cpp
+    src/exporter/aml/identity.cpp
+    src/exporter/aml/sar.cpp
+    src/exporter/aml/vertices.cpp
+    src/exporter/aml/edges.cpp
+    src/exporter/aml/export.cpp
 )
 
 set(PL_INFRA_SYNTH_SOURCES
-    src/infra/synth/rings.cpp
     src/infra/synth/devices.cpp
     src/infra/synth/ips.cpp
+    src/infra/synth/rings.cpp
 )
-# ---------------------------------------------------------------------
-# Library target
-# ---------------------------------------------------------------------
 
-add_library(phantomledger_core STATIC
+set(PL_PIPELINE_SOURCES
+    src/pipeline/simulate.cpp
+    src/pipeline/stages/entities.cpp
+    src/pipeline/stages/infra.cpp
+    src/pipeline/stages/transfers.cpp
+)
+
+set(PL_ALL_SOURCES
     ${PL_ENTROPY_SOURCES}
     ${PL_PRIMITIVES_SOURCES}
     ${PL_TRANSACTIONS_SOURCES}
@@ -159,30 +168,100 @@ add_library(phantomledger_core STATIC
     ${PL_TRANSFERS_SOURCES}
     ${PL_SPENDING_SOURCES}
     ${PL_FRAUD_SOURCES}
+    ${PL_PRODUCTS_SOURCES}
     ${PL_LEGIT_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
+    ${PL_RUN_SOURCES}
     ${PL_EXPORTER_SOURCES}
     ${PL_INFRA_SYNTH_SOURCES}
+    ${PL_PIPELINE_SOURCES}
 )
+
+file(GLOB_RECURSE PL_DISCOVERED_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+)
+
+set(PL_DISCOVERED_SOURCES_REL)
+foreach(src IN LISTS PL_DISCOVERED_SOURCES)
+    file(RELATIVE_PATH rel "${CMAKE_CURRENT_SOURCE_DIR}" "${src}")
+    list(APPEND PL_DISCOVERED_SOURCES_REL "${rel}")
+endforeach()
+
+list(REMOVE_ITEM PL_DISCOVERED_SOURCES_REL "src/main.cpp")
+
+list(SORT PL_ALL_SOURCES)
+list(SORT PL_DISCOVERED_SOURCES_REL)
+
+if(NOT PL_ALL_SOURCES STREQUAL PL_DISCOVERED_SOURCES_REL)
+    set(PL_MISSING_FROM_CMAKE)
+    foreach(src IN LISTS PL_DISCOVERED_SOURCES_REL)
+        if(NOT src IN_LIST PL_ALL_SOURCES)
+            list(APPEND PL_MISSING_FROM_CMAKE "  ${src}")
+        endif()
+    endforeach()
+
+    set(PL_EXTRA_IN_CMAKE)
+    foreach(src IN LISTS PL_ALL_SOURCES)
+        if(NOT src IN_LIST PL_DISCOVERED_SOURCES_REL)
+            list(APPEND PL_EXTRA_IN_CMAKE "  ${src}")
+        endif()
+    endforeach()
+
+    string(JOIN "\n" PL_MISSING_FROM_CMAKE_MSG ${PL_MISSING_FROM_CMAKE})
+    string(JOIN "\n" PL_EXTRA_IN_CMAKE_MSG ${PL_EXTRA_IN_CMAKE})
+
+    message(FATAL_ERROR
+        "CMake source list is out of sync with src/*.cpp files.\n"
+        "Missing from CMake:\n${PL_MISSING_FROM_CMAKE_MSG}\n"
+        "Extra in CMake:\n${PL_EXTRA_IN_CMAKE_MSG}\n"
+    )
+endif()
+
+add_library(phantomledger_core STATIC ${PL_ALL_SOURCES})
 
 target_include_directories(phantomledger_core PUBLIC include)
 target_compile_features(phantomledger_core PUBLIC cxx_std_23)
-
-target_compile_options(phantomledger_core PRIVATE
-    -Wall
-    -Wextra
-    -Wpedantic
-    -O3
-    -march=native
-)
-
 target_link_libraries(phantomledger_core PUBLIC faker-cxx)
 
-# ---------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------
+if(MSVC)
+    target_compile_options(phantomledger_core PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phantomledger_core PRIVATE -Wall -Wextra -Wpedantic)
+
+    if(PL_ENABLE_NATIVE_OPTIMIZATION)
+        target_compile_options(phantomledger_core PRIVATE -march=native)
+    endif()
+endif()
+
+add_executable(phantomledger src/main.cpp)
+target_link_libraries(phantomledger PRIVATE phantomledger_core)
+
+if(MSVC)
+    target_compile_options(phantomledger PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(phantomledger PRIVATE -Wall -Wextra -Wpedantic)
+
+    if(PL_ENABLE_NATIVE_OPTIMIZATION)
+        target_compile_options(phantomledger PRIVATE -march=native)
+    endif()
+endif()
 
 if(PL_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+include(GNUInstallDirs)
+
+install(TARGETS phantomledger
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(TARGETS phantomledger_core
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+)
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.hpp"
+)

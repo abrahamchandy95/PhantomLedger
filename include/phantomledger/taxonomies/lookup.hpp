@@ -1,27 +1,4 @@
 #pragma once
-/*
- * Compile-time name ↔ enum lookup machinery.
- *
- * Three taxonomy modules (channels, merchants, personas) used to each
- * ship their own copy of:
- *
- *   - consteval insertion sort by name
- *   - consteval duplicate-name check
- *   - consteval reverse table (value → name), indexed by some
- *     user-defined slot function
- *   - runtime binary search (name → optional<value>)
- *
- * This header is that code once. Each taxonomy module defines:
- *
- *   - the Value type (an enum)
- *   - a kEntries array of Entry<Value>
- *   - (optionally) an Indexer that maps Value → size_t slot for the
- *     reverse table
- *
- * and gets a parse() and a name() that behave identically to what
- * the hand-written versions did.
- */
-
 #include <array>
 #include <cstddef>
 #include <optional>
