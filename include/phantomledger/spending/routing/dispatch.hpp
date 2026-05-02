@@ -6,16 +6,15 @@
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/emission_result.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
-#include "phantomledger/spending/routing/policy.hpp"
 
 #include <optional>
 
 namespace PhantomLedger::spending::routing {
 
 [[nodiscard]] inline std::optional<EmissionResult>
-routeTxn(random::Rng &rng, const market::Market &market, const Policy &policy,
-         const ResolvedAccounts &resolved, Slot slot,
-         const actors::Event &event) {
+routeTxn(random::Rng &rng, const market::Market &market,
+         const PaymentRoutingRules &policy, const ResolvedAccounts &resolved,
+         Slot slot, const actors::Event &event) {
   switch (slot) {
   case Slot::merchant:
     return emitMerchant(rng, market, policy, resolved, event);

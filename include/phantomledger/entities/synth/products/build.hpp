@@ -3,7 +3,11 @@
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/entities/synth/products/configs.hpp"
+#include "phantomledger/entities/synth/products/auto_loan.hpp"
+#include "phantomledger/entities/synth/products/insurance.hpp"
+#include "phantomledger/entities/synth/products/mortgage.hpp"
+#include "phantomledger/entities/synth/products/student_loan.hpp"
+#include "phantomledger/entities/synth/products/tax.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
@@ -11,24 +15,17 @@
 
 namespace PhantomLedger::entities::synth::products {
 
-struct Inputs {
-  ::PhantomLedger::time::Window window{};
-
-  const ::PhantomLedger::entities::synth::personas::Pack *personas = nullptr;
-
-  const ::PhantomLedger::entity::card::Registry *creditCards = nullptr;
-
-  /// Per-product configs.
-  MortgageConfig mortgageCfg = kDefaultMortgage;
-  AutoLoanConfig autoLoanCfg = kDefaultAutoLoan;
-  StudentLoanConfig studentLoanCfg = kDefaultStudentLoan;
-  TaxConfig taxCfg = kDefaultTax;
-  InsuranceConfig insuranceCfg = kDefaultInsurance;
-
-  std::uint64_t baseSeed = 0xB0A7F00DULL;
-};
+inline constexpr std::uint64_t kDefaultProductsSeed = 0xB0A7F00DULL;
 
 [[nodiscard]] ::PhantomLedger::entity::product::PortfolioRegistry
-build(::PhantomLedger::random::Rng &rng, const Inputs &in);
+build(::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+      const ::PhantomLedger::entities::synth::personas::Pack &personas,
+      const ::PhantomLedger::entity::card::Registry &creditCards,
+      std::uint64_t baseSeed = kDefaultProductsSeed,
+      const MortgageTerms &mortgage = MortgageTerms{},
+      const AutoLoanTerms &autoLoan = AutoLoanTerms{},
+      const StudentLoanTerms &studentLoan = StudentLoanTerms{},
+      const TaxTerms &tax = TaxTerms{},
+      const InsuranceTerms &insurance = InsuranceTerms{});
 
 } // namespace PhantomLedger::entities::synth::products

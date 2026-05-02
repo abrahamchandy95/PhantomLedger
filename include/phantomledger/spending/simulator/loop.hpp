@@ -20,6 +20,7 @@
 namespace PhantomLedger::spending::simulator {
 
 struct SpenderEmissionPolicy {
+  double baseExploreP = 0.0;
   const config::BurstBehavior &burst;
   const config::ExplorationHabits &exploration;
   const config::LiquidityConstraints &liquidity;

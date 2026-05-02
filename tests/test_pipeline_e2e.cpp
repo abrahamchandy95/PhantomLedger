@@ -79,13 +79,23 @@ void expectNonEmptyFile(const fs::path &path) {
   window.start = pl::time::makeTime({2025, 1, 1});
   window.days = 7;
 
-  pl::pipeline::SimulateInputs in;
-  in.window = window;
-  in.seed = seed;
-  in.entitiesIn.population = 100;
-  in.entitiesIn.window = window;
-  in.entitiesIn.simStart = window.start;
-  in.entitiesIn.piiPools = &poolSet;
+  pl::pipeline::SimulateInputs in{
+      .window = window,
+      .seed = seed,
+      .entities =
+          pl::pipeline::SimulateEntities{
+              .identity =
+                  pl::pipeline::stages::entities::IdentitySource{
+                      .pools = poolSet,
+                      .simStart = window.start,
+                  },
+              .population =
+                  pl::pipeline::stages::entities::PopulationPlan{
+                      .count = 100,
+                  },
+          },
+  };
+
   in.infraIn.window = window;
 
   auto rng = pl::random::Rng::fromSeed(seed);

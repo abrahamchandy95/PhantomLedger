@@ -48,6 +48,16 @@ buildChannelCdf(double merchantP, double billsP, double p2pP,
   return cdf;
 }
 
+struct ChannelWeights {
+  double merchantP = 0.0;
+  double billsP = 0.0;
+  double p2pP = 0.0;
+  double externalUnknownP = 0.0;
+  [[nodiscard]] constexpr ChannelCdf cdf() const noexcept {
+    return buildChannelCdf(merchantP, billsP, p2pP, externalUnknownP);
+  }
+};
+
 [[nodiscard]] inline Slot pickSlot(const ChannelCdf &cdf, double u) noexcept {
   // Unrolled — branch predictor handles the four-way ladder cleanly.
   if (u < cdf[0]) {

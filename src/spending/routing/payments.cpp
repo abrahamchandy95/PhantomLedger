@@ -83,13 +83,14 @@ struct PaymentRoute {
 // ----------------------------- Bill --------------------------------
 
 EmissionResult emitBill(random::Rng &rng, const market::Market &market,
-                        const Policy &policy, const ResolvedAccounts &resolved,
+                        const PaymentRoutingRules &policy,
+                        const ResolvedAccounts &resolved,
                         const actors::Event &event) {
   const auto &commerce = market.commerce();
   const auto billerRow = commerce.billers().rowOf(event.spender->personIndex);
 
   std::uint32_t billerIdx = 0;
-  if (!billerRow.empty() && rng.coin(policy.preferBillersP)) {
+  if (!billerRow.empty() && rng.coin(policy.preferKnownBillersP)) {
     const auto slot = rng.choiceIndex(billerRow.size());
     billerIdx = billerRow[slot];
   } else {
@@ -211,7 +212,7 @@ std::optional<EmissionResult> emitP2p(random::Rng &rng,
 
 std::optional<EmissionResult> emitMerchant(random::Rng &rng,
                                            const market::Market &market,
-                                           const Policy &policy,
+                                           const PaymentRoutingRules &policy,
                                            const ResolvedAccounts &resolved,
                                            const actors::Event &event) {
   const auto &commerce = market.commerce();
@@ -221,7 +222,7 @@ std::optional<EmissionResult> emitMerchant(random::Rng &rng,
   }
 
   const std::uint32_t merchantIdx = pickMerchantIndex(
-      rng, commerce, *event.spender, event.exploreP, policy.maxRetries);
+      rng, commerce, *event.spender, event.exploreP, policy.merchantRetryLimit);
 
   const auto &record = catalog->records[merchantIdx];
   const auto dst = record.counterpartyId;

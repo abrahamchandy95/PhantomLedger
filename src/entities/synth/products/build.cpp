@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -25,7 +26,7 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
-namespace personas = ::PhantomLedger::personas;
+namespace personaTax = ::PhantomLedger::personas;
 namespace channels = ::PhantomLedger::channels;
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
@@ -79,14 +80,58 @@ sampleMortgageAgeDays(::PhantomLedger::random::Rng &rng) {
 
 [[nodiscard]] std::int32_t
 sampleAutoTermMonths(::PhantomLedger::random::Rng &rng,
-                     const AutoLoanConfig &cfg, bool isNew) {
-  const double mean = isNew ? cfg.newTermMeanMonths : cfg.usedTermMeanMonths;
-  const double sigma = isNew ? cfg.newTermSigmaMonths : cfg.usedTermSigmaMonths;
+                     const AutoLoanTerm &term, bool isNew) {
+  const double mean = isNew ? term.newMeanMonths : term.usedMeanMonths;
+  const double sigma = isNew ? term.newSigmaMonths : term.usedSigmaMonths;
+
   const double raw =
       ::PhantomLedger::probability::distributions::normal(rng, mean, sigma);
-  const auto term = static_cast<std::int32_t>(std::round(raw));
+  const auto months = static_cast<std::int32_t>(std::round(raw));
 
-  return std::clamp(term, cfg.termMinMonths, cfg.termMaxMonths);
+  return std::clamp(months, term.minMonths, term.maxMonths);
+}
+
+[[nodiscard]] std::int32_t
+sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
+                        const StudentLoanPlanMix &planMix,
+                        const StudentLoanTerm &term) {
+  const double total = planMix.standardP + planMix.extendedP + planMix.idrLikeP;
+
+  if (total <= 0.0) {
+    return term.standardMonths;
+  }
+
+  const double u = rng.nextDouble() * total;
+
+  if (u < planMix.standardP) {
+    return term.standardMonths;
+  }
+
+  if (u < planMix.standardP + planMix.extendedP) {
+    return term.extendedMonths;
+  }
+
+  return rng.coin(term.idr20YearP) ? term.idr20YearMonths
+                                   : term.idr25YearMonths;
+}
+
+[[nodiscard]] std::int32_t sampleStudentRepaymentAgeMonths(
+    ::PhantomLedger::random::Rng &rng, personaTax::Type personaType,
+    const StudentLoanTerm &term, const StudentLoanDeferment &deferment) {
+  if (personaType == personaTax::Type::student) {
+    if (rng.coin(deferment.studentP)) {
+      const auto graceMonths =
+          std::max<std::int32_t>(1, deferment.gracePeriodMonths);
+
+      return -static_cast<std::int32_t>(
+          rng.uniformInt(1, static_cast<std::int64_t>(graceMonths) + 1));
+    }
+
+    return static_cast<std::int32_t>(rng.uniformInt(1, 13));
+  }
+
+  return static_cast<std::int32_t>(
+      rng.uniformInt(1, static_cast<std::int64_t>(term.standardMonths) + 1));
 }
 
 [[nodiscard]] ::PhantomLedger::random::Rng
@@ -133,19 +178,19 @@ struct DelinquencyKnobs {
   double partialMaxFrac;
 };
 
-template <class Config>
+template <class Delinquency>
 [[nodiscard]] constexpr DelinquencyKnobs
-delinquencyKnobs(const Config &cfg) noexcept {
+delinquencyKnobs(const Delinquency &d) noexcept {
   return {
-      .lateP = cfg.lateP,
-      .missP = cfg.missP,
-      .partialP = cfg.partialP,
-      .cureP = cfg.cureP,
-      .clusterMult = cfg.clusterMult,
-      .lateDaysMin = cfg.lateDaysMin,
-      .lateDaysMax = cfg.lateDaysMax,
-      .partialMinFrac = cfg.partialMinFrac,
-      .partialMaxFrac = cfg.partialMaxFrac,
+      .lateP = d.lateP,
+      .missP = d.missP,
+      .partialP = d.partialP,
+      .cureP = d.cureP,
+      .clusterMult = d.clusterMult,
+      .lateDaysMin = d.lateDaysMin,
+      .lateDaysMax = d.lateDaysMax,
+      .partialMinFrac = d.partialMinFrac,
+      .partialMaxFrac = d.partialMaxFrac,
   };
 }
 
@@ -266,21 +311,21 @@ void addInstallmentProduct(
                           window);
 }
 
-bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageConfig &cfg,
-                 personas::Type personaType,
+bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageTerms &terms,
+                 personaTax::Type personaType,
                  ::PhantomLedger::time::Window window,
                  ::PhantomLedger::entity::PersonId person,
                  product::PortfolioRegistry &out, bool &outIssued) {
   outIssued = false;
 
-  if (rng.nextDouble() >= cfg.ownership.at(personaType)) {
+  if (rng.nextDouble() >= terms.adoption.probability(personaType)) {
     return false;
   }
 
   outIssued = true;
 
-  const double payment =
-      samplePaymentAmount(rng, cfg.paymentMedian, cfg.paymentSigma, 200.0);
+  const double payment = samplePaymentAmount(rng, terms.payment.median,
+                                             terms.payment.sigma, 200.0);
 
   const std::int32_t paymentDay = sampleMortgagePaymentDay(rng);
   const std::int32_t ageDays = sampleMortgageAgeDays(rng);
@@ -291,31 +336,33 @@ bool tryMortgage(::PhantomLedger::random::Rng &rng, const MortgageConfig &cfg,
   addInstallmentProduct(out, person, product::ProductType::mortgage,
                         institutional::mortgageLender(), loanStart,
                         kMortgageTermMonths, paymentDay, payment, window,
-                        delinquencyKnobs(cfg));
+                        delinquencyKnobs(terms.delinquency));
 
   return true;
 }
 
-bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanConfig &cfg,
-                 personas::Type personaType,
+bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanTerms &terms,
+                 personaTax::Type personaType,
                  ::PhantomLedger::time::Window window,
                  ::PhantomLedger::entity::PersonId person,
                  product::PortfolioRegistry &out, bool &outIssued) {
   outIssued = false;
 
-  if (rng.nextDouble() >= cfg.ownership.at(personaType)) {
+  if (rng.nextDouble() >= terms.adoption.probability(personaType)) {
     return false;
   }
 
   outIssued = true;
 
-  const bool isNew = rng.nextDouble() < cfg.newVehicleShare;
+  const bool isNew = rng.nextDouble() < terms.vehicleMix.newVehicleShare;
 
-  const double median = isNew ? cfg.newPaymentMedian : cfg.usedPaymentMedian;
-  const double sigma = isNew ? cfg.newPaymentSigma : cfg.usedPaymentSigma;
-  const double payment = samplePaymentAmount(rng, median, sigma, 100.0);
+  const double median =
+      isNew ? terms.payment.newMedian : terms.payment.usedMedian;
+  const double sigma = isNew ? terms.payment.newSigma : terms.payment.usedSigma;
+  const double payment =
+      samplePaymentAmount(rng, median, sigma, terms.payment.floor);
 
-  const std::int32_t termMonths = sampleAutoTermMonths(rng, cfg, isNew);
+  const std::int32_t termMonths = sampleAutoTermMonths(rng, terms.term, isNew);
 
   const std::int32_t maxAgeDays = std::max<std::int32_t>(30, termMonths * 30);
   const std::int32_t ageDays = static_cast<std::int32_t>(
@@ -326,53 +373,28 @@ bool tryAutoLoan(::PhantomLedger::random::Rng &rng, const AutoLoanConfig &cfg,
   addInstallmentProduct(out, person, product::ProductType::autoLoan,
                         institutional::autoLender(), loanStart, termMonths,
                         samplePaymentDay(rng), payment, window,
-                        delinquencyKnobs(cfg));
+                        delinquencyKnobs(terms.delinquency));
 
   return true;
 }
 
-[[nodiscard]] std::int32_t sampleStudentTerm(::PhantomLedger::random::Rng &rng,
-                                             const StudentLoanConfig &cfg) {
-  const double total = cfg.standardPlanP + cfg.extendedPlanP + cfg.idrLikePlanP;
-  const double u = rng.nextDouble() * total;
-
-  if (u < cfg.standardPlanP) {
-    return cfg.standardTermMonths;
-  }
-
-  if (u < cfg.standardPlanP + cfg.extendedPlanP) {
-    return cfg.extendedTermMonths;
-  }
-
-  return rng.coin(cfg.idr20YearP) ? cfg.idr20YearTermMonths
-                                  : cfg.idr25YearTermMonths;
-}
-
 bool tryStudentLoan(::PhantomLedger::random::Rng &rng,
-                    const StudentLoanConfig &cfg, personas::Type personaType,
+                    const StudentLoanTerms &terms, personaTax::Type personaType,
                     ::PhantomLedger::time::Window window,
                     ::PhantomLedger::entity::PersonId person,
                     product::PortfolioRegistry &out) {
-  if (rng.nextDouble() >= cfg.ownership.at(personaType)) {
+  if (rng.nextDouble() >= terms.adoption.probability(personaType)) {
     return false;
   }
 
-  const double payment =
-      samplePaymentAmount(rng, cfg.paymentMedian, cfg.paymentSigma, 50.0);
+  const double payment = samplePaymentAmount(
+      rng, terms.payment.median, terms.payment.sigma, terms.payment.floor);
 
-  const std::int32_t termMonths = sampleStudentTerm(rng, cfg);
+  const std::int32_t termMonths =
+      sampleStudentTermMonths(rng, terms.planMix, terms.term);
 
-  std::int32_t repaymentAgeMonths = 0;
-  if (personaType == personas::Type::student) {
-    if (rng.coin(cfg.studentDefermentP)) {
-      repaymentAgeMonths = -static_cast<std::int32_t>(rng.uniformInt(1, 13));
-    } else {
-      repaymentAgeMonths = static_cast<std::int32_t>(rng.uniformInt(1, 13));
-    }
-  } else {
-    repaymentAgeMonths = static_cast<std::int32_t>(
-        rng.uniformInt(1, static_cast<std::int64_t>(termMonths) + 1));
-  }
+  const std::int32_t repaymentAgeMonths = sampleStudentRepaymentAgeMonths(
+      rng, personaType, terms.term, terms.deferment);
 
   const auto repaymentStart =
       ::PhantomLedger::time::addMonths(window.start, -repaymentAgeMonths);
@@ -380,7 +402,7 @@ bool tryStudentLoan(::PhantomLedger::random::Rng &rng,
   addInstallmentProduct(out, person, product::ProductType::studentLoan,
                         institutional::studentServicer(), repaymentStart,
                         termMonths, samplePaymentDay(rng), payment, window,
-                        delinquencyKnobs(cfg));
+                        delinquencyKnobs(terms.delinquency));
 
   return true;
 }
@@ -456,16 +478,15 @@ void emitAnnualTaxSettlement(product::ObligationStream &stream,
   }
 }
 
-bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
-            personas::Type personaType, ::PhantomLedger::time::Window window,
+bool tryTax(::PhantomLedger::random::Rng &rng, const TaxTerms &terms,
+            personaTax::Type personaType, ::PhantomLedger::time::Window window,
             ::PhantomLedger::entity::PersonId person,
             product::PortfolioRegistry &out) {
   double quarterly = 0.0;
-  if (rng.nextDouble() < cfg.ownership.at(personaType)) {
-    const double raw =
-        ::PhantomLedger::probability::distributions::lognormalByMedian(
-            rng, cfg.quarterlyAmountMedian, cfg.quarterlyAmountSigma);
-    quarterly = std::round(std::max(100.0, raw) * 100.0) / 100.0;
+  if (rng.nextDouble() < terms.adoption.probability(personaType)) {
+    quarterly = samplePaymentAmount(rng, terms.quarterlyPayment.median,
+                                    terms.quarterlyPayment.sigma,
+                                    terms.quarterlyPayment.floor);
   }
 
   double refundAmount = 0.0;
@@ -474,17 +495,15 @@ bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
   std::int32_t balanceDueMonth = 4;
 
   const double settlementRoll = rng.nextDouble();
-  if (settlementRoll < cfg.refundP) {
-    const double raw =
-        ::PhantomLedger::probability::distributions::lognormalByMedian(
-            rng, cfg.refundAmountMedian, cfg.refundAmountSigma);
-    refundAmount = std::round(std::max(100.0, raw) * 100.0) / 100.0;
+  if (settlementRoll < terms.filingOutcome.refundP) {
+    refundAmount = samplePaymentAmount(rng, terms.refund.median,
+                                       terms.refund.sigma, terms.refund.floor);
     refundMonth = static_cast<std::int32_t>(rng.uniformInt(2, 6));
-  } else if (settlementRoll < cfg.refundP + cfg.balanceDueP) {
-    const double raw =
-        ::PhantomLedger::probability::distributions::lognormalByMedian(
-            rng, cfg.balanceDueAmountMedian, cfg.balanceDueAmountSigma);
-    balanceDueAmount = std::round(std::max(100.0, raw) * 100.0) / 100.0;
+  } else if (settlementRoll <
+             terms.filingOutcome.refundP + terms.filingOutcome.balanceDueP) {
+    balanceDueAmount =
+        samplePaymentAmount(rng, terms.balanceDue.median,
+                            terms.balanceDue.sigma, terms.balanceDue.floor);
     balanceDueMonth = 4;
   }
 
@@ -499,46 +518,51 @@ bool tryTax(::PhantomLedger::random::Rng &rng, const TaxConfig &cfg,
   return true;
 }
 
-bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
-                  personas::Type personaType, bool hasMortgage,
-                  bool hasAutoLoan, double mortgageAnchorP,
+bool tryInsurance(::PhantomLedger::random::Rng &rng,
+                  const InsuranceTerms &terms, personaTax::Type personaType,
+                  bool hasMortgage, bool hasAutoLoan, double mortgageAnchorP,
                   double autoLoanAnchorP,
                   ::PhantomLedger::entity::PersonId person,
                   product::PortfolioRegistry &out) {
-  const double autoAnchorPolicyP = cfg.autoLoanAutoRequiredP;
+  const double autoAnchorPolicyP = terms.loanRequirements.autoLoanRequiresAutoP;
   const double autoIssueP =
-      hasAutoLoan
-          ? autoAnchorPolicyP
-          : residualPolicyProbability(cfg.targets.autoP.at(personaType),
-                                      autoLoanAnchorP, autoAnchorPolicyP);
+      hasAutoLoan ? autoAnchorPolicyP
+                  : residualPolicyProbability(
+                        terms.adoption.autoProbability(personaType),
+                        autoLoanAnchorP, autoAnchorPolicyP);
 
   std::optional<product::InsurancePolicy> autoPol;
   if (rng.nextDouble() < autoIssueP) {
-    const double premium =
-        samplePaymentAmount(rng, cfg.autoMedian, cfg.autoSigma, 30.0);
-    autoPol = product::autoPolicy(institutional::autoCarrier(), premium,
-                                  samplePaymentDay(rng), cfg.autoClaimAnnualP);
+    const double premium = samplePaymentAmount(
+        rng, terms.premiums.autoPolicy.median, terms.premiums.autoPolicy.sigma,
+        terms.premiums.autoPolicy.floor);
+    autoPol =
+        product::autoPolicy(institutional::autoCarrier(), premium,
+                            samplePaymentDay(rng), terms.claims.autoAnnualP);
   }
 
-  const double homeAnchorPolicyP = cfg.mortgageHomeRequiredP;
+  const double homeAnchorPolicyP = terms.loanRequirements.mortgageRequiresHomeP;
   const double homeIssueP =
-      hasMortgage
-          ? homeAnchorPolicyP
-          : residualPolicyProbability(cfg.targets.homeP.at(personaType),
-                                      mortgageAnchorP, homeAnchorPolicyP);
+      hasMortgage ? homeAnchorPolicyP
+                  : residualPolicyProbability(
+                        terms.adoption.homeProbability(personaType),
+                        mortgageAnchorP, homeAnchorPolicyP);
 
   std::optional<product::InsurancePolicy> homePol;
   if (rng.nextDouble() < homeIssueP) {
-    const double premium =
-        samplePaymentAmount(rng, cfg.homeMedian, cfg.homeSigma, 20.0);
-    homePol = product::homePolicy(institutional::homeCarrier(), premium,
-                                  samplePaymentDay(rng), cfg.homeClaimAnnualP);
+    const double premium = samplePaymentAmount(
+        rng, terms.premiums.homePolicy.median, terms.premiums.homePolicy.sigma,
+        terms.premiums.homePolicy.floor);
+    homePol =
+        product::homePolicy(institutional::homeCarrier(), premium,
+                            samplePaymentDay(rng), terms.claims.homeAnnualP);
   }
 
   std::optional<product::InsurancePolicy> lifePol;
-  if (rng.nextDouble() < cfg.targets.lifeP.at(personaType)) {
-    const double premium =
-        samplePaymentAmount(rng, cfg.lifeMedian, cfg.lifeSigma, 10.0);
+  if (rng.nextDouble() < terms.adoption.lifeProbability(personaType)) {
+    const double premium = samplePaymentAmount(
+        rng, terms.premiums.lifePolicy.median, terms.premiums.lifePolicy.sigma,
+        terms.premiums.lifePolicy.floor);
     lifePol = product::lifePolicy(institutional::lifeCarrier(), premium,
                                   samplePaymentDay(rng));
   }
@@ -555,47 +579,44 @@ bool tryInsurance(::PhantomLedger::random::Rng &rng, const InsuranceConfig &cfg,
 
   return true;
 }
+
 } // namespace
 
 ::PhantomLedger::entity::product::PortfolioRegistry
-build(::PhantomLedger::random::Rng & /*rng*/, const Inputs &in) {
-  if (in.personas == nullptr) {
-    throw std::invalid_argument("products::build: personas is required");
-  }
-
-  if (in.creditCards == nullptr) {
-    throw std::invalid_argument("products::build: creditCards is required");
-  }
+build(::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+      const ::PhantomLedger::entities::synth::personas::Pack &personas,
+      const ::PhantomLedger::entity::card::Registry &creditCards,
+      std::uint64_t baseSeed, const MortgageTerms &mortgage,
+      const AutoLoanTerms &autoLoan, const StudentLoanTerms &studentLoan,
+      const TaxTerms &tax, const InsuranceTerms &insurance) {
+  (void)rng;
+  (void)creditCards;
 
   ::PhantomLedger::entity::product::PortfolioRegistry out;
 
-  const auto &assignment = in.personas->assignment;
+  const auto &assignment = personas.assignment;
   const auto population = static_cast<::PhantomLedger::entity::PersonId>(
       assignment.byPerson.size());
 
   for (::PhantomLedger::entity::PersonId person = 1; person <= population;
        ++person) {
-    auto local = perPersonRng(in.baseSeed, person);
+    auto local = perPersonRng(baseSeed, person);
     const auto personaType = assignment.byPerson[person - 1];
 
-    const double mortgageAnchorP = in.mortgageCfg.ownership.at(personaType);
-    const double autoLoanAnchorP = in.autoLoanCfg.ownership.at(personaType);
+    const double mortgageAnchorP = mortgage.adoption.probability(personaType);
+    const double autoLoanAnchorP = autoLoan.adoption.probability(personaType);
 
     bool hasMortgage = false;
     bool hasAutoLoan = false;
 
-    (void)tryMortgage(local, in.mortgageCfg, personaType, in.window, person,
-                      out, hasMortgage);
-    (void)tryAutoLoan(local, in.autoLoanCfg, personaType, in.window, person,
-                      out, hasAutoLoan);
-    (void)tryStudentLoan(local, in.studentLoanCfg, personaType, in.window,
-                         person, out);
-    (void)tryTax(local, in.taxCfg, personaType, in.window, person, out);
-    (void)tryInsurance(local, in.insuranceCfg, personaType, hasMortgage,
-                       hasAutoLoan, mortgageAnchorP, autoLoanAnchorP, person,
-                       out);
-
-    (void)in.creditCards;
+    (void)tryMortgage(local, mortgage, personaType, window, person, out,
+                      hasMortgage);
+    (void)tryAutoLoan(local, autoLoan, personaType, window, person, out,
+                      hasAutoLoan);
+    (void)tryStudentLoan(local, studentLoan, personaType, window, person, out);
+    (void)tryTax(local, tax, personaType, window, person, out);
+    (void)tryInsurance(local, insurance, personaType, hasMortgage, hasAutoLoan,
+                       mortgageAnchorP, autoLoanAnchorP, person, out);
   }
 
   out.obligations().sort();

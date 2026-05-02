@@ -279,13 +279,23 @@ int main(int argc, char **argv) {
 
     const auto poolSet = buildDefaultPoolSet(args.seed);
 
-    pl::pipeline::SimulateInputs in;
-    in.window = window;
-    in.seed = args.seed;
-    in.entitiesIn.population = args.population;
-    in.entitiesIn.window = window;
-    in.entitiesIn.simStart = window.start;
-    in.entitiesIn.piiPools = &poolSet;
+    pl::pipeline::SimulateInputs in{
+        .window = window,
+        .seed = args.seed,
+        .entities =
+            pl::pipeline::SimulateEntities{
+                .identity =
+                    pl::pipeline::stages::entities::IdentitySource{
+                        .pools = poolSet,
+                        .simStart = window.start,
+                    },
+                .population =
+                    pl::pipeline::stages::entities::PopulationPlan{
+                        .count = args.population,
+                    },
+            },
+    };
+
     in.infraIn.window = window;
 
     auto rng = pl::random::Rng::fromSeed(args.seed);

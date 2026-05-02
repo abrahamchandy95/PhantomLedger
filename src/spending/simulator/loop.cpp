@@ -91,9 +91,9 @@ std::uint32_t SpenderEmissionLoop::transactionCountFor(
 double
 SpenderEmissionLoop::exploreProbabilityFor(const actors::Spender &spender,
                                            double liquidityMult) const {
-  double exploreP = actors::calculateExploreP(
-      plan_.activity.baseExploreP, policy_.exploration, policy_.burst, spender,
-      frame_.day);
+  double exploreP =
+      actors::calculateExploreP(policy_.baseExploreP, policy_.exploration,
+                                policy_.burst, spender, frame_.day);
 
   const double cubed =
       std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);
@@ -156,8 +156,8 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       const routing::Slot slot =
           routing::pickSlot(plan_.routing.channelCdf, rng.nextDouble());
 
-      auto maybeResult = routing::routeTxn(rng, market_, plan_.routing.policy,
-                                           resolved_, slot, event);
+      auto maybeResult = routing::routeTxn(
+          rng, market_, plan_.routing.paymentRules, resolved_, slot, event);
 
       if (!maybeResult.has_value()) {
         continue;

@@ -65,10 +65,15 @@ set(PL_SPENDING_SOURCES
     src/spending/dynamics/monthly/evolution.cpp
     src/spending/market/bootstrap.cpp
     src/spending/routing/payments.cpp
-    src/spending/simulator/day.cpp
+    src/spending/simulator/commerce_evolver.cpp
+    src/spending/simulator/day_driver.cpp
+    src/spending/simulator/day_source.cpp
     src/spending/simulator/driver.cpp
     src/spending/simulator/loop.cpp
+    src/spending/simulator/population_dynamics.cpp
     src/spending/simulator/run.cpp
+    src/spending/simulator/run_planner.cpp
+    src/spending/simulator/spender_emission_driver.cpp
     src/spending/spenders/prepare.cpp
     src/spending/spenders/targets.cpp
 )

@@ -27,7 +27,6 @@ namespace {
 
 namespace pl_gov = ::PhantomLedger::transfers::government;
 namespace pl_inflows = ::PhantomLedger::inflows;
-namespace pl_simulator = ::PhantomLedger::spending::simulator;
 
 [[nodiscard]] std::uint32_t
 populationCount(const blueprints::LegitBuildPlan &plan) {
@@ -222,14 +221,12 @@ void addRoutines(const blueprints::Blueprint &request,
       std::span<const transactions::Transaction>(streams.screened()),
       /*baseTxnsSorted=*/true));
 
-  const pl_simulator::SimulatorConfig spendingCfg{};
-
   streams.add(routines::spending::generateDayToDayTxns(
       request, plan, ownership, registry,
       /*baseTxns=*/
       std::span<const transactions::Transaction>(streams.screened()),
       /*screenBook=*/screen.fresh(),
-      /*baseTxnsSorted=*/true, spendingCfg));
+      /*baseTxnsSorted=*/true));
 }
 
 // ---------------------------------------------------------------------------

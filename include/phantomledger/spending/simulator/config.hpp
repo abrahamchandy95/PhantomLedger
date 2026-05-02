@@ -1,38 +1,47 @@
 #pragma once
 
-#include "phantomledger/math/seasonal.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
-#include "phantomledger/spending/config/picking.hpp"
-#include "phantomledger/spending/dynamics/config.hpp"
-
 #include <cstdint>
 
 namespace PhantomLedger::spending::simulator {
 
-struct ChannelMix {
-  double merchantP = 0.0;
-  double billsP = 0.0;
-  double p2pP = 0.0;
-  double externalUnknownP = 0.0;
-};
-
-struct SimulatorConfig {
+struct TransactionLoad {
   double txnsPerMonth = 0.0;
-  ChannelMix channels{};
-
-  double baseExploreP = 0.0;
-  double dayShockShape = 1.0;
-  double preferBillersP = 0.85;
   std::uint32_t personDailyLimit = 0; // 0 = no cap
-
-  dynamics::Config dynamics = dynamics::kDefaultConfig;
-  config::BurstBehavior burst = config::kDefaultBurst;
-  config::ExplorationHabits exploration = config::kDefaultExploration;
-  config::LiquidityConstraints liquidity = config::kDefaultLiquidityConstraints;
-  config::MerchantPickRules picking = config::kDefaultPickRules;
-  math::seasonal::Config seasonal = math::seasonal::kDefaultConfig;
 };
 
+struct PaymentRouting {
+  double preferBillersP = 0.85;
+  std::uint16_t merchantRetryLimit = 6;
+};
+
+struct ExploreRate {
+  double baseExploreP = 0.0;
+};
+
+struct DayVariation {
+  double shockShape = 1.0;
+};
+
+struct WeekendExplore {
+  double multiplier = 1.25;
+};
+
+struct BurstSpend {
+  double multiplier = 3.25;
+};
+
+struct PayeePicking {
+  std::uint16_t maxPickAttempts = 250;
+};
+
+struct ExplorePropensity {
+  double alpha = 1.6;
+  double beta = 9.5;
+};
+
+struct BurstWindow {
+  double probability = 0.08;
+  std::uint16_t minDays = 3;
+  std::uint16_t maxDays = 9;
+};
 } // namespace PhantomLedger::spending::simulator
