@@ -2,11 +2,15 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/math/seasonal.hpp"
+#include "phantomledger/spending/config/burst.hpp"
+#include "phantomledger/spending/config/exploration.hpp"
 #include "phantomledger/spending/config/liquidity.hpp"
+#include "phantomledger/spending/config/picking.hpp"
 #include "phantomledger/spending/dynamics/config.hpp"
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
-#include "phantomledger/spending/simulator/config.hpp"
+#include "phantomledger/spending/simulator/day_source.hpp"
+#include "phantomledger/spending/simulator/plan.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/models.hpp"
@@ -31,16 +35,14 @@ namespace plSimulator = ::PhantomLedger::spending::simulator;
     std::span<const transactions::Transaction> baseTxns,
     clearing::Ledger *screenBook = nullptr, bool baseTxnsSorted = false,
 
-    plSimulator::PayeePicking payeePicking = {},
-    plSimulator::ExplorePropensity explorePropensity = {},
-    plSimulator::BurstWindow burstWindow = {},
+    plConfig::MerchantPickRules picking = plConfig::kDefaultPickRules,
+    plConfig::ExplorationHabits exploration = plConfig::kDefaultExploration,
+    plConfig::BurstBehavior burst = plConfig::kDefaultBurst,
 
     plSimulator::TransactionLoad load = {},
     plRouting::ChannelWeights channels = {},
-    plRouting::PaymentRoutingRules paymentRules = {},
-    plSimulator::ExploreRate explore = {}, plSimulator::DayVariation day = {},
-    plSimulator::WeekendExplore weekendExplore = {},
-    plSimulator::BurstSpend burst = {},
+    plRouting::PaymentRoutingRules paymentRules = {}, double baseExploreP = 0.0,
+    plSimulator::DaySource::Variation day = plSimulator::DaySource::Variation{},
     plConfig::LiquidityConstraints liquidity =
         plConfig::kDefaultLiquidityConstraints,
     plDynamics::Config dynamics = plDynamics::kDefaultConfig,

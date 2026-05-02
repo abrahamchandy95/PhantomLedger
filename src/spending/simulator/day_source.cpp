@@ -4,7 +4,13 @@
 
 namespace PhantomLedger::spending::simulator {
 
-DaySource::DaySource(DayVariation variation, math::seasonal::Config seasonal)
+DaySource::DaySource()
+    : DaySource(Variation{}, math::seasonal::kDefaultConfig) {}
+
+DaySource::DaySource(Variation variation)
+    : DaySource(variation, math::seasonal::kDefaultConfig) {}
+
+DaySource::DaySource(Variation variation, math::seasonal::Config seasonal)
     : variation_(variation), seasonal_(seasonal) {}
 
 actors::DayFrame DaySource::build(const market::Bounds &bounds,

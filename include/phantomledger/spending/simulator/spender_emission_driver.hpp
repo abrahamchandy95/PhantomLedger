@@ -6,7 +6,6 @@
 #include "phantomledger/spending/config/exploration.hpp"
 #include "phantomledger/spending/config/liquidity.hpp"
 #include "phantomledger/spending/market/market.hpp"
-#include "phantomledger/spending/simulator/config.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
@@ -17,7 +16,7 @@
 namespace PhantomLedger::spending::simulator {
 
 struct EmissionBehavior {
-  ExploreRate explore{};
+  double baseExploreP = 0.0;
   config::BurstBehavior burst = config::kDefaultBurst;
   config::ExplorationHabits exploration = config::kDefaultExploration;
   config::LiquidityConstraints liquidity = config::kDefaultLiquidityConstraints;

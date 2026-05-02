@@ -4,7 +4,6 @@
 #include "phantomledger/spending/obligations/snapshot.hpp"
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
-#include "phantomledger/spending/simulator/config.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 

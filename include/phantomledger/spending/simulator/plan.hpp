@@ -23,6 +23,10 @@ struct PopulationPlan {
     return static_cast<std::uint32_t>(spenders.size());
   }
 };
+struct TransactionLoad {
+  double txnsPerMonth = 0.0;
+  std::uint32_t personDailyLimit = 0;
+};
 
 struct TransactionBudget {
   double targetTotalTxns = 0.0;

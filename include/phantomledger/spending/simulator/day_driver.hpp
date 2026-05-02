@@ -3,7 +3,6 @@
 #include "phantomledger/spending/actors/day.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/simulator/commerce_evolver.hpp"
-#include "phantomledger/spending/simulator/config.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"

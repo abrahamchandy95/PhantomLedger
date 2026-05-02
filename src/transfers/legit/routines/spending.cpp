@@ -24,6 +24,7 @@
 namespace PhantomLedger::transfers::legit::routines::spending {
 
 namespace pl_spending = ::PhantomLedger::spending;
+namespace pl_config = pl_spending::config;
 namespace pl_market = pl_spending::market;
 namespace pl_pop = pl_market::population;
 namespace pl_obligations = pl_spending::obligations;
@@ -121,15 +122,11 @@ buildSpendingCards(const blueprints::CreditCardState &ccState,
 // Bootstrap inputs assembly
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] pl_market::BootstrapInputs
-assembleBootstrapInputs(const blueprints::Blueprint &request,
-                        const blueprints::LegitBuildPlan &plan,
-                        const CensusScratch &scratch,
-                        pl_simulator::PayeePicking payeePicking,
-                        pl_simulator::ExplorePropensity explorePropensity,
-                        pl_simulator::BurstWindow burstWindow,
-                        pl_simulator::WeekendExplore weekendExplore,
-                        pl_simulator::BurstSpend burst) {
+[[nodiscard]] pl_market::BootstrapInputs assembleBootstrapInputs(
+    const blueprints::Blueprint &request,
+    const blueprints::LegitBuildPlan &plan, const CensusScratch &scratch,
+    pl_config::MerchantPickRules picking,
+    pl_config::ExplorationHabits exploration, pl_config::BurstBehavior burst) {
   if (plan.personas.pack == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a populated PersonaPlan.pack");
@@ -167,16 +164,9 @@ assembleBootstrapInputs(const blueprints::Blueprint &request,
   inputs.cards =
       buildSpendingCards(request.creditCardState, scratch.personCount);
 
-  inputs.picking.maxPickAttempts = payeePicking.maxPickAttempts;
-
-  inputs.exploration.alpha = explorePropensity.alpha;
-  inputs.exploration.beta = explorePropensity.beta;
-  inputs.exploration.weekendMultiplier = weekendExplore.multiplier;
-
-  inputs.burst.probability = burstWindow.probability;
-  inputs.burst.minDays = burstWindow.minDays;
-  inputs.burst.maxDays = burstWindow.maxDays;
-  inputs.burst.multiplier = burst.multiplier;
+  inputs.picking = picking;
+  inputs.exploration = exploration;
+  inputs.burst = burst;
 
   return inputs;
 }
@@ -190,14 +180,12 @@ std::vector<transactions::Transaction> generateDayToDayTxns(
     const entity::account::Registry &registry,
     std::span<const transactions::Transaction> baseTxns,
     clearing::Ledger *screenBook, bool baseTxnsSorted,
-    pl_simulator::PayeePicking payeePicking,
-    pl_simulator::ExplorePropensity explorePropensity,
-    pl_simulator::BurstWindow burstWindow, pl_simulator::TransactionLoad load,
-    pl_routing::ChannelWeights channels,
-    pl_routing::PaymentRoutingRules paymentRules,
-    pl_simulator::ExploreRate explore, pl_simulator::DayVariation day,
-    pl_simulator::WeekendExplore weekendExplore, pl_simulator::BurstSpend burst,
-    pl_spending::config::LiquidityConstraints liquidity,
+    pl_config::MerchantPickRules picking,
+    pl_config::ExplorationHabits exploration, pl_config::BurstBehavior burst,
+    pl_simulator::TransactionLoad load, pl_routing::ChannelWeights channels,
+    pl_routing::PaymentRoutingRules paymentRules, double baseExploreP,
+    pl_simulator::DaySource::Variation day,
+    pl_config::LiquidityConstraints liquidity,
     pl_spending::dynamics::Config dynamics,
     ::PhantomLedger::math::seasonal::Config seasonal) {
   (void)ownership;
@@ -215,9 +203,9 @@ std::vector<transactions::Transaction> generateDayToDayTxns(
   const auto scratch = buildCensusScratch(plan, *request.network.accountsLookup,
                                           registry, baseTxns);
 
-  auto inputs = assembleBootstrapInputs(request, plan, scratch, payeePicking,
-                                        explorePropensity, burstWindow,
-                                        weekendExplore, burst);
+  auto inputs = assembleBootstrapInputs(request, plan, scratch, picking,
+                                        exploration, burst);
+
   auto market = pl_market::buildMarket(std::move(inputs));
 
   random::RngFactory rngFactory{plan.seed};
@@ -253,26 +241,16 @@ std::vector<transactions::Transaction> generateDayToDayTxns(
       pl_simulator::CommerceEvolver{dynamics.evolution},
       pl_simulator::PopulationDynamics{dynamics},
       pl_simulator::SpenderEmissionDriver{pl_simulator::EmissionBehavior{
-          .explore = explore,
-          .burst =
-              pl_spending::config::BurstBehavior{
-                  .probability = burstWindow.probability,
-                  .minDays = burstWindow.minDays,
-                  .maxDays = burstWindow.maxDays,
-                  .multiplier = burst.multiplier,
-              },
-          .exploration =
-              pl_spending::config::ExplorationHabits{
-                  .alpha = explorePropensity.alpha,
-                  .beta = explorePropensity.beta,
-                  .weekendMultiplier = weekendExplore.multiplier,
-              },
+          .baseExploreP = baseExploreP,
+          .burst = burst,
+          .exploration = exploration,
           .liquidity = liquidity,
       }},
   };
 
   pl_simulator::Simulator simulator(market, engine, obligations,
                                     std::move(planner), std::move(dayDriver));
+
   return simulator.run();
 }
 

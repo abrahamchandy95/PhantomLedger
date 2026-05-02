@@ -110,7 +110,7 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
   auto *lockArray = engine.threadCount > 1 ? &lockArray_ : nullptr;
 
   const SpenderEmissionPolicy emissionPolicy{
-      .baseExploreP = behavior_.explore.baseExploreP,
+      .baseExploreP = behavior_.baseExploreP,
       .burst = behavior_.burst,
       .exploration = behavior_.exploration,
       .liquidity = behavior_.liquidity,
