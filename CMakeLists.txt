@@ -94,7 +94,15 @@ set(PL_FRAUD_SOURCES
 )
 
 set(PL_PRODUCTS_SOURCES
-    src/entities/synth/products/build.cpp
+    src/entities/synth/products/amount_sampling.cpp
+    src/entities/synth/products/auto_loan.cpp
+    src/entities/synth/products/dates.cpp
+    src/entities/synth/products/installment_emission.cpp
+    src/entities/synth/products/insurance.cpp
+    src/entities/synth/products/mortgage.cpp
+    src/entities/synth/products/obligation_emission.cpp
+    src/entities/synth/products/student_loan.cpp
+    src/entities/synth/products/tax.cpp
 )
 
 set(PL_LEGIT_SOURCES

@@ -8,7 +8,6 @@
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
-#include "phantomledger/entities/synth/products/build.hpp"
 
 #include <stdexcept>
 
@@ -22,69 +21,98 @@ namespace {
 
 } // namespace
 
-::PhantomLedger::pipeline::Entities
-build(::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
-      IdentitySource identity, PopulationPlan population,
-      ::PhantomLedger::entities::synth::people::Fraud fraud,
-      ::PhantomLedger::entities::synth::personas::Mix personaMix,
-      ::PhantomLedger::entities::synth::merchants::Config merchants,
-      ::PhantomLedger::entities::synth::landlords::Config landlords,
-      ::PhantomLedger::entities::synth::counterparties::Config counterparties,
-      ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance,
-      Seeds seeds,
-      ::PhantomLedger::entities::synth::products::MortgageTerms mortgage,
-      ::PhantomLedger::entities::synth::products::AutoLoanTerms autoLoan,
-      ::PhantomLedger::entities::synth::products::StudentLoanTerms studentLoan,
-      ::PhantomLedger::entities::synth::products::TaxTerms tax,
-      ::PhantomLedger::entities::synth::products::InsuranceTerms insurance) {
+void validate(PopulationPlan population) {
   if (population.count < 0) {
-    throw std::invalid_argument("entities::build: population must be >= 0");
+    throw std::invalid_argument("entities: population must be >= 0");
   }
 
   if (population.maxAccountsPerPerson < 1) {
-    throw std::invalid_argument(
-        "entities::build: maxAccountsPerPerson must be >= 1");
+    throw std::invalid_argument("entities: maxAccountsPerPerson must be >= 1");
   }
+}
 
+[[nodiscard]] IdentitySource
+withDefaultStart(IdentitySource identity,
+                 ::PhantomLedger::time::TimePoint fallbackStart) {
   if (identity.simStart == ::PhantomLedger::time::TimePoint{}) {
-    identity.simStart = window.start;
+    identity.simStart = fallbackStart;
   }
 
-  ::PhantomLedger::pipeline::Entities out;
+  return identity;
+}
 
-  out.people = ::PhantomLedger::entities::synth::people::make(
-      rng, population.count, fraud);
+[[nodiscard]] ::PhantomLedger::entities::synth::people::Pack
+buildPeople(::PhantomLedger::random::Rng &rng, PopulationPlan population,
+            const ::PhantomLedger::entities::synth::people::Fraud &fraud) {
+  validate(population);
 
-  out.accounts = ::PhantomLedger::entities::synth::accounts::makePack(
-      rng, out.people.roster, population.maxAccountsPerPerson);
+  return ::PhantomLedger::entities::synth::people::make(rng, population.count,
+                                                        fraud);
+}
 
+[[nodiscard]] ::PhantomLedger::entities::synth::accounts::Pack
+buildAccounts(::PhantomLedger::random::Rng &rng,
+              const ::PhantomLedger::entities::synth::people::Pack &people,
+              PopulationPlan population) {
+  validate(population);
+
+  return ::PhantomLedger::entities::synth::accounts::makePack(
+      rng, people.roster, population.maxAccountsPerPerson);
+}
+
+[[nodiscard]] ::PhantomLedger::entities::synth::personas::Pack
+buildPersonas(::PhantomLedger::random::Rng &rng,
+              const ::PhantomLedger::entities::synth::people::Pack &people,
+              const ::PhantomLedger::entities::synth::personas::Mix &mix) {
   const std::uint64_t personasSeed = rng.nextU64();
-  out.personas = ::PhantomLedger::entities::synth::personas::makePack(
-      rng, out.people.roster.count, personasSeed, personaMix);
 
-  out.pii = ::PhantomLedger::entities::synth::pii::make(
-      rng, out.personas.assignment, identity.simStart, identity.localeMix,
+  return ::PhantomLedger::entities::synth::personas::makePack(
+      rng, people.roster.count, personasSeed, mix);
+}
+
+[[nodiscard]] ::PhantomLedger::entity::pii::Roster
+buildPii(::PhantomLedger::random::Rng &rng,
+         const ::PhantomLedger::entities::synth::personas::Pack &personas,
+         IdentitySource identity) {
+  return ::PhantomLedger::entities::synth::pii::make(
+      rng, personas.assignment, identity.simStart, identity.localeMix,
       identity.pools);
+}
 
-  out.merchants = ::PhantomLedger::entities::synth::merchants::makePack(
-      rng, population.count, merchants);
+[[nodiscard]] ::PhantomLedger::entities::synth::merchants::Pack buildMerchants(
+    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    const ::PhantomLedger::entities::synth::merchants::Config &config) {
+  validate(population);
 
-  out.landlords = ::PhantomLedger::entities::synth::landlords::makePack(
-      rng, population.count, landlords);
+  return ::PhantomLedger::entities::synth::merchants::makePack(
+      rng, population.count, config);
+}
 
-  out.creditCards = ::PhantomLedger::entities::synth::cards::issue(
-      cardsIssuanceBase(seeds.cardIssuance), out.personas.table,
-      out.people.roster.count, cardIssuance);
+[[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack buildLandlords(
+    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    const ::PhantomLedger::entities::synth::landlords::Config &config) {
+  validate(population);
 
-  out.counterpartyPools =
-      ::PhantomLedger::entities::synth::counterparties::makePool(
-          rng, population.count, counterparties);
+  return ::PhantomLedger::entities::synth::landlords::makePack(
+      rng, population.count, config);
+}
 
-  out.portfolios = ::PhantomLedger::entities::synth::products::build(
-      rng, window, out.personas, out.creditCards, seeds.products, mortgage,
-      autoLoan, studentLoan, tax, insurance);
+[[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
+    const ::PhantomLedger::entities::synth::personas::Pack &personas,
+    const ::PhantomLedger::entities::synth::people::Pack &people, Seeds seeds,
+    const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules) {
+  return ::PhantomLedger::entities::synth::cards::issue(
+      cardsIssuanceBase(seeds.cardIssuance), personas.table,
+      people.roster.count, rules);
+}
 
-  return out;
+[[nodiscard]] ::PhantomLedger::entity::counterparty::Pool buildCounterparties(
+    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    const ::PhantomLedger::entities::synth::counterparties::Config &config) {
+  validate(population);
+
+  return ::PhantomLedger::entities::synth::counterparties::makePool(
+      rng, population.count, config);
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities

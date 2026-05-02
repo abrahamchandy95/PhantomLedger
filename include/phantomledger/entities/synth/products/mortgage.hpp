@@ -1,5 +1,9 @@
 #pragma once
 
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
 #include <cstdint>
@@ -48,5 +52,12 @@ struct MortgageTerms {
   MortgagePayment payment{};
   MortgageDelinquency delinquency{};
 };
+
+[[nodiscard]] bool
+emitMortgage(::PhantomLedger::random::Rng &rng,
+             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+             ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
+             ::PhantomLedger::time::Window window,
+             const MortgageTerms &terms = {});
 
 } // namespace PhantomLedger::entities::synth::products

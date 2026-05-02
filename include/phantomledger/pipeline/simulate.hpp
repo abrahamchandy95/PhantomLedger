@@ -1,5 +1,10 @@
 #pragma once
 
+#include "phantomledger/entities/synth/products/auto_loan.hpp"
+#include "phantomledger/entities/synth/products/insurance.hpp"
+#include "phantomledger/entities/synth/products/mortgage.hpp"
+#include "phantomledger/entities/synth/products/student_loan.hpp"
+#include "phantomledger/entities/synth/products/tax.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
