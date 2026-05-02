@@ -79,11 +79,21 @@ struct StudentLoanTerms {
   StudentLoanDelinquency delinquency{};
 };
 
-[[nodiscard]] bool
-emitStudentLoan(::PhantomLedger::random::Rng &rng,
-                ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-                ::PhantomLedger::entity::PersonId person,
-                personaTax::Type persona, ::PhantomLedger::time::Window window,
-                const StudentLoanTerms &terms = {});
+class StudentLoanEmitter {
+public:
+  StudentLoanEmitter(
+      ::PhantomLedger::random::Rng &rng,
+      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+      ::PhantomLedger::time::Window window, StudentLoanTerms terms = {});
+
+  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
+                          personaTax::Type persona);
+
+private:
+  ::PhantomLedger::random::Rng *rng_;
+  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::time::Window window_;
+  StudentLoanTerms terms_;
+};
 
 } // namespace PhantomLedger::entities::synth::products

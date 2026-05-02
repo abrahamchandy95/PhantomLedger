@@ -6,6 +6,7 @@
 #include "phantomledger/entities/synth/products/institutional.hpp"
 
 #include <algorithm>
+#include <utility>
 
 namespace PhantomLedger::entities::synth::products {
 
@@ -58,32 +59,43 @@ sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
 
 } // namespace
 
+StudentLoanEmitter::StudentLoanEmitter(
+    ::PhantomLedger::random::Rng &rng,
+    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::time::Window window, StudentLoanTerms terms)
+    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
+      terms_{std::move(terms)} {}
+
 [[nodiscard]] bool
-emitStudentLoan(::PhantomLedger::random::Rng &rng,
-                ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-                ::PhantomLedger::entity::PersonId person,
-                personaTax::Type persona, ::PhantomLedger::time::Window window,
-                const StudentLoanTerms &terms) {
-  if (rng.nextDouble() >= terms.adoption.probability(persona)) {
+StudentLoanEmitter::emit(::PhantomLedger::entity::PersonId person,
+                         personaTax::Type persona) {
+  if (rng_->nextDouble() >= terms_.adoption.probability(persona)) {
     return false;
   }
 
   const double payment = samplePaymentAmount(
-      rng, terms.payment.median, terms.payment.sigma, terms.payment.floor);
+      *rng_, terms_.payment.median, terms_.payment.sigma, terms_.payment.floor);
 
   const std::int32_t termMonths =
-      sampleStudentTermMonths(rng, terms.planMix, terms.term);
+      sampleStudentTermMonths(*rng_, terms_.planMix, terms_.term);
 
   const std::int32_t repaymentAgeMonths = sampleStudentRepaymentAgeMonths(
-      rng, persona, terms.term, terms.deferment);
+      *rng_, persona, terms_.term, terms_.deferment);
 
   const auto repaymentStart =
-      ::PhantomLedger::time::addMonths(window.start, -repaymentAgeMonths);
+      ::PhantomLedger::time::addMonths(window_.start, -repaymentAgeMonths);
 
-  addInstallmentProduct(portfolios, person, product::ProductType::studentLoan,
-                        institutional::studentServicer(), repaymentStart,
-                        termMonths, samplePaymentDay(rng), payment, window,
-                        delinquencyKnobs(terms.delinquency));
+  addInstallmentProduct(*portfolios_, window_,
+                        InstallmentIssue{
+                            .person = person,
+                            .productType = product::ProductType::studentLoan,
+                            .counterparty = institutional::studentServicer(),
+                            .start = repaymentStart,
+                            .termMonths = termMonths,
+                            .paymentDay = samplePaymentDay(*rng_),
+                            .monthlyPayment = payment,
+                            .terms = installmentTerms(terms_.delinquency),
+                        });
 
   return true;
 }

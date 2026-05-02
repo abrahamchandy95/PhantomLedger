@@ -53,53 +53,69 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
   }
 }
 
-void emitAnnualTaxSettlement(product::ObligationStream &stream,
-                             ::PhantomLedger::entity::PersonId person,
-                             double refundAmount, std::int32_t refundMonth,
-                             double balanceDueAmount,
-                             std::int32_t balanceDueMonth,
-                             ::PhantomLedger::time::Window window) {
+void emitTaxRefund(product::ObligationStream &stream,
+                   ::PhantomLedger::entity::PersonId person, double amount,
+                   std::int32_t month, ::PhantomLedger::time::Window window) {
+  if (amount <= 0.0) {
+    return;
+  }
+
   const auto startCal = ::PhantomLedger::time::toCalendarDate(window.start);
   const auto endCal = ::PhantomLedger::time::toCalendarDate(window.endExcl());
 
   for (int year = startCal.year; year <= endCal.year; ++year) {
-    if (refundAmount > 0.0) {
-      const auto due = midday(year, static_cast<unsigned>(refundMonth), 15U);
-
-      if (inWindow(due, window)) {
-        appendObligation(stream, person, product::Direction::inflow,
-                         institutional::irsTreasury(), refundAmount, due,
-                         channels::tag(channels::Product::taxRefund),
-                         product::ProductType::tax, 1);
-      }
+    const auto due = midday(year, static_cast<unsigned>(month), 15U);
+    if (!inWindow(due, window)) {
+      continue;
     }
 
-    if (balanceDueAmount > 0.0) {
-      const auto due =
-          midday(year, static_cast<unsigned>(balanceDueMonth), 15U);
+    appendObligation(stream, person, product::Direction::inflow,
+                     institutional::irsTreasury(), amount, due,
+                     channels::tag(channels::Product::taxRefund),
+                     product::ProductType::tax, 1);
+  }
+}
 
-      if (inWindow(due, window)) {
-        appendObligation(stream, person, product::Direction::outflow,
-                         institutional::irsTreasury(), balanceDueAmount, due,
-                         channels::tag(channels::Product::taxBalanceDue),
-                         product::ProductType::tax, 2);
-      }
+void emitTaxBalanceDue(product::ObligationStream &stream,
+                       ::PhantomLedger::entity::PersonId person, double amount,
+                       std::int32_t month,
+                       ::PhantomLedger::time::Window window) {
+  if (amount <= 0.0) {
+    return;
+  }
+
+  const auto startCal = ::PhantomLedger::time::toCalendarDate(window.start);
+  const auto endCal = ::PhantomLedger::time::toCalendarDate(window.endExcl());
+
+  for (int year = startCal.year; year <= endCal.year; ++year) {
+    const auto due = midday(year, static_cast<unsigned>(month), 15U);
+    if (!inWindow(due, window)) {
+      continue;
     }
+
+    appendObligation(stream, person, product::Direction::outflow,
+                     institutional::irsTreasury(), amount, due,
+                     channels::tag(channels::Product::taxBalanceDue),
+                     product::ProductType::tax, 2);
   }
 }
 
 } // namespace
 
-[[nodiscard]] bool
-emitTax(::PhantomLedger::random::Rng &rng,
-        ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-        ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-        ::PhantomLedger::time::Window window, const TaxTerms &terms) {
+TaxEmitter::TaxEmitter(
+    ::PhantomLedger::random::Rng &rng,
+    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::time::Window window, TaxTerms terms)
+    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
+      terms_{std::move(terms)} {}
+
+[[nodiscard]] bool TaxEmitter::emit(::PhantomLedger::entity::PersonId person,
+                                    personaTax::Type persona) {
   double quarterly = 0.0;
-  if (rng.nextDouble() < terms.adoption.probability(persona)) {
-    quarterly = samplePaymentAmount(rng, terms.quarterlyPayment.median,
-                                    terms.quarterlyPayment.sigma,
-                                    terms.quarterlyPayment.floor);
+  if (rng_->nextDouble() < terms_.adoption.probability(persona)) {
+    quarterly = samplePaymentAmount(*rng_, terms_.quarterlyPayment.median,
+                                    terms_.quarterlyPayment.sigma,
+                                    terms_.quarterlyPayment.floor);
   }
 
   double refundAmount = 0.0;
@@ -107,16 +123,16 @@ emitTax(::PhantomLedger::random::Rng &rng,
   double balanceDueAmount = 0.0;
   std::int32_t balanceDueMonth = 4;
 
-  const double settlementRoll = rng.nextDouble();
-  if (settlementRoll < terms.filingOutcome.refundP) {
-    refundAmount = samplePaymentAmount(rng, terms.refund.median,
-                                       terms.refund.sigma, terms.refund.floor);
-    refundMonth = static_cast<std::int32_t>(rng.uniformInt(2, 6));
+  const double settlementRoll = rng_->nextDouble();
+  if (settlementRoll < terms_.filingOutcome.refundP) {
+    refundAmount = samplePaymentAmount(
+        *rng_, terms_.refund.median, terms_.refund.sigma, terms_.refund.floor);
+    refundMonth = static_cast<std::int32_t>(rng_->uniformInt(2, 6));
   } else if (settlementRoll <
-             terms.filingOutcome.refundP + terms.filingOutcome.balanceDueP) {
+             terms_.filingOutcome.refundP + terms_.filingOutcome.balanceDueP) {
     balanceDueAmount =
-        samplePaymentAmount(rng, terms.balanceDue.median,
-                            terms.balanceDue.sigma, terms.balanceDue.floor);
+        samplePaymentAmount(*rng_, terms_.balanceDue.median,
+                            terms_.balanceDue.sigma, terms_.balanceDue.floor);
     balanceDueMonth = 4;
   }
 
@@ -124,10 +140,11 @@ emitTax(::PhantomLedger::random::Rng &rng,
     return false;
   }
 
-  emitTaxQuarterlies(portfolios.obligations(), person, quarterly, window);
-  emitAnnualTaxSettlement(portfolios.obligations(), person, refundAmount,
-                          refundMonth, balanceDueAmount, balanceDueMonth,
-                          window);
+  auto &obligations = portfolios_->obligations();
+  emitTaxQuarterlies(obligations, person, quarterly, window_);
+  emitTaxRefund(obligations, person, refundAmount, refundMonth, window_);
+  emitTaxBalanceDue(obligations, person, balanceDueAmount, balanceDueMonth,
+                    window_);
 
   return true;
 }

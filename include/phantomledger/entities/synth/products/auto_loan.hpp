@@ -77,11 +77,21 @@ struct AutoLoanTerms {
   AutoLoanDelinquency delinquency{};
 };
 
-[[nodiscard]] bool
-emitAutoLoan(::PhantomLedger::random::Rng &rng,
-             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-             ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-             ::PhantomLedger::time::Window window,
-             const AutoLoanTerms &terms = {});
+class AutoLoanEmitter {
+public:
+  AutoLoanEmitter(
+      ::PhantomLedger::random::Rng &rng,
+      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+      ::PhantomLedger::time::Window window, AutoLoanTerms terms = {});
+
+  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
+                          personaTax::Type persona);
+
+private:
+  ::PhantomLedger::random::Rng *rng_;
+  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::time::Window window_;
+  AutoLoanTerms terms_;
+};
 
 } // namespace PhantomLedger::entities::synth::products

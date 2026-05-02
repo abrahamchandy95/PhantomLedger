@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace PhantomLedger::entities::synth::products {
 
@@ -44,28 +45,40 @@ sampleMortgageAgeDays(::PhantomLedger::random::Rng &rng) {
 
 } // namespace
 
+MortgageEmitter::MortgageEmitter(
+    ::PhantomLedger::random::Rng &rng,
+    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::time::Window window, MortgageTerms terms)
+    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
+      terms_{std::move(terms)} {}
+
 [[nodiscard]] bool
-emitMortgage(::PhantomLedger::random::Rng &rng,
-             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-             ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-             ::PhantomLedger::time::Window window, const MortgageTerms &terms) {
-  if (rng.nextDouble() >= terms.adoption.probability(persona)) {
+MortgageEmitter::emit(::PhantomLedger::entity::PersonId person,
+                      personaTax::Type persona) {
+  if (rng_->nextDouble() >= terms_.adoption.probability(persona)) {
     return false;
   }
 
-  const double payment = samplePaymentAmount(rng, terms.payment.median,
-                                             terms.payment.sigma, 200.0);
+  const double payment = samplePaymentAmount(*rng_, terms_.payment.median,
+                                             terms_.payment.sigma, 200.0);
 
-  const std::int32_t paymentDay = sampleMortgagePaymentDay(rng);
-  const std::int32_t ageDays = sampleMortgageAgeDays(rng);
-  const auto loanStart = window.start - ::PhantomLedger::time::Days{ageDays};
+  const std::int32_t paymentDay = sampleMortgagePaymentDay(*rng_);
+  const std::int32_t ageDays = sampleMortgageAgeDays(*rng_);
+  const auto loanStart = window_.start - ::PhantomLedger::time::Days{ageDays};
 
   constexpr std::int32_t kMortgageTermMonths = 360;
 
-  addInstallmentProduct(portfolios, person, product::ProductType::mortgage,
-                        institutional::mortgageLender(), loanStart,
-                        kMortgageTermMonths, paymentDay, payment, window,
-                        delinquencyKnobs(terms.delinquency));
+  addInstallmentProduct(*portfolios_, window_,
+                        InstallmentIssue{
+                            .person = person,
+                            .productType = product::ProductType::mortgage,
+                            .counterparty = institutional::mortgageLender(),
+                            .start = loanStart,
+                            .termMonths = kMortgageTermMonths,
+                            .paymentDay = paymentDay,
+                            .monthlyPayment = payment,
+                            .terms = installmentTerms(terms_.delinquency),
+                        });
 
   return true;
 }

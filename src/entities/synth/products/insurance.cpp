@@ -42,65 +42,69 @@ namespace product = ::PhantomLedger::entity::product;
 
 } // namespace
 
+InsuranceEmitter::InsuranceEmitter(
+    ::PhantomLedger::random::Rng &rng,
+    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    InsuranceTerms terms)
+    : rng_{&rng}, portfolios_{&portfolios}, terms_{std::move(terms)} {}
+
 [[nodiscard]] bool
-emitInsurance(::PhantomLedger::random::Rng &rng,
-              ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-              ::PhantomLedger::entity::PersonId person,
-              personaTax::Type persona, bool hasMortgage, bool hasAutoLoan,
-              double mortgageAnchorP, double autoLoanAnchorP,
-              const InsuranceTerms &terms) {
-  const double autoAnchorPolicyP = terms.loanRequirements.autoLoanRequiresAutoP;
+InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
+                       personaTax::Type persona, LoanAnchors anchors) {
+  const double autoAnchorPolicyP =
+      terms_.loanRequirements.autoLoanRequiresAutoP;
   const double autoIssueP =
-      hasAutoLoan
+      anchors.hasAutoLoan
           ? autoAnchorPolicyP
-          : residualPolicyProbability(terms.adoption.autoProbability(persona),
-                                      autoLoanAnchorP, autoAnchorPolicyP);
+          : residualPolicyProbability(terms_.adoption.autoProbability(persona),
+                                      anchors.autoLoanP, autoAnchorPolicyP);
 
   std::optional<product::InsurancePolicy> autoPol;
-  if (rng.nextDouble() < autoIssueP) {
+  if (rng_->nextDouble() < autoIssueP) {
     const double premium = samplePaymentAmount(
-        rng, terms.premiums.autoPolicy.median, terms.premiums.autoPolicy.sigma,
-        terms.premiums.autoPolicy.floor);
+        *rng_, terms_.premiums.autoPolicy.median,
+        terms_.premiums.autoPolicy.sigma, terms_.premiums.autoPolicy.floor);
     autoPol =
         product::autoPolicy(institutional::autoCarrier(), premium,
-                            samplePaymentDay(rng), terms.claims.autoAnnualP);
+                            samplePaymentDay(*rng_), terms_.claims.autoAnnualP);
   }
 
-  const double homeAnchorPolicyP = terms.loanRequirements.mortgageRequiresHomeP;
+  const double homeAnchorPolicyP =
+      terms_.loanRequirements.mortgageRequiresHomeP;
   const double homeIssueP =
-      hasMortgage
+      anchors.hasMortgage
           ? homeAnchorPolicyP
-          : residualPolicyProbability(terms.adoption.homeProbability(persona),
-                                      mortgageAnchorP, homeAnchorPolicyP);
+          : residualPolicyProbability(terms_.adoption.homeProbability(persona),
+                                      anchors.mortgageP, homeAnchorPolicyP);
 
   std::optional<product::InsurancePolicy> homePol;
-  if (rng.nextDouble() < homeIssueP) {
+  if (rng_->nextDouble() < homeIssueP) {
     const double premium = samplePaymentAmount(
-        rng, terms.premiums.homePolicy.median, terms.premiums.homePolicy.sigma,
-        terms.premiums.homePolicy.floor);
+        *rng_, terms_.premiums.homePolicy.median,
+        terms_.premiums.homePolicy.sigma, terms_.premiums.homePolicy.floor);
     homePol =
         product::homePolicy(institutional::homeCarrier(), premium,
-                            samplePaymentDay(rng), terms.claims.homeAnnualP);
+                            samplePaymentDay(*rng_), terms_.claims.homeAnnualP);
   }
 
   std::optional<product::InsurancePolicy> lifePol;
-  if (rng.nextDouble() < terms.adoption.lifeProbability(persona)) {
+  if (rng_->nextDouble() < terms_.adoption.lifeProbability(persona)) {
     const double premium = samplePaymentAmount(
-        rng, terms.premiums.lifePolicy.median, terms.premiums.lifePolicy.sigma,
-        terms.premiums.lifePolicy.floor);
+        *rng_, terms_.premiums.lifePolicy.median,
+        terms_.premiums.lifePolicy.sigma, terms_.premiums.lifePolicy.floor);
     lifePol = product::lifePolicy(institutional::lifeCarrier(), premium,
-                                  samplePaymentDay(rng));
+                                  samplePaymentDay(*rng_));
   }
 
   if (!autoPol.has_value() && !homePol.has_value() && !lifePol.has_value()) {
     return false;
   }
 
-  portfolios.insurance().set(person, product::InsuranceHoldings{
-                                         std::move(autoPol),
-                                         std::move(homePol),
-                                         std::move(lifePol),
-                                     });
+  portfolios_->insurance().set(person, product::InsuranceHoldings{
+                                           std::move(autoPol),
+                                           std::move(homePol),
+                                           std::move(lifePol),
+                                       });
 
   return true;
 }

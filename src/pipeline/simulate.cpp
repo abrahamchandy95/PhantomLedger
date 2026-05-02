@@ -19,28 +19,31 @@ void synthesizeProducts(SimulationResult &out,
     auto local = productSynth::personRng(entities.seeds.products, person);
     const auto persona = assignment.byPerson[person - 1];
 
-    const double mortgageAnchorP =
-        entities.mortgage.adoption.probability(persona);
-    const double autoLoanAnchorP =
-        entities.autoLoan.adoption.probability(persona);
+    productSynth::MortgageEmitter mortgage{local, out.entities.portfolios,
+                                           window, entities.mortgage};
+    productSynth::AutoLoanEmitter autoLoan{local, out.entities.portfolios,
+                                           window, entities.autoLoan};
+    productSynth::StudentLoanEmitter studentLoan{local, out.entities.portfolios,
+                                                 window, entities.studentLoan};
+    productSynth::TaxEmitter tax{local, out.entities.portfolios, window,
+                                 entities.tax};
+    productSynth::InsuranceEmitter insurance{local, out.entities.portfolios,
+                                             entities.insurance};
 
-    const bool hasMortgage =
-        productSynth::emitMortgage(local, out.entities.portfolios, person,
-                                   persona, window, entities.mortgage);
+    const bool hasMortgage = mortgage.emit(person, persona);
+    const bool hasAutoLoan = autoLoan.emit(person, persona);
 
-    const bool hasAutoLoan =
-        productSynth::emitAutoLoan(local, out.entities.portfolios, person,
-                                   persona, window, entities.autoLoan);
+    (void)studentLoan.emit(person, persona);
+    (void)tax.emit(person, persona);
 
-    (void)productSynth::emitStudentLoan(local, out.entities.portfolios, person,
-                                        persona, window, entities.studentLoan);
-
-    (void)productSynth::emitTax(local, out.entities.portfolios, person, persona,
-                                window, entities.tax);
-
-    (void)productSynth::emitInsurance(
-        local, out.entities.portfolios, person, persona, hasMortgage,
-        hasAutoLoan, mortgageAnchorP, autoLoanAnchorP, entities.insurance);
+    (void)insurance.emit(
+        person, persona,
+        productSynth::LoanAnchors{
+            .hasMortgage = hasMortgage,
+            .hasAutoLoan = hasAutoLoan,
+            .mortgageP = entities.mortgage.adoption.probability(persona),
+            .autoLoanP = entities.autoLoan.adoption.probability(persona),
+        });
   }
 
   out.entities.portfolios.obligations().sort();

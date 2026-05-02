@@ -57,10 +57,20 @@ struct TaxTerms {
   TaxBalanceDue balanceDue{};
 };
 
-[[nodiscard]] bool
-emitTax(::PhantomLedger::random::Rng &rng,
-        ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-        ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-        ::PhantomLedger::time::Window window, const TaxTerms &terms = {});
+class TaxEmitter {
+public:
+  TaxEmitter(::PhantomLedger::random::Rng &rng,
+             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+             ::PhantomLedger::time::Window window, TaxTerms terms = {});
+
+  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
+                          personaTax::Type persona);
+
+private:
+  ::PhantomLedger::random::Rng *rng_;
+  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::time::Window window_;
+  TaxTerms terms_;
+};
 
 } // namespace PhantomLedger::entities::synth::products
