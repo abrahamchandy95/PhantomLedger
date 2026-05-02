@@ -53,11 +53,21 @@ struct MortgageTerms {
   MortgageDelinquency delinquency{};
 };
 
-[[nodiscard]] bool
-emitMortgage(::PhantomLedger::random::Rng &rng,
-             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-             ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-             ::PhantomLedger::time::Window window,
-             const MortgageTerms &terms = {});
+class MortgageEmitter {
+public:
+  MortgageEmitter(
+      ::PhantomLedger::random::Rng &rng,
+      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+      ::PhantomLedger::time::Window window, MortgageTerms terms = {});
+
+  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
+                          personaTax::Type persona);
+
+private:
+  ::PhantomLedger::random::Rng *rng_;
+  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::time::Window window_;
+  MortgageTerms terms_;
+};
 
 } // namespace PhantomLedger::entities::synth::products

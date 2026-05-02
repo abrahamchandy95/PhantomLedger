@@ -1,50 +1,45 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/products/installment_terms.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
 #include <cstdint>
 
 namespace PhantomLedger::entities::synth::products {
 
-struct DelinquencyKnobs {
-  double lateP = 0.0;
-  double missP = 0.0;
-  double partialP = 0.0;
-  double cureP = 0.0;
-  double clusterMult = 1.0;
-
-  std::int32_t lateDaysMin = 0;
-  std::int32_t lateDaysMax = 0;
-
-  double partialMinFrac = 0.0;
-  double partialMaxFrac = 0.0;
-};
-
 template <class Delinquency>
-[[nodiscard]] constexpr DelinquencyKnobs
-delinquencyKnobs(const Delinquency &d) noexcept {
+[[nodiscard]] constexpr ::PhantomLedger::entity::product::InstallmentTerms
+installmentTerms(const Delinquency &d) noexcept {
   return {
       .lateP = d.lateP,
+      .lateDaysMin = d.lateDaysMin,
+      .lateDaysMax = d.lateDaysMax,
       .missP = d.missP,
       .partialP = d.partialP,
       .cureP = d.cureP,
-      .clusterMult = d.clusterMult,
-      .lateDaysMin = d.lateDaysMin,
-      .lateDaysMax = d.lateDaysMax,
       .partialMinFrac = d.partialMinFrac,
       .partialMaxFrac = d.partialMaxFrac,
+      .clusterMult = d.clusterMult,
   };
 }
 
+struct InstallmentIssue {
+  ::PhantomLedger::entity::PersonId person{};
+  ::PhantomLedger::entity::product::ProductType productType =
+      ::PhantomLedger::entity::product::ProductType::unknown;
+  ::PhantomLedger::entity::Key counterparty{};
+  ::PhantomLedger::time::TimePoint start{};
+  std::int32_t termMonths = 0;
+  std::int32_t paymentDay = 1;
+  double monthlyPayment = 0.0;
+  ::PhantomLedger::entity::product::InstallmentTerms terms{};
+};
+
 void addInstallmentProduct(
     ::PhantomLedger::entity::product::PortfolioRegistry &out,
-    ::PhantomLedger::entity::PersonId person,
-    ::PhantomLedger::entity::product::ProductType productType,
-    ::PhantomLedger::entity::Key counterparty,
-    ::PhantomLedger::time::TimePoint start, std::int32_t termMonths,
-    std::int32_t paymentDay, double monthlyPayment,
-    ::PhantomLedger::time::Window window, DelinquencyKnobs knobs);
+    ::PhantomLedger::time::Window window, const InstallmentIssue &issue);
 
 } // namespace PhantomLedger::entities::synth::products

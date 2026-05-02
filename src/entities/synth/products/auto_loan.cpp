@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace PhantomLedger::entities::synth::products {
 
@@ -30,35 +31,49 @@ sampleAutoTermMonths(::PhantomLedger::random::Rng &rng,
 
 } // namespace
 
+AutoLoanEmitter::AutoLoanEmitter(
+    ::PhantomLedger::random::Rng &rng,
+    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::time::Window window, AutoLoanTerms terms)
+    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
+      terms_{std::move(terms)} {}
+
 [[nodiscard]] bool
-emitAutoLoan(::PhantomLedger::random::Rng &rng,
-             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-             ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
-             ::PhantomLedger::time::Window window, const AutoLoanTerms &terms) {
-  if (rng.nextDouble() >= terms.adoption.probability(persona)) {
+AutoLoanEmitter::emit(::PhantomLedger::entity::PersonId person,
+                      personaTax::Type persona) {
+  if (rng_->nextDouble() >= terms_.adoption.probability(persona)) {
     return false;
   }
 
-  const bool isNew = rng.nextDouble() < terms.vehicleMix.newVehicleShare;
+  const bool isNew = rng_->nextDouble() < terms_.vehicleMix.newVehicleShare;
 
   const double median =
-      isNew ? terms.payment.newMedian : terms.payment.usedMedian;
-  const double sigma = isNew ? terms.payment.newSigma : terms.payment.usedSigma;
+      isNew ? terms_.payment.newMedian : terms_.payment.usedMedian;
+  const double sigma =
+      isNew ? terms_.payment.newSigma : terms_.payment.usedSigma;
   const double payment =
-      samplePaymentAmount(rng, median, sigma, terms.payment.floor);
+      samplePaymentAmount(*rng_, median, sigma, terms_.payment.floor);
 
-  const std::int32_t termMonths = sampleAutoTermMonths(rng, terms.term, isNew);
+  const std::int32_t termMonths =
+      sampleAutoTermMonths(*rng_, terms_.term, isNew);
 
   const std::int32_t maxAgeDays = std::max<std::int32_t>(30, termMonths * 30);
   const std::int32_t ageDays = static_cast<std::int32_t>(
-      rng.uniformInt(30, static_cast<std::int64_t>(maxAgeDays) + 1));
+      rng_->uniformInt(30, static_cast<std::int64_t>(maxAgeDays) + 1));
 
-  const auto loanStart = window.start - ::PhantomLedger::time::Days{ageDays};
+  const auto loanStart = window_.start - ::PhantomLedger::time::Days{ageDays};
 
-  addInstallmentProduct(portfolios, person, product::ProductType::autoLoan,
-                        institutional::autoLender(), loanStart, termMonths,
-                        samplePaymentDay(rng), payment, window,
-                        delinquencyKnobs(terms.delinquency));
+  addInstallmentProduct(*portfolios_, window_,
+                        InstallmentIssue{
+                            .person = person,
+                            .productType = product::ProductType::autoLoan,
+                            .counterparty = institutional::autoLender(),
+                            .start = loanStart,
+                            .termMonths = termMonths,
+                            .paymentDay = samplePaymentDay(*rng_),
+                            .monthlyPayment = payment,
+                            .terms = installmentTerms(terms_.delinquency),
+                        });
 
   return true;
 }

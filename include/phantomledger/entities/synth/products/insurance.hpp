@@ -96,12 +96,27 @@ struct InsuranceTerms {
   InsuranceClaims claims{};
 };
 
-[[nodiscard]] bool
-emitInsurance(::PhantomLedger::random::Rng &rng,
-              ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-              ::PhantomLedger::entity::PersonId person,
-              personaTax::Type persona, bool hasMortgage, bool hasAutoLoan,
-              double mortgageAnchorP, double autoLoanAnchorP,
-              const InsuranceTerms &terms = {});
+struct LoanAnchors {
+  bool hasMortgage = false;
+  bool hasAutoLoan = false;
+  double mortgageP = 0.0;
+  double autoLoanP = 0.0;
+};
+
+class InsuranceEmitter {
+public:
+  InsuranceEmitter(
+      ::PhantomLedger::random::Rng &rng,
+      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+      InsuranceTerms terms = {});
+
+  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
+                          personaTax::Type persona, LoanAnchors anchors);
+
+private:
+  ::PhantomLedger::random::Rng *rng_;
+  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  InsuranceTerms terms_;
+};
 
 } // namespace PhantomLedger::entities::synth::products

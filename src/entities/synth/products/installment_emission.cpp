@@ -17,22 +17,6 @@ namespace product = ::PhantomLedger::entity::product;
 namespace channels = ::PhantomLedger::channels;
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
-[[nodiscard]] product::InstallmentTerms
-makeInstallmentTerms(const DelinquencyKnobs &knobs) {
-  product::InstallmentTerms terms{};
-  terms.lateP = knobs.lateP;
-  terms.lateDaysMin = knobs.lateDaysMin;
-  terms.lateDaysMax = knobs.lateDaysMax;
-  terms.missP = knobs.missP;
-  terms.partialP = knobs.partialP;
-  terms.cureP = knobs.cureP;
-  terms.partialMinFrac = knobs.partialMinFrac;
-  terms.partialMaxFrac = knobs.partialMaxFrac;
-  terms.clusterMult = knobs.clusterMult;
-
-  return terms;
-}
-
 [[nodiscard]] constexpr auto makeInstallmentChannelTable() noexcept {
   using ProductChannel = channels::Product;
 
@@ -64,28 +48,25 @@ channelForInstallment(product::ProductType productType) {
 }
 
 void emitInstallmentSchedule(product::ObligationStream &stream,
-                             ::PhantomLedger::entity::PersonId person,
-                             ::PhantomLedger::entity::Key counterparty,
-                             product::ProductType productType,
-                             ::PhantomLedger::time::TimePoint loanStart,
-                             std::int32_t termMonths, std::int32_t paymentDay,
-                             double monthlyPayment,
+                             const InstallmentIssue &issue,
                              ::PhantomLedger::time::Window window) {
-  const auto channel = channelForInstallment(productType);
+  const auto channel = channelForInstallment(issue.productType);
 
-  for (std::int32_t cycle = 0; cycle < termMonths; ++cycle) {
-    const auto cycleAnchor = ::PhantomLedger::time::addMonths(loanStart, cycle);
+  for (std::int32_t cycle = 0; cycle < issue.termMonths; ++cycle) {
+    const auto cycleAnchor =
+        ::PhantomLedger::time::addMonths(issue.start, cycle);
     const auto cycleDate = ::PhantomLedger::time::toCalendarDate(cycleAnchor);
 
     const auto dueDate = midday(cycleDate.year, cycleDate.month,
-                                static_cast<unsigned>(paymentDay));
+                                static_cast<unsigned>(issue.paymentDay));
 
     if (!inWindow(dueDate, window)) {
       continue;
     }
 
-    appendObligation(stream, person, product::Direction::outflow, counterparty,
-                     monthlyPayment, dueDate, channel, productType);
+    appendObligation(stream, issue.person, product::Direction::outflow,
+                     issue.counterparty, issue.monthlyPayment, dueDate, channel,
+                     issue.productType);
   }
 }
 
@@ -93,17 +74,9 @@ void emitInstallmentSchedule(product::ObligationStream &stream,
 
 void addInstallmentProduct(
     ::PhantomLedger::entity::product::PortfolioRegistry &out,
-    ::PhantomLedger::entity::PersonId person,
-    ::PhantomLedger::entity::product::ProductType productType,
-    ::PhantomLedger::entity::Key counterparty,
-    ::PhantomLedger::time::TimePoint start, std::int32_t termMonths,
-    std::int32_t paymentDay, double monthlyPayment,
-    ::PhantomLedger::time::Window window, DelinquencyKnobs knobs) {
-  out.loans().set(person, productType, makeInstallmentTerms(knobs));
-
-  emitInstallmentSchedule(out.obligations(), person, counterparty, productType,
-                          start, termMonths, paymentDay, monthlyPayment,
-                          window);
+    ::PhantomLedger::time::Window window, const InstallmentIssue &issue) {
+  out.loans().set(issue.person, issue.productType, issue.terms);
+  emitInstallmentSchedule(out.obligations(), issue, window);
 }
 
 } // namespace PhantomLedger::entities::synth::products
