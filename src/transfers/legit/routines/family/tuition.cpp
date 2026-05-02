@@ -9,7 +9,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdint>
 
 namespace PhantomLedger::transfers::legit::routines::family::tuition {
@@ -40,9 +39,9 @@ struct Plan {
   std::int64_t semesterStartEpoch = 0;
 };
 
-[[nodiscard]] Plan
-buildPlan(const ::PhantomLedger::transfers::family::Tuition &cfg,
-          ::PhantomLedger::time::TimePoint firstMonthStart, random::Rng &rng) {
+[[nodiscard]] Plan buildPlan(const TuitionSchedule &cfg,
+                             ::PhantomLedger::time::TimePoint firstMonthStart,
+                             random::Rng &rng) {
   const auto count = static_cast<int>(
       rng.uniformInt(cfg.instMin, static_cast<std::int64_t>(cfg.instMax) + 1));
 
@@ -109,8 +108,7 @@ emitInstallment(int stepIndex, const Plan &plan, entity::Key payerAcct,
 
 void processStudent(entity::PersonId student,
                     std::span<const entity::PersonId> parents,
-                    entity::Key payeeAcct,
-                    const ::PhantomLedger::transfers::family::Tuition &cfg,
+                    entity::Key payeeAcct, const TuitionSchedule &cfg,
                     std::int64_t windowEndEpochSec, const Runtime &rt,
                     random::Rng &rng,
                     std::vector<transactions::Transaction> &out) {
@@ -146,9 +144,8 @@ void processStudent(entity::PersonId student,
     (void)student;
   }
 }
-[[nodiscard]] std::size_t
-estimateCapacity(std::size_t studentCount,
-                 const ::PhantomLedger::transfers::family::Tuition &cfg) {
+[[nodiscard]] std::size_t estimateCapacity(std::size_t studentCount,
+                                           const TuitionSchedule &cfg) {
   if (studentCount == 0) {
     return 0;
   }
@@ -161,9 +158,8 @@ estimateCapacity(std::size_t studentCount,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::Tuition &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const TuitionSchedule &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

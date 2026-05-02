@@ -56,8 +56,7 @@ collectGivingParents(std::span<const entity::PersonId> parents,
 emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
                 std::span<const entity::PersonId> givingParents,
                 entity::Key childAcct, std::int64_t windowEndEpochSec,
-                const ::PhantomLedger::transfers::family::ParentGifts &cfg,
-                const Runtime &rt, random::Rng &rng,
+                const ParentGiftFlow &cfg, const Runtime &rt, random::Rng &rng,
                 std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.p)) {
     return false;
@@ -99,9 +98,8 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::ParentGifts &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const ParentGiftFlow &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

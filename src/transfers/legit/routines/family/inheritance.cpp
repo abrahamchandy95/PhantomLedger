@@ -74,8 +74,8 @@ void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
 }
 
 void processRetiree(entity::PersonId retiree, std::int64_t windowEndEpochSec,
-                    const ::PhantomLedger::transfers::family::Inheritance &cfg,
-                    const Runtime &rt, random::Rng &rng,
+                    const InheritanceEvent &cfg, const Runtime &rt,
+                    random::Rng &rng,
                     std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.eventP)) {
     return;
@@ -109,9 +109,8 @@ void processRetiree(entity::PersonId retiree, std::int64_t windowEndEpochSec,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::Inheritance &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const InheritanceEvent &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

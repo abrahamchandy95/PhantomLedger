@@ -65,12 +65,11 @@ resolvePair(entity::PersonId a, entity::PersonId b, const Runtime &rt) {
       .personA = a, .personB = b, .acctA = *acctA, .acctB = *acctB};
 }
 
-[[nodiscard]] bool emitMonthlyTransfer(
-    ::PhantomLedger::time::TimePoint monthStart, const ResolvedPair &pair,
-    std::int64_t windowEndEpochSec,
-    const ::PhantomLedger::transfers::family::SiblingTransfers &cfg,
-    const Runtime &rt, random::Rng &rng,
-    std::vector<transactions::Transaction> &out) {
+[[nodiscard]] bool
+emitMonthlyTransfer(::PhantomLedger::time::TimePoint monthStart,
+                    const ResolvedPair &pair, std::int64_t windowEndEpochSec,
+                    const SiblingFlow &cfg, const Runtime &rt, random::Rng &rng,
+                    std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.monthlyP)) {
     return false;
   }
@@ -108,11 +107,10 @@ resolvePair(entity::PersonId a, entity::PersonId b, const Runtime &rt) {
   return true;
 }
 
-void processPair(
-    entity::PersonId a, entity::PersonId b, std::int64_t windowEndEpochSec,
-    const ::PhantomLedger::transfers::family::SiblingTransfers &cfg,
-    const Runtime &rt, random::Rng &rng,
-    std::vector<transactions::Transaction> &out) {
+void processPair(entity::PersonId a, entity::PersonId b,
+                 std::int64_t windowEndEpochSec, const SiblingFlow &cfg,
+                 const Runtime &rt, random::Rng &rng,
+                 std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.activeP)) {
     return;
   }
@@ -130,9 +128,8 @@ void processPair(
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::SiblingTransfers &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const SiblingFlow &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

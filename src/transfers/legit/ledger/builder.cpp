@@ -48,9 +48,9 @@ blueprints::TransfersPayload LegitTransferBuilder::build() const {
                         *request->network.accounts, txf, streams, screen);
   }
 
-  if (famGraphCfg != nullptr && famTransferCfg != nullptr) {
+  if (famGraphCfg != nullptr && familyTransfers != nullptr) {
     passes::addFamily(*request, plan, txf, streams, *famGraphCfg,
-                      *famTransferCfg);
+                      *familyTransfers);
   }
 
   passes::addCredit(*request, plan, txf, streams);
