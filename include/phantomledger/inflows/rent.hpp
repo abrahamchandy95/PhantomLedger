@@ -3,6 +3,7 @@
 #include "phantomledger/inflows/selection.hpp"
 #include "phantomledger/inflows/timestamps.hpp"
 #include "phantomledger/inflows/types.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/recurring/rent.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
@@ -13,6 +14,7 @@
 #include <array>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -20,30 +22,91 @@ namespace PhantomLedger::inflows {
 
 namespace rent {
 
-namespace detail {
-
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
-[[nodiscard]] consteval auto buildProbabilityTable() {
-  std::array<double, personas::kKindCount> table{};
+namespace internal {
 
-  table[enumTax::toIndex(personas::Type::student)] = 0.50;
-  table[enumTax::toIndex(personas::Type::retiree)] = 0.18;
-  table[enumTax::toIndex(personas::Type::freelancer)] = 0.58;
-  table[enumTax::toIndex(personas::Type::smallBusiness)] = 0.35;
-  table[enumTax::toIndex(personas::Type::highNetWorth)] = 0.10;
-  table[enumTax::toIndex(personas::Type::salaried)] = 0.62;
+struct PersonaProbability {
+  personas::Type persona;
+  double probability = 0.0;
+};
 
-  return table;
+inline constexpr auto kPersonaProbabilities =
+    std::to_array<PersonaProbability>({
+        {personas::Type::student, 0.50},
+        {personas::Type::retiree, 0.18},
+        {personas::Type::freelancer, 0.58},
+        {personas::Type::smallBusiness, 0.35},
+        {personas::Type::highNetWorth, 0.10},
+        {personas::Type::salaried, 0.62},
+    });
+
+struct ProbabilityBuild {
+  std::array<double, personas::kKindCount> values{};
+  bool valid = true;
+};
+
+[[nodiscard]] consteval bool unit(double value) {
+  return value >= 0.0 && value <= 1.0;
 }
 
-inline constexpr auto kProbabilityByPersona = buildProbabilityTable();
+[[nodiscard]] consteval ProbabilityBuild buildProbabilityTable() {
+  ProbabilityBuild build{};
+  std::array<bool, personas::kKindCount> seen{};
 
-} // namespace detail
+  if (kPersonaProbabilities.size() != personas::kKindCount) {
+    build.valid = false;
+    return build;
+  }
+
+  for (const auto entry : kPersonaProbabilities) {
+    const auto index = enumTax::toIndex(entry.persona);
+
+    if (index >= personas::kKindCount) {
+      build.valid = false;
+      return build;
+    }
+
+    if (seen[index]) {
+      build.valid = false;
+      return build;
+    }
+
+    if (!unit(entry.probability)) {
+      build.valid = false;
+      return build;
+    }
+
+    build.values[index] = entry.probability;
+    seen[index] = true;
+  }
+
+  for (const bool found : seen) {
+    if (!found) {
+      build.valid = false;
+      return build;
+    }
+  }
+
+  return build;
+}
+
+inline constexpr auto kProbabilityBuild = buildProbabilityTable();
+
+static_assert(kProbabilityBuild.valid,
+              "rent probabilities must contain exactly one valid entry for "
+              "each persona");
+
+inline constexpr auto kProbabilityByPersona = kProbabilityBuild.values;
+
+[[nodiscard]] constexpr double probabilityFor(personas::Type type) noexcept {
+  return kProbabilityByPersona[enumTax::toIndex(type)];
+}
+
+} // namespace internal
 
 [[nodiscard]] constexpr double probability(personas::Type type) noexcept {
-  return detail::kProbabilityByPersona
-      [::PhantomLedger::taxonomies::enums::toIndex(type)];
+  return internal::probabilityFor(type);
 }
 
 using HomeownerCheck = std::function<bool(PersonId)>;
@@ -110,19 +173,22 @@ struct PayerState {
 
 [[nodiscard]] inline std::vector<transactions::Transaction>
 generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
-                 const transactions::Factory &txf, double targetRentFraction,
+                 const transactions::Factory &txf,
                  const std::function<double()> &rentModel,
                  const rent::HomeownerCheck &isHomeowner = rent::noHomeowners) {
   namespace recur = ::PhantomLedger::recurring;
 
-  if (!snapshot.hasRecurringPolicy() ||
-      snapshot.counterparties.landlords.empty()) {
+  if (snapshot.rent.landlords.empty()) {
     return {};
   }
 
+  primitives::validate::require(snapshot.recurring.lease);
+  primitives::validate::unit("rentPaidFraction",
+                             snapshot.recurring.rentPaidFraction);
+
   const auto selector = rent::makePayerSelector(snapshot, isHomeowner);
-  const double scale =
-      selector.fitScale(snapshot.population.count, targetRentFraction);
+  const double scale = selector.fitScale(snapshot.population.count,
+                                         snapshot.recurring.rentPaidFraction);
 
   if (scale <= 0.0) {
     return {};
@@ -133,12 +199,7 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     return {};
   }
 
-  const recur::LeaseRules rules{
-      .tenure = snapshot.policy().tenure,
-      .inflation = snapshot.policy().inflation,
-      .raises = snapshot.policy().raises,
-  };
-
+  const auto &rules = snapshot.recurring.lease;
   const recur::RentRouter router;
 
   std::vector<rent::PayerState> states;
@@ -153,13 +214,13 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     auto initRng = snapshot.entropy.factory.rng({"lease_init", ps.payerKey});
 
     ps.lease =
-        initializeLease(rules, snapshot.entropy.factory, initRng,
-                        recur::LeaseInitInput{
-                            .payerKey = ps.payerKey,
-                            .startDate = snapshot.timeframe.startDate,
-                            .landlords = snapshot.counterparties.landlords,
-                            .rentSource = rentModel,
-                        });
+        recur::initializeLease(rules, snapshot.entropy.factory, initRng,
+                               recur::LeaseInitInput{
+                                   .payerKey = ps.payerKey,
+                                   .startDate = snapshot.timeframe.startDate,
+                                   .landlords = snapshot.rent.landlords,
+                                   .rentSource = rentModel,
+                               });
 
     states.push_back(std::move(ps));
   }
@@ -173,15 +234,14 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
         auto advRng = snapshot.entropy.factory.rng(
             {"lease_advance", ps.payerKey, std::to_string(ps.lease.moveIndex)});
 
-        ps.lease =
-            advanceLease(rules, snapshot.entropy.factory, advRng,
-                         recur::LeaseAdvanceInput{
-                             .payerKey = ps.payerKey,
-                             .now = ps.lease.end,
-                             .landlords = snapshot.counterparties.landlords,
-                             .previous = ps.lease,
-                             .resetRentSource = rentModel,
-                         });
+        ps.lease = recur::advanceLease(rules, snapshot.entropy.factory, advRng,
+                                       recur::LeaseAdvanceInput{
+                                           .payerKey = ps.payerKey,
+                                           .now = ps.lease.end,
+                                           .landlords = snapshot.rent.landlords,
+                                           .previous = ps.lease,
+                                           .resetRentSource = rentModel,
+                                       });
       }
 
       const auto txnTs = timestamps::jittered(
@@ -191,15 +251,16 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
         continue;
       }
 
-      const double amount = calculateRent(rules, snapshot.entropy.factory,
-                                          recur::RentQuery{
-                                              .payerKey = ps.payerKey,
-                                              .state = ps.lease,
-                                              .payDate = monthStart,
-                                          });
+      const double amount =
+          recur::calculateRent(rules, snapshot.entropy.factory,
+                               recur::RentQuery{
+                                   .payerKey = ps.payerKey,
+                                   .state = ps.lease,
+                                   .payDate = monthStart,
+                               });
 
-      const auto channel = router.pick(
-          rng, snapshot.counterparties.landlordType(ps.lease.landlordAcct));
+      const auto channel =
+          router.pick(rng, snapshot.rent.landlordType(ps.lease.landlordAcct));
 
       txns.push_back(txf.make(transactions::Draft{
           .source = ps.account,

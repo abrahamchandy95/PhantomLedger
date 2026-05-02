@@ -3,6 +3,7 @@
 #include "phantomledger/inflows/selection.hpp"
 #include "phantomledger/inflows/timestamps.hpp"
 #include "phantomledger/inflows/types.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/recurring/employment.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
@@ -26,20 +27,86 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
-struct ProbabilityTable {
-  static constexpr std::array<double, personas::kKindCount> table{{
-      0.12, // student
-      0.02, // retiree
-      0.08, // freelancer
-      0.04, // smallBusiness
-      0.12, // highNetWorth
-      0.98, // salaried
-  }};
+namespace internal {
 
-  [[nodiscard]] static constexpr double forKind(personas::Type type) noexcept {
-    return table[enumTax::toIndex(type)];
-  }
+struct PersonaProbability {
+  personas::Type persona;
+  double probability = 0.0;
 };
+
+inline constexpr auto kPersonaProbabilities =
+    std::to_array<PersonaProbability>({
+        {personas::Type::student, 0.12},
+        {personas::Type::retiree, 0.02},
+        {personas::Type::freelancer, 0.08},
+        {personas::Type::smallBusiness, 0.04},
+        {personas::Type::highNetWorth, 0.12},
+        {personas::Type::salaried, 0.98},
+    });
+
+struct ProbabilityBuild {
+  std::array<double, personas::kKindCount> values{};
+  bool valid = true;
+};
+
+[[nodiscard]] consteval bool unit(double value) {
+  return value >= 0.0 && value <= 1.0;
+}
+
+[[nodiscard]] consteval ProbabilityBuild buildProbabilityTable() {
+  ProbabilityBuild build{};
+  std::array<bool, personas::kKindCount> seen{};
+
+  if (kPersonaProbabilities.size() != personas::kKindCount) {
+    build.valid = false;
+    return build;
+  }
+
+  for (const auto entry : kPersonaProbabilities) {
+    const auto index = enumTax::toIndex(entry.persona);
+
+    if (index >= personas::kKindCount) {
+      build.valid = false;
+      return build;
+    }
+
+    if (seen[index]) {
+      build.valid = false;
+      return build;
+    }
+
+    if (!unit(entry.probability)) {
+      build.valid = false;
+      return build;
+    }
+
+    build.values[index] = entry.probability;
+    seen[index] = true;
+  }
+
+  for (const bool found : seen) {
+    if (!found) {
+      build.valid = false;
+      return build;
+    }
+  }
+
+  return build;
+}
+
+inline constexpr auto kProbabilityBuild = buildProbabilityTable();
+
+static_assert(kProbabilityBuild.valid,
+              "salary probabilities must contain exactly one valid entry for "
+              "each persona");
+
+inline constexpr auto kProbabilityByPersona = kProbabilityBuild.values;
+
+[[nodiscard]] constexpr double probabilityFor(personas::Type type) noexcept {
+  return kProbabilityByPersona[enumTax::toIndex(type)];
+}
+
+} // namespace internal
 
 struct NumText {
   std::array<char, 16> buf{};
@@ -64,7 +131,7 @@ struct NumText {
 
 [[nodiscard]] inline double baseProbability(const Population &population,
                                             PersonId person) {
-  return ProbabilityTable::forKind(population.persona(person));
+  return internal::probabilityFor(population.persona(person));
 }
 
 class Paymaster {
@@ -74,13 +141,13 @@ public:
             const std::function<double()> &salaryModel,
             std::vector<transactions::Transaction> &out)
       : snapshot_(snapshot), rng_(rng), txf_(txf), salaryModel_(salaryModel),
-        out_(out),
-        salaryGrowth_(snapshot.policy().inflation, snapshot.policy().raises,
-                      snapshot.entropy.factory),
-        init_(snapshot.policy().tenure, snapshot.policy().payroll,
-              snapshot.entropy.factory),
-        advance_(snapshot.policy().tenure, snapshot.policy().payroll,
-                 salaryGrowth_, snapshot.entropy.factory),
+        out_(out), salaryGrowth_(snapshot.recurring.employment.salary,
+                                 snapshot.entropy.factory),
+        init_(snapshot.recurring.employment.job,
+              snapshot.recurring.employment.payroll, snapshot.entropy.factory),
+        advance_(snapshot.recurring.employment.job,
+                 snapshot.recurring.employment.payroll, salaryGrowth_,
+                 snapshot.entropy.factory),
         salaryCalc_(salaryGrowth_) {}
 
   void pay(PersonId person) {
@@ -109,7 +176,7 @@ private:
     };
 
     return init_(personId, snapshot_.timeframe.startDate,
-                 snapshot_.counterparties.employers, annualSalary);
+                 snapshot_.payroll.employers, annualSalary);
   }
 
   void payJob(const recurring::Employment &state, const Key &dst,
@@ -153,8 +220,8 @@ private:
     auto advRng = snapshot_.entropy.factory.rng(
         {"employment_advance", personId, switchId.str()});
 
-    return advance_(advRng, personId, state.end,
-                    snapshot_.counterparties.employers, state);
+    return advance_(advRng, personId, state.end, snapshot_.payroll.employers,
+                    state);
   }
 
   const InflowSnapshot &snapshot_;
@@ -162,6 +229,7 @@ private:
   const transactions::Factory &txf_;
   const std::function<double()> &salaryModel_;
   std::vector<transactions::Transaction> &out_;
+
   recurring::SalaryGrowthModel salaryGrowth_;
   recurring::EmploymentInitializer init_;
   recurring::EmploymentAdvancer advance_;
@@ -172,12 +240,15 @@ private:
 
 [[nodiscard]] inline std::vector<transactions::Transaction>
 generateSalaryTxns(const InflowSnapshot &snapshot, random::Rng &rng,
-                   const transactions::Factory &txf, double targetPaidFraction,
+                   const transactions::Factory &txf,
                    const std::function<double()> &salaryModel) {
-  if (!snapshot.hasRecurringPolicy() ||
-      snapshot.counterparties.employers.empty()) {
+  if (snapshot.payroll.employers.empty()) {
     return {};
   }
+
+  primitives::validate::require(snapshot.recurring.employment);
+  primitives::validate::unit("salaryPaidFraction",
+                             snapshot.recurring.salaryPaidFraction);
 
   const auto selector = selection::makeSelector(
       [&](PersonId person) {
@@ -187,8 +258,8 @@ generateSalaryTxns(const InflowSnapshot &snapshot, random::Rng &rng,
         return salary::baseProbability(snapshot.population, person);
       });
 
-  const double scale =
-      selector.fitScale(snapshot.population.count, targetPaidFraction);
+  const double scale = selector.fitScale(snapshot.population.count,
+                                         snapshot.recurring.salaryPaidFraction);
 
   if (scale <= 0.0) {
     return {};

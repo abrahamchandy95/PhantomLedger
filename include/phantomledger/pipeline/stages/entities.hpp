@@ -3,7 +3,7 @@
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 #include "phantomledger/entities/synth/cards/issue.hpp"
-#include "phantomledger/entities/synth/counterparties/config.hpp"
+#include "phantomledger/entities/synth/counterparties/make.hpp"
 #include "phantomledger/entities/synth/landlords/config.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/merchants/config.hpp"
@@ -78,9 +78,10 @@ buildPii(::PhantomLedger::random::Rng &rng,
     const ::PhantomLedger::entities::synth::people::Pack &people, Seeds seeds,
     const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules = {});
 
-[[nodiscard]] ::PhantomLedger::entity::counterparty::Pool buildCounterparties(
+[[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
+buildCounterparties(
     ::PhantomLedger::random::Rng &rng, PopulationPlan population,
-    const ::PhantomLedger::entities::synth::counterparties::Config &config =
-        {});
+    const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
+        &targets = {});
 
 } // namespace PhantomLedger::pipeline::stages::entities

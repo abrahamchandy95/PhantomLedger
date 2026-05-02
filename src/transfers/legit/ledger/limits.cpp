@@ -4,6 +4,7 @@
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
+#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
 #include <stdexcept>
@@ -43,10 +44,12 @@ void applyCreditCardLimits(clearing::Ledger &ledger,
 
 } // namespace
 
-std::unique_ptr<clearing::Ledger> buildBalanceBook(
-    const blueprints::Timeline &timeline, const blueprints::Network &network,
-    const blueprints::Specifications &specs, const blueprints::CCState &ccState,
-    const blueprints::LegitBuildPlan &plan) {
+std::unique_ptr<clearing::Ledger>
+buildBalanceBook(const blueprints::Timeline &timeline,
+                 const blueprints::Network &network,
+                 const blueprints::ClearingSpec &specs,
+                 const blueprints::CreditCardState &ccState,
+                 const blueprints::LegitBuildPlan &plan) {
   if (specs.balances == nullptr) {
     return nullptr;
   }

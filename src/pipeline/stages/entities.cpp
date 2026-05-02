@@ -106,13 +106,15 @@ buildPii(::PhantomLedger::random::Rng &rng,
       people.roster.count, rules);
 }
 
-[[nodiscard]] ::PhantomLedger::entity::counterparty::Pool buildCounterparties(
+[[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
+buildCounterparties(
     ::PhantomLedger::random::Rng &rng, PopulationPlan population,
-    const ::PhantomLedger::entities::synth::counterparties::Config &config) {
+    const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
+        &targets) {
   validate(population);
 
-  return ::PhantomLedger::entities::synth::counterparties::makePool(
-      rng, population.count, config);
+  return ::PhantomLedger::entities::synth::counterparties::make(
+      rng, population.count, targets);
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities

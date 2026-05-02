@@ -1,9 +1,5 @@
 #pragma once
-/*
- * inflows/revenue/sources.hpp — persona-aware revenue source assignment.
- */
 
-#include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/inflow/ids.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
@@ -133,32 +129,41 @@ source(random::Rng &rng, std::span<const Key> pool,
 }
 
 inline void applyFallback(personas::Type persona, random::Rng &rng,
-                          const entity::counterparty::Pool &pools,
+                          const RevenueCounterparties &counterparties,
                           const Accounts &accounts, Sources &sources) {
   if (sources.any()) {
     return;
   }
 
   switch (persona) {
-  case personas::Type::freelancer:
-    if (!pools.clientPayerIds.empty()) {
-      sources.clients = choiceK(rng, pools.clientPayerIds, 1, 2);
+  case personas::Type::freelancer: {
+    const auto clients = counterparties.clients();
+    if (!clients.empty()) {
+      sources.clients = choiceK(rng, clients, 1, 2);
     }
     break;
+  }
 
-  case personas::Type::smallBusiness:
-    if (!accounts.business.has_value() && !pools.ownerBusinessIds.empty()) {
-      sources.drawSrc = pickOne(rng, pools.ownerBusinessIds);
+  case personas::Type::smallBusiness: {
+    const auto ownerBusinesses = counterparties.ownerBusinesses();
+    if (!accounts.business.has_value() && !ownerBusinesses.empty()) {
+      sources.drawSrc = pickOne(rng, ownerBusinesses);
     }
     break;
+  }
 
-  case personas::Type::highNetWorth:
+  case personas::Type::highNetWorth: {
     if (accounts.brokerage.has_value()) {
       sources.investmentSrc = accounts.brokerage;
-    } else if (!pools.brokerageIds.empty()) {
-      sources.investmentSrc = pickOne(rng, pools.brokerageIds);
+      break;
+    }
+
+    const auto brokerages = counterparties.brokerages();
+    if (!brokerages.empty()) {
+      sources.investmentSrc = pickOne(rng, brokerages);
     }
     break;
+  }
 
   default:
     break;
@@ -176,9 +181,9 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
 [[nodiscard]] inline std::optional<Plan> assign(const InflowSnapshot &snapshot,
                                                 PersonId person) {
   const auto &population = snapshot.population;
-  const auto &counterparties = snapshot.counterparties;
+  const auto &counterparties = snapshot.revenue;
 
-  if (!counterparties.hasPools()) {
+  if (!counterparties.available()) {
     return std::nullopt;
   }
 
@@ -205,25 +210,24 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
   auto rng =
       snapshot.entropy.factory.rng({"legit", "nonpayroll_income", personKey});
 
-  const auto &pools = *counterparties.pools;
-
   Sources sources{
-      .clients = detail::counterpartySources(rng, pools.clientPayerIds,
+      .clients = detail::counterpartySources(rng, counterparties.clients(),
                                              profile->client),
-      .platforms = detail::counterpartySources(rng, pools.platformIds,
+      .platforms = detail::counterpartySources(rng, counterparties.platforms(),
                                                profile->platform),
-      .processor = detail::source(rng, pools.processorIds, profile->settlement),
-      .drawSrc =
-          accounts.business.has_value()
-              ? accounts.business
-              : detail::source(rng, pools.ownerBusinessIds, profile->ownerDraw),
-      .investmentSrc =
-          accounts.brokerage.has_value()
-              ? accounts.brokerage
-              : detail::source(rng, pools.brokerageIds, profile->investment),
+      .processor =
+          detail::source(rng, counterparties.processors(), profile->settlement),
+      .drawSrc = accounts.business.has_value()
+                     ? accounts.business
+                     : detail::source(rng, counterparties.ownerBusinesses(),
+                                      profile->ownerDraw),
+      .investmentSrc = accounts.brokerage.has_value()
+                           ? accounts.brokerage
+                           : detail::source(rng, counterparties.brokerages(),
+                                            profile->investment),
   };
 
-  detail::applyFallback(persona, rng, pools, accounts, sources);
+  detail::applyFallback(persona, rng, counterparties, accounts, sources);
 
   return Plan{
       .person = person,

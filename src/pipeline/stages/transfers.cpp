@@ -2,6 +2,7 @@
 
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/insurance/claims.hpp"
@@ -53,22 +54,44 @@ buildPrimaryAccountsMap(
     if (record.owner == ::PhantomLedger::entity::invalidPerson) {
       continue;
     }
+
     out.try_emplace(record.owner, record.id);
   }
+
   return out;
+}
+
+[[nodiscard]] blueprints::GovernmentPrograms
+makeGovernmentPrograms(const Inputs &in) {
+  return blueprints::GovernmentPrograms{
+      .retirement = in.government.retirement,
+      .disability = in.government.disability,
+  };
+}
+
+[[nodiscard]] blueprints::IncomeSpec makeIncomeSpec(const Inputs &in) {
+  return blueprints::IncomeSpec{
+      .employment = in.income.employment,
+      .lease = in.income.lease,
+      .salaryPaidFraction = in.income.salaryPaidFraction,
+      .rentPaidFraction = in.income.rentPaidFraction,
+  };
+}
+
+[[nodiscard]] blueprints::CreditCardSpec makeCreditCardSpec(const Inputs &in) {
+  return blueprints::CreditCardSpec{
+      .issuance = nullptr,
+      .terms = in.creditCards.terms,
+      .habits = in.creditCards.habits,
+  };
 }
 
 [[nodiscard]] blueprints::Blueprint
 makeBlueprint(::PhantomLedger::random::Rng &rng,
               const ::PhantomLedger::pipeline::Entities &entities,
               const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in,
-              blueprints::GovernmentPrograms &govStore /*owned by caller*/,
-              blueprints::CreditCardProfile &ccStore /*owned by caller*/) {
-  govStore.retirement = in.retirement;
-  govStore.disability = in.disability;
-
-  ccStore.terms = in.ccTerms;
-  ccStore.habits = in.ccHabits;
+              blueprints::GovernmentPrograms &governmentStore) {
+  governmentStore = makeGovernmentPrograms(in);
 
   blueprints::Blueprint bp{};
 
@@ -86,18 +109,19 @@ makeBlueprint(::PhantomLedger::random::Rng &rng,
   bp.macro.population.count = entities.people.roster.count;
   bp.macro.population.seed = in.seed;
   bp.macro.hubSelection.fraction = in.hubFraction;
-  bp.macro.government = &govStore;
+  bp.macro.government = &governmentStore;
 
-  bp.specs.recurringPolicy = in.recurringPolicy;
-  bp.specs.balances = in.balanceRules;
-  bp.specs.ccProfile = ccStore;
+  bp.income = makeIncomeSpec(in);
+  bp.clearing.balances = in.clearing.balanceRules;
+  bp.creditCards = makeCreditCardSpec(in);
 
   bp.overrides.infra = &infra.router;
   bp.overrides.personas = &entities.personas;
-  bp.overrides.counterpartyPools = &entities.counterpartyPools;
+  bp.overrides.counterparties = &entities.counterparties;
 
-  bp.ccState.cards = &entities.creditCards;
+  bp.creditCardState.cards = &entities.creditCards;
 
+  primitives::validate::require(bp);
   return bp;
 }
 
@@ -121,8 +145,8 @@ makeBlueprint(::PhantomLedger::random::Rng &rng,
 
   ::PhantomLedger::random::RngFactory claimsFactory{in.seed};
   auto claimTxns =
-      insurance::claims(in.claimRates, in.window, rng, txf, claimsFactory,
-                        entities.portfolios, insPop);
+      insurance::claims(in.insurance.claimRates, in.window, rng, txf,
+                        claimsFactory, entities.portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
 
   obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
@@ -180,7 +204,6 @@ runFraudInjection(::PhantomLedger::random::Rng &rng,
   req.scenario.ownership = &entities.accounts.ownership;
   req.scenario.baseTxns = draftTxns;
 
-  // Runtime — RNG + infra views.
   req.runtime.rng = &rng;
   req.runtime.router = &infra.router;
   req.runtime.ringInfra = &infra.ringInfra;
@@ -188,7 +211,7 @@ runFraudInjection(::PhantomLedger::random::Rng &rng,
   req.counterparties.billerAccounts = legitPayload.billerAccounts;
   req.counterparties.employers = legitPayload.employers;
 
-  req.params = in.fraudParams;
+  req.params = in.fraud.params;
 
   return fraud::inject(req);
 }
@@ -216,6 +239,7 @@ runPostFraudReplay(::PhantomLedger::random::Rng &rng,
   PostReplayResult out;
   out.finalTxns = accumulator.takeTxns();
   out.finalBook = std::move(bookCopy);
+
   return out;
 }
 
@@ -225,15 +249,15 @@ runPostFraudReplay(::PhantomLedger::random::Rng &rng,
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
       const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in) {
+  primitives::validate::require(in);
 
-  blueprints::GovernmentPrograms govStore{};
-  blueprints::CreditCardProfile ccStore{};
-  auto blueprint = makeBlueprint(rng, entities, infra, in, govStore, ccStore);
+  blueprints::GovernmentPrograms governmentStore{};
+  auto blueprint = makeBlueprint(rng, entities, infra, in, governmentStore);
 
   legit_ledger::LegitTransferBuilder builder{
       .request = &blueprint,
-      .famGraphCfg = in.familyGraphCfg,
-      .familyTransfers = in.familyTransfers,
+      .famGraphCfg = in.family.graph,
+      .familyTransfers = in.family.transfers,
   };
 
   blueprints::TransfersPayload legitPayload = builder.build();
@@ -253,7 +277,7 @@ build(::PhantomLedger::random::Rng &rng,
                                                  primaryAccounts, legitPayload);
 
   auto preReplay =
-      runPreFraudReplay(*legitPayload.initialBook, rng, in.preReplayPolicy,
+      runPreFraudReplay(*legitPayload.initialBook, rng, in.replay.preFraud,
                         std::move(replaySortedStream));
 
   auto injection = runFraudInjection(rng, entities, infra, in,
@@ -263,7 +287,7 @@ build(::PhantomLedger::random::Rng &rng,
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
   auto postReplay =
-      runPostFraudReplay(rng, *legitPayload.initialBook, in.preReplayPolicy,
+      runPostFraudReplay(rng, *legitPayload.initialBook, in.replay.preFraud,
                          std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(

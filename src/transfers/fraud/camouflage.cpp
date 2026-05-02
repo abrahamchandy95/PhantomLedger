@@ -3,44 +3,40 @@
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/recurring/payroll.hpp"
-#include "phantomledger/recurring/policy.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 namespace PhantomLedger::transfers::fraud::camouflage {
 
 namespace {
 
 using recurring::PayCadence;
-using recurring::PayrollPolicy;
 using recurring::PayrollProfile;
+using recurring::PayrollRules;
 
 [[nodiscard]] PayrollProfile sampleCamouflagePayrollProfile(random::Rng &rng) {
-  static constexpr PayrollPolicy kPolicy{};
+  static constexpr PayrollRules kRules{};
 
-  static constexpr std::array<PayCadence, 4> kCadences{
-      PayCadence::weekly,
-      PayCadence::biweekly,
-      PayCadence::semimonthly,
-      PayCadence::monthly,
+  const std::array<double, recurring::kPayCadenceCount> cadenceWeights{
+      kRules.weights.weekly,
+      kRules.weights.biweekly,
+      kRules.weights.semimonthly,
+      kRules.weights.monthly,
   };
 
-  const std::array<double, 4> weights{
-      kPolicy.weights.weekly,
-      kPolicy.weights.biweekly,
-      kPolicy.weights.semimonthly,
-      kPolicy.weights.monthly,
-  };
+  const auto cdf = distributions::buildCdf(cadenceWeights);
+  const auto cadence = recurring::kPayCadences[distributions::sampleIndex(
+      cdf, rng.nextDouble())];
 
-  const auto cdf = distributions::buildCdf(weights);
-  const auto cadence =
-      kCadences[distributions::sampleIndex(cdf, rng.nextDouble())];
-
-  int weekday = kPolicy.defaultWeekday;
+  int weekday = kRules.defaultWeekday;
   if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&
       rng.coin(0.25)) {
     weekday = (weekday == 4) ? 3 : 4;
@@ -58,7 +54,7 @@ using recurring::PayrollProfile;
     anchor = time::addDays(anchor, 7);
   }
 
-  const int lagMax = std::max(0, kPolicy.postingLagDaysMax);
+  const int lagMax = kRules.postingLagDaysMax;
   const int postingLagDays =
       (lagMax == 0) ? 0
                     : static_cast<int>(rng.uniformInt(
@@ -81,6 +77,7 @@ using recurring::PayrollProfile;
         kMonthlyDayChoices[rng.choiceIndex(kMonthlyDayChoices.size())];
   }
 
+  primitives::validate::require(profile);
   return profile;
 }
 
@@ -126,6 +123,7 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
 
         const auto ts = payDay + time::Days{offsetDays} +
                         time::Hours{offsetHours} + time::Minutes{offsetMinutes};
+
         if (ts >= windowEndExcl) {
           continue;
         }
@@ -155,6 +153,7 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
 
         const auto &dst = ctx.accounts->allAccounts[rng.choiceIndex(
             ctx.accounts->allAccounts.size())];
+
         if (dst == acct) {
           continue;
         }
@@ -190,6 +189,7 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
       const auto &src =
           ctx.accounts
               ->employers[rng.choiceIndex(ctx.accounts->employers.size())];
+
       const auto profile = sampleCamouflagePayrollProfile(rng);
       const double annualSalary = math::amounts::kSalary.sample(rng) * 12.0;
 
@@ -204,6 +204,7 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
 
         const auto ts =
             payDate + time::Hours{offsetHours} + time::Minutes{offsetMinutes};
+
         if (ts < startDate || ts >= windowEndExcl) {
           continue;
         }
@@ -211,9 +212,6 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
         const auto payDateCal = time::toCalendarDate(payDate);
         const int periods =
             recurring::payPeriodsInYear(profile, payDateCal.year);
-        if (periods <= 0) {
-          continue;
-        }
 
         const double rawAmount = annualSalary / static_cast<double>(periods);
         const double amount =

@@ -32,7 +32,8 @@ generateLifecycle(const blueprints::Blueprint &request,
                   const blueprints::LegitBuildPlan &plan,
                   const transactions::Factory &txf,
                   std::span<const transactions::Transaction> existingTxns) {
-  if (!request.ccState.enabled() || request.ccState.cards == nullptr) {
+  if (!request.creditCardState.enabled() ||
+      request.creditCardState.cards == nullptr) {
     return {};
   }
   if (request.timeline.rng == nullptr) {
@@ -40,8 +41,8 @@ generateLifecycle(const blueprints::Blueprint &request,
         "credit_cards routine requires a non-null timeline.rng");
   }
 
-  const auto *issuerPolicy = request.specs.ccProfile.terms;
-  const auto *behavior = request.specs.ccProfile.habits;
+  const auto *issuerPolicy = request.creditCards.terms;
+  const auto *behavior = request.creditCards.habits;
 
   if (issuerPolicy == nullptr || behavior == nullptr) {
     throw std::invalid_argument(
@@ -51,7 +52,7 @@ generateLifecycle(const blueprints::Blueprint &request,
   const auto primaryByPerson = primaryAccountKeysByPerson(plan);
 
   ::PhantomLedger::transfers::credit_cards::LedgerView view{
-      .cards = *request.ccState.cards,
+      .cards = *request.creditCardState.cards,
       .primaryAccounts = primaryByPerson,
       .issuerAccount = plan.counterparties.issuerAcct,
   };

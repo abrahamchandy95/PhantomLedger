@@ -7,7 +7,9 @@
 #include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/recurring/policy.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/recurring/employment.hpp"
+#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -18,6 +20,7 @@
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::inflows {
@@ -50,6 +53,12 @@ struct Timeframe {
 
   [[nodiscard]] bool contains(TimePoint ts) const noexcept {
     return ts >= startDate && ts < end();
+  }
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::nonNegative("days", days); });
   }
 };
 
@@ -154,18 +163,28 @@ private:
 };
 
 // ---------------------------------------------------------------
-// Counterparties
+// Payroll counterparties
 // ---------------------------------------------------------------
 
-struct Counterparties {
-  const entity::counterparty::Pool *pools = nullptr;
-
+struct PayrollCounterparties {
   std::span<const Key> employers;
-  std::span<const Key> landlords;
 
+  [[nodiscard]] bool hasEmployers() const noexcept {
+    return !employers.empty();
+  }
+};
+
+// ---------------------------------------------------------------
+// Rent counterparties
+// ---------------------------------------------------------------
+
+struct RentCounterparties {
+  std::span<const Key> landlords;
   const LandlordTypes *landlordTypes = nullptr;
 
-  [[nodiscard]] bool hasPools() const noexcept { return pools != nullptr; }
+  [[nodiscard]] bool hasLandlords() const noexcept {
+    return !landlords.empty();
+  }
 
   [[nodiscard]] std::optional<entity::landlord::Type>
   landlordType(const Key &landlord) const noexcept {
@@ -174,12 +193,90 @@ struct Counterparties {
     }
 
     const auto it = landlordTypes->find(landlord);
-
     if (it == landlordTypes->end()) {
       return std::nullopt;
     }
 
     return it->second;
+  }
+};
+
+// ---------------------------------------------------------------
+// Revenue counterparties
+// ---------------------------------------------------------------
+
+class RevenueCounterparties {
+public:
+  const entity::counterparty::Directory *directory = nullptr;
+
+  [[nodiscard]] bool available() const noexcept { return directory != nullptr; }
+
+  [[nodiscard]] std::span<const Key> clients() const noexcept {
+    if (directory == nullptr) {
+      return {};
+    }
+
+    return view(directory->clients.accounts.all);
+  }
+
+  [[nodiscard]] std::span<const Key> platforms() const noexcept {
+    if (directory == nullptr) {
+      return {};
+    }
+
+    return view(directory->external.platforms);
+  }
+
+  [[nodiscard]] std::span<const Key> processors() const noexcept {
+    if (directory == nullptr) {
+      return {};
+    }
+
+    return view(directory->external.processors);
+  }
+
+  [[nodiscard]] std::span<const Key> ownerBusinesses() const noexcept {
+    if (directory == nullptr) {
+      return {};
+    }
+
+    return view(directory->external.ownerBusinesses);
+  }
+
+  [[nodiscard]] std::span<const Key> brokerages() const noexcept {
+    if (directory == nullptr) {
+      return {};
+    }
+
+    return view(directory->external.brokerages);
+  }
+
+private:
+  [[nodiscard]] static std::span<const Key>
+  view(const std::vector<Key> &keys) noexcept {
+    return {keys.data(), keys.size()};
+  }
+};
+
+// ---------------------------------------------------------------
+// Recurring income rules
+// ---------------------------------------------------------------
+
+struct RecurringIncomeRules {
+  recurring::EmploymentRules employment{};
+  recurring::LeaseRules lease{};
+
+  double salaryPaidFraction = 0.95;
+  double rentPaidFraction = 0.80;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    employment.validate(r);
+    lease.validate(r);
+
+    r.check([&] { v::unit("salaryPaidFraction", salaryPaidFraction); });
+    r.check([&] { v::unit("rentPaidFraction", rentPaidFraction); });
   }
 };
 
@@ -191,17 +288,16 @@ struct InflowSnapshot {
   Timeframe timeframe;
   Entropy entropy;
   Population population;
-  Counterparties counterparties;
-  const recurring::Policy *recurringPolicy = nullptr;
 
-  [[nodiscard]] bool hasRecurringPolicy() const noexcept {
-    return recurringPolicy != nullptr;
-  }
+  PayrollCounterparties payroll;
+  RentCounterparties rent;
+  RevenueCounterparties revenue;
 
-  [[nodiscard]] const recurring::Policy &policy() const noexcept {
-    assert(recurringPolicy != nullptr);
+  RecurringIncomeRules recurring{};
 
-    return *recurringPolicy;
+  void validate(primitives::validate::Report &r) const {
+    timeframe.validate(r);
+    recurring.validate(r);
   }
 };
 

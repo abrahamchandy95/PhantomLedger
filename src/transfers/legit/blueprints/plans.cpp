@@ -150,10 +150,11 @@ buildCounterpartyPlan(const Timeline &timeline, const Network &network,
                                 ? plan.hubAccounts.front()
                                 : network.accounts->records.front().id;
 
-  const auto *pools = overrides.counterpartyPools;
+  const auto *counterparties = overrides.counterparties;
 
-  if (pools != nullptr && !pools->employerIds.empty()) {
-    plan.employers = pools->employerIds;
+  if (counterparties != nullptr &&
+      !counterparties->employers.accounts.all.empty()) {
+    plan.employers = counterparties->employers.accounts.all;
   } else if (!plan.hubAccounts.empty()) {
     const auto take = std::max<std::size_t>(1, plan.hubAccounts.size() / 5);
     plan.employers.assign(plan.hubAccounts.begin(),

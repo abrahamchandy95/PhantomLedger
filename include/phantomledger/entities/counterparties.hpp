@@ -6,27 +6,31 @@
 
 namespace PhantomLedger::entity::counterparty {
 
-struct Pool {
-  // Employers split by banking relationship.
-  std::vector<entity::Key> employerInternalIds;
-  std::vector<entity::Key> employerExternalIds;
-  std::vector<entity::Key> employerIds; // combined
+struct BankSplit {
+  std::vector<entity::Key> internal;
+  std::vector<entity::Key> external;
+  std::vector<entity::Key> all;
+};
 
-  // Clients split by banking relationship.
-  std::vector<entity::Key> clientInternalIds;
-  std::vector<entity::Key> clientExternalIds;
-  std::vector<entity::Key> clientPayerIds; // combined
+struct Employers {
+  BankSplit accounts;
+};
 
-  // Fully external pools (platforms, processors, businesses,
-  // brokerages bank at treasury/commercial banks, not retail).
-  std::vector<entity::Key> platformIds;
-  std::vector<entity::Key> processorIds;
-  std::vector<entity::Key> ownerBusinessIds;
-  std::vector<entity::Key> brokerageIds;
+struct ClientPayers {
+  BankSplit accounts;
+};
 
-  // Aggregates for merge convenience.
-  std::vector<entity::Key> allExternals;
-  std::vector<entity::Key> allInternals;
+struct ExternalParties {
+  std::vector<entity::Key> platforms;
+  std::vector<entity::Key> processors;
+  std::vector<entity::Key> ownerBusinesses;
+  std::vector<entity::Key> brokerages;
+};
+
+struct Directory {
+  Employers employers;
+  ClientPayers clients;
+  ExternalParties external;
 };
 
 } // namespace PhantomLedger::entity::counterparty

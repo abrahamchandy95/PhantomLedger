@@ -1,6 +1,5 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
@@ -9,9 +8,11 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-[[nodiscard]] std::unique_ptr<clearing::Ledger> buildBalanceBook(
-    const blueprints::Timeline &timeline, const blueprints::Network &network,
-    const blueprints::Specifications &specs, const blueprints::CCState &ccState,
-    const blueprints::LegitBuildPlan &plan);
+[[nodiscard]] std::unique_ptr<clearing::Ledger>
+buildBalanceBook(const blueprints::Timeline &timeline,
+                 const blueprints::Network &network,
+                 const blueprints::ClearingSpec &specs,
+                 const blueprints::CreditCardState &ccState,
+                 const blueprints::LegitBuildPlan &plan);
 
 } // namespace PhantomLedger::transfers::legit::ledger
