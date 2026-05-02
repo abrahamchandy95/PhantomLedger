@@ -3,15 +3,18 @@
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/probability/distributions/normal.hpp"
 #include "phantomledger/probability/distributions/uniform.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <iterator>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace PhantomLedger::recurring::growth {
@@ -20,13 +23,82 @@ namespace detail {
 
 inline constexpr double kDaysPerYear = 365.25;
 
+inline void requireNonNegativeYears(std::string_view field, double years) {
+  namespace v = primitives::validate;
+
+  v::finite(field, years);
+  v::nonNegative(field, years);
+}
+
+inline void requireNonNegativeSigma(std::string_view field, double sigma) {
+  namespace v = primitives::validate;
+
+  v::finite(field, sigma);
+  v::nonNegative(field, sigma);
+}
+
 } // namespace detail
+
+// ---------------------------------------------------------------
+// Rule values
+// ---------------------------------------------------------------
+
+struct Range {
+  double min = 0.0;
+  double max = 0.0;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::finite("min", min); });
+    r.check([&] { v::finite("max", max); });
+    r.check([&] { v::nonNegative("min", min); });
+    r.check([&] { v::ge("max", max, min); });
+  }
+};
+
+struct GrowthDist {
+  double mu = 0.0;
+  double sigma = 0.0;
+  double floor = -1.0;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::finite("mu", mu); });
+    r.check([&] { v::finite("sigma", sigma); });
+    r.check([&] { v::finite("floor", floor); });
+    r.check([&] { v::nonNegative("sigma", sigma); });
+    r.check([&] { v::gt("floor", floor, -1.0); });
+  }
+};
+
+struct CompoundRules {
+  double annualInflation = 0.0;
+  GrowthDist annualRaise{};
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::finite("annualInflation", annualInflation); });
+    r.check([&] { v::gt("annualInflation", annualInflation, -1.0); });
+
+    annualRaise.validate(r);
+  }
+};
+
+struct AnnualRaiseInput {
+  std::string_view stream;
+  std::string_view key;
+  int year = 0;
+};
 
 // ---------------------------------------------------------------
 // Date arithmetic
 // ---------------------------------------------------------------
 
 [[nodiscard]] inline int yearsToDays(double years) {
+  detail::requireNonNegativeYears("years", years);
   return static_cast<int>(std::round(years * detail::kDaysPerYear));
 }
 
@@ -49,28 +121,42 @@ inline constexpr double kDaysPerYear = 365.25;
 // Sampling
 // ---------------------------------------------------------------
 
-/// Sample tenure in days from a uniform [yearsMin, yearsMax] range.
-[[nodiscard]] inline int sampleTenureDays(random::Rng &rng, double yearsMin,
-                                          double yearsMax) {
-  if (yearsMax <= yearsMin) {
-    return std::max(1, yearsToDays(yearsMin));
+/// Sample tenure in days from a uniform year range.
+[[nodiscard]] inline int sampleTenureDays(random::Rng &rng,
+                                          const Range &range) {
+  primitives::validate::require(range);
+
+  if (range.max == range.min) {
+    return std::max(1, yearsToDays(range.min));
   }
 
   const double years =
-      probability::distributions::uniform(rng, yearsMin, yearsMax);
+      probability::distributions::uniform(rng, range.min, range.max);
   return std::max(1, yearsToDays(years));
 }
 
 /// Normal draw clamped to a floor.
-[[nodiscard]] inline double sampleNormalClamped(random::Rng &rng, double mu,
-                                                double sigma, double floor) {
-  return std::max(floor, probability::distributions::normal(rng, mu, sigma));
+[[nodiscard]] inline double sampleNormalClamped(random::Rng &rng,
+                                                const GrowthDist &dist) {
+  primitives::validate::require(dist);
+
+  return std::max(dist.floor,
+                  probability::distributions::normal(rng, dist.mu, dist.sigma));
 }
 
 /// Lognormal multiplier centered at 1.0.
 [[nodiscard]] inline double sampleLognormalMultiplier(random::Rng &rng,
                                                       double sigma) {
+  detail::requireNonNegativeSigma("sigma", sigma);
   return probability::distributions::lognormal(rng, 0.0, sigma);
+}
+
+[[nodiscard]] inline double seededAnnualRaise(const random::RngFactory &factory,
+                                              const GrowthDist &dist,
+                                              const AnnualRaiseInput &input) {
+  auto rng = factory.rng({input.stream, input.key, std::to_string(input.year)});
+
+  return sampleNormalClamped(rng, dist);
 }
 
 // ---------------------------------------------------------------
@@ -131,8 +217,8 @@ struct Interval {
 /// the tenure, so the start is before anchorDate.
 [[nodiscard]] inline Interval
 sampleBackdatedInterval(random::Rng &rng, time::TimePoint anchorDate,
-                        double yearsMin, double yearsMax) {
-  const int tenureDays = sampleTenureDays(rng, yearsMin, yearsMax);
+                        const Range &tenure) {
+  const int tenureDays = sampleTenureDays(rng, tenure);
   const int ageDays =
       static_cast<int>(rng.uniformInt(0, std::max(1, tenureDays)));
 
@@ -144,9 +230,8 @@ sampleBackdatedInterval(random::Rng &rng, time::TimePoint anchorDate,
 /// Sample a forward interval starting from `startDate`.
 [[nodiscard]] inline Interval sampleForwardInterval(random::Rng &rng,
                                                     time::TimePoint startDate,
-                                                    double yearsMin,
-                                                    double yearsMax) {
-  const int tenureDays = sampleTenureDays(rng, yearsMin, yearsMax);
+                                                    const Range &tenure) {
+  const int tenureDays = sampleTenureDays(rng, tenure);
   return {startDate, time::addDays(startDate, tenureDays)};
 }
 
@@ -154,15 +239,25 @@ sampleBackdatedInterval(random::Rng &rng, time::TimePoint anchorDate,
 // Compound growth
 // ---------------------------------------------------------------
 
-/// Callback type for per-year real raise sampling.
 using AnnualRaiseSource = double (*)(const random::RngFactory &,
-                                     std::string_view, int);
+                                     const GrowthDist &,
+                                     const AnnualRaiseInput &);
+
+inline void requireGrowthFactor(double factor, std::string_view field) {
+  namespace v = primitives::validate;
+
+  v::finite(field, factor);
+  v::gt(field, factor, 0.0);
+}
 
 /// Compound inflation + real raises over elapsed full years.
 [[nodiscard]] inline double
-compoundGrowth(double inflation, const random::RngFactory &rngFactory,
-               std::string_view key, time::TimePoint start, time::TimePoint now,
-               AnnualRaiseSource raiseSource) {
+compoundGrowth(const CompoundRules &rules, const random::RngFactory &factory,
+               std::string_view stream, std::string_view key,
+               time::TimePoint start, time::TimePoint now,
+               AnnualRaiseSource raiseSource = seededAnnualRaise) {
+  primitives::validate::require(rules);
+
   if (raiseSource == nullptr) {
     throw std::invalid_argument("compoundGrowth requires a raiseSource");
   }
@@ -173,16 +268,27 @@ compoundGrowth(double inflation, const random::RngFactory &rngFactory,
   }
 
   const auto startCal = time::toCalendarDate(start);
-  const double base = 1.0 + inflation;
 
-  double growth = 1.0;
+  double growthFactor = 1.0;
   for (int i = 0; i < years; ++i) {
     const int year = startCal.year + i;
-    const double realRaise = raiseSource(rngFactory, key, year);
-    growth *= (base + realRaise);
+
+    const double realRaise = raiseSource(factory, rules.annualRaise,
+                                         AnnualRaiseInput{
+                                             .stream = stream,
+                                             .key = key,
+                                             .year = year,
+                                         });
+
+    const double factor = 1.0 + rules.annualInflation + realRaise;
+
+    primitives::validate::finite("realRaise", realRaise);
+    requireGrowthFactor(factor, "growthFactor");
+
+    growthFactor *= factor;
   }
 
-  return growth;
+  return growthFactor;
 }
 
 } // namespace PhantomLedger::recurring::growth

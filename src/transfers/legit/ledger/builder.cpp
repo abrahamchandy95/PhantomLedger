@@ -25,8 +25,9 @@ blueprints::TransfersPayload LegitTransferBuilder::build() const {
   auto plan = blueprints::buildLegitPlan(request->timeline, request->network,
                                          request->macro, request->overrides);
 
-  auto initialBook = buildBalanceBook(request->timeline, request->network,
-                                      request->specs, request->ccState, plan);
+  auto initialBook =
+      buildBalanceBook(request->timeline, request->network, request->clearing,
+                       request->creditCardState, plan);
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};

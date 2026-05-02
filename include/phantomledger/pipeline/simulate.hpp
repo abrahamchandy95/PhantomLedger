@@ -25,7 +25,8 @@ struct SimulateEntities {
   ::PhantomLedger::entities::synth::personas::Mix personaMix{};
   ::PhantomLedger::entities::synth::merchants::Config merchants{};
   ::PhantomLedger::entities::synth::landlords::Config landlords{};
-  ::PhantomLedger::entities::synth::counterparties::Config counterparties{};
+  ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
+      counterparties{};
   ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance{};
 
   ::PhantomLedger::entities::synth::products::MortgageTerms mortgage{};

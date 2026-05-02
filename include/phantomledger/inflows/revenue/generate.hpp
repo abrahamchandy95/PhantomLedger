@@ -1,11 +1,4 @@
 #pragma once
-/*
- * For each eligible person (freelancer, smallBusiness, highNetWorth),
- * iterates month-by-month over the simulation window. Each month:
- *   1. Derives a deterministic per-person-per-month RNG.
- *   2. Checks the quiet-month policy.
- *   3. Runs the five revenue flow drafters.
- */
 
 #include "phantomledger/inflows/revenue/flows.hpp"
 #include "phantomledger/inflows/revenue/sources.hpp"
@@ -14,7 +7,9 @@
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstddef>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -37,7 +32,7 @@ public:
   }
 
   [[nodiscard]] std::vector<transactions::Transaction> run() {
-    if (!snapshot_.counterparties.hasPools()) {
+    if (!snapshot_.revenue.available()) {
       return {};
     }
 

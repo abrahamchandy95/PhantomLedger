@@ -8,6 +8,9 @@
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/recurring/employment.hpp"
+#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -29,10 +32,6 @@ struct Social;
 namespace PhantomLedger::clearing {
 struct BalanceRules;
 } // namespace PhantomLedger::clearing
-
-namespace PhantomLedger::recurring {
-struct Policy;
-} // namespace PhantomLedger::recurring
 
 namespace PhantomLedger::entity::card {
 struct IssuancePolicy;
@@ -89,6 +88,12 @@ struct PopulationScale {
 
 struct HubSelection {
   double fraction = 0.01;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::unit("hubFraction", fraction); });
+  }
 };
 
 struct GovernmentPrograms {
@@ -106,49 +111,80 @@ struct Macro {
   const config::Landlords *landlordsCfg = nullptr;
 
   const GovernmentPrograms *government = nullptr;
+
+  void validate(primitives::validate::Report &r) const {
+    hubSelection.validate(r);
+  }
 };
 
 // ---------------------------------------------------------------------------
-// CreditCardProfile — credit-card defaults bundled into specifications
+// Income — recurring salary and rent behavior
 // ---------------------------------------------------------------------------
 
-struct CreditCardProfile {
+struct IncomeSpec {
+  recurring::EmploymentRules employment{};
+  recurring::LeaseRules lease{};
+
+  double salaryPaidFraction = 0.95;
+  double rentPaidFraction = 0.80;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    employment.validate(r);
+    lease.validate(r);
+
+    r.check([&] { v::unit("salaryPaidFraction", salaryPaidFraction); });
+    r.check([&] { v::unit("rentPaidFraction", rentPaidFraction); });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Social — relationship behavior used by family and peer transfers
+// ---------------------------------------------------------------------------
+
+struct SocialSpec {
+  const config::Social *rules = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// Clearing — balance rules and ledger protection
+// ---------------------------------------------------------------------------
+
+struct ClearingSpec {
+  const clearing::BalanceRules *balances = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// Credit cards — issuance, issuer terms, and cardholder behavior
+// ---------------------------------------------------------------------------
+
+struct CreditCardSpec {
+  const entity::card::IssuancePolicy *issuance = nullptr;
   const transfers::credit_cards::IssuerPolicy *terms = nullptr;
   const transfers::credit_cards::CardholderBehavior *habits = nullptr;
 };
 
 // ---------------------------------------------------------------------------
-// Specifications — policies used while building legitimate transfers
-// ---------------------------------------------------------------------------
-
-struct Specifications {
-  const recurring::Policy *recurringPolicy = nullptr;
-  const config::Social *social = nullptr;
-  const clearing::BalanceRules *balances = nullptr;
-  const entity::card::IssuancePolicy *creditIssuance = nullptr;
-  CreditCardProfile ccProfile{};
-};
-
-// ---------------------------------------------------------------------------
-// CCState — optional credit-card registry handle
-// ---------------------------------------------------------------------------
-
-struct CCState {
-  const entity::card::Registry *cards = nullptr;
-
-  [[nodiscard]] bool enabled() const noexcept {
-    return cards != nullptr && !cards->records.empty();
-  }
-};
-
-// ---------------------------------------------------------------------------
-// Overrides — pipeline-supplied glue from upstream stages
+// Runtime overrides — pipeline-supplied glue from upstream stages
 // ---------------------------------------------------------------------------
 
 struct Overrides {
   const infra::Router *infra = nullptr;
   const entities::synth::personas::Pack *personas = nullptr;
-  const entity::counterparty::Pool *counterpartyPools = nullptr;
+  const entity::counterparty::Directory *counterparties = nullptr;
+};
+
+// ---------------------------------------------------------------------------
+// CreditCardState — optional credit-card registry handle
+// ---------------------------------------------------------------------------
+
+struct CreditCardState {
+  const entity::card::Registry *cards = nullptr;
+
+  [[nodiscard]] bool enabled() const noexcept {
+    return cards != nullptr && !cards->records.empty();
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -159,9 +195,19 @@ struct Blueprint {
   Timeline timeline{};
   Network network{};
   Macro macro{};
-  Specifications specs{};
+
+  IncomeSpec income{};
+  SocialSpec social{};
+  ClearingSpec clearing{};
+  CreditCardSpec creditCards{};
+
   Overrides overrides{};
-  CCState ccState{};
+  CreditCardState creditCardState{};
+
+  void validate(primitives::validate::Report &r) const {
+    macro.validate(r);
+    income.validate(r);
+  }
 };
 
 // ---------------------------------------------------------------------------

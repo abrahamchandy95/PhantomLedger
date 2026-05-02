@@ -36,7 +36,7 @@ struct Entities {
   entities::synth::landlords::Pack landlords;
   entities::synth::personas::Pack personas;
   entity::card::Registry creditCards;
-  entity::counterparty::Pool counterpartyPools;
+  entity::counterparty::Directory counterparties;
   entity::product::PortfolioRegistry portfolios;
 };
 

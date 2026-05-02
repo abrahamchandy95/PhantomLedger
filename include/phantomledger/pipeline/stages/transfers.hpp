@@ -3,10 +3,9 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/recurring/policy.hpp"
-#include "phantomledger/transactions/clearing/balance_book.hpp"
-#include "phantomledger/transfers/credit_cards/policy/issuer.hpp"
-#include "phantomledger/transfers/family/graph_config.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/recurring/employment.hpp"
+#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
@@ -15,11 +14,76 @@
 
 #include <cstdint>
 
+namespace PhantomLedger::clearing {
+struct BalanceRules;
+} // namespace PhantomLedger::clearing
+
+namespace PhantomLedger::transfers::credit_cards {
+struct IssuerPolicy;
+struct CardholderBehavior;
+} // namespace PhantomLedger::transfers::credit_cards
+
+namespace PhantomLedger::transfers::family {
+struct GraphConfig;
+} // namespace PhantomLedger::transfers::family
+
 namespace PhantomLedger::transfers::legit::routines::relatives {
 struct FamilyTransferModel;
 } // namespace PhantomLedger::transfers::legit::routines::relatives
 
 namespace PhantomLedger::pipeline::stages::transfers {
+
+struct IncomeInputs {
+  ::PhantomLedger::recurring::EmploymentRules employment{};
+  ::PhantomLedger::recurring::LeaseRules lease{};
+
+  double salaryPaidFraction = 0.95;
+  double rentPaidFraction = 0.80;
+
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
+
+    employment.validate(r);
+    lease.validate(r);
+
+    r.check([&] { v::unit("salaryPaidFraction", salaryPaidFraction); });
+    r.check([&] { v::unit("rentPaidFraction", rentPaidFraction); });
+  }
+};
+
+struct ClearingInputs {
+  const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
+};
+
+struct CreditCardInputs {
+  const ::PhantomLedger::transfers::credit_cards::IssuerPolicy *terms = nullptr;
+  const ::PhantomLedger::transfers::credit_cards::CardholderBehavior *habits =
+      nullptr;
+};
+
+struct FamilyInputs {
+  const ::PhantomLedger::transfers::family::GraphConfig *graph = nullptr;
+  const ::PhantomLedger::transfers::legit::routines::relatives::
+      FamilyTransferModel *transfers = nullptr;
+};
+
+struct GovernmentInputs {
+  ::PhantomLedger::transfers::government::RetirementTerms retirement{};
+  ::PhantomLedger::transfers::government::DisabilityTerms disability{};
+};
+
+struct InsuranceInputs {
+  ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
+};
+
+struct ReplayInputs {
+  ::PhantomLedger::transfers::legit::ledger::ReplayPolicy preFraud =
+      ::PhantomLedger::transfers::legit::ledger::kDefaultReplayPolicy;
+};
+
+struct FraudInputs {
+  ::PhantomLedger::transfers::fraud::Parameters params{};
+};
 
 struct Inputs {
   /// Time window of the simulation.
@@ -27,28 +91,23 @@ struct Inputs {
 
   std::uint64_t seed = 0;
 
-  const ::PhantomLedger::recurring::Policy *recurringPolicy = nullptr;
-  const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
-  const ::PhantomLedger::transfers::credit_cards::IssuerPolicy *ccTerms =
-      nullptr;
-  const ::PhantomLedger::transfers::credit_cards::CardholderBehavior *ccHabits =
-      nullptr;
-  const ::PhantomLedger::transfers::family::GraphConfig *familyGraphCfg =
-      nullptr;
-  const ::PhantomLedger::transfers::legit::routines::relatives::
-      FamilyTransferModel *familyTransfers = nullptr;
-
-  ::PhantomLedger::transfers::government::RetirementTerms retirement{};
-  ::PhantomLedger::transfers::government::DisabilityTerms disability{};
-
-  ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
+  IncomeInputs income{};
+  ClearingInputs clearing{};
+  CreditCardInputs creditCards{};
+  FamilyInputs family{};
+  GovernmentInputs government{};
+  InsuranceInputs insurance{};
+  ReplayInputs replay{};
+  FraudInputs fraud{};
 
   double hubFraction = 0.01;
 
-  ::PhantomLedger::transfers::legit::ledger::ReplayPolicy preReplayPolicy =
-      ::PhantomLedger::transfers::legit::ledger::kDefaultReplayPolicy;
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
 
-  ::PhantomLedger::transfers::fraud::Parameters fraudParams{};
+    income.validate(r);
+    r.check([&] { v::unit("hubFraction", hubFraction); });
+  }
 };
 
 [[nodiscard]] ::PhantomLedger::pipeline::Transfers

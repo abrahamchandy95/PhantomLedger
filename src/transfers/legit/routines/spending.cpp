@@ -94,7 +94,7 @@ buildCensusScratch(const blueprints::LegitBuildPlan &plan,
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] pl_market::Cards
-buildSpendingCards(const blueprints::CCState &ccState,
+buildSpendingCards(const blueprints::CreditCardState &ccState,
                    std::uint32_t personCount) {
   pl_market::Cards cards(static_cast<std::size_t>(personCount));
 
@@ -164,7 +164,8 @@ assembleBootstrapInputs(const blueprints::Blueprint &request,
   inputs.network.catalog = request.network.merchants;
   inputs.network.social = nullptr;
 
-  inputs.cards = buildSpendingCards(request.ccState, scratch.personCount);
+  inputs.cards =
+      buildSpendingCards(request.creditCardState, scratch.personCount);
 
   inputs.picking.maxPickAttempts = payeePicking.maxPickAttempts;
 

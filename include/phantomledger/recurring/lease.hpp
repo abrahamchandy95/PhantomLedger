@@ -1,23 +1,17 @@
 #pragma once
-/*
- * Lease state machine.
- *
- * Tracks the lifecycle of a person's housing lease: landlord
- * assignment, lease tenure, base rent with compounding raises,
- * and lease transitions (move to new landlord with fresh rent).
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/recurring/growth.hpp"
-#include "phantomledger/recurring/policy.hpp"
 
 #include <algorithm>
 #include <functional>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -30,16 +24,46 @@ struct Lease {
   time::TimePoint end;
   double baseRent = 0.0;
   int moveIndex = 0;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::finite("baseRent", baseRent); });
+    r.check([&] { v::positive("baseRent", baseRent); });
+    r.check([&] { v::nonNegative("moveIndex", moveIndex); });
+  }
 };
 
 /// Source callback for base rent draws.
 using RentSource = std::function<double()>;
 
-/// Narrow policy view used by lease logic.
+struct RentGrowthRules {
+  growth::CompoundRules annual{
+      .annualInflation = 0.025,
+      .annualRaise =
+          growth::GrowthDist{
+              .mu = 0.020,
+              .sigma = 0.015,
+              .floor = -0.01,
+          },
+  };
+
+  void validate(primitives::validate::Report &r) const { annual.validate(r); }
+};
+
+/// Rules owned by lease generation and rent growth.
 struct LeaseRules {
-  const TenurePolicy &tenure;
-  const InflationPolicy &inflation;
-  const RaisePolicy &raises;
+  growth::Range tenure{
+      .min = 1.0,
+      .max = 3.0,
+  };
+
+  RentGrowthRules growth{};
+
+  void validate(primitives::validate::Report &r) const {
+    tenure.validate(r);
+    growth.validate(r);
+  }
 };
 
 struct LeaseInitInput {
@@ -63,64 +87,70 @@ struct RentQuery {
   time::TimePoint payDate;
 };
 
-namespace detail {
+namespace internal {
 
-struct RentGrowthInput {
-  std::string_view payerKey;
-  time::TimePoint start;
-  time::TimePoint now;
-};
-
-[[nodiscard]] inline double rentRealRaise(const random::RngFactory &factory,
-                                          const RaisePolicy &raises,
-                                          std::string_view key, int year) {
-  auto rng = factory.rng({"rent_real_raise", key, std::to_string(year)});
-  return growth::sampleNormalClamped(rng, raises.rent.mu, raises.rent.sigma,
-                                     raises.rent.floor);
+inline void requireKey(std::string_view key, std::string_view field) {
+  if (key.empty()) {
+    throw std::invalid_argument(std::string(field) + " is required");
+  }
 }
 
-[[nodiscard]] inline double compoundRent(const LeaseRules &rules,
-                                         const random::RngFactory &factory,
-                                         const RentGrowthInput &input) {
-  const int years = growth::anniversariesPassed(input.start, input.now);
-  if (years <= 0) {
-    return 1.0;
+inline void requireRentSource(const RentSource &source,
+                              std::string_view field) {
+  if (!source) {
+    throw std::invalid_argument(std::string(field) + " is required");
   }
-
-  const auto startCal = time::toCalendarDate(input.start);
-  double growthFactor = 1.0;
-
-  for (int i = 0; i < years; ++i) {
-    const double realRaise =
-        rentRealRaise(factory, rules.raises, input.payerKey, startCal.year + i);
-    growthFactor *= (1.0 + rules.inflation.annual + realRaise);
-  }
-
-  return growthFactor;
 }
 
-} // namespace detail
+inline void requireRentAmount(double amount, std::string_view field) {
+  namespace v = primitives::validate;
+
+  v::finite(field, amount);
+  v::positive(field, amount);
+}
+
+[[nodiscard]] inline double sampleBaseRent(random::Rng &rng,
+                                           const RentSource &source,
+                                           std::string_view sourceField) {
+  requireRentSource(source, sourceField);
+
+  const double base = source();
+  requireRentAmount(base, sourceField);
+
+  const double multiplier = growth::sampleLognormalMultiplier(rng, 0.05);
+  const double amount = base * multiplier;
+
+  requireRentAmount(amount, "baseRent");
+  return amount;
+}
+
+} // namespace internal
 
 /// Bootstrap the initial lease state for a payer account.
 [[nodiscard]] inline Lease initializeLease(const LeaseRules &rules,
                                            const random::RngFactory &factory,
                                            random::Rng &rng,
                                            const LeaseInitInput &input) {
+  primitives::validate::require(rules);
+  internal::requireKey(input.payerKey, "payerKey");
+
   auto initRng = factory.rng({"lease_init", input.payerKey});
 
   const auto landlord = growth::pickOne(initRng, input.landlords);
-  const auto [leaseStart, leaseEnd] = growth::sampleBackdatedInterval(
-      initRng, input.startDate, rules.tenure.lease.min, rules.tenure.lease.max);
+
+  const auto interval =
+      growth::sampleBackdatedInterval(initRng, input.startDate, rules.tenure);
 
   const double baseRent =
-      input.rentSource() * growth::sampleLognormalMultiplier(initRng, 0.05);
+      internal::sampleBaseRent(initRng, input.rentSource, "rentSource");
 
+  // Preserve the caller-visible RNG stream movement from the previous version.
   (void)rng.nextDouble();
 
   return Lease{
       .landlordAcct = landlord,
-      .start = leaseStart,
-      .end = leaseEnd,
+      .start = interval.start,
+      .end = interval.end,
       .baseRent = baseRent,
       .moveIndex = 0,
   };
@@ -131,22 +161,26 @@ struct RentGrowthInput {
                                         const random::RngFactory &factory,
                                         random::Rng &rng,
                                         const LeaseAdvanceInput &input) {
+  primitives::validate::require(rules);
+  primitives::validate::require(input.previous);
+  internal::requireKey(input.payerKey, "payerKey");
+
   const auto landlord =
       growth::pickDifferent(rng, input.landlords, input.previous.landlordAcct);
 
-  const auto [start, end] = growth::sampleForwardInterval(
-      rng, input.now, rules.tenure.lease.min, rules.tenure.lease.max);
+  const auto interval =
+      growth::sampleForwardInterval(rng, input.now, rules.tenure);
 
   auto resetRng = factory.rng({"lease_reset_rent", input.payerKey,
                                std::to_string(input.previous.moveIndex + 1)});
 
-  const double baseRent = input.resetRentSource() *
-                          growth::sampleLognormalMultiplier(resetRng, 0.05);
+  const double baseRent = internal::sampleBaseRent(
+      resetRng, input.resetRentSource, "resetRentSource");
 
   return Lease{
       .landlordAcct = landlord,
-      .start = start,
-      .end = end,
+      .start = interval.start,
+      .end = interval.end,
       .baseRent = baseRent,
       .moveIndex = input.previous.moveIndex + 1,
   };
@@ -156,13 +190,16 @@ struct RentGrowthInput {
 [[nodiscard]] inline double calculateRent(const LeaseRules &rules,
                                           const random::RngFactory &factory,
                                           const RentQuery &query) {
-  const double amount = query.state.baseRent *
-                        detail::compoundRent(rules, factory,
-                                             detail::RentGrowthInput{
-                                                 .payerKey = query.payerKey,
-                                                 .start = query.state.start,
-                                                 .now = query.payDate,
-                                             });
+  primitives::validate::require(rules);
+  primitives::validate::require(query.state);
+  internal::requireKey(query.payerKey, "payerKey");
+
+  const double amount =
+      query.state.baseRent *
+      growth::compoundGrowth(rules.growth.annual, factory, "rent_real_raise",
+                             query.payerKey, query.state.start, query.payDate);
+
+  primitives::validate::finite("rentAmount", amount);
 
   return primitives::utils::roundMoney(std::max(1.0, amount));
 }

@@ -87,7 +87,7 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
       out.entities.personas, out.entities.people, in.entities.seeds,
       in.entities.cardIssuance);
 
-  out.entities.counterpartyPools = entityStage::buildCounterparties(
+  out.entities.counterparties = entityStage::buildCounterparties(
       rng, in.entities.population, in.entities.counterparties);
 
   synthesizeProducts(out, in.window, in.entities);

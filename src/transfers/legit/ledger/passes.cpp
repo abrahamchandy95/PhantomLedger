@@ -5,6 +5,7 @@
 #include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/inflows/types.hpp"
 #include "phantomledger/math/amounts.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/recipients.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
@@ -46,22 +47,40 @@ buildHubAccounts(const blueprints::LegitBuildPlan &plan) {
   return hubs;
 }
 
-[[nodiscard]] pl_inflows::Counterparties
-buildInflowCounterparties(const blueprints::Blueprint &request,
-                          const blueprints::LegitBuildPlan &plan) {
-  pl_inflows::Counterparties counterparties{};
-  counterparties.pools = request.overrides.counterpartyPools;
+[[nodiscard]] pl_inflows::PayrollCounterparties
+buildPayrollCounterparties(const blueprints::LegitBuildPlan &plan) {
+  return pl_inflows::PayrollCounterparties{
+      .employers =
+          std::span<const entity::Key>(plan.counterparties.employers.data(),
+                                       plan.counterparties.employers.size()),
+  };
+}
 
-  counterparties.employers =
-      std::span<const entity::Key>(plan.counterparties.employers.data(),
-                                   plan.counterparties.employers.size());
+[[nodiscard]] pl_inflows::RentCounterparties
+buildRentCounterparties(const blueprints::LegitBuildPlan &plan) {
+  return pl_inflows::RentCounterparties{
+      .landlords =
+          std::span<const entity::Key>(plan.counterparties.landlords.data(),
+                                       plan.counterparties.landlords.size()),
+      .landlordTypes = &plan.counterparties.landlordTypeOf,
+  };
+}
 
-  counterparties.landlords =
-      std::span<const entity::Key>(plan.counterparties.landlords.data(),
-                                   plan.counterparties.landlords.size());
+[[nodiscard]] pl_inflows::RevenueCounterparties
+buildRevenueCounterparties(const blueprints::Blueprint &request) {
+  return pl_inflows::RevenueCounterparties{
+      .directory = request.overrides.counterparties,
+  };
+}
 
-  counterparties.landlordTypes = &plan.counterparties.landlordTypeOf;
-  return counterparties;
+[[nodiscard]] pl_inflows::RecurringIncomeRules
+buildRecurringIncomeRules(const blueprints::Blueprint &request) {
+  return pl_inflows::RecurringIncomeRules{
+      .employment = request.income.employment,
+      .lease = request.income.lease,
+      .salaryPaidFraction = request.income.salaryPaidFraction,
+      .rentPaidFraction = request.income.rentPaidFraction,
+  };
 }
 
 [[nodiscard]] pl_inflows::InflowSnapshot
@@ -69,7 +88,7 @@ buildInflowSnapshot(const blueprints::Blueprint &request,
                     const blueprints::LegitBuildPlan &plan,
                     const entity::account::Ownership &ownership,
                     const entity::account::Registry &registry) {
-  return pl_inflows::InflowSnapshot{
+  auto snapshot = pl_inflows::InflowSnapshot{
       .timeframe =
           pl_inflows::Timeframe{
               .startDate = plan.startDate,
@@ -89,9 +108,14 @@ buildInflowSnapshot(const blueprints::Blueprint &request,
               plan.personas.pack->assignment,
               buildHubAccounts(plan),
           },
-      .counterparties = buildInflowCounterparties(request, plan),
-      .recurringPolicy = request.specs.recurringPolicy,
+      .payroll = buildPayrollCounterparties(plan),
+      .rent = buildRentCounterparties(plan),
+      .revenue = buildRevenueCounterparties(request),
+      .recurring = buildRecurringIncomeRules(request),
   };
+
+  primitives::validate::require(snapshot);
+  return snapshot;
 }
 
 [[nodiscard]] pl_gov::Population
@@ -137,17 +161,11 @@ void addIncome(const blueprints::Blueprint &request,
   const auto snap = buildInflowSnapshot(
       request, plan, *request.network.ownership, *request.network.accounts);
 
-  if (request.specs.recurringPolicy != nullptr) {
-    const auto targetPaidFraction =
-        request.specs.recurringPolicy->activation.salary;
+  const std::function<double()> salaryModel = [&mainRng]() -> double {
+    return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
+  };
 
-    const std::function<double()> salaryModel = [&mainRng]() -> double {
-      return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
-    };
-
-    streams.add(pl_inflows::generateSalaryTxns(
-        snap, mainRng, txf, targetPaidFraction, salaryModel));
-  }
+  streams.add(pl_inflows::generateSalaryTxns(snap, mainRng, txf, salaryModel));
 
   if (govCps.valid() && request.macro.government != nullptr) {
     const auto govPopulation = buildGovernmentPopulation(
@@ -188,17 +206,11 @@ void addRoutines(const blueprints::Blueprint &request,
 
   const auto snap = buildInflowSnapshot(request, plan, ownership, registry);
 
-  if (request.specs.recurringPolicy != nullptr) {
-    const auto targetRentFraction =
-        request.specs.recurringPolicy->activation.rent;
+  const std::function<double()> rentModel = [&rng]() -> double {
+    return ::PhantomLedger::math::amounts::kRent.sample(rng);
+  };
 
-    const std::function<double()> rentModel = [&rng]() -> double {
-      return ::PhantomLedger::math::amounts::kRent.sample(rng);
-    };
-
-    streams.add(pl_inflows::generateRentTxns(snap, rng, txf, targetRentFraction,
-                                             rentModel));
-  }
+  streams.add(pl_inflows::generateRentTxns(snap, rng, txf, rentModel));
 
   streams.add(routines::subscriptions::generate(
       rng, plan, txf, registry,
