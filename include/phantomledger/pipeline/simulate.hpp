@@ -7,14 +7,34 @@
 #include "phantomledger/pipeline/stages/transfers.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
+#include <cstdint>
+
 namespace PhantomLedger::pipeline {
+
+struct SimulateEntities {
+  stages::entities::IdentitySource identity;
+  stages::entities::PopulationPlan population{};
+  stages::entities::Seeds seeds{};
+
+  ::PhantomLedger::entities::synth::people::Fraud fraud{};
+  ::PhantomLedger::entities::synth::personas::Mix personaMix{};
+  ::PhantomLedger::entities::synth::merchants::Config merchants{};
+  ::PhantomLedger::entities::synth::landlords::Config landlords{};
+  ::PhantomLedger::entities::synth::counterparties::Config counterparties{};
+  ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance{};
+
+  ::PhantomLedger::entities::synth::products::MortgageTerms mortgage{};
+  ::PhantomLedger::entities::synth::products::AutoLoanTerms autoLoan{};
+  ::PhantomLedger::entities::synth::products::StudentLoanTerms studentLoan{};
+  ::PhantomLedger::entities::synth::products::TaxTerms tax{};
+  ::PhantomLedger::entities::synth::products::InsuranceTerms insurance{};
+};
 
 struct SimulateInputs {
   ::PhantomLedger::time::Window window{};
-
   std::uint64_t seed = 0;
 
-  ::PhantomLedger::pipeline::stages::entities::Inputs entitiesIn{};
+  SimulateEntities entities;
   ::PhantomLedger::pipeline::stages::infra::Inputs infraIn{};
   ::PhantomLedger::pipeline::stages::transfers::Inputs transfersIn{};
 };

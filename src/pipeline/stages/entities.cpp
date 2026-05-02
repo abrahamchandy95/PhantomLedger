@@ -17,65 +17,72 @@ namespace PhantomLedger::pipeline::stages::entities {
 namespace {
 
 [[nodiscard]] std::uint64_t cardsIssuanceBase(std::uint64_t userBaseSeed) {
-
   return userBaseSeed;
 }
 
 } // namespace
 
-::PhantomLedger::pipeline::Entities build(::PhantomLedger::random::Rng &rng,
-                                          const Inputs &in) {
-  if (in.population < 0) {
+::PhantomLedger::pipeline::Entities
+build(::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+      IdentitySource identity, PopulationPlan population,
+      ::PhantomLedger::entities::synth::people::Fraud fraud,
+      ::PhantomLedger::entities::synth::personas::Mix personaMix,
+      ::PhantomLedger::entities::synth::merchants::Config merchants,
+      ::PhantomLedger::entities::synth::landlords::Config landlords,
+      ::PhantomLedger::entities::synth::counterparties::Config counterparties,
+      ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance,
+      Seeds seeds,
+      ::PhantomLedger::entities::synth::products::MortgageTerms mortgage,
+      ::PhantomLedger::entities::synth::products::AutoLoanTerms autoLoan,
+      ::PhantomLedger::entities::synth::products::StudentLoanTerms studentLoan,
+      ::PhantomLedger::entities::synth::products::TaxTerms tax,
+      ::PhantomLedger::entities::synth::products::InsuranceTerms insurance) {
+  if (population.count < 0) {
     throw std::invalid_argument("entities::build: population must be >= 0");
   }
-  if (in.piiPools == nullptr) {
+
+  if (population.maxAccountsPerPerson < 1) {
     throw std::invalid_argument(
-        "entities::build: piiPools is required (build via "
-        "pii::buildLocalePool)");
+        "entities::build: maxAccountsPerPerson must be >= 1");
+  }
+
+  if (identity.simStart == ::PhantomLedger::time::TimePoint{}) {
+    identity.simStart = window.start;
   }
 
   ::PhantomLedger::pipeline::Entities out;
 
   out.people = ::PhantomLedger::entities::synth::people::make(
-      rng, in.population, in.fraud);
+      rng, population.count, fraud);
 
   out.accounts = ::PhantomLedger::entities::synth::accounts::makePack(
-      rng, out.people.roster, in.maxAccountsPerPerson);
+      rng, out.people.roster, population.maxAccountsPerPerson);
 
   const std::uint64_t personasSeed = rng.nextU64();
   out.personas = ::PhantomLedger::entities::synth::personas::makePack(
-      rng, out.people.roster.count, personasSeed, in.personaMix);
+      rng, out.people.roster.count, personasSeed, personaMix);
 
   out.pii = ::PhantomLedger::entities::synth::pii::make(
-      rng, out.personas.assignment, in.simStart, in.localeMix, *in.piiPools);
+      rng, out.personas.assignment, identity.simStart, identity.localeMix,
+      identity.pools);
 
   out.merchants = ::PhantomLedger::entities::synth::merchants::makePack(
-      rng, in.population, in.merchantsCfg);
+      rng, population.count, merchants);
 
   out.landlords = ::PhantomLedger::entities::synth::landlords::makePack(
-      rng, in.population, in.landlordsCfg);
+      rng, population.count, landlords);
 
   out.creditCards = ::PhantomLedger::entities::synth::cards::issue(
-      cardsIssuanceBase(in.cardsBaseSeed), out.personas.table,
-      out.people.roster.count, in.cardsPolicy);
+      cardsIssuanceBase(seeds.cardIssuance), out.personas.table,
+      out.people.roster.count, cardIssuance);
 
   out.counterpartyPools =
       ::PhantomLedger::entities::synth::counterparties::makePool(
-          rng, in.population, in.counterpartiesCfg);
+          rng, population.count, counterparties);
 
-  ::PhantomLedger::entities::synth::products::Inputs productsIn{};
-  productsIn.window = in.window;
-  productsIn.personas = &out.personas;
-  productsIn.creditCards = &out.creditCards;
-  productsIn.mortgageCfg = in.mortgageCfg;
-  productsIn.autoLoanCfg = in.autoLoanCfg;
-  productsIn.studentLoanCfg = in.studentLoanCfg;
-  productsIn.taxCfg = in.taxCfg;
-  productsIn.insuranceCfg = in.insuranceCfg;
-  productsIn.baseSeed = in.productsBaseSeed;
-
-  out.portfolios =
-      ::PhantomLedger::entities::synth::products::build(rng, productsIn);
+  out.portfolios = ::PhantomLedger::entities::synth::products::build(
+      rng, window, out.personas, out.creditCards, seeds.products, mortgage,
+      autoLoan, studentLoan, tax, insurance);
 
   return out;
 }

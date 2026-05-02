@@ -1,7 +1,11 @@
 #pragma once
 
 #include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/math/seasonal.hpp"
+#include "phantomledger/spending/config/liquidity.hpp"
+#include "phantomledger/spending/dynamics/config.hpp"
+#include "phantomledger/spending/routing/channel.hpp"
+#include "phantomledger/spending/routing/payments.hpp"
 #include "phantomledger/spending/simulator/config.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -13,6 +17,12 @@
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 
+namespace plConfig = ::PhantomLedger::spending::config;
+namespace plDynamics = ::PhantomLedger::spending::dynamics;
+namespace plRouting = ::PhantomLedger::spending::routing;
+namespace plSeasonal = ::PhantomLedger::math::seasonal;
+namespace plSimulator = ::PhantomLedger::spending::simulator;
+
 [[nodiscard]] std::vector<transactions::Transaction> generateDayToDayTxns(
     const blueprints::Blueprint &request,
     const blueprints::LegitBuildPlan &plan,
@@ -20,6 +30,20 @@ namespace PhantomLedger::transfers::legit::routines::spending {
     const entity::account::Registry &registry,
     std::span<const transactions::Transaction> baseTxns,
     clearing::Ledger *screenBook = nullptr, bool baseTxnsSorted = false,
-    const PhantomLedger::spending::simulator::SimulatorConfig &cfg = {});
+
+    plSimulator::PayeePicking payeePicking = {},
+    plSimulator::ExplorePropensity explorePropensity = {},
+    plSimulator::BurstWindow burstWindow = {},
+
+    plSimulator::TransactionLoad load = {},
+    plRouting::ChannelWeights channels = {},
+    plRouting::PaymentRoutingRules paymentRules = {},
+    plSimulator::ExploreRate explore = {}, plSimulator::DayVariation day = {},
+    plSimulator::WeekendExplore weekendExplore = {},
+    plSimulator::BurstSpend burst = {},
+    plConfig::LiquidityConstraints liquidity =
+        plConfig::kDefaultLiquidityConstraints,
+    plDynamics::Config dynamics = plDynamics::kDefaultConfig,
+    plSeasonal::Config seasonal = plSeasonal::kDefaultConfig);
 
 } // namespace PhantomLedger::transfers::legit::routines::spending

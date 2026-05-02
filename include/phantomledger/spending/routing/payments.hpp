@@ -4,15 +4,21 @@
 #include "phantomledger/spending/actors/event.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/routing/emission_result.hpp"
-#include "phantomledger/spending/routing/policy.hpp"
 
 #include <optional>
 
 namespace PhantomLedger::spending::routing {
 
-[[nodiscard]] EmissionResult
-emitBill(random::Rng &rng, const market::Market &market, const Policy &policy,
-         const ResolvedAccounts &resolved, const actors::Event &event);
+struct PaymentRoutingRules {
+  double preferKnownBillersP = 0.85;
+  std::uint16_t merchantRetryLimit = 6;
+};
+
+[[nodiscard]] EmissionResult emitBill(random::Rng &rng,
+                                      const market::Market &market,
+                                      const PaymentRoutingRules &policy,
+                                      const ResolvedAccounts &resolved,
+                                      const actors::Event &event);
 
 [[nodiscard]] EmissionResult emitExternal(random::Rng &rng,
                                           const market::Market &market,
@@ -21,8 +27,8 @@ emitBill(random::Rng &rng, const market::Market &market, const Policy &policy,
 
 [[nodiscard]] std::optional<EmissionResult>
 emitMerchant(random::Rng &rng, const market::Market &market,
-             const Policy &policy, const ResolvedAccounts &resolved,
-             const actors::Event &event);
+             const PaymentRoutingRules &policy,
+             const ResolvedAccounts &resolved, const actors::Event &event);
 
 [[nodiscard]] std::optional<EmissionResult>
 emitP2p(random::Rng &rng, const market::Market &market,

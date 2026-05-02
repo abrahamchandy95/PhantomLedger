@@ -2,13 +2,16 @@
 
 #include "phantomledger/spending/simulator/driver.hpp"
 
+#include <utility>
+
 namespace PhantomLedger::spending::simulator {
 
 std::vector<transactions::Transaction>
-simulate(const market::Market &market, Engine &engine,
-         const obligations::Snapshot &obligations,
-         const SimulatorConfig &config) {
-  Simulator sim(market, engine, obligations, config);
+simulate(market::Market &market, Engine &engine,
+         const obligations::Snapshot &obligations, RunPlanner planner,
+         DayDriver dayDriver) {
+  Simulator sim(market, engine, obligations, std::move(planner),
+                std::move(dayDriver));
   return sim.run();
 }
 

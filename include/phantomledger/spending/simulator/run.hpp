@@ -2,8 +2,9 @@
 
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/obligations/snapshot.hpp"
-#include "phantomledger/spending/simulator/config.hpp"
+#include "phantomledger/spending/simulator/day_driver.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
+#include "phantomledger/spending/simulator/run_planner.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <vector>
@@ -11,8 +12,8 @@
 namespace PhantomLedger::spending::simulator {
 
 [[nodiscard]] std::vector<transactions::Transaction>
-simulate(const market::Market &market, Engine &engine,
-         const obligations::Snapshot &obligations,
-         const SimulatorConfig &config);
+simulate(market::Market &market, Engine &engine,
+         const obligations::Snapshot &obligations, RunPlanner planner = {},
+         DayDriver dayDriver = DayDriver{});
 
 } // namespace PhantomLedger::spending::simulator

@@ -2,7 +2,7 @@
 
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/emission_result.hpp"
-#include "phantomledger/spending/routing/policy.hpp"
+#include "phantomledger/spending/routing/payments.hpp"
 #include "phantomledger/spending/simulator/payday_index.hpp"
 #include "phantomledger/spending/spenders/prepared.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
@@ -40,7 +40,7 @@ struct PaydayPlan {
 
 struct RoutingPlan {
   routing::ChannelCdf channelCdf{};
-  routing::Policy policy{};
+  routing::PaymentRoutingRules paymentRules{};
 
   std::vector<clearing::Ledger::Index> personPrimaryIdx;
   std::vector<clearing::Ledger::Index> merchantCounterpartyIdx;
@@ -57,18 +57,12 @@ struct RoutingPlan {
   }
 };
 
-struct ActivityPlan {
-  double baseExploreP = 0.0;
-  double dayShockShape = 1.0;
-};
-
 struct RunPlan {
   PopulationPlan population;
   TransactionBudget budget;
   BaseLedgerPlan baseLedger;
   PaydayPlan payday;
   RoutingPlan routing;
-  ActivityPlan activity;
 };
 
 } // namespace PhantomLedger::spending::simulator

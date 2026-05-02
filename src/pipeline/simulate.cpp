@@ -6,12 +6,9 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
                           const SimulateInputs &in) {
   SimulationResult out;
 
-  auto entitiesIn = in.entitiesIn;
-  if (entitiesIn.simStart == ::PhantomLedger::time::TimePoint{}) {
-    entitiesIn.simStart = in.window.start;
-  }
-  if (entitiesIn.window.days == 0) {
-    entitiesIn.window = in.window;
+  auto identity = in.entities.identity;
+  if (identity.simStart == ::PhantomLedger::time::TimePoint{}) {
+    identity.simStart = in.window.start;
   }
 
   auto infraIn = in.infraIn;
@@ -19,8 +16,12 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
     infraIn.window = in.window;
   }
 
-  out.entities =
-      ::PhantomLedger::pipeline::stages::entities::build(rng, entitiesIn);
+  out.entities = ::PhantomLedger::pipeline::stages::entities::build(
+      rng, in.window, identity, in.entities.population, in.entities.fraud,
+      in.entities.personaMix, in.entities.merchants, in.entities.landlords,
+      in.entities.counterparties, in.entities.cardIssuance, in.entities.seeds,
+      in.entities.mortgage, in.entities.autoLoan, in.entities.studentLoan,
+      in.entities.tax, in.entities.insurance);
 
   out.infra = ::PhantomLedger::pipeline::stages::infra::build(rng, out.entities,
                                                               infraIn);
@@ -29,9 +30,11 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
   if (transfersIn.window.days == 0) {
     transfersIn.window = in.window;
   }
+
   if (transfersIn.seed == 0) {
     transfersIn.seed = in.seed;
   }
+
   out.transfers = ::PhantomLedger::pipeline::stages::transfers::build(
       rng, out.entities, out.infra, transfersIn);
 
