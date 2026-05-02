@@ -55,13 +55,13 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
   };
 }
 
-[[nodiscard]] bool
-emitOnePayment(entity::PersonId studentId, entity::Key childAcct,
-               std::span<const entity::PersonId> parents,
-               std::int64_t timestamp,
-               const ::PhantomLedger::transfers::family::Allowances &cfg,
-               const Runtime &rt, random::Rng &rng,
-               std::vector<transactions::Transaction> &out) {
+[[nodiscard]] bool emitOnePayment(entity::PersonId studentId,
+                                  entity::Key childAcct,
+                                  std::span<const entity::PersonId> parents,
+                                  std::int64_t timestamp,
+                                  const AllowanceSchedule &cfg,
+                                  const Runtime &rt, random::Rng &rng,
+                                  std::vector<transactions::Transaction> &out) {
   if (parents.empty()) {
     return false;
   }
@@ -98,8 +98,8 @@ emitOnePayment(entity::PersonId studentId, entity::Key childAcct,
 void walkSchedule(entity::PersonId studentId, entity::Key childAcct,
                   std::span<const entity::PersonId> parents,
                   const Schedule &schedule, std::int64_t windowEndEpochSec,
-                  const ::PhantomLedger::transfers::family::Allowances &cfg,
-                  const Runtime &rt, random::Rng &rng,
+                  const AllowanceSchedule &cfg, const Runtime &rt,
+                  random::Rng &rng,
                   std::vector<transactions::Transaction> &out) {
   std::int64_t ts = schedule.firstTs;
 
@@ -125,9 +125,8 @@ void walkSchedule(entity::PersonId studentId, entity::Key childAcct,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::Allowances &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const AllowanceSchedule &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

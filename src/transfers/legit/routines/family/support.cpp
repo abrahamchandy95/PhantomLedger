@@ -59,13 +59,12 @@ resolvePayer(std::span<const entity::PersonId> supporters,
   return ResolvedPayer{.person = picked, .account = *payerAcct};
 }
 
-[[nodiscard]] bool emitMonthlySupport(
-    ::PhantomLedger::time::TimePoint monthStart,
-    std::span<const entity::PersonId> supporters, entity::Key retireeAcct,
-    std::int64_t windowEndEpochSec,
-    const ::PhantomLedger::transfers::family::RetireeSupport &cfg,
-    const Runtime &rt, random::Rng &rng,
-    std::vector<transactions::Transaction> &out) {
+[[nodiscard]] bool
+emitMonthlySupport(::PhantomLedger::time::TimePoint monthStart,
+                   std::span<const entity::PersonId> supporters,
+                   entity::Key retireeAcct, std::int64_t windowEndEpochSec,
+                   const SupportFlow &cfg, const Runtime &rt, random::Rng &rng,
+                   std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.supportP)) {
     return false;
   }
@@ -113,9 +112,8 @@ resolvePayer(std::span<const entity::PersonId> supporters,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::RetireeSupport &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const SupportFlow &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

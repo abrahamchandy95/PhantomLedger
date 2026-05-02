@@ -233,7 +233,7 @@ build(::PhantomLedger::random::Rng &rng,
   legit_ledger::LegitTransferBuilder builder{
       .request = &blueprint,
       .famGraphCfg = in.familyGraphCfg,
-      .famTransferCfg = in.familyTransferCfg,
+      .familyTransfers = in.familyTransfers,
   };
 
   blueprints::TransfersPayload legitPayload = builder.build();

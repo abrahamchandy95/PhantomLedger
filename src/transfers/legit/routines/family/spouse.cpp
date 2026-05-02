@@ -26,8 +26,7 @@ struct CoupleState {
 };
 
 [[nodiscard]] std::optional<CoupleState>
-resolveCouple(entity::PersonId a, entity::PersonId b,
-              const ::PhantomLedger::transfers::family::Spouses &cfg,
+resolveCouple(entity::PersonId a, entity::PersonId b, const CoupleFlow &cfg,
               const Runtime &rt, random::Rng &rng) {
   if (!rng.coin(cfg.separateAccountsP)) {
     return std::nullopt;
@@ -58,8 +57,7 @@ resolveCouple(entity::PersonId a, entity::PersonId b,
 [[nodiscard]] bool
 emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
                 const CoupleState &couple, std::int64_t windowEndEpochSec,
-                const ::PhantomLedger::transfers::family::Spouses &cfg,
-                const Runtime &rt, random::Rng &rng,
+                const CoupleFlow &cfg, const Runtime &rt, random::Rng &rng,
                 std::vector<transactions::Transaction> &out) {
   const bool fromBreadwinner = rng.coin(cfg.breadwinnerFlowP);
   const auto src = fromBreadwinner ? couple.higherAcct : couple.lowerAcct;
@@ -97,8 +95,7 @@ emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
 
 void processCoupleMonth(::PhantomLedger::time::TimePoint monthStart,
                         const CoupleState &couple,
-                        std::int64_t windowEndEpochSec,
-                        const ::PhantomLedger::transfers::family::Spouses &cfg,
+                        std::int64_t windowEndEpochSec, const CoupleFlow &cfg,
                         const Runtime &rt, random::Rng &rng,
                         std::vector<transactions::Transaction> &out) {
   const auto count = static_cast<int>(rng.uniformInt(
@@ -113,9 +110,8 @@ void processCoupleMonth(::PhantomLedger::time::TimePoint monthStart,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::Spouses &cfg) {
+std::vector<transactions::Transaction> generate(const Runtime &rt,
+                                                const CoupleFlow &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||

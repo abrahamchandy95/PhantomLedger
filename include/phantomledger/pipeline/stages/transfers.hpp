@@ -7,7 +7,6 @@
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/credit_cards/policy/issuer.hpp"
 #include "phantomledger/transfers/family/graph_config.hpp"
-#include "phantomledger/transfers/family/transfer_config.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
@@ -15,6 +14,10 @@
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 
 #include <cstdint>
+
+namespace PhantomLedger::transfers::legit::routines::relatives {
+struct FamilyTransferModel;
+} // namespace PhantomLedger::transfers::legit::routines::relatives
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
@@ -32,8 +35,8 @@ struct Inputs {
       nullptr;
   const ::PhantomLedger::transfers::family::GraphConfig *familyGraphCfg =
       nullptr;
-  const ::PhantomLedger::transfers::family::TransferConfig *familyTransferCfg =
-      nullptr;
+  const ::PhantomLedger::transfers::legit::routines::relatives::
+      FamilyTransferModel *familyTransfers = nullptr;
 
   ::PhantomLedger::transfers::government::RetirementTerms retirement{};
   ::PhantomLedger::transfers::government::DisabilityTerms disability{};

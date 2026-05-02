@@ -5,14 +5,25 @@
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/network.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transfers/family/transfer_config.hpp"
 
 #include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family {
+
+struct CounterpartyRouting {
+  double externalP = 0.18;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::between("externalP", externalP, 0.0, 1.0); });
+  }
+};
+
+inline constexpr CounterpartyRouting kDefaultCounterpartyRouting{};
 
 struct Runtime {
 
@@ -37,7 +48,7 @@ struct Runtime {
 
   const transactions::Factory *txf = nullptr;
 
-  ::PhantomLedger::transfers::family::Routing routing{};
+  CounterpartyRouting routing{};
 };
 
 } // namespace PhantomLedger::transfers::legit::routines::family

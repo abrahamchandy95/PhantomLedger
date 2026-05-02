@@ -6,10 +6,10 @@
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/screenbook.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
+#include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 namespace PhantomLedger::transfers::family {
 struct GraphConfig;
-struct TransferConfig;
 } // namespace PhantomLedger::transfers::family
 
 namespace PhantomLedger::transfers::legit::ledger::passes {
@@ -37,7 +37,7 @@ void addFamily(const blueprints::Blueprint &request,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const family::GraphConfig &graphCfg,
-               const family::TransferConfig &transferCfg);
+               const routines::relatives::FamilyTransferModel &transferModel);
 
 void addCredit(const blueprints::Blueprint &request,
                const blueprints::LegitBuildPlan &plan,

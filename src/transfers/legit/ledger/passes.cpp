@@ -240,9 +240,9 @@ void addFamily(const blueprints::Blueprint &request,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const family::GraphConfig &graphCfg,
-               const family::TransferConfig &transferCfg) {
-  streams.add(routines::relatives::generateFamilyTxns(request, graphCfg,
-                                                      transferCfg, plan, txf));
+               const routines::relatives::FamilyTransferModel &transferModel) {
+  streams.add(routines::relatives::generateFamilyTxns(
+      request, graphCfg, transferModel, plan, txf));
 }
 
 // ---------------------------------------------------------------------------

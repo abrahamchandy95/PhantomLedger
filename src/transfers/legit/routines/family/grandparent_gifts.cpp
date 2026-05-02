@@ -24,9 +24,8 @@ inline constexpr double kAmountFloor = 10.0;
 [[nodiscard]] bool
 emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
                 entity::Key gcAcct, std::int64_t windowEndEpochSec,
-                const ::PhantomLedger::transfers::family::GrandparentGifts &cfg,
-                const Runtime &rt, random::Rng &rng,
-                std::vector<transactions::Transaction> &out) {
+                const GrandparentGiftFlow &cfg, const Runtime &rt,
+                random::Rng &rng, std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.p)) {
     return false;
   }
@@ -60,12 +59,10 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
   return true;
 }
 
-void processPair(
-    entity::PersonId grandparent, entity::PersonId grandchild,
-    std::int64_t windowEndEpochSec,
-    const ::PhantomLedger::transfers::family::GrandparentGifts &cfg,
-    const Runtime &rt, random::Rng &rng,
-    std::vector<transactions::Transaction> &out) {
+void processPair(entity::PersonId grandparent, entity::PersonId grandchild,
+                 std::int64_t windowEndEpochSec, const GrandparentGiftFlow &cfg,
+                 const Runtime &rt, random::Rng &rng,
+                 std::vector<transactions::Transaction> &out) {
   const auto gpAcct = fhelp::resolveFamilyAccount(
       grandparent, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
   const auto gcAcct = fhelp::resolveFamilyAccount(
@@ -83,8 +80,7 @@ void processPair(
 } // namespace
 
 std::vector<transactions::Transaction>
-generate(const Runtime &rt,
-         const ::PhantomLedger::transfers::family::GrandparentGifts &cfg) {
+generate(const Runtime &rt, const GrandparentGiftFlow &cfg) {
   std::vector<transactions::Transaction> out;
   if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
       rt.ownership == nullptr || rt.txf == nullptr ||
