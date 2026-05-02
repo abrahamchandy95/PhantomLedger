@@ -106,7 +106,6 @@ set(PL_PRODUCTS_SOURCES
 )
 
 set(PL_LEGIT_SOURCES
-    src/transfers/legit/blueprints/models.cpp
     src/transfers/legit/blueprints/paydays.cpp
     src/transfers/legit/blueprints/plans.cpp
     src/transfers/legit/ledger/builder.cpp
