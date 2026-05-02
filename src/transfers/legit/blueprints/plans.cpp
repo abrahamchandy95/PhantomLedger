@@ -18,18 +18,17 @@ namespace PhantomLedger::transfers::legit::blueprints {
 
 namespace {
 
-[[nodiscard]] std::size_t hubCountFor(const Macro &macro,
+[[nodiscard]] std::size_t hubCountFor(const PopulationTuning &population,
                                       std::size_t personCount) noexcept {
   if (personCount == 0) {
     return 0;
   }
 
-  const auto populationCount =
-      macro.population.count == 0
-          ? personCount
-          : static_cast<std::size_t>(macro.population.count);
+  const auto populationCount = population.count == 0
+                                   ? personCount
+                                   : static_cast<std::size_t>(population.count);
 
-  const double fraction = std::clamp(macro.hubSelection.fraction, 0.0, 0.5);
+  const double fraction = std::clamp(population.hubFraction, 0.0, 0.5);
 
   const auto requested =
       static_cast<std::size_t>(static_cast<double>(populationCount) * fraction);
@@ -38,31 +37,32 @@ namespace {
 }
 
 [[nodiscard]] std::vector<entity::Key>
-selectHubAccounts(const Timeline &timeline, const Network &network,
-                  const Macro &macro,
+selectHubAccounts(const PlanRequest &request,
                   const std::vector<entity::PersonId> &persons) {
-  if (persons.empty() || timeline.rng == nullptr ||
-      network.accounts == nullptr || network.ownership == nullptr) {
+  const auto &census = request.census;
+
+  if (persons.empty() || request.rng == nullptr || census.accounts == nullptr ||
+      census.ownership == nullptr) {
     return {};
   }
 
-  const auto count = hubCountFor(macro, persons.size());
+  const auto count = hubCountFor(request.population, persons.size());
   if (count == 0) {
     return {};
   }
 
-  const auto chosenIdx = timeline.rng->choiceIndices(persons.size(), count,
-                                                     /*replace=*/false);
+  const auto chosenIdx =
+      request.rng->choiceIndices(persons.size(), count, /*replace=*/false);
 
   std::vector<entity::Key> out;
   out.reserve(chosenIdx.size());
 
   for (const auto idx : chosenIdx) {
     const auto person = persons[idx];
-    const auto recordIx = network.ownership->primaryIndex(person);
+    const auto recordIx = census.ownership->primaryIndex(person);
 
-    if (recordIx < network.accounts->records.size()) {
-      out.push_back(network.accounts->records[recordIx].id);
+    if (recordIx < census.accounts->records.size()) {
+      out.push_back(census.accounts->records[recordIx].id);
     }
   }
 
@@ -70,14 +70,14 @@ selectHubAccounts(const Timeline &timeline, const Network &network,
 }
 
 [[nodiscard]] std::unordered_map<entity::PersonId, std::uint32_t>
-primaryAcctRecordIxByPerson(const Network &network) {
+primaryAcctRecordIxByPerson(const CensusSource &census) {
   std::unordered_map<entity::PersonId, std::uint32_t> out;
 
-  if (network.accounts == nullptr || network.ownership == nullptr) {
+  if (census.accounts == nullptr || census.ownership == nullptr) {
     return out;
   }
 
-  const auto &ownership = *network.ownership;
+  const auto &ownership = *census.ownership;
   const std::size_t personCount = ownership.byPersonOffset.empty()
                                       ? 0
                                       : ownership.byPersonOffset.size() - 1;
@@ -105,16 +105,16 @@ struct LandlordResolution {
 };
 
 [[nodiscard]] LandlordResolution
-resolveLandlords(const Network &network,
+resolveLandlords(const CounterpartySource &source,
                  const std::vector<entity::Key> &hubAccounts,
                  entity::Key fallbackAcct) {
   LandlordResolution out;
 
-  if (network.landlords != nullptr && !network.landlords->records.empty()) {
-    out.ids.reserve(network.landlords->records.size());
-    out.typeOf.reserve(network.landlords->records.size());
+  if (source.landlords != nullptr && !source.landlords->records.empty()) {
+    out.ids.reserve(source.landlords->records.size());
+    out.typeOf.reserve(source.landlords->records.size());
 
-    for (const auto &record : network.landlords->records) {
+    for (const auto &record : source.landlords->records) {
       out.ids.push_back(record.accountId);
       out.typeOf.emplace(record.accountId, record.type);
     }
@@ -132,25 +132,26 @@ resolveLandlords(const Network &network,
 }
 
 [[nodiscard]] CounterpartyPlan
-buildCounterpartyPlan(const Timeline &timeline, const Network &network,
-                      const Macro &macro, const Overrides &overrides,
+buildCounterpartyPlan(const PlanRequest &request,
                       const std::vector<entity::PersonId> &persons) {
-  if (network.accounts == nullptr || network.accounts->records.empty()) {
-    throw std::invalid_argument(
-        "Network.accounts must be non-empty to build a counterparty plan");
+  const auto *accounts = request.census.accounts;
+
+  if (accounts == nullptr || accounts->records.empty()) {
+    throw std::invalid_argument("PlanRequest.census.accounts must be non-empty "
+                                "to build counterparties");
   }
 
   CounterpartyPlan plan;
 
-  plan.hubAccounts = selectHubAccounts(timeline, network, macro, persons);
+  plan.hubAccounts = selectHubAccounts(request, persons);
   plan.hubSet.reserve(plan.hubAccounts.size());
   plan.hubSet.insert(plan.hubAccounts.begin(), plan.hubAccounts.end());
 
   const auto fallbackAcct = !plan.hubAccounts.empty()
                                 ? plan.hubAccounts.front()
-                                : network.accounts->records.front().id;
+                                : accounts->records.front().id;
 
-  const auto *counterparties = overrides.counterparties;
+  const auto *counterparties = request.counterparties.directory;
 
   if (counterparties != nullptr &&
       !counterparties->employers.accounts.all.empty()) {
@@ -163,7 +164,8 @@ buildCounterpartyPlan(const Timeline &timeline, const Network &network,
     plan.employers.push_back(fallbackAcct);
   }
 
-  auto landlords = resolveLandlords(network, plan.hubAccounts, fallbackAcct);
+  auto landlords =
+      resolveLandlords(request.counterparties, plan.hubAccounts, fallbackAcct);
   plan.landlords = std::move(landlords.ids);
   plan.landlordTypeOf = std::move(landlords.typeOf);
 
@@ -177,24 +179,23 @@ buildCounterpartyPlan(const Timeline &timeline, const Network &network,
 }
 
 [[nodiscard]] PersonaPlan
-buildPersonaPlan(const Timeline &timeline, const Macro &macro,
-                 const Overrides &overrides,
+buildPersonaPlan(const PlanRequest &request,
                  const std::vector<entity::PersonId> &persons) {
   PersonaPlan plan;
 
-  if (overrides.personas != nullptr) {
-    plan.pack = overrides.personas;
+  if (request.personas.pack != nullptr) {
+    plan.pack = request.personas.pack;
   } else {
-    if (timeline.rng == nullptr) {
-      throw std::invalid_argument(
-          "buildLegitPlan requires either Overrides.personas or Timeline.rng");
+    if (request.rng == nullptr) {
+      throw std::invalid_argument("buildLegitPlan requires either "
+                                  "PersonaSource.pack or PlanRequest.rng");
     }
 
     const auto popSize = static_cast<std::uint32_t>(persons.size());
-    const auto baseSeed = static_cast<std::uint64_t>(macro.population.seed);
+    const auto baseSeed = static_cast<std::uint64_t>(request.population.seed);
 
     plan.ownedPack =
-        entities::synth::personas::makePack(*timeline.rng, popSize, baseSeed);
+        entities::synth::personas::makePack(*request.rng, popSize, baseSeed);
     plan.pack = &*plan.ownedPack;
   }
 
@@ -209,14 +210,14 @@ buildPersonaPlan(const Timeline &timeline, const Macro &macro,
 }
 
 [[nodiscard]] std::vector<entity::PersonId>
-extractPersons(const Network &network) {
+extractPersons(const CensusSource &census) {
   std::vector<entity::PersonId> out;
 
-  if (network.accounts == nullptr || network.ownership == nullptr) {
+  if (census.accounts == nullptr || census.ownership == nullptr) {
     return out;
   }
 
-  const auto &ownership = *network.ownership;
+  const auto &ownership = *census.ownership;
   if (ownership.byPersonOffset.size() <= 1) {
     return out;
   }
@@ -239,26 +240,24 @@ extractPersons(const Network &network) {
 
 } // namespace
 
-LegitBuildPlan buildLegitPlan(const Timeline &timeline, const Network &network,
-                              const Macro &macro, const Overrides &overrides) {
+LegitBuildPlan buildLegitPlan(const PlanRequest &request) {
   LegitBuildPlan plan;
 
-  plan.startDate = timeline.window.start;
-  plan.days = static_cast<std::int32_t>(timeline.window.days);
-  plan.seed = static_cast<std::uint64_t>(macro.population.seed);
+  plan.startDate = request.window.start;
+  plan.days = static_cast<std::int32_t>(request.window.days);
+  plan.seed = static_cast<std::uint64_t>(request.population.seed);
 
-  plan.allAccounts = network.accounts;
-  plan.persons = extractPersons(network);
+  plan.allAccounts = request.census.accounts;
+  plan.persons = extractPersons(request.census);
 
-  plan.counterparties =
-      buildCounterpartyPlan(timeline, network, macro, overrides, plan.persons);
+  plan.counterparties = buildCounterpartyPlan(request, plan.persons);
 
-  plan.personas = buildPersonaPlan(timeline, macro, overrides, plan.persons);
+  plan.personas = buildPersonaPlan(request, plan.persons);
 
-  plan.primaryAcctRecordIx = primaryAcctRecordIxByPerson(network);
+  plan.primaryAcctRecordIx = primaryAcctRecordIxByPerson(request.census);
 
-  const auto endExcl = time::addDays(timeline.window.start, plan.days);
-  plan.monthStarts = time::monthStarts(timeline.window.start, endExcl);
+  const auto endExcl = time::addDays(request.window.start, plan.days);
+  plan.monthStarts = time::monthStarts(request.window.start, endExcl);
 
   return plan;
 }

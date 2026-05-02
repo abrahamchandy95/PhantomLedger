@@ -1,7 +1,4 @@
 #pragma once
-/*
- * Per-card billing-cycle processor (project-internal).
- */
 
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -10,8 +7,9 @@
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/credit_cards/policy/behavior.hpp"
-#include "phantomledger/transfers/credit_cards/policy/issuer.hpp"
+#include "phantomledger/transfers/credit_cards/dispute.hpp"
+#include "phantomledger/transfers/credit_cards/payment.hpp"
+#include "phantomledger/transfers/credit_cards/statement.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -49,8 +47,9 @@ struct Purchases {
 };
 
 struct Environment {
-  const IssuerPolicy &policy;
-  const CardholderBehavior &behavior;
+  const BillingTerms &billing;
+  const PaymentBehavior &payments;
+  const DisputeBehavior &disputes;
   const transactions::Factory &factory;
   entity::Key issuerAccount;
 };

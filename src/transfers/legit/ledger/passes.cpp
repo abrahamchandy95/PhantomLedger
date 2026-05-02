@@ -29,6 +29,14 @@ namespace {
 namespace pl_gov = ::PhantomLedger::transfers::government;
 namespace pl_inflows = ::PhantomLedger::inflows;
 
+[[nodiscard]] time::Window
+windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+  return time::Window{
+      .start = plan.startDate,
+      .days = plan.days,
+  };
+}
+
 [[nodiscard]] std::uint32_t
 populationCount(const blueprints::LegitBuildPlan &plan) {
   if (plan.personas.pack == nullptr) {
@@ -67,24 +75,14 @@ buildRentCounterparties(const blueprints::LegitBuildPlan &plan) {
 }
 
 [[nodiscard]] pl_inflows::RevenueCounterparties
-buildRevenueCounterparties(const blueprints::Blueprint &request) {
+buildRevenueCounterparties(const IncomePassRequest &request) {
   return pl_inflows::RevenueCounterparties{
-      .directory = request.overrides.counterparties,
-  };
-}
-
-[[nodiscard]] pl_inflows::RecurringIncomeRules
-buildRecurringIncomeRules(const blueprints::Blueprint &request) {
-  return pl_inflows::RecurringIncomeRules{
-      .employment = request.income.employment,
-      .lease = request.income.lease,
-      .salaryPaidFraction = request.income.salaryPaidFraction,
-      .rentPaidFraction = request.income.rentPaidFraction,
+      .directory = request.revenueCounterparties,
   };
 }
 
 [[nodiscard]] pl_inflows::InflowSnapshot
-buildInflowSnapshot(const blueprints::Blueprint &request,
+buildInflowSnapshot(const IncomePassRequest &request,
                     const blueprints::LegitBuildPlan &plan,
                     const entity::account::Ownership &ownership,
                     const entity::account::Registry &registry) {
@@ -111,7 +109,7 @@ buildInflowSnapshot(const blueprints::Blueprint &request,
       .payroll = buildPayrollCounterparties(plan),
       .rent = buildRentCounterparties(plan),
       .revenue = buildRevenueCounterparties(request),
-      .recurring = buildRecurringIncomeRules(request),
+      .recurring = request.recurring,
   };
 
   primitives::validate::require(snapshot);
@@ -141,25 +139,23 @@ bool GovernmentCounterparties::valid() const noexcept {
 // addIncome
 // ---------------------------------------------------------------------------
 
-void addIncome(const blueprints::Blueprint &request,
+void addIncome(const IncomePassRequest &request,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps) {
-  if (request.timeline.rng == nullptr) {
-    throw std::invalid_argument(
-        "passes::addIncome requires a non-null timeline.rng");
+  if (request.rng == nullptr) {
+    throw std::invalid_argument("passes::addIncome requires a non-null rng");
   }
 
-  if (request.network.accounts == nullptr ||
-      request.network.ownership == nullptr) {
+  if (request.accounts == nullptr || request.ownership == nullptr) {
     throw std::invalid_argument(
         "passes::addIncome requires accounts and ownership");
   }
 
-  auto &mainRng = *request.timeline.rng;
+  auto &mainRng = *request.rng;
 
-  const auto snap = buildInflowSnapshot(
-      request, plan, *request.network.ownership, *request.network.accounts);
+  const auto snap =
+      buildInflowSnapshot(request, plan, *request.ownership, *request.accounts);
 
   const std::function<double()> salaryModel = [&mainRng]() -> double {
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
@@ -167,17 +163,18 @@ void addIncome(const blueprints::Blueprint &request,
 
   streams.add(pl_inflows::generateSalaryTxns(snap, mainRng, txf, salaryModel));
 
-  if (govCps.valid() && request.macro.government != nullptr) {
-    const auto govPopulation = buildGovernmentPopulation(
-        plan, *request.network.ownership, *request.network.accounts);
+  if (govCps.valid() && request.retirement != nullptr &&
+      request.disability != nullptr) {
+    const auto govPopulation =
+        buildGovernmentPopulation(plan, *request.ownership, *request.accounts);
+    const auto window = windowFromPlan(plan);
 
-    streams.add(pl_gov::retirementBenefits(request.macro.government->retirement,
-                                           request.timeline.window, mainRng,
+    streams.add(pl_gov::retirementBenefits(*request.retirement, window, mainRng,
                                            txf, govPopulation, govCps.ssa));
 
-    streams.add(pl_gov::disabilityBenefits(
-        request.macro.government->disability, request.timeline.window, mainRng,
-        txf, govPopulation, govCps.disability));
+    streams.add(pl_gov::disabilityBenefits(*request.disability, window, mainRng,
+                                           txf, govPopulation,
+                                           govCps.disability));
   }
 
   streams.add(pl_inflows::revenue::generate(snap, txf));
@@ -187,24 +184,29 @@ void addIncome(const blueprints::Blueprint &request,
 // addRoutines
 // ---------------------------------------------------------------------------
 
-void addRoutines(const blueprints::Blueprint &request,
+void addRoutines(const RoutinePassRequest &request,
                  const blueprints::LegitBuildPlan &plan,
                  const entity::account::Ownership &ownership,
                  const entity::account::Registry &registry,
                  const transactions::Factory &txf, TxnStreams &streams,
                  ScreenBook &screen) {
-  if (request.timeline.rng == nullptr) {
-    throw std::invalid_argument(
-        "passes::addRoutines requires a non-null timeline.rng");
+  if (request.rng == nullptr) {
+    throw std::invalid_argument("passes::addRoutines requires a non-null rng");
   }
 
-  auto &rng = *request.timeline.rng;
+  auto &rng = *request.rng;
 
   streams.add(routines::paychecks::splitDeposits(
       rng, plan, txf, ownership, registry,
       std::span<const transactions::Transaction>(streams.candidates())));
 
-  const auto snap = buildInflowSnapshot(request, plan, ownership, registry);
+  const auto incomeReq = IncomePassRequest{
+      .rng = request.rng,
+      .accounts = &registry,
+      .ownership = &ownership,
+      .recurring = request.recurring,
+  };
+  const auto snap = buildInflowSnapshot(incomeReq, plan, ownership, registry);
 
   const std::function<double()> rentModel = [&rng]() -> double {
     return ::PhantomLedger::math::amounts::kRent.sample(rng);
@@ -234,35 +236,56 @@ void addRoutines(const blueprints::Blueprint &request,
       /*baseTxnsSorted=*/true));
 
   streams.add(routines::spending::generateDayToDayTxns(
-      request, plan, ownership, registry,
-      /*baseTxns=*/
-      std::span<const transactions::Transaction>(streams.screened()),
-      /*screenBook=*/screen.fresh(),
-      /*baseTxnsSorted=*/true));
+      routines::spending::SpendingRunRequest{
+          .rng = request.rng,
+          .txf = &txf,
+          .accountsLookup = request.accountsLookup,
+          .merchants = request.merchants,
+          .portfolios = request.portfolios,
+          .creditCards = request.creditCards,
+          .plan = plan,
+          .registry = registry,
+      },
+      routines::spending::SpendingLedgerSeed{
+          .baseTxns =
+              std::span<const transactions::Transaction>(streams.screened()),
+          .screenBook = screen.fresh(),
+          .baseTxnsSorted = true,
+      }));
 }
 
 // ---------------------------------------------------------------------------
 // addFamily
 // ---------------------------------------------------------------------------
 
-void addFamily(const blueprints::Blueprint &request,
+void addFamily(const FamilyPassRequest &request,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const family::GraphConfig &graphCfg,
                const routines::relatives::FamilyTransferModel &transferModel) {
   streams.add(routines::relatives::generateFamilyTxns(
-      request, graphCfg, transferModel, plan, txf));
+      routines::relatives::FamilyRunRequest{
+          .accounts = request.accounts,
+          .ownership = request.ownership,
+          .merchants = request.merchants,
+      },
+      graphCfg, transferModel, plan, txf));
 }
 
 // ---------------------------------------------------------------------------
 // addCredit
 // ---------------------------------------------------------------------------
 
-void addCredit(const blueprints::Blueprint &request,
+void addCredit(const CreditPassRequest &request,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams) {
   streams.add(routines::credit_cards::generateLifecycle(
-      request, plan, txf,
+      routines::credit_cards::LifecycleRunRequest{
+          .rng = request.rng,
+          .cards = request.cards,
+          .lifecycle = request.lifecycle,
+      },
+      plan, txf,
       std::span<const transactions::Transaction>(streams.candidates())));
 }
 

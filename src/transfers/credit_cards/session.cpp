@@ -54,10 +54,10 @@ void Session::run(Cycle cycle) {
     return;
   }
 
-  const double minimumDueAmt = primitives::utils::roundMoney(
-      minimumDue(env_.policy.billing, statementAbs));
+  const double minimumDueAmt =
+      primitives::utils::roundMoney(minimumDue(env_.billing, statementAbs));
   const time::TimePoint due =
-      cycle.endExcl + time::Days{env_.policy.billing.graceDays} + kDueDateHour;
+      cycle.endExcl + time::Days{env_.billing.graceDays} + kDueDateHour;
 
   const PaymentIntent intent = draftPayment(statementAbs, minimumDueAmt, due);
 
@@ -68,7 +68,7 @@ void Session::run(Cycle cycle) {
 
   postPayment(intent, cycle.windowEndExcl);
 
-  if (!paidOnTime && env_.policy.billing.lateFee > 0.0) {
+  if (!paidOnTime && env_.billing.lateFee > 0.0) {
     postLateFee(due, cycle.windowEndExcl);
   }
 
@@ -90,7 +90,7 @@ void Session::collectPurchases(Cycle cycle) {
     events_.push_back(purchase);
 
     auto credit =
-        sampleMerchantCredit(env_.policy.disputes, env_.behavior.disputes, rng_,
+        sampleMerchantCredit(env_.disputes.window, env_.disputes.rates, rng_,
                              purchase, cycle.windowEndExcl, env_.factory);
     if (credit.has_value()) {
       state_.deferredCredits.push_back(*credit);
@@ -162,16 +162,16 @@ Session::PaymentIntent Session::draftPayment(double statementAbs,
   switch (account_.autopay) {
   case entity::card::Autopay::full:
     intent.amount = statementAbs;
-    intent.when = samplePaymentTime(env_.behavior.timing, rng_, due, true);
+    intent.when = samplePaymentTime(env_.payments.timing, rng_, due, true);
     break;
   case entity::card::Autopay::minimum:
     intent.amount = minimumDueAmt;
-    intent.when = samplePaymentTime(env_.behavior.timing, rng_, due, true);
+    intent.when = samplePaymentTime(env_.payments.timing, rng_, due, true);
     break;
   case entity::card::Autopay::manual:
-    intent.amount = samplePaymentAmount(env_.behavior.mixture, rng_,
+    intent.amount = samplePaymentAmount(env_.payments.mixture, rng_,
                                         statementAbs, minimumDueAmt);
-    intent.when = samplePaymentTime(env_.behavior.timing, rng_, due, false);
+    intent.when = samplePaymentTime(env_.payments.timing, rng_, due, false);
     break;
   }
   intent.amount = primitives::utils::roundMoney(std::max(0.0, intent.amount));
@@ -203,7 +203,7 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
       resolveDueDate(due) + time::Days{1} + kLateFeeMorningHour;
   const time::TimePoint cap = windowEndExcl - time::Seconds{1};
   const time::TimePoint feeTs = std::min(fallback, cap);
-  const double fee = primitives::utils::roundMoney(env_.policy.billing.lateFee);
+  const double fee = primitives::utils::roundMoney(env_.billing.lateFee);
 
   book(
       transactions::Draft{

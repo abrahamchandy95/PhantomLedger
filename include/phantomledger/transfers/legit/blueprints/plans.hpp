@@ -1,19 +1,62 @@
 #pragma once
 
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/landlords.hpp"
+#include "phantomledger/entities/synth/personas/pack.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
+#include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
-#include "phantomledger/entities/synth/personas/pack.hpp"
-
 namespace PhantomLedger::transfers::legit::blueprints {
+
+struct PopulationTuning {
+  std::uint32_t count = 0;
+  std::uint64_t seed = 0;
+  double hubFraction = 0.01;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::unit("hubFraction", hubFraction); });
+  }
+};
+
+struct CensusSource {
+  const entity::account::Registry *accounts = nullptr;
+  const entity::account::Ownership *ownership = nullptr;
+};
+
+struct CounterpartySource {
+  const entity::counterparty::Directory *directory = nullptr;
+  const entity::landlord::Roster *landlords = nullptr;
+};
+
+struct PersonaSource {
+  const entities::synth::personas::Pack *pack = nullptr;
+};
+
+struct PlanRequest {
+  time::Window window{};
+  random::Rng *rng = nullptr;
+
+  PopulationTuning population{};
+  CensusSource census{};
+  CounterpartySource counterparties{};
+  PersonaSource personas{};
+
+  void validate(primitives::validate::Report &r) const {
+    population.validate(r);
+  }
+};
 
 // ---------------------------------------------------------------------------
 // CounterpartyPlan — flat, fast-access counterparty buckets
@@ -38,7 +81,6 @@ struct CounterpartyPlan {
 // ---------------------------------------------------------------------------
 
 struct PersonaPlan {
-
   std::optional<entities::synth::personas::Pack> ownedPack{};
   const entities::synth::personas::Pack *pack = nullptr;
 
@@ -77,9 +119,6 @@ struct LegitBuildPlan {
 // Builder
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] LegitBuildPlan buildLegitPlan(const Timeline &timeline,
-                                            const Network &network,
-                                            const Macro &macro,
-                                            const Overrides &overrides);
+[[nodiscard]] LegitBuildPlan buildLegitPlan(const PlanRequest &request);
 
 } // namespace PhantomLedger::transfers::legit::blueprints

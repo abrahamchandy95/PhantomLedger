@@ -4,10 +4,12 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/credit_cards/policy/behavior.hpp"
-#include "phantomledger/transfers/credit_cards/policy/issuer.hpp"
+#include "phantomledger/transfers/credit_cards/dispute.hpp"
+#include "phantomledger/transfers/credit_cards/payment.hpp"
+#include "phantomledger/transfers/credit_cards/statement.hpp"
 
 #include <span>
 #include <unordered_map>
@@ -21,11 +23,24 @@ struct LedgerView {
   entity::Key issuerAccount;
 };
 
+struct LifecycleRules {
+  BillingTerms billing{};
+  PaymentBehavior payments{};
+  DisputeBehavior disputes{};
+
+  void validate(primitives::validate::Report &r) const {
+    billing.validate(r);
+    payments.validate(r);
+    disputes.validate(r);
+  }
+};
+
+inline constexpr LifecycleRules kDefaultLifecycleRules{};
+
 /// Generates credit-card lifecycle transactions for a window.
 class Lifecycle {
 public:
-  Lifecycle(const IssuerPolicy &policy, const CardholderBehavior &behavior,
-            const transactions::Factory &factory,
+  Lifecycle(const LifecycleRules &rules, const transactions::Factory &factory,
             const random::RngFactory &rngFactory, LedgerView ledger);
 
   /// Generate lifecycle transactions for the window.
@@ -34,8 +49,7 @@ public:
            std::span<const transactions::Transaction> txns) const;
 
 private:
-  const IssuerPolicy &policy_;
-  const CardholderBehavior &behavior_;
+  const LifecycleRules &rules_;
   const transactions::Factory &factory_;
   const random::RngFactory &rngFactory_;
   LedgerView ledger_;

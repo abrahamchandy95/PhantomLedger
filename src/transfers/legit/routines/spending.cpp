@@ -6,11 +6,14 @@
 #include "phantomledger/spending/market/commerce/network.hpp"
 #include "phantomledger/spending/obligations/burden.hpp"
 #include "phantomledger/spending/obligations/snapshot.hpp"
+#include "phantomledger/spending/simulator/commerce_evolver.hpp"
 #include "phantomledger/spending/simulator/day_driver.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
 #include "phantomledger/spending/simulator/driver.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
+#include "phantomledger/spending/simulator/population_dynamics.hpp"
 #include "phantomledger/spending/simulator/run_planner.hpp"
+#include "phantomledger/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
@@ -23,24 +26,47 @@
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 
-namespace pl_spending = ::PhantomLedger::spending;
-namespace pl_config = pl_spending::config;
-namespace pl_market = pl_spending::market;
-namespace pl_pop = pl_market::population;
-namespace pl_obligations = pl_spending::obligations;
-namespace pl_routing = pl_spending::routing;
-namespace pl_simulator = pl_spending::simulator;
+namespace plSpending = ::PhantomLedger::spending;
+namespace plMarket = plSpending::market;
+namespace plPop = plMarket::population;
+namespace plObligations = plSpending::obligations;
+namespace plSimulator = plSpending::simulator;
+
+SpendingRoutine &SpendingRoutine::habits(SpendingHabits value) noexcept {
+  habits_ = value;
+  return *this;
+}
+
+SpendingRoutine &SpendingRoutine::planning(RunPlanning value) noexcept {
+  planning_ = value;
+  return *this;
+}
+
+SpendingRoutine &SpendingRoutine::dayPattern(DayPattern value) noexcept {
+  day_ = value;
+  return *this;
+}
+
+SpendingRoutine &SpendingRoutine::dynamics(DynamicsProfile value) noexcept {
+  dynamics_ = value;
+  return *this;
+}
+
+SpendingRoutine &SpendingRoutine::emission(EmissionProfile value) noexcept {
+  emission_ = value;
+  return *this;
+}
 
 namespace {
 
 // ---------------------------------------------------------------------------
-// Census materialisation
+// Census materialization
 // ---------------------------------------------------------------------------
 
 struct CensusScratch {
   std::uint32_t personCount = 0;
   std::vector<entity::Key> primaryAccounts;
-  std::vector<pl_pop::PaydaySet> paydaySets;
+  std::vector<plPop::PaydaySet> paydaySets;
 
   std::vector<std::vector<std::uint32_t>> paydayStorage;
 };
@@ -82,7 +108,7 @@ buildCensusScratch(const blueprints::LegitBuildPlan &plan,
   out.paydaySets.reserve(out.personCount);
 
   for (const auto &days : out.paydayStorage) {
-    out.paydaySets.push_back(pl_pop::PaydaySet{
+    out.paydaySets.push_back(plPop::PaydaySet{
         .days = std::span<const std::uint32_t>(days.data(), days.size()),
     });
   }
@@ -94,16 +120,16 @@ buildCensusScratch(const blueprints::LegitBuildPlan &plan,
 // Cards lookup
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] pl_market::Cards
-buildSpendingCards(const blueprints::CreditCardState &ccState,
+[[nodiscard]] plMarket::Cards
+buildSpendingCards(const entity::card::Registry *creditCards,
                    std::uint32_t personCount) {
-  pl_market::Cards cards(static_cast<std::size_t>(personCount));
+  plMarket::Cards cards(static_cast<std::size_t>(personCount));
 
-  if (!ccState.enabled() || ccState.cards == nullptr) {
+  if (creditCards == nullptr || creditCards->records.empty()) {
     return cards;
   }
 
-  for (const auto &record : ccState.cards->records) {
+  for (const auto &record : creditCards->records) {
     if (record.owner == entity::invalidPerson) {
       continue;
     }
@@ -122,11 +148,9 @@ buildSpendingCards(const blueprints::CreditCardState &ccState,
 // Bootstrap inputs assembly
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] pl_market::BootstrapInputs assembleBootstrapInputs(
-    const blueprints::Blueprint &request,
-    const blueprints::LegitBuildPlan &plan, const CensusScratch &scratch,
-    pl_config::MerchantPickRules picking,
-    pl_config::ExplorationHabits exploration, pl_config::BurstBehavior burst) {
+[[nodiscard]] plMarket::BootstrapInputs assembleBootstrapInputs(
+    const SpendingRunRequest &request, const blueprints::LegitBuildPlan &plan,
+    const CensusScratch &scratch, const SpendingHabits &habits) {
   if (plan.personas.pack == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a populated PersonaPlan.pack");
@@ -136,7 +160,7 @@ buildSpendingCards(const blueprints::CreditCardState &ccState,
     throw std::invalid_argument("spending routine requires non-negative days");
   }
 
-  pl_market::BootstrapInputs inputs;
+  plMarket::BootstrapInputs inputs;
 
   inputs.bounds.startDate = plan.startDate;
   inputs.bounds.days = static_cast<std::uint32_t>(plan.days);
@@ -155,103 +179,101 @@ buildSpendingCards(const blueprints::CreditCardState &ccState,
       plan.personas.pack->table.byPerson.data(),
       plan.personas.pack->table.byPerson.size());
 
-  inputs.census.paydays = std::span<const pl_pop::PaydaySet>(
+  inputs.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
 
-  inputs.network.catalog = request.network.merchants;
+  inputs.network.catalog = request.merchants;
   inputs.network.social = nullptr;
 
-  inputs.cards =
-      buildSpendingCards(request.creditCardState, scratch.personCount);
+  inputs.cards = buildSpendingCards(request.creditCards, scratch.personCount);
 
-  inputs.picking = picking;
-  inputs.exploration = exploration;
-  inputs.burst = burst;
+  inputs.picking = habits.picking;
+  inputs.exploration = habits.exploration;
+  inputs.burst = habits.burst;
 
   return inputs;
 }
 
 } // namespace
 
-std::vector<transactions::Transaction> generateDayToDayTxns(
-    const blueprints::Blueprint &request,
-    const blueprints::LegitBuildPlan &plan,
-    const entity::account::Ownership &ownership,
-    const entity::account::Registry &registry,
-    std::span<const transactions::Transaction> baseTxns,
-    clearing::Ledger *screenBook, bool baseTxnsSorted,
-    pl_config::MerchantPickRules picking,
-    pl_config::ExplorationHabits exploration, pl_config::BurstBehavior burst,
-    pl_simulator::TransactionLoad load, pl_routing::ChannelWeights channels,
-    pl_routing::PaymentRoutingRules paymentRules, double baseExploreP,
-    pl_simulator::DaySource::Variation day,
-    pl_config::LiquidityConstraints liquidity,
-    pl_spending::dynamics::Config dynamics,
-    ::PhantomLedger::math::seasonal::Config seasonal) {
-  (void)ownership;
+std::vector<transactions::Transaction>
+SpendingRoutine::run(const SpendingRunRequest &run,
+                     SpendingLedgerSeed seed) const {
+  const auto &request = run;
+  const auto &plan = run.plan;
+  const auto &registry = run.registry;
 
-  if (request.timeline.rng == nullptr) {
-    throw std::invalid_argument(
-        "spending routine requires a non-null timeline.rng");
+  if (request.rng == nullptr) {
+    throw std::invalid_argument("spending routine requires a non-null rng");
   }
 
-  if (request.network.accountsLookup == nullptr) {
+  if (request.txf == nullptr) {
+    throw std::invalid_argument(
+        "spending routine requires a non-null transaction factory");
+  }
+
+  if (request.accountsLookup == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a non-null accountsLookup");
   }
 
-  const auto scratch = buildCensusScratch(plan, *request.network.accountsLookup,
-                                          registry, baseTxns);
+  const auto scratch = buildCensusScratch(plan, *request.accountsLookup,
+                                          registry, seed.baseTxns);
 
-  auto inputs = assembleBootstrapInputs(request, plan, scratch, picking,
-                                        exploration, burst);
+  auto inputs = assembleBootstrapInputs(request, plan, scratch, habits_);
 
-  auto market = pl_market::buildMarket(std::move(inputs));
+  auto market = plMarket::buildMarket(std::move(inputs));
 
   random::RngFactory rngFactory{plan.seed};
 
-  const transactions::Factory txf(*request.timeline.rng,
-                                  request.overrides.infra);
-
-  pl_simulator::Engine engine{
-      .rng = request.timeline.rng,
-      .factory = &txf,
-      .ledger = screenBook,
+  plSimulator::Engine engine{
+      .rng = request.rng,
+      .factory = request.txf,
+      .ledger = seed.screenBook,
       .rngFactory = &rngFactory,
       .threadCount = 1,
   };
 
   std::vector<double> monthlyBurdens;
 
-  if (request.network.portfolios != nullptr) {
+  if (request.portfolios != nullptr) {
     monthlyBurdens = ledger::buildMonthlyBurdens(
-        *request.network.portfolios, scratch.personCount, plan.startDate);
+        *request.portfolios, scratch.personCount, plan.startDate);
   }
 
-  pl_obligations::Snapshot obligations{
-      .baseTxns = baseTxns,
-      .baseTxnsSorted = baseTxnsSorted,
-      .burden = pl_obligations::Burden(std::move(monthlyBurdens)),
+  plObligations::Snapshot obligations{
+      .baseTxns = seed.baseTxns,
+      .baseTxnsSorted = seed.baseTxnsSorted,
+      .burden = plObligations::Burden(std::move(monthlyBurdens)),
   };
 
-  pl_simulator::RunPlanner planner{load, channels, paymentRules};
+  plSimulator::RunPlanner planner{
+      planning_.load,
+      planning_.channels,
+      planning_.paymentRules,
+  };
 
-  pl_simulator::DayDriver dayDriver{
-      pl_simulator::DaySource{day, seasonal},
-      pl_simulator::CommerceEvolver{dynamics.evolution},
-      pl_simulator::PopulationDynamics{dynamics},
-      pl_simulator::SpenderEmissionDriver{pl_simulator::EmissionBehavior{
-          .baseExploreP = baseExploreP,
-          .burst = burst,
-          .exploration = exploration,
-          .liquidity = liquidity,
+  plSimulator::DayDriver dayDriver{
+      plSimulator::DaySource{day_.variation, day_.seasonal},
+      plSimulator::CommerceEvolver{dynamics_.value.evolution},
+      plSimulator::PopulationDynamics{dynamics_.value},
+      plSimulator::SpenderEmissionDriver{plSimulator::EmissionBehavior{
+          .baseExploreP = emission_.baseExploreP,
+          .burst = habits_.burst,
+          .exploration = habits_.exploration,
+          .liquidity = emission_.liquidity,
       }},
   };
 
-  pl_simulator::Simulator simulator(market, engine, obligations,
-                                    std::move(planner), std::move(dayDriver));
+  plSimulator::Simulator simulator(market, engine, obligations,
+                                   std::move(planner), std::move(dayDriver));
 
   return simulator.run();
+}
+
+std::vector<transactions::Transaction>
+generateDayToDayTxns(const SpendingRunRequest &run, SpendingLedgerSeed seed) {
+  return SpendingRoutine{}.run(run, seed);
 }
 
 } // namespace PhantomLedger::transfers::legit::routines::spending

@@ -4,7 +4,6 @@
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
 #include <stdexcept>
@@ -13,6 +12,11 @@
 namespace PhantomLedger::transfers::legit::ledger {
 
 namespace {
+
+[[nodiscard]] bool
+hasCreditCards(const entity::card::Registry *cards) noexcept {
+  return cards != nullptr && !cards->records.empty();
+}
 
 [[nodiscard]] std::unordered_set<clearing::Ledger::Index>
 hubIndicesFromKeys(const blueprints::LegitBuildPlan &plan,
@@ -45,26 +49,22 @@ void applyCreditCardLimits(clearing::Ledger &ledger,
 } // namespace
 
 std::unique_ptr<clearing::Ledger>
-buildBalanceBook(const blueprints::Timeline &timeline,
-                 const blueprints::Network &network,
-                 const blueprints::ClearingSpec &specs,
-                 const blueprints::CreditCardState &ccState,
+buildBalanceBook(const BalanceBookRequest &request,
                  const blueprints::LegitBuildPlan &plan) {
-  if (specs.balances == nullptr) {
+  if (request.rules == nullptr) {
     return nullptr;
   }
-  if (!specs.balances->enableConstraints) {
+  if (!request.rules->enableConstraints) {
     return nullptr;
   }
 
-  if (network.accounts == nullptr || network.accountsLookup == nullptr ||
-      network.ownership == nullptr) {
+  if (request.accounts == nullptr || request.accountsLookup == nullptr ||
+      request.ownership == nullptr) {
     throw std::invalid_argument(
         "buildBalanceBook requires accounts, accountsLookup and ownership");
   }
-  if (timeline.rng == nullptr) {
-    throw std::invalid_argument(
-        "buildBalanceBook requires a non-null timeline.rng");
+  if (request.rng == nullptr) {
+    throw std::invalid_argument("buildBalanceBook requires a non-null rng");
   }
   if (plan.personas.pack == nullptr) {
     throw std::invalid_argument(
@@ -73,19 +73,19 @@ buildBalanceBook(const blueprints::Timeline &timeline,
 
   auto ledger = std::make_unique<clearing::Ledger>();
   const auto count =
-      static_cast<clearing::Ledger::Index>(network.accounts->records.size());
+      static_cast<clearing::Ledger::Index>(request.accounts->records.size());
   ledger->initialize(count);
 
   for (clearing::Ledger::Index idx = 0; idx < count; ++idx) {
-    ledger->addAccount(network.accounts->records[idx].id, idx);
+    ledger->addAccount(request.accounts->records[idx].id, idx);
   }
 
   // Hub indices set — required by bootstrap() to assign infinite cash.
-  const auto hubIndices = hubIndicesFromKeys(plan, *network.accountsLookup);
+  const auto hubIndices = hubIndicesFromKeys(plan, *request.accountsLookup);
 
-  clearing::bootstrap(*ledger, *timeline.rng, *network.accounts,
-                      *network.ownership, plan.personas.pack->table, hubIndices,
-                      *specs.balances);
+  clearing::bootstrap(*ledger, *request.rng, *request.accounts,
+                      *request.ownership, plan.personas.pack->table, hubIndices,
+                      *request.rules);
 
   for (const auto idx : hubIndices) {
     ledger->createHub(idx);
@@ -94,18 +94,19 @@ buildBalanceBook(const blueprints::Timeline &timeline,
   // Burden buffers — 35% of the per-person monthly fixed obligation
   // total. Built from the obligations stream + insurance ledger; see
   // burdens.hpp for the windowing rationale.
-  if (network.portfolios != nullptr) {
+  if (request.portfolios != nullptr) {
     const auto personCount = static_cast<std::uint32_t>(plan.persons.size());
     const auto monthlyBurdens =
-        buildMonthlyBurdens(*network.portfolios, personCount, plan.startDate);
-    clearing::addBurdenBuffer(*ledger, *network.ownership, monthlyBurdens,
+        buildMonthlyBurdens(*request.portfolios, personCount, plan.startDate);
+    clearing::addBurdenBuffer(*ledger, *request.ownership, monthlyBurdens,
                               personCount);
   }
 
   // Credit-card limits, applied last so they don't interact with
   // protection sampling above.
-  if (ccState.enabled() && ccState.cards != nullptr) {
-    applyCreditCardLimits(*ledger, *ccState.cards, *network.accountsLookup);
+  if (hasCreditCards(request.creditCards)) {
+    applyCreditCardLimits(*ledger, *request.creditCards,
+                          *request.accountsLookup);
   }
 
   return ledger;

@@ -67,19 +67,18 @@ extractAmountMultipliers(const blueprints::LegitBuildPlan &plan) {
 }
 
 [[nodiscard]] family_rt::Runtime assembleRuntime(
-    const blueprints::Blueprint &request,
-    const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf,
-    family_rt::CounterpartyRouting routing, const family_relg::Graph &graph,
-    const random::RngFactory &rngFactory,
+    const FamilyRunRequest &request, const blueprints::LegitBuildPlan &plan,
+    const transactions::Factory &txf, family_rt::CounterpartyRouting routing,
+    const family_relg::Graph &graph, const random::RngFactory &rngFactory,
     std::span<const ::PhantomLedger::personas::Type> personas,
     std::span<const double> amountMultipliers) {
   return family_rt::Runtime{
       .graph = &graph,
       .personas = personas,
       .amountMultipliers = amountMultipliers,
-      .accounts = request.network.accounts,
-      .ownership = request.network.ownership,
-      .merchants = request.network.merchants,
+      .accounts = request.accounts,
+      .ownership = request.ownership,
+      .merchants = request.merchants,
       .window = windowFromPlan(plan),
       .monthStarts =
           std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts},
@@ -105,17 +104,14 @@ void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
 
 } // namespace
 
-std::vector<transactions::Transaction>
-generateFamilyTxns(const blueprints::Blueprint &request,
-                   const family_cfg::GraphConfig &graphCfg,
-                   const FamilyTransferModel &transferModel,
-                   const blueprints::LegitBuildPlan &plan,
-                   const transactions::Factory &txf) {
+std::vector<transactions::Transaction> generateFamilyTxns(
+    const FamilyRunRequest &request, const family_cfg::GraphConfig &graphCfg,
+    const FamilyTransferModel &transferModel,
+    const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf) {
   std::vector<transactions::Transaction> out;
 
   // Cheap fast-paths before we touch the graph.
-  if (request.network.accounts == nullptr ||
-      request.network.ownership == nullptr) {
+  if (request.accounts == nullptr || request.ownership == nullptr) {
     return out;
   }
 

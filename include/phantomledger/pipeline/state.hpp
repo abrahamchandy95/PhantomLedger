@@ -17,8 +17,8 @@
 #include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
+#include "phantomledger/transfers/legit/ledger/result.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -50,7 +50,7 @@ struct Infra {
 };
 
 struct Transfers {
-  transfers::legit::blueprints::TransfersPayload legit;
+  transfers::legit::ledger::TransfersPayload legit;
   transfers::fraud::InjectionOutput fraud;
 
   std::vector<transactions::Transaction> draftTxns;

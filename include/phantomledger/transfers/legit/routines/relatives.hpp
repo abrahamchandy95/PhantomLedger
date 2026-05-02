@@ -1,9 +1,10 @@
 #pragma once
 
+#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/family/graph_config.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/routines/family/allowances.hpp"
 #include "phantomledger/transfers/legit/routines/family/grandparent_gifts.hpp"
@@ -20,6 +21,12 @@
 namespace PhantomLedger::transfers::legit::routines::relatives {
 
 namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
+
+struct FamilyRunRequest {
+  const entity::account::Registry *accounts = nullptr;
+  const entity::account::Ownership *ownership = nullptr;
+  const entity::merchant::Catalog *merchants = nullptr;
+};
 
 struct FamilyTransferModel {
   family_rt::allowances::AllowanceSchedule allowances{};
@@ -48,7 +55,7 @@ struct FamilyTransferModel {
 inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 
 [[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
-    const blueprints::Blueprint &request,
+    const FamilyRunRequest &request,
     const ::PhantomLedger::transfers::family::GraphConfig &graphModel,
     const FamilyTransferModel &transferModel,
     const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf);

@@ -1,51 +1,66 @@
 #pragma once
 
 #include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/math/seasonal.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
-#include "phantomledger/spending/config/picking.hpp"
-#include "phantomledger/spending/dynamics/config.hpp"
-#include "phantomledger/spending/routing/channel.hpp"
-#include "phantomledger/spending/routing/payments.hpp"
-#include "phantomledger/spending/simulator/day_source.hpp"
-#include "phantomledger/spending/simulator/plan.hpp"
+#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
+#include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
+#include "phantomledger/transfers/legit/routines/spending/behavior.hpp"
 
 #include <span>
 #include <vector>
 
+namespace PhantomLedger::entity::product {
+class PortfolioRegistry;
+} // namespace PhantomLedger::entity::product
+
 namespace PhantomLedger::transfers::legit::routines::spending {
 
-namespace plConfig = ::PhantomLedger::spending::config;
-namespace plDynamics = ::PhantomLedger::spending::dynamics;
-namespace plRouting = ::PhantomLedger::spending::routing;
-namespace plSeasonal = ::PhantomLedger::math::seasonal;
-namespace plSimulator = ::PhantomLedger::spending::simulator;
+struct SpendingRunRequest {
+  random::Rng *rng = nullptr;
+  const transactions::Factory *txf = nullptr;
 
-[[nodiscard]] std::vector<transactions::Transaction> generateDayToDayTxns(
-    const blueprints::Blueprint &request,
-    const blueprints::LegitBuildPlan &plan,
-    const entity::account::Ownership &ownership,
-    const entity::account::Registry &registry,
-    std::span<const transactions::Transaction> baseTxns,
-    clearing::Ledger *screenBook = nullptr, bool baseTxnsSorted = false,
+  const entity::account::Lookup *accountsLookup = nullptr;
+  const entity::merchant::Catalog *merchants = nullptr;
+  const entity::product::PortfolioRegistry *portfolios = nullptr;
+  const entity::card::Registry *creditCards = nullptr;
 
-    plConfig::MerchantPickRules picking = plConfig::kDefaultPickRules,
-    plConfig::ExplorationHabits exploration = plConfig::kDefaultExploration,
-    plConfig::BurstBehavior burst = plConfig::kDefaultBurst,
+  const blueprints::LegitBuildPlan &plan;
+  const entity::account::Registry &registry;
+};
 
-    plSimulator::TransactionLoad load = {},
-    plRouting::ChannelWeights channels = {},
-    plRouting::PaymentRoutingRules paymentRules = {}, double baseExploreP = 0.0,
-    plSimulator::DaySource::Variation day = plSimulator::DaySource::Variation{},
-    plConfig::LiquidityConstraints liquidity =
-        plConfig::kDefaultLiquidityConstraints,
-    plDynamics::Config dynamics = plDynamics::kDefaultConfig,
-    plSeasonal::Config seasonal = plSeasonal::kDefaultConfig);
+struct SpendingLedgerSeed {
+  std::span<const transactions::Transaction> baseTxns{};
+  clearing::Ledger *screenBook = nullptr;
+  bool baseTxnsSorted = false;
+};
+
+class SpendingRoutine {
+public:
+  SpendingRoutine() = default;
+
+  SpendingRoutine &habits(SpendingHabits value) noexcept;
+  SpendingRoutine &planning(RunPlanning value) noexcept;
+  SpendingRoutine &dayPattern(DayPattern value) noexcept;
+  SpendingRoutine &dynamics(DynamicsProfile value) noexcept;
+  SpendingRoutine &emission(EmissionProfile value) noexcept;
+
+  [[nodiscard]] std::vector<transactions::Transaction>
+  run(const SpendingRunRequest &run, SpendingLedgerSeed seed = {}) const;
+
+private:
+  SpendingHabits habits_{};
+  RunPlanning planning_{};
+  DayPattern day_{};
+  DynamicsProfile dynamics_{};
+  EmissionProfile emission_{};
+};
+
+[[nodiscard]] std::vector<transactions::Transaction>
+generateDayToDayTxns(const SpendingRunRequest &run,
+                     SpendingLedgerSeed seed = {});
 
 } // namespace PhantomLedger::transfers::legit::routines::spending

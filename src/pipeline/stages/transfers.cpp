@@ -1,19 +1,21 @@
 #include "phantomledger/pipeline/stages/transfers.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/inflows/types.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/insurance/claims.hpp"
 #include "phantomledger/transfers/insurance/premiums.hpp"
-#include "phantomledger/transfers/legit/blueprints/models.hpp"
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 #include "phantomledger/transfers/obligations/schedule.hpp"
 
 #include <cstddef>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <unordered_map>
 #include <utility>
@@ -61,16 +63,9 @@ buildPrimaryAccountsMap(
   return out;
 }
 
-[[nodiscard]] blueprints::GovernmentPrograms
-makeGovernmentPrograms(const Inputs &in) {
-  return blueprints::GovernmentPrograms{
-      .retirement = in.government.retirement,
-      .disability = in.government.disability,
-  };
-}
-
-[[nodiscard]] blueprints::IncomeSpec makeIncomeSpec(const Inputs &in) {
-  return blueprints::IncomeSpec{
+[[nodiscard]] ::PhantomLedger::inflows::RecurringIncomeRules
+makeRecurringIncomeRules(const Inputs &in) {
+  return ::PhantomLedger::inflows::RecurringIncomeRules{
       .employment = in.income.employment,
       .lease = in.income.lease,
       .salaryPaidFraction = in.income.salaryPaidFraction,
@@ -78,51 +73,117 @@ makeGovernmentPrograms(const Inputs &in) {
   };
 }
 
-[[nodiscard]] blueprints::CreditCardSpec makeCreditCardSpec(const Inputs &in) {
-  return blueprints::CreditCardSpec{
-      .issuance = nullptr,
-      .terms = in.creditCards.terms,
-      .habits = in.creditCards.habits,
+[[nodiscard]] blueprints::PlanRequest
+makePlanRequest(::PhantomLedger::random::Rng &rng,
+                const ::PhantomLedger::pipeline::Entities &entities,
+                const Inputs &in) {
+  return blueprints::PlanRequest{
+      .window = in.window,
+      .rng = &rng,
+      .population =
+          blueprints::PopulationTuning{
+              .count = entities.people.roster.count,
+              .seed = in.seed,
+              .hubFraction = in.hubFraction,
+          },
+      .census =
+          blueprints::CensusSource{
+              .accounts = &entities.accounts.registry,
+              .ownership = &entities.accounts.ownership,
+          },
+      .counterparties =
+          blueprints::CounterpartySource{
+              .directory = &entities.counterparties,
+              .landlords = &entities.landlords.roster,
+          },
+      .personas =
+          blueprints::PersonaSource{
+              .pack = &entities.personas,
+          },
   };
 }
 
-[[nodiscard]] blueprints::Blueprint
-makeBlueprint(::PhantomLedger::random::Rng &rng,
-              const ::PhantomLedger::pipeline::Entities &entities,
-              const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in,
-              blueprints::GovernmentPrograms &governmentStore) {
-  governmentStore = makeGovernmentPrograms(in);
+[[nodiscard]] legit_ledger::BalanceBookRequest
+makeBalanceBookRequest(::PhantomLedger::random::Rng &rng,
+                       const ::PhantomLedger::pipeline::Entities &entities,
+                       const Inputs &in) {
+  return legit_ledger::BalanceBookRequest{
+      .window = in.window,
+      .rng = &rng,
+      .accounts = &entities.accounts.registry,
+      .accountsLookup = &entities.accounts.lookup,
+      .ownership = &entities.accounts.ownership,
+      .rules = in.clearing.balanceRules,
+      .portfolios = &entities.portfolios,
+      .creditCards = &entities.creditCards,
+  };
+}
 
-  blueprints::Blueprint bp{};
+[[nodiscard]] legit_ledger::passes::IncomePassRequest
+makeIncomePassRequest(::PhantomLedger::random::Rng &rng,
+                      const ::PhantomLedger::pipeline::Entities &entities,
+                      const Inputs &in) {
+  return legit_ledger::passes::IncomePassRequest{
+      .rng = &rng,
+      .accounts = &entities.accounts.registry,
+      .ownership = &entities.accounts.ownership,
+      .revenueCounterparties = &entities.counterparties,
+      .recurring = makeRecurringIncomeRules(in),
+      .retirement = &in.government.retirement,
+      .disability = &in.government.disability,
+  };
+}
 
-  bp.timeline.window = in.window;
-  bp.timeline.rng = &rng;
+[[nodiscard]] legit_ledger::passes::RoutinePassRequest
+makeRoutinePassRequest(::PhantomLedger::random::Rng &rng,
+                       const ::PhantomLedger::pipeline::Entities &entities,
+                       const Inputs &in) {
+  return legit_ledger::passes::RoutinePassRequest{
+      .rng = &rng,
+      .accountsLookup = &entities.accounts.lookup,
+      .merchants = &entities.merchants.catalog,
+      .portfolios = &entities.portfolios,
+      .creditCards = &entities.creditCards,
+      .recurring = makeRecurringIncomeRules(in),
+  };
+}
 
-  bp.network.accounts = &entities.accounts.registry;
-  bp.network.accountsLookup = &entities.accounts.lookup;
-  bp.network.ownership = &entities.accounts.ownership;
-  bp.network.merchants = &entities.merchants.catalog;
-  bp.network.landlords = &entities.landlords.roster;
-  bp.network.landlordsIndex = &entities.landlords.index;
-  bp.network.portfolios = &entities.portfolios;
+[[nodiscard]] legit_ledger::passes::FamilyPassRequest
+makeFamilyPassRequest(const ::PhantomLedger::pipeline::Entities &entities) {
+  return legit_ledger::passes::FamilyPassRequest{
+      .accounts = &entities.accounts.registry,
+      .ownership = &entities.accounts.ownership,
+      .merchants = &entities.merchants.catalog,
+  };
+}
 
-  bp.macro.population.count = entities.people.roster.count;
-  bp.macro.population.seed = in.seed;
-  bp.macro.hubSelection.fraction = in.hubFraction;
-  bp.macro.government = &governmentStore;
+[[nodiscard]] legit_ledger::passes::CreditPassRequest
+makeCreditPassRequest(::PhantomLedger::random::Rng &rng,
+                      const ::PhantomLedger::pipeline::Entities &entities,
+                      const Inputs &in) {
+  return legit_ledger::passes::CreditPassRequest{
+      .rng = &rng,
+      .cards = &entities.creditCards,
+      .lifecycle = in.creditCards.lifecycle,
+  };
+}
 
-  bp.income = makeIncomeSpec(in);
-  bp.clearing.balances = in.clearing.balanceRules;
-  bp.creditCards = makeCreditCardSpec(in);
-
-  bp.overrides.infra = &infra.router;
-  bp.overrides.personas = &entities.personas;
-  bp.overrides.counterparties = &entities.counterparties;
-
-  bp.creditCardState.cards = &entities.creditCards;
-
-  primitives::validate::require(bp);
-  return bp;
+[[nodiscard]] legit_ledger::LegitTransferRequest
+makeLegitTransferRequest(::PhantomLedger::random::Rng &rng,
+                         const ::PhantomLedger::pipeline::Entities &entities,
+                         const ::PhantomLedger::pipeline::Infra &infra,
+                         const Inputs &in) {
+  return legit_ledger::LegitTransferRequest{
+      .plan = makePlanRequest(rng, entities, in),
+      .balanceBook = makeBalanceBookRequest(rng, entities, in),
+      .income = makeIncomePassRequest(rng, entities, in),
+      .routines = makeRoutinePassRequest(rng, entities, in),
+      .family = makeFamilyPassRequest(entities),
+      .credit = makeCreditPassRequest(rng, entities, in),
+      .famGraphCfg = in.family.graph,
+      .familyTransfers = in.family.transfers,
+      .router = &infra.router,
+  };
 }
 
 [[nodiscard]] std::vector<Transaction> assembleReplayStream(
@@ -131,7 +192,7 @@ makeBlueprint(::PhantomLedger::random::Rng &rng,
     const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in,
     const std::unordered_map<::PhantomLedger::entity::PersonId,
                              ::PhantomLedger::entity::Key> &primaryAccounts,
-    blueprints::TransfersPayload &legitPayload) {
+    legit_ledger::TransfersPayload &legitPayload) {
   std::vector<Transaction> stream = std::move(legitPayload.replaySortedTxns);
 
   ::PhantomLedger::transactions::Factory txf{rng, &infra.router,
@@ -191,11 +252,10 @@ runFraudInjection(::PhantomLedger::random::Rng &rng,
                   const ::PhantomLedger::pipeline::Entities &entities,
                   const ::PhantomLedger::pipeline::Infra &infra,
                   const Inputs &in, std::span<const Transaction> draftTxns,
-                  const blueprints::TransfersPayload &legitPayload) {
+                  const legit_ledger::TransfersPayload &legitPayload) {
   fraud::InjectionInput req{};
 
-  req.scenario.fraudCfg = nullptr; // builder default; entities synth pack
-                                   // owns the canonical values
+  req.scenario.fraudCfg = nullptr;
   req.scenario.window = in.window;
   req.scenario.people = &entities.people.roster;
   req.scenario.topology = &entities.people.topology;
@@ -251,16 +311,13 @@ build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in) {
   primitives::validate::require(in);
 
-  blueprints::GovernmentPrograms governmentStore{};
-  auto blueprint = makeBlueprint(rng, entities, infra, in, governmentStore);
+  auto legitRequest = makeLegitTransferRequest(rng, entities, infra, in);
 
   legit_ledger::LegitTransferBuilder builder{
-      .request = &blueprint,
-      .famGraphCfg = in.family.graph,
-      .familyTransfers = in.family.transfers,
+      .request = &legitRequest,
   };
 
-  blueprints::TransfersPayload legitPayload = builder.build();
+  legit_ledger::TransfersPayload legitPayload = builder.build();
 
   if (legitPayload.initialBook == nullptr) {
     throw std::runtime_error(

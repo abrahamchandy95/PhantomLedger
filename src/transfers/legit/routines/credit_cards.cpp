@@ -10,6 +10,14 @@ namespace PhantomLedger::transfers::legit::routines::credit_cards {
 
 namespace {
 
+[[nodiscard]] time::Window
+windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+  return time::Window{
+      .start = plan.startDate,
+      .days = plan.days,
+  };
+}
+
 [[nodiscard]] std::unordered_map<entity::PersonId, entity::Key>
 primaryAccountKeysByPerson(const blueprints::LegitBuildPlan &plan) {
   std::unordered_map<entity::PersonId, entity::Key> out;
@@ -28,31 +36,26 @@ primaryAccountKeysByPerson(const blueprints::LegitBuildPlan &plan) {
 } // namespace
 
 std::vector<transactions::Transaction>
-generateLifecycle(const blueprints::Blueprint &request,
+generateLifecycle(const LifecycleRunRequest &request,
                   const blueprints::LegitBuildPlan &plan,
                   const transactions::Factory &txf,
                   std::span<const transactions::Transaction> existingTxns) {
-  if (!request.creditCardState.enabled() ||
-      request.creditCardState.cards == nullptr) {
+  if (request.cards == nullptr || request.cards->records.empty()) {
     return {};
   }
-  if (request.timeline.rng == nullptr) {
-    throw std::invalid_argument(
-        "credit_cards routine requires a non-null timeline.rng");
+  if (request.rng == nullptr) {
+    throw std::invalid_argument("credit_cards routine requires a non-null rng");
   }
 
-  const auto *issuerPolicy = request.creditCards.terms;
-  const auto *behavior = request.creditCards.habits;
-
-  if (issuerPolicy == nullptr || behavior == nullptr) {
+  if (request.lifecycle == nullptr) {
     throw std::invalid_argument(
-        "credit_cards routine requires terms and habits in Specifications");
+        "credit_cards routine requires lifecycle rules");
   }
 
   const auto primaryByPerson = primaryAccountKeysByPerson(plan);
 
   ::PhantomLedger::transfers::credit_cards::LedgerView view{
-      .cards = *request.creditCardState.cards,
+      .cards = *request.cards,
       .primaryAccounts = primaryByPerson,
       .issuerAccount = plan.counterparties.issuerAcct,
   };
@@ -60,10 +63,13 @@ generateLifecycle(const blueprints::Blueprint &request,
   const random::RngFactory rngFactory{plan.seed};
 
   ::PhantomLedger::transfers::credit_cards::Lifecycle lifecycle{
-      *issuerPolicy, *behavior, txf, rngFactory, view,
+      *request.lifecycle,
+      txf,
+      rngFactory,
+      view,
   };
 
-  return lifecycle.generate(request.timeline.window, existingTxns);
+  return lifecycle.generate(windowFromPlan(plan), existingTxns);
 }
 
 } // namespace PhantomLedger::transfers::legit::routines::credit_cards

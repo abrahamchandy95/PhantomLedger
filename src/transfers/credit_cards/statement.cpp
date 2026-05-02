@@ -64,9 +64,8 @@ integrateBalance(const entity::Key &cardAccount, double openingBalance,
   return {dollarDayIntegral / total, balance};
 }
 
-double minimumDue(const BillingPolicy &policy, double statementAbs) noexcept {
-  return std::max(policy.minPaymentDollars,
-                  policy.minPaymentPct * statementAbs);
+double minimumDue(const BillingTerms &terms, double statementAbs) noexcept {
+  return std::max(terms.minPaymentDollars, terms.minPaymentPct * statementAbs);
 }
 
 std::optional<double> billableInterest(double rawAmount) noexcept {

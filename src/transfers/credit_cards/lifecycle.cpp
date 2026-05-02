@@ -20,8 +20,6 @@
 namespace PhantomLedger::transfers::credit_cards {
 namespace {
 
-/// Stack-buffered decimal rendering of a uint64 key for RNG seeding.
-/// Avoids heap allocation in the hot per-card loop.
 struct KeyText {
   std::array<char, 24> buf{};
   std::size_t len{};
@@ -90,12 +88,11 @@ indexPurchasesByCard(std::span<const transactions::Transaction> txns,
 // Lifecycle public API
 // =====================================================================
 
-Lifecycle::Lifecycle(const IssuerPolicy &policy,
-                     const CardholderBehavior &behavior,
+Lifecycle::Lifecycle(const LifecycleRules &rules,
                      const transactions::Factory &factory,
                      const random::RngFactory &rngFactory, LedgerView ledger)
-    : policy_(policy), behavior_(behavior), factory_(factory),
-      rngFactory_(rngFactory), ledger_(std::move(ledger)) {}
+    : rules_(rules), factory_(factory), rngFactory_(rngFactory),
+      ledger_(std::move(ledger)) {}
 
 std::vector<transactions::Transaction>
 Lifecycle::generate(const time::Window &window,
@@ -117,7 +114,8 @@ Lifecycle::generate(const time::Window &window,
   // Conservative reservation: a few lifecycle events per purchase.
   out.reserve(txns.size() / 8);
 
-  const detail::Environment env{policy_, behavior_, factory_,
+  const detail::Environment env{rules_.billing, rules_.payments,
+                                rules_.disputes, factory_,
                                 ledger_.issuerAccount};
 
   std::vector<entity::Key> activeCards;

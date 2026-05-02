@@ -19,8 +19,7 @@ struct BalanceRules;
 } // namespace PhantomLedger::clearing
 
 namespace PhantomLedger::transfers::credit_cards {
-struct IssuerPolicy;
-struct CardholderBehavior;
+struct LifecycleRules;
 } // namespace PhantomLedger::transfers::credit_cards
 
 namespace PhantomLedger::transfers::family {
@@ -56,8 +55,7 @@ struct ClearingInputs {
 };
 
 struct CreditCardInputs {
-  const ::PhantomLedger::transfers::credit_cards::IssuerPolicy *terms = nullptr;
-  const ::PhantomLedger::transfers::credit_cards::CardholderBehavior *habits =
+  const ::PhantomLedger::transfers::credit_cards::LifecycleRules *lifecycle =
       nullptr;
 };
 
@@ -86,7 +84,6 @@ struct FraudInputs {
 };
 
 struct Inputs {
-  /// Time window of the simulation.
   ::PhantomLedger::time::Window window{};
 
   std::uint64_t seed = 0;

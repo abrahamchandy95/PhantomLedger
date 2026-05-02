@@ -11,53 +11,59 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-blueprints::TransfersPayload LegitTransferBuilder::build() const {
+namespace {
+
+[[nodiscard]] const entity::account::Registry *
+accountsFrom(const LegitTransferRequest &request) noexcept {
+  return request.plan.census.accounts;
+}
+
+} // namespace
+
+TransfersPayload LegitTransferBuilder::build() const {
   if (request == nullptr) {
     throw std::invalid_argument(
         "LegitTransferBuilder.build() requires a non-null request");
   }
 
-  if (request->network.accounts == nullptr ||
-      request->network.accounts->records.empty()) {
-    return blueprints::TransfersPayload{};
+  const auto *accounts = accountsFrom(*request);
+  if (accounts == nullptr || accounts->records.empty()) {
+    return TransfersPayload{};
   }
 
-  auto plan = blueprints::buildLegitPlan(request->timeline, request->network,
-                                         request->macro, request->overrides);
+  auto plan = blueprints::buildLegitPlan(request->plan);
 
-  auto initialBook =
-      buildBalanceBook(request->timeline, request->network, request->clearing,
-                       request->creditCardState, plan);
+  auto initialBook = buildBalanceBook(request->balanceBook, plan);
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
 
-  if (request->timeline.rng == nullptr) {
+  if (request->plan.rng == nullptr) {
     throw std::invalid_argument(
-        "LegitTransferBuilder.build() requires a non-null timeline.rng");
+        "LegitTransferBuilder.build() requires a non-null rng");
   }
-  const transactions::Factory txf(*request->timeline.rng,
-                                  request->overrides.infra);
+  const transactions::Factory txf(*request->plan.rng, request->router);
 
   passes::GovernmentCounterparties govCps{};
 
-  passes::addIncome(*request, plan, txf, streams, govCps);
+  passes::addIncome(request->income, plan, txf, streams, govCps);
 
-  if (request->network.ownership != nullptr &&
-      request->network.accounts != nullptr) {
-    passes::addRoutines(*request, plan, *request->network.ownership,
-                        *request->network.accounts, txf, streams, screen);
+  if (request->plan.census.ownership != nullptr &&
+      request->plan.census.accounts != nullptr) {
+    passes::addRoutines(request->routines, plan,
+                        *request->plan.census.ownership,
+                        *request->plan.census.accounts, txf, streams, screen);
   }
 
-  if (famGraphCfg != nullptr && familyTransfers != nullptr) {
-    passes::addFamily(*request, plan, txf, streams, *famGraphCfg,
-                      *familyTransfers);
+  if (request->famGraphCfg != nullptr && request->familyTransfers != nullptr) {
+    passes::addFamily(request->family, plan, txf, streams,
+                      *request->famGraphCfg, *request->familyTransfers);
   }
 
-  passes::addCredit(*request, plan, txf, streams);
+  passes::addCredit(request->credit, plan, txf, streams);
 
-  // 6. Payload packing
-  blueprints::TransfersPayload payload;
+  // Payload packing.
+  TransfersPayload payload;
   payload.candidateTxns = streams.takeCandidates();
   payload.hubAccounts = std::move(plan.counterparties.hubAccounts);
   payload.billerAccounts = std::move(plan.counterparties.billerAccounts);
