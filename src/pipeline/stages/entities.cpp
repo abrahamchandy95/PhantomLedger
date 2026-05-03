@@ -21,7 +21,7 @@ namespace {
 
 } // namespace
 
-void validate(PopulationPlan population) {
+void validate(PopulationSizing population) {
   if (population.count < 0) {
     throw std::invalid_argument("entities: population must be >= 0");
   }
@@ -42,7 +42,7 @@ withDefaultStart(IdentitySource identity,
 }
 
 [[nodiscard]] ::PhantomLedger::entities::synth::people::Pack
-buildPeople(::PhantomLedger::random::Rng &rng, PopulationPlan population,
+buildPeople(::PhantomLedger::random::Rng &rng, PopulationSizing population,
             const ::PhantomLedger::entities::synth::people::Fraud &fraud) {
   validate(population);
 
@@ -53,7 +53,7 @@ buildPeople(::PhantomLedger::random::Rng &rng, PopulationPlan population,
 [[nodiscard]] ::PhantomLedger::entities::synth::accounts::Pack
 buildAccounts(::PhantomLedger::random::Rng &rng,
               const ::PhantomLedger::entities::synth::people::Pack &people,
-              PopulationPlan population) {
+              PopulationSizing population) {
   validate(population);
 
   return ::PhantomLedger::entities::synth::accounts::makePack(
@@ -80,7 +80,7 @@ buildPii(::PhantomLedger::random::Rng &rng,
 }
 
 [[nodiscard]] ::PhantomLedger::entities::synth::merchants::Pack buildMerchants(
-    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    ::PhantomLedger::random::Rng &rng, PopulationSizing population,
     const ::PhantomLedger::entities::synth::merchants::GenerationPlan &plan) {
   validate(population);
 
@@ -89,7 +89,7 @@ buildPii(::PhantomLedger::random::Rng &rng,
 }
 
 [[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack buildLandlords(
-    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    ::PhantomLedger::random::Rng &rng, PopulationSizing population,
     const ::PhantomLedger::entities::synth::landlords::GenerationPlan &plan) {
   validate(population);
 
@@ -99,7 +99,8 @@ buildPii(::PhantomLedger::random::Rng &rng,
 
 [[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
     const ::PhantomLedger::entities::synth::personas::Pack &personas,
-    const ::PhantomLedger::entities::synth::people::Pack &people, Seeds seeds,
+    const ::PhantomLedger::entities::synth::people::Pack &people,
+    ProductSeeds seeds,
     const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules) {
   return ::PhantomLedger::entities::synth::cards::issue(
       cardsIssuanceBase(seeds.cardIssuance), personas.table,
@@ -108,7 +109,7 @@ buildPii(::PhantomLedger::random::Rng &rng,
 
 [[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
 buildCounterparties(
-    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    ::PhantomLedger::random::Rng &rng, PopulationSizing population,
     const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
         &targets) {
   validate(population);

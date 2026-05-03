@@ -27,7 +27,7 @@
 
 namespace PhantomLedger::pipeline::stages::entities {
 
-struct PopulationPlan {
+struct PopulationSizing {
   std::int32_t count = 10'000;
   std::int32_t maxAccountsPerPerson = 3;
 };
@@ -39,28 +39,28 @@ struct IdentitySource {
       ::PhantomLedger::entities::synth::pii::LocaleMix::usBankDefault();
 };
 
-struct Seeds {
+struct ProductSeeds {
   std::uint64_t cardIssuance = 0xC0DECAFEULL;
   std::uint64_t products =
       ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
 };
 
-struct PeopleInputs {
+struct PeopleSynthesis {
   IdentitySource identity;
-  PopulationPlan population{};
+  PopulationSizing population{};
   ::PhantomLedger::entities::synth::people::Fraud fraud{};
   ::PhantomLedger::entities::synth::personas::Mix personaMix{};
 };
 
-struct CounterpartyInputs {
+struct CounterpartySynthesis {
   ::PhantomLedger::entities::synth::merchants::GenerationPlan merchants{};
   ::PhantomLedger::entities::synth::landlords::GenerationPlan landlords{};
   ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
       counterparties{};
 };
 
-struct CreditInputs {
-  Seeds seeds{};
+struct ProductSynthesis {
+  ProductSeeds seeds{};
   ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance{};
 
   ::PhantomLedger::entities::synth::products::MortgageTerms mortgage{};
@@ -70,26 +70,26 @@ struct CreditInputs {
   ::PhantomLedger::entities::synth::products::InsuranceTerms insurance{};
 };
 
-struct Inputs {
-  PeopleInputs people;
-  CounterpartyInputs counterparties{};
-  CreditInputs credit{};
+struct EntitySynthesis {
+  PeopleSynthesis people;
+  CounterpartySynthesis counterparties{};
+  ProductSynthesis products{};
 };
 
-void validate(PopulationPlan population);
+void validate(PopulationSizing population);
 
 [[nodiscard]] IdentitySource
 withDefaultStart(IdentitySource identity,
                  ::PhantomLedger::time::TimePoint fallbackStart);
 
 [[nodiscard]] ::PhantomLedger::entities::synth::people::Pack
-buildPeople(::PhantomLedger::random::Rng &rng, PopulationPlan population,
+buildPeople(::PhantomLedger::random::Rng &rng, PopulationSizing population,
             const ::PhantomLedger::entities::synth::people::Fraud &fraud = {});
 
 [[nodiscard]] ::PhantomLedger::entities::synth::accounts::Pack
 buildAccounts(::PhantomLedger::random::Rng &rng,
               const ::PhantomLedger::entities::synth::people::Pack &people,
-              PopulationPlan population);
+              PopulationSizing population);
 
 [[nodiscard]] ::PhantomLedger::entities::synth::personas::Pack
 buildPersonas(::PhantomLedger::random::Rng &rng,
@@ -102,23 +102,24 @@ buildPii(::PhantomLedger::random::Rng &rng,
          IdentitySource identity);
 
 [[nodiscard]] ::PhantomLedger::entities::synth::merchants::Pack
-buildMerchants(::PhantomLedger::random::Rng &rng, PopulationPlan population,
+buildMerchants(::PhantomLedger::random::Rng &rng, PopulationSizing population,
                const ::PhantomLedger::entities::synth::merchants::GenerationPlan
                    &plan = {});
 
 [[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack
-buildLandlords(::PhantomLedger::random::Rng &rng, PopulationPlan population,
+buildLandlords(::PhantomLedger::random::Rng &rng, PopulationSizing population,
                const ::PhantomLedger::entities::synth::landlords::GenerationPlan
                    &plan = {});
 
 [[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
     const ::PhantomLedger::entities::synth::personas::Pack &personas,
-    const ::PhantomLedger::entities::synth::people::Pack &people, Seeds seeds,
+    const ::PhantomLedger::entities::synth::people::Pack &people,
+    ProductSeeds seeds,
     const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules = {});
 
 [[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
 buildCounterparties(
-    ::PhantomLedger::random::Rng &rng, PopulationPlan population,
+    ::PhantomLedger::random::Rng &rng, PopulationSizing population,
     const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
         &targets = {});
 

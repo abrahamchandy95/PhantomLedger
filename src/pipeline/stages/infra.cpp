@@ -24,28 +24,31 @@ buildOwnerMap(const entity::account::Registry &registry) {
 
 ::PhantomLedger::pipeline::Infra
 build(::PhantomLedger::random::Rng &rng,
-      const ::PhantomLedger::pipeline::Entities &entities, const Inputs &in) {
+      const ::PhantomLedger::pipeline::Entities &entities,
+      const InfraSynthesis &infra) {
   ::PhantomLedger::pipeline::Infra out;
 
   out.ringPlans = ::PhantomLedger::infra::synth::rings::build(
-      rng, in.window, entities.people.topology.rings, entities.people.topology,
-      in.ringsCfg);
+      rng, infra.window, entities.people.topology.rings,
+      entities.people.topology, infra.ringBehavior);
 
   out.devices = ::PhantomLedger::infra::synth::devices::build(
-      rng, in.window, entities.people.roster, out.ringPlans, in.devicesCfg);
+      rng, infra.window, entities.people.roster, out.ringPlans,
+      infra.deviceBehavior);
 
   out.ips = ::PhantomLedger::infra::synth::ips::build(
-      rng, in.window, entities.people.roster, out.ringPlans, in.ipsCfg);
+      rng, infra.window, entities.people.roster, out.ringPlans,
+      infra.ipBehavior);
 
   out.router = ::PhantomLedger::infra::Router::build(
-      in.switchP, buildOwnerMap(entities.accounts.registry),
+      infra.routerSwitchP, buildOwnerMap(entities.accounts.registry),
       out.devices.byPerson, // copy — Router owns its pools
       out.ips.byPerson);
 
   out.ringInfra.ringDevice = out.devices.ringMap;
   out.ringInfra.ringIp = out.ips.ringMap;
-  out.ringInfra.useSharedDeviceP = in.useSharedDeviceP;
-  out.ringInfra.useSharedIpP = in.useSharedIpP;
+  out.ringInfra.useSharedDeviceP = infra.sharedDeviceUseP;
+  out.ringInfra.useSharedIpP = infra.sharedIpUseP;
 
   return out;
 }
