@@ -2,8 +2,8 @@
 
 namespace PhantomLedger::spending::simulator {
 
-PopulationDynamics::PopulationDynamics(dynamics::Config config)
-    : config_(config) {}
+PopulationDynamics::PopulationDynamics(dynamics::population::Drivers drivers)
+    : drivers_(drivers) {}
 
 void PopulationDynamics::resetFor(const market::Market &market) {
   const auto count = market.population().count();
@@ -29,7 +29,7 @@ std::span<const double> PopulationDynamics::dailyMultipliers() const noexcept {
 
 void PopulationDynamics::advance(random::Rng &rng,
                                  std::span<const std::uint32_t> paydayPersons) {
-  cohort_.advanceAll(rng, config_, paydayPersons, sensitivities_,
+  cohort_.advanceAll(rng, drivers_, paydayPersons, sensitivities_,
                      dailyMultBuffer_);
 }
 

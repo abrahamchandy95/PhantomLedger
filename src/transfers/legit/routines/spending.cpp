@@ -255,8 +255,8 @@ SpendingRoutine::run(const SpendingRunRequest &run,
 
   plSimulator::DayDriver dayDriver{
       plSimulator::DaySource{day_.variation, day_.seasonal},
-      plSimulator::CommerceEvolver{dynamics_.value.evolution},
-      plSimulator::PopulationDynamics{dynamics_.value},
+      plSimulator::CommerceEvolver{dynamics_.commerce},
+      plSimulator::PopulationDynamics{dynamics_.population},
       plSimulator::SpenderEmissionDriver{plSimulator::EmissionBehavior{
           .baseExploreP = emission_.baseExploreP,
           .burst = habits_.burst,

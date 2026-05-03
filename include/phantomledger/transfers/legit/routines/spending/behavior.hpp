@@ -1,11 +1,12 @@
 #pragma once
 
+#include "phantomledger/math/evolution.hpp"
 #include "phantomledger/math/seasonal.hpp"
 #include "phantomledger/spending/config/burst.hpp"
 #include "phantomledger/spending/config/exploration.hpp"
 #include "phantomledger/spending/config/liquidity.hpp"
 #include "phantomledger/spending/config/picking.hpp"
-#include "phantomledger/spending/dynamics/config.hpp"
+#include "phantomledger/spending/dynamics/population/advance.hpp"
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
@@ -53,8 +54,8 @@ struct EmissionProfile {
 inline constexpr EmissionProfile kDefaultEmissionProfile{};
 
 struct DynamicsProfile {
-  ::PhantomLedger::spending::dynamics::Config value =
-      ::PhantomLedger::spending::dynamics::kDefaultConfig;
+  ::PhantomLedger::spending::dynamics::population::Drivers population{};
+  ::PhantomLedger::math::evolution::Config commerce{};
 };
 
 inline constexpr DynamicsProfile kDefaultDynamicsProfile{};

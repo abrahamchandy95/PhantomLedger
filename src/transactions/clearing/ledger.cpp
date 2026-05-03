@@ -1,6 +1,5 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
-#include "phantomledger/transactions/clearing/overdraft_fee_policy.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -14,6 +13,36 @@ namespace {
 
 [[nodiscard]] constexpr bool isExternalAccount(const entity::Key &id) noexcept {
   return id.bank == entity::Bank::external;
+}
+
+struct OverdraftFeeAssessment {
+  bool fires = false;
+  double amount = 0.0;
+
+  [[nodiscard]] constexpr explicit operator bool() const noexcept {
+    return fires;
+  }
+};
+
+[[nodiscard]] constexpr OverdraftFeeAssessment
+assessOverdraftFee(ProtectionType protection, channels::Tag channel,
+                   double cashBefore, double cashAfter,
+                   double feeAmount) noexcept {
+  if (protection != ProtectionType::courtesy &&
+      protection != ProtectionType::linked) {
+    return {};
+  }
+
+  if (channels::isLiquidity(channel) || feeAmount <= 0.0) {
+    return {};
+  }
+
+  const bool crossed = cashBefore >= 0.0 && cashAfter < 0.0;
+  if (!crossed) {
+    return {};
+  }
+
+  return OverdraftFeeAssessment{.fires = true, .amount = feeAmount};
 }
 
 } // namespace
