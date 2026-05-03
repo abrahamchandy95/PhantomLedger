@@ -13,7 +13,7 @@ namespace PhantomLedger::spending::simulator {
 
 class Simulator {
 public:
-  Simulator(market::Market &market, Engine &engine,
+  Simulator(market::Market &market, RunResources &resources,
             const obligations::Snapshot &obligations, RunPlanner planner = {},
             DayDriver dayDriver = DayDriver{});
 
@@ -26,7 +26,7 @@ public:
 
 private:
   market::Market &market_;
-  Engine &engine_;
+  RunResources &resources_;
   const obligations::Snapshot &obligations_;
 
   RunPlanner planner_{};

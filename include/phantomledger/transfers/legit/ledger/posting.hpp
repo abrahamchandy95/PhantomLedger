@@ -16,31 +16,6 @@
 namespace PhantomLedger::transfers::legit::ledger {
 
 // ---------------------------------------------------------------------------
-// Policy
-// ---------------------------------------------------------------------------
-
-struct ReplayPolicy {
-  // Cure-window lookahead.
-  std::int32_t sameDayCureHours = 10;
-  std::int32_t delayedCureHours = 36;
-
-  // Retry-padding after a cure.
-  std::int32_t cardRetryPaddingMinutes = 5;
-  std::int32_t achRetryPaddingMinutes = 30;
-
-  std::int32_t blindRetryDelayHours = 18;
-  std::int32_t blindRetrySecondDelayHours = 72;
-  double blindRetryProbability = 0.55;
-
-  std::int32_t overdraftFeeDailyCap = 3;
-
-  [[nodiscard]] std::int32_t
-  maxRetriesFor(channels::Tag channel) const noexcept;
-};
-
-inline constexpr ReplayPolicy kDefaultReplayPolicy{};
-
-// ---------------------------------------------------------------------------
 // System counterparties for liquidity-event Transactions
 // ---------------------------------------------------------------------------
 [[nodiscard]] entity::Key bankFeeCollectionKey() noexcept;
@@ -70,8 +45,36 @@ inline constexpr std::string_view kUnbooked = "unbooked";
 
 class ChronoReplayAccumulator {
 public:
+  struct CureWindows {
+    std::int32_t sameDayHours = 10;
+    std::int32_t delayedHours = 36;
+  };
+
+  struct RetrySchedule {
+    std::int32_t cardPaddingMinutes = 5;
+    std::int32_t achPaddingMinutes = 30;
+    std::int32_t firstBlindDelayHours = 18;
+    std::int32_t secondBlindDelayHours = 72;
+    double blindProbability = 0.55;
+
+    [[nodiscard]] std::int32_t
+    maxAttemptsFor(channels::Tag channel) const noexcept;
+  };
+
+  struct OverdraftFeeLimits {
+    std::int32_t dailyCap = 3;
+  };
+
+  struct Rules {
+    CureWindows cure{};
+    RetrySchedule retry{};
+    OverdraftFeeLimits overdraftFees{};
+  };
+
+  [[nodiscard]] static constexpr Rules defaults() noexcept { return {}; }
+
   ChronoReplayAccumulator(clearing::Ledger *book, random::Rng *rng,
-                          ReplayPolicy policy = kDefaultReplayPolicy,
+                          Rules rules = defaults(),
                           bool emitLiquidityEvents = true);
 
   bool append(const transactions::Transaction &txn);
@@ -160,7 +163,7 @@ private:
   // ---- State ----
   clearing::Ledger *book_;
   random::Rng *rng_;
-  ReplayPolicy policy_;
+  Rules rules_;
   bool emitLiquidityEvents_;
 
   std::vector<transactions::Transaction> txns_;

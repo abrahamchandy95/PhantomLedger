@@ -30,10 +30,10 @@ public:
   SpenderEmissionDriver(SpenderEmissionDriver &&) noexcept = default;
   SpenderEmissionDriver &operator=(SpenderEmissionDriver &&) noexcept = default;
 
-  void prepare(const market::Market &market, const Engine &engine,
+  void prepare(const market::Market &market, const RunResources &resources,
                const TransactionLoad &load);
 
-  void emitDay(const market::Market &market, const Engine &engine,
+  void emitDay(const market::Market &market, const RunResources &resources,
                const RunPlan &plan, RunState &state,
                const actors::DayFrame &frame,
                std::span<const double> dailyMultipliers);
@@ -41,9 +41,10 @@ public:
   void finish(RunState &state);
 
 private:
-  void prepareThreadStates(const market::Market &market, const Engine &engine,
+  void prepareThreadStates(const market::Market &market,
+                           const RunResources &resources,
                            const TransactionLoad &load);
-  void prepareLockArray(const Engine &engine);
+  void prepareLockArray(const RunResources &resources);
   void mergeThreadTxns(RunState &state);
 
   EmissionBehavior behavior_{};

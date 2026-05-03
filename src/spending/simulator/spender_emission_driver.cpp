@@ -31,55 +31,53 @@ SpenderEmissionDriver::SpenderEmissionDriver(EmissionBehavior behavior)
     : behavior_(behavior) {}
 
 void SpenderEmissionDriver::prepare(const market::Market &market,
-                                    const Engine &engine,
+                                    const RunResources &resources,
                                     const TransactionLoad &load) {
-  prepareThreadStates(market, engine, load);
-  prepareLockArray(engine);
+  prepareThreadStates(market, resources, load);
+  prepareLockArray(resources);
 }
 
 void SpenderEmissionDriver::prepareThreadStates(const market::Market &market,
-                                                const Engine &engine,
+                                                const RunResources &resources,
                                                 const TransactionLoad &load) {
   threadStates_.clear();
-  if (engine.threadCount <= 1) {
+
+  const auto &threads = resources.threads();
+  if (!threads.parallel()) {
     return;
   }
 
-  if (engine.rngFactory == nullptr) {
+  if (threads.rngFactory == nullptr) {
     throw std::runtime_error(
-        "spending::SpenderEmissionDriver: threadCount > 1 requires "
-        "engine.rngFactory");
-  }
-  if (engine.factory == nullptr) {
-    throw std::runtime_error(
-        "spending::SpenderEmissionDriver: threadCount > 1 requires "
-        "engine.factory (per-thread Factory is built via factory->rebound)");
+        "spending::SpenderEmissionDriver: parallel emission requires "
+        "resources.threads().rngFactory");
   }
 
-  threadStates_.reserve(engine.threadCount);
+  threadStates_.reserve(threads.count);
 
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market.bounds().days) *
        (static_cast<double>(market.population().count()) / 30.0) *
        load.txnsPerMonth * kTxnReserveSlack) /
-      static_cast<double>(engine.threadCount));
+      static_cast<double>(threads.count));
 
   std::array<char, 16> idBuf{};
-  for (std::uint32_t t = 0; t < engine.threadCount; ++t) {
+  for (std::uint32_t t = 0; t < threads.count; ++t) {
     const auto idStr = renderUInt(idBuf, t);
-    auto threadRng = engine.rngFactory->rng({"spending_thread", idStr});
+    auto threadRng = threads.rngFactory->rng({"spending_thread", idStr});
     threadStates_.emplace_back(std::move(threadRng));
     threadStates_.back().txns.reserve(perThreadReserve);
   }
 }
 
-void SpenderEmissionDriver::prepareLockArray(const Engine &engine) {
-  if (engine.threadCount <= 1 || engine.ledger == nullptr) {
+void SpenderEmissionDriver::prepareLockArray(const RunResources &resources) {
+  const auto &threads = resources.threads();
+  if (!threads.parallel() || resources.ledger() == nullptr) {
     lockArray_.resize(0);
     return;
   }
 
-  lockArray_.resize(static_cast<std::size_t>(engine.ledger->size()));
+  lockArray_.resize(static_cast<std::size_t>(resources.ledger()->size()));
 }
 
 void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
@@ -102,12 +100,13 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
 }
 
 void SpenderEmissionDriver::emitDay(const market::Market &market,
-                                    const Engine &engine, const RunPlan &plan,
-                                    RunState &state,
+                                    const RunResources &resources,
+                                    const RunPlan &plan, RunState &state,
                                     const actors::DayFrame &frame,
                                     std::span<const double> dailyMultipliers) {
   const routing::ResolvedAccounts resolved = plan.routing.resolvedAccounts();
-  auto *lockArray = engine.threadCount > 1 ? &lockArray_ : nullptr;
+  const auto &threads = resources.threads();
+  auto *lockArray = threads.parallel() ? &lockArray_ : nullptr;
 
   const SpenderEmissionPolicy emissionPolicy{
       .baseExploreP = behavior_.baseExploreP,
@@ -117,7 +116,7 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
 
   const std::size_t spenderCount = plan.population.spenders.size();
 
-  if (engine.threadCount <= 1) {
+  if (!threads.parallel()) {
     SpenderEmissionLoop loop{market,
                              plan,
                              state,
@@ -125,22 +124,22 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
                              dailyMultipliers,
                              emissionPolicy,
                              resolved,
-                             ParallelLedgerView{engine.ledger, lockArray}};
+                             ParallelLedgerView{resources.ledger(), lockArray}};
 
-    loop.run(0, spenderCount, *engine.rng, *engine.factory, state.txns());
+    loop.run(0, spenderCount, resources.rng(), resources.factory(),
+             state.txns());
     return;
   }
 
-  runParallel(engine.threadCount, [&](std::uint32_t threadIdx) {
-    const auto range =
-        partitionRange(spenderCount, engine.threadCount, threadIdx);
+  runParallel(threads.count, [&](std::uint32_t threadIdx) {
+    const auto range = partitionRange(spenderCount, threads.count, threadIdx);
 
     if (range.size() == 0) {
       return;
     }
 
     auto &threadState = threadStates_[threadIdx];
-    const auto threadFactory = engine.factory->rebound(threadState.rng);
+    const auto threadFactory = resources.factory().rebound(threadState.rng);
 
     SpenderEmissionLoop loop{market,
                              plan,
@@ -149,7 +148,7 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
                              dailyMultipliers,
                              emissionPolicy,
                              resolved,
-                             ParallelLedgerView{engine.ledger, lockArray}};
+                             ParallelLedgerView{resources.ledger(), lockArray}};
 
     loop.run(range.begin, range.end, threadState.rng, threadFactory,
              threadState.txns);

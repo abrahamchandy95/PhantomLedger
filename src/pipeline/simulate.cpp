@@ -5,6 +5,7 @@ namespace PhantomLedger::pipeline {
 namespace {
 
 namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
+namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
 namespace productSynth = ::PhantomLedger::entities::synth::products;
 
 void synthesizeProducts(SimulationResult &out,
@@ -96,17 +97,19 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
   out.infra = ::PhantomLedger::pipeline::stages::infra::build(rng, out.entities,
                                                               infraIn);
 
-  auto transfersIn = in.transfersIn;
-  if (transfersIn.window.days == 0) {
-    transfersIn.window = in.window;
+  auto transferRun = in.transferRun;
+  if (transferRun.window.days == 0) {
+    transferRun.window = in.window;
   }
 
-  if (transfersIn.seed == 0) {
-    transfersIn.seed = in.seed;
+  if (transferRun.seed == 0) {
+    transferRun.seed = in.seed;
   }
 
-  out.transfers = ::PhantomLedger::pipeline::stages::transfers::build(
-      rng, out.entities, out.infra, transfersIn);
+  out.transfers = transferStage::build(
+      rng, out.entities, out.infra, transferRun, in.recurringIncome,
+      in.balanceBook, in.creditCards, in.family, in.government, in.insurance,
+      in.replay, in.fraud, in.transferPopulation);
 
   return out;
 }

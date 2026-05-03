@@ -64,27 +64,27 @@ buildPrimaryAccountsMap(
 }
 
 [[nodiscard]] ::PhantomLedger::inflows::RecurringIncomeRules
-makeRecurringIncomeRules(const Inputs &in) {
+makeRecurringIncomeRules(const RecurringIncome &income) {
   return ::PhantomLedger::inflows::RecurringIncomeRules{
-      .employment = in.income.employment,
-      .lease = in.income.lease,
-      .salaryPaidFraction = in.income.salaryPaidFraction,
-      .rentPaidFraction = in.income.rentPaidFraction,
+      .employment = income.employment,
+      .lease = income.lease,
+      .salaryPaidFraction = income.salaryPaidFraction,
+      .rentPaidFraction = income.rentPaidFraction,
   };
 }
 
 [[nodiscard]] blueprints::PlanRequest
 makePlanRequest(::PhantomLedger::random::Rng &rng,
                 const ::PhantomLedger::pipeline::Entities &entities,
-                const Inputs &in) {
+                RunScope run, PopulationShape population) {
   return blueprints::PlanRequest{
-      .window = in.window,
+      .window = run.window,
       .rng = &rng,
       .population =
           blueprints::PopulationTuning{
               .count = entities.people.roster.count,
-              .seed = in.seed,
-              .hubFraction = in.hubFraction,
+              .seed = run.seed,
+              .hubFraction = population.hubFraction,
           },
       .census =
           blueprints::CensusSource{
@@ -106,14 +106,14 @@ makePlanRequest(::PhantomLedger::random::Rng &rng,
 [[nodiscard]] legit_ledger::BalanceBookRequest
 makeBalanceBookRequest(::PhantomLedger::random::Rng &rng,
                        const ::PhantomLedger::pipeline::Entities &entities,
-                       const Inputs &in) {
+                       RunScope run, const BalanceBookRules &balanceBook) {
   return legit_ledger::BalanceBookRequest{
-      .window = in.window,
+      .window = run.window,
       .rng = &rng,
       .accounts = &entities.accounts.registry,
       .accountsLookup = &entities.accounts.lookup,
       .ownership = &entities.accounts.ownership,
-      .rules = in.clearing.balanceRules,
+      .rules = balanceBook.balanceRules,
       .portfolios = &entities.portfolios,
       .creditCards = &entities.creditCards,
   };
@@ -122,29 +122,30 @@ makeBalanceBookRequest(::PhantomLedger::random::Rng &rng,
 [[nodiscard]] legit_ledger::passes::IncomePassRequest
 makeIncomePassRequest(::PhantomLedger::random::Rng &rng,
                       const ::PhantomLedger::pipeline::Entities &entities,
-                      const Inputs &in) {
+                      const RecurringIncome &income,
+                      const GovernmentPrograms &government) {
   return legit_ledger::passes::IncomePassRequest{
       .rng = &rng,
       .accounts = &entities.accounts.registry,
       .ownership = &entities.accounts.ownership,
       .revenueCounterparties = &entities.counterparties,
-      .recurring = makeRecurringIncomeRules(in),
-      .retirement = &in.government.retirement,
-      .disability = &in.government.disability,
+      .recurring = makeRecurringIncomeRules(income),
+      .retirement = &government.retirement,
+      .disability = &government.disability,
   };
 }
 
 [[nodiscard]] legit_ledger::passes::RoutinePassRequest
 makeRoutinePassRequest(::PhantomLedger::random::Rng &rng,
                        const ::PhantomLedger::pipeline::Entities &entities,
-                       const Inputs &in) {
+                       const RecurringIncome &income) {
   return legit_ledger::passes::RoutinePassRequest{
       .rng = &rng,
       .accountsLookup = &entities.accounts.lookup,
       .merchants = &entities.merchants.catalog,
       .portfolios = &entities.portfolios,
       .creditCards = &entities.creditCards,
-      .recurring = makeRecurringIncomeRules(in),
+      .recurring = makeRecurringIncomeRules(income),
   };
 }
 
@@ -160,30 +161,32 @@ makeFamilyPassRequest(const ::PhantomLedger::pipeline::Entities &entities) {
 [[nodiscard]] legit_ledger::passes::CreditPassRequest
 makeCreditPassRequest(::PhantomLedger::random::Rng &rng,
                       const ::PhantomLedger::pipeline::Entities &entities,
-                      const Inputs &in) {
+                      const CreditCardLifecycle &creditCards) {
   return legit_ledger::passes::CreditPassRequest{
       .rng = &rng,
       .cards = &entities.creditCards,
-      .lifecycle = in.creditCards.lifecycle,
+      .lifecycle = creditCards.lifecycle,
   };
 }
 
-[[nodiscard]] legit_ledger::LegitTransferRequest
-makeLegitTransferRequest(::PhantomLedger::random::Rng &rng,
-                         const ::PhantomLedger::pipeline::Entities &entities,
-                         const ::PhantomLedger::pipeline::Infra &infra,
-                         const Inputs &in) {
+[[nodiscard]] legit_ledger::LegitTransferRequest makeLegitTransferRequest(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
+    const RecurringIncome &income, const BalanceBookRules &balanceBook,
+    const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
+    const GovernmentPrograms &government, PopulationShape population) {
   return legit_ledger::LegitTransferRequest{
-      .plan = makePlanRequest(rng, entities, in),
-      .balanceBook = makeBalanceBookRequest(rng, entities, in),
-      .income = makeIncomePassRequest(rng, entities, in),
-      .routines = makeRoutinePassRequest(rng, entities, in),
+      .plan = makePlanRequest(rng, entities, run, population),
+      .balanceBook = makeBalanceBookRequest(rng, entities, run, balanceBook),
+      .income = makeIncomePassRequest(rng, entities, income, government),
+      .routines = makeRoutinePassRequest(rng, entities, income),
       .family = makeFamilyPassRequest(entities),
-      .credit = makeCreditPassRequest(rng, entities, in),
-      .familyHouseholds = in.family.households,
-      .familyDependents = in.family.dependents,
-      .retireeSupport = in.family.retireeSupport,
-      .familyTransfers = in.family.transfers,
+      .credit = makeCreditPassRequest(rng, entities, creditCards),
+      .familyHouseholds = family.households,
+      .familyDependents = family.dependents,
+      .retireeSupport = family.retireeSupport,
+      .familyTransfers = family.transfers,
       .router = &infra.router,
   };
 }
@@ -191,7 +194,8 @@ makeLegitTransferRequest(::PhantomLedger::random::Rng &rng,
 [[nodiscard]] std::vector<Transaction> assembleReplayStream(
     ::PhantomLedger::random::Rng &rng,
     const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in,
+    const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
+    const InsuranceClaims &insuranceClaims,
     const std::unordered_map<::PhantomLedger::entity::PersonId,
                              ::PhantomLedger::entity::Key> &primaryAccounts,
     legit_ledger::TransfersPayload &legitPayload) {
@@ -203,19 +207,19 @@ makeLegitTransferRequest(::PhantomLedger::random::Rng &rng,
   insurance::Population insPop{.primaryAccounts = &primaryAccounts};
 
   auto premiumTxns =
-      insurance::premiums(in.window, rng, txf, entities.portfolios, insPop);
+      insurance::premiums(run.window, rng, txf, entities.portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
 
-  ::PhantomLedger::random::RngFactory claimsFactory{in.seed};
+  ::PhantomLedger::random::RngFactory claimsFactory{run.seed};
   auto claimTxns =
-      insurance::claims(in.insurance.claimRates, in.window, rng, txf,
+      insurance::claims(insuranceClaims.claimRates, run.window, rng, txf,
                         claimsFactory, entities.portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
 
   obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
   auto obligationTxns =
-      obligations::scheduledPayments(entities.portfolios, in.window.start,
-                                     in.window.endExcl(), oblPop, rng, txf);
+      obligations::scheduledPayments(entities.portfolios, run.window.start,
+                                     run.window.endExcl(), oblPop, rng, txf);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
 
   return stream;
@@ -231,13 +235,13 @@ struct PreReplayResult {
 [[nodiscard]] PreReplayResult
 runPreFraudReplay(const ::PhantomLedger::clearing::Ledger &initialBook,
                   ::PhantomLedger::random::Rng &rng,
-                  legit_ledger::ReplayPolicy policy,
+                  legit_ledger::ChronoReplayAccumulator::Rules rules,
                   std::vector<Transaction> sorted) {
   auto bookCopy =
       std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
 
   legit_ledger::ChronoReplayAccumulator accumulator(
-      bookCopy.get(), &rng, policy, /*emitLiquidityEvents=*/true);
+      bookCopy.get(), &rng, rules, /*emitLiquidityEvents=*/true);
 
   accumulator.extend(std::move(sorted), /*presorted=*/true);
 
@@ -252,13 +256,14 @@ runPreFraudReplay(const ::PhantomLedger::clearing::Ledger &initialBook,
 [[nodiscard]] fraud::InjectionOutput
 runFraudInjection(::PhantomLedger::random::Rng &rng,
                   const ::PhantomLedger::pipeline::Entities &entities,
-                  const ::PhantomLedger::pipeline::Infra &infra,
-                  const Inputs &in, std::span<const Transaction> draftTxns,
+                  const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
+                  const FraudInjection &fraudInjection,
+                  std::span<const Transaction> draftTxns,
                   const legit_ledger::TransfersPayload &legitPayload) {
   fraud::InjectionInput req{};
 
   req.scenario.fraudCfg = nullptr;
-  req.scenario.window = in.window;
+  req.scenario.window = run.window;
   req.scenario.people = &entities.people.roster;
   req.scenario.topology = &entities.people.topology;
   req.scenario.accounts = &entities.accounts.registry;
@@ -273,7 +278,7 @@ runFraudInjection(::PhantomLedger::random::Rng &rng,
   req.counterparties.billerAccounts = legitPayload.billerAccounts;
   req.counterparties.employers = legitPayload.employers;
 
-  req.params = in.fraud.params;
+  req.params = fraudInjection.params;
 
   return fraud::inject(req);
 }
@@ -286,13 +291,13 @@ struct PostReplayResult {
 [[nodiscard]] PostReplayResult
 runPostFraudReplay(::PhantomLedger::random::Rng &rng,
                    const ::PhantomLedger::clearing::Ledger &initialBook,
-                   legit_ledger::ReplayPolicy policy,
+                   legit_ledger::ChronoReplayAccumulator::Rules rules,
                    std::vector<Transaction> merged) {
   auto bookCopy =
       std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
 
   legit_ledger::ChronoReplayAccumulator accumulator(
-      bookCopy.get(), &rng, policy, /*emitLiquidityEvents=*/false);
+      bookCopy.get(), &rng, rules, /*emitLiquidityEvents=*/false);
 
   auto sorted = legit_ledger::sortForReplay(
       std::span<const Transaction>{merged.data(), merged.size()});
@@ -310,10 +315,18 @@ runPostFraudReplay(::PhantomLedger::random::Rng &rng,
 ::PhantomLedger::pipeline::Transfers
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
-      const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in) {
-  primitives::validate::require(in);
+      const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
+      const RecurringIncome &income, const BalanceBookRules &balanceBook,
+      const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
+      const GovernmentPrograms &government,
+      const InsuranceClaims &insuranceClaims, const LedgerReplay &replay,
+      const FraudInjection &fraudInjection, PopulationShape population) {
+  primitives::validate::require(income);
+  primitives::validate::require(population);
 
-  auto legitRequest = makeLegitTransferRequest(rng, entities, infra, in);
+  auto legitRequest =
+      makeLegitTransferRequest(rng, entities, infra, run, income, balanceBook,
+                               creditCards, family, government, population);
 
   legit_ledger::LegitTransferBuilder builder{
       .request = &legitRequest,
@@ -332,29 +345,29 @@ build(::PhantomLedger::random::Rng &rng,
   const auto primaryAccounts =
       buildPrimaryAccountsMap(entities.accounts.registry);
 
-  auto replaySortedStream = assembleReplayStream(rng, entities, infra, in,
-                                                 primaryAccounts, legitPayload);
+  auto replaySortedStream =
+      assembleReplayStream(rng, entities, infra, run, insuranceClaims,
+                           primaryAccounts, legitPayload);
 
   auto preReplay =
-      runPreFraudReplay(*legitPayload.initialBook, rng, in.replay.preFraud,
+      runPreFraudReplay(*legitPayload.initialBook, rng, replay.preFraud,
                         std::move(replaySortedStream));
 
-  auto injection = runFraudInjection(rng, entities, infra, in,
-                                     preReplay.draftTxns, legitPayload);
+  auto fraudOut = runFraudInjection(rng, entities, infra, run, fraudInjection,
+                                    preReplay.draftTxns, legitPayload);
 
-  auto mergedTxns = std::move(injection.txns);
+  auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
-  auto postReplay =
-      runPostFraudReplay(rng, *legitPayload.initialBook, in.replay.preFraud,
-                         std::move(mergedTxns));
+  auto postReplay = runPostFraudReplay(rng, *legitPayload.initialBook,
+                                       replay.preFraud, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
       entities.accounts.lookup, postReplay.finalTxns);
 
   ::PhantomLedger::pipeline::Transfers out{};
   out.legit = std::move(legitPayload);
-  out.fraud.injectedCount = injection.injectedCount;
+  out.fraud.injectedCount = fraudOut.injectedCount;
   out.draftTxns = std::move(preReplay.draftTxns);
   out.finalTxns = std::move(postReplay.finalTxns);
   out.finalBook = std::move(postReplay.finalBook);

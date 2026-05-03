@@ -14,38 +14,38 @@ DayDriver::DayDriver(DaySource days, CommerceEvolver commerce,
     : days_(std::move(days)), commerce_(std::move(commerce)),
       dynamics_(std::move(dynamics)), emission_(std::move(emission)) {}
 
-void DayDriver::prepare(market::Market &market, const Engine &engine,
+void DayDriver::prepare(market::Market &market, const RunResources &resources,
                         const TransactionLoad &load) {
   dynamics_.resetFor(market);
-  emission_.prepare(market, engine, load);
+  emission_.prepare(market, resources, load);
 }
 
 std::span<const double> DayDriver::sensitivities() const noexcept {
   return dynamics_.sensitivities();
 }
 
-void DayDriver::runDay(market::Market &market, const Engine &engine,
+void DayDriver::runDay(market::Market &market, const RunResources &resources,
                        const RunPlan &plan, RunState &state,
                        std::uint32_t dayIndex) {
-  commerce_.evolveIfNeeded(market, *engine.rng, dayIndex);
+  commerce_.evolveIfNeeded(market, resources.rng(), dayIndex);
 
-  const auto frame = days_.build(market.bounds(), *engine.rng, dayIndex);
+  const auto frame = days_.build(market.bounds(), resources.rng(), dayIndex);
 
-  advanceLedgerToDay(engine, plan, state, frame);
+  advanceLedgerToDay(resources, plan, state, frame);
 
   const auto paydayPersons = updatePaydayState(plan, state, dayIndex);
 
-  dynamics_.advance(*engine.rng, paydayPersons);
+  dynamics_.advance(resources.rng(), paydayPersons);
 
-  emission_.emitDay(market, engine, plan, state, frame,
+  emission_.emitDay(market, resources, plan, state, frame,
                     dynamics_.dailyMultipliers());
 }
 
-void DayDriver::advanceLedgerToDay(const Engine &engine, const RunPlan &plan,
-                                   RunState &state,
+void DayDriver::advanceLedgerToDay(const RunResources &resources,
+                                   const RunPlan &plan, RunState &state,
                                    const actors::DayFrame &frame) const {
   const auto newBaseIdx = clearing::advanceBookThrough(
-      engine.ledger, plan.baseLedger.txns, state.baseIdx(),
+      resources.ledger(), plan.baseLedger.txns, state.baseIdx(),
       time::toEpochSeconds(frame.day.start),
       /*inclusive=*/false);
 

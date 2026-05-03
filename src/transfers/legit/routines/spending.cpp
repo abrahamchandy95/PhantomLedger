@@ -145,12 +145,13 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 }
 
 // ---------------------------------------------------------------------------
-// Bootstrap inputs assembly
+// Market bootstrap assembly
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] plMarket::BootstrapInputs assembleBootstrapInputs(
-    const SpendingRunRequest &request, const blueprints::LegitBuildPlan &plan,
-    const CensusScratch &scratch, const SpendingHabits &habits) {
+[[nodiscard]] plMarket::MarketSources
+assembleMarketSources(const SpendingRunRequest &request,
+                      const blueprints::LegitBuildPlan &plan,
+                      const CensusScratch &scratch) {
   if (plan.personas.pack == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a populated PersonaPlan.pack");
@@ -160,38 +161,49 @@ buildSpendingCards(const entity::card::Registry *creditCards,
     throw std::invalid_argument("spending routine requires non-negative days");
   }
 
-  plMarket::BootstrapInputs inputs;
+  plMarket::MarketSources sources;
 
-  inputs.bounds.startDate = plan.startDate;
-  inputs.bounds.days = static_cast<std::uint32_t>(plan.days);
-  inputs.baseSeed = plan.seed;
+  sources.bounds.startDate = plan.startDate;
+  sources.bounds.days = static_cast<std::uint32_t>(plan.days);
+  sources.baseSeed = plan.seed;
 
-  inputs.census.count = scratch.personCount;
+  sources.census.count = scratch.personCount;
 
-  inputs.census.primaryAccounts = std::span<const entity::Key>(
+  sources.census.primaryAccounts = std::span<const entity::Key>(
       scratch.primaryAccounts.data(), scratch.primaryAccounts.size());
 
-  inputs.census.personaTypes = std::span<const personas::Type>(
+  sources.census.personaTypes = std::span<const personas::Type>(
       plan.personas.pack->assignment.byPerson.data(),
       plan.personas.pack->assignment.byPerson.size());
 
-  inputs.census.personaObjects = std::span<const entity::behavior::Persona>(
+  sources.census.personaObjects = std::span<const entity::behavior::Persona>(
       plan.personas.pack->table.byPerson.data(),
       plan.personas.pack->table.byPerson.size());
 
-  inputs.census.paydays = std::span<const plPop::PaydaySet>(
+  sources.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
 
-  inputs.network.catalog = request.merchants;
-  inputs.network.social = nullptr;
+  sources.network.catalog = request.merchants;
+  sources.network.social = nullptr;
 
-  inputs.cards = buildSpendingCards(request.creditCards, scratch.personCount);
+  sources.cards = buildSpendingCards(request.creditCards, scratch.personCount);
 
-  inputs.picking = habits.picking;
-  inputs.exploration = habits.exploration;
-  inputs.burst = habits.burst;
+  return sources;
+}
 
-  return inputs;
+[[nodiscard]] plMarket::PayeeSelectionRules
+marketPayeesFrom(const SpendingHabits &habits) {
+  plMarket::PayeeSelectionRules payees;
+  payees.picking = habits.picking;
+  return payees;
+}
+
+[[nodiscard]] plMarket::ShopperBehaviorRules
+marketBehaviorFrom(const SpendingHabits &habits) {
+  return plMarket::ShopperBehaviorRules{
+      .burst = habits.burst,
+      .exploration = habits.exploration,
+  };
 }
 
 } // namespace
@@ -220,18 +232,22 @@ SpendingRoutine::run(const SpendingRunRequest &run,
   const auto scratch = buildCensusScratch(plan, *request.accountsLookup,
                                           registry, seed.baseTxns);
 
-  auto inputs = assembleBootstrapInputs(request, plan, scratch, habits_);
+  auto sources = assembleMarketSources(request, plan, scratch);
+  const auto payees = marketPayeesFrom(habits_);
+  const auto behavior = marketBehaviorFrom(habits_);
 
-  auto market = plMarket::buildMarket(std::move(inputs));
+  auto market = plMarket::buildMarket(std::move(sources), payees, behavior);
 
   random::RngFactory rngFactory{plan.seed};
 
-  plSimulator::Engine engine{
-      .rng = request.rng,
-      .factory = request.txf,
-      .ledger = seed.screenBook,
-      .rngFactory = &rngFactory,
-      .threadCount = 1,
+  plSimulator::RunResources resources{
+      *request.rng,
+      *request.txf,
+      seed.screenBook,
+      plSimulator::EmissionThreads{
+          .rngFactory = &rngFactory,
+          .count = 1,
+      },
   };
 
   std::vector<double> monthlyBurdens;
@@ -264,7 +280,7 @@ SpendingRoutine::run(const SpendingRunRequest &run,
       }},
   };
 
-  plSimulator::Simulator simulator(market, engine, obligations,
+  plSimulator::Simulator simulator(market, resources, obligations,
                                    std::move(planner), std::move(dayDriver));
 
   return simulator.run();

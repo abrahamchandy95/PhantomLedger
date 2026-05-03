@@ -27,18 +27,18 @@ public:
   DayDriver(DayDriver &&) noexcept = default;
   DayDriver &operator=(DayDriver &&) noexcept = default;
 
-  void prepare(market::Market &market, const Engine &engine,
+  void prepare(market::Market &market, const RunResources &resources,
                const TransactionLoad &load);
 
-  void runDay(market::Market &market, const Engine &engine, const RunPlan &plan,
-              RunState &state, std::uint32_t dayIndex);
+  void runDay(market::Market &market, const RunResources &resources,
+              const RunPlan &plan, RunState &state, std::uint32_t dayIndex);
 
   void finish(RunState &state);
 
   [[nodiscard]] std::span<const double> sensitivities() const noexcept;
 
 private:
-  void advanceLedgerToDay(const Engine &engine, const RunPlan &plan,
+  void advanceLedgerToDay(const RunResources &resources, const RunPlan &plan,
                           RunState &state, const actors::DayFrame &frame) const;
 
   [[nodiscard]] std::span<const std::uint32_t>

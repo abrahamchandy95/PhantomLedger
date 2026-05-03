@@ -82,10 +82,11 @@ bool isCureInbound(const transactions::Transaction &txn) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// ReplayPolicy
+// ChronoReplayAccumulator::RetrySchedule
 // ---------------------------------------------------------------------------
 
-std::int32_t ReplayPolicy::maxRetriesFor(channels::Tag channel) const noexcept {
+std::int32_t ChronoReplayAccumulator::RetrySchedule::maxAttemptsFor(
+    channels::Tag channel) const noexcept {
   if (isCardLike(channel)) {
     return 1;
   }
@@ -132,10 +133,9 @@ std::size_t ChronoReplayAccumulator::FeeKeyHash::operator()(
 // ---------------------------------------------------------------------------
 
 ChronoReplayAccumulator::ChronoReplayAccumulator(clearing::Ledger *book,
-                                                 random::Rng *rng,
-                                                 ReplayPolicy policy,
+                                                 random::Rng *rng, Rules rules,
                                                  bool emitLiquidityEvents)
-    : book_(book), rng_(rng), policy_(policy),
+    : book_(book), rng_(rng), rules_(rules),
       emitLiquidityEvents_(emitLiquidityEvents) {}
 
 bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
@@ -254,7 +254,8 @@ void ChronoReplayAccumulator::extend(
       continue;
     }
 
-    if (item.retryCount + 1 > policy_.maxRetriesFor(item.txn.session.channel)) {
+    if (item.retryCount + 1 >
+        rules_.retry.maxAttemptsFor(item.txn.session.channel)) {
       recordDrop(drop_reasons::kInsufficientFundsRetryExhausted,
                  item.txn.session.channel);
       continue;
@@ -336,23 +337,23 @@ std::int64_t ChronoReplayAccumulator::resolveRetryTimestamp(
   const auto cureTs = findFutureCure(txn);
   if (cureTs != 0) {
     const auto paddingMinutes = isCardLike(txn.session.channel)
-                                    ? policy_.cardRetryPaddingMinutes
-                                    : policy_.achRetryPaddingMinutes;
+                                    ? rules_.retry.cardPaddingMinutes
+                                    : rules_.retry.achPaddingMinutes;
     return cureTs + static_cast<std::int64_t>(paddingMinutes) * 60;
   }
 
   if (rng_ == nullptr || !isRetryable(txn.session.channel) ||
-      retryCount >= policy_.maxRetriesFor(txn.session.channel)) {
+      retryCount >= rules_.retry.maxAttemptsFor(txn.session.channel)) {
     return 0;
   }
 
-  if (!rng_->coin(policy_.blindRetryProbability)) {
+  if (!rng_->coin(rules_.retry.blindProbability)) {
     return 0;
   }
 
   const auto delayHours = (retryCount == 0)
-                              ? policy_.blindRetryDelayHours
-                              : policy_.blindRetrySecondDelayHours;
+                              ? rules_.retry.firstBlindDelayHours
+                              : rules_.retry.secondBlindDelayHours;
   return txn.timestamp + static_cast<std::int64_t>(delayHours) * 3600;
 }
 
@@ -364,8 +365,8 @@ std::int64_t ChronoReplayAccumulator::findFutureCure(
   }
 
   const auto cureHours = isCardLike(txn.session.channel)
-                             ? policy_.sameDayCureHours
-                             : policy_.delayedCureHours;
+                             ? rules_.cure.sameDayHours
+                             : rules_.cure.delayedHours;
   const auto upper =
       txn.timestamp + static_cast<std::int64_t>(cureHours) * 3600;
 
@@ -437,7 +438,7 @@ bool ChronoReplayAccumulator::feeBudgetAllows(
   const auto day = static_cast<std::int32_t>(event.timestamp / 86400);
   const FeeKey key{srcIdx, day};
   auto &count = feeTapsToday_[key];
-  if (count >= policy_.overdraftFeeDailyCap) {
+  if (count >= rules_.overdraftFees.dailyCap) {
     return false;
   }
   ++count;

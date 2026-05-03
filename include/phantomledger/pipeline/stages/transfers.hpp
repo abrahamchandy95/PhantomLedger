@@ -34,7 +34,21 @@ struct FamilyTransferModel;
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
-struct IncomeInputs {
+struct RunScope {
+  ::PhantomLedger::time::Window window{};
+  std::uint64_t seed = 0;
+};
+
+struct PopulationShape {
+  double hubFraction = 0.01;
+
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
+    r.check([&] { v::unit("hubFraction", hubFraction); });
+  }
+};
+
+struct RecurringIncome {
   ::PhantomLedger::recurring::EmploymentRules employment{};
   ::PhantomLedger::recurring::LeaseRules lease{};
 
@@ -52,16 +66,16 @@ struct IncomeInputs {
   }
 };
 
-struct ClearingInputs {
+struct BalanceBookRules {
   const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
 };
 
-struct CreditCardInputs {
+struct CreditCardLifecycle {
   const ::PhantomLedger::transfers::credit_cards::LifecycleRules *lifecycle =
       nullptr;
 };
 
-struct FamilyInputs {
+struct FamilyPrograms {
   const ::PhantomLedger::relationships::family::Households *households =
       nullptr;
   const ::PhantomLedger::relationships::family::Dependents *dependents =
@@ -72,51 +86,34 @@ struct FamilyInputs {
       FamilyTransferModel *transfers = nullptr;
 };
 
-struct GovernmentInputs {
+struct GovernmentPrograms {
   ::PhantomLedger::transfers::government::RetirementTerms retirement{};
   ::PhantomLedger::transfers::government::DisabilityTerms disability{};
 };
 
-struct InsuranceInputs {
+struct InsuranceClaims {
   ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
 };
 
-struct ReplayInputs {
-  ::PhantomLedger::transfers::legit::ledger::ReplayPolicy preFraud =
-      ::PhantomLedger::transfers::legit::ledger::kDefaultReplayPolicy;
+struct LedgerReplay {
+  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+      preFraud{};
 };
 
-struct FraudInputs {
+struct FraudInjection {
   ::PhantomLedger::transfers::fraud::Parameters params{};
-};
-
-struct Inputs {
-  ::PhantomLedger::time::Window window{};
-
-  std::uint64_t seed = 0;
-
-  IncomeInputs income{};
-  ClearingInputs clearing{};
-  CreditCardInputs creditCards{};
-  FamilyInputs family{};
-  GovernmentInputs government{};
-  InsuranceInputs insurance{};
-  ReplayInputs replay{};
-  FraudInputs fraud{};
-
-  double hubFraction = 0.01;
-
-  void validate(::PhantomLedger::primitives::validate::Report &r) const {
-    namespace v = ::PhantomLedger::primitives::validate;
-
-    income.validate(r);
-    r.check([&] { v::unit("hubFraction", hubFraction); });
-  }
 };
 
 [[nodiscard]] ::PhantomLedger::pipeline::Transfers
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
-      const ::PhantomLedger::pipeline::Infra &infra, const Inputs &in);
+      const ::PhantomLedger::pipeline::Infra &infra, RunScope run = {},
+      const RecurringIncome &income = {},
+      const BalanceBookRules &balanceBook = {},
+      const CreditCardLifecycle &creditCards = {},
+      const FamilyPrograms &family = {},
+      const GovernmentPrograms &government = {},
+      const InsuranceClaims &insurance = {}, const LedgerReplay &replay = {},
+      const FraudInjection &fraud = {}, PopulationShape population = {});
 
 } // namespace PhantomLedger::pipeline::stages::transfers
