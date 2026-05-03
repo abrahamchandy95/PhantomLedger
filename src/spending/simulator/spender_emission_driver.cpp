@@ -111,7 +111,6 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
 
   const SpenderEmissionPolicy emissionPolicy{
       .baseExploreP = behavior_.baseExploreP,
-      .burst = behavior_.burst,
       .exploration = behavior_.exploration,
       .liquidity = behavior_.liquidity,
   };

@@ -259,8 +259,7 @@ SpendingRoutine::run(const SpendingRunRequest &run,
       plSimulator::PopulationDynamics{dynamics_.population},
       plSimulator::SpenderEmissionDriver{plSimulator::EmissionBehavior{
           .baseExploreP = emission_.baseExploreP,
-          .burst = habits_.burst,
-          .exploration = habits_.exploration,
+          .exploration = emission_.exploration,
           .liquidity = emission_.liquidity,
       }},
   };

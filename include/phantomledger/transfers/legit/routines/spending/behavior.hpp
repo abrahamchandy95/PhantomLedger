@@ -2,11 +2,10 @@
 
 #include "phantomledger/math/evolution.hpp"
 #include "phantomledger/math/seasonal.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
-#include "phantomledger/spending/config/picking.hpp"
+#include "phantomledger/spending/actors/explore.hpp"
 #include "phantomledger/spending/dynamics/population/advance.hpp"
+#include "phantomledger/spending/liquidity/multiplier.hpp"
+#include "phantomledger/spending/market/bootstrap.hpp"
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
@@ -15,14 +14,9 @@
 namespace PhantomLedger::transfers::legit::routines::spending {
 
 struct SpendingHabits {
-  ::PhantomLedger::spending::config::MerchantPickRules picking =
-      ::PhantomLedger::spending::config::kDefaultPickRules;
-
-  ::PhantomLedger::spending::config::ExplorationHabits exploration =
-      ::PhantomLedger::spending::config::kDefaultExploration;
-
-  ::PhantomLedger::spending::config::BurstBehavior burst =
-      ::PhantomLedger::spending::config::kDefaultBurst;
+  ::PhantomLedger::spending::market::MerchantPickBudget picking{};
+  ::PhantomLedger::spending::market::ExplorationDistribution exploration{};
+  ::PhantomLedger::spending::market::BurstSchedule burst{};
 };
 
 inline constexpr SpendingHabits kDefaultSpendingHabits{};
@@ -46,9 +40,8 @@ inline constexpr DayPattern kDefaultDayPattern{};
 
 struct EmissionProfile {
   double baseExploreP = 0.0;
-
-  ::PhantomLedger::spending::config::LiquidityConstraints liquidity =
-      ::PhantomLedger::spending::config::kDefaultLiquidityConstraints;
+  ::PhantomLedger::spending::actors::ExploreModifiers exploration{};
+  ::PhantomLedger::spending::liquidity::Throttle liquidity{};
 };
 
 inline constexpr EmissionProfile kDefaultEmissionProfile{};

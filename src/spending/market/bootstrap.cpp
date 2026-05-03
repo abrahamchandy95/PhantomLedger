@@ -3,7 +3,6 @@
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
-#include "phantomledger/spending/config/picking.hpp"
 #include "phantomledger/spending/market/cards.hpp"
 #include "phantomledger/spending/market/population/paydays.hpp"
 
@@ -72,7 +71,7 @@ std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
 
   bool any = false;
   for (std::size_t i = 0; i < catalog.records.size(); ++i) {
-    if (config::isBillerCategory(catalog.records[i].category)) {
+    if (isBillerCategory(catalog.records[i].category)) {
       weights[i] = catalog.records[i].weight;
       any = true;
     }

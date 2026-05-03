@@ -1,32 +1,54 @@
 #pragma once
 
-#include "phantomledger/spending/config/liquidity.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/spending/liquidity/snapshot.hpp"
 
 #include <algorithm>
+#include <cstdint>
 
 namespace PhantomLedger::spending::liquidity {
 
-[[nodiscard]] inline double
-multiplier(const config::LiquidityConstraints &policy,
-           const Snapshot &snap) noexcept {
-  if (!policy.enabled) {
+struct Throttle {
+  bool enabled = true;
+  std::uint16_t reliefDays = 2;
+  std::uint16_t stressStartDay = 3;
+  std::uint16_t stressRampDays = 5;
+  double absoluteFloor = 0.08;
+  double explorationFloor = 0.0;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::ge("reliefDays", static_cast<int>(reliefDays), 0); });
+    r.check(
+        [&] { v::ge("stressStartDay", static_cast<int>(stressStartDay), 0); });
+    r.check(
+        [&] { v::ge("stressRampDays", static_cast<int>(stressRampDays), 1); });
+    r.check([&] { v::unit("absoluteFloor", absoluteFloor); });
+    r.check([&] { v::unit("explorationFloor", explorationFloor); });
+  }
+};
+
+inline constexpr double kCeiling = 1.10;
+
+[[nodiscard]] inline double multiplier(const Throttle &throttle,
+                                       const Snapshot &snap) noexcept {
+  if (!throttle.enabled) {
     return 1.0;
   }
 
   double relief = 0.0;
-  if (policy.reliefDays > 0 && snap.daysSincePayday <= policy.reliefDays) {
-    relief = static_cast<double>(policy.reliefDays - snap.daysSincePayday) /
-             static_cast<double>(policy.reliefDays);
+  if (throttle.reliefDays > 0 && snap.daysSincePayday <= throttle.reliefDays) {
+    relief = static_cast<double>(throttle.reliefDays - snap.daysSincePayday) /
+             static_cast<double>(throttle.reliefDays);
   }
 
-  const auto stressDays = snap.daysSincePayday > policy.stressStartDay
-                              ? snap.daysSincePayday - policy.stressStartDay
+  const auto stressDays = snap.daysSincePayday > throttle.stressStartDay
+                              ? snap.daysSincePayday - throttle.stressStartDay
                               : std::uint32_t{0};
   const double stress =
       std::min(1.0, static_cast<double>(stressDays) /
                         static_cast<double>(std::max<std::uint32_t>(
-                            1u, policy.stressRampDays)));
+                            1u, throttle.stressRampDays)));
 
   // Sensitivity-weighted up/down legs.
   constexpr double kStressDownBase = 0.35;
@@ -41,7 +63,7 @@ multiplier(const config::LiquidityConstraints &policy,
 
   constexpr double kCycleCeiling = 1.05;
   double cycleMult = 1.0 - cycleDown + cycleUp;
-  cycleMult = std::clamp(cycleMult, policy.absoluteFloor, kCycleCeiling);
+  cycleMult = std::clamp(cycleMult, throttle.absoluteFloor, kCycleCeiling);
 
   // ---- Cash-on-hand ratio ------------------------------------------
   constexpr double kCashRefFloor =
@@ -65,7 +87,7 @@ multiplier(const config::LiquidityConstraints &policy,
 
   // ---- Compose & final clip ----------------------------------------
   const double mult = cycleMult * cashMult * burdenMult;
-  return std::clamp(mult, 0.0, config::kLiquidityCeiling);
+  return std::clamp(mult, 0.0, kCeiling);
 }
 
 } // namespace PhantomLedger::spending::liquidity

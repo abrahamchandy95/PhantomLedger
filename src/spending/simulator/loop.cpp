@@ -91,9 +91,8 @@ std::uint32_t SpenderEmissionLoop::transactionCountFor(
 double
 SpenderEmissionLoop::exploreProbabilityFor(const actors::Spender &spender,
                                            double liquidityMult) const {
-  double exploreP =
-      actors::calculateExploreP(policy_.baseExploreP, policy_.exploration,
-                                policy_.burst, spender, frame_.day);
+  double exploreP = actors::calculateExploreP(
+      policy_.baseExploreP, policy_.exploration, spender, frame_.day);
 
   const double cubed =
       std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);

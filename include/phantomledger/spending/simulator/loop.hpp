@@ -2,10 +2,9 @@
 
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/spending/actors/day.hpp"
+#include "phantomledger/spending/actors/explore.hpp"
 #include "phantomledger/spending/clearing/parallel_ledger_view.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
+#include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/routing/emission_result.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"
@@ -21,9 +20,8 @@ namespace PhantomLedger::spending::simulator {
 
 struct SpenderEmissionPolicy {
   double baseExploreP = 0.0;
-  const config::BurstBehavior &burst;
-  const config::ExplorationHabits &exploration;
-  const config::LiquidityConstraints &liquidity;
+  const actors::ExploreModifiers &exploration;
+  const liquidity::Throttle &liquidity;
 };
 
 class SpenderEmissionLoop {

@@ -2,9 +2,8 @@
 
 #include "phantomledger/primitives/concurrent/account_lock_array.hpp"
 #include "phantomledger/spending/actors/day.hpp"
-#include "phantomledger/spending/config/burst.hpp"
-#include "phantomledger/spending/config/exploration.hpp"
-#include "phantomledger/spending/config/liquidity.hpp"
+#include "phantomledger/spending/actors/explore.hpp"
+#include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/plan.hpp"
@@ -17,9 +16,8 @@ namespace PhantomLedger::spending::simulator {
 
 struct EmissionBehavior {
   double baseExploreP = 0.0;
-  config::BurstBehavior burst = config::kDefaultBurst;
-  config::ExplorationHabits exploration = config::kDefaultExploration;
-  config::LiquidityConstraints liquidity = config::kDefaultLiquidityConstraints;
+  actors::ExploreModifiers exploration{};
+  liquidity::Throttle liquidity{};
 };
 
 class SpenderEmissionDriver {
