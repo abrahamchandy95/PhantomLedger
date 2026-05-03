@@ -273,11 +273,12 @@ SpendingRoutine::run(const SpendingRunRequest &run,
       plSimulator::DaySource{day_.variation, day_.seasonal},
       plSimulator::CommerceEvolver{dynamics_.commerce},
       plSimulator::PopulationDynamics{dynamics_.population},
-      plSimulator::SpenderEmissionDriver{plSimulator::EmissionBehavior{
-          .baseExploreP = emission_.baseExploreP,
-          .exploration = emission_.exploration,
-          .liquidity = emission_.liquidity,
-      }},
+      plSimulator::SpenderEmissionDriver{
+          plSimulator::SpenderEmissionDriver::Behavior{
+              .baseExploreP = emission_.baseExploreP,
+              .exploration = emission_.exploration,
+              .liquidity = emission_.liquidity,
+          }},
   };
 
   plSimulator::Simulator simulator(market, resources, obligations,

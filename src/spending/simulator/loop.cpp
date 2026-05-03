@@ -18,12 +18,15 @@
 namespace PhantomLedger::spending::simulator {
 
 SpenderEmissionLoop::SpenderEmissionLoop(
-    const market::Market &market, const RunPlan &plan, RunState &state,
-    const actors::DayFrame &frame, std::span<const double> dailyMultipliers,
-    SpenderEmissionPolicy policy, const routing::ResolvedAccounts &resolved,
+    const market::Market &market, const PreparedRun::Population &population,
+    const PreparedRun::Budget &budget, const PreparedRun::Routing &routing,
+    RunState &state, const actors::DayFrame &frame,
+    std::span<const double> dailyMultipliers, Rules rules,
+    const routing::ResolvedAccounts &resolved,
     ParallelLedgerView ledgerView) noexcept
-    : market_(market), plan_(plan), state_(state), frame_(frame),
-      dailyMultipliers_(dailyMultipliers), policy_(policy), resolved_(resolved),
+    : market_(market), population_(population), budget_(budget),
+      routing_(routing), state_(state), frame_(frame),
+      dailyMultipliers_(dailyMultipliers), rules_(rules), resolved_(resolved),
       ledgerView_(ledgerView) {}
 
 double SpenderEmissionLoop::availableCashFor(
@@ -52,7 +55,7 @@ double SpenderEmissionLoop::liquidityMultiplierFor(
       .fixedMonthlyBurden = prepared.fixedBurden,
   };
 
-  return liquidity::multiplier(policy_.liquidity, snapshot);
+  return liquidity::multiplier(rules_.liquidity, snapshot);
 }
 
 double
@@ -85,19 +88,19 @@ std::uint32_t SpenderEmissionLoop::transactionCountFor(
           .dynamicsMultiplier = combinedMult,
           .liquidityMultiplier = liquidityMult,
       },
-      plan_.budget.personLimit);
+      budget_.personLimit);
 }
 
 double
 SpenderEmissionLoop::exploreProbabilityFor(const actors::Spender &spender,
                                            double liquidityMult) const {
   double exploreP = actors::calculateExploreP(
-      policy_.baseExploreP, policy_.exploration, spender, frame_.day);
+      rules_.baseExploreP, rules_.exploration, spender, frame_.day);
 
   const double cubed =
       std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);
 
-  exploreP *= std::max(policy_.liquidity.explorationFloor, cubed);
+  exploreP *= std::max(rules_.liquidity.explorationFloor, cubed);
 
   return exploreP;
 }
@@ -113,7 +116,7 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
                               random::Rng &rng,
                               const transactions::Factory &factory,
                               std::vector<transactions::Transaction> &outTxns) {
-  const auto &spenders = plan_.population.spenders;
+  const auto &spenders = population_.spenders;
 
   for (std::size_t i = begin; i < end; ++i) {
     const auto &prepared = spenders[i];
@@ -153,10 +156,10 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       event.exploreP = exploreP;
 
       const routing::Slot slot =
-          routing::pickSlot(plan_.routing.channelCdf, rng.nextDouble());
+          routing::pickSlot(routing_.channelCdf, rng.nextDouble());
 
-      auto maybeResult = routing::routeTxn(
-          rng, market_, plan_.routing.paymentRules, resolved_, slot, event);
+      auto maybeResult = routing::routeTxn(rng, market_, routing_.paymentRules,
+                                           resolved_, slot, event);
 
       if (!maybeResult.has_value()) {
         continue;

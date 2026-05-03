@@ -27,19 +27,19 @@ constexpr double kTxnReserveSlack = 1.05;
 
 } // namespace
 
-SpenderEmissionDriver::SpenderEmissionDriver(EmissionBehavior behavior)
+SpenderEmissionDriver::SpenderEmissionDriver(Behavior behavior)
     : behavior_(behavior) {}
 
 void SpenderEmissionDriver::prepare(const market::Market &market,
                                     const RunResources &resources,
-                                    const TransactionLoad &load) {
-  prepareThreadStates(market, resources, load);
+                                    double txnsPerMonth) {
+  prepareThreadStates(market, resources, txnsPerMonth);
   prepareLockArray(resources);
 }
 
 void SpenderEmissionDriver::prepareThreadStates(const market::Market &market,
                                                 const RunResources &resources,
-                                                const TransactionLoad &load) {
+                                                double txnsPerMonth) {
   threadStates_.clear();
 
   const auto &threads = resources.threads();
@@ -58,7 +58,7 @@ void SpenderEmissionDriver::prepareThreadStates(const market::Market &market,
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market.bounds().days) *
        (static_cast<double>(market.population().count()) / 30.0) *
-       load.txnsPerMonth * kTxnReserveSlack) /
+       txnsPerMonth * kTxnReserveSlack) /
       static_cast<double>(threads.count));
 
   std::array<char, 16> idBuf{};
@@ -101,28 +101,33 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
 
 void SpenderEmissionDriver::emitDay(const market::Market &market,
                                     const RunResources &resources,
-                                    const RunPlan &plan, RunState &state,
+                                    const PreparedRun::Population &population,
+                                    const PreparedRun::Budget &budget,
+                                    const PreparedRun::Routing &routingSnapshot,
+                                    RunState &state,
                                     const actors::DayFrame &frame,
                                     std::span<const double> dailyMultipliers) {
-  const routing::ResolvedAccounts resolved = plan.routing.resolvedAccounts();
+  const routing::ResolvedAccounts resolved = routingSnapshot.resolvedAccounts();
   const auto &threads = resources.threads();
   auto *lockArray = threads.parallel() ? &lockArray_ : nullptr;
 
-  const SpenderEmissionPolicy emissionPolicy{
+  const SpenderEmissionLoop::Rules rules{
       .baseExploreP = behavior_.baseExploreP,
       .exploration = behavior_.exploration,
       .liquidity = behavior_.liquidity,
   };
 
-  const std::size_t spenderCount = plan.population.spenders.size();
+  const std::size_t spenderCount = population.spenders.size();
 
   if (!threads.parallel()) {
     SpenderEmissionLoop loop{market,
-                             plan,
+                             population,
+                             budget,
+                             routingSnapshot,
                              state,
                              frame,
                              dailyMultipliers,
-                             emissionPolicy,
+                             rules,
                              resolved,
                              ParallelLedgerView{resources.ledger(), lockArray}};
 
@@ -142,11 +147,13 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
     const auto threadFactory = resources.factory().rebound(threadState.rng);
 
     SpenderEmissionLoop loop{market,
-                             plan,
+                             population,
+                             budget,
+                             routingSnapshot,
                              state,
                              frame,
                              dailyMultipliers,
-                             emissionPolicy,
+                             rules,
                              resolved,
                              ParallelLedgerView{resources.ledger(), lockArray}};
 

@@ -41,53 +41,88 @@ void resolveMerchantCounterpartyIdx(const market::Market &market,
   }
 }
 
-} // namespace
+[[nodiscard]] PreparedRun::Population preparePopulation(
+    const market::Market &market, const obligations::Snapshot &obligations,
+    const clearing::Ledger *ledger, std::span<const double> sensitivities) {
+  PreparedRun::Population population;
+  population.spenders = spenders::prepareSpenders(market, obligations, ledger);
+  population.sensitivities = sensitivities;
+  return population;
+}
 
-RunPlanner::RunPlanner(TransactionLoad load, routing::ChannelWeights channels,
-                       routing::PaymentRoutingRules paymentRules)
-    : load_(load), channels_(channels), paymentRules_(paymentRules) {}
+[[nodiscard]] PreparedRun::Budget
+buildBudget(const RunPlanner::TransactionLoad &load,
+            std::uint32_t activeSpenders, std::uint32_t days) {
+  PreparedRun::Budget budget;
+  budget.targetTotalTxns =
+      spenders::totalTargetTxns(load.txnsPerMonth, activeSpenders, days);
+  budget.totalPersonDays = static_cast<std::uint64_t>(activeSpenders) * days;
 
-RunPlan RunPlanner::build(const market::Market &market,
-                          const obligations::Snapshot &obligations,
-                          const clearing::Ledger *ledger,
-                          std::span<const double> sensitivities) const {
-  RunPlan plan{};
-
-  plan.population.spenders =
-      spenders::prepareSpenders(market, obligations, ledger);
-  plan.population.sensitivities = sensitivities;
-
-  const std::uint32_t activeSpenders = plan.population.activeCount();
-
-  plan.budget.targetTotalTxns = spenders::totalTargetTxns(
-      load_.txnsPerMonth, activeSpenders, market.bounds().days);
-
-  plan.budget.totalPersonDays =
-      static_cast<std::uint64_t>(activeSpenders) * market.bounds().days;
-
-  if (load_.personDailyLimit > 0) {
-    plan.budget.personLimit = load_.personDailyLimit;
+  if (load.personDailyLimit > 0) {
+    budget.personLimit = load.personDailyLimit;
   }
 
-  plan.baseLedger.txns = obligations.baseTxns;
-  plan.payday.index =
-      PaydayIndex::build(market.population().paydays(), market.bounds().days);
+  return budget;
+}
 
-  plan.routing.channelCdf = channels_.cdf();
-  plan.routing.paymentRules = paymentRules_;
+[[nodiscard]] PreparedRun::LedgerReplay
+ledgerReplayFrom(const obligations::Snapshot &obligations) noexcept {
+  return PreparedRun::LedgerReplay{.txns = obligations.baseTxns};
+}
+
+[[nodiscard]] PreparedRun::Paydays
+preparePaydays(const market::Market &market) {
+  return PreparedRun::Paydays{
+      .index = PaydayIndex::build(market.population().paydays(),
+                                  market.bounds().days),
+  };
+}
+
+[[nodiscard]] PreparedRun::Routing
+prepareRouting(const market::Market &market, const clearing::Ledger *ledger,
+               const routing::ChannelWeights &channels,
+               const routing::PaymentRoutingRules &paymentRules) {
+  PreparedRun::Routing routing;
+  routing.channelCdf = channels.cdf();
+  routing.paymentRules = paymentRules;
 
   if (ledger != nullptr) {
-    resolvePersonPrimaryIdx(market, *ledger, plan.routing.personPrimaryIdx);
+    resolvePersonPrimaryIdx(market, *ledger, routing.personPrimaryIdx);
     resolveMerchantCounterpartyIdx(market, *ledger,
-                                   plan.routing.merchantCounterpartyIdx);
+                                   routing.merchantCounterpartyIdx);
 
     const entity::Key externalKey =
         entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
-    plan.routing.externalUnknownIdx = ledger->findAccount(externalKey);
+    routing.externalUnknownIdx = ledger->findAccount(externalKey);
   }
 
-  return plan;
+  return routing;
+}
+
+} // namespace
+
+RunPlanner::RunPlanner(TransactionLoad transactionLoad,
+                       routing::ChannelWeights channels,
+                       routing::PaymentRoutingRules paymentRules)
+    : transactionLoad_(transactionLoad), channels_(channels),
+      paymentRules_(paymentRules) {}
+
+PreparedRun RunPlanner::build(const market::Market &market,
+                              const obligations::Snapshot &obligations,
+                              const clearing::Ledger *ledger,
+                              std::span<const double> sensitivities) const {
+  PreparedRun run;
+
+  run.population() =
+      preparePopulation(market, obligations, ledger, sensitivities);
+  run.budget() = buildBudget(transactionLoad_, run.population().activeCount(),
+                             market.bounds().days);
+  run.ledgerReplay() = ledgerReplayFrom(obligations);
+  run.paydays() = preparePaydays(market);
+  run.routing() = prepareRouting(market, ledger, channels_, paymentRules_);
+
+  return run;
 }
 
 } // namespace PhantomLedger::spending::simulator
