@@ -81,20 +81,20 @@ buildPii(::PhantomLedger::random::Rng &rng,
 
 [[nodiscard]] ::PhantomLedger::entities::synth::merchants::Pack buildMerchants(
     ::PhantomLedger::random::Rng &rng, PopulationPlan population,
-    const ::PhantomLedger::entities::synth::merchants::Config &config) {
+    const ::PhantomLedger::entities::synth::merchants::GenerationPlan &plan) {
   validate(population);
 
   return ::PhantomLedger::entities::synth::merchants::makePack(
-      rng, population.count, config);
+      rng, population.count, plan);
 }
 
 [[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack buildLandlords(
     ::PhantomLedger::random::Rng &rng, PopulationPlan population,
-    const ::PhantomLedger::entities::synth::landlords::Config &config) {
+    const ::PhantomLedger::entities::synth::landlords::GenerationPlan &plan) {
   validate(population);
 
   return ::PhantomLedger::entities::synth::landlords::makePack(
-      rng, population.count, config);
+      rng, population.count, plan);
 }
 
 [[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(

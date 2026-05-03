@@ -283,15 +283,18 @@ int main(int argc, char **argv) {
         .window = window,
         .seed = args.seed,
         .entities =
-            pl::pipeline::SimulateEntities{
-                .identity =
-                    pl::pipeline::stages::entities::IdentitySource{
-                        .pools = poolSet,
-                        .simStart = window.start,
-                    },
-                .population =
-                    pl::pipeline::stages::entities::PopulationPlan{
-                        .count = args.population,
+            pl::pipeline::stages::entities::Inputs{
+                .people =
+                    pl::pipeline::stages::entities::PeopleInputs{
+                        .identity =
+                            pl::pipeline::stages::entities::IdentitySource{
+                                .pools = poolSet,
+                                .simStart = window.start,
+                            },
+                        .population =
+                            pl::pipeline::stages::entities::PopulationPlan{
+                                .count = args.population,
+                            },
                     },
             },
     };

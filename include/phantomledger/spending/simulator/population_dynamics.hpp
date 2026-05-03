@@ -1,7 +1,6 @@
 #pragma once
 
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/spending/dynamics/config.hpp"
 #include "phantomledger/spending/dynamics/population/advance.hpp"
 #include "phantomledger/spending/market/market.hpp"
 
@@ -14,7 +13,7 @@ namespace PhantomLedger::spending::simulator {
 class PopulationDynamics {
 public:
   PopulationDynamics() = default;
-  explicit PopulationDynamics(dynamics::Config config);
+  explicit PopulationDynamics(dynamics::population::Drivers drivers);
 
   void resetFor(const market::Market &market);
 
@@ -24,7 +23,7 @@ public:
   void advance(random::Rng &rng, std::span<const std::uint32_t> paydayPersons);
 
 private:
-  dynamics::Config config_{};
+  dynamics::population::Drivers drivers_{};
   dynamics::population::Cohort cohort_{};
   std::vector<double> sensitivities_{};
   std::vector<double> dailyMultBuffer_{};

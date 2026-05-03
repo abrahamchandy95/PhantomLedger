@@ -66,9 +66,6 @@ void expectNonEmptyFile(const fs::path &path) {
 }
 
 [[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
-  // Build a default PoolSet so the entities stage has somewhere to
-  // pull names + addresses from. The 3-arg `buildLocalePool` overload
-  // generates a synthetic pool — enough for a smoke test.
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
   poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
@@ -83,15 +80,18 @@ void expectNonEmptyFile(const fs::path &path) {
       .window = window,
       .seed = seed,
       .entities =
-          pl::pipeline::SimulateEntities{
-              .identity =
-                  pl::pipeline::stages::entities::IdentitySource{
-                      .pools = poolSet,
-                      .simStart = window.start,
-                  },
-              .population =
-                  pl::pipeline::stages::entities::PopulationPlan{
-                      .count = 100,
+          pl::pipeline::stages::entities::Inputs{
+              .people =
+                  pl::pipeline::stages::entities::PeopleInputs{
+                      .identity =
+                          pl::pipeline::stages::entities::IdentitySource{
+                              .pools = poolSet,
+                              .simStart = window.start,
+                          },
+                      .population =
+                          pl::pipeline::stages::entities::PopulationPlan{
+                              .count = 100,
+                          },
                   },
           },
   };
