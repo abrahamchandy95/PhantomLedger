@@ -1,12 +1,13 @@
 #pragma once
 
+#include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/recurring/employment.hpp"
 #include "phantomledger/recurring/lease.hpp"
-#include "phantomledger/transfers/fraud/engine.hpp"
+#include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
 #include "phantomledger/transfers/insurance/rates.hpp"
@@ -101,7 +102,8 @@ struct LedgerReplay {
 };
 
 struct FraudInjection {
-  ::PhantomLedger::transfers::fraud::Parameters params{};
+  const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
+  ::PhantomLedger::transfers::fraud::Injector::Rules rules;
 };
 
 [[nodiscard]] ::PhantomLedger::pipeline::Transfers

@@ -260,27 +260,31 @@ runFraudInjection(::PhantomLedger::random::Rng &rng,
                   const FraudInjection &fraudInjection,
                   std::span<const Transaction> draftTxns,
                   const legit_ledger::TransfersPayload &legitPayload) {
-  fraud::InjectionInput req{};
+  fraud::Injector injector{
+      fraud::Injector::Services{
+          .rng = &rng,
+          .router = &infra.router,
+          .ringInfra = &infra.ringInfra,
+      },
+      fraudInjection.rules,
+  };
 
-  req.scenario.fraudCfg = nullptr;
-  req.scenario.window = run.window;
-  req.scenario.people = &entities.people.roster;
-  req.scenario.topology = &entities.people.topology;
-  req.scenario.accounts = &entities.accounts.registry;
-  req.scenario.accountsLookup = &entities.accounts.lookup;
-  req.scenario.ownership = &entities.accounts.ownership;
-  req.scenario.baseTxns = draftTxns;
-
-  req.runtime.rng = &rng;
-  req.runtime.router = &infra.router;
-  req.runtime.ringInfra = &infra.ringInfra;
-
-  req.counterparties.billerAccounts = legitPayload.billerAccounts;
-  req.counterparties.employers = legitPayload.employers;
-
-  req.params = fraudInjection.params;
-
-  return fraud::inject(req);
+  return injector.inject(
+      fraud::Injector::FraudPopulation{
+          .profile = fraudInjection.profile,
+          .window = run.window,
+          .topology = &entities.people.topology,
+          .accounts = &entities.accounts.registry,
+          .ownership = &entities.accounts.ownership,
+          .baseTxns = draftTxns,
+      },
+      fraud::Injector::LegitCounterparties{
+          .billerAccounts = std::span<const ::PhantomLedger::entity::Key>(
+              legitPayload.billerAccounts.data(),
+              legitPayload.billerAccounts.size()),
+          .employers = std::span<const ::PhantomLedger::entity::Key>(
+              legitPayload.employers.data(), legitPayload.employers.size()),
+      });
 }
 
 struct PostReplayResult {

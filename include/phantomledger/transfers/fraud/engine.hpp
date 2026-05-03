@@ -1,23 +1,18 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/infra/router.hpp"
-#include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
-#include <stdexcept>
 #include <vector>
 
 namespace PhantomLedger::transfers::fraud {
@@ -35,14 +30,15 @@ struct TypologyWeights {
   double invoice = 0.05;
   double mule = 0.30;
 
-  void validate() const {
-    const std::array<double, 6> ws{classic,     layering, funnel,
-                                   structuring, invoice,  mule};
-    for (const auto w : ws) {
-      if (w < 0.0) {
-        throw std::invalid_argument("Fraud typology weights must be >= 0");
-      }
-    }
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::nonNegative("classic", classic); });
+    r.check([&] { v::nonNegative("layering", layering); });
+    r.check([&] { v::nonNegative("funnel", funnel); });
+    r.check([&] { v::nonNegative("structuring", structuring); });
+    r.check([&] { v::nonNegative("invoice", invoice); });
+    r.check([&] { v::nonNegative("mule", mule); });
   }
 
   [[nodiscard]] Typology choose(random::Rng &rng) const {
@@ -65,20 +61,18 @@ struct TypologyWeights {
 };
 
 // ---------------------------------------------------------------------------
-// Per-typology rules
+// Per-typology and camouflage rules
 // ---------------------------------------------------------------------------
 
 struct LayeringRules {
   std::int32_t minHops = 3;
   std::int32_t maxHops = 8;
 
-  void validate() const {
-    if (minHops < 1) {
-      throw std::invalid_argument("LayeringRules.minHops must be >= 1");
-    }
-    if (maxHops < minHops) {
-      throw std::invalid_argument("LayeringRules.maxHops must be >= minHops");
-    }
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::ge("minHops", minHops, 1); });
+    r.check([&] { v::ge("maxHops", maxHops, minHops); });
   }
 };
 
@@ -89,21 +83,13 @@ struct StructuringRules {
   std::int32_t splitsMin = 3;
   std::int32_t splitsMax = 12;
 
-  void validate() const {
-    if (threshold <= 0.0) {
-      throw std::invalid_argument("StructuringRules.threshold must be > 0");
-    }
-    if (epsilonMax < epsilonMin) {
-      throw std::invalid_argument(
-          "StructuringRules.epsilonMax must be >= epsilonMin");
-    }
-    if (splitsMin < 1) {
-      throw std::invalid_argument("StructuringRules.splitsMin must be >= 1");
-    }
-    if (splitsMax < splitsMin) {
-      throw std::invalid_argument(
-          "StructuringRules.splitsMax must be >= splitsMin");
-    }
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::positive("threshold", threshold); });
+    r.check([&] { v::ge("epsilonMax", epsilonMax, epsilonMin); });
+    r.check([&] { v::ge("splitsMin", splitsMin, 1); });
+    r.check([&] { v::ge("splitsMax", splitsMax, splitsMin); });
   }
 };
 
@@ -112,61 +98,13 @@ struct CamouflageRates {
   double billMonthlyP = 0.35;
   double salaryInboundP = 0.12;
 
-  void validate() const {
-    auto inUnit = [](double v) { return v >= 0.0 && v <= 1.0; };
-    if (!inUnit(smallP2pPerDayP) || !inUnit(billMonthlyP) ||
-        !inUnit(salaryInboundP)) {
-      throw std::invalid_argument(
-          "CamouflageRates probabilities must lie in [0, 1]");
-    }
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    r.check([&] { v::unit("smallP2pPerDayP", smallP2pPerDayP); });
+    r.check([&] { v::unit("billMonthlyP", billMonthlyP); });
+    r.check([&] { v::unit("salaryInboundP", salaryInboundP); });
   }
-};
-
-struct Parameters {
-  TypologyWeights typology{};
-  LayeringRules layering{};
-  StructuringRules structuring{};
-  CamouflageRates camouflage{};
-
-  void validate() const {
-    typology.validate();
-    layering.validate();
-    structuring.validate();
-    camouflage.validate();
-  }
-};
-
-// ---------------------------------------------------------------------------
-// Inputs from the pipeline
-// ---------------------------------------------------------------------------
-
-struct Scenario {
-  const entities::synth::people::Fraud *fraudCfg = nullptr;
-  time::Window window{};
-  const entity::person::Roster *people = nullptr;
-  const entity::person::Topology *topology = nullptr;
-  const entity::account::Registry *accounts = nullptr;
-  const entity::account::Lookup *accountsLookup = nullptr;
-  const entity::account::Ownership *ownership = nullptr;
-  std::span<const transactions::Transaction> baseTxns{};
-};
-
-struct Runtime {
-  random::Rng *rng = nullptr;
-  const infra::Router *router = nullptr;
-  const infra::SharedInfra *ringInfra = nullptr;
-};
-
-struct Counterparties {
-  std::vector<entity::Key> billerAccounts;
-  std::vector<entity::Key> employers;
-};
-
-struct InjectionInput {
-  Scenario scenario{};
-  Runtime runtime{};
-  Counterparties counterparties{};
-  Parameters params{};
 };
 
 struct InjectionOutput {
@@ -175,7 +113,7 @@ struct InjectionOutput {
 };
 
 // ---------------------------------------------------------------------------
-// Execution contexts (built by the injector, consumed by sub-generators)
+// Execution contexts built by the injector and consumed by sub-generators.
 // ---------------------------------------------------------------------------
 
 struct Execution {

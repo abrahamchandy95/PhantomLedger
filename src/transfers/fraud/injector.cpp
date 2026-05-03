@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <stdexcept>
 
 namespace PhantomLedger::transfers::fraud {
@@ -22,56 +23,67 @@ namespace {
 
 } // namespace
 
-InjectionOutput inject(const InjectionInput &request) {
-  const auto &scenario = request.scenario;
-  const auto &runtime = request.runtime;
-  const auto &params = request.params;
+Injector::Injector(Services services) noexcept : Injector(services, Rules{}) {}
 
+Injector::Injector(Services services, Rules rules) noexcept
+    : services_(services), rules_(rules) {}
+
+InjectionOutput Injector::inject(const FraudPopulation &population) const {
+  return inject(population, LegitCounterparties{});
+}
+
+InjectionOutput Injector::inject(const FraudPopulation &population,
+                                 LegitCounterparties counterparties) const {
   // Defensive: a missing required input would otherwise produce a confusing
   // dereference deeper in the pipeline.
-  if (runtime.rng == nullptr) {
-    throw std::invalid_argument("Fraud injection requires a runtime.rng");
-  }
-  if (scenario.people == nullptr || scenario.topology == nullptr ||
-      scenario.accounts == nullptr || scenario.ownership == nullptr) {
+  if (services_.rng == nullptr) {
     throw std::invalid_argument(
-        "Fraud injection requires people, topology, accounts and ownership");
+        "Fraud injection requires an Injector::Services.rng");
   }
-  if (scenario.fraudCfg == nullptr) {
-    throw std::invalid_argument("Fraud injection requires a fraudCfg");
+  if (population.topology == nullptr || population.accounts == nullptr ||
+      population.ownership == nullptr) {
+    throw std::invalid_argument(
+        "Fraud injection requires topology, accounts and ownership");
+  }
+  if (population.profile == nullptr) {
+    throw std::invalid_argument(
+        "Fraud injection requires a FraudPopulation.profile");
   }
 
   // Empty-rings shortcut: the scenario passes through unchanged.
-  if (scenario.topology->rings.empty()) {
+  if (population.topology->rings.empty()) {
     return InjectionOutput{
         .txns = std::vector<transactions::Transaction>(
-            scenario.baseTxns.begin(), scenario.baseTxns.end()),
+            population.baseTxns.begin(), population.baseTxns.end()),
         .injectedCount = 0,
     };
   }
 
-  // Materialise the execution context. Factory rebinds onto the runtime's
+  // Materialise the execution context. Factory rebinds onto the injector's
   // RNG and reuses the router + ring infra so generated fraud rows carry
   // the same device/IP signatures the legit pipeline produces for ring
   // accounts.
   Execution execution{
-      .txf = transactions::Factory(*runtime.rng, runtime.router,
-                                   runtime.ringInfra),
-      .rng = runtime.rng,
+      .txf = transactions::Factory(*services_.rng, services_.router,
+                                   services_.ringInfra),
+      .rng = services_.rng,
   };
 
   ActiveWindow window{
-      .startDate = scenario.window.start,
-      .days = scenario.window.days,
+      .startDate = population.window.start,
+      .days = population.window.days,
   };
 
   AccountPools pools{
       .allAccounts = {},
-      .billerAccounts = request.counterparties.billerAccounts,
-      .employers = request.counterparties.employers,
+      .billerAccounts =
+          std::vector<entity::Key>(counterparties.billerAccounts.begin(),
+                                   counterparties.billerAccounts.end()),
+      .employers = std::vector<entity::Key>(counterparties.employers.begin(),
+                                            counterparties.employers.end()),
   };
-  pools.allAccounts.reserve(scenario.accounts->records.size());
-  for (const auto &record : scenario.accounts->records) {
+  pools.allAccounts.reserve(population.accounts->records.size());
+  for (const auto &record : population.accounts->records) {
     pools.allAccounts.push_back(record.id);
   }
 
@@ -79,7 +91,7 @@ InjectionOutput inject(const InjectionInput &request) {
       .execution = execution,
       .window = window,
       .accounts = &pools,
-      .rates = params.camouflage,
+      .rates = rules_.camouflage,
   };
 
   IllicitContext illicitCtx{
@@ -87,17 +99,17 @@ InjectionOutput inject(const InjectionInput &request) {
       .window = window,
       .billerAccounts = std::span<const entity::Key>(
           pools.billerAccounts.data(), pools.billerAccounts.size()),
-      .layeringRules = params.layering,
-      .structuringRules = params.structuring,
+      .layeringRules = rules_.layering,
+      .structuringRules = rules_.structuring,
   };
 
   // Build all ring plans up front. Plans are cheap (small vectors of Keys)
   // and we iterate them twice: once for camouflage, once for illicit.
   std::vector<Plan> ringPlans;
-  ringPlans.reserve(scenario.topology->rings.size());
-  for (const auto &ring : scenario.topology->rings) {
-    ringPlans.push_back(buildPlan(ring, *scenario.topology, *scenario.accounts,
-                                  *scenario.ownership));
+  ringPlans.reserve(population.topology->rings.size());
+  for (const auto &ring : population.topology->rings) {
+    ringPlans.push_back(buildPlan(ring, *population.topology,
+                                  *population.accounts, *population.ownership));
   }
 
   // ---- Camouflage pass ------------------------------------------------
@@ -110,14 +122,14 @@ InjectionOutput inject(const InjectionInput &request) {
 
   // ---- Budget calculation --------------------------------------------
   const auto targetIllicit = calculateIllicitBudget(
-      static_cast<double>(scenario.fraudCfg->limits.targetIllicitP),
-      static_cast<std::int64_t>(scenario.baseTxns.size() + camoTxns.size()));
+      static_cast<double>(population.profile->limits.targetIllicitP),
+      static_cast<std::int64_t>(population.baseTxns.size() + camoTxns.size()));
 
   std::vector<transactions::Transaction> out;
   out.reserve(
-      scenario.baseTxns.size() + camoTxns.size() +
+      population.baseTxns.size() + camoTxns.size() +
       static_cast<std::size_t>(std::max<std::int64_t>(0, targetIllicit)));
-  out.assign(scenario.baseTxns.begin(), scenario.baseTxns.end());
+  out.assign(population.baseTxns.begin(), population.baseTxns.end());
 
   if (targetIllicit <= 0) {
     out.insert(out.end(), std::make_move_iterator(camoTxns.begin()),
@@ -141,7 +153,7 @@ InjectionOutput inject(const InjectionInput &request) {
     }
 
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
-    const auto typology = params.typology.choose(*runtime.rng);
+    const auto typology = rules_.typology.choose(*services_.rng);
     auto produced =
         typologies::generate(illicitCtx, ringPlans[ringIdx], typology, perRing);
 
