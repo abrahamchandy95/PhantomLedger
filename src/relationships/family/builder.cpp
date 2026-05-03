@@ -17,19 +17,21 @@ namespace {
   return g;
 }
 
-[[nodiscard]] Partition runPartition(const transfers::family::GraphConfig &cfg,
+[[nodiscard]] Partition runPartition(const Households &households,
                                      const random::RngFactory &factory,
                                      std::uint32_t personCount) {
   auto rng = factory.rng({"family", "households"});
-  return partition(cfg.households, rng, personCount);
+  return partition(households, rng, personCount);
 }
 
-[[nodiscard]] Links runLinks(const transfers::family::GraphConfig &cfg,
+[[nodiscard]] Links runLinks(const Households &households,
+                             const Dependents &dependents,
                              const random::RngFactory &factory,
                              const Partition &part, const BuildInputs &inputs) {
   auto rng = factory.rng({"family", "links"});
   const LinkInputs li{
-      .cfg = &cfg,
+      .households = &households,
+      .dependents = &dependents,
       .partition = &part,
       .personas = inputs.personas,
       .personCount = inputs.personCount,
@@ -37,13 +39,13 @@ namespace {
   return buildLinks(li, rng);
 }
 
-[[nodiscard]] SupportTies runSupport(const transfers::family::GraphConfig &cfg,
+[[nodiscard]] SupportTies runSupport(const RetireeSupport &retireeSupport,
                                      const random::RngFactory &factory,
                                      const Partition &part, const Links &links,
                                      const BuildInputs &inputs) {
   auto rng = factory.rng({"family", "support"});
   const SupportInputs si{
-      .cfg = &cfg.retireeSupport,
+      .support = &retireeSupport,
       .partition = &part,
       .links = &links,
       .personas = inputs.personas,
@@ -71,17 +73,18 @@ namespace {
 
 } // namespace
 
-Graph build(const transfers::family::GraphConfig &cfg,
-            const BuildInputs &inputs) {
+Graph build(const BuildInputs &inputs, const Households &households,
+            const Dependents &dependents,
+            const RetireeSupport &retireeSupport) {
   if (inputs.personCount == 0) {
     return emptyGraph();
   }
 
   const random::RngFactory factory{inputs.baseSeed};
 
-  auto partition = runPartition(cfg, factory, inputs.personCount);
-  auto links = runLinks(cfg, factory, partition, inputs);
-  auto support = runSupport(cfg, factory, partition, links, inputs);
+  auto partition = runPartition(households, factory, inputs.personCount);
+  auto links = runLinks(households, dependents, factory, partition, inputs);
+  auto support = runSupport(retireeSupport, factory, partition, links, inputs);
 
   return fold(std::move(partition), std::move(links), std::move(support));
 }

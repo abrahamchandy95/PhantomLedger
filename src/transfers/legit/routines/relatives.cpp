@@ -2,14 +2,12 @@
 
 #include "phantomledger/relationships/family/builder.hpp"
 #include "phantomledger/relationships/family/network.hpp"
-#include "phantomledger/transfers/family/graph_config.hpp"
 
 #include <utility>
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
 
 namespace family_relg = ::PhantomLedger::relationships::family;
-namespace family_cfg = ::PhantomLedger::transfers::family;
 namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
 
 namespace {
@@ -41,7 +39,9 @@ windowFromPlan(const blueprints::LegitBuildPlan &plan) {
 }
 
 [[nodiscard]] family_relg::Graph
-buildGraph(const family_cfg::GraphConfig &graphCfg,
+buildGraph(const family_relg::Households &households,
+           const family_relg::Dependents &dependents,
+           const family_relg::RetireeSupport &retireeSupport,
            std::span<const ::PhantomLedger::personas::Type> personas,
            std::uint32_t personCount, std::uint64_t baseSeed) {
   const family_relg::BuildInputs inputs{
@@ -49,7 +49,7 @@ buildGraph(const family_cfg::GraphConfig &graphCfg,
       .personCount = personCount,
       .baseSeed = baseSeed,
   };
-  return family_relg::build(graphCfg, inputs);
+  return family_relg::build(inputs, households, dependents, retireeSupport);
 }
 
 [[nodiscard]] std::vector<double>
@@ -105,7 +105,9 @@ void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
 } // namespace
 
 std::vector<transactions::Transaction> generateFamilyTxns(
-    const FamilyRunRequest &request, const family_cfg::GraphConfig &graphCfg,
+    const FamilyRunRequest &request, const family_relg::Households &households,
+    const family_relg::Dependents &dependents,
+    const family_relg::RetireeSupport &retireeSupport,
     const FamilyTransferModel &transferModel,
     const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf) {
   std::vector<transactions::Transaction> out;
@@ -122,7 +124,8 @@ std::vector<transactions::Transaction> generateFamilyTxns(
   }
 
   // Build the graph once. All routines below read from it.
-  const auto graph = buildGraph(graphCfg, personas, personCount, plan.seed);
+  const auto graph = buildGraph(households, dependents, retireeSupport,
+                                personas, personCount, plan.seed);
 
   // Pre-extract per-person amount multipliers so routines can
   // span over them without dereferencing the full Persona table.

@@ -2,9 +2,11 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/relationships/family/links.hpp"
+#include "phantomledger/relationships/family/partition.hpp"
+#include "phantomledger/relationships/family/support.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/family/graph_config.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/routines/family/allowances.hpp"
 #include "phantomledger/transfers/legit/routines/family/grandparent_gifts.hpp"
@@ -21,6 +23,7 @@
 namespace PhantomLedger::transfers::legit::routines::relatives {
 
 namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
+namespace family_rel = ::PhantomLedger::relationships::family;
 
 struct FamilyRunRequest {
   const entity::account::Registry *accounts = nullptr;
@@ -55,8 +58,9 @@ struct FamilyTransferModel {
 inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 
 [[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
-    const FamilyRunRequest &request,
-    const ::PhantomLedger::transfers::family::GraphConfig &graphModel,
+    const FamilyRunRequest &request, const family_rel::Households &households,
+    const family_rel::Dependents &dependents,
+    const family_rel::RetireeSupport &retireeSupport,
     const FamilyTransferModel &transferModel,
     const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf);
 

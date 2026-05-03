@@ -213,8 +213,8 @@ SupportTies buildSupportTies(const SupportInputs &inputs, random::Rng &rng) {
   out.supportedParentsBy.assign(inputs.personCount,
                                 std::vector<entity::PersonId>{});
 
-  if (inputs.personCount == 0 || inputs.cfg == nullptr ||
-      !inputs.cfg->enabled) {
+  if (inputs.personCount == 0 || inputs.support == nullptr ||
+      !inputs.support->enabled) {
     return out;
   }
 
@@ -231,7 +231,7 @@ SupportTies buildSupportTies(const SupportInputs &inputs, random::Rng &rng) {
       continue;
     }
 
-    if (!rng.coin(inputs.cfg->hasChildP)) {
+    if (!rng.coin(inputs.support->hasChildP)) {
       continue;
     }
 
@@ -241,7 +241,7 @@ SupportTies buildSupportTies(const SupportInputs &inputs, random::Rng &rng) {
                               inputs.personCount, residentSupporters);
 
     const bool useResidents =
-        !residentSupporters.empty() && rng.coin(inputs.cfg->coresidesP);
+        !residentSupporters.empty() && rng.coin(inputs.support->coresidesP);
     const std::span<const entity::PersonId> pool =
         useResidents ? std::span<const entity::PersonId>{residentSupporters}
                      : std::span<const entity::PersonId>{supporters};

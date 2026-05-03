@@ -22,9 +22,11 @@ namespace PhantomLedger::transfers::credit_cards {
 struct LifecycleRules;
 } // namespace PhantomLedger::transfers::credit_cards
 
-namespace PhantomLedger::transfers::family {
-struct GraphConfig;
-} // namespace PhantomLedger::transfers::family
+namespace PhantomLedger::relationships::family {
+struct Households;
+struct Dependents;
+struct RetireeSupport;
+} // namespace PhantomLedger::relationships::family
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
 struct FamilyTransferModel;
@@ -60,7 +62,12 @@ struct CreditCardInputs {
 };
 
 struct FamilyInputs {
-  const ::PhantomLedger::transfers::family::GraphConfig *graph = nullptr;
+  const ::PhantomLedger::relationships::family::Households *households =
+      nullptr;
+  const ::PhantomLedger::relationships::family::Dependents *dependents =
+      nullptr;
+  const ::PhantomLedger::relationships::family::RetireeSupport *retireeSupport =
+      nullptr;
   const ::PhantomLedger::transfers::legit::routines::relatives::
       FamilyTransferModel *transfers = nullptr;
 };

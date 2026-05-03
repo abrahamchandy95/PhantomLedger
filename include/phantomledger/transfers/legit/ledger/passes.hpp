@@ -27,9 +27,11 @@ struct DisabilityTerms;
 struct RetirementTerms;
 } // namespace PhantomLedger::transfers::government
 
-namespace PhantomLedger::transfers::family {
-struct GraphConfig;
-} // namespace PhantomLedger::transfers::family
+namespace PhantomLedger::relationships::family {
+struct Households;
+struct Dependents;
+struct RetireeSupport;
+} // namespace PhantomLedger::relationships::family
 
 namespace PhantomLedger::transfers::legit::ledger::passes {
 
@@ -88,11 +90,14 @@ void addRoutines(const RoutinePassRequest &request,
                  const transactions::Factory &txf, TxnStreams &streams,
                  ScreenBook &screen);
 
-void addFamily(const FamilyPassRequest &request,
-               const blueprints::LegitBuildPlan &plan,
-               const transactions::Factory &txf, TxnStreams &streams,
-               const family::GraphConfig &graphCfg,
-               const routines::relatives::FamilyTransferModel &transferModel);
+void addFamily(
+    const FamilyPassRequest &request, const blueprints::LegitBuildPlan &plan,
+    const transactions::Factory &txf, TxnStreams &streams,
+    const ::PhantomLedger::relationships::family::Households &households,
+    const ::PhantomLedger::relationships::family::Dependents &dependents,
+    const ::PhantomLedger::relationships::family::RetireeSupport
+        &retireeSupport,
+    const routines::relatives::FamilyTransferModel &transferModel);
 
 void addCredit(const CreditPassRequest &request,
                const blueprints::LegitBuildPlan &plan,

@@ -9,6 +9,12 @@ namespace PhantomLedger::infra {
 class Router;
 } // namespace PhantomLedger::infra
 
+namespace PhantomLedger::relationships::family {
+struct Households;
+struct Dependents;
+struct RetireeSupport;
+} // namespace PhantomLedger::relationships::family
+
 namespace PhantomLedger::transfers::legit::ledger {
 
 struct LegitTransferRequest {
@@ -20,7 +26,12 @@ struct LegitTransferRequest {
   passes::FamilyPassRequest family{};
   passes::CreditPassRequest credit{};
 
-  const ::PhantomLedger::transfers::family::GraphConfig *famGraphCfg = nullptr;
+  const ::PhantomLedger::relationships::family::Households *familyHouseholds =
+      nullptr;
+  const ::PhantomLedger::relationships::family::Dependents *familyDependents =
+      nullptr;
+  const ::PhantomLedger::relationships::family::RetireeSupport *retireeSupport =
+      nullptr;
   const ::PhantomLedger::transfers::legit::routines::relatives::
       FamilyTransferModel *familyTransfers = nullptr;
 

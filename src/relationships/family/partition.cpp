@@ -54,7 +54,7 @@ void shuffleIdentityPermutation(random::Rng &rng,
 
 } // namespace
 
-Partition partition(const transfers::family::Households &cfg, random::Rng &rng,
+Partition partition(const Households &households, random::Rng &rng,
                     std::uint32_t personCount) {
   Partition out{};
 
@@ -68,7 +68,7 @@ Partition partition(const transfers::family::Households &cfg, random::Rng &rng,
   out.offsets.reserve(static_cast<std::size_t>(personCount) + 1U);
   out.offsets.push_back(0U);
 
-  const auto sizeCdf = buildSizeCdf(cfg.zipfAlpha, cfg.maxSize);
+  const auto sizeCdf = buildSizeCdf(households.zipfAlpha, households.maxSize);
 
   std::vector<entity::PersonId> permuted(personCount);
   shuffleIdentityPermutation(rng, permuted);
@@ -78,7 +78,7 @@ Partition partition(const transfers::family::Households &cfg, random::Rng &rng,
 
   while (cursor < personCount) {
     const auto desired =
-        drawHouseholdSize(rng, sizeCdf, cfg.singleP, cfg.maxSize);
+        drawHouseholdSize(rng, sizeCdf, households.singleP, households.maxSize);
     const auto remaining = personCount - cursor;
     const auto take = std::min(desired, remaining);
 

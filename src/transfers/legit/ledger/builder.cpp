@@ -18,6 +18,27 @@ accountsFrom(const LegitTransferRequest &request) noexcept {
   return request.plan.census.accounts;
 }
 
+[[nodiscard]] const relationships::family::Households &
+familyHouseholdsFrom(const LegitTransferRequest &request) noexcept {
+  return request.familyHouseholds != nullptr
+             ? *request.familyHouseholds
+             : relationships::family::kDefaultHouseholds;
+}
+
+[[nodiscard]] const relationships::family::Dependents &
+familyDependentsFrom(const LegitTransferRequest &request) noexcept {
+  return request.familyDependents != nullptr
+             ? *request.familyDependents
+             : relationships::family::kDefaultDependents;
+}
+
+[[nodiscard]] const relationships::family::RetireeSupport &
+retireeSupportFrom(const LegitTransferRequest &request) noexcept {
+  return request.retireeSupport != nullptr
+             ? *request.retireeSupport
+             : relationships::family::kDefaultRetireeSupport;
+}
+
 } // namespace
 
 TransfersPayload LegitTransferBuilder::build() const {
@@ -55,9 +76,11 @@ TransfersPayload LegitTransferBuilder::build() const {
                         *request->plan.census.accounts, txf, streams, screen);
   }
 
-  if (request->famGraphCfg != nullptr && request->familyTransfers != nullptr) {
+  if (request->familyTransfers != nullptr) {
     passes::addFamily(request->family, plan, txf, streams,
-                      *request->famGraphCfg, *request->familyTransfers);
+                      familyHouseholdsFrom(*request),
+                      familyDependentsFrom(*request),
+                      retireeSupportFrom(*request), *request->familyTransfers);
   }
 
   passes::addCredit(request->credit, plan, txf, streams);

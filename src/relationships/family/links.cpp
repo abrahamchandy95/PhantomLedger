@@ -83,20 +83,20 @@ void seatParents(entity::PersonId student,
 void assignParentsForStudent(
     entity::PersonId student, std::span<const entity::PersonId> localAdults,
     std::span<const entity::PersonId> globalAdults,
-    const transfers::family::Dependents &cfg, random::Rng &rng,
+    const Dependents &dependents, random::Rng &rng,
     std::vector<std::array<entity::PersonId, 2>> &parentsOf,
     std::vector<std::vector<entity::PersonId>> &childrenOf) {
-  if (!studentIsDependent(rng, cfg.studentDependentP)) {
+  if (!studentIsDependent(rng, dependents.studentDependentP)) {
     return;
   }
 
-  const auto pool =
-      parentPoolFor(localAdults, globalAdults, rng, cfg.studentCoresidesP);
+  const auto pool = parentPoolFor(localAdults, globalAdults, rng,
+                                  dependents.studentCoresidesP);
   if (pool.empty()) {
     return;
   }
 
-  const auto count = parentCountFor(pool.size(), rng, cfg.twoParentP);
+  const auto count = parentCountFor(pool.size(), rng, dependents.twoParentP);
   seatParents(student, pool, count, rng, parentsOf, childrenOf);
 }
 
@@ -129,19 +129,19 @@ collectGlobalAdults(std::span<const ::PhantomLedger::personas::Type> personas,
 // =============================================================================
 
 void assignSpouses(const LinkInputs &inputs, random::Rng &rng, Links &out) {
-  if (inputs.partition == nullptr || inputs.cfg == nullptr ||
-      inputs.personCount == 0) {
+  if (inputs.partition == nullptr || inputs.households == nullptr ||
+      inputs.dependents == nullptr || inputs.personCount == 0) {
     return;
   }
 
   const auto &part = *inputs.partition;
-  const double spouseP = inputs.cfg->households.spouseP;
+  const auto &households = *inputs.households;
+  const double spouseP = households.spouseP;
 
   std::vector<entity::PersonId> adults;
   std::vector<entity::PersonId> studentsScratch;
-  adults.reserve(static_cast<std::size_t>(inputs.cfg->households.maxSize));
-  studentsScratch.reserve(
-      static_cast<std::size_t>(inputs.cfg->households.maxSize));
+  adults.reserve(static_cast<std::size_t>(households.maxSize));
+  studentsScratch.reserve(static_cast<std::size_t>(households.maxSize));
 
   const auto hhCount = part.householdCount();
   for (std::uint32_t h = 0; h < hhCount; ++h) {
@@ -159,13 +159,14 @@ void assignSpouses(const LinkInputs &inputs, random::Rng &rng, Links &out) {
 }
 
 void assignParents(const LinkInputs &inputs, random::Rng &rng, Links &out) {
-  if (inputs.partition == nullptr || inputs.cfg == nullptr ||
-      inputs.personCount == 0) {
+  if (inputs.partition == nullptr || inputs.households == nullptr ||
+      inputs.dependents == nullptr || inputs.personCount == 0) {
     return;
   }
 
   const auto &part = *inputs.partition;
-  const auto &dep = inputs.cfg->dependents;
+  const auto &households = *inputs.households;
+  const auto &dep = *inputs.dependents;
 
   const auto globalAdults =
       collectGlobalAdults(inputs.personas, inputs.personCount);
@@ -174,8 +175,8 @@ void assignParents(const LinkInputs &inputs, random::Rng &rng, Links &out) {
   // Scratch buffers reused across households.
   std::vector<entity::PersonId> adults;
   std::vector<entity::PersonId> students;
-  adults.reserve(static_cast<std::size_t>(inputs.cfg->households.maxSize));
-  students.reserve(static_cast<std::size_t>(inputs.cfg->households.maxSize));
+  adults.reserve(static_cast<std::size_t>(households.maxSize));
+  students.reserve(static_cast<std::size_t>(households.maxSize));
 
   const auto hhCount = part.householdCount();
   for (std::uint32_t h = 0; h < hhCount; ++h) {

@@ -1,30 +1,3 @@
-/// High-level spending-pipeline tests.
-///
-/// These exercise the refactored helpers in `phantomledger/spending/`
-/// without standing up a full `Market` / `Engine`. Each piece is a
-/// pure-ish function whose inputs we can construct in isolation:
-///
-///   * `routing::buildChannelCdf` and `routing::pickSlot` — deterministic
-///     CDF construction and sampling for the merchant/bill/p2p/external
-///     channel mix.
-///
-///   * `liquidity::countFactor` — soft-shaped count-stage liquidity
-///     suppressor. Asserts the documented monotonicity and the kink at
-///     liquidity = 1.0.
-///
-///   * `liquidity::multiplier` — given a `Snapshot` and a
-///     `LiquidityConstraints` config, produces the per-day multiplier.
-///     We test the regimes named in the implementation comments
-///     (relief window, stress region, cash-on-hand effects).
-///
-///   * `spenders::totalTargetTxns` — pure scaling formula
-///     `txns_per_month * spenders * (days/30)`.
-///
-/// If these pass, the lower-level primitives they call into
-/// (`distributions::buildCdf` for the channel CDF, the validate /
-/// rounding helpers consumed indirectly, etc.) are also working.
-
-#include "phantomledger/spending/config/liquidity.hpp"
 #include "phantomledger/spending/liquidity/factor.hpp"
 #include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/liquidity/snapshot.hpp"
@@ -39,7 +12,6 @@
 using namespace PhantomLedger;
 namespace routing = PhantomLedger::spending::routing;
 namespace liquidity = PhantomLedger::spending::liquidity;
-namespace config = PhantomLedger::spending::config;
 namespace spenders = PhantomLedger::spending::spenders;
 
 namespace {
@@ -164,10 +136,9 @@ void testCountFactorBoundaries() {
 }
 
 void testMultiplierDisabled() {
-  config::LiquidityConstraints disabled = config::kDefaultLiquidityConstraints;
+  liquidity::Throttle disabled{};
   disabled.enabled = false;
 
-  // Disabled config short-circuits to 1.0 regardless of snapshot shape.
   const auto snap = makeSnap(/*daysSincePayday=*/365, /*sensitivity=*/0.9,
                              /*availableCash=*/0.0, /*baselineCash=*/1000.0,
                              /*burden=*/2000.0);
@@ -176,14 +147,12 @@ void testMultiplierDisabled() {
 }
 
 void testMultiplierStressRegion() {
-  const auto cfg = config::kDefaultLiquidityConstraints;
+  const liquidity::Throttle cfg{};
 
-  // Just past payday: in the relief window (daysSincePayday <= reliefDays=2).
   const auto fresh = makeSnap(/*daysSincePayday=*/0, /*sensitivity=*/0.5,
                               /*availableCash=*/1000.0, /*baselineCash=*/1000.0,
                               /*burden=*/0.0);
 
-  // Deep into the stress region (daysSincePayday > stressStartDay+rampDays).
   const auto stressed =
       makeSnap(/*daysSincePayday=*/30, /*sensitivity=*/0.5,
                /*availableCash=*/1000.0, /*baselineCash=*/1000.0,
@@ -192,14 +161,10 @@ void testMultiplierStressRegion() {
   const double freshMult = liquidity::multiplier(cfg, fresh);
   const double stressedMult = liquidity::multiplier(cfg, stressed);
 
-  // Stress region must produce strictly less than (or equal to) the
-  // fresh-payday multiplier when everything else is equal.
   PL_CHECK(stressedMult < freshMult);
 
-  // Both stay within the documented [absoluteFloor, kLiquidityCeiling]
-  // global window.
   PL_CHECK(stressedMult >= cfg.absoluteFloor - 1e-12);
-  PL_CHECK(freshMult <= config::kLiquidityCeiling + 1e-12);
+  PL_CHECK(freshMult <= liquidity::kCeiling + 1e-12);
 
   std::printf("  PASS: liquidity multiplier — stress region < fresh region "
               "(%.3f < %.3f)\n",
@@ -207,7 +172,7 @@ void testMultiplierStressRegion() {
 }
 
 void testMultiplierBurdenPenalty() {
-  const auto cfg = config::kDefaultLiquidityConstraints;
+  const liquidity::Throttle cfg{};
 
   const auto noBurden =
       makeSnap(/*daysSincePayday=*/4, /*sensitivity=*/0.3,
