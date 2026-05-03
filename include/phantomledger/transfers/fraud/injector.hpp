@@ -6,6 +6,7 @@
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -23,12 +24,14 @@ public:
     StructuringRules structuring{};
     CamouflageRates camouflage{};
 
-    void validate() const {
-      typology.validate();
-      layering.validate();
-      structuring.validate();
-      camouflage.validate();
+    void validate(primitives::validate::Report &r) const {
+      typology.validate(r);
+      layering.validate(r);
+      structuring.validate(r);
+      camouflage.validate(r);
     }
+
+    void validate() const { primitives::validate::require(*this); }
   };
 
   struct Services {

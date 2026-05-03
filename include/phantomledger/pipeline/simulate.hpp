@@ -11,14 +11,8 @@
 
 namespace PhantomLedger::pipeline {
 
-struct SimulateInputs {
-  ::PhantomLedger::time::Window window{};
-  std::uint64_t seed = 0;
-
-  ::PhantomLedger::pipeline::stages::entities::Inputs entities;
-  ::PhantomLedger::pipeline::stages::infra::Inputs infraIn{};
-
-  ::PhantomLedger::pipeline::stages::transfers::RunScope transferRun{};
+struct TransferSynthesis {
+  ::PhantomLedger::pipeline::stages::transfers::RunScope run{};
   ::PhantomLedger::pipeline::stages::transfers::RecurringIncome
       recurringIncome{};
   ::PhantomLedger::pipeline::stages::transfers::BalanceBookRules balanceBook{};
@@ -29,11 +23,19 @@ struct SimulateInputs {
   ::PhantomLedger::pipeline::stages::transfers::InsuranceClaims insurance{};
   ::PhantomLedger::pipeline::stages::transfers::LedgerReplay replay{};
   ::PhantomLedger::pipeline::stages::transfers::FraudInjection fraud{};
-  ::PhantomLedger::pipeline::stages::transfers::PopulationShape
-      transferPopulation{};
+  ::PhantomLedger::pipeline::stages::transfers::PopulationShape population{};
+};
+
+struct SimulationScenario {
+  ::PhantomLedger::time::Window window{};
+  std::uint64_t seed = 0;
+
+  ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities;
+  ::PhantomLedger::pipeline::stages::infra::InfraSynthesis infra{};
+  TransferSynthesis transfers{};
 };
 
 [[nodiscard]] SimulationResult simulate(::PhantomLedger::random::Rng &rng,
-                                        const SimulateInputs &in);
+                                        const SimulationScenario &scenario);
 
 } // namespace PhantomLedger::pipeline

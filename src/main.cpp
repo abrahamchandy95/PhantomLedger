@@ -279,30 +279,30 @@ int main(int argc, char **argv) {
 
     const auto poolSet = buildDefaultPoolSet(args.seed);
 
-    pl::pipeline::SimulateInputs in{
+    pl::pipeline::SimulationScenario scenario{
         .window = window,
         .seed = args.seed,
         .entities =
-            pl::pipeline::stages::entities::Inputs{
+            pl::pipeline::stages::entities::EntitySynthesis{
                 .people =
-                    pl::pipeline::stages::entities::PeopleInputs{
+                    pl::pipeline::stages::entities::PeopleSynthesis{
                         .identity =
                             pl::pipeline::stages::entities::IdentitySource{
                                 .pools = poolSet,
                                 .simStart = window.start,
                             },
                         .population =
-                            pl::pipeline::stages::entities::PopulationPlan{
+                            pl::pipeline::stages::entities::PopulationSizing{
                                 .count = args.population,
                             },
                     },
             },
     };
 
-    in.infraIn.window = window;
+    scenario.infra.window = window;
 
     auto rng = pl::random::Rng::fromSeed(args.seed);
-    const auto result = pl::pipeline::simulate(rng, in);
+    const auto result = pl::pipeline::simulate(rng, scenario);
 
     switch (args.usecase) {
     case pl::run::UseCase::standard:

@@ -9,21 +9,22 @@
 
 namespace PhantomLedger::pipeline::stages::infra {
 
-struct Inputs {
+struct InfraSynthesis {
   ::PhantomLedger::time::Window window{};
 
-  double switchP = 0.05;
+  double routerSwitchP = 0.05;
 
-  ::PhantomLedger::infra::synth::rings::Config ringsCfg{};
-  ::PhantomLedger::infra::synth::devices::Config devicesCfg{};
-  ::PhantomLedger::infra::synth::ips::Config ipsCfg{};
+  ::PhantomLedger::infra::synth::rings::Config ringBehavior{};
+  ::PhantomLedger::infra::synth::devices::Config deviceBehavior{};
+  ::PhantomLedger::infra::synth::ips::Config ipBehavior{};
 
-  double useSharedDeviceP = 0.85;
-  double useSharedIpP = 0.80;
+  double sharedDeviceUseP = 0.85;
+  double sharedIpUseP = 0.80;
 };
 
 [[nodiscard]] ::PhantomLedger::pipeline::Infra
 build(::PhantomLedger::random::Rng &rng,
-      const ::PhantomLedger::pipeline::Entities &entities, const Inputs &in);
+      const ::PhantomLedger::pipeline::Entities &entities,
+      const InfraSynthesis &infra);
 
 } // namespace PhantomLedger::pipeline::stages::infra

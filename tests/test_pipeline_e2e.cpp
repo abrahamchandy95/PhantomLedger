@@ -10,8 +10,9 @@
 #include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -38,6 +39,7 @@ void expectNonEmptyFile(const fs::path &path) {
     ++failures;
     return;
   }
+
   std::ifstream in(path);
   std::string line;
   if (!std::getline(in, line) || line.empty()) {
@@ -52,8 +54,9 @@ void expectNonEmptyFile(const fs::path &path) {
 /// only need uniqueness across concurrent test runs, not security.
 [[nodiscard]] fs::path uniqueTempDir(const std::string &prefix) {
   std::random_device rd;
-  std::uint64_t mix = (static_cast<std::uint64_t>(rd()) << 32) |
+  std::uint64_t mix = (static_cast<std::uint64_t>(rd()) << 32U) |
                       static_cast<std::uint64_t>(rd());
+
   // Mix in the high-resolution clock so back-to-back invocations
   // never collide even if random_device has limited entropy.
   mix ^= static_cast<std::uint64_t>(
@@ -62,12 +65,14 @@ void expectNonEmptyFile(const fs::path &path) {
   char buf[24];
   std::snprintf(buf, sizeof(buf), "%016llx",
                 static_cast<unsigned long long>(mix));
+
   return fs::temp_directory_path() / (prefix + buf);
 }
 
 [[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
+
   poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
       pl::entities::synth::pii::buildLocalePool(
           pl::locale::Country::us, sizes, static_cast<std::uint32_t>(seed));
@@ -76,30 +81,30 @@ void expectNonEmptyFile(const fs::path &path) {
   window.start = pl::time::makeTime({2025, 1, 1});
   window.days = 7;
 
-  pl::pipeline::SimulateInputs in{
+  pl::pipeline::SimulationScenario scenario{
       .window = window,
       .seed = seed,
       .entities =
-          pl::pipeline::stages::entities::Inputs{
+          pl::pipeline::stages::entities::EntitySynthesis{
               .people =
-                  pl::pipeline::stages::entities::PeopleInputs{
+                  pl::pipeline::stages::entities::PeopleSynthesis{
                       .identity =
                           pl::pipeline::stages::entities::IdentitySource{
                               .pools = poolSet,
                               .simStart = window.start,
                           },
                       .population =
-                          pl::pipeline::stages::entities::PopulationPlan{
+                          pl::pipeline::stages::entities::PopulationSizing{
                               .count = 100,
                           },
                   },
           },
   };
 
-  in.infraIn.window = window;
+  scenario.infra.window = window;
 
   auto rng = pl::random::Rng::fromSeed(seed);
-  return pl::pipeline::simulate(rng, in);
+  return pl::pipeline::simulate(rng, scenario);
 }
 
 void testStandardExport(const pl::pipeline::SimulationResult &result,
@@ -126,6 +131,7 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
        }) {
     expectNonEmptyFile(outDir / name);
   }
+
   // transactions.csv only emitted with showTransactions=true.
   check(!fs::exists(outDir / "transactions.csv"),
         "transactions.csv NOT emitted by default");
@@ -134,7 +140,8 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
 void testMuleMlExport(const pl::pipeline::SimulationResult &result,
                       const fs::path &outDir) {
   pl::exporter::mule_ml::Options opts{};
-  // includeStandardExport stays at its default (true).
+
+  // includeStandardExport stays at its default: true.
   pl::exporter::mule_ml::exportAll(result, outDir, opts);
 
   for (const auto *name : {
@@ -145,8 +152,8 @@ void testMuleMlExport(const pl::pipeline::SimulationResult &result,
        }) {
     expectNonEmptyFile(outDir / "ml_ready" / name);
   }
-  // Standard bundle should also be present (includeStandardExport
-  // defaults to true).
+
+  // Standard bundle should also be present.
   expectNonEmptyFile(outDir / "person.csv");
 }
 
@@ -177,8 +184,8 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
        }) {
     expectNonEmptyFile(outDir / "aml" / "vertices" / name);
   }
-  // Representative edge CSVs (full count is 38 — checking a handful
-  // is enough for smoke).
+
+  // Representative edge CSVs. Full count is larger; this is a smoke test.
   for (const auto *name : {
            "customer_has_account.csv",
            "send_transaction.csv",
@@ -188,7 +195,7 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
        }) {
     expectNonEmptyFile(outDir / "aml" / "edges" / name);
   }
-  // Summary must reflect the small population.
+
   check(summary.customerCount == 100,
         "AML summary customerCount == 100, got " +
             std::to_string(summary.customerCount));
@@ -202,6 +209,7 @@ int main() {
 
   try {
     const auto result = runSmallSim(/*seed=*/42);
+
     testStandardExport(result, base / "standard");
     testMuleMlExport(result, base / "mule_ml");
     testAmlExport(result, base / "aml");
