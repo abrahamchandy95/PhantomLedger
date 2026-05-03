@@ -7,10 +7,10 @@
 namespace PhantomLedger::spending::simulator {
 
 std::vector<transactions::Transaction>
-simulate(market::Market &market, Engine &engine,
+simulate(market::Market &market, RunResources &resources,
          const obligations::Snapshot &obligations, RunPlanner planner,
          DayDriver dayDriver) {
-  Simulator sim(market, engine, obligations, std::move(planner),
+  Simulator sim(market, resources, obligations, std::move(planner),
                 std::move(dayDriver));
   return sim.run();
 }

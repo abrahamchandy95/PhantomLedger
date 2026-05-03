@@ -20,10 +20,10 @@ void sortChronological(std::vector<transactions::Transaction> &txns) {
 
 } // namespace
 
-Simulator::Simulator(market::Market &market, Engine &engine,
+Simulator::Simulator(market::Market &market, RunResources &resources,
                      const obligations::Snapshot &obligations,
                      RunPlanner planner, DayDriver dayDriver)
-    : market_(market), engine_(engine), obligations_(obligations),
+    : market_(market), resources_(resources), obligations_(obligations),
       planner_(std::move(planner)), dayDriver_(std::move(dayDriver)) {}
 
 std::vector<transactions::Transaction> Simulator::run() {
@@ -31,13 +31,13 @@ std::vector<transactions::Transaction> Simulator::run() {
     return {};
   }
 
-  dayDriver_.prepare(market_, engine_, planner_.load());
+  dayDriver_.prepare(market_, resources_, planner_.load());
 
-  RunPlan plan = planner_.build(market_, obligations_, engine_.ledger,
+  RunPlan plan = planner_.build(market_, obligations_, resources_.ledger(),
                                 dayDriver_.sensitivities());
 
   const std::size_t reserveCapacity =
-      engine_.threadCount <= 1
+      !resources_.threads().parallel()
           ? static_cast<std::size_t>(plan.budget.targetTotalTxns *
                                      kTxnReserveSlack)
           : 0;
@@ -47,7 +47,7 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
-    dayDriver_.runDay(market_, engine_, plan, state, dayIndex);
+    dayDriver_.runDay(market_, resources_, plan, state, dayIndex);
   }
 
   dayDriver_.finish(state);

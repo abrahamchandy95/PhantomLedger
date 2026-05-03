@@ -140,12 +140,13 @@ void uniqueWeightedPick(random::Rng &rng, const std::vector<double> &cdf,
 
 } // namespace
 
-Market buildMarket(BootstrapInputs inputs) {
-  population::View popView = buildPopulationView(inputs.census);
+Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
+                   ShopperBehaviorRules behavior) {
+  population::View popView = buildPopulationView(sources.census);
 
-  random::RngFactory factory(inputs.baseSeed);
+  random::RngFactory factory(sources.baseSeed);
 
-  const auto *catalog = inputs.network.catalog;
+  const auto *catalog = sources.network.catalog;
 
   std::vector<double> merchCdf =
       catalog != nullptr ? buildMerchCdf(*catalog) : std::vector<double>{};
@@ -155,73 +156,73 @@ Market buildMarket(BootstrapInputs inputs) {
                                       : std::vector<double>{};
 
   std::vector<std::uint32_t> favOffsets;
-  favOffsets.reserve(inputs.census.count + 1);
+  favOffsets.reserve(sources.census.count + 1);
   favOffsets.push_back(0);
 
   std::vector<std::uint32_t> favFlat;
 
   std::vector<std::uint32_t> billOffsets;
-  billOffsets.reserve(inputs.census.count + 1);
+  billOffsets.reserve(sources.census.count + 1);
   billOffsets.push_back(0);
 
   std::vector<std::uint32_t> billFlat;
 
   std::vector<std::uint32_t> rowScratch;
-  rowScratch.reserve(inputs.favoriteMax);
+  rowScratch.reserve(payees.favoriteMax);
 
-  std::vector<float> exploreProp(inputs.census.count);
-  std::vector<std::uint32_t> burstStart(inputs.census.count,
+  std::vector<float> exploreProp(sources.census.count);
+  std::vector<std::uint32_t> burstStart(sources.census.count,
                                         commerce::kNoBurstDay);
-  std::vector<std::uint16_t> burstLen(inputs.census.count, 0u);
+  std::vector<std::uint16_t> burstLen(sources.census.count, 0u);
 
-  for (std::uint32_t i = 0; i < inputs.census.count; ++i) {
+  for (std::uint32_t i = 0; i < sources.census.count; ++i) {
     auto rng = makePerPersonRng(factory, i);
 
     const std::uint16_t favK = static_cast<std::uint16_t>(
-        rng.uniformInt(inputs.favoriteMin, inputs.favoriteMax + 1));
+        rng.uniformInt(payees.favoriteMin, payees.favoriteMax + 1));
 
     rowScratch.clear();
-    uniqueWeightedPick(rng, merchCdf, favK, inputs.picking.maxPickAttempts,
+    uniqueWeightedPick(rng, merchCdf, favK, payees.picking.maxPickAttempts,
                        rowScratch);
 
     favFlat.insert(favFlat.end(), rowScratch.begin(), rowScratch.end());
     favOffsets.push_back(static_cast<std::uint32_t>(favFlat.size()));
 
     const std::uint16_t billK = static_cast<std::uint16_t>(
-        rng.uniformInt(inputs.billerMin, inputs.billerMax + 1));
+        rng.uniformInt(payees.billerMin, payees.billerMax + 1));
 
     rowScratch.clear();
-    uniqueWeightedPick(rng, billerCdf, billK, inputs.picking.maxPickAttempts,
+    uniqueWeightedPick(rng, billerCdf, billK, payees.picking.maxPickAttempts,
                        rowScratch);
 
     billFlat.insert(billFlat.end(), rowScratch.begin(), rowScratch.end());
     billOffsets.push_back(static_cast<std::uint32_t>(billFlat.size()));
 
     exploreProp[i] = static_cast<float>(probability::distributions::beta(
-        rng, inputs.exploration.alpha, inputs.exploration.beta));
+        rng, behavior.exploration.alpha, behavior.exploration.beta));
 
-    if (inputs.bounds.days > 0 && rng.coin(inputs.burst.probability)) {
+    if (sources.bounds.days > 0 && rng.coin(behavior.burst.probability)) {
       burstStart[i] = static_cast<std::uint32_t>(
-          rng.uniformInt(0, static_cast<int>(inputs.bounds.days)));
+          rng.uniformInt(0, static_cast<int>(sources.bounds.days)));
 
       burstLen[i] = static_cast<std::uint16_t>(
-          rng.uniformInt(inputs.burst.minDays, inputs.burst.maxDays + 1));
+          rng.uniformInt(behavior.burst.minDays, behavior.burst.maxDays + 1));
     }
   }
 
   commerce::Favorites favorites(std::move(favOffsets), std::move(favFlat));
   commerce::Billers billers(std::move(billOffsets), std::move(billFlat));
 
-  commerce::Contacts contacts(inputs.census.count, /*degree=*/12);
+  commerce::Contacts contacts(sources.census.count, /*degree=*/12);
 
   commerce::View commerceView(
       catalog, std::move(merchCdf), std::move(billerCdf), std::move(favorites),
       std::move(billers), std::move(exploreProp), std::move(burstStart),
       std::move(burstLen), std::move(contacts));
 
-  Cards cards = normalizeCards(std::move(inputs.cards), inputs.census.count);
+  Cards cards = normalizeCards(std::move(sources.cards), sources.census.count);
 
-  return Market(inputs.bounds, std::move(popView), std::move(commerceView),
+  return Market(sources.bounds, std::move(popView), std::move(commerceView),
                 std::move(cards));
 }
 

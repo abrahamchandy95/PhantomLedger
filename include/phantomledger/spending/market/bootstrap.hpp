@@ -66,24 +66,31 @@ struct BurstSchedule {
   }
 };
 
-struct BootstrapInputs {
+struct MarketSources {
   Bounds bounds{};
   population::Census census{};
   commerce::Network network{};
   Cards cards{};
-
-  MerchantPickBudget picking{};
-  BurstSchedule burst{};
-  ExplorationDistribution exploration{};
   std::uint64_t baseSeed = 0;
+};
 
-  // Counts plumbed from the world Merchants config.
+struct PayeeSelectionRules {
+  MerchantPickBudget picking{};
+
+  // Counts plumbed from the world Merchants rules.
   std::uint16_t favoriteMin = 8;
   std::uint16_t favoriteMax = 30;
   std::uint16_t billerMin = 2;
   std::uint16_t billerMax = 6;
 };
 
-[[nodiscard]] Market buildMarket(BootstrapInputs inputs);
+struct ShopperBehaviorRules {
+  BurstSchedule burst{};
+  ExplorationDistribution exploration{};
+};
+
+[[nodiscard]] Market buildMarket(MarketSources sources,
+                                 PayeeSelectionRules payees = {},
+                                 ShopperBehaviorRules behavior = {});
 
 } // namespace PhantomLedger::spending::market

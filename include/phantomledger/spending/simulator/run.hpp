@@ -12,7 +12,7 @@
 namespace PhantomLedger::spending::simulator {
 
 [[nodiscard]] std::vector<transactions::Transaction>
-simulate(market::Market &market, Engine &engine,
+simulate(market::Market &market, RunResources &resources,
          const obligations::Snapshot &obligations, RunPlanner planner = {},
          DayDriver dayDriver = DayDriver{});
 
