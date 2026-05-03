@@ -15,9 +15,9 @@ DayDriver::DayDriver(DaySource days, CommerceEvolver commerce,
       dynamics_(std::move(dynamics)), emission_(std::move(emission)) {}
 
 void DayDriver::prepare(market::Market &market, const RunResources &resources,
-                        const TransactionLoad &load) {
+                        double txnsPerMonth) {
   dynamics_.resetFor(market);
-  emission_.prepare(market, resources, load);
+  emission_.prepare(market, resources, txnsPerMonth);
 }
 
 std::span<const double> DayDriver::sensitivities() const noexcept {
@@ -25,27 +25,28 @@ std::span<const double> DayDriver::sensitivities() const noexcept {
 }
 
 void DayDriver::runDay(market::Market &market, const RunResources &resources,
-                       const RunPlan &plan, RunState &state,
+                       const PreparedRun &run, RunState &state,
                        std::uint32_t dayIndex) {
   commerce_.evolveIfNeeded(market, resources.rng(), dayIndex);
 
   const auto frame = days_.build(market.bounds(), resources.rng(), dayIndex);
 
-  advanceLedgerToDay(resources, plan, state, frame);
+  advanceLedgerToDay(resources, run.ledgerReplay(), state, frame);
 
-  const auto paydayPersons = updatePaydayState(plan, state, dayIndex);
+  const auto paydayPersons = updatePaydayState(run.paydays(), state, dayIndex);
 
   dynamics_.advance(resources.rng(), paydayPersons);
 
-  emission_.emitDay(market, resources, plan, state, frame,
-                    dynamics_.dailyMultipliers());
+  emission_.emitDay(market, resources, run.population(), run.budget(),
+                    run.routing(), state, frame, dynamics_.dailyMultipliers());
 }
 
 void DayDriver::advanceLedgerToDay(const RunResources &resources,
-                                   const RunPlan &plan, RunState &state,
+                                   const PreparedRun::LedgerReplay &replay,
+                                   RunState &state,
                                    const actors::DayFrame &frame) const {
   const auto newBaseIdx = clearing::advanceBookThrough(
-      resources.ledger(), plan.baseLedger.txns, state.baseIdx(),
+      resources.ledger(), replay.txns, state.baseIdx(),
       time::toEpochSeconds(frame.day.start),
       /*inclusive=*/false);
 
@@ -53,11 +54,11 @@ void DayDriver::advanceLedgerToDay(const RunResources &resources,
 }
 
 std::span<const std::uint32_t>
-DayDriver::updatePaydayState(const RunPlan &plan, RunState &state,
-                             std::uint32_t dayIndex) const {
+DayDriver::updatePaydayState(const PreparedRun::Paydays &paydays,
+                             RunState &state, std::uint32_t dayIndex) const {
   state.bumpAllDaysSincePayday();
 
-  const auto paydayPersons = plan.payday.index.personsOn(dayIndex);
+  const auto paydayPersons = paydays.index.personsOn(dayIndex);
   for (const auto idx : paydayPersons) {
     state.resetDaysSincePayday(idx);
   }

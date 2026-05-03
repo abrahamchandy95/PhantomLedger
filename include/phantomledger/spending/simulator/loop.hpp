@@ -7,7 +7,7 @@
 #include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/routing/emission_result.hpp"
-#include "phantomledger/spending/simulator/plan.hpp"
+#include "phantomledger/spending/simulator/prepared_run.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -18,18 +18,20 @@
 
 namespace PhantomLedger::spending::simulator {
 
-struct SpenderEmissionPolicy {
-  double baseExploreP = 0.0;
-  const actors::ExploreModifiers &exploration;
-  const liquidity::Throttle &liquidity;
-};
-
 class SpenderEmissionLoop {
 public:
-  SpenderEmissionLoop(const market::Market &market, const RunPlan &plan,
-                      RunState &state, const actors::DayFrame &frame,
-                      std::span<const double> dailyMultipliers,
-                      SpenderEmissionPolicy policy,
+  struct Rules {
+    double baseExploreP = 0.0;
+    const actors::ExploreModifiers &exploration;
+    const liquidity::Throttle &liquidity;
+  };
+
+  SpenderEmissionLoop(const market::Market &market,
+                      const PreparedRun::Population &population,
+                      const PreparedRun::Budget &budget,
+                      const PreparedRun::Routing &routing, RunState &state,
+                      const actors::DayFrame &frame,
+                      std::span<const double> dailyMultipliers, Rules rules,
                       const routing::ResolvedAccounts &resolved,
                       ParallelLedgerView ledgerView) noexcept;
 
@@ -61,11 +63,13 @@ private:
   [[nodiscard]] bool tryEmit(const routing::EmissionResult &result);
 
   const market::Market &market_;
-  const RunPlan &plan_;
+  const PreparedRun::Population &population_;
+  const PreparedRun::Budget &budget_;
+  const PreparedRun::Routing &routing_;
   RunState &state_;
   const actors::DayFrame &frame_;
   std::span<const double> dailyMultipliers_;
-  SpenderEmissionPolicy policy_;
+  Rules rules_;
   const routing::ResolvedAccounts &resolved_;
   ParallelLedgerView ledgerView_;
 };

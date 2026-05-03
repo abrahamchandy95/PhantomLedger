@@ -9,7 +9,7 @@
 #include "phantomledger/spending/routing/channel.hpp"
 #include "phantomledger/spending/routing/payments.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
-#include "phantomledger/spending/simulator/plan.hpp"
+#include "phantomledger/spending/simulator/run_planner.hpp"
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 
@@ -22,7 +22,7 @@ struct SpendingHabits {
 inline constexpr SpendingHabits kDefaultSpendingHabits{};
 
 struct RunPlanning {
-  ::PhantomLedger::spending::simulator::TransactionLoad load{};
+  ::PhantomLedger::spending::simulator::RunPlanner::TransactionLoad load{};
   ::PhantomLedger::spending::routing::ChannelWeights channels{};
   ::PhantomLedger::spending::routing::PaymentRoutingRules paymentRules{};
 };

@@ -31,23 +31,23 @@ std::vector<transactions::Transaction> Simulator::run() {
     return {};
   }
 
-  dayDriver_.prepare(market_, resources_, planner_.load());
+  dayDriver_.prepare(market_, resources_, planner_.txnsPerMonth());
 
-  RunPlan plan = planner_.build(market_, obligations_, resources_.ledger(),
-                                dayDriver_.sensitivities());
+  PreparedRun run = planner_.build(market_, obligations_, resources_.ledger(),
+                                   dayDriver_.sensitivities());
 
   const std::size_t reserveCapacity =
       !resources_.threads().parallel()
-          ? static_cast<std::size_t>(plan.budget.targetTotalTxns *
+          ? static_cast<std::size_t>(run.budget().targetTotalTxns *
                                      kTxnReserveSlack)
           : 0;
 
   RunState state(market_.population().count(), reserveCapacity,
-                 plan.budget.totalPersonDays, plan.budget.targetTotalTxns);
+                 run.budget().totalPersonDays, run.budget().targetTotalTxns);
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
-    dayDriver_.runDay(market_, resources_, plan, state, dayIndex);
+    dayDriver_.runDay(market_, resources_, run, state, dayIndex);
   }
 
   dayDriver_.finish(state);

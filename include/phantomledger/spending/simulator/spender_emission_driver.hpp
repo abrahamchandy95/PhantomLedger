@@ -6,7 +6,7 @@
 #include "phantomledger/spending/liquidity/multiplier.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/simulator/engine.hpp"
-#include "phantomledger/spending/simulator/plan.hpp"
+#include "phantomledger/spending/simulator/prepared_run.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
 
 #include <span>
@@ -14,16 +14,16 @@
 
 namespace PhantomLedger::spending::simulator {
 
-struct EmissionBehavior {
-  double baseExploreP = 0.0;
-  actors::ExploreModifiers exploration{};
-  liquidity::Throttle liquidity{};
-};
-
 class SpenderEmissionDriver {
 public:
+  struct Behavior {
+    double baseExploreP = 0.0;
+    actors::ExploreModifiers exploration{};
+    liquidity::Throttle liquidity{};
+  };
+
   SpenderEmissionDriver() = default;
-  explicit SpenderEmissionDriver(EmissionBehavior behavior);
+  explicit SpenderEmissionDriver(Behavior behavior);
 
   SpenderEmissionDriver(const SpenderEmissionDriver &) = delete;
   SpenderEmissionDriver &operator=(const SpenderEmissionDriver &) = delete;
@@ -31,10 +31,12 @@ public:
   SpenderEmissionDriver &operator=(SpenderEmissionDriver &&) noexcept = default;
 
   void prepare(const market::Market &market, const RunResources &resources,
-               const TransactionLoad &load);
+               double txnsPerMonth);
 
   void emitDay(const market::Market &market, const RunResources &resources,
-               const RunPlan &plan, RunState &state,
+               const PreparedRun::Population &population,
+               const PreparedRun::Budget &budget,
+               const PreparedRun::Routing &routingSnapshot, RunState &state,
                const actors::DayFrame &frame,
                std::span<const double> dailyMultipliers);
 
@@ -42,12 +44,11 @@ public:
 
 private:
   void prepareThreadStates(const market::Market &market,
-                           const RunResources &resources,
-                           const TransactionLoad &load);
+                           const RunResources &resources, double txnsPerMonth);
   void prepareLockArray(const RunResources &resources);
   void mergeThreadTxns(RunState &state);
 
-  EmissionBehavior behavior_{};
+  Behavior behavior_{};
   std::vector<ThreadLocalState> threadStates_{};
   primitives::concurrent::AccountLockArray lockArray_{};
 };
