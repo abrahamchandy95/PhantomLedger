@@ -262,20 +262,10 @@ void addRoutines(const RoutinePassRequest &request,
 // ---------------------------------------------------------------------------
 
 void addFamily(
-    const FamilyPassRequest &request, const blueprints::LegitBuildPlan &plan,
-    const transactions::Factory &txf, TxnStreams &streams,
-    const ::PhantomLedger::relationships::family::Households &households,
-    const ::PhantomLedger::relationships::family::Dependents &dependents,
-    const ::PhantomLedger::relationships::family::RetireeSupport
-        &retireeSupport,
-    const routines::relatives::FamilyTransferModel &transferModel) {
-  streams.add(routines::relatives::generateFamilyTxns(
-      routines::relatives::FamilyRunRequest{
-          .accounts = request.accounts,
-          .ownership = request.ownership,
-          .merchants = request.merchants,
-      },
-      households, dependents, retireeSupport, transferModel, plan, txf));
+    const ::PhantomLedger::transfers::legit::routines::family::Runtime &runtime,
+    const routines::relatives::FamilyTransferModel &transferModel,
+    TxnStreams &streams) {
+  streams.add(routines::relatives::generateFamilyTxns(runtime, transferModel));
 }
 
 // ---------------------------------------------------------------------------

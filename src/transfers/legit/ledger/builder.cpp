@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
 
+#include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
@@ -7,12 +8,17 @@
 #include "phantomledger/transfers/legit/ledger/screenbook.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
+#include <span>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace PhantomLedger::transfers::legit::ledger {
 
 namespace {
+
+namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
+namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
 
 [[nodiscard]] const relationships::family::Households &familyHouseholdsFrom(
     const LegitTransferBuilder::FamilyPrograms &family) noexcept {
@@ -33,6 +39,59 @@ namespace {
   return family.retireeSupport != nullptr
              ? *family.retireeSupport
              : relationships::family::kDefaultRetireeSupport;
+}
+
+[[nodiscard]] relatives::FamilyRunRequest
+familyRunFrom(const passes::FamilyPassRequest &request) noexcept {
+  return relatives::FamilyRunRequest{
+      .accounts = request.accounts,
+      .ownership = request.ownership,
+      .merchants = request.merchants,
+  };
+}
+
+[[nodiscard]] std::vector<transactions::Transaction>
+familyTxnsFrom(const passes::FamilyPassRequest &request,
+               const LegitTransferBuilder::FamilyPrograms &programs,
+               const blueprints::LegitBuildPlan &plan,
+               const transactions::Factory &txf) {
+  if (programs.transfers == nullptr) {
+    return {};
+  }
+
+  const auto familyRun = familyRunFrom(request);
+  if (!relatives::canRun(familyRun)) {
+    return {};
+  }
+
+  const auto personas = relatives::personasView(plan);
+  if (personas.empty() || relatives::personCount(plan) == 0) {
+    return {};
+  }
+
+  const auto graph = relatives::buildFamilyGraph(
+      plan, familyHouseholdsFrom(programs), familyDependentsFrom(programs),
+      retireeSupportFrom(programs));
+
+  const auto multipliers = relatives::amountMultipliers(plan);
+  const random::RngFactory rngFactory{plan.seed};
+
+  const auto runtime = family_rt::Runtime{
+      .graph = &graph,
+      .personas = personas,
+      .amountMultipliers = std::span<const double>{multipliers},
+      .accounts = familyRun.accounts,
+      .ownership = familyRun.ownership,
+      .merchants = familyRun.merchants,
+      .window = relatives::windowFromPlan(plan),
+      .monthStarts =
+          std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts},
+      .rngFactory = &rngFactory,
+      .txf = &txf,
+      .routing = programs.transfers->routing,
+  };
+
+  return relatives::generateFamilyTxns(runtime, *programs.transfers);
 }
 
 } // namespace
@@ -161,12 +220,7 @@ TransfersPayload LegitTransferBuilder::build() const {
                         txf, streams, screen);
   }
 
-  if (familyPrograms_.transfers != nullptr) {
-    passes::addFamily(
-        family_, plan, txf, streams, familyHouseholdsFrom(familyPrograms_),
-        familyDependentsFrom(familyPrograms_),
-        retireeSupportFrom(familyPrograms_), *familyPrograms_.transfers);
-  }
+  streams.add(familyTxnsFrom(family_, familyPrograms_, plan, txf));
 
   passes::addCredit(credit_, plan, txf, streams);
 

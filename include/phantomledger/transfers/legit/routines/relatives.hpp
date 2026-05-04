@@ -2,10 +2,13 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/links.hpp"
+#include "phantomledger/relationships/family/network.hpp"
 #include "phantomledger/relationships/family/partition.hpp"
 #include "phantomledger/relationships/family/support.hpp"
-#include "phantomledger/transactions/factory.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/routines/family/allowances.hpp"
@@ -18,6 +21,8 @@
 #include "phantomledger/transfers/legit/routines/family/support.hpp"
 #include "phantomledger/transfers/legit/routines/family/tuition.hpp"
 
+#include <cstdint>
+#include <span>
 #include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
@@ -57,11 +62,28 @@ struct FamilyTransferModel {
 
 inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 
-[[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
-    const FamilyRunRequest &request, const family_rel::Households &households,
-    const family_rel::Dependents &dependents,
-    const family_rel::RetireeSupport &retireeSupport,
-    const FamilyTransferModel &transferModel,
-    const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf);
+[[nodiscard]] bool canRun(const FamilyRunRequest &request) noexcept;
+
+[[nodiscard]] std::span<const ::PhantomLedger::personas::Type>
+personasView(const blueprints::LegitBuildPlan &plan) noexcept;
+
+[[nodiscard]] std::uint32_t
+personCount(const blueprints::LegitBuildPlan &plan) noexcept;
+
+[[nodiscard]] ::PhantomLedger::time::Window
+windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept;
+
+[[nodiscard]] family_rel::Graph
+buildFamilyGraph(const blueprints::LegitBuildPlan &plan,
+                 const family_rel::Households &households,
+                 const family_rel::Dependents &dependents,
+                 const family_rel::RetireeSupport &retireeSupport);
+
+[[nodiscard]] std::vector<double>
+amountMultipliers(const blueprints::LegitBuildPlan &plan);
+
+[[nodiscard]] std::vector<transactions::Transaction>
+generateFamilyTxns(const family_rt::Runtime &runtime,
+                   const FamilyTransferModel &transferModel);
 
 } // namespace PhantomLedger::transfers::legit::routines::relatives

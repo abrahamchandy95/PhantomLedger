@@ -3,6 +3,8 @@
 #include "phantomledger/relationships/family/builder.hpp"
 #include "phantomledger/relationships/family/network.hpp"
 
+#include <iterator>
+#include <stdexcept>
 #include <utility>
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
@@ -11,82 +13,6 @@ namespace family_relg = ::PhantomLedger::relationships::family;
 namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
 
 namespace {
-
-[[nodiscard]] std::span<const ::PhantomLedger::personas::Type>
-personasView(const blueprints::LegitBuildPlan &plan) {
-  if (plan.personas.pack == nullptr) {
-    return {};
-  }
-  const auto &assignment = plan.personas.pack->assignment;
-  return std::span<const ::PhantomLedger::personas::Type>{assignment.byPerson};
-}
-
-[[nodiscard]] std::uint32_t
-totalPersonCount(const blueprints::LegitBuildPlan &plan) {
-  if (plan.personas.pack == nullptr) {
-    return 0;
-  }
-  return static_cast<std::uint32_t>(
-      plan.personas.pack->assignment.byPerson.size());
-}
-
-[[nodiscard]] ::PhantomLedger::time::Window
-windowFromPlan(const blueprints::LegitBuildPlan &plan) {
-  return ::PhantomLedger::time::Window{
-      .start = plan.startDate,
-      .days = plan.days,
-  };
-}
-
-[[nodiscard]] family_relg::Graph
-buildGraph(const family_relg::Households &households,
-           const family_relg::Dependents &dependents,
-           const family_relg::RetireeSupport &retireeSupport,
-           std::span<const ::PhantomLedger::personas::Type> personas,
-           std::uint32_t personCount, std::uint64_t baseSeed) {
-  const family_relg::BuildInputs inputs{
-      .personas = personas,
-      .personCount = personCount,
-      .baseSeed = baseSeed,
-  };
-  return family_relg::build(inputs, households, dependents, retireeSupport);
-}
-
-[[nodiscard]] std::vector<double>
-extractAmountMultipliers(const blueprints::LegitBuildPlan &plan) {
-  std::vector<double> out;
-  if (plan.personas.pack == nullptr) {
-    return out;
-  }
-  const auto &table = plan.personas.pack->table.byPerson;
-  out.reserve(table.size());
-  for (const auto &persona : table) {
-    out.push_back(persona.cash.amountMultiplier);
-  }
-  return out;
-}
-
-[[nodiscard]] family_rt::Runtime assembleRuntime(
-    const FamilyRunRequest &request, const blueprints::LegitBuildPlan &plan,
-    const transactions::Factory &txf, family_rt::CounterpartyRouting routing,
-    const family_relg::Graph &graph, const random::RngFactory &rngFactory,
-    std::span<const ::PhantomLedger::personas::Type> personas,
-    std::span<const double> amountMultipliers) {
-  return family_rt::Runtime{
-      .graph = &graph,
-      .personas = personas,
-      .amountMultipliers = amountMultipliers,
-      .accounts = request.accounts,
-      .ownership = request.ownership,
-      .merchants = request.merchants,
-      .window = windowFromPlan(plan),
-      .monthStarts =
-          std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts},
-      .rngFactory = &rngFactory,
-      .txf = &txf,
-      .routing = routing,
-  };
-}
 
 void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
                          std::vector<transactions::Transaction> &out) {
@@ -104,41 +30,77 @@ void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
 
 } // namespace
 
-std::vector<transactions::Transaction> generateFamilyTxns(
-    const FamilyRunRequest &request, const family_relg::Households &households,
-    const family_relg::Dependents &dependents,
-    const family_relg::RetireeSupport &retireeSupport,
-    const FamilyTransferModel &transferModel,
-    const blueprints::LegitBuildPlan &plan, const transactions::Factory &txf) {
+bool canRun(const FamilyRunRequest &request) noexcept {
+  return request.accounts != nullptr && request.ownership != nullptr;
+}
+
+std::span<const ::PhantomLedger::personas::Type>
+personasView(const blueprints::LegitBuildPlan &plan) noexcept {
+  if (plan.personas.pack == nullptr) {
+    return {};
+  }
+  const auto &assignment = plan.personas.pack->assignment;
+  return std::span<const ::PhantomLedger::personas::Type>{assignment.byPerson};
+}
+
+std::uint32_t personCount(const blueprints::LegitBuildPlan &plan) noexcept {
+  if (plan.personas.pack == nullptr) {
+    return 0;
+  }
+  return static_cast<std::uint32_t>(
+      plan.personas.pack->assignment.byPerson.size());
+}
+
+::PhantomLedger::time::Window
+windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+  return ::PhantomLedger::time::Window{
+      .start = plan.startDate,
+      .days = plan.days,
+  };
+}
+
+family_relg::Graph
+buildFamilyGraph(const blueprints::LegitBuildPlan &plan,
+                 const family_relg::Households &households,
+                 const family_relg::Dependents &dependents,
+                 const family_relg::RetireeSupport &retireeSupport) {
+  const family_relg::BuildInputs inputs{
+      .personas = personasView(plan),
+      .personCount = personCount(plan),
+      .baseSeed = plan.seed,
+  };
+  return family_relg::build(inputs, households, dependents, retireeSupport);
+}
+
+std::vector<double> amountMultipliers(const blueprints::LegitBuildPlan &plan) {
+  std::vector<double> out;
+  if (plan.personas.pack == nullptr) {
+    return out;
+  }
+  const auto &table = plan.personas.pack->table.byPerson;
+  out.reserve(table.size());
+  for (const auto &persona : table) {
+    out.push_back(persona.cash.amountMultiplier);
+  }
+  return out;
+}
+
+std::vector<transactions::Transaction>
+generateFamilyTxns(const family_rt::Runtime &runtime,
+                   const FamilyTransferModel &transferModel) {
   std::vector<transactions::Transaction> out;
 
-  // Cheap fast-paths before we touch the graph.
-  if (request.accounts == nullptr || request.ownership == nullptr) {
+  // Preserve the old cheap fast-path before any routine touches the graph.
+  if (runtime.accounts == nullptr || runtime.ownership == nullptr ||
+      runtime.graph == nullptr || runtime.personas.empty()) {
     return out;
   }
 
-  const auto personas = personasView(plan);
-  const auto personCount = totalPersonCount(plan);
-  if (personCount == 0 || personas.empty()) {
-    return out;
+  if (runtime.rngFactory == nullptr || runtime.txf == nullptr) {
+    throw std::invalid_argument(
+        "family transfers require rngFactory and transaction factory");
   }
 
-  // Build the graph once. All routines below read from it.
-  const auto graph = buildGraph(households, dependents, retireeSupport,
-                                personas, personCount, plan.seed);
-
-  // Pre-extract per-person amount multipliers so routines can
-  // span over them without dereferencing the full Persona table.
-  const auto amountMultipliers = extractAmountMultipliers(plan);
-
-  // Per-routine entropy comes from this factory.
-  const random::RngFactory rngFactory{plan.seed};
-
-  const auto runtime = assembleRuntime(
-      request, plan, txf, transferModel.routing, graph, rngFactory, personas,
-      std::span<const double>{amountMultipliers});
-
-  // ---- Dispatch ----------------------------------------------------------
   appendRoutineOutput(
       family_rt::allowances::generate(runtime, transferModel.allowances), out);
 

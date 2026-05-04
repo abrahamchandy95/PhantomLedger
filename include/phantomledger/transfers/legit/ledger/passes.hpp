@@ -91,13 +91,9 @@ void addRoutines(const RoutinePassRequest &request,
                  ScreenBook &screen);
 
 void addFamily(
-    const FamilyPassRequest &request, const blueprints::LegitBuildPlan &plan,
-    const transactions::Factory &txf, TxnStreams &streams,
-    const ::PhantomLedger::relationships::family::Households &households,
-    const ::PhantomLedger::relationships::family::Dependents &dependents,
-    const ::PhantomLedger::relationships::family::RetireeSupport
-        &retireeSupport,
-    const routines::relatives::FamilyTransferModel &transferModel);
+    const ::PhantomLedger::transfers::legit::routines::family::Runtime &runtime,
+    const routines::relatives::FamilyTransferModel &transferModel,
+    TxnStreams &streams);
 
 void addCredit(const CreditPassRequest &request,
                const blueprints::LegitBuildPlan &plan,
