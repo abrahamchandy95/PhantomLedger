@@ -33,22 +33,36 @@ public:
   void prepare(const market::Market &market, const RunResources &resources,
                double txnsPerMonth);
 
-  void emitDay(const market::Market &market, const RunResources &resources,
-               const PreparedRun::Population &population,
-               const PreparedRun::Budget &budget,
-               const PreparedRun::Routing &routingSnapshot, RunState &state,
+  void bindRun(const PreparedRun::Budget &budget,
+               const PreparedRun::Routing &routing) noexcept;
+
+  void emitDay(const PreparedRun::Population &population, RunState &state,
                const actors::DayFrame &frame,
                std::span<const double> dailyMultipliers);
 
   void finish(RunState &state);
 
 private:
-  void prepareThreadStates(const market::Market &market,
-                           const RunResources &resources, double txnsPerMonth);
-  void prepareLockArray(const RunResources &resources);
+  [[nodiscard]] const market::Market &market() const;
+  [[nodiscard]] const RunResources &resources() const;
+  [[nodiscard]] const PreparedRun::Budget &budget() const;
+  [[nodiscard]] const PreparedRun::Routing &routing() const;
+
+  void prepareThreadStates(double txnsPerMonth);
+  void prepareLockArray();
+  void emitSerial(const PreparedRun::Population &population, RunState &state,
+                  const actors::DayFrame &frame,
+                  std::span<const double> dailyMultipliers);
+  void emitParallel(const PreparedRun::Population &population, RunState &state,
+                    const actors::DayFrame &frame,
+                    std::span<const double> dailyMultipliers);
   void mergeThreadTxns(RunState &state);
 
   Behavior behavior_{};
+  const market::Market *market_ = nullptr;
+  const RunResources *resources_ = nullptr;
+  const PreparedRun::Budget *budget_ = nullptr;
+  const PreparedRun::Routing *routing_ = nullptr;
   std::vector<ThreadLocalState> threadStates_{};
   primitives::concurrent::AccountLockArray lockArray_{};
 };

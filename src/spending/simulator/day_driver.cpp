@@ -20,6 +20,11 @@ void DayDriver::prepare(market::Market &market, const RunResources &resources,
   emission_.prepare(market, resources, txnsPerMonth);
 }
 
+void DayDriver::bindEmission(const PreparedRun::Budget &budget,
+                             const PreparedRun::Routing &routing) noexcept {
+  emission_.bindRun(budget, routing);
+}
+
 std::span<const double> DayDriver::sensitivities() const noexcept {
   return dynamics_.sensitivities();
 }
@@ -37,8 +42,8 @@ void DayDriver::runDay(market::Market &market, const RunResources &resources,
 
   dynamics_.advance(resources.rng(), paydayPersons);
 
-  emission_.emitDay(market, resources, run.population(), run.budget(),
-                    run.routing(), state, frame, dynamics_.dailyMultipliers());
+  emission_.emitDay(run.population(), state, frame,
+                    dynamics_.dailyMultipliers());
 }
 
 void DayDriver::advanceLedgerToDay(const RunResources &resources,
