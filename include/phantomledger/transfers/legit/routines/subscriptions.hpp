@@ -1,14 +1,13 @@
 #pragma once
 
-#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
+#include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
 
 #include <cstdint>
-#include <span>
 #include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::subscriptions {
@@ -24,12 +23,23 @@ struct Config {
 
 inline constexpr Config kDefaultConfig{};
 
-[[nodiscard]] std::vector<transactions::Transaction>
-generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
-         const transactions::Factory &txf,
-         const entity::account::Registry &registry,
-         clearing::Ledger *book = nullptr,
-         std::span<const transactions::Transaction> baseTxns = {},
-         bool baseTxnsSorted = false, Config cfg = kDefaultConfig);
+class Generator {
+public:
+  Generator(random::Rng &rng, const transactions::Factory &txf,
+            ledger::SeededScreen &screen, Config cfg = kDefaultConfig);
+
+  Generator(const Generator &) = delete;
+  Generator &operator=(const Generator &) = delete;
+
+  [[nodiscard]] std::vector<transactions::Transaction>
+  generate(const blueprints::LegitBuildPlan &plan,
+           const entity::account::Registry &registry);
+
+private:
+  random::Rng &rng_;
+  const transactions::Factory &txf_;
+  ledger::SeededScreen &screen_;
+  Config cfg_;
+};
 
 } // namespace PhantomLedger::transfers::legit::routines::subscriptions

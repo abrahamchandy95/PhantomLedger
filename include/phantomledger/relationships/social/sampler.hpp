@@ -3,7 +3,6 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/relationships/social/communities.hpp"
 
-#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -20,20 +19,22 @@ public:
   [[nodiscard]] std::uint32_t personCount() const noexcept {
     return personCount_;
   }
-  [[nodiscard]] const std::vector<double> &globalCdf() const noexcept {
-    return globalCdf_;
-  }
-  [[nodiscard]] const std::vector<double> &
-  blockCdf(std::uint32_t blockIdx) const noexcept {
-    return blockCdfs_[blockIdx];
-  }
-  [[nodiscard]] const Communities *communities() const noexcept {
-    return communities_;
-  }
-  [[nodiscard]] double localProb() const noexcept { return localProb_; }
-  [[nodiscard]] double crossProb() const noexcept { return crossProb_; }
 
 private:
+  [[nodiscard]] std::uint32_t
+  fallbackOther(std::uint32_t srcIdx) const noexcept;
+  [[nodiscard]] std::uint32_t drawLocal(std::uint32_t srcIdx,
+                                        std::uint32_t blockIdx,
+                                        random::Rng &rng) const;
+  [[nodiscard]] std::uint32_t drawGlobal(std::uint32_t srcIdx,
+                                         random::Rng &rng) const;
+  [[nodiscard]] std::uint32_t drawCross(std::uint32_t srcIdx,
+                                        std::uint32_t blockIdx,
+                                        random::Rng &rng) const;
+  [[nodiscard]] std::uint32_t drawCandidate(std::uint32_t srcIdx,
+                                            std::uint32_t blockIdx,
+                                            random::Rng &rng) const;
+
   const Communities *communities_ = nullptr;
   std::uint32_t personCount_ = 0;
   std::vector<double> globalCdf_;

@@ -20,94 +20,6 @@ inline constexpr int kCrossMaxTries = 24;
 inline constexpr int kDedupBaseTries = 24;
 inline constexpr int kDedupMultiplier = 10;
 
-[[nodiscard]] std::uint32_t fallbackOther(std::uint32_t srcIdx,
-                                          std::uint32_t personCount) noexcept {
-  if (personCount <= 1) {
-    return srcIdx;
-  }
-  return (srcIdx + 1) % personCount;
-}
-
-[[nodiscard]] std::uint32_t
-drawLocal(std::uint32_t srcIdx, std::uint32_t blockLo, std::uint32_t blockHi,
-          std::span<const double> blockCdfView, std::uint32_t personCount,
-          random::Rng &rng) {
-  if (blockHi - blockLo <= 1) {
-    return fallbackOther(srcIdx, personCount);
-  }
-
-  for (int attempt = 0; attempt < kLocalMaxTries; ++attempt) {
-    const auto pickInBlock = static_cast<std::uint32_t>(
-        dist::sampleIndex(blockCdfView, rng.nextDouble()));
-    const auto candidate = blockLo + pickInBlock;
-    if (candidate != srcIdx) {
-      return candidate;
-    }
-  }
-
-  if (srcIdx != blockLo) {
-    return blockLo;
-  }
-  if (srcIdx + 1U < blockHi) {
-    return srcIdx + 1U;
-  }
-  return fallbackOther(srcIdx, personCount);
-}
-
-[[nodiscard]] std::uint32_t drawGlobal(std::uint32_t srcIdx,
-                                       std::span<const double> globalCdfView,
-                                       std::uint32_t personCount,
-                                       random::Rng &rng) {
-  if (personCount <= 1) {
-    return srcIdx;
-  }
-
-  for (int attempt = 0; attempt < kGlobalMaxTries; ++attempt) {
-    const auto candidate = static_cast<std::uint32_t>(
-        dist::sampleIndex(globalCdfView, rng.nextDouble()));
-    if (candidate != srcIdx) {
-      return candidate;
-    }
-  }
-
-  return fallbackOther(srcIdx, personCount);
-}
-
-[[nodiscard]] std::uint32_t
-drawCross(std::uint32_t srcIdx, std::uint32_t blockLo, std::uint32_t blockHi,
-          std::span<const double> globalCdfView, std::uint32_t personCount,
-          random::Rng &rng) {
-  if (personCount - (blockHi - blockLo) == 0) {
-    return drawGlobal(srcIdx, globalCdfView, personCount, rng);
-  }
-
-  for (int attempt = 0; attempt < kCrossMaxTries; ++attempt) {
-    const auto candidate = static_cast<std::uint32_t>(
-        dist::sampleIndex(globalCdfView, rng.nextDouble()));
-    if (candidate != srcIdx && (candidate < blockLo || candidate >= blockHi)) {
-      return candidate;
-    }
-  }
-
-  return drawGlobal(srcIdx, globalCdfView, personCount, rng);
-}
-
-[[nodiscard]] std::uint32_t
-drawCandidate(std::uint32_t srcIdx, std::uint32_t blockLo,
-              std::uint32_t blockHi, std::span<const double> blockCdfView,
-              std::span<const double> globalCdfView, std::uint32_t personCount,
-              double localProb, double crossProb, random::Rng &rng) {
-  const auto blockSize = blockHi - blockLo;
-
-  if (blockSize > 1U && rng.coin(localProb)) {
-    return drawLocal(srcIdx, blockLo, blockHi, blockCdfView, personCount, rng);
-  }
-  if (personCount - blockSize > 0U && rng.coin(crossProb)) {
-    return drawCross(srcIdx, blockLo, blockHi, globalCdfView, personCount, rng);
-  }
-  return drawGlobal(srcIdx, globalCdfView, personCount, rng);
-}
-
 [[nodiscard]] bool containsLinear(std::span<const std::uint32_t> seen,
                                   std::uint32_t value) noexcept {
   for (const auto v : seen) {
@@ -139,6 +51,100 @@ ContactSampler::ContactSampler(std::vector<double> attract,
   }
 }
 
+std::uint32_t
+ContactSampler::fallbackOther(std::uint32_t srcIdx) const noexcept {
+  if (personCount_ <= 1) {
+    return srcIdx;
+  }
+  return (srcIdx + 1) % personCount_;
+}
+
+std::uint32_t ContactSampler::drawLocal(std::uint32_t srcIdx,
+                                        std::uint32_t blockIdx,
+                                        random::Rng &rng) const {
+  const auto blockLo = communities_->starts[blockIdx];
+  const auto blockHi = communities_->ends[blockIdx];
+  const auto blockCdfView = std::span<const double>{blockCdfs_[blockIdx]};
+
+  if (blockHi - blockLo <= 1) {
+    return fallbackOther(srcIdx);
+  }
+
+  for (int attempt = 0; attempt < kLocalMaxTries; ++attempt) {
+    const auto pickInBlock = static_cast<std::uint32_t>(
+        dist::sampleIndex(blockCdfView, rng.nextDouble()));
+    const auto candidate = blockLo + pickInBlock;
+    if (candidate != srcIdx) {
+      return candidate;
+    }
+  }
+
+  if (srcIdx != blockLo) {
+    return blockLo;
+  }
+  if (srcIdx + 1U < blockHi) {
+    return srcIdx + 1U;
+  }
+  return fallbackOther(srcIdx);
+}
+
+std::uint32_t ContactSampler::drawGlobal(std::uint32_t srcIdx,
+                                         random::Rng &rng) const {
+  if (personCount_ <= 1) {
+    return srcIdx;
+  }
+
+  const auto globalCdfView = std::span<const double>{globalCdf_};
+  for (int attempt = 0; attempt < kGlobalMaxTries; ++attempt) {
+    const auto candidate = static_cast<std::uint32_t>(
+        dist::sampleIndex(globalCdfView, rng.nextDouble()));
+    if (candidate != srcIdx) {
+      return candidate;
+    }
+  }
+
+  return fallbackOther(srcIdx);
+}
+
+std::uint32_t ContactSampler::drawCross(std::uint32_t srcIdx,
+                                        std::uint32_t blockIdx,
+                                        random::Rng &rng) const {
+  const auto blockLo = communities_->starts[blockIdx];
+  const auto blockHi = communities_->ends[blockIdx];
+  const auto blockSize = blockHi - blockLo;
+
+  if (personCount_ - blockSize == 0) {
+    return drawGlobal(srcIdx, rng);
+  }
+
+  const auto globalCdfView = std::span<const double>{globalCdf_};
+  for (int attempt = 0; attempt < kCrossMaxTries; ++attempt) {
+    const auto candidate = static_cast<std::uint32_t>(
+        dist::sampleIndex(globalCdfView, rng.nextDouble()));
+    if (candidate != srcIdx && (candidate < blockLo || candidate >= blockHi)) {
+      return candidate;
+    }
+  }
+
+  return drawGlobal(srcIdx, rng);
+}
+
+std::uint32_t ContactSampler::drawCandidate(std::uint32_t srcIdx,
+                                            std::uint32_t blockIdx,
+                                            random::Rng &rng) const {
+  const auto blockLo = communities_->starts[blockIdx];
+  const auto blockHi = communities_->ends[blockIdx];
+  const auto blockSize = blockHi - blockLo;
+
+  if (blockSize > 1U && rng.coin(localProb_)) {
+    return drawLocal(srcIdx, blockIdx, rng);
+  }
+  if (personCount_ - blockSize > 0U && rng.coin(crossProb_)) {
+    return drawCross(srcIdx, blockIdx, rng);
+  }
+  return drawGlobal(srcIdx, rng);
+}
+
 void ContactSampler::drawUnique(std::uint32_t srcIdx,
                                 std::uint32_t desiredCount, random::Rng &rng,
                                 std::vector<std::uint32_t> &out) const {
@@ -149,26 +155,20 @@ void ContactSampler::drawUnique(std::uint32_t srcIdx,
   out.reserve(desiredCount);
 
   const auto blockIdx = communities_->memberOf[srcIdx];
-  const auto blockLo = communities_->starts[blockIdx];
-  const auto blockHi = communities_->ends[blockIdx];
-  const std::span<const double> blockCdfView{blockCdfs_[blockIdx]};
-  const std::span<const double> globalCdfView{globalCdf_};
 
   const int maxTries = std::max<int>(
       kDedupBaseTries, kDedupMultiplier * static_cast<int>(desiredCount));
 
   for (int attempt = 0; attempt < maxTries && out.size() < desiredCount;
        ++attempt) {
-    const auto candidate =
-        drawCandidate(srcIdx, blockLo, blockHi, blockCdfView, globalCdfView,
-                      personCount_, localProb_, crossProb_, rng);
+    const auto candidate = drawCandidate(srcIdx, blockIdx, rng);
     if (!containsLinear(std::span<const std::uint32_t>{out}, candidate)) {
       out.push_back(candidate);
     }
   }
 
   if (out.empty()) {
-    out.push_back(fallbackOther(srcIdx, personCount_));
+    out.push_back(fallbackOther(srcIdx));
   }
 }
 

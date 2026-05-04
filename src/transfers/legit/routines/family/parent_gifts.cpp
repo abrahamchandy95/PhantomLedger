@@ -16,12 +16,8 @@ namespace fhelp = ::PhantomLedger::transfers::legit::routines::family::helpers;
 namespace {
 
 inline constexpr std::int64_t kPostingDayMaxExcl = 20;
-
-/// Posting hour [8am, 9pm).
 inline constexpr std::int64_t kPostingHourMin = 8;
 inline constexpr std::int64_t kPostingHourMaxExcl = 21;
-
-/// Floor on per-gift amount.
 inline constexpr double kAmountFloor = 10.0;
 
 [[nodiscard]] std::int64_t
@@ -56,8 +52,8 @@ collectGivingParents(std::span<const entity::PersonId> parents,
 emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
                 std::span<const entity::PersonId> givingParents,
                 entity::Key childAcct, std::int64_t windowEndEpochSec,
-                const ParentGiftFlow &cfg, const Runtime &rt, random::Rng &rng,
-                std::vector<transactions::Transaction> &out) {
+                const ParentGiftFlow &cfg, const TransferRun &run,
+                random::Rng &rng, std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.p)) {
     return false;
   }
@@ -66,8 +62,7 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
       rng.uniformInt(0, static_cast<std::int64_t>(givingParents.size())));
   const auto payerId = givingParents[parentIdx];
 
-  const auto payerAcct = fhelp::resolveFamilyAccount(
-      payerId, *rt.accounts, *rt.ownership, rt.routing.externalP);
+  const auto payerAcct = run.accounts().routedMemberAccount(payerId);
   if (!payerAcct.has_value() || *payerAcct == childAcct) {
     return false;
   }
@@ -78,13 +73,13 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
   }
 
   const auto base = fhelp::pareto(rng, cfg.paretoXm, cfg.paretoAlpha);
-  const auto multiplier = fhelp::capacityFor(payerId, rt.amountMultipliers);
+  const auto multiplier = run.kinship().amountMultiplier(payerId);
   const auto amt = fhelp::sanitizeAmount(base * multiplier, kAmountFloor);
   if (amt == 0.0) {
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = *payerAcct,
       .destination = childAcct,
       .amount = amt,
@@ -98,38 +93,34 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const ParentGiftFlow &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
-  if (personCount == 0 || rt.monthStarts.empty()) {
+  const auto personCount = run.kinship().personCount();
+  if (personCount == 0 || run.posting().monthStarts().empty()) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "parent_gifts"});
+  auto rng = run.emission().rng({"family", "parent_gifts"});
 
-  // Capacity estimate: rough — most adults won't qualify.
   out.reserve(static_cast<std::size_t>(
       static_cast<double>(personCount) *
-      static_cast<double>(rt.monthStarts.size()) * cfg.p * 0.1));
+      static_cast<double>(run.posting().monthStarts().size()) * cfg.p * 0.1));
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   std::array<entity::PersonId, 2> givingParents{};
 
   for (entity::PersonId child = 1; child <= personCount; ++child) {
-    if (!pred::isAdult(rt.personas[child - 1])) {
+    if (!pred::isAdult(run.kinship().persona(child))) {
       continue;
     }
 
-    const auto parentSlots = rt.graph->parentsOf[child - 1];
+    const auto parentSlots = run.kinship().parentsOf(child);
     if (!entity::valid(parentSlots[0]) && !entity::valid(parentSlots[1])) {
       continue;
     }
@@ -137,22 +128,21 @@ std::vector<transactions::Transaction> generate(const Runtime &rt,
     const auto givingCount = collectGivingParents(
         std::span<const entity::PersonId>{parentSlots.data(),
                                           parentSlots.size()},
-        rt.personas, givingParents);
+        run.kinship().personas(), givingParents);
     if (givingCount == 0) {
       continue;
     }
 
-    const auto childAcct = fhelp::resolveFamilyAccount(
-        child, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+    const auto childAcct = run.accounts().localMemberAccount(child);
     if (!childAcct.has_value()) {
       continue;
     }
 
     const std::span<const entity::PersonId> givingView{givingParents.data(),
                                                        givingCount};
-    for (const auto monthStart : rt.monthStarts) {
+    for (const auto monthStart : run.posting().monthStarts()) {
       (void)emitMonthlyGift(monthStart, givingView, *childAcct,
-                            windowEndEpochSec, cfg, rt, rng, out);
+                            windowEndEpochSec, cfg, run, rng, out);
     }
   }
 

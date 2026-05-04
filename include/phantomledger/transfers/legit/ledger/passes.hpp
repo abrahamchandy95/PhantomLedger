@@ -181,7 +181,7 @@ void addRoutines(const RoutinePass &pass,
                  ScreenBook &screen);
 
 void addFamily(
-    const ::PhantomLedger::transfers::legit::routines::family::Runtime &runtime,
+    const ::PhantomLedger::transfers::legit::routines::family::TransferRun &run,
     const routines::relatives::FamilyTransferModel &transferModel,
     TxnStreams &streams);
 

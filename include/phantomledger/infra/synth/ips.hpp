@@ -11,7 +11,7 @@
 
 namespace PhantomLedger::infra::synth::ips {
 
-struct Config {
+struct AssignmentRules {
   double legitIpNoiseP = 0.05;
 
   double extraIpP1 = 0.35;
@@ -22,6 +22,6 @@ struct Config {
 build(random::Rng &rng, time::Window window,
       const entity::person::Roster &people,
       const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-      const Config &cfg = {});
+      const AssignmentRules &rules = {});
 
 } // namespace PhantomLedger::infra::synth::ips

@@ -17,7 +17,6 @@ namespace PhantomLedger::transfers::legit::ledger {
 
 namespace {
 
-namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
 namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
 
 [[nodiscard]] const relationships::family::Households &familyHouseholdsFrom(
@@ -41,14 +40,14 @@ namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
              : relationships::family::kDefaultRetireeSupport;
 }
 
-[[nodiscard]] relatives::FamilyRunRequest
-familyRunFrom(const passes::FamilyPass &pass) noexcept {
+[[nodiscard]] relatives::FamilyLedgerSources
+familySourcesFrom(const passes::FamilyPass &pass) noexcept {
   const auto accounts = pass.accounts();
 
-  return relatives::FamilyRunRequest{
+  return relatives::FamilyLedgerSources{
       .accounts = accounts.registry,
       .ownership = accounts.ownership,
-      .merchants = pass.merchants(),
+      .educationMerchants = pass.merchants(),
   };
 }
 
@@ -61,8 +60,8 @@ familyTxnsFrom(const passes::FamilyPass &pass,
     return {};
   }
 
-  const auto familyRun = familyRunFrom(pass);
-  if (!relatives::canRun(familyRun)) {
+  const auto familySources = familySourcesFrom(pass);
+  if (!relatives::canRun(familySources)) {
     return {};
   }
 
@@ -78,22 +77,11 @@ familyTxnsFrom(const passes::FamilyPass &pass,
   const auto multipliers = relatives::amountMultipliers(plan);
   const random::RngFactory rngFactory{plan.seed};
 
-  const auto runtime = family_rt::Runtime{
-      .graph = &graph,
-      .personas = personas,
-      .amountMultipliers = std::span<const double>{multipliers},
-      .accounts = familyRun.accounts,
-      .ownership = familyRun.ownership,
-      .merchants = familyRun.merchants,
-      .window = relatives::windowFromPlan(plan),
-      .monthStarts =
-          std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts},
-      .rngFactory = &rngFactory,
-      .txf = &txf,
-      .routing = programs.transfers->routing,
-  };
+  const auto run = relatives::makeTransferRun(
+      plan, graph, std::span<const double>{multipliers}, familySources,
+      rngFactory, txf, programs.transfers->routing);
 
-  return relatives::generateFamilyTxns(runtime, *programs.transfers);
+  return relatives::generateFamilyTxns(run, *programs.transfers);
 }
 
 } // namespace
@@ -226,7 +214,6 @@ TransfersPayload LegitTransferBuilder::build() const {
 
   passes::addCredit(credit_, plan, txf, streams);
 
-  // Payload packing.
   TransfersPayload payload;
   payload.candidateTxns = streams.takeCandidates();
   payload.hubAccounts = std::move(plan.counterparties.hubAccounts);

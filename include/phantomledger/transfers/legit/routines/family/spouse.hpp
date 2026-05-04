@@ -2,7 +2,7 @@
 
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <vector>
 
@@ -34,6 +34,6 @@ struct CoupleFlow {
 inline constexpr CoupleFlow kDefaultCoupleFlow{};
 
 [[nodiscard]] std::vector<transactions::Transaction>
-generate(const Runtime &rt, const CoupleFlow &model);
+generate(const TransferRun &run, const CoupleFlow &model);
 
 } // namespace PhantomLedger::transfers::legit::routines::family::spouse

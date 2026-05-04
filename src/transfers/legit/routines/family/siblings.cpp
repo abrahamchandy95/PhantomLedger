@@ -8,6 +8,7 @@
 #include "phantomledger/transfers/legit/routines/family/helpers.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family::siblings {
@@ -42,21 +43,17 @@ void collectAdults(std::span<const entity::PersonId> members,
 }
 
 [[nodiscard]] std::optional<ResolvedPair>
-resolvePair(entity::PersonId a, entity::PersonId b, const Runtime &rt) {
-  // Non-spouse check.
-  if (rt.graph->spouseOf[a - 1] == b) {
+resolvePair(entity::PersonId a, entity::PersonId b, const TransferRun &run) {
+  if (run.kinship().spouseOf(a) == b) {
     return std::nullopt;
   }
 
-  const auto acctA = fhelp::resolveFamilyAccount(a, *rt.accounts, *rt.ownership,
-                                                 rt.routing.externalP);
-  const auto acctB = fhelp::resolveFamilyAccount(b, *rt.accounts, *rt.ownership,
-                                                 rt.routing.externalP);
+  const auto acctA = run.accounts().routedMemberAccount(a);
+  const auto acctB = run.accounts().routedMemberAccount(b);
   if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
     return std::nullopt;
   }
 
-  // Both external means we'd never see the transfer in our books.
   if (encoding::isExternal(*acctA) && encoding::isExternal(*acctB)) {
     return std::nullopt;
   }
@@ -68,7 +65,8 @@ resolvePair(entity::PersonId a, entity::PersonId b, const Runtime &rt) {
 [[nodiscard]] bool
 emitMonthlyTransfer(::PhantomLedger::time::TimePoint monthStart,
                     const ResolvedPair &pair, std::int64_t windowEndEpochSec,
-                    const SiblingFlow &cfg, const Runtime &rt, random::Rng &rng,
+                    const SiblingFlow &cfg, const TransferRun &run,
+                    random::Rng &rng,
                     std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.monthlyP)) {
     return false;
@@ -95,7 +93,7 @@ emitMonthlyTransfer(::PhantomLedger::time::TimePoint monthStart,
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = src,
       .destination = dst,
       .amount = amt,
@@ -109,52 +107,47 @@ emitMonthlyTransfer(::PhantomLedger::time::TimePoint monthStart,
 
 void processPair(entity::PersonId a, entity::PersonId b,
                  std::int64_t windowEndEpochSec, const SiblingFlow &cfg,
-                 const Runtime &rt, random::Rng &rng,
+                 const TransferRun &run, random::Rng &rng,
                  std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.activeP)) {
     return;
   }
 
-  const auto pair = resolvePair(a, b, rt);
+  const auto pair = resolvePair(a, b, run);
   if (!pair.has_value()) {
     return;
   }
 
-  for (const auto monthStart : rt.monthStarts) {
-    (void)emitMonthlyTransfer(monthStart, *pair, windowEndEpochSec, cfg, rt,
+  for (const auto monthStart : run.posting().monthStarts()) {
+    (void)emitMonthlyTransfer(monthStart, *pair, windowEndEpochSec, cfg, run,
                               rng, out);
   }
 }
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const SiblingFlow &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto householdCount = rt.graph->householdCount();
-  if (householdCount == 0 || rt.monthStarts.empty()) {
+  const auto householdCount = run.kinship().householdCount();
+  if (householdCount == 0 || run.posting().monthStarts().empty()) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "siblings"});
+  auto rng = run.emission().rng({"family", "siblings"});
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
-  // Scratch buffer reused across households. Real households have
-  // at most a handful of adults, so this rarely reallocates.
   std::vector<entity::PersonId> adults;
   adults.reserve(8);
 
   for (std::uint32_t h = 0; h < householdCount; ++h) {
-    const auto members = rt.graph->householdMembersOf(h);
-    collectAdults(members, rt.personas, adults);
+    const auto members = run.kinship().householdMembersOf(h);
+    collectAdults(members, run.kinship().personas(), adults);
 
     if (adults.size() < 2) {
       continue;
@@ -162,7 +155,8 @@ std::vector<transactions::Transaction> generate(const Runtime &rt,
 
     for (std::size_t i = 0; i < adults.size(); ++i) {
       for (std::size_t j = i + 1; j < adults.size(); ++j) {
-        processPair(adults[i], adults[j], windowEndEpochSec, cfg, rt, rng, out);
+        processPair(adults[i], adults[j], windowEndEpochSec, cfg, run, rng,
+                    out);
       }
     }
   }

@@ -15,10 +15,10 @@
 #include "phantomledger/transfers/legit/routines/family/grandparent_gifts.hpp"
 #include "phantomledger/transfers/legit/routines/family/inheritance.hpp"
 #include "phantomledger/transfers/legit/routines/family/parent_gifts.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
 #include "phantomledger/transfers/legit/routines/family/siblings.hpp"
 #include "phantomledger/transfers/legit/routines/family/spouse.hpp"
 #include "phantomledger/transfers/legit/routines/family/support.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 #include "phantomledger/transfers/legit/routines/family/tuition.hpp"
 
 #include <cstdint>
@@ -30,10 +30,10 @@ namespace PhantomLedger::transfers::legit::routines::relatives {
 namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
 namespace family_rel = ::PhantomLedger::relationships::family;
 
-struct FamilyRunRequest {
+struct FamilyLedgerSources {
   const entity::account::Registry *accounts = nullptr;
   const entity::account::Ownership *ownership = nullptr;
-  const entity::merchant::Catalog *merchants = nullptr;
+  const entity::merchant::Catalog *educationMerchants = nullptr;
 };
 
 struct FamilyTransferModel {
@@ -62,7 +62,7 @@ struct FamilyTransferModel {
 
 inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 
-[[nodiscard]] bool canRun(const FamilyRunRequest &request) noexcept;
+[[nodiscard]] bool canRun(const FamilyLedgerSources &sources) noexcept;
 
 [[nodiscard]] std::span<const ::PhantomLedger::personas::Type>
 personasView(const blueprints::LegitBuildPlan &plan) noexcept;
@@ -82,8 +82,15 @@ buildFamilyGraph(const blueprints::LegitBuildPlan &plan,
 [[nodiscard]] std::vector<double>
 amountMultipliers(const blueprints::LegitBuildPlan &plan);
 
+[[nodiscard]] family_rt::TransferRun makeTransferRun(
+    const blueprints::LegitBuildPlan &plan, const family_rel::Graph &graph,
+    std::span<const double> amountMultipliers,
+    const FamilyLedgerSources &sources, const random::RngFactory &rngFactory,
+    const transactions::Factory &txf,
+    family_rt::CounterpartyRouting routing) noexcept;
+
 [[nodiscard]] std::vector<transactions::Transaction>
-generateFamilyTxns(const family_rt::Runtime &runtime,
+generateFamilyTxns(const family_rt::TransferRun &run,
                    const FamilyTransferModel &transferModel);
 
 } // namespace PhantomLedger::transfers::legit::routines::relatives

@@ -11,7 +11,7 @@
 
 namespace PhantomLedger::infra::synth::devices {
 
-struct Config {
+struct AssignmentRules {
   double legitDeviceNoiseP = 0.05;
 
   double secondDeviceP = 0.20;
@@ -21,6 +21,6 @@ struct Config {
 build(random::Rng &rng, time::Window window,
       const entity::person::Roster &people,
       const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-      const Config &cfg = {});
+      const AssignmentRules &rules = {});
 
 } // namespace PhantomLedger::infra::synth::devices

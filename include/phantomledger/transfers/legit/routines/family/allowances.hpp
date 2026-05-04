@@ -2,7 +2,7 @@
 
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <vector>
 
@@ -25,6 +25,6 @@ struct AllowanceSchedule {
 inline constexpr AllowanceSchedule kDefaultRules{};
 
 [[nodiscard]] std::vector<transactions::Transaction>
-generate(const Runtime &rt, const AllowanceSchedule &cfg);
+generate(const TransferRun &run, const AllowanceSchedule &cfg);
 
 } // namespace PhantomLedger::transfers::legit::routines::family::allowances

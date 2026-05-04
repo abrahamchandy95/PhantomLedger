@@ -60,7 +60,7 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
                                   std::span<const entity::PersonId> parents,
                                   std::int64_t timestamp,
                                   const AllowanceSchedule &cfg,
-                                  const Runtime &rt, random::Rng &rng,
+                                  const TransferRun &run, random::Rng &rng,
                                   std::vector<transactions::Transaction> &out) {
   if (parents.empty()) {
     return false;
@@ -70,8 +70,7 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
       rng.uniformInt(0, static_cast<std::int64_t>(parents.size())));
   const auto payerId = parents[parentIdx];
 
-  const auto payerAcct = fhelp::resolveFamilyAccount(
-      payerId, *rt.accounts, *rt.ownership, rt.routing.externalP);
+  const auto payerAcct = run.accounts().routedMemberAccount(payerId);
   if (!payerAcct.has_value() || *payerAcct == childAcct) {
     return false;
   }
@@ -82,7 +81,7 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = *payerAcct,
       .destination = childAcct,
       .amount = amt,
@@ -98,13 +97,13 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
 void walkSchedule(entity::PersonId studentId, entity::Key childAcct,
                   std::span<const entity::PersonId> parents,
                   const Schedule &schedule, std::int64_t windowEndEpochSec,
-                  const AllowanceSchedule &cfg, const Runtime &rt,
+                  const AllowanceSchedule &cfg, const TransferRun &run,
                   random::Rng &rng,
                   std::vector<transactions::Transaction> &out) {
   std::int64_t ts = schedule.firstTs;
 
   while (ts < windowEndEpochSec) {
-    (void)emitOnePayment(studentId, childAcct, parents, ts, cfg, rt, rng, out);
+    (void)emitOnePayment(studentId, childAcct, parents, ts, cfg, run, rng, out);
 
     const auto jitter = rng.uniformInt(kJitterMin, kJitterMaxExcl);
     const auto stepDays =
@@ -119,40 +118,35 @@ void walkSchedule(entity::PersonId studentId, entity::Key childAcct,
     return 0;
   }
   const auto perStudent = static_cast<std::size_t>(windowDays) / 7U;
-  // Approx 80% of the weekly upper bound.
   return (studentCount * perStudent * 4U) / 5U;
 }
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const AllowanceSchedule &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
+  const auto personCount = run.kinship().personCount();
   if (personCount == 0) {
     return out;
   }
 
-  out.reserve(estimateCapacity(personCount, rt.window.days));
+  out.reserve(estimateCapacity(personCount, run.posting().days()));
 
-  auto rng = rt.rngFactory->rng({"family", "allowances"});
+  auto rng = run.emission().rng({"family", "allowances"});
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId student = 1; student <= personCount; ++student) {
-    if (!pred::isStudent(rt.personas[student - 1])) {
+    if (!pred::isStudent(run.kinship().persona(student))) {
       continue;
     }
 
-    // Parents stored as fixed-2 array; find the populated prefix.
-    const auto parentSlots = rt.graph->parentsOf[student - 1];
+    const auto parentSlots = run.kinship().parentsOf(student);
     std::array<entity::PersonId, 2> parentBuf{};
     std::size_t parentCount = 0;
     for (const auto p : parentSlots) {
@@ -164,18 +158,16 @@ std::vector<transactions::Transaction> generate(const Runtime &rt,
       continue;
     }
 
-    // Resolve student's primary account once.
-    const auto childAcct = fhelp::resolveFamilyAccount(
-        student, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+    const auto childAcct = run.accounts().localMemberAccount(student);
     if (!childAcct.has_value()) {
       continue;
     }
 
-    const auto schedule = pickSchedule(rng, rt.window.start, cfg.weeklyP);
+    const auto schedule = pickSchedule(rng, run.posting().start(), cfg.weeklyP);
     walkSchedule(
         student, *childAcct,
         std::span<const entity::PersonId>{parentBuf.data(), parentCount},
-        schedule, windowEndEpochSec, cfg, rt, rng, out);
+        schedule, windowEndEpochSec, cfg, run, rng, out);
   }
 
   return out;

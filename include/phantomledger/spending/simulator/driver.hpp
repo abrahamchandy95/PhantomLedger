@@ -18,15 +18,17 @@ class Simulator {
 public:
   Simulator(market::Market &market, random::Rng &rng,
             const transactions::Factory &factory,
-            const obligations::Snapshot &obligations,
-            clearing::Ledger *ledger = nullptr, RunPlanner planner = {},
-            DayDriver dayDriver = DayDriver{},
-            SpenderEmissionDriver::Threads emissionThreads = {});
+            const obligations::Snapshot &obligations);
 
   Simulator(const Simulator &) = delete;
   Simulator &operator=(const Simulator &) = delete;
   Simulator(Simulator &&) noexcept = default;
   Simulator &operator=(Simulator &&) = delete;
+
+  Simulator &ledger(clearing::Ledger *ledger) noexcept;
+  Simulator &planner(RunPlanner planner) noexcept;
+  Simulator &dayDriver(DayDriver dayDriver) noexcept;
+  Simulator &emissionThreads(SpenderEmissionDriver::Threads threads) noexcept;
 
   [[nodiscard]] std::vector<transactions::Transaction> run();
 
