@@ -1,41 +1,42 @@
 #pragma once
 
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
+#include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
 
 #include <cstdint>
-#include <span>
 #include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::internal_xfer {
 
 struct Config {
-  double activeP = 0.45;
-
+  double activeP = 0.55;
   std::int32_t transfersPerMonthMin = 1;
   std::int32_t transfersPerMonthMax = 3;
-
-  double amountMedian = 250.0;
-  double amountSigma = 0.8;
-
-  double roundAmountP = 0.45;
+  double amountMedian = 120.0;
+  double amountSigma = 0.75;
+  double roundAmountP = 0.25;
 
   void validate() const;
 };
 
 inline constexpr Config kDefaultConfig{};
 
-[[nodiscard]] std::vector<transactions::Transaction>
-generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
-         const transactions::Factory &txf,
-         const entity::account::Ownership &ownership,
-         const entity::account::Registry &registry,
-         clearing::Ledger *book = nullptr,
-         std::span<const transactions::Transaction> baseTxns = {},
-         bool baseTxnsSorted = false, Config cfg = kDefaultConfig);
+class Generator {
+public:
+  Generator(random::Rng &rng, const transactions::Factory &txf,
+            ledger::SeededScreen &screen) noexcept
+      : rng_(rng), txf_(txf), screen_(screen) {}
+
+  [[nodiscard]] std::vector<transactions::Transaction>
+  generate(const blueprints::LegitBuildPlan &plan, Config cfg = kDefaultConfig);
+
+private:
+  random::Rng &rng_;
+  const transactions::Factory &txf_;
+  ledger::SeededScreen &screen_;
+};
 
 } // namespace PhantomLedger::transfers::legit::routines::internal_xfer

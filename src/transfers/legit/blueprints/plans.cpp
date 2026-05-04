@@ -69,6 +69,39 @@ selectHubAccounts(random::Rng &rng, AccountCensus census,
   return out;
 }
 
+[[nodiscard]] OwnedAccountSlices
+ownedAccountSlicesByPerson(AccountCensus census) {
+  OwnedAccountSlices out;
+
+  if (census.accounts == nullptr || census.ownership == nullptr ||
+      census.ownership->byPersonOffset.empty()) {
+    return out;
+  }
+
+  const auto &ownership = *census.ownership;
+  const auto personCount = ownership.byPersonOffset.size() - 1;
+
+  out.offset.resize(personCount + 1);
+  out.recordIx.reserve(ownership.byPersonIndex.size());
+
+  for (std::size_t personIdx = 0; personIdx < personCount; ++personIdx) {
+    out.offset[personIdx] = static_cast<std::uint32_t>(out.recordIx.size());
+
+    const auto start = ownership.byPersonOffset[personIdx];
+    const auto end = ownership.byPersonOffset[personIdx + 1];
+
+    for (auto i = start; i < end; ++i) {
+      const auto recordIx = ownership.byPersonIndex[i];
+      if (recordIx < census.accounts->records.size()) {
+        out.recordIx.push_back(recordIx);
+      }
+    }
+  }
+
+  out.offset[personCount] = static_cast<std::uint32_t>(out.recordIx.size());
+  return out;
+}
+
 [[nodiscard]] std::unordered_map<entity::PersonId, std::uint32_t>
 primaryAcctRecordIxByPerson(AccountCensus census) {
   std::unordered_map<entity::PersonId, std::uint32_t> out;
@@ -247,6 +280,7 @@ LegitBuildPlan buildLegitPlan(random::Rng &rng, LegitTimeframe timeframe,
   plan.seed = timeframe.seed;
 
   plan.allAccounts = census.accounts;
+  plan.ownedAccountSlices = ownedAccountSlicesByPerson(census);
   plan.persons = extractPersons(census);
 
   plan.counterparties =

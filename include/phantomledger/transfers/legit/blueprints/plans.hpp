@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -57,6 +58,33 @@ struct PersonaCatalog {
 };
 
 // ---------------------------------------------------------------------------
+// OwnedAccountSlices — compact per-person account record slices
+// ---------------------------------------------------------------------------
+
+struct OwnedAccountSlices {
+  std::vector<std::uint32_t> offset;
+  std::vector<std::uint32_t> recordIx;
+
+  [[nodiscard]] bool empty() const noexcept { return recordIx.empty(); }
+
+  [[nodiscard]] std::span<const std::uint32_t>
+  recordsFor(entity::PersonId person) const noexcept {
+    if (person == entity::invalidPerson || person == 0 ||
+        static_cast<std::size_t>(person) >= offset.size()) {
+      return {};
+    }
+
+    const auto start = offset[person - 1];
+    const auto end = offset[person];
+    if (start == end) {
+      return {};
+    }
+    return std::span<const std::uint32_t>(recordIx.data() + start,
+                                          recordIx.data() + end);
+  }
+};
+
+// ---------------------------------------------------------------------------
 // CounterpartyPlan — flat, fast-access counterparty buckets
 // ---------------------------------------------------------------------------
 
@@ -95,6 +123,7 @@ struct LegitBuildPlan {
   std::uint64_t seed = 0;
 
   const entity::account::Registry *allAccounts = nullptr;
+  OwnedAccountSlices ownedAccountSlices;
 
   std::vector<entity::PersonId> persons;
 

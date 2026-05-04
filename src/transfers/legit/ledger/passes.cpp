@@ -9,6 +9,7 @@
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/recipients.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
+#include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
 #include "phantomledger/transfers/legit/routines/atm.hpp"
 #include "phantomledger/transfers/legit/routines/credit_cards.hpp"
 #include "phantomledger/transfers/legit/routines/internal.hpp"
@@ -228,12 +229,15 @@ void addRoutines(const RoutinePassRequest &request,
       std::span<const transactions::Transaction>(streams.screened()),
       /*baseTxnsSorted=*/true));
 
-  streams.add(routines::internal_xfer::generate(
-      rng, plan, txf, ownership, registry,
-      /*book=*/screen.fresh(),
-      /*baseTxns=*/
-      std::span<const transactions::Transaction>(streams.screened()),
-      /*baseTxnsSorted=*/true));
+  auto internalScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto internalTransfers = routines::internal_xfer::Generator{
+      rng,
+      txf,
+      internalScreen,
+  };
+  streams.add(internalTransfers.generate(plan));
 
   streams.add(routines::spending::generateDayToDayTxns(
       routines::spending::SpendingRunRequest{
