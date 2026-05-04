@@ -1,4 +1,5 @@
 #include "phantomledger/entities/synth/products/installment_emission.hpp"
+#include "phantomledger/entities/products/event.hpp"
 
 #include "phantomledger/entities/synth/products/dates.hpp"
 #include "phantomledger/entities/synth/products/obligation_emission.hpp"
@@ -64,9 +65,15 @@ void emitInstallmentSchedule(product::ObligationStream &stream,
       continue;
     }
 
-    appendObligation(stream, issue.person, product::Direction::outflow,
-                     issue.counterparty, issue.monthlyPayment, dueDate, channel,
-                     issue.productType);
+    appendObligation(stream, product::ObligationEvent{
+                                 .personId = issue.person,
+                                 .direction = product::Direction::outflow,
+                                 .counterpartyAcct = issue.counterparty,
+                                 .amount = issue.monthlyPayment,
+                                 .timestamp = dueDate,
+                                 .channel = channel,
+                                 .productType = issue.productType,
+                             });
   }
 }
 

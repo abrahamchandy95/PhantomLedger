@@ -1,4 +1,5 @@
 #include "phantomledger/entities/synth/products/tax.hpp"
+#include "phantomledger/entities/products/event.hpp"
 
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/dates.hpp"
@@ -45,10 +46,16 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
         continue;
       }
 
-      appendObligation(stream, person, product::Direction::outflow,
-                       institutional::irsTreasury(), quarterlyAmount, due,
-                       channels::tag(channels::Product::taxEstimated),
-                       product::ProductType::tax);
+      appendObligation(
+          stream, product::ObligationEvent{
+                      .personId = person,
+                      .direction = product::Direction::outflow,
+                      .counterpartyAcct = institutional::irsTreasury(),
+                      .amount = quarterlyAmount,
+                      .timestamp = due,
+                      .channel = channels::tag(channels::Product::taxEstimated),
+                      .productType = product::ProductType::tax,
+                  });
     }
   }
 }
@@ -69,10 +76,17 @@ void emitTaxRefund(product::ObligationStream &stream,
       continue;
     }
 
-    appendObligation(stream, person, product::Direction::inflow,
-                     institutional::irsTreasury(), amount, due,
-                     channels::tag(channels::Product::taxRefund),
-                     product::ProductType::tax, 1);
+    appendObligation(stream,
+                     product::ObligationEvent{
+                         .personId = person,
+                         .direction = product::Direction::inflow,
+                         .counterpartyAcct = institutional::irsTreasury(),
+                         .amount = amount,
+                         .timestamp = due,
+                         .channel = channels::tag(channels::Product::taxRefund),
+                         .productType = product::ProductType::tax,
+                         .productId = 1,
+                     });
   }
 }
 
@@ -93,10 +107,17 @@ void emitTaxBalanceDue(product::ObligationStream &stream,
       continue;
     }
 
-    appendObligation(stream, person, product::Direction::outflow,
-                     institutional::irsTreasury(), amount, due,
-                     channels::tag(channels::Product::taxBalanceDue),
-                     product::ProductType::tax, 2);
+    appendObligation(
+        stream, product::ObligationEvent{
+                    .personId = person,
+                    .direction = product::Direction::outflow,
+                    .counterpartyAcct = institutional::irsTreasury(),
+                    .amount = amount,
+                    .timestamp = due,
+                    .channel = channels::tag(channels::Product::taxBalanceDue),
+                    .productType = product::ProductType::tax,
+                    .productId = 2,
+                });
   }
 }
 
