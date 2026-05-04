@@ -222,12 +222,11 @@ void addRoutines(const RoutinePassRequest &request,
       std::span<const transactions::Transaction>(streams.screened()),
       /*baseTxnsSorted=*/true));
 
-  streams.add(routines::atm::generate(
-      rng, plan, txf, ownership, registry,
-      /*book=*/screen.fresh(),
-      /*baseTxns=*/
-      std::span<const transactions::Transaction>(streams.screened()),
-      /*baseTxnsSorted=*/true));
+  auto atmScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto atmWithdrawals = routines::atm::Generator{rng, txf, atmScreen};
+  streams.add(atmWithdrawals.generate(plan, registry));
 
   auto internalScreen = SeededScreen::sorted(
       screen.fresh(),
