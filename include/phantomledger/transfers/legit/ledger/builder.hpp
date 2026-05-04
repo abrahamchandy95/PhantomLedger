@@ -31,10 +31,18 @@ public:
   };
 
   LegitTransferBuilder() = default;
-  LegitTransferBuilder(blueprints::PlanRequest blueprint,
+  LegitTransferBuilder(random::Rng &rng, blueprints::LegitTimeframe timeframe,
+                       blueprints::AccountCensus census,
                        BalanceBookRequest openingBook) noexcept;
 
-  LegitTransferBuilder &blueprint(blueprints::PlanRequest value) noexcept;
+  LegitTransferBuilder &rng(random::Rng &value) noexcept;
+  LegitTransferBuilder &timeframe(blueprints::LegitTimeframe value) noexcept;
+  LegitTransferBuilder &census(blueprints::AccountCensus value) noexcept;
+  LegitTransferBuilder &
+  counterparties(blueprints::CounterpartyPools value) noexcept;
+  LegitTransferBuilder &personas(blueprints::PersonaCatalog value) noexcept;
+  LegitTransferBuilder &
+  hubSelection(blueprints::HubSelectionRules value) noexcept;
   LegitTransferBuilder &openingBook(BalanceBookRequest value) noexcept;
   LegitTransferBuilder &income(passes::IncomePassRequest value) noexcept;
   LegitTransferBuilder &routines(passes::RoutinePassRequest value) noexcept;
@@ -51,7 +59,13 @@ public:
 private:
   [[nodiscard]] const entity::account::Registry *accounts() const noexcept;
 
-  blueprints::PlanRequest blueprint_{};
+  random::Rng *rng_ = nullptr;
+  blueprints::LegitTimeframe timeframe_{};
+  blueprints::AccountCensus census_{};
+  blueprints::CounterpartyPools counterparties_{};
+  blueprints::PersonaCatalog personas_{};
+  blueprints::HubSelectionRules hubSelection_{};
+
   BalanceBookRequest openingBook_{};
 
   passes::IncomePassRequest income_{};
@@ -61,7 +75,6 @@ private:
 
   FamilyPrograms familyPrograms_{};
   const ::PhantomLedger::infra::Router *router_ = nullptr;
-  bool hasBlueprint_ = false;
 };
 
 } // namespace PhantomLedger::transfers::legit::ledger

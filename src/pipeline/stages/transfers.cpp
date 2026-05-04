@@ -73,33 +73,43 @@ makeRecurringIncomeRules(const RecurringIncome &income) {
   };
 }
 
-[[nodiscard]] blueprints::PlanRequest
-makePlanRequest(::PhantomLedger::random::Rng &rng,
-                const ::PhantomLedger::pipeline::Entities &entities,
-                RunScope run, PopulationShape population) {
-  return blueprints::PlanRequest{
+[[nodiscard]] blueprints::LegitTimeframe
+makeLegitTimeframe(RunScope run) noexcept {
+  return blueprints::LegitTimeframe{
       .window = run.window,
-      .rng = &rng,
-      .population =
-          blueprints::PopulationTuning{
-              .count = entities.people.roster.count,
-              .seed = run.seed,
-              .hubFraction = population.hubFraction,
-          },
-      .census =
-          blueprints::CensusSource{
-              .accounts = &entities.accounts.registry,
-              .ownership = &entities.accounts.ownership,
-          },
-      .counterparties =
-          blueprints::CounterpartySource{
-              .directory = &entities.counterparties,
-              .landlords = &entities.landlords.roster,
-          },
-      .personas =
-          blueprints::PersonaSource{
-              .pack = &entities.personas,
-          },
+      .seed = run.seed,
+  };
+}
+
+[[nodiscard]] blueprints::AccountCensus makeAccountCensus(
+    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+  return blueprints::AccountCensus{
+      .accounts = &entities.accounts.registry,
+      .ownership = &entities.accounts.ownership,
+  };
+}
+
+[[nodiscard]] blueprints::CounterpartyPools makeCounterpartyPools(
+    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+  return blueprints::CounterpartyPools{
+      .directory = &entities.counterparties,
+      .landlords = &entities.landlords.roster,
+  };
+}
+
+[[nodiscard]] blueprints::PersonaCatalog makePersonaCatalog(
+    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+  return blueprints::PersonaCatalog{
+      .pack = &entities.personas,
+  };
+}
+
+[[nodiscard]] blueprints::HubSelectionRules
+makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
+                 PopulationShape population) noexcept {
+  return blueprints::HubSelectionRules{
+      .populationCount = entities.people.roster.count,
+      .fraction = population.hubFraction,
   };
 }
 
@@ -187,11 +197,16 @@ makeLegitFamilyPrograms(const FamilyPrograms &family) noexcept {
     const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
     const GovernmentPrograms &government, PopulationShape population) {
   legit_ledger::LegitTransferBuilder builder{
-      makePlanRequest(rng, entities, run, population),
+      rng,
+      makeLegitTimeframe(run),
+      makeAccountCensus(entities),
       makeBalanceBookRequest(rng, entities, run, balanceBook),
   };
 
-  builder.income(makeIncomePassRequest(rng, entities, income, government))
+  builder.counterparties(makeCounterpartyPools(entities))
+      .personas(makePersonaCatalog(entities))
+      .hubSelection(makeHubSelection(entities, population))
+      .income(makeIncomePassRequest(rng, entities, income, government))
       .routines(makeRoutinePassRequest(rng, entities, income))
       .family(makeFamilyPassRequest(entities))
       .credit(makeCreditPassRequest(rng, entities, creditCards))
