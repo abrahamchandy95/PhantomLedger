@@ -22,13 +22,30 @@ void sortChronological(std::vector<transactions::Transaction> &txns) {
 
 Simulator::Simulator(market::Market &market, random::Rng &rng,
                      const transactions::Factory &factory,
-                     const obligations::Snapshot &obligations,
-                     clearing::Ledger *ledger, RunPlanner planner,
-                     DayDriver dayDriver,
-                     SpenderEmissionDriver::Threads emissionThreads)
-    : market_(market), rng_(rng), factory_(factory), obligations_(obligations),
-      ledger_(ledger), emissionThreads_(emissionThreads),
-      planner_(std::move(planner)), dayDriver_(std::move(dayDriver)) {}
+                     const obligations::Snapshot &obligations)
+    : market_(market), rng_(rng), factory_(factory), obligations_(obligations) {
+}
+
+Simulator &Simulator::ledger(clearing::Ledger *ledger) noexcept {
+  ledger_ = ledger;
+  return *this;
+}
+
+Simulator &Simulator::planner(RunPlanner planner) noexcept {
+  planner_ = std::move(planner);
+  return *this;
+}
+
+Simulator &Simulator::dayDriver(DayDriver dayDriver) noexcept {
+  dayDriver_ = std::move(dayDriver);
+  return *this;
+}
+
+Simulator &
+Simulator::emissionThreads(SpenderEmissionDriver::Threads threads) noexcept {
+  emissionThreads_ = threads;
+  return *this;
+}
 
 std::vector<transactions::Transaction> Simulator::run() {
   if (market_.bounds().days == 0) {

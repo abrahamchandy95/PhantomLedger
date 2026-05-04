@@ -9,12 +9,12 @@ namespace PhantomLedger::infra::synth::rings {
 namespace {
 
 [[nodiscard]] std::pair<time::TimePoint, time::TimePoint>
-sampleWindow(random::Rng &rng, time::Window window, const Config &cfg) {
+sampleWindow(random::Rng &rng, time::Window window, const AccessRules &rules) {
   const std::int32_t totalDays = window.days;
 
-  const std::int32_t burstMin = std::max<std::int32_t>(1, cfg.burstDaysMin);
+  const std::int32_t burstMin = std::max<std::int32_t>(1, rules.burstDaysMin);
   const std::int32_t burstMax =
-      std::max<std::int32_t>(burstMin, cfg.burstDaysMax);
+      std::max<std::int32_t>(burstMin, rules.burstDaysMax);
 
   const std::int32_t rawBurst = static_cast<std::int32_t>(
       rng.uniformInt(burstMin, static_cast<std::int64_t>(burstMax) + 1));
@@ -79,20 +79,20 @@ membersOf(const entity::person::Ring &ring,
 std::unordered_map<std::uint32_t, RingPlan>
 build(random::Rng &rng, time::Window window,
       std::span<const entity::person::Ring> rings,
-      const entity::person::Topology &topology, const Config &cfg) {
+      const entity::person::Topology &topology, const AccessRules &rules) {
   std::unordered_map<std::uint32_t, RingPlan> plans;
   plans.reserve(rings.size());
 
   for (const auto &ring : rings) {
-    const auto [firstSeen, lastSeen] = sampleWindow(rng, window, cfg);
+    const auto [firstSeen, lastSeen] = sampleWindow(rng, window, rules);
     const auto members = membersOf(ring, topology);
 
     RingPlan plan{};
     plan.ringId = ring.id;
     plan.firstSeen = firstSeen;
     plan.lastSeen = lastSeen;
-    plan.sharedDeviceMembers = sampleMembers(rng, members, cfg.sharedDeviceP);
-    plan.sharedIpMembers = sampleMembers(rng, members, cfg.sharedIpP);
+    plan.sharedDeviceMembers = sampleMembers(rng, members, rules.sharedDeviceP);
+    plan.sharedIpMembers = sampleMembers(rng, members, rules.sharedIpP);
 
     plans.emplace(ring.id, std::move(plan));
   }

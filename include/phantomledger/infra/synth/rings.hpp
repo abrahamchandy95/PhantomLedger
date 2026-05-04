@@ -11,7 +11,7 @@
 
 namespace PhantomLedger::infra::synth::rings {
 
-struct Config {
+struct AccessRules {
   std::int32_t burstDaysMin = 7;
   std::int32_t burstDaysMax = 30;
 
@@ -22,6 +22,6 @@ struct Config {
 [[nodiscard]] std::unordered_map<std::uint32_t, RingPlan>
 build(random::Rng &rng, time::Window window,
       std::span<const entity::person::Ring> rings,
-      const entity::person::Topology &topology, const Config &cfg = {});
+      const entity::person::Topology &topology, const AccessRules &rules = {});
 
 } // namespace PhantomLedger::infra::synth::rings

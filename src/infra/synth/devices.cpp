@@ -20,6 +20,7 @@ namespace {
   const auto idx = rng.choiceIndex(kAllDeviceKinds.size());
   return kAllDeviceKinds[idx];
 }
+
 void registerRecord(Output &out, DeviceIdentity id, DeviceKind kind,
                     bool flagged) {
   out.records.push_back(Record{
@@ -46,7 +47,7 @@ buildLegitPool(const entity::person::Roster &people) {
 Output build(random::Rng &rng, time::Window window,
              const entity::person::Roster &people,
              const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-             const Config &cfg) {
+             const AssignmentRules &rules) {
   Output out;
   const auto reserveHint =
       static_cast<std::size_t>(people.count) * 12U / 10U + ringPlans.size();
@@ -61,7 +62,7 @@ Output build(random::Rng &rng, time::Window window,
   const auto windowDays = window.days;
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
-    const std::uint32_t nDev = rng.coin(cfg.secondDeviceP) ? 2U : 1U;
+    const std::uint32_t nDev = rng.coin(rules.secondDeviceP) ? 2U : 1U;
 
     for (std::uint32_t slot = 1; slot <= nDev; ++slot) {
       const auto id = DeviceIdentity::person(p, slot);
@@ -96,7 +97,7 @@ Output build(random::Rng &rng, time::Window window,
     if (!pool::contains(remainingIndex, anchor)) {
       continue;
     }
-    if (!rng.coin(cfg.legitDeviceNoiseP)) {
+    if (!rng.coin(rules.legitDeviceNoiseP)) {
       continue;
     }
 

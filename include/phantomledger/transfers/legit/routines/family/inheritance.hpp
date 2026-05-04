@@ -2,7 +2,7 @@
 
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <vector>
 
@@ -25,6 +25,6 @@ struct InheritanceEvent {
 inline constexpr InheritanceEvent kDefaultInheritanceEvent{};
 
 [[nodiscard]] std::vector<transactions::Transaction>
-generate(const Runtime &rt, const InheritanceEvent &model);
+generate(const TransferRun &run, const InheritanceEvent &model);
 
 } // namespace PhantomLedger::transfers::legit::routines::family::inheritance

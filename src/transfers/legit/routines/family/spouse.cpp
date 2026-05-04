@@ -6,7 +6,9 @@
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/legit/routines/family/helpers.hpp"
 
+#include <algorithm>
 #include <cstdint>
+#include <optional>
 
 namespace PhantomLedger::transfers::legit::routines::family::spouse {
 
@@ -27,15 +29,13 @@ struct CoupleState {
 
 [[nodiscard]] std::optional<CoupleState>
 resolveCouple(entity::PersonId a, entity::PersonId b, const CoupleFlow &cfg,
-              const Runtime &rt, random::Rng &rng) {
+              const TransferRun &run, random::Rng &rng) {
   if (!rng.coin(cfg.separateAccountsP)) {
     return std::nullopt;
   }
 
-  const auto acctA = fhelp::resolveFamilyAccount(a, *rt.accounts, *rt.ownership,
-                                                 rt.routing.externalP);
-  const auto acctB = fhelp::resolveFamilyAccount(b, *rt.accounts, *rt.ownership,
-                                                 rt.routing.externalP);
+  const auto acctA = run.accounts().routedMemberAccount(a);
+  const auto acctB = run.accounts().routedMemberAccount(b);
   if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
     return std::nullopt;
   }
@@ -43,10 +43,8 @@ resolveCouple(entity::PersonId a, entity::PersonId b, const CoupleFlow &cfg,
     return std::nullopt;
   }
 
-  // Capacity multiplier as breadwinner proxy. Equal weights →
-  // a is the higher, deterministic.
-  const auto powerA = fhelp::capacityFor(a, rt.amountMultipliers);
-  const auto powerB = fhelp::capacityFor(b, rt.amountMultipliers);
+  const auto powerA = run.kinship().amountMultiplier(a);
+  const auto powerB = run.kinship().amountMultiplier(b);
 
   if (powerA >= powerB) {
     return CoupleState{.higherAcct = *acctA, .lowerAcct = *acctB};
@@ -57,7 +55,7 @@ resolveCouple(entity::PersonId a, entity::PersonId b, const CoupleFlow &cfg,
 [[nodiscard]] bool
 emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
                 const CoupleState &couple, std::int64_t windowEndEpochSec,
-                const CoupleFlow &cfg, const Runtime &rt, random::Rng &rng,
+                const CoupleFlow &cfg, const TransferRun &run, random::Rng &rng,
                 std::vector<transactions::Transaction> &out) {
   const bool fromBreadwinner = rng.coin(cfg.breadwinnerFlowP);
   const auto src = fromBreadwinner ? couple.higherAcct : couple.lowerAcct;
@@ -81,7 +79,7 @@ emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = src,
       .destination = dst,
       .amount = amt,
@@ -96,57 +94,53 @@ emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
 void processCoupleMonth(::PhantomLedger::time::TimePoint monthStart,
                         const CoupleState &couple,
                         std::int64_t windowEndEpochSec, const CoupleFlow &cfg,
-                        const Runtime &rt, random::Rng &rng,
+                        const TransferRun &run, random::Rng &rng,
                         std::vector<transactions::Transaction> &out) {
   const auto count = static_cast<int>(rng.uniformInt(
       cfg.txnsPerMonthMin, static_cast<std::int64_t>(cfg.txnsPerMonthMax) + 1));
 
   for (int i = 0; i < count; ++i) {
-    if (!emitOneTransfer(monthStart, couple, windowEndEpochSec, cfg, rt, rng,
-                         out)) {
-    }
+    (void)emitOneTransfer(monthStart, couple, windowEndEpochSec, cfg, run, rng,
+                          out);
   }
 }
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const CoupleFlow &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
-  if (personCount == 0 || rt.monthStarts.empty()) {
+  const auto personCount = run.kinship().personCount();
+  if (personCount == 0 || run.posting().monthStarts().empty()) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "spouse"});
+  auto rng = run.emission().rng({"family", "spouse"});
 
   const auto avgPerMonth = (cfg.txnsPerMonthMin + cfg.txnsPerMonthMax + 1) / 2;
   out.reserve(static_cast<std::size_t>(personCount / 4U) *
-              rt.monthStarts.size() *
+              run.posting().monthStarts().size() *
               static_cast<std::size_t>(std::max(1, avgPerMonth)));
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId p = 1; p <= personCount; ++p) {
-    const auto spouse = rt.graph->spouseOf[p - 1];
+    const auto spouse = run.kinship().spouseOf(p);
     if (!entity::valid(spouse) || spouse <= p) {
       continue;
     }
 
-    const auto couple = resolveCouple(p, spouse, cfg, rt, rng);
+    const auto couple = resolveCouple(p, spouse, cfg, run, rng);
     if (!couple.has_value()) {
       continue;
     }
 
-    for (const auto monthStart : rt.monthStarts) {
-      processCoupleMonth(monthStart, *couple, windowEndEpochSec, cfg, rt, rng,
+    for (const auto monthStart : run.posting().monthStarts()) {
+      processCoupleMonth(monthStart, *couple, windowEndEpochSec, cfg, run, rng,
                          out);
     }
   }

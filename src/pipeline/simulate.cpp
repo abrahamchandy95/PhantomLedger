@@ -40,21 +40,22 @@ SimulationPipeline::infraWindow(::PhantomLedger::time::Window value) noexcept {
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::ringBehavior(
-    const ::PhantomLedger::infra::synth::rings::Config &value) noexcept {
-  infra_.ringBehavior(value);
+SimulationPipeline &SimulationPipeline::ringAccess(
+    const ::PhantomLedger::infra::synth::rings::AccessRules &value) noexcept {
+  infra_.ringAccess(value);
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::deviceBehavior(
-    const ::PhantomLedger::infra::synth::devices::Config &value) noexcept {
-  infra_.deviceBehavior(value);
+SimulationPipeline &SimulationPipeline::deviceAssignment(
+    const ::PhantomLedger::infra::synth::devices::AssignmentRules
+        &value) noexcept {
+  infra_.deviceAssignment(value);
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::ipBehavior(
-    const ::PhantomLedger::infra::synth::ips::Config &value) noexcept {
-  infra_.ipBehavior(value);
+SimulationPipeline &SimulationPipeline::ipAssignment(
+    const ::PhantomLedger::infra::synth::ips::AssignmentRules &value) noexcept {
+  infra_.ipAssignment(value);
   return *this;
 }
 

@@ -1,7 +1,8 @@
 #pragma once
 
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <vector>
 
@@ -27,6 +28,6 @@ struct TuitionSchedule {
 inline constexpr TuitionSchedule kDefaultTuitionSchedule{};
 
 [[nodiscard]] std::vector<transactions::Transaction>
-generate(const Runtime &rt, const TuitionSchedule &cfg);
+generate(const TransferRun &run, const TuitionSchedule &cfg);
 
 } // namespace PhantomLedger::transfers::legit::routines::family::tuition

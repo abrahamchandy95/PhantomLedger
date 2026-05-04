@@ -136,10 +136,6 @@ bool GovernmentCounterparties::valid() const noexcept {
   return !(ssa == sentinel) && !(disability == sentinel);
 }
 
-// ---------------------------------------------------------------------------
-// addIncome
-// ---------------------------------------------------------------------------
-
 void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps) {
@@ -182,10 +178,6 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
   streams.add(pl_inflows::revenue::generate(snap, txf));
 }
 
-// ---------------------------------------------------------------------------
-// addRoutines
-// ---------------------------------------------------------------------------
-
 void addRoutines(const RoutinePass &pass,
                  const blueprints::LegitBuildPlan &plan,
                  const entity::account::Ownership &ownership,
@@ -220,12 +212,15 @@ void addRoutines(const RoutinePass &pass,
 
   streams.add(pl_inflows::generateRentTxns(snap, rng, txf, rentModel));
 
-  streams.add(routines::subscriptions::generate(
-      rng, plan, txf, registry,
-      /*book=*/screen.fresh(),
-      /*baseTxns=*/
-      std::span<const transactions::Transaction>(streams.screened()),
-      /*baseTxnsSorted=*/true));
+  auto subscriptionScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto subscriptions = routines::subscriptions::Generator{
+      rng,
+      txf,
+      subscriptionScreen,
+  };
+  streams.add(subscriptions.generate(plan, registry));
 
   auto atmScreen = SeededScreen::sorted(
       screen.fresh(),
@@ -276,20 +271,12 @@ void addRoutines(const RoutinePass &pass,
       }));
 }
 
-// ---------------------------------------------------------------------------
-// addFamily
-// ---------------------------------------------------------------------------
-
 void addFamily(
-    const ::PhantomLedger::transfers::legit::routines::family::Runtime &runtime,
+    const ::PhantomLedger::transfers::legit::routines::family::TransferRun &run,
     const routines::relatives::FamilyTransferModel &transferModel,
     TxnStreams &streams) {
-  streams.add(routines::relatives::generateFamilyTxns(runtime, transferModel));
+  streams.add(routines::relatives::generateFamilyTxns(run, transferModel));
 }
-
-// ---------------------------------------------------------------------------
-// addCredit
-// ---------------------------------------------------------------------------
 
 void addCredit(const CreditLifecyclePass &pass,
                const blueprints::LegitBuildPlan &plan,

@@ -23,12 +23,14 @@ public:
   AccessInfraStage() = default;
 
   AccessInfraStage &window(::PhantomLedger::time::Window value) noexcept;
-  AccessInfraStage &ringBehavior(
-      const ::PhantomLedger::infra::synth::rings::Config &value) noexcept;
-  AccessInfraStage &deviceBehavior(
-      const ::PhantomLedger::infra::synth::devices::Config &value) noexcept;
+  AccessInfraStage &ringAccess(
+      const ::PhantomLedger::infra::synth::rings::AccessRules &value) noexcept;
   AccessInfraStage &
-  ipBehavior(const ::PhantomLedger::infra::synth::ips::Config &value) noexcept;
+  deviceAssignment(const ::PhantomLedger::infra::synth::devices::AssignmentRules
+                       &value) noexcept;
+  AccessInfraStage &
+  ipAssignment(const ::PhantomLedger::infra::synth::ips::AssignmentRules
+                   &value) noexcept;
   AccessInfraStage &routingBehavior(RoutingBehavior value) noexcept;
   AccessInfraStage &sharedInfra(SharedInfraUse value) noexcept;
 
@@ -43,9 +45,9 @@ private:
   void applySharedInfra(::PhantomLedger::pipeline::Infra &out) const noexcept;
 
   ::PhantomLedger::time::Window window_{};
-  ::PhantomLedger::infra::synth::rings::Config ringBehavior_{};
-  ::PhantomLedger::infra::synth::devices::Config deviceBehavior_{};
-  ::PhantomLedger::infra::synth::ips::Config ipBehavior_{};
+  ::PhantomLedger::infra::synth::rings::AccessRules ringAccess_{};
+  ::PhantomLedger::infra::synth::devices::AssignmentRules deviceAssignment_{};
+  ::PhantomLedger::infra::synth::ips::AssignmentRules ipAssignment_{};
   RoutingBehavior routingBehavior_{};
   SharedInfraUse sharedInfra_{};
 };
@@ -54,9 +56,11 @@ private:
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
       ::PhantomLedger::time::Window window,
-      const ::PhantomLedger::infra::synth::rings::Config &ringBehavior = {},
-      const ::PhantomLedger::infra::synth::devices::Config &deviceBehavior = {},
-      const ::PhantomLedger::infra::synth::ips::Config &ipBehavior = {},
+      const ::PhantomLedger::infra::synth::rings::AccessRules &ringAccess = {},
+      const ::PhantomLedger::infra::synth::devices::AssignmentRules
+          &deviceAssignment = {},
+      const ::PhantomLedger::infra::synth::ips::AssignmentRules &ipAssignment =
+          {},
       RoutingBehavior routing = {}, SharedInfraUse shared = {});
 
 } // namespace PhantomLedger::pipeline::stages::infra

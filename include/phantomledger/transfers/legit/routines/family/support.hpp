@@ -2,7 +2,7 @@
 
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/legit/routines/family/runtime.hpp"
+#include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <vector>
 
@@ -25,6 +25,6 @@ struct SupportFlow {
 inline constexpr SupportFlow kDefaultSupportFlow{};
 
 [[nodiscard]] std::vector<transactions::Transaction>
-generate(const Runtime &rt, const SupportFlow &model);
+generate(const TransferRun &run, const SupportFlow &model);
 
 } // namespace PhantomLedger::transfers::legit::routines::family::support

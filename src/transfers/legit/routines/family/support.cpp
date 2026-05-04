@@ -6,6 +6,7 @@
 #include "phantomledger/transfers/legit/routines/family/helpers.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family::support {
@@ -16,12 +17,8 @@ namespace fhelp = ::PhantomLedger::transfers::legit::routines::family::helpers;
 namespace {
 
 inline constexpr std::int64_t kPostingDayMaxExcl = 6;
-
-/// Posting hour window [7am, 9pm).
 inline constexpr std::int64_t kPostingHourMin = 7;
 inline constexpr std::int64_t kPostingHourMaxExcl = 21;
-
-/// Minimum credible support amount. Below this we drop.
 inline constexpr double kAmountFloor = 5.0;
 
 [[nodiscard]] std::int64_t
@@ -43,15 +40,15 @@ struct ResolvedPayer {
 
 [[nodiscard]] std::optional<ResolvedPayer>
 resolvePayer(std::span<const entity::PersonId> supporters,
-             entity::Key retireeAcct, const Runtime &rt, random::Rng &rng) {
-  const auto picked =
-      fhelp::weightedPickPerson(supporters, rt.amountMultipliers, rng);
+             entity::Key retireeAcct, const TransferRun &run,
+             random::Rng &rng) {
+  const auto picked = fhelp::weightedPickPerson(
+      supporters, run.kinship().amountMultipliers(), rng);
   if (!entity::valid(picked)) {
     return std::nullopt;
   }
 
-  const auto payerAcct = fhelp::resolveFamilyAccount(
-      picked, *rt.accounts, *rt.ownership, rt.routing.externalP);
+  const auto payerAcct = run.accounts().routedMemberAccount(picked);
   if (!payerAcct.has_value() || *payerAcct == retireeAcct) {
     return std::nullopt;
   }
@@ -63,13 +60,14 @@ resolvePayer(std::span<const entity::PersonId> supporters,
 emitMonthlySupport(::PhantomLedger::time::TimePoint monthStart,
                    std::span<const entity::PersonId> supporters,
                    entity::Key retireeAcct, std::int64_t windowEndEpochSec,
-                   const SupportFlow &cfg, const Runtime &rt, random::Rng &rng,
+                   const SupportFlow &cfg, const TransferRun &run,
+                   random::Rng &rng,
                    std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.supportP)) {
     return false;
   }
 
-  const auto payer = resolvePayer(supporters, retireeAcct, rt, rng);
+  const auto payer = resolvePayer(supporters, retireeAcct, run, rng);
   if (!payer.has_value()) {
     return false;
   }
@@ -80,14 +78,13 @@ emitMonthlySupport(::PhantomLedger::time::TimePoint monthStart,
   }
 
   const auto base = fhelp::pareto(rng, cfg.paretoXm, cfg.paretoAlpha);
-  const auto multiplier =
-      fhelp::capacityFor(payer->person, rt.amountMultipliers);
+  const auto multiplier = run.kinship().amountMultiplier(payer->person);
   const auto amt = fhelp::sanitizeAmount(base * multiplier, kAmountFloor);
   if (amt == 0.0) {
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = payer->account,
       .destination = retireeAcct,
       .amount = amt,
@@ -112,57 +109,52 @@ emitMonthlySupport(::PhantomLedger::time::TimePoint monthStart,
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const SupportFlow &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
-  if (personCount == 0 || rt.monthStarts.empty()) {
+  const auto personCount = run.kinship().personCount();
+  if (personCount == 0 || run.posting().monthStarts().empty()) {
     return out;
   }
 
-  // Count retirees-with-supporters for capacity estimate.
   std::size_t supportedRetireeCount = 0;
   for (entity::PersonId p = 1; p <= personCount; ++p) {
-    if (pred::isRetired(rt.personas[p - 1]) &&
-        !rt.graph->supportingChildrenOf[p - 1].empty()) {
+    if (pred::isRetired(run.kinship().persona(p)) &&
+        !run.kinship().supportingChildrenOf(p).empty()) {
       ++supportedRetireeCount;
     }
   }
 
-  out.reserve(estimateCapacity(supportedRetireeCount, rt.monthStarts.size(),
-                               cfg.supportP));
+  out.reserve(estimateCapacity(
+      supportedRetireeCount, run.posting().monthStarts().size(), cfg.supportP));
 
-  auto rng = rt.rngFactory->rng({"family", "support"});
+  auto rng = run.emission().rng({"family", "support"});
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId retiree = 1; retiree <= personCount; ++retiree) {
-    if (!pred::isRetired(rt.personas[retiree - 1])) {
+    if (!pred::isRetired(run.kinship().persona(retiree))) {
       continue;
     }
 
-    const auto &supporters = rt.graph->supportingChildrenOf[retiree - 1];
+    const auto &supporters = run.kinship().supportingChildrenOf(retiree);
     if (supporters.empty()) {
       continue;
     }
 
-    const auto retireeAcct = fhelp::resolveFamilyAccount(
-        retiree, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+    const auto retireeAcct = run.accounts().localMemberAccount(retiree);
     if (!retireeAcct.has_value()) {
       continue;
     }
 
     const std::span<const entity::PersonId> supportersView{supporters};
-    for (const auto monthStart : rt.monthStarts) {
+    for (const auto monthStart : run.posting().monthStarts()) {
       (void)emitMonthlySupport(monthStart, supportersView, *retireeAcct,
-                               windowEndEpochSec, cfg, rt, rng, out);
+                               windowEndEpochSec, cfg, run, rng, out);
     }
   }
 

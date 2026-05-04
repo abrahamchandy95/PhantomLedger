@@ -4,12 +4,13 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/transactions/clearing/screening.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -27,6 +28,25 @@ struct PersonSub {
   double amount = 0.0;
   std::uint8_t billingDay = 1; // 1..28
 };
+
+struct ActivePerson {
+  entity::Key depositAcct{};
+  std::vector<PersonSub> subs;
+};
+
+struct Candidate {
+  std::int64_t timestamp = 0;
+  entity::Key depositAcct{};
+  entity::Key merchantAcct{};
+  double amount = 0.0;
+};
+
+[[nodiscard]] std::span<const entity::Key>
+merchantAccounts(const blueprints::LegitBuildPlan &plan) noexcept {
+  return std::span<const entity::Key>(
+      plan.counterparties.billerAccounts.data(),
+      plan.counterparties.billerAccounts.size());
+}
 
 [[nodiscard]] std::vector<PersonSub>
 assignSubscriptions(const random::RngFactory &rngFactory,
@@ -74,70 +94,10 @@ assignSubscriptions(const random::RngFactory &rngFactory,
   return out;
 }
 
-struct ActivePerson {
-  entity::Key depositAcct{};
-  std::vector<PersonSub> subs;
-};
-
-struct Candidate {
-  std::int64_t timestamp = 0;
-  entity::Key depositAcct{};
-  entity::Key merchantAcct{};
-  double amount = 0.0;
-};
-
-} // namespace
-
-void Config::validate() const {
-  namespace v = primitives::validate;
-  v::ge("minPerPerson", minPerPerson, 0);
-  v::ge("maxPerPerson", maxPerPerson, minPerPerson);
-  v::between("debitP", debitP, 0.0, 1.0);
-  v::ge("dayJitter", dayJitter, 0);
-}
-
-std::vector<transactions::Transaction>
-generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
-         const transactions::Factory &txf,
-         const entity::account::Registry &registry, clearing::Ledger *book,
-         std::span<const transactions::Transaction> baseTxns,
-         bool baseTxnsSorted, Config cfg) {
-  cfg.validate();
-
-  std::vector<transactions::Transaction> out;
-  if (plan.monthStarts.empty()) {
-    return out;
-  }
-
-  const auto merchantAccts =
-      std::span<const entity::Key>(plan.counterparties.billerAccounts.data(),
-                                   plan.counterparties.billerAccounts.size());
-  if (merchantAccts.empty()) {
-    return out;
-  }
-
-  const auto endExcl = plan.startDate + time::Days{static_cast<int>(plan.days)};
-  const auto channel = channels::tag(channels::Legit::subscription);
-  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate);
-  const std::int64_t endExclEpoch = time::toEpochSeconds(endExcl);
-
-  // ---- Resolve seeded base txns (same shape as ATM / internal) ----
-  std::vector<transactions::Transaction> sortedHolder;
-  std::span<const transactions::Transaction> seeded;
-  if (baseTxnsSorted || baseTxns.empty()) {
-    seeded = baseTxns;
-  } else {
-    sortedHolder.assign(baseTxns.begin(), baseTxns.end());
-    std::ranges::sort(sortedHolder,
-                      [](const transactions::Transaction &a,
-                         const transactions::Transaction &b) noexcept {
-                        return a.timestamp < b.timestamp;
-                      });
-    seeded = std::span<const transactions::Transaction>(sortedHolder);
-  }
-  std::size_t seedIdx = 0;
-
-  // ---- Per-person sub roster ----
+[[nodiscard]] std::vector<ActivePerson>
+selectActivePeople(const blueprints::LegitBuildPlan &plan,
+                   const entity::account::Registry &registry, const Config &cfg,
+                   std::span<const entity::Key> merchantAccts) {
   const random::RngFactory subFactory{plan.seed};
 
   std::vector<ActivePerson> active;
@@ -160,51 +120,69 @@ generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
     active.push_back(ActivePerson{record.id, std::move(subs)});
   }
 
-  if (active.empty()) {
-    return out;
-  }
+  return active;
+}
 
-  // ---- Candidate generation ----
-  //
+[[nodiscard]] std::size_t
+maxCandidateCount(std::span<const ActivePerson> active,
+                  std::span<const time::TimePoint> monthStarts) noexcept {
+  std::size_t maxCandidates = 0;
+  for (const auto &person : active) {
+    maxCandidates += person.subs.size();
+  }
+  return maxCandidates * monthStarts.size();
+}
+
+[[nodiscard]] Candidate sampleCandidate(random::Rng &rng,
+                                        std::int64_t monthEpoch,
+                                        const ActivePerson &person,
+                                        const PersonSub &sub,
+                                        const Config &cfg) {
+  std::int32_t day = std::min<std::int32_t>(sub.billingDay, 28);
+
+  const auto jitter = static_cast<std::int32_t>(
+      rng.uniformInt(-static_cast<std::int64_t>(cfg.dayJitter),
+                     static_cast<std::int64_t>(cfg.dayJitter) + 1));
+  day = std::clamp<std::int32_t>(day + jitter, 1, 28);
+
+  const auto hour = static_cast<std::int32_t>(rng.uniformInt(0, 7));
+  const auto minute = static_cast<std::int32_t>(rng.uniformInt(0, 61));
+
+  const std::int64_t timestamp = monthEpoch +
+                                 static_cast<std::int64_t>(day - 1) * 86400 +
+                                 static_cast<std::int64_t>(hour) * 3600 +
+                                 static_cast<std::int64_t>(minute) * 60;
+
+  return Candidate{
+      .timestamp = timestamp,
+      .depositAcct = person.depositAcct,
+      .merchantAcct = sub.merchantAcct,
+      .amount = sub.amount,
+  };
+}
+
+[[nodiscard]] std::vector<Candidate>
+makeCandidates(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+               std::span<const ActivePerson> active, const Config &cfg) {
+  const auto endExcl = plan.startDate + time::Days{static_cast<int>(plan.days)};
+  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate);
+  const std::int64_t endExclEpoch = time::toEpochSeconds(endExcl);
 
   std::vector<Candidate> candidates;
-  std::size_t maxCandidates = 0;
-  for (const auto &p : active) {
-    maxCandidates += p.subs.size();
-  }
-  maxCandidates *= plan.monthStarts.size();
-  candidates.reserve(maxCandidates);
+  candidates.reserve(maxCandidateCount(active, plan.monthStarts));
 
   for (const auto &monthAnchor : plan.monthStarts) {
     const std::int64_t monthEpoch = time::toEpochSeconds(monthAnchor);
 
     for (const auto &person : active) {
       for (const auto &sub : person.subs) {
-        std::int32_t day = std::min<std::int32_t>(sub.billingDay, 28);
-
-        const auto jitter = static_cast<std::int32_t>(
-            rng.uniformInt(-static_cast<std::int64_t>(cfg.dayJitter),
-                           static_cast<std::int64_t>(cfg.dayJitter) + 1));
-        day = std::clamp<std::int32_t>(day + jitter, 1, 28);
-
-        const auto hour = static_cast<std::int32_t>(rng.uniformInt(0, 7));
-        const auto minute = static_cast<std::int32_t>(rng.uniformInt(0, 61));
-
-        const std::int64_t ts = monthEpoch +
-                                static_cast<std::int64_t>(day - 1) * 86400 +
-                                static_cast<std::int64_t>(hour) * 3600 +
-                                static_cast<std::int64_t>(minute) * 60;
-
-        if (ts < startEpoch || ts >= endExclEpoch) {
+        auto candidate = sampleCandidate(rng, monthEpoch, person, sub, cfg);
+        if (candidate.timestamp < startEpoch ||
+            candidate.timestamp >= endExclEpoch) {
           continue;
         }
 
-        candidates.push_back(Candidate{
-            .timestamp = ts,
-            .depositAcct = person.depositAcct,
-            .merchantAcct = sub.merchantAcct,
-            .amount = sub.amount,
-        });
+        candidates.push_back(candidate);
       }
     }
   }
@@ -213,32 +191,70 @@ generate(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
     return a.timestamp < b.timestamp;
   });
 
-  // ---- Screen + emit ----
-  out.reserve(candidates.size());
-  for (const auto &cand : candidates) {
-    seedIdx =
-        clearing::advanceBookThrough(book, seeded, seedIdx, cand.timestamp,
-                                     /*inclusive=*/true);
+  return candidates;
+}
 
-    if (book != nullptr) {
-      const auto srcIdx = book->findAccount(cand.depositAcct);
-      const auto dstIdx = book->findAccount(cand.merchantAcct);
-      const auto decision = book->transferAt(srcIdx, dstIdx, cand.amount,
-                                             channel, cand.timestamp);
-      if (!decision.accepted()) {
-        continue;
-      }
+[[nodiscard]] transactions::Draft draftFrom(const Candidate &candidate,
+                                            channels::Tag channel) noexcept {
+  return transactions::Draft{
+      .source = candidate.depositAcct,
+      .destination = candidate.merchantAcct,
+      .amount = candidate.amount,
+      .timestamp = candidate.timestamp,
+      .isFraud = 0,
+      .ringId = -1,
+      .channel = channel,
+  };
+}
+
+} // namespace
+
+void Config::validate() const {
+  namespace v = primitives::validate;
+  v::ge("minPerPerson", minPerPerson, 0);
+  v::ge("maxPerPerson", maxPerPerson, minPerPerson);
+  v::between("debitP", debitP, 0.0, 1.0);
+  v::ge("dayJitter", dayJitter, 0);
+}
+
+Generator::Generator(random::Rng &rng, const transactions::Factory &txf,
+                     ledger::SeededScreen &screen, Config cfg)
+    : rng_{rng}, txf_{txf}, screen_{screen}, cfg_{cfg} {
+  cfg_.validate();
+}
+
+std::vector<transactions::Transaction>
+Generator::generate(const blueprints::LegitBuildPlan &plan,
+                    const entity::account::Registry &registry) {
+  std::vector<transactions::Transaction> out;
+  if (plan.monthStarts.empty()) {
+    return out;
+  }
+
+  const auto billerAccts = merchantAccounts(plan);
+  if (billerAccts.empty()) {
+    return out;
+  }
+
+  const auto active = selectActivePeople(plan, registry, cfg_, billerAccts);
+  if (active.empty()) {
+    return out;
+  }
+
+  const auto candidates = makeCandidates(rng_, plan, active, cfg_);
+  const auto channel = channels::tag(channels::Legit::subscription);
+
+  out.reserve(candidates.size());
+  for (const auto &candidate : candidates) {
+    screen_.advanceThrough(candidate.timestamp, /*inclusive=*/true);
+
+    if (!screen_.acceptTransfer(candidate.depositAcct, candidate.merchantAcct,
+                                candidate.amount, channel,
+                                candidate.timestamp)) {
+      continue;
     }
 
-    out.push_back(txf.make(transactions::Draft{
-        .source = cand.depositAcct,
-        .destination = cand.merchantAcct,
-        .amount = cand.amount,
-        .timestamp = cand.timestamp,
-        .isFraud = 0,
-        .ringId = -1,
-        .channel = channel,
-    }));
+    out.push_back(txf_.make(draftFrom(candidate, channel)));
   }
 
   return out;

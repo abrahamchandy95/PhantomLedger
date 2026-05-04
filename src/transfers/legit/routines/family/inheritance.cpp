@@ -19,21 +19,19 @@ namespace dist = ::PhantomLedger::probability::distributions;
 namespace {
 
 inline constexpr double kTotalFloor = 1000.0;
-
 inline constexpr double kPerHeirAmountFloor = 1.0;
 
-/// Posting time — daytime hours [10am, 4pm).
 inline constexpr std::int64_t kPostingHourMin = 10;
 inline constexpr std::int64_t kPostingHourMaxExcl = 16;
 
 [[nodiscard]] std::span<const entity::PersonId>
-resolveHeirs(entity::PersonId retiree, const Runtime &rt) {
-  const auto &direct = rt.graph->childrenOf[retiree - 1];
+resolveHeirs(entity::PersonId retiree, const TransferRun &run) {
+  const auto &direct = run.kinship().childrenOf(retiree);
   if (!direct.empty()) {
     return std::span<const entity::PersonId>{direct};
   }
   return std::span<const entity::PersonId>{
-      rt.graph->supportingChildrenOf[retiree - 1]};
+      run.kinship().supportingChildrenOf(retiree)};
 }
 
 [[nodiscard]] std::int64_t
@@ -49,10 +47,10 @@ pickEventTimestamp(::PhantomLedger::time::TimePoint windowStart, int windowDays,
 }
 
 void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
-                double perHeirAmount, std::int64_t timestamp, const Runtime &rt,
+                double perHeirAmount, std::int64_t timestamp,
+                const TransferRun &run,
                 std::vector<transactions::Transaction> &out) {
-  const auto heirAcct = fhelp::resolveFamilyAccount(
-      heir, *rt.accounts, *rt.ownership, rt.routing.externalP);
+  const auto heirAcct = run.accounts().routedMemberAccount(heir);
   if (!heirAcct.has_value() || *heirAcct == retireeAcct) {
     return;
   }
@@ -62,7 +60,7 @@ void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
     return;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = retireeAcct,
       .destination = *heirAcct,
       .amount = amt,
@@ -74,20 +72,19 @@ void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
 }
 
 void processRetiree(entity::PersonId retiree, std::int64_t windowEndEpochSec,
-                    const InheritanceEvent &cfg, const Runtime &rt,
+                    const InheritanceEvent &cfg, const TransferRun &run,
                     random::Rng &rng,
                     std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.eventP)) {
     return;
   }
 
-  const auto heirs = resolveHeirs(retiree, rt);
+  const auto heirs = resolveHeirs(retiree, run);
   if (heirs.empty()) {
     return;
   }
 
-  const auto retireeAcct = fhelp::resolveFamilyAccount(
-      retiree, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+  const auto retireeAcct = run.accounts().localMemberAccount(retiree);
   if (!retireeAcct.has_value()) {
     return;
   }
@@ -97,44 +94,42 @@ void processRetiree(entity::PersonId retiree, std::int64_t windowEndEpochSec,
   const auto perHeir =
       fhelp::roundCents(total / static_cast<double>(heirs.size()));
 
-  const auto ts = pickEventTimestamp(rt.window.start, rt.window.days, rng);
+  const auto ts =
+      pickEventTimestamp(run.posting().start(), run.posting().days(), rng);
   if (ts >= windowEndEpochSec) {
     return;
   }
 
   for (const auto heir : heirs) {
-    emitToHeir(heir, *retireeAcct, perHeir, ts, rt, out);
+    emitToHeir(heir, *retireeAcct, perHeir, ts, run, out);
   }
 }
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const InheritanceEvent &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
+  const auto personCount = run.kinship().personCount();
   if (personCount == 0) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "inheritance"});
+  auto rng = run.emission().rng({"family", "inheritance"});
 
   out.reserve(16);
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId retiree = 1; retiree <= personCount; ++retiree) {
-    if (!pred::isRetired(rt.personas[retiree - 1])) {
+    if (!pred::isRetired(run.kinship().persona(retiree))) {
       continue;
     }
-    processRetiree(retiree, windowEndEpochSec, cfg, rt, rng, out);
+    processRetiree(retiree, windowEndEpochSec, cfg, run, rng, out);
   }
 
   return out;

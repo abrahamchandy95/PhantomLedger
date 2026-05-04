@@ -54,7 +54,7 @@ buildLegitPool(const entity::person::Roster &people) {
 Output build(random::Rng &rng, time::Window window,
              const entity::person::Roster &people,
              const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-             const Config &cfg) {
+             const AssignmentRules &rules) {
   Output out;
 
   const auto reserveHint =
@@ -73,8 +73,8 @@ Output build(random::Rng &rng, time::Window window,
   const auto windowDays = window.days;
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
-    const std::uint32_t nIp = 1U + (rng.coin(cfg.extraIpP1) ? 1U : 0U) +
-                              (rng.coin(cfg.extraIpP2) ? 1U : 0U);
+    const std::uint32_t nIp = 1U + (rng.coin(rules.extraIpP1) ? 1U : 0U) +
+                              (rng.coin(rules.extraIpP2) ? 1U : 0U);
 
     for (std::uint32_t i = 0; i < nIp; ++i) {
       const auto ip = network::randomIpv4(rng);
@@ -106,7 +106,7 @@ Output build(random::Rng &rng, time::Window window,
     if (!pool::contains(remainingIndex, anchor)) {
       continue;
     }
-    if (!rng.coin(cfg.legitIpNoiseP)) {
+    if (!rng.coin(rules.legitIpNoiseP)) {
       continue;
     }
 

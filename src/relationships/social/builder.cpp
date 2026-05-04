@@ -8,8 +8,10 @@
 #include "phantomledger/relationships/social/sampler.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::relationships::social {
@@ -48,44 +50,68 @@ buildAttractiveness(random::Rng &rng, std::uint32_t personCount,
   return static_cast<std::uint32_t>(std::max(1, target));
 }
 
-void populateRow(std::uint32_t srcIdx, std::span<std::uint32_t> rowSlots,
-                 const ContactSampler &sampler, double tieStrengthShape,
-                 random::Rng &rng, std::vector<std::uint32_t> &uniquesScratch,
-                 std::vector<double> &tieWeightsScratch,
-                 std::vector<double> &tieCdfScratch) {
-  const auto degree = static_cast<std::uint32_t>(rowSlots.size());
-  if (degree == 0) {
-    return;
+class ContactRowBuilder {
+public:
+  ContactRowBuilder(const ContactSampler &sampler, double tieStrengthShape,
+                    random::Rng &rng, std::uint32_t maxDegree)
+      : sampler_(sampler), tieStrengthShape_(tieStrengthShape), rng_(rng) {
+    const auto capacity = static_cast<std::size_t>(maxDegree);
+    uniques_.reserve(capacity);
+    tieWeights_.reserve(capacity);
+    tieCdf_.reserve(capacity);
   }
 
-  const auto needed =
-      std::min(degree, baseUniqueCount(static_cast<int>(degree)));
-  sampler.drawUnique(srcIdx, needed, rng, uniquesScratch);
+  void populate(std::uint32_t srcIdx, std::span<std::uint32_t> rowSlots) {
+    const auto degree = static_cast<std::uint32_t>(rowSlots.size());
+    if (degree == 0) {
+      return;
+    }
 
-  if (uniquesScratch.empty()) {
-    return;
+    const auto needed =
+        std::min(degree, baseUniqueCount(static_cast<int>(degree)));
+    sampler_.drawUnique(srcIdx, needed, rng_, uniques_);
+
+    if (uniques_.empty()) {
+      return;
+    }
+
+    if (uniques_.size() == 1U) {
+      std::fill(rowSlots.begin(), rowSlots.end(), uniques_.front());
+      return;
+    }
+
+    drawTieWeights();
+    fillWeighted(rowSlots);
   }
 
-  if (uniquesScratch.size() == 1U) {
-    std::fill(rowSlots.begin(), rowSlots.end(), uniquesScratch.front());
-    return;
+private:
+  void drawTieWeights() {
+    tieWeights_.clear();
+    tieWeights_.reserve(uniques_.size());
+
+    for (std::size_t i = 0; i < uniques_.size(); ++i) {
+      tieWeights_.push_back(
+          probdist::gamma(rng_, tieStrengthShape_, /*scale=*/1.0));
+    }
+
+    tieCdf_ = cdf::buildCdf(std::span<const double>{tieWeights_});
   }
 
-  tieWeightsScratch.clear();
-  tieWeightsScratch.reserve(uniquesScratch.size());
-  for (std::size_t i = 0; i < uniquesScratch.size(); ++i) {
-    tieWeightsScratch.push_back(
-        probdist::gamma(rng, tieStrengthShape, /*scale=*/1.0));
+  void fillWeighted(std::span<std::uint32_t> rowSlots) {
+    for (auto &slot : rowSlots) {
+      const auto pick = static_cast<std::size_t>(cdf::sampleIndex(
+          std::span<const double>{tieCdf_}, rng_.nextDouble()));
+      slot = uniques_[std::min(pick, uniques_.size() - 1U)];
+    }
   }
 
-  tieCdfScratch = cdf::buildCdf(std::span<const double>{tieWeightsScratch});
-
-  for (std::uint32_t s = 0; s < degree; ++s) {
-    const auto pick = static_cast<std::size_t>(cdf::sampleIndex(
-        std::span<const double>{tieCdfScratch}, rng.nextDouble()));
-    rowSlots[s] = uniquesScratch[std::min(pick, uniquesScratch.size() - 1U)];
-  }
-}
+  const ContactSampler &sampler_;
+  double tieStrengthShape_ = 1.0;
+  random::Rng &rng_;
+  std::vector<std::uint32_t> uniques_;
+  std::vector<double> tieWeights_;
+  std::vector<double> tieCdf_;
+};
 
 } // namespace
 
@@ -114,16 +140,11 @@ commerce::Contacts build(const Social &cfg, const BuildInputs &inputs) {
   commerce::Contacts contacts(inputs.personCount,
                               static_cast<std::uint16_t>(degree));
 
-  std::vector<std::uint32_t> uniquesScratch;
-  std::vector<double> tieWeightsScratch;
-  std::vector<double> tieCdfScratch;
-  uniquesScratch.reserve(static_cast<std::size_t>(degree));
-  tieWeightsScratch.reserve(static_cast<std::size_t>(degree));
-  tieCdfScratch.reserve(static_cast<std::size_t>(degree));
+  ContactRowBuilder rows{sampler, cfg.tieStrengthShape, contactsRng,
+                         static_cast<std::uint32_t>(degree)};
 
   for (std::uint32_t i = 0; i < inputs.personCount; ++i) {
-    populateRow(i, contacts.rowOfMutable(i), sampler, cfg.tieStrengthShape,
-                contactsRng, uniquesScratch, tieWeightsScratch, tieCdfScratch);
+    rows.populate(i, contacts.rowOfMutable(i));
   }
 
   return contacts;

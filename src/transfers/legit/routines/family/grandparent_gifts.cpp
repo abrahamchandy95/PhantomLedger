@@ -24,7 +24,7 @@ inline constexpr double kAmountFloor = 10.0;
 [[nodiscard]] bool
 emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
                 entity::Key gcAcct, std::int64_t windowEndEpochSec,
-                const GrandparentGiftFlow &cfg, const Runtime &rt,
+                const GrandparentGiftFlow &cfg, const TransferRun &run,
                 random::Rng &rng, std::vector<transactions::Transaction> &out) {
   if (!rng.coin(cfg.p)) {
     return false;
@@ -47,7 +47,7 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = gpAcct,
       .destination = gcAcct,
       .amount = amt,
@@ -61,56 +61,51 @@ emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
 
 void processPair(entity::PersonId grandparent, entity::PersonId grandchild,
                  std::int64_t windowEndEpochSec, const GrandparentGiftFlow &cfg,
-                 const Runtime &rt, random::Rng &rng,
+                 const TransferRun &run, random::Rng &rng,
                  std::vector<transactions::Transaction> &out) {
-  const auto gpAcct = fhelp::resolveFamilyAccount(
-      grandparent, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
-  const auto gcAcct = fhelp::resolveFamilyAccount(
-      grandchild, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+  const auto gpAcct = run.accounts().localMemberAccount(grandparent);
+  const auto gcAcct = run.accounts().localMemberAccount(grandchild);
   if (!gpAcct.has_value() || !gcAcct.has_value() || *gpAcct == *gcAcct) {
     return;
   }
 
-  for (const auto monthStart : rt.monthStarts) {
+  for (const auto monthStart : run.posting().monthStarts()) {
     (void)emitMonthlyGift(monthStart, *gpAcct, *gcAcct, windowEndEpochSec, cfg,
-                          rt, rng, out);
+                          run, rng, out);
   }
 }
 
 } // namespace
 
 std::vector<transactions::Transaction>
-generate(const Runtime &rt, const GrandparentGiftFlow &cfg) {
+generate(const TransferRun &run, const GrandparentGiftFlow &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr) {
+  if (!cfg.enabled || !run.ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
-  if (personCount == 0 || rt.monthStarts.empty()) {
+  const auto personCount = run.kinship().personCount();
+  if (personCount == 0 || run.posting().monthStarts().empty()) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "grandparent_gifts"});
+  auto rng = run.emission().rng({"family", "grandparent_gifts"});
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId gp = 1; gp <= personCount; ++gp) {
-    if (!pred::isRetired(rt.personas[gp - 1])) {
+    if (!pred::isRetired(run.kinship().persona(gp))) {
       continue;
     }
 
-    const auto &middleGen = rt.graph->childrenOf[gp - 1];
+    const auto &middleGen = run.kinship().childrenOf(gp);
     for (const auto parent : middleGen) {
       if (!entity::valid(parent) || parent > personCount) {
         continue;
       }
-      const auto &grandchildren = rt.graph->childrenOf[parent - 1];
+      const auto &grandchildren = run.kinship().childrenOf(parent);
       for (const auto gc : grandchildren) {
-        processPair(gp, gc, windowEndEpochSec, cfg, rt, rng, out);
+        processPair(gp, gc, windowEndEpochSec, cfg, run, rng, out);
       }
     }
   }

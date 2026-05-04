@@ -20,15 +20,11 @@ namespace dist = ::PhantomLedger::probability::distributions;
 namespace {
 
 inline constexpr int kInstallmentSpacingDays = 30;
-
 inline constexpr double kTotalTuitionFloor = 200.0;
-
 inline constexpr double kInstallmentAmountFloor = 10.0;
-
 inline constexpr double kInstallmentNoiseSigma = 0.03;
 
 inline constexpr std::int64_t kSemesterStartJitterDaysExcl = 10;
-
 inline constexpr std::int64_t kInstallmentDayJitterExcl = 5;
 inline constexpr std::int64_t kInstallmentHourMin = 8;
 inline constexpr std::int64_t kInstallmentHourMaxExcl = 18;
@@ -51,7 +47,6 @@ struct Plan {
   const auto base =
       fhelp::roundCents(total / static_cast<double>(std::max(1, count)));
 
-  // Anchor — first monthStart plus a few days of jitter.
   const auto offsetDays = rng.uniformInt(0, kSemesterStartJitterDaysExcl);
   const auto anchorEpoch =
       ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
@@ -67,7 +62,7 @@ struct Plan {
 [[nodiscard]] bool
 emitInstallment(int stepIndex, const Plan &plan, entity::Key payerAcct,
                 entity::Key payeeAcct, std::int64_t windowEndEpochSec,
-                const Runtime &rt, random::Rng &rng,
+                const TransferRun &run, random::Rng &rng,
                 std::vector<transactions::Transaction> &out) {
   const auto baseTs =
       plan.semesterStartEpoch +
@@ -94,7 +89,7 @@ emitInstallment(int stepIndex, const Plan &plan, entity::Key payerAcct,
     return false;
   }
 
-  out.push_back(rt.txf->make(transactions::Draft{
+  out.push_back(run.emission().make(transactions::Draft{
       .source = payerAcct,
       .destination = payeeAcct,
       .amount = amt,
@@ -109,41 +104,37 @@ emitInstallment(int stepIndex, const Plan &plan, entity::Key payerAcct,
 void processStudent(entity::PersonId student,
                     std::span<const entity::PersonId> parents,
                     entity::Key payeeAcct, const TuitionSchedule &cfg,
-                    std::int64_t windowEndEpochSec, const Runtime &rt,
+                    std::int64_t windowEndEpochSec, const TransferRun &run,
                     random::Rng &rng,
                     std::vector<transactions::Transaction> &out) {
-  // Per-student gate.
   if (!rng.coin(cfg.p)) {
     return;
   }
 
-  // Pick one parent uniformly.
   const auto parentIdx = static_cast<std::size_t>(
       rng.uniformInt(0, static_cast<std::int64_t>(parents.size())));
   const auto payerId = parents[parentIdx];
 
-  const auto payerAcct = fhelp::resolveFamilyAccount(
-      payerId, *rt.accounts, *rt.ownership, /*externalP=*/0.0);
+  const auto payerAcct = run.accounts().localMemberAccount(payerId);
   if (!payerAcct.has_value() || *payerAcct == payeeAcct) {
     return;
   }
 
-  if (rt.monthStarts.empty()) {
+  if (run.posting().monthStarts().empty()) {
     return;
   }
 
-  const auto plan = buildPlan(cfg, rt.monthStarts.front(), rng);
+  const auto plan = buildPlan(cfg, run.posting().firstMonthStart(), rng);
 
   for (int i = 0; i < plan.installments; ++i) {
-    if (!emitInstallment(i, plan, *payerAcct, payeeAcct, windowEndEpochSec, rt,
+    if (!emitInstallment(i, plan, *payerAcct, payeeAcct, windowEndEpochSec, run,
                          rng, out)) {
-      // Once we drift past the window, all later installments
-      // would too — short-circuit.
       break;
     }
     (void)student;
   }
 }
+
 [[nodiscard]] std::size_t estimateCapacity(std::size_t studentCount,
                                            const TuitionSchedule &cfg) {
   if (studentCount == 0) {
@@ -158,46 +149,41 @@ void processStudent(entity::PersonId student,
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(const Runtime &rt,
+std::vector<transactions::Transaction> generate(const TransferRun &run,
                                                 const TuitionSchedule &cfg) {
   std::vector<transactions::Transaction> out;
-  if (!cfg.enabled || rt.graph == nullptr || rt.accounts == nullptr ||
-      rt.ownership == nullptr || rt.txf == nullptr ||
-      rt.rngFactory == nullptr || rt.merchants == nullptr) {
+  if (!cfg.enabled || !run.ready() || !run.education().ready()) {
     return out;
   }
 
-  const auto personCount = rt.graph->personCount();
+  const auto personCount = run.kinship().personCount();
   if (personCount == 0) {
     return out;
   }
 
-  auto rng = rt.rngFactory->rng({"family", "tuition"});
+  auto rng = run.emission().rng({"family", "tuition"});
 
-  const auto payeeAcct = fhelp::pickEducationMerchant(*rt.merchants, rng);
+  const auto payeeAcct = run.education().pick(rng);
   if (!payeeAcct.has_value()) {
     return out;
   }
 
-  // Estimate capacity from the student count.
   std::size_t studentCount = 0;
   for (entity::PersonId p = 1; p <= personCount; ++p) {
-    if (pred::isStudent(rt.personas[p - 1])) {
+    if (pred::isStudent(run.kinship().persona(p))) {
       ++studentCount;
     }
   }
   out.reserve(estimateCapacity(studentCount, cfg));
 
-  const auto windowEndEpochSec =
-      ::PhantomLedger::time::toEpochSeconds(rt.window.endExcl());
+  const auto windowEndEpochSec = run.posting().endEpochSec();
 
   for (entity::PersonId student = 1; student <= personCount; ++student) {
-    if (!pred::isStudent(rt.personas[student - 1])) {
+    if (!pred::isStudent(run.kinship().persona(student))) {
       continue;
     }
 
-    // Build the populated parent prefix.
-    const auto parentSlots = rt.graph->parentsOf[student - 1];
+    const auto parentSlots = run.kinship().parentsOf(student);
     std::array<entity::PersonId, 2> parentBuf{};
     std::size_t parentCount = 0;
     for (const auto p : parentSlots) {
@@ -212,7 +198,7 @@ std::vector<transactions::Transaction> generate(const Runtime &rt,
     processStudent(
         student,
         std::span<const entity::PersonId>{parentBuf.data(), parentCount},
-        *payeeAcct, cfg, windowEndEpochSec, rt, rng, out);
+        *payeeAcct, cfg, windowEndEpochSec, run, rng, out);
   }
 
   return out;

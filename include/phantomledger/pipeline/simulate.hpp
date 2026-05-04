@@ -24,12 +24,14 @@ public:
   SimulationPipeline &operator=(SimulationPipeline &&) noexcept = delete;
 
   SimulationPipeline &infraWindow(::PhantomLedger::time::Window value) noexcept;
-  SimulationPipeline &ringBehavior(
-      const ::PhantomLedger::infra::synth::rings::Config &value) noexcept;
-  SimulationPipeline &deviceBehavior(
-      const ::PhantomLedger::infra::synth::devices::Config &value) noexcept;
+  SimulationPipeline &ringAccess(
+      const ::PhantomLedger::infra::synth::rings::AccessRules &value) noexcept;
   SimulationPipeline &
-  ipBehavior(const ::PhantomLedger::infra::synth::ips::Config &value) noexcept;
+  deviceAssignment(const ::PhantomLedger::infra::synth::devices::AssignmentRules
+                       &value) noexcept;
+  SimulationPipeline &
+  ipAssignment(const ::PhantomLedger::infra::synth::ips::AssignmentRules
+                   &value) noexcept;
   SimulationPipeline &routingBehavior(
       ::PhantomLedger::pipeline::stages::infra::RoutingBehavior value) noexcept;
   SimulationPipeline &sharedInfra(

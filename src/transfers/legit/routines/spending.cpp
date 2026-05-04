@@ -263,9 +263,11 @@ SpendingRoutine::run(Execution execution, const CensusSource &census,
   };
 
   plSimulator::Simulator simulator(market, execution.rng, execution.txf,
-                                   obligationSnapshot, replay.screenBook,
-                                   std::move(planner), std::move(dayDriver),
-                                   emissionThreads);
+                                   obligationSnapshot);
+  simulator.ledger(replay.screenBook)
+      .planner(std::move(planner))
+      .dayDriver(std::move(dayDriver))
+      .emissionThreads(emissionThreads);
 
   return simulator.run();
 }
