@@ -73,6 +73,10 @@ public:
     return book_ == nullptr ? 0.0 : book_->availableCash(acct);
   }
 
+  [[nodiscard]] double liquidity(const entity::Key &acct) const {
+    return book_ == nullptr ? 0.0 : book_->liquidity(acct);
+  }
+
   void advanceThrough(std::int64_t timestamp, bool inclusive = true) {
     seedIdx_ = clearing::advanceBookThrough(book_, seedTxns_, seedIdx_,
                                             timestamp, inclusive);
