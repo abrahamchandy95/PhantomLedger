@@ -129,13 +129,19 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
     transferScope.seed = scenario.seed;
   }
 
-  out.transfers = transferStage::build(
-      rng, out.entities, out.infra, transferScope,
-      scenario.transfers.recurringIncome, scenario.transfers.balanceBook,
-      scenario.transfers.creditCards, scenario.transfers.family,
-      scenario.transfers.government, scenario.transfers.insurance,
-      scenario.transfers.replay, scenario.transfers.fraud,
-      scenario.transfers.population);
+  transferStage::TransferStage transfers{rng, out.entities, out.infra};
+  transfers.scope(transferScope)
+      .income(scenario.transfers.recurringIncome)
+      .balanceBook(scenario.transfers.balanceBook)
+      .creditCards(scenario.transfers.creditCards)
+      .family(scenario.transfers.family)
+      .government(scenario.transfers.government)
+      .insurance(scenario.transfers.insurance)
+      .replay(scenario.transfers.replay)
+      .fraud(scenario.transfers.fraud)
+      .population(scenario.transfers.population);
+
+  out.transfers = transfers.build();
 
   return out;
 }
