@@ -40,10 +40,15 @@ SpenderEmissionDriver::SpenderEmissionDriver(Behavior behavior)
     : behavior_(behavior) {}
 
 void SpenderEmissionDriver::prepare(const market::Market &market,
-                                    const RunResources &resources,
+                                    random::Rng &rng,
+                                    const transactions::Factory &factory,
+                                    clearing::Ledger *ledger, Threads threads,
                                     double txnsPerMonth) {
   market_ = &market;
-  resources_ = &resources;
+  rng_ = &rng;
+  factory_ = &factory;
+  ledger_ = ledger;
+  threads_ = threads;
   budget_ = nullptr;
   routing_ = nullptr;
 
@@ -66,12 +71,29 @@ const market::Market &SpenderEmissionDriver::market() const {
   return *market_;
 }
 
-const RunResources &SpenderEmissionDriver::resources() const {
-  if (resources_ == nullptr) {
+random::Rng &SpenderEmissionDriver::rng() const {
+  if (rng_ == nullptr) {
     throw std::logic_error("spending::SpenderEmissionDriver: prepare must be "
                            "called before emission");
   }
-  return *resources_;
+  return *rng_;
+}
+
+const transactions::Factory &SpenderEmissionDriver::factory() const {
+  if (factory_ == nullptr) {
+    throw std::logic_error("spending::SpenderEmissionDriver: prepare must be "
+                           "called before emission");
+  }
+  return *factory_;
+}
+
+clearing::Ledger *SpenderEmissionDriver::ledger() const noexcept {
+  return ledger_;
+}
+
+const SpenderEmissionDriver::Threads &
+SpenderEmissionDriver::threads() const noexcept {
+  return threads_;
 }
 
 const PreparedRun::Budget &SpenderEmissionDriver::budget() const {
@@ -93,43 +115,42 @@ const PreparedRun::Routing &SpenderEmissionDriver::routing() const {
 void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   threadStates_.clear();
 
-  const auto &threads = resources().threads();
-  if (!threads.parallel()) {
+  const auto &threading = threads();
+  if (!threading.parallel()) {
     return;
   }
 
-  if (threads.rngFactory == nullptr) {
+  if (threading.rngFactory == nullptr) {
     throw std::runtime_error(
         "spending::SpenderEmissionDriver: parallel emission requires "
-        "resources.threads().rngFactory");
+        "Threads::rngFactory");
   }
 
-  threadStates_.reserve(threads.count);
+  threadStates_.reserve(threading.count);
 
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market().bounds().days) *
        (static_cast<double>(market().population().count()) / 30.0) *
        txnsPerMonth * kTxnReserveSlack) /
-      static_cast<double>(threads.count));
+      static_cast<double>(threading.count));
 
   std::array<char, 16> idBuf{};
-  for (std::uint32_t t = 0; t < threads.count; ++t) {
+  for (std::uint32_t t = 0; t < threading.count; ++t) {
     const auto idStr = renderUInt(idBuf, t);
-    auto threadRng = threads.rngFactory->rng({"spending_thread", idStr});
+    auto threadRng = threading.rngFactory->rng({"spending_thread", idStr});
     threadStates_.emplace_back(std::move(threadRng));
     threadStates_.back().txns.reserve(perThreadReserve);
   }
 }
 
 void SpenderEmissionDriver::prepareLockArray() {
-  const auto &resources = this->resources();
-  const auto &threads = resources.threads();
-  if (!threads.parallel() || resources.ledger() == nullptr) {
+  const auto &threading = threads();
+  if (!threading.parallel() || ledger() == nullptr) {
     lockArray_.resize(0);
     return;
   }
 
-  lockArray_.resize(static_cast<std::size_t>(resources.ledger()->size()));
+  lockArray_.resize(static_cast<std::size_t>(ledger()->size()));
 }
 
 void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
@@ -154,7 +175,7 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
 void SpenderEmissionDriver::emitSerial(
     const PreparedRun::Population &population, RunState &state,
     const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  ParallelLedgerView ledgerView{resources().ledger(), nullptr};
+  ParallelLedgerView ledgerView{ledger(), nullptr};
   SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
                                          rulesFrom(behavior_)};
   rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
@@ -165,29 +186,28 @@ void SpenderEmissionDriver::emitSerial(
                                                resolved, ledgerView};
   SpenderEmissionLoop loop{population, rates, payments};
 
-  loop.run(0, population.spenders.size(), resources().rng(),
-           resources().factory(), state.txns());
+  loop.run(0, population.spenders.size(), rng(), factory(), state.txns());
 }
 
 void SpenderEmissionDriver::emitParallel(
     const PreparedRun::Population &population, RunState &state,
     const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  const auto &threads = resources().threads();
+  const auto &threading = threads();
   const auto spenderCount = population.spenders.size();
   const auto &routingSnapshot = routing();
   const routing::ResolvedAccounts resolved = routingSnapshot.resolvedAccounts();
 
-  runParallel(threads.count, [&](std::uint32_t threadIdx) {
-    const auto range = partitionRange(spenderCount, threads.count, threadIdx);
+  runParallel(threading.count, [&](std::uint32_t threadIdx) {
+    const auto range = partitionRange(spenderCount, threading.count, threadIdx);
 
     if (range.size() == 0) {
       return;
     }
 
     auto &threadState = threadStates_[threadIdx];
-    const auto threadFactory = resources().factory().rebound(threadState.rng);
+    const auto threadFactory = factory().rebound(threadState.rng);
 
-    ParallelLedgerView ledgerView{resources().ledger(), &lockArray_};
+    ParallelLedgerView ledgerView{ledger(), &lockArray_};
     SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
                                            rulesFrom(behavior_)};
     rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
@@ -205,7 +225,7 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
                                     RunState &state,
                                     const actors::DayFrame &frame,
                                     std::span<const double> dailyMultipliers) {
-  if (!resources().threads().parallel()) {
+  if (!threads().parallel()) {
     emitSerial(population, state, frame, dailyMultipliers);
     return;
   }
