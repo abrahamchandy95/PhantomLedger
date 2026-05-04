@@ -30,6 +30,9 @@ public:
   void prepare(market::Market &market, const RunResources &resources,
                double txnsPerMonth);
 
+  void bindEmission(const PreparedRun::Budget &budget,
+                    const PreparedRun::Routing &routing) noexcept;
+
   void runDay(market::Market &market, const RunResources &resources,
               const PreparedRun &run, RunState &state, std::uint32_t dayIndex);
 

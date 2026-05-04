@@ -36,6 +36,8 @@ std::vector<transactions::Transaction> Simulator::run() {
   PreparedRun run = planner_.build(market_, obligations_, resources_.ledger(),
                                    dayDriver_.sensitivities());
 
+  dayDriver_.bindEmission(run.budget(), run.routing());
+
   const std::size_t reserveCapacity =
       !resources_.threads().parallel()
           ? static_cast<std::size_t>(run.budget().targetTotalTxns *
