@@ -14,6 +14,9 @@
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 
 #include <cstdint>
+#include <span>
+#include <unordered_map>
+#include <vector>
 
 namespace PhantomLedger::clearing {
 struct BalanceRules;
@@ -28,6 +31,11 @@ struct Households;
 struct Dependents;
 struct RetireeSupport;
 } // namespace PhantomLedger::relationships::family
+
+namespace PhantomLedger::transfers::legit::ledger {
+class LegitTransferBuilder;
+struct TransfersPayload;
+} // namespace PhantomLedger::transfers::legit::ledger
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
 struct FamilyTransferModel;
@@ -106,16 +114,56 @@ struct FraudInjection {
   ::PhantomLedger::transfers::fraud::Injector::Rules rules;
 };
 
-[[nodiscard]] ::PhantomLedger::pipeline::Transfers
-build(::PhantomLedger::random::Rng &rng,
-      const ::PhantomLedger::pipeline::Entities &entities,
-      const ::PhantomLedger::pipeline::Infra &infra, RunScope run = {},
-      const RecurringIncome &income = {},
-      const BalanceBookRules &balanceBook = {},
-      const CreditCardLifecycle &creditCards = {},
-      const FamilyPrograms &family = {},
-      const GovernmentPrograms &government = {},
-      const InsuranceClaims &insurance = {}, const LedgerReplay &replay = {},
-      const FraudInjection &fraud = {}, PopulationShape population = {});
+class TransferStage {
+public:
+  TransferStage(::PhantomLedger::random::Rng &rng,
+                const ::PhantomLedger::pipeline::Entities &entities,
+                const ::PhantomLedger::pipeline::Infra &infra) noexcept;
+
+  TransferStage &scope(RunScope value) noexcept;
+  TransferStage &income(const RecurringIncome &value);
+  TransferStage &balanceBook(BalanceBookRules value) noexcept;
+  TransferStage &creditCards(CreditCardLifecycle value) noexcept;
+  TransferStage &family(FamilyPrograms value) noexcept;
+  TransferStage &government(const GovernmentPrograms &value);
+  TransferStage &insurance(InsuranceClaims value) noexcept;
+  TransferStage &replay(LedgerReplay value) noexcept;
+  TransferStage &fraud(FraudInjection value) noexcept;
+  TransferStage &population(PopulationShape value) noexcept;
+
+  [[nodiscard]] ::PhantomLedger::pipeline::Transfers build() const;
+
+private:
+  using Transaction = ::PhantomLedger::transactions::Transaction;
+  using PrimaryAccounts = std::unordered_map<::PhantomLedger::entity::PersonId,
+                                             ::PhantomLedger::entity::Key>;
+
+  ::PhantomLedger::random::Rng *rng_ = nullptr;
+  const ::PhantomLedger::pipeline::Entities *entities_ = nullptr;
+  const ::PhantomLedger::pipeline::Infra *infra_ = nullptr;
+
+  RunScope run_{};
+  RecurringIncome income_{};
+  BalanceBookRules balanceBook_{};
+  CreditCardLifecycle creditCards_{};
+  FamilyPrograms family_{};
+  GovernmentPrograms government_{};
+  InsuranceClaims insurance_{};
+  LedgerReplay replay_{};
+  FraudInjection fraud_{};
+  PopulationShape population_{};
+
+  [[nodiscard]] PrimaryAccounts primaryAccounts() const;
+  [[nodiscard]] ::PhantomLedger::transfers::legit::ledger::LegitTransferBuilder
+  makeLegitBuilder() const;
+  [[nodiscard]] std::vector<Transaction>
+  replayStream(const PrimaryAccounts &primaryAccounts,
+               ::PhantomLedger::transfers::legit::ledger::TransfersPayload
+                   &legitPayload) const;
+  [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectionOutput
+  injectFraud(std::span<const Transaction> draftTxns,
+              const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
+                  &legitPayload) const;
+};
 
 } // namespace PhantomLedger::pipeline::stages::transfers

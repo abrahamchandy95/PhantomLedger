@@ -17,6 +17,7 @@
 #include <memory>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -41,26 +42,6 @@ constexpr double kFraudHeadroomFraction = 0.05;
 [[nodiscard]] std::size_t fraudMergedCapacity(std::size_t legitSize) noexcept {
   return legitSize + static_cast<std::size_t>(static_cast<double>(legitSize) *
                                               kFraudHeadroomFraction);
-}
-
-[[nodiscard]] std::unordered_map<::PhantomLedger::entity::PersonId,
-                                 ::PhantomLedger::entity::Key>
-buildPrimaryAccountsMap(
-    const ::PhantomLedger::entity::account::Registry &registry) {
-  std::unordered_map<::PhantomLedger::entity::PersonId,
-                     ::PhantomLedger::entity::Key>
-      out;
-  out.reserve(registry.records.size());
-
-  for (const auto &record : registry.records) {
-    if (record.owner == ::PhantomLedger::entity::invalidPerson) {
-      continue;
-    }
-
-    out.try_emplace(record.owner, record.id);
-  }
-
-  return out;
 }
 
 [[nodiscard]] ::PhantomLedger::inflows::RecurringIncomeRules
@@ -189,67 +170,6 @@ makeLegitFamilyPrograms(const FamilyPrograms &family) noexcept {
   };
 }
 
-[[nodiscard]] legit_ledger::LegitTransferBuilder makeLegitTransferBuilder(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
-    const RecurringIncome &income, const BalanceBookRules &balanceBook,
-    const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
-    const GovernmentPrograms &government, PopulationShape population) {
-  legit_ledger::LegitTransferBuilder builder{
-      rng,
-      makeLegitTimeframe(run),
-      makeAccountCensus(entities),
-      makeBalanceBookRequest(rng, entities, run, balanceBook),
-  };
-
-  builder.counterparties(makeCounterpartyPools(entities))
-      .personas(makePersonaCatalog(entities))
-      .hubSelection(makeHubSelection(entities, population))
-      .income(makeIncomePassRequest(rng, entities, income, government))
-      .routines(makeRoutinePassRequest(rng, entities, income))
-      .family(makeFamilyPassRequest(entities))
-      .credit(makeCreditPassRequest(rng, entities, creditCards))
-      .familyPrograms(makeLegitFamilyPrograms(family))
-      .router(infra.router);
-
-  return builder;
-}
-
-[[nodiscard]] std::vector<Transaction> assembleReplayStream(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
-    const InsuranceClaims &insuranceClaims,
-    const std::unordered_map<::PhantomLedger::entity::PersonId,
-                             ::PhantomLedger::entity::Key> &primaryAccounts,
-    legit_ledger::TransfersPayload &legitPayload) {
-  std::vector<Transaction> stream = std::move(legitPayload.replaySortedTxns);
-
-  ::PhantomLedger::transactions::Factory txf{rng, &infra.router,
-                                             &infra.ringInfra};
-
-  insurance::Population insPop{.primaryAccounts = &primaryAccounts};
-
-  auto premiumTxns =
-      insurance::premiums(run.window, rng, txf, entities.portfolios, insPop);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
-
-  ::PhantomLedger::random::RngFactory claimsFactory{run.seed};
-  auto claimTxns =
-      insurance::claims(insuranceClaims.claimRates, run.window, rng, txf,
-                        claimsFactory, entities.portfolios, insPop);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
-
-  obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
-  auto obligationTxns =
-      obligations::scheduledPayments(entities.portfolios, run.window.start,
-                                     run.window.endExcl(), oblPop, rng, txf);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
-
-  return stream;
-}
-
 struct PreReplayResult {
   std::vector<Transaction> draftTxns;
   std::unordered_map<std::string, std::uint32_t> dropCounts;
@@ -276,40 +196,6 @@ runPreFraudReplay(const ::PhantomLedger::clearing::Ledger &initialBook,
   out.dropCountsByChannel = accumulator.dropCountsByChannel();
 
   return out;
-}
-
-[[nodiscard]] fraud::InjectionOutput
-runFraudInjection(::PhantomLedger::random::Rng &rng,
-                  const ::PhantomLedger::pipeline::Entities &entities,
-                  const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
-                  const FraudInjection &fraudInjection,
-                  std::span<const Transaction> draftTxns,
-                  const legit_ledger::TransfersPayload &legitPayload) {
-  fraud::Injector injector{
-      fraud::Injector::Services{
-          .rng = &rng,
-          .router = &infra.router,
-          .ringInfra = &infra.ringInfra,
-      },
-      fraudInjection.rules,
-  };
-
-  return injector.inject(
-      fraud::Injector::FraudPopulation{
-          .profile = fraudInjection.profile,
-          .window = run.window,
-          .topology = &entities.people.topology,
-          .accounts = &entities.accounts.registry,
-          .ownership = &entities.accounts.ownership,
-          .baseTxns = draftTxns,
-      },
-      fraud::Injector::LegitCounterparties{
-          .billerAccounts = std::span<const ::PhantomLedger::entity::Key>(
-              legitPayload.billerAccounts.data(),
-              legitPayload.billerAccounts.size()),
-          .employers = std::span<const ::PhantomLedger::entity::Key>(
-              legitPayload.employers.data(), legitPayload.employers.size()),
-      });
 }
 
 struct PostReplayResult {
@@ -341,54 +227,192 @@ runPostFraudReplay(::PhantomLedger::random::Rng &rng,
 
 } // namespace
 
-::PhantomLedger::pipeline::Transfers
-build(::PhantomLedger::random::Rng &rng,
-      const ::PhantomLedger::pipeline::Entities &entities,
-      const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
-      const RecurringIncome &income, const BalanceBookRules &balanceBook,
-      const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
-      const GovernmentPrograms &government,
-      const InsuranceClaims &insuranceClaims, const LedgerReplay &replay,
-      const FraudInjection &fraudInjection, PopulationShape population) {
-  primitives::validate::require(income);
-  primitives::validate::require(population);
+TransferStage::TransferStage(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::pipeline::Infra &infra) noexcept
+    : rng_{&rng}, entities_{&entities}, infra_{&infra} {}
 
-  auto builder =
-      makeLegitTransferBuilder(rng, entities, infra, run, income, balanceBook,
-                               creditCards, family, government, population);
+TransferStage &TransferStage::scope(RunScope value) noexcept {
+  run_ = value;
+  return *this;
+}
 
+TransferStage &TransferStage::income(const RecurringIncome &value) {
+  income_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::balanceBook(BalanceBookRules value) noexcept {
+  balanceBook_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::creditCards(CreditCardLifecycle value) noexcept {
+  creditCards_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::family(FamilyPrograms value) noexcept {
+  family_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::government(const GovernmentPrograms &value) {
+  government_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::insurance(InsuranceClaims value) noexcept {
+  insurance_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::replay(LedgerReplay value) noexcept {
+  replay_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::fraud(FraudInjection value) noexcept {
+  fraud_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::population(PopulationShape value) noexcept {
+  population_ = value;
+  return *this;
+}
+
+TransferStage::PrimaryAccounts TransferStage::primaryAccounts() const {
+  PrimaryAccounts out;
+  out.reserve(entities_->accounts.registry.records.size());
+
+  for (const auto &record : entities_->accounts.registry.records) {
+    if (record.owner == ::PhantomLedger::entity::invalidPerson) {
+      continue;
+    }
+
+    out.try_emplace(record.owner, record.id);
+  }
+
+  return out;
+}
+
+legit_ledger::LegitTransferBuilder TransferStage::makeLegitBuilder() const {
+  legit_ledger::LegitTransferBuilder builder{
+      *rng_,
+      makeLegitTimeframe(run_),
+      makeAccountCensus(*entities_),
+      makeBalanceBookRequest(*rng_, *entities_, run_, balanceBook_),
+  };
+
+  builder.counterparties(makeCounterpartyPools(*entities_))
+      .personas(makePersonaCatalog(*entities_))
+      .hubSelection(makeHubSelection(*entities_, population_))
+      .income(makeIncomePassRequest(*rng_, *entities_, income_, government_))
+      .routines(makeRoutinePassRequest(*rng_, *entities_, income_))
+      .family(makeFamilyPassRequest(*entities_))
+      .credit(makeCreditPassRequest(*rng_, *entities_, creditCards_))
+      .familyPrograms(makeLegitFamilyPrograms(family_))
+      .router(infra_->router);
+
+  return builder;
+}
+
+std::vector<Transaction> TransferStage::replayStream(
+    const PrimaryAccounts &primaryAccounts,
+    legit_ledger::TransfersPayload &legitPayload) const {
+  std::vector<Transaction> stream = std::move(legitPayload.replaySortedTxns);
+
+  ::PhantomLedger::transactions::Factory txf{*rng_, &infra_->router,
+                                             &infra_->ringInfra};
+
+  insurance::Population insPop{.primaryAccounts = &primaryAccounts};
+
+  auto premiumTxns = insurance::premiums(run_.window, *rng_, txf,
+                                         entities_->portfolios, insPop);
+  stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
+
+  ::PhantomLedger::random::RngFactory claimsFactory{run_.seed};
+  auto claimTxns =
+      insurance::claims(insurance_.claimRates, run_.window, *rng_, txf,
+                        claimsFactory, entities_->portfolios, insPop);
+  stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
+
+  obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
+  auto obligationTxns =
+      obligations::scheduledPayments(entities_->portfolios, run_.window.start,
+                                     run_.window.endExcl(), oblPop, *rng_, txf);
+  stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
+
+  return stream;
+}
+
+fraud::InjectionOutput TransferStage::injectFraud(
+    std::span<const Transaction> draftTxns,
+    const legit_ledger::TransfersPayload &legitPayload) const {
+  fraud::Injector injector{
+      fraud::Injector::Services{
+          .rng = rng_,
+          .router = &infra_->router,
+          .ringInfra = &infra_->ringInfra,
+      },
+      fraud_.rules,
+  };
+
+  return injector.inject(
+      fraud::Injector::FraudPopulation{
+          .profile = fraud_.profile,
+          .window = run_.window,
+          .topology = &entities_->people.topology,
+          .accounts = &entities_->accounts.registry,
+          .ownership = &entities_->accounts.ownership,
+          .baseTxns = draftTxns,
+      },
+      fraud::Injector::LegitCounterparties{
+          .billerAccounts = std::span<const ::PhantomLedger::entity::Key>(
+              legitPayload.billerAccounts.data(),
+              legitPayload.billerAccounts.size()),
+          .employers = std::span<const ::PhantomLedger::entity::Key>(
+              legitPayload.employers.data(), legitPayload.employers.size()),
+      });
+}
+
+::PhantomLedger::pipeline::Transfers TransferStage::build() const {
+  primitives::validate::require(income_);
+  primitives::validate::require(population_);
+
+  auto builder = makeLegitBuilder();
   legit_ledger::TransfersPayload legitPayload = builder.build();
 
   if (legitPayload.initialBook == nullptr) {
     throw std::runtime_error(
-        "transfers::build: legit builder produced no initial book");
+        "transfers::TransferStage::build: legit builder produced no initial "
+        "book");
   }
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, legitPayload.candidateTxns);
+      entities_->accounts.lookup, legitPayload.candidateTxns);
 
-  const auto primaryAccounts =
-      buildPrimaryAccountsMap(entities.accounts.registry);
-
-  auto replaySortedStream =
-      assembleReplayStream(rng, entities, infra, run, insuranceClaims,
-                           primaryAccounts, legitPayload);
+  const auto primaryAccountsByPerson = primaryAccounts();
+  auto replaySortedStream = replayStream(primaryAccountsByPerson, legitPayload);
 
   auto preReplay =
-      runPreFraudReplay(*legitPayload.initialBook, rng, replay.preFraud,
+      runPreFraudReplay(*legitPayload.initialBook, *rng_, replay_.preFraud,
                         std::move(replaySortedStream));
 
-  auto fraudOut = runFraudInjection(rng, entities, infra, run, fraudInjection,
-                                    preReplay.draftTxns, legitPayload);
+  const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
+                                               preReplay.draftTxns.size()};
+  auto fraudOut = injectFraud(draftView, legitPayload);
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
-  auto postReplay = runPostFraudReplay(rng, *legitPayload.initialBook,
-                                       replay.preFraud, std::move(mergedTxns));
+  auto postReplay = runPostFraudReplay(*rng_, *legitPayload.initialBook,
+                                       replay_.preFraud, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, postReplay.finalTxns);
+      entities_->accounts.lookup, postReplay.finalTxns);
 
   ::PhantomLedger::pipeline::Transfers out{};
   out.legit = std::move(legitPayload);
