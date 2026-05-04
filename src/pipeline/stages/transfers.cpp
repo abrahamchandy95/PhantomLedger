@@ -110,53 +110,61 @@ makeBalanceBookRequest(::PhantomLedger::random::Rng &rng,
   };
 }
 
-[[nodiscard]] legit_ledger::passes::IncomePassRequest
-makeIncomePassRequest(::PhantomLedger::random::Rng &rng,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      const RecurringIncome &income,
-                      const GovernmentPrograms &government) {
-  return legit_ledger::passes::IncomePassRequest{
-      .rng = &rng,
-      .accounts = &entities.accounts.registry,
-      .ownership = &entities.accounts.ownership,
-      .revenueCounterparties = &entities.counterparties,
-      .recurring = makeRecurringIncomeRules(income),
-      .retirement = &government.retirement,
-      .disability = &government.disability,
+[[nodiscard]] legit_ledger::passes::IncomePass
+makeIncomePass(::PhantomLedger::random::Rng &rng,
+               const ::PhantomLedger::pipeline::Entities &entities,
+               const RecurringIncome &income,
+               const GovernmentPrograms &government) {
+  return legit_ledger::passes::IncomePass{
+      &rng,
+      legit_ledger::passes::AccountAccess{
+          .registry = &entities.accounts.registry,
+          .ownership = &entities.accounts.ownership,
+      },
+      &entities.counterparties,
+      makeRecurringIncomeRules(income),
+      legit_ledger::passes::GovernmentBenefits{
+          .retirement = &government.retirement,
+          .disability = &government.disability,
+      },
   };
 }
 
-[[nodiscard]] legit_ledger::passes::RoutinePassRequest
-makeRoutinePassRequest(::PhantomLedger::random::Rng &rng,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       const RecurringIncome &income) {
-  return legit_ledger::passes::RoutinePassRequest{
-      .rng = &rng,
-      .accountsLookup = &entities.accounts.lookup,
-      .merchants = &entities.merchants.catalog,
-      .portfolios = &entities.portfolios,
-      .creditCards = &entities.creditCards,
-      .recurring = makeRecurringIncomeRules(income),
+[[nodiscard]] legit_ledger::passes::RoutinePass
+makeRoutinePass(::PhantomLedger::random::Rng &rng,
+                const ::PhantomLedger::pipeline::Entities &entities,
+                const RecurringIncome &income) {
+  return legit_ledger::passes::RoutinePass{
+      &rng,
+      legit_ledger::passes::RoutineResources{
+          .accountsLookup = &entities.accounts.lookup,
+          .merchants = &entities.merchants.catalog,
+          .portfolios = &entities.portfolios,
+          .creditCards = &entities.creditCards,
+      },
+      makeRecurringIncomeRules(income),
   };
 }
 
-[[nodiscard]] legit_ledger::passes::FamilyPassRequest
-makeFamilyPassRequest(const ::PhantomLedger::pipeline::Entities &entities) {
-  return legit_ledger::passes::FamilyPassRequest{
-      .accounts = &entities.accounts.registry,
-      .ownership = &entities.accounts.ownership,
-      .merchants = &entities.merchants.catalog,
+[[nodiscard]] legit_ledger::passes::FamilyPass
+makeFamilyPass(const ::PhantomLedger::pipeline::Entities &entities) {
+  return legit_ledger::passes::FamilyPass{
+      legit_ledger::passes::AccountAccess{
+          .registry = &entities.accounts.registry,
+          .ownership = &entities.accounts.ownership,
+      },
+      &entities.merchants.catalog,
   };
 }
 
-[[nodiscard]] legit_ledger::passes::CreditPassRequest
-makeCreditPassRequest(::PhantomLedger::random::Rng &rng,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      const CreditCardLifecycle &creditCards) {
-  return legit_ledger::passes::CreditPassRequest{
-      .rng = &rng,
-      .cards = &entities.creditCards,
-      .lifecycle = creditCards.lifecycle,
+[[nodiscard]] legit_ledger::passes::CreditLifecyclePass
+makeCreditPass(::PhantomLedger::random::Rng &rng,
+               const ::PhantomLedger::pipeline::Entities &entities,
+               const CreditCardLifecycle &creditCards) {
+  return legit_ledger::passes::CreditLifecyclePass{
+      &rng,
+      &entities.creditCards,
+      creditCards.lifecycle,
   };
 }
 
@@ -309,10 +317,10 @@ legit_ledger::LegitTransferBuilder TransferStage::makeLegitBuilder() const {
   builder.counterparties(makeCounterpartyPools(*entities_))
       .personas(makePersonaCatalog(*entities_))
       .hubSelection(makeHubSelection(*entities_, population_))
-      .income(makeIncomePassRequest(*rng_, *entities_, income_, government_))
-      .routines(makeRoutinePassRequest(*rng_, *entities_, income_))
-      .family(makeFamilyPassRequest(*entities_))
-      .credit(makeCreditPassRequest(*rng_, *entities_, creditCards_))
+      .income(makeIncomePass(*rng_, *entities_, income_, government_))
+      .routines(makeRoutinePass(*rng_, *entities_, income_))
+      .family(makeFamilyPass(*entities_))
+      .credit(makeCreditPass(*rng_, *entities_, creditCards_))
       .familyPrograms(makeLegitFamilyPrograms(family_))
       .router(infra_->router);
 

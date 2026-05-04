@@ -169,6 +169,7 @@ set(PL_PIPELINE_SOURCES
     src/pipeline/simulate.cpp
     src/pipeline/stages/entities.cpp
     src/pipeline/stages/infra.cpp
+    src/pipeline/stages/products.cpp
     src/pipeline/stages/transfers.cpp
 )
 

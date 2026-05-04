@@ -76,14 +76,14 @@ buildRentCounterparties(const blueprints::LegitBuildPlan &plan) {
 }
 
 [[nodiscard]] pl_inflows::RevenueCounterparties
-buildRevenueCounterparties(const IncomePassRequest &request) {
+buildRevenueCounterparties(const IncomePass &pass) {
   return pl_inflows::RevenueCounterparties{
-      .directory = request.revenueCounterparties,
+      .directory = pass.revenueCounterparties(),
   };
 }
 
 [[nodiscard]] pl_inflows::InflowSnapshot
-buildInflowSnapshot(const IncomePassRequest &request,
+buildInflowSnapshot(const IncomePass &pass,
                     const blueprints::LegitBuildPlan &plan,
                     const entity::account::Ownership &ownership,
                     const entity::account::Registry &registry) {
@@ -109,8 +109,8 @@ buildInflowSnapshot(const IncomePassRequest &request,
           },
       .payroll = buildPayrollCounterparties(plan),
       .rent = buildRentCounterparties(plan),
-      .revenue = buildRevenueCounterparties(request),
-      .recurring = request.recurring,
+      .revenue = buildRevenueCounterparties(pass),
+      .recurring = pass.recurring(),
   };
 
   primitives::validate::require(snapshot);
@@ -140,23 +140,23 @@ bool GovernmentCounterparties::valid() const noexcept {
 // addIncome
 // ---------------------------------------------------------------------------
 
-void addIncome(const IncomePassRequest &request,
-               const blueprints::LegitBuildPlan &plan,
+void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps) {
-  if (request.rng == nullptr) {
+  if (pass.rng() == nullptr) {
     throw std::invalid_argument("passes::addIncome requires a non-null rng");
   }
 
-  if (request.accounts == nullptr || request.ownership == nullptr) {
+  const auto accounts = pass.accounts();
+  if (accounts.registry == nullptr || accounts.ownership == nullptr) {
     throw std::invalid_argument(
         "passes::addIncome requires accounts and ownership");
   }
 
-  auto &mainRng = *request.rng;
+  auto &mainRng = *pass.rng();
 
   const auto snap =
-      buildInflowSnapshot(request, plan, *request.ownership, *request.accounts);
+      buildInflowSnapshot(pass, plan, *accounts.ownership, *accounts.registry);
 
   const std::function<double()> salaryModel = [&mainRng]() -> double {
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
@@ -164,17 +164,18 @@ void addIncome(const IncomePassRequest &request,
 
   streams.add(pl_inflows::generateSalaryTxns(snap, mainRng, txf, salaryModel));
 
-  if (govCps.valid() && request.retirement != nullptr &&
-      request.disability != nullptr) {
-    const auto govPopulation =
-        buildGovernmentPopulation(plan, *request.ownership, *request.accounts);
+  const auto benefits = pass.benefits();
+  if (govCps.valid() && benefits.retirement != nullptr &&
+      benefits.disability != nullptr) {
+    const auto govPopulation = buildGovernmentPopulation(
+        plan, *accounts.ownership, *accounts.registry);
     const auto window = windowFromPlan(plan);
 
-    streams.add(pl_gov::retirementBenefits(*request.retirement, window, mainRng,
-                                           txf, govPopulation, govCps.ssa));
+    streams.add(pl_gov::retirementBenefits(
+        *benefits.retirement, window, mainRng, txf, govPopulation, govCps.ssa));
 
-    streams.add(pl_gov::disabilityBenefits(*request.disability, window, mainRng,
-                                           txf, govPopulation,
+    streams.add(pl_gov::disabilityBenefits(*benefits.disability, window,
+                                           mainRng, txf, govPopulation,
                                            govCps.disability));
   }
 
@@ -185,29 +186,33 @@ void addIncome(const IncomePassRequest &request,
 // addRoutines
 // ---------------------------------------------------------------------------
 
-void addRoutines(const RoutinePassRequest &request,
+void addRoutines(const RoutinePass &pass,
                  const blueprints::LegitBuildPlan &plan,
                  const entity::account::Ownership &ownership,
                  const entity::account::Registry &registry,
                  const transactions::Factory &txf, TxnStreams &streams,
                  ScreenBook &screen) {
-  if (request.rng == nullptr) {
+  if (pass.rng() == nullptr) {
     throw std::invalid_argument("passes::addRoutines requires a non-null rng");
   }
 
-  auto &rng = *request.rng;
+  auto &rng = *pass.rng();
+  const auto resources = pass.resources();
 
   streams.add(routines::paychecks::splitDeposits(
       rng, plan, txf, ownership, registry,
       std::span<const transactions::Transaction>(streams.candidates())));
 
-  const auto incomeReq = IncomePassRequest{
-      .rng = request.rng,
-      .accounts = &registry,
-      .ownership = &ownership,
-      .recurring = request.recurring,
+  const auto incomePass = IncomePass{
+      pass.rng(),
+      AccountAccess{
+          .registry = &registry,
+          .ownership = &ownership,
+      },
+      nullptr,
+      pass.recurring(),
   };
-  const auto snap = buildInflowSnapshot(incomeReq, plan, ownership, registry);
+  const auto snap = buildInflowSnapshot(incomePass, plan, ownership, registry);
 
   const std::function<double()> rentModel = [&rng]() -> double {
     return ::PhantomLedger::math::amounts::kRent.sample(rng);
@@ -238,18 +243,32 @@ void addRoutines(const RoutinePassRequest &request,
   };
   streams.add(internalTransfers.generate(plan));
 
+  if (resources.accountsLookup == nullptr) {
+    throw std::invalid_argument(
+        "spending routine requires a non-null accountsLookup");
+  }
+
   streams.add(routines::spending::generateDayToDayTxns(
-      routines::spending::SpendingRunRequest{
-          .rng = request.rng,
-          .txf = &txf,
-          .accountsLookup = request.accountsLookup,
-          .merchants = request.merchants,
-          .portfolios = request.portfolios,
-          .creditCards = request.creditCards,
-          .plan = plan,
-          .registry = registry,
+      routines::spending::SpendingRoutine::Execution{
+          .rng = rng,
+          .txf = txf,
       },
-      routines::spending::SpendingLedgerSeed{
+      routines::spending::SpendingRoutine::CensusSource{
+          .blueprint = plan,
+          .accounts =
+              routines::spending::SpendingRoutine::AccountSource{
+                  .lookup = *resources.accountsLookup,
+                  .registry = registry,
+              },
+      },
+      routines::spending::SpendingRoutine::PayeeDirectory{
+          .merchants = resources.merchants,
+          .creditCards = resources.creditCards,
+      },
+      routines::spending::SpendingRoutine::ObligationSource{
+          .portfolios = resources.portfolios,
+      },
+      routines::spending::SpendingRoutine::LedgerReplay{
           .baseTxns =
               std::span<const transactions::Transaction>(streams.screened()),
           .screenBook = screen.fresh(),
@@ -272,14 +291,14 @@ void addFamily(
 // addCredit
 // ---------------------------------------------------------------------------
 
-void addCredit(const CreditPassRequest &request,
+void addCredit(const CreditLifecyclePass &pass,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf, TxnStreams &streams) {
   streams.add(routines::credit_cards::generateLifecycle(
       routines::credit_cards::LifecycleRunRequest{
-          .rng = request.rng,
-          .cards = request.cards,
-          .lifecycle = request.lifecycle,
+          .rng = pass.rng(),
+          .cards = pass.cards(),
+          .lifecycle = pass.lifecycle(),
       },
       plan, txf,
       std::span<const transactions::Transaction>(streams.candidates())));

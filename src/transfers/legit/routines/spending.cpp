@@ -149,7 +149,7 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] plMarket::MarketSources
-assembleMarketSources(const SpendingRunRequest &request,
+assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
                       const blueprints::LegitBuildPlan &plan,
                       const CensusScratch &scratch) {
   if (plan.personas.pack == nullptr) {
@@ -183,10 +183,10 @@ assembleMarketSources(const SpendingRunRequest &request,
   sources.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
 
-  sources.network.catalog = request.merchants;
+  sources.network.catalog = payees.merchants;
   sources.network.social = nullptr;
 
-  sources.cards = buildSpendingCards(request.creditCards, scratch.personCount);
+  sources.cards = buildSpendingCards(payees.creditCards, scratch.personCount);
 
   return sources;
 }
@@ -209,47 +209,33 @@ marketBehaviorFrom(const SpendingHabits &habits) {
 } // namespace
 
 std::vector<transactions::Transaction>
-SpendingRoutine::run(const SpendingRunRequest &run,
-                     SpendingLedgerSeed seed) const {
-  const auto &request = run;
-  const auto &plan = run.plan;
-  const auto &registry = run.registry;
+SpendingRoutine::run(Execution execution, const CensusSource &census,
+                     PayeeDirectory payees, ObligationSource obligations,
+                     LedgerReplay replay) const {
+  const auto &plan = census.blueprint;
+  const auto &registry = census.accounts.registry;
 
-  if (request.rng == nullptr) {
-    throw std::invalid_argument("spending routine requires a non-null rng");
-  }
+  const auto scratch = buildCensusScratch(plan, census.accounts.lookup,
+                                          registry, replay.baseTxns);
 
-  if (request.txf == nullptr) {
-    throw std::invalid_argument(
-        "spending routine requires a non-null transaction factory");
-  }
-
-  if (request.accountsLookup == nullptr) {
-    throw std::invalid_argument(
-        "spending routine requires a non-null accountsLookup");
-  }
-
-  const auto scratch = buildCensusScratch(plan, *request.accountsLookup,
-                                          registry, seed.baseTxns);
-
-  auto sources = assembleMarketSources(request, plan, scratch);
-  const auto payees = marketPayeesFrom(habits_);
+  auto sources = assembleMarketSources(payees, plan, scratch);
+  const auto payeeRules = marketPayeesFrom(habits_);
   const auto behavior = marketBehaviorFrom(habits_);
 
-  auto market = plMarket::buildMarket(std::move(sources), payees, behavior);
+  auto market = plMarket::buildMarket(std::move(sources), payeeRules, behavior);
 
   random::RngFactory rngFactory{plan.seed};
 
   std::vector<double> monthlyBurdens;
 
-  if (request.portfolios != nullptr) {
+  if (obligations.portfolios != nullptr) {
     monthlyBurdens = ledger::buildMonthlyBurdens(
-        *request.portfolios, scratch.personCount, plan.startDate);
+        *obligations.portfolios, scratch.personCount, plan.startDate);
   }
 
-  plObligations::Snapshot obligations{
-      .baseTxns = seed.baseTxns,
-      .baseTxnsSorted = seed.baseTxnsSorted,
+  plObligations::Snapshot obligationSnapshot{
+      .baseTxns = replay.baseTxns,
+      .baseTxnsSorted = replay.baseTxnsSorted,
       .burden = plObligations::Burden(std::move(monthlyBurdens)),
   };
 
@@ -276,16 +262,21 @@ SpendingRoutine::run(const SpendingRunRequest &run,
       .count = 1,
   };
 
-  plSimulator::Simulator simulator(
-      market, *request.rng, *request.txf, obligations, seed.screenBook,
-      std::move(planner), std::move(dayDriver), emissionThreads);
+  plSimulator::Simulator simulator(market, execution.rng, execution.txf,
+                                   obligationSnapshot, replay.screenBook,
+                                   std::move(planner), std::move(dayDriver),
+                                   emissionThreads);
 
   return simulator.run();
 }
 
 std::vector<transactions::Transaction>
-generateDayToDayTxns(const SpendingRunRequest &run, SpendingLedgerSeed seed) {
-  return SpendingRoutine{}.run(run, seed);
+generateDayToDayTxns(SpendingRoutine::Execution execution,
+                     const SpendingRoutine::CensusSource &census,
+                     SpendingRoutine::PayeeDirectory payees,
+                     SpendingRoutine::ObligationSource obligations,
+                     SpendingRoutine::LedgerReplay replay) {
+  return SpendingRoutine{}.run(execution, census, payees, obligations, replay);
 }
 
 } // namespace PhantomLedger::transfers::legit::routines::spending

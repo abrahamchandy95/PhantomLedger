@@ -1,149 +1,200 @@
 #include "phantomledger/pipeline/simulate.hpp"
 
+#include "phantomledger/pipeline/stages/products.hpp"
+
 namespace PhantomLedger::pipeline {
 
 namespace {
 
 namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
 namespace infraStage = ::PhantomLedger::pipeline::stages::infra;
+namespace productStage = ::PhantomLedger::pipeline::stages::products;
 namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
-namespace productSynth = ::PhantomLedger::entities::synth::products;
 
-[[nodiscard]] ::PhantomLedger::time::Window
-activeInfraWindow(const SimulationScenario &scenario) noexcept {
-  if (scenario.infraWindow.days == 0) {
-    return scenario.window;
+[[nodiscard]] transferStage::RunScope
+activeTransferScope(transferStage::RunScope requested,
+                    ::PhantomLedger::time::Window fallbackWindow,
+                    std::uint64_t fallbackSeed) noexcept {
+  if (requested.window.days == 0) {
+    requested.window = fallbackWindow;
   }
 
-  return scenario.infraWindow;
-}
-
-void synthesizeProducts(SimulationResult &out,
-                        ::PhantomLedger::time::Window window,
-                        const entityStage::ProductSynthesis &products) {
-  const auto &assignment = out.entities.personas.assignment;
-  const auto population = static_cast<::PhantomLedger::entity::PersonId>(
-      assignment.byPerson.size());
-
-  for (::PhantomLedger::entity::PersonId person = 1; person <= population;
-       ++person) {
-    auto local = productSynth::personRng(products.seeds.products, person);
-    const auto persona = assignment.byPerson[person - 1];
-
-    productSynth::MortgageEmitter mortgage{local, out.entities.portfolios,
-                                           window, products.mortgage};
-    productSynth::AutoLoanEmitter autoLoan{local, out.entities.portfolios,
-                                           window, products.autoLoan};
-    productSynth::StudentLoanEmitter studentLoan{local, out.entities.portfolios,
-                                                 window, products.studentLoan};
-    productSynth::TaxEmitter tax{local, out.entities.portfolios, window,
-                                 products.tax};
-    productSynth::InsuranceEmitter insurance{local, out.entities.portfolios,
-                                             products.insurance};
-
-    const bool hasMortgage = mortgage.emit(person, persona);
-    const bool hasAutoLoan = autoLoan.emit(person, persona);
-
-    (void)studentLoan.emit(person, persona);
-    (void)tax.emit(person, persona);
-
-    (void)insurance.emit(
-        person, persona,
-        productSynth::LoanAnchors{
-            .hasMortgage = hasMortgage,
-            .hasAutoLoan = hasAutoLoan,
-            .mortgageP = products.mortgage.adoption.probability(persona),
-            .autoLoanP = products.autoLoan.adoption.probability(persona),
-        });
+  if (requested.seed == 0) {
+    requested.seed = fallbackSeed;
   }
 
-  out.entities.portfolios.obligations().sort();
+  return requested;
 }
 
 } // namespace
 
-SimulationResult simulate(::PhantomLedger::random::Rng &rng,
-                          const SimulationScenario &scenario) {
+SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
+                                       ::PhantomLedger::time::Window window,
+                                       entityStage::EntitySynthesis entities,
+                                       std::uint64_t seed)
+    : rng_(&rng), window_(window), seed_(seed), entities_(entities) {}
+
+SimulationPipeline &
+SimulationPipeline::infraWindow(::PhantomLedger::time::Window value) noexcept {
+  infra_.window(value);
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::ringBehavior(
+    const ::PhantomLedger::infra::synth::rings::Config &value) noexcept {
+  infra_.ringBehavior(value);
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::deviceBehavior(
+    const ::PhantomLedger::infra::synth::devices::Config &value) noexcept {
+  infra_.deviceBehavior(value);
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::ipBehavior(
+    const ::PhantomLedger::infra::synth::ips::Config &value) noexcept {
+  infra_.ipBehavior(value);
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::routingBehavior(
+    infraStage::RoutingBehavior value) noexcept {
+  infra_.routingBehavior(value);
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::sharedInfra(infraStage::SharedInfraUse value) noexcept {
+  infra_.sharedInfra(value);
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::transferScope(transferStage::RunScope value) noexcept {
+  transferScope_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::recurringIncome(
+    const transferStage::RecurringIncome &value) {
+  recurringIncome_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::balanceBook(
+    transferStage::BalanceBookRules value) noexcept {
+  balanceBook_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::creditCards(
+    transferStage::CreditCardLifecycle value) noexcept {
+  creditCards_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::family(transferStage::FamilyPrograms value) noexcept {
+  family_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::government(const transferStage::GovernmentPrograms &value) {
+  government_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::insurance(transferStage::InsuranceClaims value) noexcept {
+  insurance_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::replay(transferStage::LedgerReplay value) noexcept {
+  replay_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::fraud(transferStage::FraudInjection value) noexcept {
+  fraud_ = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::population(transferStage::PopulationShape value) noexcept {
+  population_ = value;
+  return *this;
+}
+
+SimulationResult SimulationPipeline::run() const {
   SimulationResult out;
 
-  entityStage::validate(scenario.entities.people.population);
+  entityStage::validate(entities_.people.population);
 
-  const auto identity = entityStage::withDefaultStart(
-      scenario.entities.people.identity, scenario.window.start);
+  const auto identity =
+      entityStage::withDefaultStart(entities_.people.identity, window_.start);
 
   out.entities.people = entityStage::buildPeople(
-      rng, scenario.entities.people.population, scenario.entities.people.fraud);
+      *rng_, entities_.people.population, entities_.people.fraud);
 
   out.entities.accounts = entityStage::buildAccounts(
-      rng, out.entities.people, scenario.entities.people.population);
+      *rng_, out.entities.people, entities_.people.population);
 
   out.entities.personas = entityStage::buildPersonas(
-      rng, out.entities.people, scenario.entities.people.personaMix);
+      *rng_, out.entities.people, entities_.people.personaMix);
 
   out.entities.pii =
-      entityStage::buildPii(rng, out.entities.personas, identity);
+      entityStage::buildPii(*rng_, out.entities.personas, identity);
 
-  out.entities.merchants =
-      entityStage::buildMerchants(rng, scenario.entities.people.population,
-                                  scenario.entities.counterparties.merchants);
+  out.entities.merchants = entityStage::buildMerchants(
+      *rng_, entities_.people.population, entities_.counterparties.merchants);
 
-  out.entities.landlords =
-      entityStage::buildLandlords(rng, scenario.entities.people.population,
-                                  scenario.entities.counterparties.landlords);
+  out.entities.landlords = entityStage::buildLandlords(
+      *rng_, entities_.people.population, entities_.counterparties.landlords);
 
-  out.entities.creditCards =
-      entityStage::issueCreditCards(out.entities.personas, out.entities.people,
-                                    scenario.entities.products.seeds,
-                                    scenario.entities.products.cardIssuance);
+  out.entities.creditCards = entityStage::issueCreditCards(
+      out.entities.personas, out.entities.people, entities_.products.seeds,
+      entities_.products.cardIssuance);
 
-  out.entities.counterparties = entityStage::buildCounterparties(
-      rng, scenario.entities.people.population,
-      scenario.entities.counterparties.counterparties);
+  out.entities.counterparties =
+      entityStage::buildCounterparties(*rng_, entities_.people.population,
+                                       entities_.counterparties.counterparties);
 
-  // Register every external endpoint (system bank accounts, merchants,
-  // landlords, employers, clients, platforms, processors, businesses,
-  // brokerages) into entities.accounts so that:
-  //   - validateTransactionAccounts() in the transfer stage finds every
-  //     transaction endpoint in the lookup,
-  //   - hubIndicesFromKeys() resolves counterparty hub keys against the
-  //     lookup so balance-book bootstrap can grant infinite cash to hubs,
-  //   - the standard exporter's external_accounts.csv pass and the AML
-  //     SharedContext counterparty set both pick these up via the
-  //     Flag::external bit.
-  // Must run after every entity-build step above and before transfer build.
+  // Register every external endpoint after entity construction and before
+  // transfers so validation, balance bootstrap, standard export, and AML export
+  // all see the same account registry.
   entityStage::finalizeAccountRegistry(out.entities);
 
-  synthesizeProducts(out, scenario.window, scenario.entities.products);
+  productStage::synthesize(out.entities, window_, entities_.products);
 
-  out.infra = infraStage::build(rng, out.entities, activeInfraWindow(scenario),
-                                scenario.ringBehavior, scenario.deviceBehavior,
-                                scenario.ipBehavior, scenario.routingBehavior,
-                                scenario.sharedInfra);
+  out.infra = infra_.build(*rng_, out.entities, window_);
 
-  auto transferScope = scenario.transfers.run;
-  if (transferScope.window.days == 0) {
-    transferScope.window = scenario.window;
-  }
-
-  if (transferScope.seed == 0) {
-    transferScope.seed = scenario.seed;
-  }
-
-  transferStage::TransferStage transfers{rng, out.entities, out.infra};
-  transfers.scope(transferScope)
-      .income(scenario.transfers.recurringIncome)
-      .balanceBook(scenario.transfers.balanceBook)
-      .creditCards(scenario.transfers.creditCards)
-      .family(scenario.transfers.family)
-      .government(scenario.transfers.government)
-      .insurance(scenario.transfers.insurance)
-      .replay(scenario.transfers.replay)
-      .fraud(scenario.transfers.fraud)
-      .population(scenario.transfers.population);
+  transferStage::TransferStage transfers{*rng_, out.entities, out.infra};
+  transfers.scope(activeTransferScope(transferScope_, window_, seed_))
+      .income(recurringIncome_)
+      .balanceBook(balanceBook_)
+      .creditCards(creditCards_)
+      .family(family_)
+      .government(government_)
+      .insurance(insurance_)
+      .replay(replay_)
+      .fraud(fraud_)
+      .population(population_);
 
   out.transfers = transfers.build();
 
   return out;
+}
+
+SimulationResult simulate(::PhantomLedger::random::Rng &rng,
+                          ::PhantomLedger::time::Window window,
+                          entityStage::EntitySynthesis entities,
+                          std::uint64_t seed) {
+  return SimulationPipeline{rng, window, entities, seed}.run();
 }
 
 } // namespace PhantomLedger::pipeline

@@ -4,6 +4,7 @@
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
+#include "phantomledger/pipeline/stages/transfers.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
@@ -19,6 +20,7 @@
 #include <fstream>
 #include <random>
 #include <string>
+#include <system_error>
 
 namespace pl = ::PhantomLedger;
 namespace fs = std::filesystem;
@@ -67,14 +69,8 @@ void expectNonEmptyFile(const fs::path &path) {
   return fs::temp_directory_path() / (prefix + buf);
 }
 
-/// Run the full pipeline end-to-end with default configuration.
-///
-/// All entity flows (employers, clients, merchants, landlords, products,
-/// fraud, recurring income) run with their library defaults. The point of
-/// this test is to exercise simulate() exactly as production callers do
-/// and assert that the three exporters produce the file shapes downstream
-/// pipelines depend on.
-[[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
+[[nodiscard]] pl::entities::synth::pii::PoolSet
+buildPoolSet(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
 
@@ -82,42 +78,75 @@ void expectNonEmptyFile(const fs::path &path) {
       pl::entities::synth::pii::buildLocalePool(
           pl::locale::Country::us, sizes, static_cast<std::uint32_t>(seed));
 
+  return poolSet;
+}
+
+[[nodiscard]] pl::time::Window smallWindow() {
   pl::time::Window window;
   window.start = pl::time::makeTime({2025, 1, 1});
   window.days = 7;
+  return window;
+}
+
+[[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
+smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
+                     pl::time::TimePoint simStart,
+                     const pl::entities::synth::people::Fraud &fraudProfile) {
+  return pl::pipeline::stages::entities::EntitySynthesis{
+      .people =
+          pl::pipeline::stages::entities::PeopleSynthesis{
+              .identity =
+                  pl::pipeline::stages::entities::IdentitySource{
+                      .pools = poolSet,
+                      .simStart = simStart,
+                  },
+              .population =
+                  pl::pipeline::stages::entities::PopulationSizing{
+                      .count = 100,
+                  },
+              .fraud = fraudProfile,
+          },
+  };
+}
+
+/// Run the full pipeline end-to-end with default configuration.
+///
+/// All entity flows (employers, clients, merchants, landlords, products,
+/// fraud, recurring income) run with their library defaults. The point of
+/// this test is to exercise the same public simulation pipeline production
+/// callers use and assert that the three exporters produce the file shapes
+/// downstream pipelines depend on.
+[[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
+  const auto poolSet = buildPoolSet(seed);
+  const auto window = smallWindow();
+
+  const pl::entities::synth::people::Fraud fraudProfile{};
+  const auto entities =
+      smallEntitySynthesis(poolSet, window.start, fraudProfile);
 
   pl::clearing::BalanceRules balanceRules{};
   pl::transfers::credit_cards::LifecycleRules lifecycleRules{};
 
-  pl::pipeline::SimulationScenario scenario{
-      .window = window,
-      .seed = seed,
-      .entities =
-          pl::pipeline::stages::entities::EntitySynthesis{
-              .people =
-                  pl::pipeline::stages::entities::PeopleSynthesis{
-                      .identity =
-                          pl::pipeline::stages::entities::IdentitySource{
-                              .pools = poolSet,
-                              .simStart = window.start,
-                          },
-                      .population =
-                          pl::pipeline::stages::entities::PopulationSizing{
-                              .count = 100,
-                          },
-                  },
-          },
-  };
-
-  scenario.transfers.run.window = window;
-  scenario.transfers.run.seed = seed;
-
-  scenario.transfers.balanceBook.balanceRules = &balanceRules;
-  scenario.transfers.creditCards.lifecycle = &lifecycleRules;
-  scenario.transfers.fraud.profile = &scenario.entities.people.fraud;
-
   auto rng = pl::random::Rng::fromSeed(seed);
-  return pl::pipeline::simulate(rng, scenario);
+
+  pl::pipeline::SimulationPipeline pipeline{rng, window, entities, seed};
+
+  pipeline
+      .transferScope(pl::pipeline::stages::transfers::RunScope{
+          .window = window,
+          .seed = seed,
+      })
+      .balanceBook(pl::pipeline::stages::transfers::BalanceBookRules{
+          .balanceRules = &balanceRules,
+      })
+      .creditCards(pl::pipeline::stages::transfers::CreditCardLifecycle{
+          .lifecycle = &lifecycleRules,
+      })
+      .fraud(pl::pipeline::stages::transfers::FraudInjection{
+          .profile = &fraudProfile,
+      });
+
+  return pipeline.run();
 }
 
 void testStandardExport(const pl::pipeline::SimulationResult &result,
