@@ -38,14 +38,43 @@ namespace {
 } // namespace
 
 LegitTransferBuilder::LegitTransferBuilder(
-    blueprints::PlanRequest blueprint, BalanceBookRequest openingBook) noexcept
-    : blueprint_(std::move(blueprint)), openingBook_(std::move(openingBook)),
-      hasBlueprint_(true) {}
+    random::Rng &rng, blueprints::LegitTimeframe timeframe,
+    blueprints::AccountCensus census, BalanceBookRequest openingBook) noexcept
+    : rng_(&rng), timeframe_(timeframe), census_(census),
+      openingBook_(std::move(openingBook)) {}
+
+LegitTransferBuilder &LegitTransferBuilder::rng(random::Rng &value) noexcept {
+  rng_ = &value;
+  return *this;
+}
 
 LegitTransferBuilder &
-LegitTransferBuilder::blueprint(blueprints::PlanRequest value) noexcept {
-  blueprint_ = std::move(value);
-  hasBlueprint_ = true;
+LegitTransferBuilder::timeframe(blueprints::LegitTimeframe value) noexcept {
+  timeframe_ = value;
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::census(blueprints::AccountCensus value) noexcept {
+  census_ = value;
+  return *this;
+}
+
+LegitTransferBuilder &LegitTransferBuilder::counterparties(
+    blueprints::CounterpartyPools value) noexcept {
+  counterparties_ = value;
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::personas(blueprints::PersonaCatalog value) noexcept {
+  personas_ = value;
+  return *this;
+}
+
+LegitTransferBuilder &LegitTransferBuilder::hubSelection(
+    blueprints::HubSelectionRules value) noexcept {
+  hubSelection_ = value;
   return *this;
 }
 
@@ -99,13 +128,13 @@ LegitTransferBuilder &LegitTransferBuilder::router(
 
 const entity::account::Registry *
 LegitTransferBuilder::accounts() const noexcept {
-  return blueprint_.census.accounts;
+  return census_.accounts;
 }
 
 TransfersPayload LegitTransferBuilder::build() const {
-  if (!hasBlueprint_) {
+  if (rng_ == nullptr) {
     throw std::invalid_argument(
-        "LegitTransferBuilder.build() requires a plan blueprint");
+        "LegitTransferBuilder.build() requires a non-null rng");
   }
 
   const auto *accountRegistry = accounts();
@@ -113,27 +142,23 @@ TransfersPayload LegitTransferBuilder::build() const {
     return TransfersPayload{};
   }
 
-  auto plan = blueprints::buildLegitPlan(blueprint_);
+  auto plan = blueprints::buildLegitPlan(
+      *rng_, timeframe_, census_, counterparties_, personas_, hubSelection_);
 
   auto initialBook = buildBalanceBook(openingBook_, plan);
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
 
-  if (blueprint_.rng == nullptr) {
-    throw std::invalid_argument(
-        "LegitTransferBuilder.build() requires a non-null rng");
-  }
-  const transactions::Factory txf(*blueprint_.rng, router_);
+  const transactions::Factory txf(*rng_, router_);
 
   passes::GovernmentCounterparties govCps{};
 
   passes::addIncome(income_, plan, txf, streams, govCps);
 
-  if (blueprint_.census.ownership != nullptr &&
-      blueprint_.census.accounts != nullptr) {
-    passes::addRoutines(routines_, plan, *blueprint_.census.ownership,
-                        *blueprint_.census.accounts, txf, streams, screen);
+  if (census_.ownership != nullptr && census_.accounts != nullptr) {
+    passes::addRoutines(routines_, plan, *census_.ownership, *census_.accounts,
+                        txf, streams, screen);
   }
 
   if (familyPrograms_.transfers != nullptr) {

@@ -19,43 +19,41 @@
 
 namespace PhantomLedger::transfers::legit::blueprints {
 
-struct PopulationTuning {
-  std::uint32_t count = 0;
+struct LegitTimeframe {
+  time::Window window{};
   std::uint64_t seed = 0;
-  double hubFraction = 0.01;
+};
+
+struct HubSelectionRules {
+  std::uint32_t populationCount = 0;
+  double fraction = 0.01;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
-    r.check([&] { v::unit("hubFraction", hubFraction); });
+    r.check([&] { v::unit("hubSelection.fraction", fraction); });
   }
 };
 
-struct CensusSource {
+struct AccountCensus {
   const entity::account::Registry *accounts = nullptr;
   const entity::account::Ownership *ownership = nullptr;
+
+  [[nodiscard]] bool hasAccounts() const noexcept {
+    return accounts != nullptr && !accounts->records.empty();
+  }
+
+  [[nodiscard]] bool hasOwnership() const noexcept {
+    return ownership != nullptr;
+  }
 };
 
-struct CounterpartySource {
+struct CounterpartyPools {
   const entity::counterparty::Directory *directory = nullptr;
   const entity::landlord::Roster *landlords = nullptr;
 };
 
-struct PersonaSource {
+struct PersonaCatalog {
   const entities::synth::personas::Pack *pack = nullptr;
-};
-
-struct PlanRequest {
-  time::Window window{};
-  random::Rng *rng = nullptr;
-
-  PopulationTuning population{};
-  CensusSource census{};
-  CounterpartySource counterparties{};
-  PersonaSource personas{};
-
-  void validate(primitives::validate::Report &r) const {
-    population.validate(r);
-  }
 };
 
 // ---------------------------------------------------------------------------
@@ -119,6 +117,9 @@ struct LegitBuildPlan {
 // Builder
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] LegitBuildPlan buildLegitPlan(const PlanRequest &request);
+[[nodiscard]] LegitBuildPlan
+buildLegitPlan(random::Rng &rng, LegitTimeframe timeframe, AccountCensus census,
+               CounterpartyPools counterparties = {},
+               PersonaCatalog personas = {}, HubSelectionRules hubs = {});
 
 } // namespace PhantomLedger::transfers::legit::blueprints
