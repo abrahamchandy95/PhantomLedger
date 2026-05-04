@@ -6,6 +6,7 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -35,6 +36,11 @@ struct Recipient {
   entity::Key account{};
   double amount = 0.0;
   int ssaCohort = 0;
+};
+
+struct BenefitDeposit {
+  entity::Key source{};
+  channels::Tag channel{};
 };
 
 namespace detail {
@@ -99,38 +105,54 @@ select(const Population &pop, random::Rng &rng, double eligibleP, double median,
   return out;
 }
 
-inline void monthlyDeposits(const std::vector<Recipient> &recipients,
-                            const entity::Key &source, channels::Tag channel,
-                            time::Almanac &almanac, time::TimePoint start,
-                            time::TimePoint endExcl, random::Rng &rng,
-                            const transactions::Factory &txf,
-                            std::vector<transactions::Transaction> &out) {
-  if (recipients.empty()) {
-    return;
+class MonthlyDepositEmitter {
+public:
+  MonthlyDepositEmitter(const time::Window &window, random::Rng &rng,
+                        const transactions::Factory &txf)
+      : window_(window), almanac_(window), rng_(rng), txf_(txf) {}
+
+  [[nodiscard]] bool active() const noexcept {
+    return !almanac_.monthAnchors().empty();
   }
 
-  const std::span<const time::TimePoint> cohorts[3] = {
-      almanac.ssaPayDates(0),
-      almanac.ssaPayDates(1),
-      almanac.ssaPayDates(2),
-  };
-
-  const auto months = cohorts[0].size();
-  for (std::size_t m = 0; m < months; ++m) {
-    for (const auto &r : recipients) {
-      const auto ts = detail::morningJitter(rng, cohorts[r.ssaCohort][m]);
-      if (ts < start || ts >= endExcl) {
-        continue;
-      }
-      out.push_back(txf.make(transactions::Draft{
-          .source = source,
-          .destination = r.account,
-          .amount = r.amount,
-          .timestamp = time::toEpochSeconds(ts),
-          .channel = channel,
-      }));
+  [[nodiscard]] std::vector<transactions::Transaction>
+  emit(std::span<const Recipient> recipients, BenefitDeposit deposit) {
+    std::vector<transactions::Transaction> out;
+    if (recipients.empty()) {
+      return out;
     }
+
+    const std::span<const time::TimePoint> cohorts[3] = {
+        almanac_.ssaPayDates(0),
+        almanac_.ssaPayDates(1),
+        almanac_.ssaPayDates(2),
+    };
+
+    const auto months = cohorts[0].size();
+    for (std::size_t m = 0; m < months; ++m) {
+      for (const auto &r : recipients) {
+        const auto ts = detail::morningJitter(rng_, cohorts[r.ssaCohort][m]);
+        if (ts < window_.start || ts >= window_.endExcl()) {
+          continue;
+        }
+        out.push_back(txf_.make(transactions::Draft{
+            .source = deposit.source,
+            .destination = r.account,
+            .amount = r.amount,
+            .timestamp = time::toEpochSeconds(ts),
+            .channel = deposit.channel,
+        }));
+      }
+    }
+
+    return out;
   }
-}
+
+private:
+  time::Window window_{};
+  time::Almanac almanac_;
+  random::Rng &rng_;
+  const transactions::Factory &txf_;
+};
 
 } // namespace PhantomLedger::transfers::government

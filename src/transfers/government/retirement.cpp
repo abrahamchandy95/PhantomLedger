@@ -1,11 +1,11 @@
 #include "phantomledger/transfers/government/retirement.hpp"
 
-#include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transfers/government/recipients.hpp"
 
 #include <algorithm>
+#include <span>
 
 namespace PhantomLedger::transfers::government {
 
@@ -14,20 +14,21 @@ retirementBenefits(const RetirementTerms &terms, const time::Window &window,
                    random::Rng &rng, const transactions::Factory &txf,
                    const Population &population,
                    const entity::Key &ssaCounterparty) {
-  std::vector<transactions::Transaction> out;
-
-  time::Almanac almanac{window};
-  if (almanac.monthAnchors().empty()) {
-    return out;
+  MonthlyDepositEmitter deposits{window, rng, txf};
+  if (!deposits.active()) {
+    return {};
   }
 
   auto recipients = select(
       population, rng, terms.eligibleP, terms.median, terms.sigma, terms.floor,
       [](personas::Type t) { return t == personas::Type::retiree; });
 
-  monthlyDeposits(recipients, ssaCounterparty,
-                  channels::tag(channels::Government::socialSecurity), almanac,
-                  window.start, window.endExcl(), rng, txf, out);
+  auto out = deposits.emit(
+      std::span<const Recipient>{recipients},
+      BenefitDeposit{
+          .source = ssaCounterparty,
+          .channel = channels::tag(channels::Government::socialSecurity),
+      });
 
   std::sort(
       out.begin(), out.end(),
