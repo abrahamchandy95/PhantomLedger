@@ -34,63 +34,75 @@ namespace product = entity::product;
   return 1.0 - std::pow(1.0 - annualP, years);
 }
 
-[[nodiscard]] double sampleAmount(random::Rng &rng, double median, double sigma,
-                                  double floor) {
-  const auto raw =
-      probability::distributions::lognormalByMedian(rng, median, sigma);
+[[nodiscard]] std::size_t claimMonthCount(const time::Window &window) {
+  time::Almanac almanac{window};
 
-  return primitives::utils::floorAndRound(raw, floor);
+  return almanac.monthAnchors().size();
 }
 
-void postClaim(random::Rng &rng, const transactions::Factory &txf,
-               TimePoint start, TimePoint endExcl, int days, const Key &carrier,
-               const Key &payer, double amount,
-               std::vector<transactions::Transaction> &out) {
-  if (amount <= 0.0) {
-    return;
-  }
+[[nodiscard]] double sampleAmount(random::Rng &rng, const ClaimPayout &payout) {
+  const auto raw = probability::distributions::lognormalByMedian(
+      rng, payout.median, payout.sigma);
 
-  const auto dayOff = rng.uniformInt(0, std::max(1, days));
-  const auto hour = rng.uniformInt(9, 17);
-  const auto minute = rng.uniformInt(0, 60);
-  const auto ts =
-      start + time::Days{dayOff} + time::Hours{hour} + time::Minutes{minute};
-
-  if (ts >= endExcl) {
-    return;
-  }
-
-  out.push_back(txf.make(transactions::Draft{
-      .source = carrier,
-      .destination = payer,
-      .amount = amount,
-      .timestamp = time::toEpochSeconds(ts),
-      .channel = channels::tag(channels::Insurance::claim),
-  }));
+  return primitives::utils::floorAndRound(raw, payout.floor);
 }
 
-void tryPostClaim(random::Rng &claimRng, random::Rng &timestampRng,
-                  const transactions::Factory &txf,
-                  const product::InsuranceHoldings &holdings,
-                  product::PolicyType policyType, TimePoint start,
-                  TimePoint endExcl, int days, const Key &payer, double median,
-                  double sigma, double floor, std::size_t months,
-                  std::vector<transactions::Transaction> &out) {
-  const auto *policy = holdings.get(policyType);
-  if (policy == nullptr) {
-    return;
+class ClaimEmitter {
+public:
+  ClaimEmitter(const time::Window &window, random::Rng &timestampRng,
+               const transactions::Factory &txf,
+               std::vector<transactions::Transaction> &out)
+      : start_(window.start), endExcl_(window.endExcl()), days_(window.days),
+        monthCount_(claimMonthCount(window)), timestampRng_(timestampRng),
+        txf_(txf), out_(out) {}
+
+  [[nodiscard]] bool active() const noexcept { return monthCount_ != 0; }
+
+  void tryPost(random::Rng &claimRng, const product::InsurancePolicy &policy,
+               const ClaimPayout &payout, const Key &payer) {
+    const double claimP =
+        windowClaimProbability(policy.annualClaimP, monthCount_);
+    if (!claimRng.coin(claimP)) {
+      return;
+    }
+
+    post(policy.carrierAcct, payer, sampleAmount(claimRng, payout));
   }
 
-  const double claimP = windowClaimProbability(policy->annualClaimP, months);
-  if (!claimRng.coin(claimP)) {
-    return;
+private:
+  void post(const Key &carrier, const Key &payer, double amount) {
+    if (amount <= 0.0) {
+      return;
+    }
+
+    const auto dayOff = timestampRng_.uniformInt(0, std::max(1, days_));
+    const auto hour = timestampRng_.uniformInt(9, 17);
+    const auto minute = timestampRng_.uniformInt(0, 60);
+    const auto ts =
+        start_ + time::Days{dayOff} + time::Hours{hour} + time::Minutes{minute};
+
+    if (ts >= endExcl_) {
+      return;
+    }
+
+    out_.push_back(txf_.make(transactions::Draft{
+        .source = carrier,
+        .destination = payer,
+        .amount = amount,
+        .timestamp = time::toEpochSeconds(ts),
+        .channel = channels::tag(channels::Insurance::claim),
+    }));
   }
 
-  const double amount = sampleAmount(claimRng, median, sigma, floor);
+  TimePoint start_{};
+  TimePoint endExcl_{};
+  int days_ = 0;
+  std::size_t monthCount_ = 0;
 
-  postClaim(timestampRng, txf, start, endExcl, days, policy->carrierAcct, payer,
-            amount, out);
-}
+  random::Rng &timestampRng_;
+  const transactions::Factory &txf_;
+  std::vector<transactions::Transaction> &out_;
+};
 
 } // namespace
 
@@ -101,14 +113,10 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
        const Population &population) {
   std::vector<transactions::Transaction> out;
 
-  time::Almanac almanac{window};
-  const auto months = almanac.monthAnchors().size();
-
-  if (months == 0) {
+  ClaimEmitter emitter{window, rng, txf, out};
+  if (!emitter.active()) {
     return out;
   }
-
-  const auto endExcl = window.endExcl();
 
   portfolios.forEachInsuredPerson(
       [&](PersonId person, const product::InsuranceHoldings &holdings) {
@@ -124,15 +132,13 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
             factory.rng({"insurance_claims",
                          std::to_string(static_cast<unsigned>(person))});
 
-        tryPostClaim(personRng, rng, txf, holdings, product::PolicyType::auto_,
-                     window.start, endExcl, window.days, payer,
-                     rates.autoMedian, rates.autoSigma, rates.autoFloor, months,
-                     out);
+        if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
+          emitter.tryPost(personRng, *policy, rates.autoPayout(), payer);
+        }
 
-        tryPostClaim(personRng, rng, txf, holdings, product::PolicyType::home,
-                     window.start, endExcl, window.days, payer,
-                     rates.homeMedian, rates.homeSigma, rates.homeFloor, months,
-                     out);
+        if (const auto &policy = holdings.homePolicy(); policy.has_value()) {
+          emitter.tryPost(personRng, *policy, rates.homePayout(), payer);
+        }
 
         // Life insurance: death events are not modeled.
       });
