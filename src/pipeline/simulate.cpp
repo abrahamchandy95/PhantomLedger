@@ -95,6 +95,19 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
       rng, scenario.entities.people.population,
       scenario.entities.counterparties.counterparties);
 
+  // Register every external endpoint (system bank accounts, merchants,
+  // landlords, employers, clients, platforms, processors, businesses,
+  // brokerages) into entities.accounts so that:
+  //   - validateTransactionAccounts() in the transfer stage finds every
+  //     transaction endpoint in the lookup,
+  //   - hubIndicesFromKeys() resolves counterparty hub keys against the
+  //     lookup so balance-book bootstrap can grant infinite cash to hubs,
+  //   - the standard exporter's external_accounts.csv pass and the AML
+  //     SharedContext counterparty set both pick these up via the
+  //     Flag::external bit.
+  // Must run after every entity-build step above and before transfer build.
+  entityStage::finalizeAccountRegistry(out.entities);
+
   synthesizeProducts(out, scenario.window, scenario.entities.products);
 
   out.infra =

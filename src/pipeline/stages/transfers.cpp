@@ -169,26 +169,36 @@ makeCreditPassRequest(::PhantomLedger::random::Rng &rng,
   };
 }
 
-[[nodiscard]] legit_ledger::LegitTransferRequest makeLegitTransferRequest(
+[[nodiscard]] legit_ledger::LegitTransferBuilder::FamilyPrograms
+makeLegitFamilyPrograms(const FamilyPrograms &family) noexcept {
+  return legit_ledger::LegitTransferBuilder::FamilyPrograms{
+      .households = family.households,
+      .dependents = family.dependents,
+      .retireeSupport = family.retireeSupport,
+      .transfers = family.transfers,
+  };
+}
+
+[[nodiscard]] legit_ledger::LegitTransferBuilder makeLegitTransferBuilder(
     ::PhantomLedger::random::Rng &rng,
     const ::PhantomLedger::pipeline::Entities &entities,
     const ::PhantomLedger::pipeline::Infra &infra, RunScope run,
     const RecurringIncome &income, const BalanceBookRules &balanceBook,
     const CreditCardLifecycle &creditCards, const FamilyPrograms &family,
     const GovernmentPrograms &government, PopulationShape population) {
-  return legit_ledger::LegitTransferRequest{
-      .plan = makePlanRequest(rng, entities, run, population),
-      .balanceBook = makeBalanceBookRequest(rng, entities, run, balanceBook),
-      .income = makeIncomePassRequest(rng, entities, income, government),
-      .routines = makeRoutinePassRequest(rng, entities, income),
-      .family = makeFamilyPassRequest(entities),
-      .credit = makeCreditPassRequest(rng, entities, creditCards),
-      .familyHouseholds = family.households,
-      .familyDependents = family.dependents,
-      .retireeSupport = family.retireeSupport,
-      .familyTransfers = family.transfers,
-      .router = &infra.router,
+  legit_ledger::LegitTransferBuilder builder{
+      makePlanRequest(rng, entities, run, population),
+      makeBalanceBookRequest(rng, entities, run, balanceBook),
   };
+
+  builder.income(makeIncomePassRequest(rng, entities, income, government))
+      .routines(makeRoutinePassRequest(rng, entities, income))
+      .family(makeFamilyPassRequest(entities))
+      .credit(makeCreditPassRequest(rng, entities, creditCards))
+      .familyPrograms(makeLegitFamilyPrograms(family))
+      .router(infra.router);
+
+  return builder;
 }
 
 [[nodiscard]] std::vector<Transaction> assembleReplayStream(
@@ -328,13 +338,9 @@ build(::PhantomLedger::random::Rng &rng,
   primitives::validate::require(income);
   primitives::validate::require(population);
 
-  auto legitRequest =
-      makeLegitTransferRequest(rng, entities, infra, run, income, balanceBook,
+  auto builder =
+      makeLegitTransferBuilder(rng, entities, infra, run, income, balanceBook,
                                creditCards, family, government, population);
-
-  legit_ledger::LegitTransferBuilder builder{
-      .request = &legitRequest,
-  };
 
   legit_ledger::TransfersPayload legitPayload = builder.build();
 

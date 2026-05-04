@@ -15,7 +15,10 @@ using namespace PhantomLedger;
 namespace {
 
 void testConvenienceFactories() {
-  PL_CHECK_EQ(encoding::customerId(1), std::string("C0000000001"));
+  PL_CHECK_EQ(encoding::customerId(1), std::string("C00000000001"));
+  PL_CHECK_EQ(encoding::customerId(4'294'967'295ULL),
+              std::string("C04294967295"));
+
   PL_CHECK_EQ(encoding::accountId(1), std::string("A0000000001"));
   PL_CHECK_EQ(encoding::merchantId(1), std::string("M00000001"));
   PL_CHECK_EQ(encoding::merchantExternalId(1), std::string("XM00000001"));
@@ -52,12 +55,12 @@ void testFactoryZeroThrows() {
 }
 
 void testDeviceId() {
-  PL_CHECK_EQ(encoding::deviceId("C0000000123", 1),
-              std::string("D0000000123_1"));
-  PL_CHECK_EQ(encoding::deviceId("C0000000001", 3),
-              std::string("D0000000001_3"));
+  PL_CHECK_EQ(encoding::deviceId("C00000000123", 1),
+              std::string("D00000000123_1"));
+  PL_CHECK_EQ(encoding::deviceId("C00000000001", 3),
+              std::string("D00000000001_3"));
 
-  PL_CHECK_THROWS(encoding::deviceId("C0000000001", 0));
+  PL_CHECK_THROWS(encoding::deviceId("C00000000001", 0));
   PL_CHECK_THROWS(encoding::deviceId("A0000000001", 1));
   PL_CHECK_THROWS(encoding::deviceId("", 1));
 
@@ -107,7 +110,7 @@ void testIsExternal() {
   PL_CHECK(encoding::isExternal("XF12345678901234567890"));
 
   PL_CHECK(!encoding::isExternal("A0000000001"));
-  PL_CHECK(!encoding::isExternal("C0000000001"));
+  PL_CHECK(!encoding::isExternal("C00000000001"));
   PL_CHECK(!encoding::isExternal("M00000001"));
   PL_CHECK(!encoding::isExternal(""));
 

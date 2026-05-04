@@ -8,82 +8,142 @@
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
 #include <stdexcept>
+#include <utility>
 
 namespace PhantomLedger::transfers::legit::ledger {
 
 namespace {
 
-[[nodiscard]] const entity::account::Registry *
-accountsFrom(const LegitTransferRequest &request) noexcept {
-  return request.plan.census.accounts;
-}
-
-[[nodiscard]] const relationships::family::Households &
-familyHouseholdsFrom(const LegitTransferRequest &request) noexcept {
-  return request.familyHouseholds != nullptr
-             ? *request.familyHouseholds
+[[nodiscard]] const relationships::family::Households &familyHouseholdsFrom(
+    const LegitTransferBuilder::FamilyPrograms &family) noexcept {
+  return family.households != nullptr
+             ? *family.households
              : relationships::family::kDefaultHouseholds;
 }
 
-[[nodiscard]] const relationships::family::Dependents &
-familyDependentsFrom(const LegitTransferRequest &request) noexcept {
-  return request.familyDependents != nullptr
-             ? *request.familyDependents
+[[nodiscard]] const relationships::family::Dependents &familyDependentsFrom(
+    const LegitTransferBuilder::FamilyPrograms &family) noexcept {
+  return family.dependents != nullptr
+             ? *family.dependents
              : relationships::family::kDefaultDependents;
 }
 
-[[nodiscard]] const relationships::family::RetireeSupport &
-retireeSupportFrom(const LegitTransferRequest &request) noexcept {
-  return request.retireeSupport != nullptr
-             ? *request.retireeSupport
+[[nodiscard]] const relationships::family::RetireeSupport &retireeSupportFrom(
+    const LegitTransferBuilder::FamilyPrograms &family) noexcept {
+  return family.retireeSupport != nullptr
+             ? *family.retireeSupport
              : relationships::family::kDefaultRetireeSupport;
 }
 
 } // namespace
 
+LegitTransferBuilder::LegitTransferBuilder(
+    blueprints::PlanRequest blueprint, BalanceBookRequest openingBook) noexcept
+    : blueprint_(std::move(blueprint)), openingBook_(std::move(openingBook)),
+      hasBlueprint_(true) {}
+
+LegitTransferBuilder &
+LegitTransferBuilder::blueprint(blueprints::PlanRequest value) noexcept {
+  blueprint_ = std::move(value);
+  hasBlueprint_ = true;
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::openingBook(BalanceBookRequest value) noexcept {
+  openingBook_ = std::move(value);
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::income(passes::IncomePassRequest value) noexcept {
+  income_ = std::move(value);
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::routines(passes::RoutinePassRequest value) noexcept {
+  routines_ = std::move(value);
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::family(passes::FamilyPassRequest value) noexcept {
+  family_ = std::move(value);
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::credit(passes::CreditPassRequest value) noexcept {
+  credit_ = std::move(value);
+  return *this;
+}
+
+LegitTransferBuilder &
+LegitTransferBuilder::familyPrograms(FamilyPrograms value) noexcept {
+  familyPrograms_ = value;
+  return *this;
+}
+
+LegitTransferBuilder &LegitTransferBuilder::router(
+    const ::PhantomLedger::infra::Router &value) noexcept {
+  router_ = &value;
+  return *this;
+}
+
+LegitTransferBuilder &LegitTransferBuilder::router(
+    const ::PhantomLedger::infra::Router *value) noexcept {
+  router_ = value;
+  return *this;
+}
+
+const entity::account::Registry *
+LegitTransferBuilder::accounts() const noexcept {
+  return blueprint_.census.accounts;
+}
+
 TransfersPayload LegitTransferBuilder::build() const {
-  if (request == nullptr) {
+  if (!hasBlueprint_) {
     throw std::invalid_argument(
-        "LegitTransferBuilder.build() requires a non-null request");
+        "LegitTransferBuilder.build() requires a plan blueprint");
   }
 
-  const auto *accounts = accountsFrom(*request);
-  if (accounts == nullptr || accounts->records.empty()) {
+  const auto *accountRegistry = accounts();
+  if (accountRegistry == nullptr || accountRegistry->records.empty()) {
     return TransfersPayload{};
   }
 
-  auto plan = blueprints::buildLegitPlan(request->plan);
+  auto plan = blueprints::buildLegitPlan(blueprint_);
 
-  auto initialBook = buildBalanceBook(request->balanceBook, plan);
+  auto initialBook = buildBalanceBook(openingBook_, plan);
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
 
-  if (request->plan.rng == nullptr) {
+  if (blueprint_.rng == nullptr) {
     throw std::invalid_argument(
         "LegitTransferBuilder.build() requires a non-null rng");
   }
-  const transactions::Factory txf(*request->plan.rng, request->router);
+  const transactions::Factory txf(*blueprint_.rng, router_);
 
   passes::GovernmentCounterparties govCps{};
 
-  passes::addIncome(request->income, plan, txf, streams, govCps);
+  passes::addIncome(income_, plan, txf, streams, govCps);
 
-  if (request->plan.census.ownership != nullptr &&
-      request->plan.census.accounts != nullptr) {
-    passes::addRoutines(request->routines, plan,
-                        *request->plan.census.ownership,
-                        *request->plan.census.accounts, txf, streams, screen);
+  if (blueprint_.census.ownership != nullptr &&
+      blueprint_.census.accounts != nullptr) {
+    passes::addRoutines(routines_, plan, *blueprint_.census.ownership,
+                        *blueprint_.census.accounts, txf, streams, screen);
   }
 
-  if (request->familyTransfers != nullptr) {
-    passes::addFamily(request->family, plan, txf, streams,
-                      familyHouseholdsFrom(*request),
-                      familyDependentsFrom(*request),
-                      retireeSupportFrom(*request), *request->familyTransfers);
+  if (familyPrograms_.transfers != nullptr) {
+    passes::addFamily(
+        family_, plan, txf, streams, familyHouseholdsFrom(familyPrograms_),
+        familyDependentsFrom(familyPrograms_),
+        retireeSupportFrom(familyPrograms_), *familyPrograms_.transfers);
   }
 
-  passes::addCredit(request->credit, plan, txf, streams);
+  passes::addCredit(credit_, plan, txf, streams);
 
   // Payload packing.
   TransfersPayload payload;
