@@ -42,16 +42,18 @@ namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
 }
 
 [[nodiscard]] relatives::FamilyRunRequest
-familyRunFrom(const passes::FamilyPassRequest &request) noexcept {
+familyRunFrom(const passes::FamilyPass &pass) noexcept {
+  const auto accounts = pass.accounts();
+
   return relatives::FamilyRunRequest{
-      .accounts = request.accounts,
-      .ownership = request.ownership,
-      .merchants = request.merchants,
+      .accounts = accounts.registry,
+      .ownership = accounts.ownership,
+      .merchants = pass.merchants(),
   };
 }
 
 [[nodiscard]] std::vector<transactions::Transaction>
-familyTxnsFrom(const passes::FamilyPassRequest &request,
+familyTxnsFrom(const passes::FamilyPass &pass,
                const LegitTransferBuilder::FamilyPrograms &programs,
                const blueprints::LegitBuildPlan &plan,
                const transactions::Factory &txf) {
@@ -59,7 +61,7 @@ familyTxnsFrom(const passes::FamilyPassRequest &request,
     return {};
   }
 
-  const auto familyRun = familyRunFrom(request);
+  const auto familyRun = familyRunFrom(pass);
   if (!relatives::canRun(familyRun)) {
     return {};
   }
@@ -144,25 +146,25 @@ LegitTransferBuilder::openingBook(BalanceBookRequest value) noexcept {
 }
 
 LegitTransferBuilder &
-LegitTransferBuilder::income(passes::IncomePassRequest value) noexcept {
+LegitTransferBuilder::income(passes::IncomePass value) noexcept {
   income_ = std::move(value);
   return *this;
 }
 
 LegitTransferBuilder &
-LegitTransferBuilder::routines(passes::RoutinePassRequest value) noexcept {
+LegitTransferBuilder::routines(passes::RoutinePass value) noexcept {
   routines_ = std::move(value);
   return *this;
 }
 
 LegitTransferBuilder &
-LegitTransferBuilder::family(passes::FamilyPassRequest value) noexcept {
+LegitTransferBuilder::family(passes::FamilyPass value) noexcept {
   family_ = std::move(value);
   return *this;
 }
 
 LegitTransferBuilder &
-LegitTransferBuilder::credit(passes::CreditPassRequest value) noexcept {
+LegitTransferBuilder::credit(passes::CreditLifecyclePass value) noexcept {
   credit_ = std::move(value);
   return *this;
 }

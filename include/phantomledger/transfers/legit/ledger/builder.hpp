@@ -44,10 +44,12 @@ public:
   LegitTransferBuilder &
   hubSelection(blueprints::HubSelectionRules value) noexcept;
   LegitTransferBuilder &openingBook(BalanceBookRequest value) noexcept;
-  LegitTransferBuilder &income(passes::IncomePassRequest value) noexcept;
-  LegitTransferBuilder &routines(passes::RoutinePassRequest value) noexcept;
-  LegitTransferBuilder &family(passes::FamilyPassRequest value) noexcept;
-  LegitTransferBuilder &credit(passes::CreditPassRequest value) noexcept;
+
+  LegitTransferBuilder &income(passes::IncomePass value) noexcept;
+  LegitTransferBuilder &routines(passes::RoutinePass value) noexcept;
+  LegitTransferBuilder &family(passes::FamilyPass value) noexcept;
+  LegitTransferBuilder &credit(passes::CreditLifecyclePass value) noexcept;
+
   LegitTransferBuilder &familyPrograms(FamilyPrograms value) noexcept;
   LegitTransferBuilder &
   router(const ::PhantomLedger::infra::Router &value) noexcept;
@@ -68,10 +70,10 @@ private:
 
   BalanceBookRequest openingBook_{};
 
-  passes::IncomePassRequest income_{};
-  passes::RoutinePassRequest routines_{};
-  passes::FamilyPassRequest family_{};
-  passes::CreditPassRequest credit_{};
+  passes::IncomePass income_{};
+  passes::RoutinePass routines_{};
+  passes::FamilyPass family_{};
+  passes::CreditLifecyclePass credit_{};
 
   FamilyPrograms familyPrograms_{};
   const ::PhantomLedger::infra::Router *router_ = nullptr;

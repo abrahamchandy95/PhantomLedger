@@ -10,12 +10,14 @@
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
+#include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -70,28 +72,34 @@ void printUsage(const char *prog) {
   if (s.empty()) {
     return std::nullopt;
   }
+
   std::string buf{s};
   char *end = nullptr;
   errno = 0;
-  const auto v = std::strtoll(buf.c_str(), &end, 10);
+
+  const auto value = std::strtoll(buf.c_str(), &end, 10);
   if (end != buf.c_str() + buf.size() || errno == ERANGE) {
     return std::nullopt;
   }
-  return v;
+
+  return value;
 }
 
 [[nodiscard]] std::optional<std::uint64_t> parseU64(std::string_view s) {
   if (s.empty()) {
     return std::nullopt;
   }
+
   std::string buf{s};
   char *end = nullptr;
   errno = 0;
-  const auto v = std::strtoull(buf.c_str(), &end, 0);
+
+  const auto value = std::strtoull(buf.c_str(), &end, 0);
   if (end != buf.c_str() + buf.size() || errno == ERANGE) {
     return std::nullopt;
   }
-  return v;
+
+  return value;
 }
 
 [[nodiscard]] std::optional<pl::time::CalendarDate>
@@ -99,17 +107,21 @@ parseDate(std::string_view s) {
   if (s.size() != 10 || s[4] != '-' || s[7] != '-') {
     return std::nullopt;
   }
-  const auto y = parseInt(s.substr(0, 4));
-  const auto m = parseInt(s.substr(5, 2));
-  const auto d = parseInt(s.substr(8, 2));
-  if (!y || !m || !d || *y < 1 || *m < 1 || *m > 12 || *d < 1 || *d > 31) {
+
+  const auto year = parseInt(s.substr(0, 4));
+  const auto month = parseInt(s.substr(5, 2));
+  const auto day = parseInt(s.substr(8, 2));
+
+  if (!year || !month || !day || *year < 1 || *month < 1 || *month > 12 ||
+      *day < 1 || *day > 31) {
     return std::nullopt;
   }
-  pl::time::CalendarDate out;
-  out.year = static_cast<int>(*y);
-  out.month = static_cast<unsigned>(*m);
-  out.day = static_cast<unsigned>(*d);
-  return out;
+
+  return pl::time::CalendarDate{
+      .year = static_cast<int>(*year),
+      .month = static_cast<unsigned>(*month),
+      .day = static_cast<unsigned>(*day),
+  };
 }
 
 [[nodiscard]] CliArgs parseArgs(int argc, char **argv) {
@@ -126,6 +138,7 @@ parseDate(std::string_view s) {
     if (i + 1 >= argc) {
       die("Missing value for " + std::string{flag});
     }
+
     ++i;
     return std::string_view{argv[i]};
   };
@@ -136,56 +149,89 @@ parseDate(std::string_view s) {
     if (arg == "--help" || arg == "-h") {
       printUsage(argv[0]);
       std::exit(0);
-    } else if (arg == "--usecase") {
+    }
+
+    if (arg == "--usecase") {
       const auto value = requireValue(i, arg);
       const auto parsed = pl::run::parseUseCase(value);
       if (!parsed) {
         die("Unknown --usecase value: " + std::string{value});
       }
+
       args.usecase = *parsed;
-    } else if (arg == "--days") {
+      continue;
+    }
+
+    if (arg == "--days") {
       const auto value = requireValue(i, arg);
       const auto parsed = parseInt(value);
       if (!parsed || *parsed < 1) {
         die("--days must be a positive integer (got " + std::string{value} +
             ")");
       }
+
       args.days = *parsed;
-    } else if (arg == "--population") {
+      continue;
+    }
+
+    if (arg == "--population") {
       const auto value = requireValue(i, arg);
       const auto parsed = parseInt(value);
-      if (!parsed || *parsed < 1) {
-        die("--population must be a positive integer (got " +
+      if (!parsed || *parsed < 1 ||
+          *parsed > std::numeric_limits<std::int32_t>::max()) {
+        die("--population must fit in a positive int32 (got " +
             std::string{value} + ")");
       }
+
       args.population = static_cast<std::int32_t>(*parsed);
-    } else if (arg == "--seed") {
+      continue;
+    }
+
+    if (arg == "--seed") {
       const auto value = requireValue(i, arg);
       const auto parsed = parseU64(value);
       if (!parsed) {
         die("--seed must be a non-negative integer (got " + std::string{value} +
             ")");
       }
+
       args.seed = *parsed;
-    } else if (arg == "--out") {
+      continue;
+    }
+
+    if (arg == "--out") {
       const auto value = requireValue(i, arg);
       args.outDir = std::filesystem::path{value};
-    } else if (arg == "--start") {
+      continue;
+    }
+
+    if (arg == "--start") {
       const auto value = requireValue(i, arg);
       const auto parsed = parseDate(value);
       if (!parsed) {
         die("--start must be YYYY-MM-DD (got " + std::string{value} + ")");
       }
+
       args.startDate = *parsed;
-    } else if (arg == "--show-transactions") {
-      args.showTransactions = true;
-    } else if (arg == "--progress") {
-      args.progress = true;
-    } else if (arg == "--ml-only") {
-      args.mlOnly = true;
-    } else {
-      die("Unknown argument: " + std::string{arg});
+      continue;
     }
+
+    if (arg == "--show-transactions") {
+      args.showTransactions = true;
+      continue;
+    }
+
+    if (arg == "--progress") {
+      args.progress = true;
+      continue;
+    }
+
+    if (arg == "--ml-only") {
+      args.mlOnly = true;
+      continue;
+    }
+
+    die("Unknown argument: " + std::string{arg});
   }
 
   return args;
@@ -195,17 +241,40 @@ parseDate(std::string_view s) {
 buildDefaultPoolSet(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
+
   const auto derived = static_cast<std::uint32_t>(seed ^ 0xA5A5A5A5ULL);
   poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
       pl::entities::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
                                                 derived);
+
   return poolSet;
+}
+
+[[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
+buildEntitySynthesis(const CliArgs &args,
+                     const pl::entities::synth::pii::PoolSet &poolSet,
+                     pl::time::TimePoint simStart) {
+  return pl::pipeline::stages::entities::EntitySynthesis{
+      .people =
+          pl::pipeline::stages::entities::PeopleSynthesis{
+              .identity =
+                  pl::pipeline::stages::entities::IdentitySource{
+                      .pools = poolSet,
+                      .simStart = simStart,
+                  },
+              .population =
+                  pl::pipeline::stages::entities::PopulationSizing{
+                      .count = args.population,
+                  },
+          },
+  };
 }
 
 void runStandardExport(const pl::pipeline::SimulationResult &result,
                        const CliArgs &args) {
   pl::exporter::standard::Options opts;
   opts.showTransactions = args.showTransactions;
+
   pl::exporter::standard::exportAll(result, args.outDir, opts);
 }
 
@@ -216,6 +285,7 @@ void runMuleMlExport(const pl::pipeline::SimulationResult &result,
   opts.showTransactions = args.showTransactions;
   opts.includeStandardExport = !args.mlOnly;
   opts.piiPools = piiPools;
+
   pl::exporter::mule_ml::exportAll(result, args.outDir, opts);
 }
 
@@ -224,22 +294,24 @@ runAmlExport(const pl::pipeline::SimulationResult &result,
              const CliArgs &args) {
   pl::exporter::aml::Options opts;
   opts.showTransactions = args.showTransactions;
+
   return pl::exporter::aml::exportAll(result, args.outDir, opts);
 }
 
 void printGenericSummary(const pl::pipeline::SimulationResult &result,
                          const CliArgs &args) {
   const auto totalTxns = result.transfers.finalTxns.size();
+
   std::size_t illicit = 0;
   for (const auto &tx : result.transfers.finalTxns) {
     if (tx.fraud.flag != 0) {
       ++illicit;
     }
   }
-  const auto ratio =
-      totalTxns == 0
-          ? 0.0
-          : (static_cast<double>(illicit) / static_cast<double>(totalTxns));
+
+  const auto ratio = totalTxns == 0 ? 0.0
+                                    : static_cast<double>(illicit) /
+                                          static_cast<double>(totalTxns);
 
   std::printf("People: %u  Accounts: %zu\n",
               static_cast<unsigned>(result.entities.people.roster.count),
@@ -253,8 +325,8 @@ void printAmlSummary(const pl::exporter::aml::Summary &summary,
                      const CliArgs &args) {
   const auto ratio = summary.totalTxnCount == 0
                          ? 0.0
-                         : (static_cast<double>(summary.illicitTxnCount) /
-                            static_cast<double>(summary.totalTxnCount));
+                         : static_cast<double>(summary.illicitTxnCount) /
+                               static_cast<double>(summary.totalTxnCount);
 
   std::printf("AML Export complete -> %s/aml/\n", args.outDir.string().c_str());
   std::printf("  Customers:       %zu\n", summary.customerCount);
@@ -278,39 +350,24 @@ int main(int argc, char **argv) {
     window.days = static_cast<int>(args.days);
 
     const auto poolSet = buildDefaultPoolSet(args.seed);
-
-    pl::pipeline::SimulationScenario scenario{
-        .window = window,
-        .seed = args.seed,
-        .entities =
-            pl::pipeline::stages::entities::EntitySynthesis{
-                .people =
-                    pl::pipeline::stages::entities::PeopleSynthesis{
-                        .identity =
-                            pl::pipeline::stages::entities::IdentitySource{
-                                .pools = poolSet,
-                                .simStart = window.start,
-                            },
-                        .population =
-                            pl::pipeline::stages::entities::PopulationSizing{
-                                .count = args.population,
-                            },
-                    },
-            },
-    };
+    const auto entitySynthesis =
+        buildEntitySynthesis(args, poolSet, window.start);
 
     auto rng = pl::random::Rng::fromSeed(args.seed);
-    const auto result = pl::pipeline::simulate(rng, scenario);
+    const auto result =
+        pl::pipeline::simulate(rng, window, entitySynthesis, args.seed);
 
     switch (args.usecase) {
     case pl::run::UseCase::standard:
       runStandardExport(result, args);
       printGenericSummary(result, args);
       break;
+
     case pl::run::UseCase::muleMl:
       runMuleMlExport(result, args, &poolSet);
       printGenericSummary(result, args);
       break;
+
     case pl::run::UseCase::aml: {
       const auto summary = runAmlExport(result, args);
       printAmlSummary(summary, args);

@@ -19,27 +19,38 @@ class PortfolioRegistry;
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 
-struct SpendingRunRequest {
-  random::Rng *rng = nullptr;
-  const transactions::Factory *txf = nullptr;
-
-  const entity::account::Lookup *accountsLookup = nullptr;
-  const entity::merchant::Catalog *merchants = nullptr;
-  const entity::product::PortfolioRegistry *portfolios = nullptr;
-  const entity::card::Registry *creditCards = nullptr;
-
-  const blueprints::LegitBuildPlan &plan;
-  const entity::account::Registry &registry;
-};
-
-struct SpendingLedgerSeed {
-  std::span<const transactions::Transaction> baseTxns{};
-  clearing::Ledger *screenBook = nullptr;
-  bool baseTxnsSorted = false;
-};
-
 class SpendingRoutine {
 public:
+  struct Execution {
+    random::Rng &rng;
+    const transactions::Factory &txf;
+  };
+
+  struct AccountSource {
+    const entity::account::Lookup &lookup;
+    const entity::account::Registry &registry;
+  };
+
+  struct CensusSource {
+    const blueprints::LegitBuildPlan &blueprint;
+    AccountSource accounts;
+  };
+
+  struct PayeeDirectory {
+    const entity::merchant::Catalog *merchants = nullptr;
+    const entity::card::Registry *creditCards = nullptr;
+  };
+
+  struct ObligationSource {
+    const entity::product::PortfolioRegistry *portfolios = nullptr;
+  };
+
+  struct LedgerReplay {
+    std::span<const transactions::Transaction> baseTxns{};
+    clearing::Ledger *screenBook = nullptr;
+    bool baseTxnsSorted = false;
+  };
+
   SpendingRoutine() = default;
 
   SpendingRoutine &habits(SpendingHabits value) noexcept;
@@ -49,7 +60,8 @@ public:
   SpendingRoutine &emission(EmissionProfile value) noexcept;
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  run(const SpendingRunRequest &run, SpendingLedgerSeed seed = {}) const;
+  run(Execution execution, const CensusSource &census, PayeeDirectory payees,
+      ObligationSource obligations, LedgerReplay replay) const;
 
 private:
   SpendingHabits habits_{};
@@ -59,8 +71,12 @@ private:
   EmissionProfile emission_{};
 };
 
-[[nodiscard]] std::vector<transactions::Transaction>
-generateDayToDayTxns(const SpendingRunRequest &run,
-                     SpendingLedgerSeed seed = {});
+[[nodiscard]] std::vector<transactions::Transaction> generateDayToDayTxns(
+    SpendingRoutine::Execution execution,
+    const SpendingRoutine::CensusSource &census,
+    SpendingRoutine::PayeeDirectory payees = SpendingRoutine::PayeeDirectory{},
+    SpendingRoutine::ObligationSource obligations =
+        SpendingRoutine::ObligationSource{},
+    SpendingRoutine::LedgerReplay replay = SpendingRoutine::LedgerReplay{});
 
 } // namespace PhantomLedger::transfers::legit::routines::spending
