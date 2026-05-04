@@ -13,6 +13,8 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -26,52 +28,79 @@ public:
     const liquidity::Throttle &liquidity;
   };
 
-  SpenderEmissionLoop(const market::Market &market,
-                      const PreparedRun::Population &population,
-                      const PreparedRun::Budget &budget,
-                      const PreparedRun::Routing &routing, RunState &state,
-                      const actors::DayFrame &frame,
-                      std::span<const double> dailyMultipliers, Rules rules,
-                      const routing::ResolvedAccounts &resolved,
-                      ParallelLedgerView ledgerView) noexcept;
+  class RateSampler {
+  public:
+    RateSampler(const PreparedRun::Budget &budget, RunState &state,
+                const actors::DayFrame &frame, Rules rules) noexcept;
+
+    RateSampler &dailyMultipliers(std::span<const double> value) noexcept;
+    RateSampler &ledgerView(ParallelLedgerView value) noexcept;
+
+    [[nodiscard]] double combinedMultiplierFor(std::uint32_t personIndex) const;
+
+    [[nodiscard]] double
+    liquidityMultiplierFor(const spenders::PreparedSpender &prepared);
+
+    [[nodiscard]] double latentBaseRateFor(const actors::Spender &spender,
+                                           double combinedMult,
+                                           double liquidityMult) const;
+
+    [[nodiscard]] std::uint32_t
+    transactionCountFor(random::Rng &rng, const actors::Spender &spender,
+                        double latentBaseRate, double combinedMult,
+                        double liquidityMult) const;
+
+    [[nodiscard]] double exploreProbabilityFor(const actors::Spender &spender,
+                                               double liquidityMult) const;
+
+    [[nodiscard]] ::PhantomLedger::time::TimePoint
+    timestampAtOffset(std::int32_t offsetSec) const noexcept;
+
+    void consumeOnePersonDay() noexcept;
+    void recordAccepted(std::uint32_t count) noexcept;
+
+  private:
+    [[nodiscard]] double
+    availableCashFor(const spenders::PreparedSpender &prepared);
+
+    const PreparedRun::Budget &budget_;
+    RunState &state_;
+    const actors::DayFrame &frame_;
+    std::span<const double> dailyMultipliers_{};
+    Rules rules_;
+    ParallelLedgerView ledgerView_{};
+  };
+
+  class PaymentEmitter {
+  public:
+    PaymentEmitter(const market::Market &market,
+                   const PreparedRun::Routing &routing,
+                   const routing::ResolvedAccounts &resolved,
+                   ParallelLedgerView ledgerView) noexcept;
+
+    [[nodiscard]] std::optional<transactions::Transaction>
+    tryEmit(random::Rng &rng, const actors::Event &event);
+
+  private:
+    [[nodiscard]] bool accept(const routing::EmissionResult &result);
+
+    const market::Market &market_;
+    const PreparedRun::Routing &routing_;
+    const routing::ResolvedAccounts &resolved_;
+    ParallelLedgerView ledgerView_{};
+  };
+
+  SpenderEmissionLoop(const PreparedRun::Population &population,
+                      RateSampler &rates, PaymentEmitter &payments) noexcept;
 
   void run(std::size_t begin, std::size_t end, random::Rng &rng,
            const transactions::Factory &factory,
            std::vector<transactions::Transaction> &outTxns);
 
 private:
-  [[nodiscard]] double
-  availableCashFor(const spenders::PreparedSpender &prepared);
-
-  [[nodiscard]] double
-  liquidityMultiplierFor(const spenders::PreparedSpender &prepared);
-
-  [[nodiscard]] double combinedMultiplierFor(std::uint32_t personIndex) const;
-
-  [[nodiscard]] double latentBaseRateFor(const actors::Spender &spender,
-                                         double combinedMult,
-                                         double liquidityMult) const;
-
-  [[nodiscard]] std::uint32_t
-  transactionCountFor(random::Rng &rng, const actors::Spender &spender,
-                      double latentBaseRate, double combinedMult,
-                      double liquidityMult) const;
-
-  [[nodiscard]] double exploreProbabilityFor(const actors::Spender &spender,
-                                             double liquidityMult) const;
-
-  [[nodiscard]] bool tryEmit(const routing::EmissionResult &result);
-
-  const market::Market &market_;
   const PreparedRun::Population &population_;
-  const PreparedRun::Budget &budget_;
-  const PreparedRun::Routing &routing_;
-  RunState &state_;
-  const actors::DayFrame &frame_;
-  std::span<const double> dailyMultipliers_;
-  Rules rules_;
-  const routing::ResolvedAccounts &resolved_;
-  ParallelLedgerView ledgerView_;
+  RateSampler &rates_;
+  PaymentEmitter &payments_;
 };
 
 } // namespace PhantomLedger::spending::simulator

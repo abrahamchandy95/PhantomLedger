@@ -120,16 +120,13 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
   const std::size_t spenderCount = population.spenders.size();
 
   if (!threads.parallel()) {
-    SpenderEmissionLoop loop{market,
-                             population,
-                             budget,
-                             routingSnapshot,
-                             state,
-                             frame,
-                             dailyMultipliers,
-                             rules,
-                             resolved,
-                             ParallelLedgerView{resources.ledger(), lockArray}};
+    ParallelLedgerView ledgerView{resources.ledger(), lockArray};
+    SpenderEmissionLoop::RateSampler rates{budget, state, frame, rules};
+    rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
+
+    SpenderEmissionLoop::PaymentEmitter payments{market, routingSnapshot,
+                                                 resolved, ledgerView};
+    SpenderEmissionLoop loop{population, rates, payments};
 
     loop.run(0, spenderCount, resources.rng(), resources.factory(),
              state.txns());
@@ -146,16 +143,13 @@ void SpenderEmissionDriver::emitDay(const market::Market &market,
     auto &threadState = threadStates_[threadIdx];
     const auto threadFactory = resources.factory().rebound(threadState.rng);
 
-    SpenderEmissionLoop loop{market,
-                             population,
-                             budget,
-                             routingSnapshot,
-                             state,
-                             frame,
-                             dailyMultipliers,
-                             rules,
-                             resolved,
-                             ParallelLedgerView{resources.ledger(), lockArray}};
+    ParallelLedgerView ledgerView{resources.ledger(), lockArray};
+    SpenderEmissionLoop::RateSampler rates{budget, state, frame, rules};
+    rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
+
+    SpenderEmissionLoop::PaymentEmitter payments{market, routingSnapshot,
+                                                 resolved, ledgerView};
+    SpenderEmissionLoop loop{population, rates, payments};
 
     loop.run(range.begin, range.end, threadState.rng, threadFactory,
              threadState.txns);

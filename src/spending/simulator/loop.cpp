@@ -17,19 +17,26 @@
 
 namespace PhantomLedger::spending::simulator {
 
-SpenderEmissionLoop::SpenderEmissionLoop(
-    const market::Market &market, const PreparedRun::Population &population,
-    const PreparedRun::Budget &budget, const PreparedRun::Routing &routing,
-    RunState &state, const actors::DayFrame &frame,
-    std::span<const double> dailyMultipliers, Rules rules,
-    const routing::ResolvedAccounts &resolved,
-    ParallelLedgerView ledgerView) noexcept
-    : market_(market), population_(population), budget_(budget),
-      routing_(routing), state_(state), frame_(frame),
-      dailyMultipliers_(dailyMultipliers), rules_(rules), resolved_(resolved),
-      ledgerView_(ledgerView) {}
+SpenderEmissionLoop::RateSampler::RateSampler(const PreparedRun::Budget &budget,
+                                              RunState &state,
+                                              const actors::DayFrame &frame,
+                                              Rules rules) noexcept
+    : budget_(budget), state_(state), frame_(frame), rules_(rules) {}
 
-double SpenderEmissionLoop::availableCashFor(
+SpenderEmissionLoop::RateSampler &
+SpenderEmissionLoop::RateSampler::dailyMultipliers(
+    std::span<const double> value) noexcept {
+  dailyMultipliers_ = value;
+  return *this;
+}
+
+SpenderEmissionLoop::RateSampler &SpenderEmissionLoop::RateSampler::ledgerView(
+    ParallelLedgerView value) noexcept {
+  ledgerView_ = value;
+  return *this;
+}
+
+double SpenderEmissionLoop::RateSampler::availableCashFor(
     const spenders::PreparedSpender &prepared) {
   if (ledgerView_.empty()) {
     return prepared.initialCash;
@@ -43,7 +50,7 @@ double SpenderEmissionLoop::availableCashFor(
   return ledgerView_.availableCash(idx);
 }
 
-double SpenderEmissionLoop::liquidityMultiplierFor(
+double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
     const spenders::PreparedSpender &prepared) {
   const auto personIndex = prepared.spender.personIndex;
 
@@ -58,14 +65,14 @@ double SpenderEmissionLoop::liquidityMultiplierFor(
   return liquidity::multiplier(rules_.liquidity, snapshot);
 }
 
-double
-SpenderEmissionLoop::combinedMultiplierFor(std::uint32_t personIndex) const {
+double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
+    std::uint32_t personIndex) const {
   return dailyMultipliers_[personIndex] * frame_.seasonalMult;
 }
 
-double SpenderEmissionLoop::latentBaseRateFor(const actors::Spender &spender,
-                                              double combinedMult,
-                                              double liquidityMult) const {
+double SpenderEmissionLoop::RateSampler::latentBaseRateFor(
+    const actors::Spender &spender, double combinedMult,
+    double liquidityMult) const {
   const std::uint64_t remainingPersonDays =
       std::max<std::uint64_t>(std::uint64_t{1}, state_.remainingPersonDays());
 
@@ -77,7 +84,7 @@ double SpenderEmissionLoop::latentBaseRateFor(const actors::Spender &spender,
                                      combinedMult, liquidityMult);
 }
 
-std::uint32_t SpenderEmissionLoop::transactionCountFor(
+std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
     random::Rng &rng, const actors::Spender &spender, double latentBaseRate,
     double combinedMult, double liquidityMult) const {
   return actors::sampleTransactionCount(
@@ -91,9 +98,8 @@ std::uint32_t SpenderEmissionLoop::transactionCountFor(
       budget_.personLimit);
 }
 
-double
-SpenderEmissionLoop::exploreProbabilityFor(const actors::Spender &spender,
-                                           double liquidityMult) const {
+double SpenderEmissionLoop::RateSampler::exploreProbabilityFor(
+    const actors::Spender &spender, double liquidityMult) const {
   double exploreP = actors::calculateExploreP(
       rules_.baseExploreP, rules_.exploration, spender, frame_.day);
 
@@ -105,12 +111,60 @@ SpenderEmissionLoop::exploreProbabilityFor(const actors::Spender &spender,
   return exploreP;
 }
 
-bool SpenderEmissionLoop::tryEmit(const routing::EmissionResult &result) {
+::PhantomLedger::time::TimePoint
+SpenderEmissionLoop::RateSampler::timestampAtOffset(
+    std::int32_t offsetSec) const noexcept {
+  return frame_.day.start + ::PhantomLedger::time::Seconds{offsetSec};
+}
+
+void SpenderEmissionLoop::RateSampler::consumeOnePersonDay() noexcept {
+  state_.consumeOnePersonDay();
+}
+
+void SpenderEmissionLoop::RateSampler::recordAccepted(
+    std::uint32_t count) noexcept {
+  state_.recordAccepted(count);
+}
+
+SpenderEmissionLoop::PaymentEmitter::PaymentEmitter(
+    const market::Market &market, const PreparedRun::Routing &routing,
+    const routing::ResolvedAccounts &resolved,
+    ParallelLedgerView ledgerView) noexcept
+    : market_(market), routing_(routing), resolved_(resolved),
+      ledgerView_(ledgerView) {}
+
+bool SpenderEmissionLoop::PaymentEmitter::accept(
+    const routing::EmissionResult &result) {
   return ledgerView_
       .transfer(result.srcIdx, result.dstIdx, result.transaction.amount,
                 result.transaction.session.channel)
       .accepted();
 }
+
+std::optional<transactions::Transaction>
+SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
+                                             const actors::Event &event) {
+  const routing::Slot slot =
+      routing::pickSlot(routing_.channelCdf, rng.nextDouble());
+
+  auto maybeResult = routing::routeTxn(rng, market_, routing_.paymentRules,
+                                       resolved_, slot, event);
+
+  if (!maybeResult.has_value()) {
+    return std::nullopt;
+  }
+
+  if (!accept(*maybeResult)) {
+    return std::nullopt;
+  }
+
+  return std::move(maybeResult->transaction);
+}
+
+SpenderEmissionLoop::SpenderEmissionLoop(
+    const PreparedRun::Population &population, RateSampler &rates,
+    PaymentEmitter &payments) noexcept
+    : population_(population), rates_(rates), payments_(payments) {}
 
 void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
                               random::Rng &rng,
@@ -123,22 +177,23 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
     const auto &spender = prepared.spender;
     const auto personIndex = spender.personIndex;
 
-    const double liquidityMult = liquidityMultiplierFor(prepared);
-    const double combinedMult = combinedMultiplierFor(personIndex);
+    const double liquidityMult = rates_.liquidityMultiplierFor(prepared);
+    const double combinedMult = rates_.combinedMultiplierFor(personIndex);
 
     const double latentBaseRate =
-        latentBaseRateFor(spender, combinedMult, liquidityMult);
+        rates_.latentBaseRateFor(spender, combinedMult, liquidityMult);
 
-    const auto txnCount = transactionCountFor(rng, spender, latentBaseRate,
-                                              combinedMult, liquidityMult);
+    const auto txnCount = rates_.transactionCountFor(
+        rng, spender, latentBaseRate, combinedMult, liquidityMult);
 
-    state_.consumeOnePersonDay();
+    rates_.consumeOnePersonDay();
 
     if (txnCount == 0) {
       continue;
     }
 
-    const double exploreP = exploreProbabilityFor(spender, liquidityMult);
+    const double exploreP =
+        rates_.exploreProbabilityFor(spender, liquidityMult);
 
     std::uint32_t accepted = 0;
     std::uint32_t attemptBudget = txnCount * 4u;
@@ -152,28 +207,19 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       actors::Event event{};
       event.spender = &spender;
       event.factory = &factory;
-      event.ts = frame_.day.start + time::Seconds{offsetSec};
+      event.ts = rates_.timestampAtOffset(offsetSec);
       event.exploreP = exploreP;
 
-      const routing::Slot slot =
-          routing::pickSlot(routing_.channelCdf, rng.nextDouble());
-
-      auto maybeResult = routing::routeTxn(rng, market_, routing_.paymentRules,
-                                           resolved_, slot, event);
-
-      if (!maybeResult.has_value()) {
+      auto maybeTxn = payments_.tryEmit(rng, event);
+      if (!maybeTxn.has_value()) {
         continue;
       }
 
-      if (!tryEmit(*maybeResult)) {
-        continue;
-      }
-
-      outTxns.push_back(std::move(maybeResult->transaction));
+      outTxns.push_back(std::move(*maybeTxn));
       ++accepted;
     }
 
-    state_.recordAccepted(accepted);
+    rates_.recordAccepted(accepted);
   }
 }
 
