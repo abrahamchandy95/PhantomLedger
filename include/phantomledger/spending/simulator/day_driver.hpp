@@ -1,14 +1,16 @@
 #pragma once
 
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/spending/actors/day.hpp"
 #include "phantomledger/spending/market/market.hpp"
 #include "phantomledger/spending/simulator/commerce_evolver.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
-#include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/population_dynamics.hpp"
 #include "phantomledger/spending/simulator/prepared_run.hpp"
 #include "phantomledger/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/spending/simulator/state.hpp"
+#include "phantomledger/transactions/clearing/ledger.hpp"
+#include "phantomledger/transactions/factory.hpp"
 
 #include <cstdint>
 #include <span>
@@ -27,21 +29,24 @@ public:
   DayDriver(DayDriver &&) noexcept = default;
   DayDriver &operator=(DayDriver &&) noexcept = default;
 
-  void prepare(market::Market &market, const RunResources &resources,
+  void prepare(market::Market &market, random::Rng &rng,
+               const transactions::Factory &factory, clearing::Ledger *ledger,
+               SpenderEmissionDriver::Threads emissionThreads,
                double txnsPerMonth);
 
   void bindEmission(const PreparedRun::Budget &budget,
                     const PreparedRun::Routing &routing) noexcept;
 
-  void runDay(market::Market &market, const RunResources &resources,
-              const PreparedRun &run, RunState &state, std::uint32_t dayIndex);
+  void runDay(market::Market &market, random::Rng &rng,
+              clearing::Ledger *ledger, const PreparedRun &run, RunState &state,
+              std::uint32_t dayIndex);
 
   void finish(RunState &state);
 
   [[nodiscard]] std::span<const double> sensitivities() const noexcept;
 
 private:
-  void advanceLedgerToDay(const RunResources &resources,
+  void advanceLedgerToDay(clearing::Ledger *ledger,
                           const PreparedRun::LedgerReplay &replay,
                           RunState &state, const actors::DayFrame &frame) const;
 

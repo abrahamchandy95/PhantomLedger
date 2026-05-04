@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/legit/routines/spending.hpp"
 
 #include "phantomledger/entities/synth/personas/pack.hpp"
+#include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/spending/market/bootstrap.hpp"
 #include "phantomledger/spending/market/cards.hpp"
 #include "phantomledger/spending/market/commerce/network.hpp"
@@ -10,7 +11,6 @@
 #include "phantomledger/spending/simulator/day_driver.hpp"
 #include "phantomledger/spending/simulator/day_source.hpp"
 #include "phantomledger/spending/simulator/driver.hpp"
-#include "phantomledger/spending/simulator/engine.hpp"
 #include "phantomledger/spending/simulator/population_dynamics.hpp"
 #include "phantomledger/spending/simulator/run_planner.hpp"
 #include "phantomledger/spending/simulator/spender_emission_driver.hpp"
@@ -240,16 +240,6 @@ SpendingRoutine::run(const SpendingRunRequest &run,
 
   random::RngFactory rngFactory{plan.seed};
 
-  plSimulator::RunResources resources{
-      *request.rng,
-      *request.txf,
-      seed.screenBook,
-      plSimulator::EmissionThreads{
-          .rngFactory = &rngFactory,
-          .count = 1,
-      },
-  };
-
   std::vector<double> monthlyBurdens;
 
   if (request.portfolios != nullptr) {
@@ -281,8 +271,14 @@ SpendingRoutine::run(const SpendingRunRequest &run,
           }},
   };
 
-  plSimulator::Simulator simulator(market, resources, obligations,
-                                   std::move(planner), std::move(dayDriver));
+  const plSimulator::SpenderEmissionDriver::Threads emissionThreads{
+      .rngFactory = &rngFactory,
+      .count = 1,
+  };
+
+  plSimulator::Simulator simulator(
+      market, *request.rng, *request.txf, obligations, seed.screenBook,
+      std::move(planner), std::move(dayDriver), emissionThreads);
 
   return simulator.run();
 }

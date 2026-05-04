@@ -7,11 +7,13 @@
 namespace PhantomLedger::spending::simulator {
 
 std::vector<transactions::Transaction>
-simulate(market::Market &market, RunResources &resources,
-         const obligations::Snapshot &obligations, RunPlanner planner,
-         DayDriver dayDriver) {
-  Simulator sim(market, resources, obligations, std::move(planner),
-                std::move(dayDriver));
+simulate(market::Market &market, random::Rng &rng,
+         const transactions::Factory &factory,
+         const obligations::Snapshot &obligations, clearing::Ledger *ledger,
+         RunPlanner planner, DayDriver dayDriver,
+         SpenderEmissionDriver::Threads emissionThreads) {
+  Simulator sim(market, rng, factory, obligations, ledger, std::move(planner),
+                std::move(dayDriver), emissionThreads);
   return sim.run();
 }
 

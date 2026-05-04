@@ -20,10 +20,14 @@ void sortChronological(std::vector<transactions::Transaction> &txns) {
 
 } // namespace
 
-Simulator::Simulator(market::Market &market, RunResources &resources,
+Simulator::Simulator(market::Market &market, random::Rng &rng,
+                     const transactions::Factory &factory,
                      const obligations::Snapshot &obligations,
-                     RunPlanner planner, DayDriver dayDriver)
-    : market_(market), resources_(resources), obligations_(obligations),
+                     clearing::Ledger *ledger, RunPlanner planner,
+                     DayDriver dayDriver,
+                     SpenderEmissionDriver::Threads emissionThreads)
+    : market_(market), rng_(rng), factory_(factory), obligations_(obligations),
+      ledger_(ledger), emissionThreads_(emissionThreads),
       planner_(std::move(planner)), dayDriver_(std::move(dayDriver)) {}
 
 std::vector<transactions::Transaction> Simulator::run() {
@@ -31,15 +35,16 @@ std::vector<transactions::Transaction> Simulator::run() {
     return {};
   }
 
-  dayDriver_.prepare(market_, resources_, planner_.txnsPerMonth());
+  dayDriver_.prepare(market_, rng_, factory_, ledger_, emissionThreads_,
+                     planner_.txnsPerMonth());
 
-  PreparedRun run = planner_.build(market_, obligations_, resources_.ledger(),
+  PreparedRun run = planner_.build(market_, obligations_, ledger_,
                                    dayDriver_.sensitivities());
 
   dayDriver_.bindEmission(run.budget(), run.routing());
 
   const std::size_t reserveCapacity =
-      !resources_.threads().parallel()
+      !emissionThreads_.parallel()
           ? static_cast<std::size_t>(run.budget().targetTotalTxns *
                                      kTxnReserveSlack)
           : 0;
@@ -49,7 +54,7 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
-    dayDriver_.runDay(market_, resources_, run, state, dayIndex);
+    dayDriver_.runDay(market_, rng_, ledger_, run, state, dayIndex);
   }
 
   dayDriver_.finish(state);
