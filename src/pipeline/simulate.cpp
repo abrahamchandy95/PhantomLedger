@@ -5,8 +5,18 @@ namespace PhantomLedger::pipeline {
 namespace {
 
 namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
+namespace infraStage = ::PhantomLedger::pipeline::stages::infra;
 namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
 namespace productSynth = ::PhantomLedger::entities::synth::products;
+
+[[nodiscard]] ::PhantomLedger::time::Window
+activeInfraWindow(const SimulationScenario &scenario) noexcept {
+  if (scenario.infraWindow.days == 0) {
+    return scenario.window;
+  }
+
+  return scenario.infraWindow;
+}
 
 void synthesizeProducts(SimulationResult &out,
                         ::PhantomLedger::time::Window window,
@@ -61,11 +71,6 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
   const auto identity = entityStage::withDefaultStart(
       scenario.entities.people.identity, scenario.window.start);
 
-  auto infra = scenario.infra;
-  if (infra.window.days == 0) {
-    infra.window = scenario.window;
-  }
-
   out.entities.people = entityStage::buildPeople(
       rng, scenario.entities.people.population, scenario.entities.people.fraud);
 
@@ -110,8 +115,10 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
 
   synthesizeProducts(out, scenario.window, scenario.entities.products);
 
-  out.infra =
-      ::PhantomLedger::pipeline::stages::infra::build(rng, out.entities, infra);
+  out.infra = infraStage::build(rng, out.entities, activeInfraWindow(scenario),
+                                scenario.ringBehavior, scenario.deviceBehavior,
+                                scenario.ipBehavior, scenario.routingBehavior,
+                                scenario.sharedInfra);
 
   auto transferScope = scenario.transfers.run;
   if (transferScope.window.days == 0) {

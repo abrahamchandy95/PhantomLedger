@@ -31,7 +31,14 @@ struct SimulationScenario {
   std::uint64_t seed = 0;
 
   ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities;
-  ::PhantomLedger::pipeline::stages::infra::InfraSynthesis infra{};
+
+  ::PhantomLedger::time::Window infraWindow{};
+  ::PhantomLedger::infra::synth::rings::Config ringBehavior{};
+  ::PhantomLedger::infra::synth::devices::Config deviceBehavior{};
+  ::PhantomLedger::infra::synth::ips::Config ipBehavior{};
+  ::PhantomLedger::pipeline::stages::infra::RoutingBehavior routingBehavior{};
+  ::PhantomLedger::pipeline::stages::infra::SharedInfraUse sharedInfra{};
+
   TransferSynthesis transfers{};
 };
 

@@ -299,8 +299,6 @@ int main(int argc, char **argv) {
             },
     };
 
-    scenario.infra.window = window;
-
     auto rng = pl::random::Rng::fromSeed(args.seed);
     const auto result = pl::pipeline::simulate(rng, scenario);
 

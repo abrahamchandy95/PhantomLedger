@@ -109,8 +109,6 @@ void expectNonEmptyFile(const fs::path &path) {
           },
   };
 
-  scenario.infra.window = window;
-
   scenario.transfers.run.window = window;
   scenario.transfers.run.seed = seed;
 
