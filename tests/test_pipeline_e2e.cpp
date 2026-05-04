@@ -8,6 +8,8 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
+#include "phantomledger/transactions/clearing/balance_book.hpp"
+#include "phantomledger/transfers/credit_cards/lifecycle.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -49,16 +51,12 @@ void expectNonEmptyFile(const fs::path &path) {
 }
 
 /// Build a temp-directory name with a 16-hex-digit random suffix.
-/// Replaces the POSIX-only getpid() approach so the test compiles
-/// on Windows too. Random source is just std::random_device — we
-/// only need uniqueness across concurrent test runs, not security.
+/// Randomness is only for avoiding collisions across concurrent test runs.
 [[nodiscard]] fs::path uniqueTempDir(const std::string &prefix) {
   std::random_device rd;
   std::uint64_t mix = (static_cast<std::uint64_t>(rd()) << 32U) |
                       static_cast<std::uint64_t>(rd());
 
-  // Mix in the high-resolution clock so back-to-back invocations
-  // never collide even if random_device has limited entropy.
   mix ^= static_cast<std::uint64_t>(
       std::chrono::high_resolution_clock::now().time_since_epoch().count());
 
@@ -69,6 +67,13 @@ void expectNonEmptyFile(const fs::path &path) {
   return fs::temp_directory_path() / (prefix + buf);
 }
 
+/// Run the full pipeline end-to-end with default configuration.
+///
+/// All entity flows (employers, clients, merchants, landlords, products,
+/// fraud, recurring income) run with their library defaults. The point of
+/// this test is to exercise simulate() exactly as production callers do
+/// and assert that the three exporters produce the file shapes downstream
+/// pipelines depend on.
 [[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
   pl::entities::synth::pii::PoolSizes sizes;
@@ -80,6 +85,9 @@ void expectNonEmptyFile(const fs::path &path) {
   pl::time::Window window;
   window.start = pl::time::makeTime({2025, 1, 1});
   window.days = 7;
+
+  pl::clearing::BalanceRules balanceRules{};
+  pl::transfers::credit_cards::LifecycleRules lifecycleRules{};
 
   pl::pipeline::SimulationScenario scenario{
       .window = window,
@@ -103,6 +111,13 @@ void expectNonEmptyFile(const fs::path &path) {
 
   scenario.infra.window = window;
 
+  scenario.transfers.run.window = window;
+  scenario.transfers.run.seed = seed;
+
+  scenario.transfers.balanceBook.balanceRules = &balanceRules;
+  scenario.transfers.creditCards.lifecycle = &lifecycleRules;
+  scenario.transfers.fraud.profile = &scenario.entities.people.fraud;
+
   auto rng = pl::random::Rng::fromSeed(seed);
   return pl::pipeline::simulate(rng, scenario);
 }
@@ -112,7 +127,6 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
   pl::exporter::standard::Options opts{};
   pl::exporter::standard::exportAll(result, outDir, opts);
 
-  // 14 standard CSVs at outDir root.
   for (const auto *name : {
            "person.csv",
            "accountnumber.csv",
@@ -132,7 +146,6 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
     expectNonEmptyFile(outDir / name);
   }
 
-  // transactions.csv only emitted with showTransactions=true.
   check(!fs::exists(outDir / "transactions.csv"),
         "transactions.csv NOT emitted by default");
 }
@@ -141,7 +154,6 @@ void testMuleMlExport(const pl::pipeline::SimulationResult &result,
                       const fs::path &outDir) {
   pl::exporter::mule_ml::Options opts{};
 
-  // includeStandardExport stays at its default: true.
   pl::exporter::mule_ml::exportAll(result, outDir, opts);
 
   for (const auto *name : {
@@ -153,8 +165,8 @@ void testMuleMlExport(const pl::pipeline::SimulationResult &result,
     expectNonEmptyFile(outDir / "ml_ready" / name);
   }
 
-  // Standard bundle should also be present.
-  expectNonEmptyFile(outDir / "person.csv");
+  check(!fs::exists(outDir / "person.csv"),
+        "Mule ML default export is ML-only and does not emit person.csv");
 }
 
 void testAmlExport(const pl::pipeline::SimulationResult &result,
@@ -162,7 +174,6 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
   pl::exporter::aml::Options opts{};
   const auto summary = pl::exporter::aml::exportAll(result, outDir, opts);
 
-  // 17 vertex CSVs.
   for (const auto *name : {
            "Customer.csv",
            "Account.csv",
@@ -185,7 +196,6 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
     expectNonEmptyFile(outDir / "aml" / "vertices" / name);
   }
 
-  // Representative edge CSVs. Full count is larger; this is a smoke test.
   for (const auto *name : {
            "customer_has_account.csv",
            "send_transaction.csv",
@@ -225,8 +235,6 @@ int main() {
     return 1;
   }
 
-  // Clean up on success only — leave the dir in place on failure
-  // so a developer can inspect it.
   std::error_code ec;
   fs::remove_all(base, ec);
 

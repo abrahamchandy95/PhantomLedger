@@ -25,6 +25,10 @@
 
 #include <cstdint>
 
+namespace PhantomLedger::pipeline {
+struct Entities;
+} // namespace PhantomLedger::pipeline
+
 namespace PhantomLedger::pipeline::stages::entities {
 
 struct PopulationSizing {
@@ -122,5 +126,7 @@ buildCounterparties(
     ::PhantomLedger::random::Rng &rng, PopulationSizing population,
     const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
         &targets = {});
+
+void finalizeAccountRegistry(::PhantomLedger::pipeline::Entities &entities);
 
 } // namespace PhantomLedger::pipeline::stages::entities

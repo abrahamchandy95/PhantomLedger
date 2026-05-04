@@ -17,31 +17,51 @@ struct RetireeSupport;
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-struct LegitTransferRequest {
-  blueprints::PlanRequest plan{};
-  BalanceBookRequest balanceBook{};
+class LegitTransferBuilder {
+public:
+  struct FamilyPrograms {
+    const ::PhantomLedger::relationships::family::Households *households =
+        nullptr;
+    const ::PhantomLedger::relationships::family::Dependents *dependents =
+        nullptr;
+    const ::PhantomLedger::relationships::family::RetireeSupport
+        *retireeSupport = nullptr;
+    const ::PhantomLedger::transfers::legit::routines::relatives::
+        FamilyTransferModel *transfers = nullptr;
+  };
 
-  passes::IncomePassRequest income{};
-  passes::RoutinePassRequest routines{};
-  passes::FamilyPassRequest family{};
-  passes::CreditPassRequest credit{};
+  LegitTransferBuilder() = default;
+  LegitTransferBuilder(blueprints::PlanRequest blueprint,
+                       BalanceBookRequest openingBook) noexcept;
 
-  const ::PhantomLedger::relationships::family::Households *familyHouseholds =
-      nullptr;
-  const ::PhantomLedger::relationships::family::Dependents *familyDependents =
-      nullptr;
-  const ::PhantomLedger::relationships::family::RetireeSupport *retireeSupport =
-      nullptr;
-  const ::PhantomLedger::transfers::legit::routines::relatives::
-      FamilyTransferModel *familyTransfers = nullptr;
-
-  const ::PhantomLedger::infra::Router *router = nullptr;
-};
-
-struct LegitTransferBuilder {
-  const LegitTransferRequest *request = nullptr;
+  LegitTransferBuilder &blueprint(blueprints::PlanRequest value) noexcept;
+  LegitTransferBuilder &openingBook(BalanceBookRequest value) noexcept;
+  LegitTransferBuilder &income(passes::IncomePassRequest value) noexcept;
+  LegitTransferBuilder &routines(passes::RoutinePassRequest value) noexcept;
+  LegitTransferBuilder &family(passes::FamilyPassRequest value) noexcept;
+  LegitTransferBuilder &credit(passes::CreditPassRequest value) noexcept;
+  LegitTransferBuilder &familyPrograms(FamilyPrograms value) noexcept;
+  LegitTransferBuilder &
+  router(const ::PhantomLedger::infra::Router &value) noexcept;
+  LegitTransferBuilder &
+  router(const ::PhantomLedger::infra::Router *value) noexcept;
 
   [[nodiscard]] TransfersPayload build() const;
+
+private:
+  [[nodiscard]] const entity::account::Registry *accounts() const noexcept;
+
+  blueprints::PlanRequest blueprint_{};
+  BalanceBookRequest openingBook_{};
+
+  passes::IncomePassRequest income_{};
+  passes::RoutinePassRequest routines_{};
+  passes::FamilyPassRequest family_{};
+  passes::CreditPassRequest credit_{};
+
+  FamilyPrograms familyPrograms_{};
+  const ::PhantomLedger::infra::Router *router_ = nullptr;
+  bool hasBlueprint_ = false;
 };
 
 } // namespace PhantomLedger::transfers::legit::ledger
