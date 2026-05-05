@@ -14,12 +14,6 @@
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
-#include "phantomledger/entities/synth/products/auto_loan.hpp"
-#include "phantomledger/entities/synth/products/insurance.hpp"
-#include "phantomledger/entities/synth/products/mortgage.hpp"
-#include "phantomledger/entities/synth/products/random.hpp"
-#include "phantomledger/entities/synth/products/student_loan.hpp"
-#include "phantomledger/entities/synth/products/tax.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
@@ -43,12 +37,6 @@ struct IdentitySource {
       ::PhantomLedger::entities::synth::pii::LocaleMix::usBankDefault();
 };
 
-struct ProductSeeds {
-  std::uint64_t cardIssuance = 0xC0DECAFEULL;
-  std::uint64_t products =
-      ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
-};
-
 struct PeopleSynthesis {
   IdentitySource identity;
   PopulationSizing population{};
@@ -63,21 +51,15 @@ struct CounterpartySynthesis {
       counterparties{};
 };
 
-struct ProductSynthesis {
-  ProductSeeds seeds{};
-  ::PhantomLedger::entities::synth::cards::IssuanceRules cardIssuance{};
-
-  ::PhantomLedger::entities::synth::products::MortgageTerms mortgage{};
-  ::PhantomLedger::entities::synth::products::AutoLoanTerms autoLoan{};
-  ::PhantomLedger::entities::synth::products::StudentLoanTerms studentLoan{};
-  ::PhantomLedger::entities::synth::products::TaxTerms tax{};
-  ::PhantomLedger::entities::synth::products::InsuranceTerms insurance{};
+struct CardSynthesis {
+  std::uint64_t seed = 0xC0DECAFEULL;
+  ::PhantomLedger::entities::synth::cards::IssuanceRules issuance{};
 };
 
 struct EntitySynthesis {
   PeopleSynthesis people;
   CounterpartySynthesis counterparties{};
-  ProductSynthesis products{};
+  CardSynthesis cards{};
 };
 
 void validate(PopulationSizing population);
@@ -118,8 +100,7 @@ buildLandlords(::PhantomLedger::random::Rng &rng, PopulationSizing population,
 [[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
     const ::PhantomLedger::entities::synth::personas::Pack &personas,
     const ::PhantomLedger::entities::synth::people::Pack &people,
-    ProductSeeds seeds,
-    const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules = {});
+    const CardSynthesis &cards = {});
 
 [[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
 buildCounterparties(

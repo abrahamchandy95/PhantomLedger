@@ -5,6 +5,7 @@
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
+#include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/pipeline/stages/transfers.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
@@ -14,10 +15,20 @@ namespace PhantomLedger::pipeline {
 
 class SimulationPipeline {
 public:
+  using ObligationProducts =
+      ::PhantomLedger::pipeline::stages::products::ObligationPrograms;
+  using TransferStage =
+      ::PhantomLedger::pipeline::stages::transfers::TransferStage;
+
   SimulationPipeline(
       ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
       ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities,
       std::uint64_t seed = 0);
+
+  SimulationPipeline(
+      ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+      ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities,
+      ObligationProducts obligationProducts, std::uint64_t seed = 0);
 
   SimulationPipeline(const SimulationPipeline &) = delete;
   SimulationPipeline &operator=(const SimulationPipeline &) = delete;
@@ -37,6 +48,38 @@ public:
       ::PhantomLedger::pipeline::stages::infra::RoutingBehavior value) noexcept;
   SimulationPipeline &sharedInfra(
       ::PhantomLedger::pipeline::stages::infra::SharedInfraUse value) noexcept;
+
+  SimulationPipeline &obligationProducts(ObligationProducts value) noexcept;
+  SimulationPipeline &
+  productRng(::PhantomLedger::pipeline::stages::products::PersonProductRng
+                 value) noexcept;
+  SimulationPipeline &installmentLending(
+      ::PhantomLedger::pipeline::stages::products::InstallmentLending
+          value) noexcept;
+  SimulationPipeline &
+  taxWithholding(::PhantomLedger::pipeline::stages::products::TaxWithholding
+                     value) noexcept;
+  SimulationPipeline &insuranceCoverage(
+      ::PhantomLedger::pipeline::stages::products::InsuranceCoverage
+          value) noexcept;
+
+  SimulationPipeline &transferScope(TransferStage::RunScope value) noexcept;
+  SimulationPipeline &
+  transferIncome(const TransferStage::IncomePrograms &value);
+  SimulationPipeline &
+  openingBalances(TransferStage::OpeningBalances value) noexcept;
+  SimulationPipeline &
+  cardLifecycle(TransferStage::CardLifecycle value) noexcept;
+  SimulationPipeline &familyTransfers(
+      ::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
+          value) noexcept;
+  SimulationPipeline &
+  insurancePrograms(TransferStage::InsurancePrograms value) noexcept;
+  SimulationPipeline &
+  replayOrdering(TransferStage::ReplayOrdering value) noexcept;
+  SimulationPipeline &
+  fraudInjection(TransferStage::FraudInjection value) noexcept;
+  SimulationPipeline &hubSelection(TransferStage::HubSelection value) noexcept;
 
   SimulationPipeline &
   transferWindow(::PhantomLedger::time::Window value) noexcept;
@@ -84,32 +127,34 @@ private:
   std::uint64_t seed_ = 0;
 
   ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities_;
+  ObligationProducts obligationProducts_{};
 
   ::PhantomLedger::pipeline::stages::infra::AccessInfraStage infra_{};
 
-  ::PhantomLedger::time::Window transferWindow_{};
-  std::uint64_t transferSeed_ = 0;
-  ::PhantomLedger::inflows::RecurringIncomeRules recurringIncome_{};
-  const ::PhantomLedger::clearing::BalanceRules *openingBalanceRules_ = nullptr;
-  const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-      *creditLifecycle_ = nullptr;
+  TransferStage::RunScope transferScope_{};
+  TransferStage::IncomePrograms transferIncome_{};
+  TransferStage::OpeningBalances openingBalances_{};
+  TransferStage::CardLifecycle cardLifecycle_{};
   ::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
-      familyScenario_{};
-  ::PhantomLedger::transfers::government::RetirementTerms retirement_{};
-  ::PhantomLedger::transfers::government::DisabilityTerms disability_{};
-  ::PhantomLedger::transfers::insurance::ClaimRates claimRates_{};
-  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-      replayRules_{};
-  const ::PhantomLedger::entities::synth::people::Fraud *fraudProfile_ =
-      nullptr;
-  ::PhantomLedger::transfers::fraud::Injector::Rules fraudRules_{};
-  double hubFraction_ = 0.01;
+      familyTransfers_{};
+  TransferStage::InsurancePrograms insurancePrograms_{};
+  TransferStage::ReplayOrdering replayOrdering_{};
+  TransferStage::FraudInjection fraudInjection_{};
+  TransferStage::HubSelection hubSelection_{};
 };
 
 [[nodiscard]] SimulationResult
 simulate(::PhantomLedger::random::Rng &rng,
          ::PhantomLedger::time::Window window,
          ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities,
+         std::uint64_t seed = 0);
+
+[[nodiscard]] SimulationResult
+simulate(::PhantomLedger::random::Rng &rng,
+         ::PhantomLedger::time::Window window,
+         ::PhantomLedger::pipeline::stages::entities::EntitySynthesis entities,
+         ::PhantomLedger::pipeline::stages::products::ObligationPrograms
+             obligationProducts,
          std::uint64_t seed = 0);
 
 } // namespace PhantomLedger::pipeline
