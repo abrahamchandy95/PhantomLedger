@@ -113,7 +113,7 @@ EmissionResult emitBill(random::Rng &rng, const market::Market &market,
   const double amount = math::amounts::kBill.sample(rng);
 
   EmissionResult result;
-  result.transaction = event.factory->make(transactions::Draft{
+  result.draft = transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -121,7 +121,7 @@ EmissionResult emitBill(random::Rng &rng, const market::Market &market,
       .isFraud = 0,
       .ringId = -1,
       .channel = kBillChannel,
-  });
+  };
   result.srcIdx = event.spender->depositAccountIdx;
   result.dstIdx = dstIdx;
   return result;
@@ -141,7 +141,7 @@ EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
       /*floor=*/1.0);
 
   EmissionResult result;
-  result.transaction = event.factory->make(transactions::Draft{
+  result.draft = transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -149,7 +149,7 @@ EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
       .isFraud = 0,
       .ringId = -1,
       .channel = kExternalChannel,
-  });
+  };
   result.srcIdx = event.spender->depositAccountIdx;
   result.dstIdx = resolved.externalUnknownIdx;
   return result;
@@ -194,7 +194,7 @@ std::optional<EmissionResult> emitP2p(random::Rng &rng,
                           : clearing::Ledger::invalid;
 
   EmissionResult result;
-  result.transaction = event.factory->make(transactions::Draft{
+  result.draft = transactions::Draft{
       .source = event.spender->depositAccount,
       .destination = dst,
       .amount = amount,
@@ -202,7 +202,7 @@ std::optional<EmissionResult> emitP2p(random::Rng &rng,
       .isFraud = 0,
       .ringId = -1,
       .channel = kP2pChannel,
-  });
+  };
   result.srcIdx = event.spender->depositAccountIdx;
   result.dstIdx = dstIdx;
   return result;
@@ -241,7 +241,7 @@ std::optional<EmissionResult> emitMerchant(random::Rng &rng,
                           : clearing::Ledger::invalid;
 
   EmissionResult result;
-  result.transaction = event.factory->make(transactions::Draft{
+  result.draft = transactions::Draft{
       .source = route.srcKey,
       .destination = dst,
       .amount = amount,
@@ -249,7 +249,7 @@ std::optional<EmissionResult> emitMerchant(random::Rng &rng,
       .isFraud = 0,
       .ringId = -1,
       .channel = route.channel,
-  });
+  };
   result.srcIdx = route.srcIdx;
   result.dstIdx = dstIdx;
   return result;

@@ -75,7 +75,7 @@ public:
   public:
     PaymentEmitter(const market::Market &market,
                    const PreparedRun::Routing &routing,
-                   const routing::ResolvedAccounts &resolved,
+                   const transactions::Factory &factory,
                    ParallelLedgerView ledgerView) noexcept;
 
     [[nodiscard]] std::optional<transactions::Transaction>
@@ -86,7 +86,8 @@ public:
 
     const market::Market &market_;
     const PreparedRun::Routing &routing_;
-    const routing::ResolvedAccounts &resolved_;
+    const transactions::Factory &factory_;
+    routing::ResolvedAccounts resolved_{};
     ParallelLedgerView ledgerView_{};
   };
 
@@ -94,7 +95,6 @@ public:
                       RateSampler &rates, PaymentEmitter &payments) noexcept;
 
   void run(std::size_t begin, std::size_t end, random::Rng &rng,
-           const transactions::Factory &factory,
            std::vector<transactions::Transaction> &outTxns);
 
 private:

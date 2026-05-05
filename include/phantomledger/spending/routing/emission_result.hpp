@@ -1,14 +1,14 @@
 #pragma once
 
 #include "phantomledger/transactions/clearing/ledger.hpp"
-#include "phantomledger/transactions/record.hpp"
+#include "phantomledger/transactions/draft.hpp"
 
 #include <span>
 
 namespace PhantomLedger::spending::routing {
 
 struct EmissionResult {
-  transactions::Transaction transaction;
+  transactions::Draft draft;
   clearing::Ledger::Index srcIdx = clearing::Ledger::invalid;
   clearing::Ledger::Index dstIdx = clearing::Ledger::invalid;
 };

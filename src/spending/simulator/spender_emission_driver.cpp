@@ -181,12 +181,11 @@ void SpenderEmissionDriver::emitSerial(
   rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
 
   const auto &routingSnapshot = routing();
-  const routing::ResolvedAccounts resolved = routingSnapshot.resolvedAccounts();
   SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                               resolved, ledgerView};
+                                               factory(), ledgerView};
   SpenderEmissionLoop loop{population, rates, payments};
 
-  loop.run(0, population.spenders.size(), rng(), factory(), state.txns());
+  loop.run(0, population.spenders.size(), rng(), state.txns());
 }
 
 void SpenderEmissionDriver::emitParallel(
@@ -195,7 +194,6 @@ void SpenderEmissionDriver::emitParallel(
   const auto &threading = threads();
   const auto spenderCount = population.spenders.size();
   const auto &routingSnapshot = routing();
-  const routing::ResolvedAccounts resolved = routingSnapshot.resolvedAccounts();
 
   runParallel(threading.count, [&](std::uint32_t threadIdx) {
     const auto range = partitionRange(spenderCount, threading.count, threadIdx);
@@ -213,11 +211,10 @@ void SpenderEmissionDriver::emitParallel(
     rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
 
     SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                                 resolved, ledgerView};
+                                                 threadFactory, ledgerView};
     SpenderEmissionLoop loop{population, rates, payments};
 
-    loop.run(range.begin, range.end, threadState.rng, threadFactory,
-             threadState.txns);
+    loop.run(range.begin, range.end, threadState.rng, threadState.txns);
   });
 }
 
