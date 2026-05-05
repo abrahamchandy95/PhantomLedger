@@ -1,0 +1,67 @@
+#include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
+
+#include "phantomledger/transfers/legit/ledger/streams.hpp"
+
+#include <span>
+#include <utility>
+
+namespace PhantomLedger::pipeline::stages::transfers {
+
+namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
+
+LedgerReplay &LedgerReplay::ordering(Ordering value) noexcept {
+  ordering_ = value;
+  return *this;
+}
+
+LedgerReplay &LedgerReplay::rules(
+    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+        value) noexcept {
+  ordering_.replayRules = value;
+  return *this;
+}
+
+LedgerReplay::PreFraud
+LedgerReplay::preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,
+                       ::PhantomLedger::random::Rng &rng,
+                       std::vector<Transaction> sorted) const {
+  auto bookCopy =
+      std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
+
+  legit_ledger::ChronoReplayAccumulator accumulator(
+      bookCopy.get(), &rng, ordering_.replayRules,
+      /*emitLiquidityEvents=*/true);
+
+  accumulator.extend(std::move(sorted), /*presorted=*/true);
+
+  PreFraud out;
+  out.draftTxns = accumulator.takeTxns();
+  out.dropCounts = accumulator.dropCounts();
+  out.dropCountsByChannel = accumulator.dropCountsByChannel();
+
+  return out;
+}
+
+LedgerReplay::PostFraud
+LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
+                        const ::PhantomLedger::clearing::Ledger &initialBook,
+                        std::vector<Transaction> merged) const {
+  auto bookCopy =
+      std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
+
+  legit_ledger::ChronoReplayAccumulator accumulator(
+      bookCopy.get(), &rng, ordering_.replayRules,
+      /*emitLiquidityEvents=*/false);
+
+  auto sorted = legit_ledger::sortForReplay(
+      std::span<const Transaction>{merged.data(), merged.size()});
+  accumulator.extend(std::move(sorted), /*presorted=*/true);
+
+  PostFraud out;
+  out.finalTxns = accumulator.takeTxns();
+  out.finalBook = std::move(bookCopy);
+
+  return out;
+}
+
+} // namespace PhantomLedger::pipeline::stages::transfers
