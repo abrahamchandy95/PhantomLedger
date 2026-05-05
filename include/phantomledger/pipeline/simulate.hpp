@@ -49,7 +49,7 @@ public:
   creditCards(::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
                   value) noexcept;
   SimulationPipeline &
-  family(::PhantomLedger::pipeline::stages::transfers::FamilyPrograms
+  family(::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
              value) noexcept;
   SimulationPipeline &government(
       const ::PhantomLedger::pipeline::stages::transfers::GovernmentPrograms
@@ -85,7 +85,8 @@ private:
       openingBook_{};
   ::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
       creditCards_{};
-  ::PhantomLedger::pipeline::stages::transfers::FamilyPrograms family_{};
+  ::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
+      familyScenario_{};
   ::PhantomLedger::pipeline::stages::transfers::GovernmentPrograms
       government_{};
   ::PhantomLedger::pipeline::stages::transfers::InsuranceClaims insurance_{};

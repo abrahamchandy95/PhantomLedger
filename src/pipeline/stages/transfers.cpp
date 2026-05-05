@@ -171,16 +171,6 @@ makeCreditPass(::PhantomLedger::random::Rng &rng,
   };
 }
 
-[[nodiscard]] legit_ledger::LegitTransferBuilder::FamilyPrograms
-makeLegitFamilyPrograms(const FamilyPrograms &family) noexcept {
-  return legit_ledger::LegitTransferBuilder::FamilyPrograms{
-      .households = family.households,
-      .dependents = family.dependents,
-      .retireeSupport = family.retireeSupport,
-      .transfers = family.transfers,
-  };
-}
-
 struct PreReplayResult {
   std::vector<Transaction> draftTxns;
   std::unordered_map<std::string, std::uint32_t> dropCounts;
@@ -265,8 +255,8 @@ TransferStage &TransferStage::creditCards(CreditCardLifecycle value) noexcept {
   return *this;
 }
 
-TransferStage &TransferStage::family(FamilyPrograms value) noexcept {
-  family_ = value;
+TransferStage &TransferStage::family(FamilyTransferScenario value) noexcept {
+  familyScenario_ = value;
   return *this;
 }
 
@@ -325,7 +315,7 @@ legit_ledger::LegitTransferBuilder TransferStage::makeLegitBuilder() const {
       .routines(makeRoutinePass(*rng_, *entities_, income_))
       .family(makeFamilyPass(*entities_))
       .credit(makeCreditPass(*rng_, *entities_, creditCards_))
-      .familyPrograms(makeLegitFamilyPrograms(family_))
+      .familyScenario(familyScenario_)
       .router(infra_->router);
 
   return builder;

@@ -32,6 +32,46 @@ void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
 
 } // namespace
 
+FamilyTransferScenario &FamilyTransferScenario::households(
+    const family_rel::Households &value) noexcept {
+  households_ = &value;
+  return *this;
+}
+
+FamilyTransferScenario &FamilyTransferScenario::dependents(
+    const family_rel::Dependents &value) noexcept {
+  dependents_ = &value;
+  return *this;
+}
+
+FamilyTransferScenario &FamilyTransferScenario::retireeSupport(
+    const family_rel::RetireeSupport &value) noexcept {
+  retireeSupport_ = &value;
+  return *this;
+}
+
+FamilyTransferScenario &
+FamilyTransferScenario::transfers(const FamilyTransferModel &value) noexcept {
+  transfers_ = &value;
+  return *this;
+}
+
+const family_rel::Households &
+FamilyTransferScenario::households() const noexcept {
+  return households_ != nullptr ? *households_ : family_rel::kDefaultHouseholds;
+}
+
+const family_rel::Dependents &
+FamilyTransferScenario::dependents() const noexcept {
+  return dependents_ != nullptr ? *dependents_ : family_rel::kDefaultDependents;
+}
+
+const family_rel::RetireeSupport &
+FamilyTransferScenario::retireeSupport() const noexcept {
+  return retireeSupport_ != nullptr ? *retireeSupport_
+                                    : family_rel::kDefaultRetireeSupport;
+}
+
 bool canRun(const FamilyLedgerSources &sources) noexcept {
   return sources.accounts != nullptr && sources.ownership != nullptr;
 }
@@ -116,6 +156,36 @@ family_rt::TransferRun makeTransferRun(
               plan.monthStarts()}},
       family_rt::TransferEmission{rngFactory, txf},
   };
+}
+
+std::vector<transactions::Transaction> generateFamilyTxns(
+    const blueprints::LegitBlueprint &plan, const FamilyLedgerSources &sources,
+    const random::RngFactory &rngFactory, const transactions::Factory &txf,
+    const FamilyTransferScenario &scenario) {
+  const auto *transferModel = scenario.transfers();
+  if (transferModel == nullptr) {
+    return {};
+  }
+
+  if (!canRun(sources)) {
+    return {};
+  }
+
+  const auto personas = personasView(plan);
+  if (personas.empty() || personCount(plan) == 0) {
+    return {};
+  }
+
+  const auto graph =
+      buildFamilyGraph(plan, scenario.households(), scenario.dependents(),
+                       scenario.retireeSupport());
+  const auto multipliers = amountMultipliers(plan);
+
+  const auto run =
+      makeTransferRun(plan, graph, std::span<const double>{multipliers},
+                      sources, rngFactory, txf, transferModel->routing);
+
+  return generateFamilyTxns(run, *transferModel);
 }
 
 std::vector<transactions::Transaction>

@@ -12,6 +12,7 @@
 #include "phantomledger/transfers/government/retirement.hpp"
 #include "phantomledger/transfers/insurance/rates.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
+#include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 #include <cstdint>
 #include <span>
@@ -26,20 +27,10 @@ namespace PhantomLedger::transfers::credit_cards {
 struct LifecycleRules;
 } // namespace PhantomLedger::transfers::credit_cards
 
-namespace PhantomLedger::relationships::family {
-struct Households;
-struct Dependents;
-struct RetireeSupport;
-} // namespace PhantomLedger::relationships::family
-
 namespace PhantomLedger::transfers::legit::ledger {
 class LegitTransferBuilder;
 struct TransfersPayload;
 } // namespace PhantomLedger::transfers::legit::ledger
-
-namespace PhantomLedger::transfers::legit::routines::relatives {
-struct FamilyTransferModel;
-} // namespace PhantomLedger::transfers::legit::routines::relatives
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
@@ -84,16 +75,8 @@ struct CreditCardLifecycle {
       nullptr;
 };
 
-struct FamilyPrograms {
-  const ::PhantomLedger::relationships::family::Households *households =
-      nullptr;
-  const ::PhantomLedger::relationships::family::Dependents *dependents =
-      nullptr;
-  const ::PhantomLedger::relationships::family::RetireeSupport *retireeSupport =
-      nullptr;
-  const ::PhantomLedger::transfers::legit::routines::relatives::
-      FamilyTransferModel *transfers = nullptr;
-};
+using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
+    relatives::FamilyTransferScenario;
 
 struct GovernmentPrograms {
   ::PhantomLedger::transfers::government::RetirementTerms retirement{};
@@ -124,7 +107,7 @@ public:
   TransferStage &income(const RecurringIncome &value);
   TransferStage &openingBook(OpeningBookProtections value) noexcept;
   TransferStage &creditCards(CreditCardLifecycle value) noexcept;
-  TransferStage &family(FamilyPrograms value) noexcept;
+  TransferStage &family(FamilyTransferScenario value) noexcept;
   TransferStage &government(const GovernmentPrograms &value);
   TransferStage &insurance(InsuranceClaims value) noexcept;
   TransferStage &replay(LedgerReplay value) noexcept;
@@ -146,7 +129,7 @@ private:
   RecurringIncome income_{};
   OpeningBookProtections openingBook_{};
   CreditCardLifecycle creditCards_{};
-  FamilyPrograms family_{};
+  FamilyTransferScenario familyScenario_{};
   GovernmentPrograms government_{};
   InsuranceClaims insurance_{};
   LedgerReplay replay_{};
