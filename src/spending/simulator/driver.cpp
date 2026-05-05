@@ -52,8 +52,10 @@ std::vector<transactions::Transaction> Simulator::run() {
     return {};
   }
 
-  dayDriver_.prepare(market_, rng_, factory_, ledger_, emissionThreads_,
-                     planner_.txnsPerMonth());
+  dayDriver_.resetFor(market_);
+  dayDriver_.bindEmitter(market_, rng_, factory_, ledger_);
+  dayDriver_.emissionThreads(emissionThreads_);
+  dayDriver_.prepareEmission(planner_.txnsPerMonth());
 
   PreparedRun run = planner_.build(market_, obligations_, ledger_,
                                    dayDriver_.sensitivities());

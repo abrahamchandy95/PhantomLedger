@@ -14,14 +14,24 @@ DayDriver::DayDriver(DaySource days, CommerceEvolver commerce,
     : days_(std::move(days)), commerce_(std::move(commerce)),
       dynamics_(std::move(dynamics)), emission_(std::move(emission)) {}
 
-void DayDriver::prepare(market::Market &market, random::Rng &rng,
-                        const transactions::Factory &factory,
-                        clearing::Ledger *ledger,
-                        SpenderEmissionDriver::Threads emissionThreads,
-                        double txnsPerMonth) {
+void DayDriver::resetFor(const market::Market &market) {
   dynamics_.resetFor(market);
-  emission_.prepare(market, rng, factory, ledger, emissionThreads,
-                    txnsPerMonth);
+}
+
+void DayDriver::bindEmitter(const market::Market &market, random::Rng &rng,
+                            const transactions::Factory &factory,
+                            clearing::Ledger *ledger) noexcept {
+  emission_.bindMarket(market).bindRng(rng).bindFactory(factory).bindLedger(
+      ledger);
+}
+
+void DayDriver::emissionThreads(
+    SpenderEmissionDriver::Threads threads) noexcept {
+  emission_.threads(threads);
+}
+
+void DayDriver::prepareEmission(double txnsPerMonth) {
+  emission_.prepare(txnsPerMonth);
 }
 
 void DayDriver::bindEmission(const PreparedRun::Budget &budget,

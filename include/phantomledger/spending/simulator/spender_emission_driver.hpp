@@ -41,9 +41,14 @@ public:
   SpenderEmissionDriver(SpenderEmissionDriver &&) noexcept = default;
   SpenderEmissionDriver &operator=(SpenderEmissionDriver &&) noexcept = default;
 
-  void prepare(const market::Market &market, random::Rng &rng,
-               const transactions::Factory &factory, clearing::Ledger *ledger,
-               Threads threads, double txnsPerMonth);
+  SpenderEmissionDriver &bindMarket(const market::Market &value) noexcept;
+  SpenderEmissionDriver &bindRng(random::Rng &value) noexcept;
+  SpenderEmissionDriver &
+  bindFactory(const transactions::Factory &value) noexcept;
+  SpenderEmissionDriver &bindLedger(clearing::Ledger *value) noexcept;
+  SpenderEmissionDriver &threads(Threads value) noexcept;
+
+  void prepare(double txnsPerMonth);
 
   void bindRun(const PreparedRun::Budget &budget,
                const PreparedRun::Routing &routing) noexcept;
@@ -59,7 +64,7 @@ private:
   [[nodiscard]] random::Rng &rng() const;
   [[nodiscard]] const transactions::Factory &factory() const;
   [[nodiscard]] clearing::Ledger *ledger() const noexcept;
-  [[nodiscard]] const Threads &threads() const noexcept;
+  [[nodiscard]] const Threads &threading() const noexcept;
   [[nodiscard]] const PreparedRun::Budget &budget() const;
   [[nodiscard]] const PreparedRun::Routing &routing() const;
 
