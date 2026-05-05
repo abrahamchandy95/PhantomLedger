@@ -151,8 +151,13 @@ TransfersPayload LegitTransferBuilder::build() const {
   passes::addIncome(income_, plan, txf, streams, govCps);
 
   if (census_.ownership != nullptr && census_.accounts != nullptr) {
-    passes::addRoutines(routines_, plan, *census_.ownership, *census_.accounts,
-                        txf, streams, screen);
+    auto routinePass = routines_;
+    routinePass.accounts(passes::AccountAccess{
+        .registry = census_.accounts,
+        .ownership = census_.ownership,
+    });
+    routinePass.txf(txf);
+    passes::addRoutines(routinePass, plan, streams, screen);
   }
 
   const random::RngFactory familyRngFactory{plan.seed()};

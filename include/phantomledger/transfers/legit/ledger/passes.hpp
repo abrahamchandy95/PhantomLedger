@@ -101,11 +101,33 @@ class RoutinePass {
 public:
   RoutinePass() = default;
 
+  RoutinePass(random::Rng *rng, AccountAccess accounts,
+              RoutineResources resources,
+              inflows::RecurringIncomeRules recurring = {}) noexcept
+      : rng_(rng), accounts_(accounts), resources_(resources),
+        recurring_(recurring) {}
+
   RoutinePass(random::Rng *rng, RoutineResources resources,
               inflows::RecurringIncomeRules recurring = {}) noexcept
-      : rng_(rng), resources_(resources), recurring_(recurring) {}
+      : RoutinePass(rng, AccountAccess{}, resources, recurring) {}
+
+  RoutinePass &accounts(AccountAccess value) noexcept {
+    accounts_ = value;
+    return *this;
+  }
+
+  RoutinePass &txf(const transactions::Factory &value) noexcept {
+    txf_ = &value;
+    return *this;
+  }
 
   [[nodiscard]] random::Rng *rng() const noexcept { return rng_; }
+
+  [[nodiscard]] AccountAccess accounts() const noexcept { return accounts_; }
+
+  [[nodiscard]] const transactions::Factory *txf() const noexcept {
+    return txf_;
+  }
 
   [[nodiscard]] RoutineResources resources() const noexcept {
     return resources_;
@@ -118,6 +140,8 @@ public:
 
 private:
   random::Rng *rng_ = nullptr;
+  AccountAccess accounts_{};
+  const transactions::Factory *txf_ = nullptr;
   RoutineResources resources_{};
   inflows::RecurringIncomeRules recurring_{};
 };
@@ -174,10 +198,7 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
                const GovernmentCounterparties &govCps = {});
 
 void addRoutines(const RoutinePass &pass,
-                 const blueprints::LegitBlueprint &plan,
-                 const entity::account::Ownership &ownership,
-                 const entity::account::Registry &registry,
-                 const transactions::Factory &txf, TxnStreams &streams,
+                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
                  ScreenBook &screen);
 
 void addFamily(
