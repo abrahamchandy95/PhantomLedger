@@ -75,7 +75,7 @@ struct RecurringIncome {
   }
 };
 
-struct BalanceBookRules {
+struct OpeningBookProtections {
   const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
 };
 
@@ -122,7 +122,7 @@ public:
 
   TransferStage &scope(RunScope value) noexcept;
   TransferStage &income(const RecurringIncome &value);
-  TransferStage &balanceBook(BalanceBookRules value) noexcept;
+  TransferStage &openingBook(OpeningBookProtections value) noexcept;
   TransferStage &creditCards(CreditCardLifecycle value) noexcept;
   TransferStage &family(FamilyPrograms value) noexcept;
   TransferStage &government(const GovernmentPrograms &value);
@@ -144,7 +144,7 @@ private:
 
   RunScope run_{};
   RecurringIncome income_{};
-  BalanceBookRules balanceBook_{};
+  OpeningBookProtections openingBook_{};
   CreditCardLifecycle creditCards_{};
   FamilyPrograms family_{};
   GovernmentPrograms government_{};

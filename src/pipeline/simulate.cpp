@@ -83,9 +83,9 @@ SimulationPipeline &SimulationPipeline::recurringIncome(
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::balanceBook(
-    transferStage::BalanceBookRules value) noexcept {
-  balanceBook_ = value;
+SimulationPipeline &SimulationPipeline::openingBook(
+    transferStage::OpeningBookProtections value) noexcept {
+  openingBook_ = value;
   return *this;
 }
 
@@ -177,7 +177,7 @@ SimulationResult SimulationPipeline::run() const {
   transferStage::TransferStage transfers{*rng_, out.entities, out.infra};
   transfers.scope(activeTransferScope(transferScope_, window_, seed_))
       .income(recurringIncome_)
-      .balanceBook(balanceBook_)
+      .openingBook(openingBook_)
       .creditCards(creditCards_)
       .family(family_)
       .government(government_)

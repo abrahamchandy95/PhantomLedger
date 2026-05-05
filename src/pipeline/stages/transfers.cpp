@@ -94,19 +94,22 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
   };
 }
 
-[[nodiscard]] legit_ledger::BalanceBookRequest
-makeBalanceBookRequest(::PhantomLedger::random::Rng &rng,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       RunScope run, const BalanceBookRules &balanceBook) {
-  return legit_ledger::BalanceBookRequest{
-      .window = run.window,
-      .rng = &rng,
-      .accounts = &entities.accounts.registry,
-      .accountsLookup = &entities.accounts.lookup,
-      .ownership = &entities.accounts.ownership,
-      .rules = balanceBook.balanceRules,
-      .portfolios = &entities.portfolios,
-      .creditCards = &entities.creditCards,
+[[nodiscard]] legit_ledger::OpeningBook
+makeOpeningBook(::PhantomLedger::random::Rng &rng,
+                const ::PhantomLedger::pipeline::Entities &entities,
+                OpeningBookProtections openingBook) noexcept {
+  return legit_ledger::OpeningBook{
+      rng,
+      legit_ledger::OpeningBook::Accounts{
+          .registry = &entities.accounts.registry,
+          .lookup = &entities.accounts.lookup,
+          .ownership = &entities.accounts.ownership,
+      },
+      legit_ledger::OpeningBook::Protections{
+          .balanceRules = openingBook.balanceRules,
+          .portfolios = &entities.portfolios,
+          .creditCards = &entities.creditCards,
+      },
   };
 }
 
@@ -251,8 +254,9 @@ TransferStage &TransferStage::income(const RecurringIncome &value) {
   return *this;
 }
 
-TransferStage &TransferStage::balanceBook(BalanceBookRules value) noexcept {
-  balanceBook_ = value;
+TransferStage &
+TransferStage::openingBook(OpeningBookProtections value) noexcept {
+  openingBook_ = value;
   return *this;
 }
 
@@ -311,7 +315,7 @@ legit_ledger::LegitTransferBuilder TransferStage::makeLegitBuilder() const {
       *rng_,
       makeLegitTimeframe(run_),
       makeAccountCensus(*entities_),
-      makeBalanceBookRequest(*rng_, *entities_, run_, balanceBook_),
+      makeOpeningBook(*rng_, *entities_, openingBook_),
   };
 
   builder.counterparties(makeCounterpartyPools(*entities_))

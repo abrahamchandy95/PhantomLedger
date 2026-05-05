@@ -86,9 +86,10 @@ familyTxnsFrom(const passes::FamilyPass &pass,
 
 } // namespace
 
-LegitTransferBuilder::LegitTransferBuilder(
-    random::Rng &rng, blueprints::LegitTimeframe timeframe,
-    blueprints::AccountCensus census, BalanceBookRequest openingBook) noexcept
+LegitTransferBuilder::LegitTransferBuilder(random::Rng &rng,
+                                           blueprints::LegitTimeframe timeframe,
+                                           blueprints::AccountCensus census,
+                                           OpeningBook openingBook) noexcept
     : rng_(&rng), timeframe_(timeframe), census_(census),
       openingBook_(std::move(openingBook)) {}
 
@@ -128,7 +129,7 @@ LegitTransferBuilder &LegitTransferBuilder::hubSelection(
 }
 
 LegitTransferBuilder &
-LegitTransferBuilder::openingBook(BalanceBookRequest value) noexcept {
+LegitTransferBuilder::openingBook(OpeningBook value) noexcept {
   openingBook_ = std::move(value);
   return *this;
 }
@@ -194,7 +195,7 @@ TransfersPayload LegitTransferBuilder::build() const {
   auto plan = blueprints::buildLegitPlan(
       *rng_, timeframe_, census_, counterparties_, personas_, hubSelection_);
 
-  auto initialBook = buildBalanceBook(openingBook_, plan);
+  auto initialBook = openingBook_.build(plan);
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
