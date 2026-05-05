@@ -19,12 +19,12 @@ hasCreditCards(const entity::card::Registry *cards) noexcept {
 }
 
 [[nodiscard]] std::unordered_set<clearing::Ledger::Index>
-hubIndicesFromKeys(const blueprints::LegitBuildPlan &plan,
+hubIndicesFromKeys(const blueprints::LegitBlueprint &plan,
                    const entity::account::Lookup &lookup) {
   std::unordered_set<clearing::Ledger::Index> out;
-  out.reserve(plan.counterparties.hubAccounts.size());
+  out.reserve(plan.counterparties().hubAccounts.size());
 
-  for (const auto &key : plan.counterparties.hubAccounts) {
+  for (const auto &key : plan.counterparties().hubAccounts) {
     const auto it = lookup.byId.find(key);
     if (it != lookup.byId.end()) {
       out.insert(static_cast<clearing::Ledger::Index>(it->second));
@@ -68,7 +68,7 @@ OpeningBook &OpeningBook::protections(Protections value) noexcept {
 }
 
 std::unique_ptr<clearing::Ledger>
-OpeningBook::build(const blueprints::LegitBuildPlan &plan) const {
+OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
   if (protections_.balanceRules == nullptr) {
     return nullptr;
   }
@@ -84,7 +84,7 @@ OpeningBook::build(const blueprints::LegitBuildPlan &plan) const {
   if (rng_ == nullptr) {
     throw std::invalid_argument("OpeningBook requires a non-null rng");
   }
-  if (plan.personas.pack == nullptr) {
+  if (plan.personas().pack == nullptr) {
     throw std::invalid_argument(
         "OpeningBook requires a populated PersonaPlan.pack");
   }
@@ -102,7 +102,7 @@ OpeningBook::build(const blueprints::LegitBuildPlan &plan) const {
   const auto hubIndices = hubIndicesFromKeys(plan, *accounts_.lookup);
 
   clearing::bootstrap(*ledger, *rng_, *accounts_.registry, *accounts_.ownership,
-                      plan.personas.pack->table, hubIndices,
+                      plan.personas().pack->table, hubIndices,
                       *protections_.balanceRules);
 
   for (const auto idx : hubIndices) {
@@ -113,9 +113,9 @@ OpeningBook::build(const blueprints::LegitBuildPlan &plan) const {
   // total. Built from the obligations stream + insurance ledger; see
   // burdens.hpp for the windowing rationale.
   if (protections_.portfolios != nullptr) {
-    const auto personCount = static_cast<std::uint32_t>(plan.persons.size());
+    const auto personCount = static_cast<std::uint32_t>(plan.persons().size());
     const auto monthlyBurdens = buildMonthlyBurdens(
-        *protections_.portfolios, personCount, plan.startDate);
+        *protections_.portfolios, personCount, plan.startDate());
     clearing::addBurdenBuffer(*ledger, *accounts_.ownership, monthlyBurdens,
                               personCount);
   }

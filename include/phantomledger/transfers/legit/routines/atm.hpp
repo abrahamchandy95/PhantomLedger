@@ -32,7 +32,7 @@ public:
   Generator &operator=(const Generator &) = delete;
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  generate(const blueprints::LegitBuildPlan &plan,
+  generate(const blueprints::LegitBlueprint &plan,
            const entity::account::Registry &registry);
 
 private:

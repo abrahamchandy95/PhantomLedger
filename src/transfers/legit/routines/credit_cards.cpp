@@ -11,23 +11,23 @@ namespace PhantomLedger::transfers::legit::routines::credit_cards {
 namespace {
 
 [[nodiscard]] time::Window
-windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+windowFromPlan(const blueprints::LegitBlueprint &plan) noexcept {
   return time::Window{
-      .start = plan.startDate,
-      .days = plan.days,
+      .start = plan.startDate(),
+      .days = plan.days(),
   };
 }
 
 [[nodiscard]] std::unordered_map<entity::PersonId, entity::Key>
-primaryAccountKeysByPerson(const blueprints::LegitBuildPlan &plan) {
+primaryAccountKeysByPerson(const blueprints::LegitBlueprint &plan) {
   std::unordered_map<entity::PersonId, entity::Key> out;
-  if (plan.allAccounts == nullptr) {
+  if (plan.allAccounts() == nullptr) {
     return out;
   }
 
-  out.reserve(plan.primaryAcctRecordIx.size());
-  for (const auto &kv : plan.primaryAcctRecordIx) {
-    const auto &record = plan.allAccounts->records[kv.second];
+  out.reserve(plan.primaryAcctRecordIx().size());
+  for (const auto &kv : plan.primaryAcctRecordIx()) {
+    const auto &record = plan.allAccounts()->records[kv.second];
     out.emplace(kv.first, record.id);
   }
   return out;
@@ -37,7 +37,7 @@ primaryAccountKeysByPerson(const blueprints::LegitBuildPlan &plan) {
 
 std::vector<transactions::Transaction>
 generateLifecycle(const LifecycleRunRequest &request,
-                  const blueprints::LegitBuildPlan &plan,
+                  const blueprints::LegitBlueprint &plan,
                   const transactions::Factory &txf,
                   std::span<const transactions::Transaction> existingTxns) {
   if (request.cards == nullptr || request.cards->records.empty()) {
@@ -57,10 +57,10 @@ generateLifecycle(const LifecycleRunRequest &request,
   ::PhantomLedger::transfers::credit_cards::LedgerView view{
       .cards = *request.cards,
       .primaryAccounts = primaryByPerson,
-      .issuerAccount = plan.counterparties.issuerAcct,
+      .issuerAccount = plan.counterparties().issuerAcct,
   };
 
-  const random::RngFactory rngFactory{plan.seed};
+  const random::RngFactory rngFactory{plan.seed()};
 
   ::PhantomLedger::transfers::credit_cards::Lifecycle lifecycle{
       *request.lifecycle,

@@ -31,47 +31,48 @@ namespace pl_gov = ::PhantomLedger::transfers::government;
 namespace pl_inflows = ::PhantomLedger::inflows;
 
 [[nodiscard]] time::Window
-windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+windowFromPlan(const blueprints::LegitBlueprint &plan) noexcept {
   return time::Window{
-      .start = plan.startDate,
-      .days = plan.days,
+      .start = plan.startDate(),
+      .days = plan.days(),
   };
 }
 
 [[nodiscard]] std::uint32_t
-populationCount(const blueprints::LegitBuildPlan &plan) {
-  if (plan.personas.pack == nullptr) {
+populationCount(const blueprints::LegitBlueprint &plan) {
+  if (plan.personas().pack == nullptr) {
     throw std::invalid_argument("passes requires a populated PersonaPlan.pack");
   }
 
-  return static_cast<std::uint32_t>(plan.personas.pack->table.byPerson.size());
+  return static_cast<std::uint32_t>(
+      plan.personas().pack->table.byPerson.size());
 }
 
 [[nodiscard]] pl_inflows::HubAccounts
-buildHubAccounts(const blueprints::LegitBuildPlan &plan) {
+buildHubAccounts(const blueprints::LegitBlueprint &plan) {
   pl_inflows::HubAccounts hubs;
-  hubs.reserve(plan.counterparties.hubSet.size());
-  hubs.insert(plan.counterparties.hubSet.begin(),
-              plan.counterparties.hubSet.end());
+  hubs.reserve(plan.counterparties().hubSet.size());
+  hubs.insert(plan.counterparties().hubSet.begin(),
+              plan.counterparties().hubSet.end());
   return hubs;
 }
 
 [[nodiscard]] pl_inflows::PayrollCounterparties
-buildPayrollCounterparties(const blueprints::LegitBuildPlan &plan) {
+buildPayrollCounterparties(const blueprints::LegitBlueprint &plan) {
   return pl_inflows::PayrollCounterparties{
       .employers =
-          std::span<const entity::Key>(plan.counterparties.employers.data(),
-                                       plan.counterparties.employers.size()),
+          std::span<const entity::Key>(plan.counterparties().employers.data(),
+                                       plan.counterparties().employers.size()),
   };
 }
 
 [[nodiscard]] pl_inflows::RentCounterparties
-buildRentCounterparties(const blueprints::LegitBuildPlan &plan) {
+buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
   return pl_inflows::RentCounterparties{
       .landlords =
-          std::span<const entity::Key>(plan.counterparties.landlords.data(),
-                                       plan.counterparties.landlords.size()),
-      .landlordTypes = &plan.counterparties.landlordTypeOf,
+          std::span<const entity::Key>(plan.counterparties().landlords.data(),
+                                       plan.counterparties().landlords.size()),
+      .landlordTypes = &plan.counterparties().landlordTypeOf,
   };
 }
 
@@ -84,27 +85,27 @@ buildRevenueCounterparties(const IncomePass &pass) {
 
 [[nodiscard]] pl_inflows::InflowSnapshot
 buildInflowSnapshot(const IncomePass &pass,
-                    const blueprints::LegitBuildPlan &plan,
+                    const blueprints::LegitBlueprint &plan,
                     const entity::account::Ownership &ownership,
                     const entity::account::Registry &registry) {
   auto snapshot = pl_inflows::InflowSnapshot{
       .timeframe =
           pl_inflows::Timeframe{
-              .startDate = plan.startDate,
-              .days = plan.days,
-              .monthStarts = plan.monthStarts,
+              .startDate = plan.startDate(),
+              .days = plan.days(),
+              .monthStarts = plan.monthStarts(),
           },
       .entropy =
           pl_inflows::Entropy{
-              .seed = plan.seed,
-              .factory = random::RngFactory{plan.seed},
+              .seed = plan.seed(),
+              .factory = random::RngFactory{plan.seed()},
           },
       .population =
           pl_inflows::Population{
               populationCount(plan),
               registry,
               ownership,
-              plan.personas.pack->assignment,
+              plan.personas().pack->assignment,
               buildHubAccounts(plan),
           },
       .payroll = buildPayrollCounterparties(plan),
@@ -118,12 +119,12 @@ buildInflowSnapshot(const IncomePass &pass,
 }
 
 [[nodiscard]] pl_gov::Population
-buildGovernmentPopulation(const blueprints::LegitBuildPlan &plan,
+buildGovernmentPopulation(const blueprints::LegitBlueprint &plan,
                           const entity::account::Ownership &ownership,
                           const entity::account::Registry &registry) {
   return pl_gov::Population{
       .count = populationCount(plan),
-      .personas = &plan.personas.pack->assignment,
+      .personas = &plan.personas().pack->assignment,
       .accounts = &registry,
       .ownership = &ownership,
   };
@@ -136,7 +137,7 @@ bool GovernmentCounterparties::valid() const noexcept {
   return !(ssa == sentinel) && !(disability == sentinel);
 }
 
-void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
+void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps) {
   if (pass.rng() == nullptr) {
@@ -179,7 +180,7 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
 }
 
 void addRoutines(const RoutinePass &pass,
-                 const blueprints::LegitBuildPlan &plan,
+                 const blueprints::LegitBlueprint &plan,
                  const entity::account::Ownership &ownership,
                  const entity::account::Registry &registry,
                  const transactions::Factory &txf, TxnStreams &streams,
@@ -279,7 +280,7 @@ void addFamily(
 }
 
 void addCredit(const CreditLifecyclePass &pass,
-               const blueprints::LegitBuildPlan &plan,
+               const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf, TxnStreams &streams) {
   streams.add(routines::credit_cards::generateLifecycle(
       routines::credit_cards::LifecycleRunRequest{

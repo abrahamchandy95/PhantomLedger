@@ -54,7 +54,7 @@ familySourcesFrom(const passes::FamilyPass &pass) noexcept {
 [[nodiscard]] std::vector<transactions::Transaction>
 familyTxnsFrom(const passes::FamilyPass &pass,
                const LegitTransferBuilder::FamilyPrograms &programs,
-               const blueprints::LegitBuildPlan &plan,
+               const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf) {
   if (programs.transfers == nullptr) {
     return {};
@@ -75,7 +75,7 @@ familyTxnsFrom(const passes::FamilyPass &pass,
       retireeSupportFrom(programs));
 
   const auto multipliers = relatives::amountMultipliers(plan);
-  const random::RngFactory rngFactory{plan.seed};
+  const random::RngFactory rngFactory{plan.seed()};
 
   const auto run = relatives::makeTransferRun(
       plan, graph, std::span<const double>{multipliers}, familySources,
@@ -192,7 +192,7 @@ TransfersPayload LegitTransferBuilder::build() const {
     return TransfersPayload{};
   }
 
-  auto plan = blueprints::buildLegitPlan(
+  auto plan = blueprints::buildLegitBlueprint(
       *rng_, timeframe_, census_, counterparties_, personas_, hubSelection_);
 
   auto initialBook = openingBook_.build(plan);
@@ -217,9 +217,10 @@ TransfersPayload LegitTransferBuilder::build() const {
 
   TransfersPayload payload;
   payload.candidateTxns = streams.takeCandidates();
-  payload.hubAccounts = std::move(plan.counterparties.hubAccounts);
-  payload.billerAccounts = std::move(plan.counterparties.billerAccounts);
-  payload.employers = std::move(plan.counterparties.employers);
+  auto counterparties = std::move(plan).takeCounterparties();
+  payload.hubAccounts = std::move(counterparties.hubAccounts);
+  payload.billerAccounts = std::move(counterparties.billerAccounts);
+  payload.employers = std::move(counterparties.employers);
   payload.initialBook = std::move(initialBook);
   payload.replaySortedTxns = streams.takeReplayReady();
 

@@ -24,7 +24,7 @@ struct LifecycleRunRequest {
 
 [[nodiscard]] std::vector<transactions::Transaction>
 generateLifecycle(const LifecycleRunRequest &request,
-                  const blueprints::LegitBuildPlan &plan,
+                  const blueprints::LegitBlueprint &plan,
                   const transactions::Factory &txf,
                   std::span<const transactions::Transaction> existingTxns);
 

@@ -65,25 +65,25 @@ inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 [[nodiscard]] bool canRun(const FamilyLedgerSources &sources) noexcept;
 
 [[nodiscard]] std::span<const ::PhantomLedger::personas::Type>
-personasView(const blueprints::LegitBuildPlan &plan) noexcept;
+personasView(const blueprints::LegitBlueprint &plan) noexcept;
 
 [[nodiscard]] std::uint32_t
-personCount(const blueprints::LegitBuildPlan &plan) noexcept;
+personCount(const blueprints::LegitBlueprint &plan) noexcept;
 
 [[nodiscard]] ::PhantomLedger::time::Window
-windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept;
+windowFromPlan(const blueprints::LegitBlueprint &plan) noexcept;
 
 [[nodiscard]] family_rel::Graph
-buildFamilyGraph(const blueprints::LegitBuildPlan &plan,
+buildFamilyGraph(const blueprints::LegitBlueprint &plan,
                  const family_rel::Households &households,
                  const family_rel::Dependents &dependents,
                  const family_rel::RetireeSupport &retireeSupport);
 
 [[nodiscard]] std::vector<double>
-amountMultipliers(const blueprints::LegitBuildPlan &plan);
+amountMultipliers(const blueprints::LegitBlueprint &plan);
 
 [[nodiscard]] family_rt::TransferRun makeTransferRun(
-    const blueprints::LegitBuildPlan &plan, const family_rel::Graph &graph,
+    const blueprints::LegitBlueprint &plan, const family_rel::Graph &graph,
     std::span<const double> amountMultipliers,
     const FamilyLedgerSources &sources, const random::RngFactory &rngFactory,
     const transactions::Factory &txf,

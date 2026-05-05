@@ -37,54 +37,54 @@ bool canRun(const FamilyLedgerSources &sources) noexcept {
 }
 
 std::span<const ::PhantomLedger::personas::Type>
-personasView(const blueprints::LegitBuildPlan &plan) noexcept {
-  if (plan.personas.pack == nullptr) {
+personasView(const blueprints::LegitBlueprint &plan) noexcept {
+  if (plan.personas().pack == nullptr) {
     return {};
   }
 
-  const auto &assignment = plan.personas.pack->assignment;
+  const auto &assignment = plan.personas().pack->assignment;
   return std::span<const ::PhantomLedger::personas::Type>{assignment.byPerson};
 }
 
-std::uint32_t personCount(const blueprints::LegitBuildPlan &plan) noexcept {
-  if (plan.personas.pack == nullptr) {
+std::uint32_t personCount(const blueprints::LegitBlueprint &plan) noexcept {
+  if (plan.personas().pack == nullptr) {
     return 0;
   }
 
   return static_cast<std::uint32_t>(
-      plan.personas.pack->assignment.byPerson.size());
+      plan.personas().pack->assignment.byPerson.size());
 }
 
 ::PhantomLedger::time::Window
-windowFromPlan(const blueprints::LegitBuildPlan &plan) noexcept {
+windowFromPlan(const blueprints::LegitBlueprint &plan) noexcept {
   return ::PhantomLedger::time::Window{
-      .start = plan.startDate,
-      .days = plan.days,
+      .start = plan.startDate(),
+      .days = plan.days(),
   };
 }
 
 family_relg::Graph
-buildFamilyGraph(const blueprints::LegitBuildPlan &plan,
+buildFamilyGraph(const blueprints::LegitBlueprint &plan,
                  const family_relg::Households &households,
                  const family_relg::Dependents &dependents,
                  const family_relg::RetireeSupport &retireeSupport) {
   const family_relg::BuildInputs inputs{
       .personas = personasView(plan),
       .personCount = personCount(plan),
-      .baseSeed = plan.seed,
+      .baseSeed = plan.seed(),
   };
 
   return family_relg::build(inputs, households, dependents, retireeSupport);
 }
 
-std::vector<double> amountMultipliers(const blueprints::LegitBuildPlan &plan) {
+std::vector<double> amountMultipliers(const blueprints::LegitBlueprint &plan) {
   std::vector<double> out;
 
-  if (plan.personas.pack == nullptr) {
+  if (plan.personas().pack == nullptr) {
     return out;
   }
 
-  const auto &table = plan.personas.pack->table.byPerson;
+  const auto &table = plan.personas().pack->table.byPerson;
   out.reserve(table.size());
 
   for (const auto &persona : table) {
@@ -95,7 +95,7 @@ std::vector<double> amountMultipliers(const blueprints::LegitBuildPlan &plan) {
 }
 
 family_rt::TransferRun makeTransferRun(
-    const blueprints::LegitBuildPlan &plan, const family_relg::Graph &graph,
+    const blueprints::LegitBlueprint &plan, const family_relg::Graph &graph,
     std::span<const double> multipliers, const FamilyLedgerSources &sources,
     const random::RngFactory &rngFactory, const transactions::Factory &txf,
     family_rt::CounterpartyRouting routing) noexcept {
@@ -112,7 +112,8 @@ family_rt::TransferRun makeTransferRun(
       education,
       family_rt::PostingWindow{
           windowFromPlan(plan),
-          std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts}},
+          std::span<const ::PhantomLedger::time::TimePoint>{
+              plan.monthStarts()}},
       family_rt::TransferEmission{rngFactory, txf},
   };
 }

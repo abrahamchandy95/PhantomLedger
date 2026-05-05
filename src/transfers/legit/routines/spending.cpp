@@ -72,11 +72,11 @@ struct CensusScratch {
 };
 
 [[nodiscard]] CensusScratch
-buildCensusScratch(const blueprints::LegitBuildPlan &plan,
+buildCensusScratch(const blueprints::LegitBlueprint &plan,
                    const entity::account::Lookup &lookup,
                    const entity::account::Registry &registry,
                    std::span<const transactions::Transaction> baseTxns) {
-  if (plan.personas.pack == nullptr) {
+  if (plan.personas().pack == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a populated PersonaPlan.pack");
   }
@@ -84,11 +84,11 @@ buildCensusScratch(const blueprints::LegitBuildPlan &plan,
   CensusScratch out;
 
   out.personCount =
-      static_cast<std::uint32_t>(plan.personas.pack->table.byPerson.size());
+      static_cast<std::uint32_t>(plan.personas().pack->table.byPerson.size());
 
   out.primaryAccounts.assign(out.personCount, entity::Key{});
 
-  for (const auto &[person, recordIx] : plan.primaryAcctRecordIx) {
+  for (const auto &[person, recordIx] : plan.primaryAcctRecordIx()) {
     const auto personIx = static_cast<std::size_t>(person) - 1;
 
     if (personIx >= out.primaryAccounts.size()) {
@@ -103,7 +103,8 @@ buildCensusScratch(const blueprints::LegitBuildPlan &plan,
   }
 
   out.paydayStorage = blueprints::buildPaydaysByPerson(
-      baseTxns, registry, lookup, plan.startDate, plan.days, out.personCount);
+      baseTxns, registry, lookup, plan.startDate(), plan.days(),
+      out.personCount);
 
   out.paydaySets.reserve(out.personCount);
 
@@ -150,22 +151,22 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 
 [[nodiscard]] plMarket::MarketSources
 assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
-                      const blueprints::LegitBuildPlan &plan,
+                      const blueprints::LegitBlueprint &plan,
                       const CensusScratch &scratch) {
-  if (plan.personas.pack == nullptr) {
+  if (plan.personas().pack == nullptr) {
     throw std::invalid_argument(
         "spending routine requires a populated PersonaPlan.pack");
   }
 
-  if (plan.days < 0) {
+  if (plan.days() < 0) {
     throw std::invalid_argument("spending routine requires non-negative days");
   }
 
   plMarket::MarketSources sources;
 
-  sources.bounds.startDate = plan.startDate;
-  sources.bounds.days = static_cast<std::uint32_t>(plan.days);
-  sources.baseSeed = plan.seed;
+  sources.bounds.startDate = plan.startDate();
+  sources.bounds.days = static_cast<std::uint32_t>(plan.days());
+  sources.baseSeed = plan.seed();
 
   sources.census.count = scratch.personCount;
 
@@ -173,12 +174,12 @@ assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
       scratch.primaryAccounts.data(), scratch.primaryAccounts.size());
 
   sources.census.personaTypes = std::span<const personas::Type>(
-      plan.personas.pack->assignment.byPerson.data(),
-      plan.personas.pack->assignment.byPerson.size());
+      plan.personas().pack->assignment.byPerson.data(),
+      plan.personas().pack->assignment.byPerson.size());
 
   sources.census.personaObjects = std::span<const entity::behavior::Persona>(
-      plan.personas.pack->table.byPerson.data(),
-      plan.personas.pack->table.byPerson.size());
+      plan.personas().pack->table.byPerson.data(),
+      plan.personas().pack->table.byPerson.size());
 
   sources.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
@@ -224,13 +225,13 @@ SpendingRoutine::run(Execution execution, const CensusSource &census,
 
   auto market = plMarket::buildMarket(std::move(sources), payeeRules, behavior);
 
-  random::RngFactory rngFactory{plan.seed};
+  random::RngFactory rngFactory{plan.seed()};
 
   std::vector<double> monthlyBurdens;
 
   if (obligations.portfolios != nullptr) {
     monthlyBurdens = ledger::buildMonthlyBurdens(
-        *obligations.portfolios, scratch.personCount, plan.startDate);
+        *obligations.portfolios, scratch.personCount, plan.startDate());
   }
 
   plObligations::Snapshot obligationSnapshot{

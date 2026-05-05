@@ -31,7 +31,7 @@ public:
       : rng_(rng), txf_(txf), screen_(screen) {}
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  generate(const blueprints::LegitBuildPlan &plan, Config cfg = kDefaultConfig);
+  generate(const blueprints::LegitBlueprint &plan, Config cfg = kDefaultConfig);
 
 private:
   random::Rng &rng_;

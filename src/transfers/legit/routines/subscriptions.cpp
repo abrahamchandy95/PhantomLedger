@@ -42,10 +42,10 @@ struct Candidate {
 };
 
 [[nodiscard]] std::span<const entity::Key>
-merchantAccounts(const blueprints::LegitBuildPlan &plan) noexcept {
+merchantAccounts(const blueprints::LegitBlueprint &plan) noexcept {
   return std::span<const entity::Key>(
-      plan.counterparties.billerAccounts.data(),
-      plan.counterparties.billerAccounts.size());
+      plan.counterparties().billerAccounts.data(),
+      plan.counterparties().billerAccounts.size());
 }
 
 [[nodiscard]] std::vector<PersonSub>
@@ -95,21 +95,21 @@ assignSubscriptions(const random::RngFactory &rngFactory,
 }
 
 [[nodiscard]] std::vector<ActivePerson>
-selectActivePeople(const blueprints::LegitBuildPlan &plan,
+selectActivePeople(const blueprints::LegitBlueprint &plan,
                    const entity::account::Registry &registry, const Config &cfg,
                    std::span<const entity::Key> merchantAccts) {
-  const random::RngFactory subFactory{plan.seed};
+  const random::RngFactory subFactory{plan.seed()};
 
   std::vector<ActivePerson> active;
-  active.reserve(plan.persons.size());
+  active.reserve(plan.persons().size());
 
-  for (const auto person : plan.persons) {
-    const auto it = plan.primaryAcctRecordIx.find(person);
-    if (it == plan.primaryAcctRecordIx.end()) {
+  for (const auto person : plan.persons()) {
+    const auto it = plan.primaryAcctRecordIx().find(person);
+    if (it == plan.primaryAcctRecordIx().end()) {
       continue;
     }
     const auto &record = registry.records[it->second];
-    if (plan.counterparties.hubSet.contains(record.id)) {
+    if (plan.counterparties().hubSet.contains(record.id)) {
       continue;
     }
 
@@ -162,16 +162,17 @@ maxCandidateCount(std::span<const ActivePerson> active,
 }
 
 [[nodiscard]] std::vector<Candidate>
-makeCandidates(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+makeCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                std::span<const ActivePerson> active, const Config &cfg) {
-  const auto endExcl = plan.startDate + time::Days{static_cast<int>(plan.days)};
-  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate);
+  const auto endExcl =
+      plan.startDate() + time::Days{static_cast<int>(plan.days())};
+  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate());
   const std::int64_t endExclEpoch = time::toEpochSeconds(endExcl);
 
   std::vector<Candidate> candidates;
-  candidates.reserve(maxCandidateCount(active, plan.monthStarts));
+  candidates.reserve(maxCandidateCount(active, plan.monthStarts()));
 
-  for (const auto &monthAnchor : plan.monthStarts) {
+  for (const auto &monthAnchor : plan.monthStarts()) {
     const std::int64_t monthEpoch = time::toEpochSeconds(monthAnchor);
 
     for (const auto &person : active) {
@@ -224,10 +225,10 @@ Generator::Generator(random::Rng &rng, const transactions::Factory &txf,
 }
 
 std::vector<transactions::Transaction>
-Generator::generate(const blueprints::LegitBuildPlan &plan,
+Generator::generate(const blueprints::LegitBlueprint &plan,
                     const entity::account::Registry &registry) {
   std::vector<transactions::Transaction> out;
-  if (plan.monthStarts.empty()) {
+  if (plan.monthStarts().empty()) {
     return out;
   }
 

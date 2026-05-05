@@ -41,20 +41,20 @@ struct Candidate {
 }
 
 [[nodiscard]] std::vector<entity::Key>
-selectActiveUsers(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+selectActiveUsers(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                   const entity::account::Registry &registry,
                   const Config &cfg) {
   std::vector<entity::Key> activeUsers;
-  activeUsers.reserve(plan.persons.size());
+  activeUsers.reserve(plan.persons().size());
 
-  for (const auto person : plan.persons) {
-    const auto it = plan.primaryAcctRecordIx.find(person);
-    if (it == plan.primaryAcctRecordIx.end()) {
+  for (const auto person : plan.persons()) {
+    const auto it = plan.primaryAcctRecordIx().find(person);
+    if (it == plan.primaryAcctRecordIx().end()) {
       continue;
     }
 
     const auto &record = registry.records[it->second];
-    if (plan.counterparties.hubSet.contains(record.id)) {
+    if (plan.counterparties().hubSet.contains(record.id)) {
       continue;
     }
     if (encoding::isExternal(record.id)) {
@@ -94,18 +94,19 @@ selectActiveUsers(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
 }
 
 [[nodiscard]] std::vector<Candidate>
-makeCandidates(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+makeCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                std::span<const entity::Key> activeUsers, const Config &cfg) {
   std::vector<Candidate> candidates;
-  candidates.reserve(static_cast<std::size_t>(plan.monthStarts.size()) *
+  candidates.reserve(static_cast<std::size_t>(plan.monthStarts().size()) *
                      activeUsers.size() *
                      static_cast<std::size_t>(cfg.withdrawalsPerMonthMax));
 
-  const auto endExcl = plan.startDate + time::Days{static_cast<int>(plan.days)};
-  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate);
+  const auto endExcl =
+      plan.startDate() + time::Days{static_cast<int>(plan.days())};
+  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate());
   const std::int64_t endExclEpoch = time::toEpochSeconds(endExcl);
 
-  for (const auto &monthAnchor : plan.monthStarts) {
+  for (const auto &monthAnchor : plan.monthStarts()) {
     const std::int64_t monthAnchorEpoch = time::toEpochSeconds(monthAnchor);
 
     for (const auto &depositAcct : activeUsers) {
@@ -151,10 +152,10 @@ Generator::Generator(
 }
 
 std::vector<transactions::Transaction>
-Generator::generate(const blueprints::LegitBuildPlan &plan,
+Generator::generate(const blueprints::LegitBlueprint &plan,
                     const entity::account::Registry &registry) {
   std::vector<transactions::Transaction> out;
-  if (plan.monthStarts.empty() || plan.counterparties.hubAccounts.empty()) {
+  if (plan.monthStarts().empty() || plan.counterparties().hubAccounts.empty()) {
     return out;
   }
 
@@ -164,7 +165,7 @@ Generator::generate(const blueprints::LegitBuildPlan &plan,
   }
 
   const auto candidates = makeCandidates(rng_, plan, activeUsers, cfg_);
-  const auto atmNetworkAcct = plan.counterparties.hubAccounts.front();
+  const auto atmNetworkAcct = plan.counterparties().hubAccounts.front();
   const auto channel = channels::tag(channels::Legit::atm);
 
   out.reserve(candidates.size());
