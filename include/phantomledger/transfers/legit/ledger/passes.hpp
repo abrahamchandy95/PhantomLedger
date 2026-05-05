@@ -169,12 +169,12 @@ private:
       nullptr;
 };
 
-void addIncome(const IncomePass &pass, const blueprints::LegitBuildPlan &plan,
+void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps = {});
 
 void addRoutines(const RoutinePass &pass,
-                 const blueprints::LegitBuildPlan &plan,
+                 const blueprints::LegitBlueprint &plan,
                  const entity::account::Ownership &ownership,
                  const entity::account::Registry &registry,
                  const transactions::Factory &txf, TxnStreams &streams,
@@ -186,7 +186,7 @@ void addFamily(
     TxnStreams &streams);
 
 void addCredit(const CreditLifecyclePass &pass,
-               const blueprints::LegitBuildPlan &plan,
+               const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf, TxnStreams &streams);
 
 } // namespace PhantomLedger::transfers::legit::ledger::passes

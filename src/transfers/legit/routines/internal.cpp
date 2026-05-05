@@ -36,22 +36,22 @@ struct Candidate {
 
 [[nodiscard]] std::vector<entity::Key>
 eligibleAccountsFor(entity::PersonId person,
-                    const blueprints::LegitBuildPlan &plan) {
+                    const blueprints::LegitBlueprint &plan) {
   std::vector<entity::Key> out;
-  if (plan.allAccounts == nullptr) {
+  if (plan.allAccounts() == nullptr) {
     return out;
   }
 
-  const auto recordIndices = plan.ownedAccountSlices.recordsFor(person);
+  const auto recordIndices = plan.ownedAccountSlices().recordsFor(person);
   out.reserve(recordIndices.size());
 
   for (const auto recordIx : recordIndices) {
-    if (recordIx >= plan.allAccounts->records.size()) {
+    if (recordIx >= plan.allAccounts()->records.size()) {
       continue;
     }
 
-    const auto &record = plan.allAccounts->records[recordIx];
-    if (plan.counterparties.hubSet.contains(record.id)) {
+    const auto &record = plan.allAccounts()->records[recordIx];
+    if (plan.counterparties().hubSet.contains(record.id)) {
       continue;
     }
     out.push_back(record.id);
@@ -60,12 +60,12 @@ eligibleAccountsFor(entity::PersonId person,
 }
 
 [[nodiscard]] std::vector<ActivePerson>
-selectActivePeople(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+selectActivePeople(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                    const Config &cfg) {
   std::vector<ActivePerson> out;
-  out.reserve(plan.persons.size());
+  out.reserve(plan.persons().size());
 
-  for (const auto person : plan.persons) {
+  for (const auto person : plan.persons()) {
     auto eligible = eligibleAccountsFor(person, plan);
     if (eligible.size() < 2) {
       continue;
@@ -90,19 +90,20 @@ selectActivePeople(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
 }
 
 [[nodiscard]] std::vector<Candidate>
-buildCandidates(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+buildCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                 std::span<const ActivePerson> activePeople, const Config &cfg) {
   std::vector<Candidate> out;
 
-  std::size_t expected = activePeople.size() * plan.monthStarts.size() *
+  std::size_t expected = activePeople.size() * plan.monthStarts().size() *
                          static_cast<std::size_t>(cfg.transfersPerMonthMax);
   out.reserve(expected);
 
-  const auto endExcl = plan.startDate + time::Days{static_cast<int>(plan.days)};
-  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate);
+  const auto endExcl =
+      plan.startDate() + time::Days{static_cast<int>(plan.days())};
+  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate());
   const std::int64_t endExclEpoch = time::toEpochSeconds(endExcl);
 
-  for (const auto &monthAnchor : plan.monthStarts) {
+  for (const auto &monthAnchor : plan.monthStarts()) {
     const std::int64_t monthEpoch = time::toEpochSeconds(monthAnchor);
 
     for (std::size_t i = 0; i < activePeople.size(); ++i) {
@@ -237,11 +238,11 @@ void Config::validate() const {
 }
 
 std::vector<transactions::Transaction>
-Generator::generate(const blueprints::LegitBuildPlan &plan, Config cfg) {
+Generator::generate(const blueprints::LegitBlueprint &plan, Config cfg) {
   cfg.validate();
 
   std::vector<transactions::Transaction> out;
-  if (plan.monthStarts.empty()) {
+  if (plan.monthStarts().empty()) {
     return out;
   }
 

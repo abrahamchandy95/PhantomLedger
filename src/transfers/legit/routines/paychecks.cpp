@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/legit/routines/paychecks.hpp"
 
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
@@ -18,22 +19,22 @@ struct SplitConfig {
 } // namespace
 
 std::vector<transactions::Transaction>
-splitDeposits(random::Rng &rng, const blueprints::LegitBuildPlan &plan,
+splitDeposits(random::Rng &rng, const blueprints::LegitBlueprint &plan,
               const transactions::Factory &txf,
               const entity::account::Ownership &ownership,
               const entity::account::Registry &registry,
               std::span<const transactions::Transaction> existingTxns) {
   std::vector<transactions::Transaction> out;
-  if (plan.persons.empty() || existingTxns.empty()) {
+  if (plan.persons().empty() || existingTxns.empty()) {
     return out;
   }
 
   std::unordered_map<entity::Key, SplitConfig> splittersByPrimary;
-  splittersByPrimary.reserve(plan.persons.size() / 4);
+  splittersByPrimary.reserve(plan.persons().size() / 4);
 
-  const auto &hubSet = plan.counterparties.hubSet;
+  const auto &hubSet = plan.counterparties().hubSet;
 
-  for (const auto person : plan.persons) {
+  for (const auto person : plan.persons()) {
     if (person == entity::invalidPerson ||
         static_cast<std::size_t>(person) >= ownership.byPersonOffset.size()) {
       continue;

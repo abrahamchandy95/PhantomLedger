@@ -32,7 +32,7 @@ public:
   };
 
   struct CensusSource {
-    const blueprints::LegitBuildPlan &blueprint;
+    const blueprints::LegitBlueprint &blueprint;
     AccountSource accounts;
   };
 

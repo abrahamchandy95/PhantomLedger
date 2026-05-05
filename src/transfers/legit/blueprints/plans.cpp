@@ -165,11 +165,11 @@ resolveLandlords(CounterpartyPools counterparties,
   return out;
 }
 
-[[nodiscard]] CounterpartyPlan
-buildCounterpartyPlan(random::Rng &rng, AccountCensus census,
-                      CounterpartyPools counterparties,
-                      const HubSelectionRules &hubs,
-                      const std::vector<entity::PersonId> &persons) {
+[[nodiscard]] CounterpartyAccess
+buildCounterpartyAccess(random::Rng &rng, AccountCensus census,
+                        CounterpartyPools counterparties,
+                        const HubSelectionRules &hubs,
+                        const std::vector<entity::PersonId> &persons) {
   const auto *accounts = census.accounts;
 
   if (accounts == nullptr || accounts->records.empty()) {
@@ -177,7 +177,7 @@ buildCounterpartyPlan(random::Rng &rng, AccountCensus census,
                                 "to build legit counterparties");
   }
 
-  CounterpartyPlan plan;
+  CounterpartyAccess plan;
 
   plan.hubAccounts = selectHubAccounts(rng, census, hubs, persons);
   plan.hubSet.reserve(plan.hubAccounts.size());
@@ -213,11 +213,11 @@ buildCounterpartyPlan(random::Rng &rng, AccountCensus census,
   return plan;
 }
 
-[[nodiscard]] PersonaPlan
-buildPersonaPlan(random::Rng &rng, LegitTimeframe timeframe,
-                 PersonaCatalog personas,
-                 const std::vector<entity::PersonId> &persons) {
-  PersonaPlan plan;
+[[nodiscard]] PersonaAccess
+buildPersonaAccess(random::Rng &rng, LegitTimeframe timeframe,
+                   PersonaCatalog personas,
+                   const std::vector<entity::PersonId> &persons) {
+  PersonaAccess plan;
 
   if (personas.pack != nullptr) {
     plan.pack = personas.pack;
@@ -228,11 +228,11 @@ buildPersonaPlan(random::Rng &rng, LegitTimeframe timeframe,
     plan.pack = &*plan.ownedPack;
   }
 
-  plan.personaNames.reserve(::PhantomLedger::personas::kKindCount);
+  plan.names.reserve(::PhantomLedger::personas::kKindCount);
 
   for (std::size_t i = 0; i < ::PhantomLedger::personas::kKindCount; ++i) {
     const auto kind = static_cast<::PhantomLedger::personas::Type>(i);
-    plan.personaNames.push_back(::PhantomLedger::personas::name(kind));
+    plan.names.push_back(::PhantomLedger::personas::name(kind));
   }
 
   return plan;
@@ -269,29 +269,33 @@ extractPersons(AccountCensus census) {
 
 } // namespace
 
-LegitBuildPlan buildLegitPlan(random::Rng &rng, LegitTimeframe timeframe,
-                              AccountCensus census,
-                              CounterpartyPools counterparties,
-                              PersonaCatalog personas, HubSelectionRules hubs) {
-  LegitBuildPlan plan;
+LegitBlueprint buildLegitBlueprint(random::Rng &rng, LegitTimeframe timeframe,
+                                   AccountCensus census,
+                                   CounterpartyPools counterparties,
+                                   PersonaCatalog personas,
+                                   HubSelectionRules hubs) {
+  LegitBlueprint plan;
 
-  plan.startDate = timeframe.window.start;
-  plan.days = static_cast<std::int32_t>(timeframe.window.days);
-  plan.seed = timeframe.seed;
+  plan.calendar_.startDate = timeframe.window.start;
+  plan.calendar_.days = static_cast<std::int32_t>(timeframe.window.days);
+  plan.seed_ = timeframe.seed;
 
-  plan.allAccounts = census.accounts;
-  plan.ownedAccountSlices = ownedAccountSlicesByPerson(census);
-  plan.persons = extractPersons(census);
+  plan.accounts_.registry = census.accounts;
+  plan.accounts_.ownedSlices = ownedAccountSlicesByPerson(census);
+  plan.accounts_.persons = extractPersons(census);
 
-  plan.counterparties =
-      buildCounterpartyPlan(rng, census, counterparties, hubs, plan.persons);
+  plan.counterparties_ = buildCounterpartyAccess(rng, census, counterparties,
+                                                 hubs, plan.accounts_.persons);
 
-  plan.personas = buildPersonaPlan(rng, timeframe, personas, plan.persons);
+  plan.personas_ =
+      buildPersonaAccess(rng, timeframe, personas, plan.accounts_.persons);
 
-  plan.primaryAcctRecordIx = primaryAcctRecordIxByPerson(census);
+  plan.accounts_.primaryRecordIx = primaryAcctRecordIxByPerson(census);
 
-  const auto endExcl = time::addDays(timeframe.window.start, plan.days);
-  plan.monthStarts = time::monthStarts(timeframe.window.start, endExcl);
+  const auto endExcl =
+      time::addDays(timeframe.window.start, plan.calendar_.days);
+  plan.calendar_.monthStarts =
+      time::monthStarts(timeframe.window.start, endExcl);
 
   return plan;
 }

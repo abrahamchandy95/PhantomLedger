@@ -41,7 +41,7 @@ public:
   OpeningBook &protections(Protections value) noexcept;
 
   [[nodiscard]] std::unique_ptr<clearing::Ledger>
-  build(const blueprints::LegitBuildPlan &plan) const;
+  build(const blueprints::LegitBlueprint &plan) const;
 
 private:
   random::Rng *rng_ = nullptr;
