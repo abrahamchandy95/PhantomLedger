@@ -136,6 +136,10 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
     const ::PhantomLedger::inflows::RecurringIncomeRules &recurringIncome) {
   return legit_ledger::passes::RoutinePass{
       &rng,
+      legit_ledger::passes::AccountAccess{
+          .registry = &entities.accounts.registry,
+          .ownership = &entities.accounts.ownership,
+      },
       legit_ledger::passes::RoutineResources{
           .accountsLookup = &entities.accounts.lookup,
           .merchants = &entities.merchants.catalog,

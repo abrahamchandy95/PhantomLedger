@@ -137,6 +137,151 @@ bool GovernmentCounterparties::valid() const noexcept {
   return !(ssa == sentinel) && !(disability == sentinel);
 }
 
+namespace {
+
+[[nodiscard]] random::Rng &routineRng(const RoutinePass &pass) {
+  if (pass.rng() == nullptr) {
+    throw std::invalid_argument("passes::addRoutines requires a non-null rng");
+  }
+
+  return *pass.rng();
+}
+
+[[nodiscard]] const transactions::Factory &routineTxf(const RoutinePass &pass) {
+  if (pass.txf() == nullptr) {
+    throw std::invalid_argument(
+        "passes::addRoutines requires a transaction factory");
+  }
+
+  return *pass.txf();
+}
+
+[[nodiscard]] AccountAccess routineAccounts(const RoutinePass &pass) {
+  const auto accounts = pass.accounts();
+  if (accounts.registry == nullptr || accounts.ownership == nullptr) {
+    throw std::invalid_argument(
+        "passes::addRoutines requires accounts and ownership");
+  }
+
+  return accounts;
+}
+
+void addSplitDeposits(const RoutinePass &pass,
+                      const blueprints::LegitBlueprint &plan,
+                      TxnStreams &streams) {
+  const auto accounts = routineAccounts(pass);
+
+  streams.add(routines::paychecks::splitDeposits(
+      routineRng(pass), plan, routineTxf(pass), *accounts.ownership,
+      *accounts.registry,
+      std::span<const transactions::Transaction>(streams.candidates())));
+}
+
+void addRent(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
+             TxnStreams &streams) {
+  auto &rng = routineRng(pass);
+  const auto accounts = routineAccounts(pass);
+
+  const auto incomePass = IncomePass{
+      pass.rng(),
+      accounts,
+      nullptr,
+      pass.recurring(),
+  };
+  const auto snap = buildInflowSnapshot(incomePass, plan, *accounts.ownership,
+                                        *accounts.registry);
+
+  const std::function<double()> rentModel = [&rng]() -> double {
+    return ::PhantomLedger::math::amounts::kRent.sample(rng);
+  };
+
+  streams.add(
+      pl_inflows::generateRentTxns(snap, rng, routineTxf(pass), rentModel));
+}
+
+void addSubscriptions(const RoutinePass &pass,
+                      const blueprints::LegitBlueprint &plan,
+                      TxnStreams &streams, ScreenBook &screen) {
+  const auto accounts = routineAccounts(pass);
+
+  auto subscriptionScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto subscriptions = routines::subscriptions::Generator{
+      routineRng(pass),
+      routineTxf(pass),
+      subscriptionScreen,
+  };
+  streams.add(subscriptions.generate(plan, *accounts.registry));
+}
+
+void addAtm(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
+            TxnStreams &streams, ScreenBook &screen) {
+  const auto accounts = routineAccounts(pass);
+
+  auto atmScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto atmWithdrawals =
+      routines::atm::Generator{routineRng(pass), routineTxf(pass), atmScreen};
+  streams.add(atmWithdrawals.generate(plan, *accounts.registry));
+}
+
+void addInternalTransfers(const RoutinePass &pass,
+                          const blueprints::LegitBlueprint &plan,
+                          TxnStreams &streams, ScreenBook &screen) {
+  auto internalScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto internalTransfers = routines::internal_xfer::Generator{
+      routineRng(pass),
+      routineTxf(pass),
+      internalScreen,
+  };
+  streams.add(internalTransfers.generate(plan));
+}
+
+void addSpending(const RoutinePass &pass,
+                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
+                 ScreenBook &screen) {
+  const auto accounts = routineAccounts(pass);
+  const auto resources = pass.resources();
+
+  if (resources.accountsLookup == nullptr) {
+    throw std::invalid_argument(
+        "spending routine requires a non-null accountsLookup");
+  }
+
+  streams.add(routines::spending::generateDayToDayTxns(
+      routines::spending::SpendingRoutine::Execution{
+          .rng = routineRng(pass),
+          .txf = routineTxf(pass),
+      },
+      routines::spending::SpendingRoutine::CensusSource{
+          .blueprint = plan,
+          .accounts =
+              routines::spending::SpendingRoutine::AccountSource{
+                  .lookup = *resources.accountsLookup,
+                  .registry = *accounts.registry,
+              },
+      },
+      routines::spending::SpendingRoutine::PayeeDirectory{
+          .merchants = resources.merchants,
+          .creditCards = resources.creditCards,
+      },
+      routines::spending::SpendingRoutine::ObligationSource{
+          .portfolios = resources.portfolios,
+      },
+      routines::spending::SpendingRoutine::LedgerReplay{
+          .baseTxns =
+              std::span<const transactions::Transaction>(streams.screened()),
+          .screenBook = screen.fresh(),
+          .baseTxnsSorted = true,
+      }));
+}
+
+} // namespace
+
 void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
                const transactions::Factory &txf, TxnStreams &streams,
                const GovernmentCounterparties &govCps) {
@@ -180,96 +325,18 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
 }
 
 void addRoutines(const RoutinePass &pass,
-                 const blueprints::LegitBlueprint &plan,
-                 const entity::account::Ownership &ownership,
-                 const entity::account::Registry &registry,
-                 const transactions::Factory &txf, TxnStreams &streams,
+                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
                  ScreenBook &screen) {
-  if (pass.rng() == nullptr) {
-    throw std::invalid_argument("passes::addRoutines requires a non-null rng");
-  }
+  (void)routineRng(pass);
+  (void)routineTxf(pass);
+  (void)routineAccounts(pass);
 
-  auto &rng = *pass.rng();
-  const auto resources = pass.resources();
-
-  streams.add(routines::paychecks::splitDeposits(
-      rng, plan, txf, ownership, registry,
-      std::span<const transactions::Transaction>(streams.candidates())));
-
-  const auto incomePass = IncomePass{
-      pass.rng(),
-      AccountAccess{
-          .registry = &registry,
-          .ownership = &ownership,
-      },
-      nullptr,
-      pass.recurring(),
-  };
-  const auto snap = buildInflowSnapshot(incomePass, plan, ownership, registry);
-
-  const std::function<double()> rentModel = [&rng]() -> double {
-    return ::PhantomLedger::math::amounts::kRent.sample(rng);
-  };
-
-  streams.add(pl_inflows::generateRentTxns(snap, rng, txf, rentModel));
-
-  auto subscriptionScreen = SeededScreen::sorted(
-      screen.fresh(),
-      std::span<const transactions::Transaction>(streams.screened()));
-  auto subscriptions = routines::subscriptions::Generator{
-      rng,
-      txf,
-      subscriptionScreen,
-  };
-  streams.add(subscriptions.generate(plan, registry));
-
-  auto atmScreen = SeededScreen::sorted(
-      screen.fresh(),
-      std::span<const transactions::Transaction>(streams.screened()));
-  auto atmWithdrawals = routines::atm::Generator{rng, txf, atmScreen};
-  streams.add(atmWithdrawals.generate(plan, registry));
-
-  auto internalScreen = SeededScreen::sorted(
-      screen.fresh(),
-      std::span<const transactions::Transaction>(streams.screened()));
-  auto internalTransfers = routines::internal_xfer::Generator{
-      rng,
-      txf,
-      internalScreen,
-  };
-  streams.add(internalTransfers.generate(plan));
-
-  if (resources.accountsLookup == nullptr) {
-    throw std::invalid_argument(
-        "spending routine requires a non-null accountsLookup");
-  }
-
-  streams.add(routines::spending::generateDayToDayTxns(
-      routines::spending::SpendingRoutine::Execution{
-          .rng = rng,
-          .txf = txf,
-      },
-      routines::spending::SpendingRoutine::CensusSource{
-          .blueprint = plan,
-          .accounts =
-              routines::spending::SpendingRoutine::AccountSource{
-                  .lookup = *resources.accountsLookup,
-                  .registry = registry,
-              },
-      },
-      routines::spending::SpendingRoutine::PayeeDirectory{
-          .merchants = resources.merchants,
-          .creditCards = resources.creditCards,
-      },
-      routines::spending::SpendingRoutine::ObligationSource{
-          .portfolios = resources.portfolios,
-      },
-      routines::spending::SpendingRoutine::LedgerReplay{
-          .baseTxns =
-              std::span<const transactions::Transaction>(streams.screened()),
-          .screenBook = screen.fresh(),
-          .baseTxnsSorted = true,
-      }));
+  addSplitDeposits(pass, plan, streams);
+  addRent(pass, plan, streams);
+  addSubscriptions(pass, plan, streams, screen);
+  addAtm(pass, plan, streams, screen);
+  addInternalTransfers(pass, plan, streams, screen);
+  addSpending(pass, plan, streams, screen);
 }
 
 void addFamily(
