@@ -9,21 +9,18 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/obligations/jitter.hpp"
 
-#include <vector>
+#include <optional>
 
 namespace PhantomLedger::transfers::obligations::plain {
 
-inline void postEvent(std::vector<transactions::Transaction> &out,
-                      random::Rng &rng, const transactions::Factory &factory,
-                      const entity::product::ObligationEvent &event,
-                      const entity::Key &personAcct, time::TimePoint endExcl) {
+[[nodiscard]] inline std::optional<transactions::Draft>
+draftFor(random::Rng &rng, const entity::product::ObligationEvent &event,
+         const entity::Key &personAcct, time::TimePoint endExcl) {
   const auto ts = jitter::basicJitter(rng, event.timestamp);
   if (ts >= endExcl) {
-    return;
+    return std::nullopt;
   }
 
   entity::Key src{};
@@ -36,12 +33,13 @@ inline void postEvent(std::vector<transactions::Transaction> &out,
     dst = personAcct;
   }
 
-  out.push_back(factory.make(transactions::Draft{
+  return transactions::Draft{
       .source = src,
       .destination = dst,
       .amount = primitives::utils::roundMoney(event.amount),
       .timestamp = time::toEpochSeconds(ts),
       .channel = event.channel,
-  }));
+  };
 }
+
 } // namespace PhantomLedger::transfers::obligations::plain

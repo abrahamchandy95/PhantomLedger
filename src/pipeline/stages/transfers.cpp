@@ -352,9 +352,14 @@ std::vector<Transaction> TransferStage::replayStream(
   stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
 
   obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
+  obligations::Scheduler obligationsScheduler{*rng_, txf};
   auto obligationTxns =
-      obligations::scheduledPayments(entities_->portfolios, run_.window.start,
-                                     run_.window.endExcl(), oblPop, *rng_, txf);
+      obligationsScheduler.generate(entities_->portfolios,
+                                    ::PhantomLedger::time::HalfOpenInterval{
+                                        .start = run_.window.start,
+                                        .endExcl = run_.window.endExcl(),
+                                    },
+                                    oblPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
 
   return stream;
