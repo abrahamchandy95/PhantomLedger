@@ -11,16 +11,20 @@ namespace infraStage = ::PhantomLedger::pipeline::stages::infra;
 namespace productStage = ::PhantomLedger::pipeline::stages::products;
 namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
 
-[[nodiscard]] transferStage::RunScope
-activeTransferScope(transferStage::RunScope requested,
-                    ::PhantomLedger::time::Window fallbackWindow,
-                    std::uint64_t fallbackSeed) noexcept {
-  if (requested.window.days == 0) {
-    requested.window = fallbackWindow;
+[[nodiscard]] ::PhantomLedger::time::Window
+activeTransferWindow(::PhantomLedger::time::Window requested,
+                     ::PhantomLedger::time::Window fallback) noexcept {
+  if (requested.days == 0) {
+    return fallback;
   }
 
-  if (requested.seed == 0) {
-    requested.seed = fallbackSeed;
+  return requested;
+}
+
+[[nodiscard]] std::uint64_t
+activeTransferSeed(std::uint64_t requested, std::uint64_t fallback) noexcept {
+  if (requested == 0) {
+    return fallback;
   }
 
   return requested;
@@ -71,27 +75,58 @@ SimulationPipeline::sharedInfra(infraStage::SharedInfraUse value) noexcept {
   return *this;
 }
 
+SimulationPipeline &SimulationPipeline::transferWindow(
+    ::PhantomLedger::time::Window value) noexcept {
+  transferWindow_ = value;
+  return *this;
+}
+
 SimulationPipeline &
-SimulationPipeline::transferScope(transferStage::RunScope value) noexcept {
-  transferScope_ = value;
+SimulationPipeline::transferSeed(std::uint64_t value) noexcept {
+  transferSeed_ = value;
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::recurringIncome(
-    const transferStage::RecurringIncome &value) {
+    const ::PhantomLedger::inflows::RecurringIncomeRules &value) {
   recurringIncome_ = value;
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::openingBook(
-    transferStage::OpeningBookProtections value) noexcept {
-  openingBook_ = value;
+SimulationPipeline &SimulationPipeline::employmentRules(
+    const ::PhantomLedger::recurring::EmploymentRules &value) {
+  recurringIncome_.employment = value;
   return *this;
 }
 
-SimulationPipeline &SimulationPipeline::creditCards(
-    transferStage::CreditCardLifecycle value) noexcept {
-  creditCards_ = value;
+SimulationPipeline &SimulationPipeline::leaseRules(
+    const ::PhantomLedger::recurring::LeaseRules &value) {
+  recurringIncome_.lease = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::salaryPaidFraction(double value) noexcept {
+  recurringIncome_.salaryPaidFraction = value;
+  return *this;
+}
+
+SimulationPipeline &
+SimulationPipeline::rentPaidFraction(double value) noexcept {
+  recurringIncome_.rentPaidFraction = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::openingBalanceRules(
+    const ::PhantomLedger::clearing::BalanceRules *value) noexcept {
+  openingBalanceRules_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::creditLifecycle(
+    const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+        *value) noexcept {
+  creditLifecycle_ = value;
   return *this;
 }
 
@@ -101,33 +136,45 @@ SimulationPipeline &SimulationPipeline::family(
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::government(const transferStage::GovernmentPrograms &value) {
-  government_ = value;
+SimulationPipeline &SimulationPipeline::retirementBenefits(
+    const ::PhantomLedger::transfers::government::RetirementTerms &value) {
+  retirement_ = value;
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::insurance(transferStage::InsuranceClaims value) noexcept {
-  insurance_ = value;
+SimulationPipeline &SimulationPipeline::disabilityBenefits(
+    const ::PhantomLedger::transfers::government::DisabilityTerms &value) {
+  disability_ = value;
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::replay(transferStage::LedgerReplay value) noexcept {
-  replay_ = value;
+SimulationPipeline &SimulationPipeline::insuranceClaims(
+    ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept {
+  claimRates_ = value;
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::fraud(transferStage::FraudInjection value) noexcept {
-  fraud_ = value;
+SimulationPipeline &SimulationPipeline::replayRules(
+    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+        value) noexcept {
+  replayRules_ = value;
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::population(transferStage::PopulationShape value) noexcept {
-  population_ = value;
+SimulationPipeline &SimulationPipeline::fraudProfile(
+    const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept {
+  fraudProfile_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::fraudRules(
+    ::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept {
+  fraudRules_ = value;
+  return *this;
+}
+
+SimulationPipeline &SimulationPipeline::hubFraction(double value) noexcept {
+  hubFraction_ = value;
   return *this;
 }
 
@@ -175,16 +222,19 @@ SimulationResult SimulationPipeline::run() const {
   out.infra = infra_.build(*rng_, out.entities, window_);
 
   transferStage::TransferStage transfers{*rng_, out.entities, out.infra};
-  transfers.scope(activeTransferScope(transferScope_, window_, seed_))
-      .income(recurringIncome_)
-      .openingBook(openingBook_)
-      .creditCards(creditCards_)
+  transfers.window(activeTransferWindow(transferWindow_, window_))
+      .seed(activeTransferSeed(transferSeed_, seed_))
+      .recurringIncome(recurringIncome_)
+      .openingBalanceRules(openingBalanceRules_)
+      .creditLifecycle(creditLifecycle_)
       .family(familyScenario_)
-      .government(government_)
-      .insurance(insurance_)
-      .replay(replay_)
-      .fraud(fraud_)
-      .population(population_);
+      .retirementBenefits(retirement_)
+      .disabilityBenefits(disability_)
+      .insuranceClaims(claimRates_)
+      .replayRules(replayRules_)
+      .fraudProfile(fraudProfile_)
+      .fraudRules(fraudRules_)
+      .hubFraction(hubFraction_);
 
   out.transfers = transfers.build();
 

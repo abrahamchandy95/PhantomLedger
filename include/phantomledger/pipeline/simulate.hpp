@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/inflows/types.hpp"
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
@@ -37,35 +38,43 @@ public:
   SimulationPipeline &sharedInfra(
       ::PhantomLedger::pipeline::stages::infra::SharedInfraUse value) noexcept;
 
-  SimulationPipeline &transferScope(
-      ::PhantomLedger::pipeline::stages::transfers::RunScope value) noexcept;
-  SimulationPipeline &recurringIncome(
-      const ::PhantomLedger::pipeline::stages::transfers::RecurringIncome
-          &value);
-  SimulationPipeline &openingBook(
-      ::PhantomLedger::pipeline::stages::transfers::OpeningBookProtections
-          value) noexcept;
   SimulationPipeline &
-  creditCards(::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
-                  value) noexcept;
+  transferWindow(::PhantomLedger::time::Window value) noexcept;
+  SimulationPipeline &transferSeed(std::uint64_t value) noexcept;
+
+  SimulationPipeline &
+  recurringIncome(const ::PhantomLedger::inflows::RecurringIncomeRules &value);
+  SimulationPipeline &
+  employmentRules(const ::PhantomLedger::recurring::EmploymentRules &value);
+  SimulationPipeline &
+  leaseRules(const ::PhantomLedger::recurring::LeaseRules &value);
+  SimulationPipeline &salaryPaidFraction(double value) noexcept;
+  SimulationPipeline &rentPaidFraction(double value) noexcept;
+
+  SimulationPipeline &openingBalanceRules(
+      const ::PhantomLedger::clearing::BalanceRules *value) noexcept;
+  SimulationPipeline &
+  creditLifecycle(const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+                      *value) noexcept;
   SimulationPipeline &
   family(::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
              value) noexcept;
-  SimulationPipeline &government(
-      const ::PhantomLedger::pipeline::stages::transfers::GovernmentPrograms
-          &value);
+
+  SimulationPipeline &retirementBenefits(
+      const ::PhantomLedger::transfers::government::RetirementTerms &value);
+  SimulationPipeline &disabilityBenefits(
+      const ::PhantomLedger::transfers::government::DisabilityTerms &value);
+  SimulationPipeline &insuranceClaims(
+      ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept;
+
+  SimulationPipeline &replayRules(
+      ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+          value) noexcept;
+  SimulationPipeline &fraudProfile(
+      const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
   SimulationPipeline &
-  insurance(::PhantomLedger::pipeline::stages::transfers::InsuranceClaims
-                value) noexcept;
-  SimulationPipeline &
-  replay(::PhantomLedger::pipeline::stages::transfers::LedgerReplay
-             value) noexcept;
-  SimulationPipeline &
-  fraud(::PhantomLedger::pipeline::stages::transfers::FraudInjection
-            value) noexcept;
-  SimulationPipeline &
-  population(::PhantomLedger::pipeline::stages::transfers::PopulationShape
-                 value) noexcept;
+  fraudRules(::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept;
+  SimulationPipeline &hubFraction(double value) noexcept;
 
   [[nodiscard]] SimulationResult run() const;
 
@@ -78,21 +87,23 @@ private:
 
   ::PhantomLedger::pipeline::stages::infra::AccessInfraStage infra_{};
 
-  ::PhantomLedger::pipeline::stages::transfers::RunScope transferScope_{};
-  ::PhantomLedger::pipeline::stages::transfers::RecurringIncome
-      recurringIncome_{};
-  ::PhantomLedger::pipeline::stages::transfers::OpeningBookProtections
-      openingBook_{};
-  ::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
-      creditCards_{};
+  ::PhantomLedger::time::Window transferWindow_{};
+  std::uint64_t transferSeed_ = 0;
+  ::PhantomLedger::inflows::RecurringIncomeRules recurringIncome_{};
+  const ::PhantomLedger::clearing::BalanceRules *openingBalanceRules_ = nullptr;
+  const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+      *creditLifecycle_ = nullptr;
   ::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
       familyScenario_{};
-  ::PhantomLedger::pipeline::stages::transfers::GovernmentPrograms
-      government_{};
-  ::PhantomLedger::pipeline::stages::transfers::InsuranceClaims insurance_{};
-  ::PhantomLedger::pipeline::stages::transfers::LedgerReplay replay_{};
-  ::PhantomLedger::pipeline::stages::transfers::FraudInjection fraud_{};
-  ::PhantomLedger::pipeline::stages::transfers::PopulationShape population_{};
+  ::PhantomLedger::transfers::government::RetirementTerms retirement_{};
+  ::PhantomLedger::transfers::government::DisabilityTerms disability_{};
+  ::PhantomLedger::transfers::insurance::ClaimRates claimRates_{};
+  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+      replayRules_{};
+  const ::PhantomLedger::entities::synth::people::Fraud *fraudProfile_ =
+      nullptr;
+  ::PhantomLedger::transfers::fraud::Injector::Rules fraudRules_{};
+  double hubFraction_ = 0.01;
 };
 
 [[nodiscard]] SimulationResult
