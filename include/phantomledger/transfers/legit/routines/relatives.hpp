@@ -111,12 +111,30 @@ buildFamilyGraph(const blueprints::LegitBlueprint &plan,
 [[nodiscard]] std::vector<double>
 amountMultipliers(const blueprints::LegitBlueprint &plan);
 
-[[nodiscard]] family_rt::TransferRun makeTransferRun(
-    const blueprints::LegitBlueprint &plan, const family_rel::Graph &graph,
-    std::span<const double> amountMultipliers,
-    const FamilyLedgerSources &sources, const random::RngFactory &rngFactory,
-    const transactions::Factory &txf,
-    family_rt::CounterpartyRouting routing) noexcept;
+[[nodiscard]] family_rt::KinshipView
+makeKinship(const blueprints::LegitBlueprint &plan,
+            const family_rel::Graph &graph,
+            std::span<const double> amountMultipliers) noexcept;
+
+[[nodiscard]] family_rt::FamilyAccountDirectory
+makeAccounts(const FamilyLedgerSources &sources,
+             family_rt::CounterpartyRouting routing) noexcept;
+
+[[nodiscard]] family_rt::EducationPayees
+makeEducation(const FamilyLedgerSources &sources) noexcept;
+
+[[nodiscard]] family_rt::PostingWindow
+makePosting(const blueprints::LegitBlueprint &plan) noexcept;
+
+[[nodiscard]] family_rt::TransferEmission
+makeEmission(const random::RngFactory &rngFactory,
+             const transactions::Factory &txf) noexcept;
+
+[[nodiscard]] family_rt::TransferRun
+makeTransferRun(family_rt::KinshipView kinship,
+                family_rt::FamilyAccountDirectory accounts,
+                family_rt::PostingWindow posting,
+                family_rt::TransferEmission emission) noexcept;
 
 [[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
     const blueprints::LegitBlueprint &plan, const FamilyLedgerSources &sources,

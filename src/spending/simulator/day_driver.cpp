@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <span>
+#include <stdexcept>
 #include <utility>
 
 namespace PhantomLedger::spending::simulator {
@@ -18,11 +19,35 @@ void DayDriver::resetFor(const market::Market &market) {
   dynamics_.resetFor(market);
 }
 
-void DayDriver::bindEmitter(const market::Market &market, random::Rng &rng,
-                            const transactions::Factory &factory,
-                            clearing::Ledger *ledger) noexcept {
-  emission_.bindMarket(market).bindRng(rng).bindFactory(factory).bindLedger(
-      ledger);
+void DayDriver::bindMarket(market::Market &value) noexcept {
+  market_ = &value;
+  rebindEmitter();
+}
+
+void DayDriver::bindRng(random::Rng &value) noexcept {
+  rng_ = &value;
+  rebindEmitter();
+}
+
+void DayDriver::bindLedger(clearing::Ledger *value) noexcept {
+  ledger_ = value;
+  rebindEmitter();
+}
+
+void DayDriver::bindFactory(const transactions::Factory &value) noexcept {
+  factory_ = &value;
+  rebindEmitter();
+}
+
+void DayDriver::rebindEmitter() noexcept {
+  if (market_ == nullptr || rng_ == nullptr || factory_ == nullptr) {
+    return;
+  }
+
+  emission_.bindMarket(*market_)
+      .bindRng(*rng_)
+      .bindFactory(*factory_)
+      .bindLedger(ledger_);
 }
 
 void DayDriver::emissionThreads(
@@ -43,14 +68,32 @@ std::span<const double> DayDriver::sensitivities() const noexcept {
   return dynamics_.sensitivities();
 }
 
-void DayDriver::runDay(market::Market &market, random::Rng &rng,
-                       clearing::Ledger *ledger, const PreparedRun &run,
-                       RunState &state, std::uint32_t dayIndex) {
+market::Market &DayDriver::boundMarket() const {
+  if (market_ == nullptr) {
+    throw std::logic_error("DayDriver requires bindMarket before runDay");
+  }
+
+  return *market_;
+}
+
+random::Rng &DayDriver::boundRng() const {
+  if (rng_ == nullptr) {
+    throw std::logic_error("DayDriver requires bindRng before runDay");
+  }
+
+  return *rng_;
+}
+
+void DayDriver::runDay(const PreparedRun &run, RunState &state,
+                       std::uint32_t dayIndex) {
+  auto &market = boundMarket();
+  auto &rng = boundRng();
+
   commerce_.evolveIfNeeded(market, rng, dayIndex);
 
   const auto frame = days_.build(market.bounds(), rng, dayIndex);
 
-  advanceLedgerToDay(ledger, run.ledgerReplay(), state, frame);
+  advanceLedgerToDay(run.ledgerReplay(), state, frame);
 
   const auto paydayPersons = updatePaydayState(run.paydays(), state, dayIndex);
 
@@ -60,12 +103,11 @@ void DayDriver::runDay(market::Market &market, random::Rng &rng,
                     dynamics_.dailyMultipliers());
 }
 
-void DayDriver::advanceLedgerToDay(clearing::Ledger *ledger,
-                                   const PreparedRun::LedgerReplay &replay,
+void DayDriver::advanceLedgerToDay(const PreparedRun::LedgerReplay &replay,
                                    RunState &state,
                                    const actors::DayFrame &frame) const {
   const auto newBaseIdx =
-      clearing::advanceBookThrough(ledger, replay.txns, state.baseIdx(),
+      clearing::advanceBookThrough(ledger_, replay.txns, state.baseIdx(),
                                    time::toEpochSeconds(frame.day.start),
                                    /*inclusive=*/false);
 

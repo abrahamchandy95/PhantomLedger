@@ -210,15 +210,20 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
     }
   }
 
-  commerce::Favorites favorites(std::move(favOffsets), std::move(favFlat));
-  commerce::Billers billers(std::move(billOffsets), std::move(billFlat));
+  commerce::MerchantSelection selection{catalog, std::move(merchCdf),
+                                        std::move(billerCdf)};
+
+  commerce::AssignedPayees assignedPayees{
+      commerce::Favorites{std::move(favOffsets), std::move(favFlat)},
+      commerce::Billers{std::move(billOffsets), std::move(billFlat)}};
+
+  commerce::ShopperActivity activity{
+      std::move(exploreProp), std::move(burstStart), std::move(burstLen)};
 
   commerce::Contacts contacts(sources.census.count, /*degree=*/12);
 
-  commerce::View commerceView(
-      catalog, std::move(merchCdf), std::move(billerCdf), std::move(favorites),
-      std::move(billers), std::move(exploreProp), std::move(burstStart),
-      std::move(burstLen), std::move(contacts));
+  commerce::View commerceView(std::move(selection), std::move(assignedPayees),
+                              std::move(activity), std::move(contacts));
 
   Cards cards = normalizeCards(std::move(sources.cards), sources.census.count);
 
