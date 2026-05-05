@@ -11,30 +11,28 @@ namespace PhantomLedger::pipeline::stages::products {
 
 namespace productSynth = ::PhantomLedger::entities::synth::products;
 
-void synthesize(
-    ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::Window window,
-    const ::PhantomLedger::pipeline::stages::entities::ProductSynthesis
-        &products) {
+void synthesize(::PhantomLedger::pipeline::Entities &entities,
+                ::PhantomLedger::time::Window window,
+                const ObligationPrograms &programs) {
   const auto &assignment = entities.personas.assignment;
   const auto population = static_cast<::PhantomLedger::entity::PersonId>(
       assignment.byPerson.size());
 
   for (::PhantomLedger::entity::PersonId person = 1; person <= population;
        ++person) {
-    auto local = productSynth::personRng(products.seeds.products, person);
+    auto local = productSynth::personRng(programs.rng.seed, person);
     const auto persona = assignment.byPerson[person - 1];
 
     productSynth::MortgageEmitter mortgage{local, entities.portfolios, window,
-                                           products.mortgage};
+                                           programs.lending.mortgage};
     productSynth::AutoLoanEmitter autoLoan{local, entities.portfolios, window,
-                                           products.autoLoan};
-    productSynth::StudentLoanEmitter studentLoan{local, entities.portfolios,
-                                                 window, products.studentLoan};
+                                           programs.lending.autoLoan};
+    productSynth::StudentLoanEmitter studentLoan{
+        local, entities.portfolios, window, programs.lending.studentLoan};
     productSynth::TaxEmitter tax{local, entities.portfolios, window,
-                                 products.tax};
+                                 programs.taxes.tax};
     productSynth::InsuranceEmitter insurance{local, entities.portfolios,
-                                             products.insurance};
+                                             programs.coverage.insurance};
 
     const bool hasMortgage = mortgage.emit(person, persona);
     const bool hasAutoLoan = autoLoan.emit(person, persona);
@@ -47,8 +45,10 @@ void synthesize(
         productSynth::LoanAnchors{
             .hasMortgage = hasMortgage,
             .hasAutoLoan = hasAutoLoan,
-            .mortgageP = products.mortgage.adoption.probability(persona),
-            .autoLoanP = products.autoLoan.adoption.probability(persona),
+            .mortgageP =
+                programs.lending.mortgage.adoption.probability(persona),
+            .autoLoanP =
+                programs.lending.autoLoan.adoption.probability(persona),
         });
   }
 

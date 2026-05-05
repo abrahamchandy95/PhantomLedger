@@ -106,11 +106,10 @@ buildPii(::PhantomLedger::random::Rng &rng,
 [[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
     const ::PhantomLedger::entities::synth::personas::Pack &personas,
     const ::PhantomLedger::entities::synth::people::Pack &people,
-    ProductSeeds seeds,
-    const ::PhantomLedger::entities::synth::cards::IssuanceRules &rules) {
+    const CardSynthesis &cards) {
   return ::PhantomLedger::entities::synth::cards::issue(
-      cardsIssuanceBase(seeds.cardIssuance), personas.table,
-      people.roster.count, rules);
+      cardsIssuanceBase(cards.seed), personas.table, people.roster.count,
+      cards.issuance);
 }
 
 [[nodiscard]] ::PhantomLedger::entity::counterparty::Directory

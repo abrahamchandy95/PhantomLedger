@@ -37,9 +37,57 @@ using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
 
 class TransferStage {
 public:
+  struct RunScope {
+    ::PhantomLedger::time::Window window{};
+    std::uint64_t seed = 0;
+  };
+
+  struct IncomePrograms {
+    ::PhantomLedger::inflows::RecurringIncomeRules recurring{};
+    ::PhantomLedger::transfers::government::RetirementTerms retirement{};
+    ::PhantomLedger::transfers::government::DisabilityTerms disability{};
+  };
+
+  struct OpeningBalances {
+    const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
+  };
+
+  struct CardLifecycle {
+    const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+        *lifecycleRules = nullptr;
+  };
+
+  struct InsurancePrograms {
+    ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
+  };
+
+  struct ReplayOrdering {
+    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+        replayRules{};
+  };
+
+  struct FraudInjection {
+    const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
+    ::PhantomLedger::transfers::fraud::Injector::Rules injectorRules{};
+  };
+
+  struct HubSelection {
+    double fraction = 0.01;
+  };
+
   TransferStage(::PhantomLedger::random::Rng &rng,
                 const ::PhantomLedger::pipeline::Entities &entities,
                 const ::PhantomLedger::pipeline::Infra &infra) noexcept;
+
+  TransferStage &runScope(RunScope value) noexcept;
+  TransferStage &incomePrograms(const IncomePrograms &value);
+  TransferStage &openingBalances(OpeningBalances value) noexcept;
+  TransferStage &cardLifecycle(CardLifecycle value) noexcept;
+  TransferStage &familyTransfers(FamilyTransferScenario value) noexcept;
+  TransferStage &insurancePrograms(InsurancePrograms value) noexcept;
+  TransferStage &replayOrdering(ReplayOrdering value) noexcept;
+  TransferStage &fraudInjection(FraudInjection value) noexcept;
+  TransferStage &hubSelection(HubSelection value) noexcept;
 
   TransferStage &window(::PhantomLedger::time::Window value) noexcept;
   TransferStage &seed(std::uint64_t value) noexcept;
@@ -87,23 +135,15 @@ private:
   const ::PhantomLedger::pipeline::Entities *entities_ = nullptr;
   const ::PhantomLedger::pipeline::Infra *infra_ = nullptr;
 
-  ::PhantomLedger::time::Window window_{};
-  std::uint64_t seed_ = 0;
-
-  ::PhantomLedger::inflows::RecurringIncomeRules recurringIncome_{};
-  const ::PhantomLedger::clearing::BalanceRules *openingBalanceRules_ = nullptr;
-  const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-      *creditLifecycle_ = nullptr;
-  FamilyTransferScenario familyScenario_{};
-  ::PhantomLedger::transfers::government::RetirementTerms retirement_{};
-  ::PhantomLedger::transfers::government::DisabilityTerms disability_{};
-  ::PhantomLedger::transfers::insurance::ClaimRates claimRates_{};
-  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-      replayRules_{};
-  const ::PhantomLedger::entities::synth::people::Fraud *fraudProfile_ =
-      nullptr;
-  ::PhantomLedger::transfers::fraud::Injector::Rules fraudRules_{};
-  double hubFraction_ = 0.01;
+  RunScope run_{};
+  IncomePrograms income_{};
+  OpeningBalances openingBalances_{};
+  CardLifecycle cardLifecycle_{};
+  FamilyTransferScenario familyTransfers_{};
+  InsurancePrograms insurance_{};
+  ReplayOrdering replay_{};
+  FraudInjection fraud_{};
+  HubSelection hubSelection_{};
 
   [[nodiscard]] PrimaryAccounts primaryAccounts() const;
   [[nodiscard]] ::PhantomLedger::transfers::legit::ledger::LegitTransferBuilder
