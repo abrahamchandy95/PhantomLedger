@@ -346,9 +346,10 @@ std::vector<Transaction> TransferStage::replayStream(
   stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
 
   ::PhantomLedger::random::RngFactory claimsFactory{run_.seed};
+  insurance::ClaimScheduler claimScheduler{insurance_.claimRates, *rng_, txf,
+                                           claimsFactory};
   auto claimTxns =
-      insurance::claims(insurance_.claimRates, run_.window, *rng_, txf,
-                        claimsFactory, entities_->portfolios, insPop);
+      claimScheduler.generate(run_.window, entities_->portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
 
   obligations::Population oblPop{.primaryAccounts = &primaryAccounts};

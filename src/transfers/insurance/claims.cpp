@@ -106,14 +106,20 @@ private:
 
 } // namespace
 
+ClaimScheduler::ClaimScheduler(const ClaimRates &rates,
+                               random::Rng &timestampRng,
+                               const transactions::Factory &txf,
+                               const random::RngFactory &claimRngs) noexcept
+    : rates_(&rates), timestampRng_(&timestampRng), txf_(&txf),
+      claimRngs_(&claimRngs) {}
+
 std::vector<transactions::Transaction>
-claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
-       const transactions::Factory &txf, const random::RngFactory &factory,
-       const entity::product::PortfolioRegistry &portfolios,
-       const Population &population) {
+ClaimScheduler::generate(const time::Window &window,
+                         const entity::product::PortfolioRegistry &portfolios,
+                         const Population &population) const {
   std::vector<transactions::Transaction> out;
 
-  ClaimEmitter emitter{window, rng, txf, out};
+  ClaimEmitter emitter{window, *timestampRng_, *txf_, out};
   if (!emitter.active()) {
     return out;
   }
@@ -129,15 +135,15 @@ claims(const ClaimRates &rates, const time::Window &window, random::Rng &rng,
 
         // Per-person sub-RNG isolates claim occurrence and amount sampling.
         auto personRng =
-            factory.rng({"insurance_claims",
-                         std::to_string(static_cast<unsigned>(person))});
+            claimRngs_->rng({"insurance_claims",
+                             std::to_string(static_cast<unsigned>(person))});
 
         if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
-          emitter.tryPost(personRng, *policy, rates.autoPayout(), payer);
+          emitter.tryPost(personRng, *policy, rates_->autoPayout(), payer);
         }
 
         if (const auto &policy = holdings.homePolicy(); policy.has_value()) {
-          emitter.tryPost(personRng, *policy, rates.homePayout(), payer);
+          emitter.tryPost(personRng, *policy, rates_->homePayout(), payer);
         }
 
         // Life insurance: death events are not modeled.
