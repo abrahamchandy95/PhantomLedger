@@ -95,9 +95,9 @@ SimulationPipeline &SimulationPipeline::creditCards(
   return *this;
 }
 
-SimulationPipeline &
-SimulationPipeline::family(transferStage::FamilyPrograms value) noexcept {
-  family_ = value;
+SimulationPipeline &SimulationPipeline::family(
+    transferStage::FamilyTransferScenario value) noexcept {
+  familyScenario_ = value;
   return *this;
 }
 
@@ -179,7 +179,7 @@ SimulationResult SimulationPipeline::run() const {
       .income(recurringIncome_)
       .openingBook(openingBook_)
       .creditCards(creditCards_)
-      .family(family_)
+      .family(familyScenario_)
       .government(government_)
       .insurance(insurance_)
       .replay(replay_)

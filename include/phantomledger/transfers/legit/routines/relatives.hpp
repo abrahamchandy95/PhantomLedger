@@ -62,6 +62,35 @@ struct FamilyTransferModel {
 
 inline constexpr FamilyTransferModel kDefaultFamilyTransferModel{};
 
+class FamilyTransferScenario {
+public:
+  FamilyTransferScenario() = default;
+
+  FamilyTransferScenario &
+  households(const family_rel::Households &value) noexcept;
+  FamilyTransferScenario &
+  dependents(const family_rel::Dependents &value) noexcept;
+  FamilyTransferScenario &
+  retireeSupport(const family_rel::RetireeSupport &value) noexcept;
+  FamilyTransferScenario &transfers(const FamilyTransferModel &value) noexcept;
+
+  [[nodiscard]] bool enabled() const noexcept { return transfers_ != nullptr; }
+
+  [[nodiscard]] const family_rel::Households &households() const noexcept;
+  [[nodiscard]] const family_rel::Dependents &dependents() const noexcept;
+  [[nodiscard]] const family_rel::RetireeSupport &
+  retireeSupport() const noexcept;
+  [[nodiscard]] const FamilyTransferModel *transfers() const noexcept {
+    return transfers_;
+  }
+
+private:
+  const family_rel::Households *households_ = nullptr;
+  const family_rel::Dependents *dependents_ = nullptr;
+  const family_rel::RetireeSupport *retireeSupport_ = nullptr;
+  const FamilyTransferModel *transfers_ = nullptr;
+};
+
 [[nodiscard]] bool canRun(const FamilyLedgerSources &sources) noexcept;
 
 [[nodiscard]] std::span<const ::PhantomLedger::personas::Type>
@@ -88,6 +117,11 @@ amountMultipliers(const blueprints::LegitBlueprint &plan);
     const FamilyLedgerSources &sources, const random::RngFactory &rngFactory,
     const transactions::Factory &txf,
     family_rt::CounterpartyRouting routing) noexcept;
+
+[[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
+    const blueprints::LegitBlueprint &plan, const FamilyLedgerSources &sources,
+    const random::RngFactory &rngFactory, const transactions::Factory &txf,
+    const FamilyTransferScenario &scenario);
 
 [[nodiscard]] std::vector<transactions::Transaction>
 generateFamilyTxns(const family_rt::TransferRun &run,

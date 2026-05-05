@@ -4,31 +4,18 @@
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
+#include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 namespace PhantomLedger::infra {
 class Router;
 } // namespace PhantomLedger::infra
 
-namespace PhantomLedger::relationships::family {
-struct Households;
-struct Dependents;
-struct RetireeSupport;
-} // namespace PhantomLedger::relationships::family
-
 namespace PhantomLedger::transfers::legit::ledger {
 
 class LegitTransferBuilder {
 public:
-  struct FamilyPrograms {
-    const ::PhantomLedger::relationships::family::Households *households =
-        nullptr;
-    const ::PhantomLedger::relationships::family::Dependents *dependents =
-        nullptr;
-    const ::PhantomLedger::relationships::family::RetireeSupport
-        *retireeSupport = nullptr;
-    const ::PhantomLedger::transfers::legit::routines::relatives::
-        FamilyTransferModel *transfers = nullptr;
-  };
+  using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
+      relatives::FamilyTransferScenario;
 
   LegitTransferBuilder() = default;
   LegitTransferBuilder(random::Rng &rng, blueprints::LegitTimeframe timeframe,
@@ -50,7 +37,7 @@ public:
   LegitTransferBuilder &family(passes::FamilyPass value) noexcept;
   LegitTransferBuilder &credit(passes::CreditLifecyclePass value) noexcept;
 
-  LegitTransferBuilder &familyPrograms(FamilyPrograms value) noexcept;
+  LegitTransferBuilder &familyScenario(FamilyTransferScenario value) noexcept;
   LegitTransferBuilder &
   router(const ::PhantomLedger::infra::Router &value) noexcept;
   LegitTransferBuilder &
@@ -75,7 +62,7 @@ private:
   passes::FamilyPass family_{};
   passes::CreditLifecyclePass credit_{};
 
-  FamilyPrograms familyPrograms_{};
+  FamilyTransferScenario familyScenario_{};
   const ::PhantomLedger::infra::Router *router_ = nullptr;
 };
 
