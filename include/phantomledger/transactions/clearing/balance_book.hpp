@@ -6,6 +6,7 @@
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/probability/distributions/normal.hpp"
 #include "phantomledger/taxonomies/clearing/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <unordered_set>
 #include <vector>
@@ -257,70 +259,131 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
 
 } // namespace detail
 
-inline void
-bootstrap(Ledger &ledger, random::Rng &rng,
-          const entity::account::Registry &registry,
-          [[maybe_unused]] const entity::account::Ownership &ownership,
-          const entity::behavior::Table &personas,
-          const std::unordered_set<Ledger::Index> &hubIndices,
-          const BalanceRules &rules = {}) {
-  const auto count = static_cast<Ledger::Index>(registry.records.size());
+class OpeningBalanceSeeder {
+public:
+  OpeningBalanceSeeder(Ledger &ledger, random::Rng &rng,
+                       const BalanceRules &rules = {}) noexcept
+      : ledger_{&ledger}, rng_{&rng}, rules_{rules} {}
 
-  if (count == 0) {
-    return;
+  void seedHubAccount(Ledger::Index idx) const {
+    ledger().cash(idx) = detail::kHubCash;
+    ledger().setProtection(idx, ProtectionType::none, 0.0);
+    ledger().setBankTier(idx, BankTier::zeroFee, 0.0);
   }
+
+  void seedOwnedAccount(Ledger::Index idx,
+                        const entity::behavior::Persona &persona) {
+    const auto profile = bufferProfile(persona.archetype.type);
+
+    // 1. Cash balance.
+    ledger().cash(idx) = detail::sampleMoney(rng(), profile.balanceMedian,
+                                             rules_.initialBalanceSigma, 1.0,
+                                             rules_.enableConstraints);
+
+    // 2-3. Bank tier and overdraft fee amount.
+    const auto tier = detail::sampleTier(rng(), rules_.tierWeights);
+    const double fee =
+        detail::sampleOverdraftFee(rng(), tier, rules_.enableConstraints);
+    ledger().setBankTier(idx, tier, fee);
+
+    // 4-5. Protection type and buffer amount.
+    const auto protection = detail::sampleProtectionType(rng(), profile.shares);
+    const double buffer =
+        detail::sampleBufferAmount(rng(), protection, profile, rules_);
+    ledger().setProtection(idx, protection, buffer);
+
+    // 6. LOC-specific parameters.
+    if (protection == ProtectionType::loc) {
+      const double apr = std::max(0.0, probability::distributions::normal(
+                                           rng(), rules_.locDefaults.aprMean,
+                                           rules_.locDefaults.aprSigma));
+
+      const int billingDay = static_cast<int>(
+          rng().uniformInt(rules_.locDefaults.billingDayMin,
+                           rules_.locDefaults.billingDayMax + 1));
+
+      ledger().setLoc(idx, apr, billingDay);
+    }
+  }
+
+private:
+  [[nodiscard]] Ledger &ledger() const noexcept { return *ledger_; }
+  [[nodiscard]] random::Rng &rng() const noexcept { return *rng_; }
+
+  Ledger *ledger_ = nullptr;
+  random::Rng *rng_ = nullptr;
+  BalanceRules rules_{};
+};
+
+inline void requireLedgerSlots(const Ledger &ledger,
+                               const entity::account::Registry &registry) {
+  const auto count = static_cast<Ledger::Index>(registry.records.size());
 
   if (ledger.size() < count) {
     throw std::invalid_argument(
         "bootstrap: ledger has fewer slots than registry records");
   }
+}
 
+[[nodiscard]] inline std::vector<Ledger::Index>
+ownedNonHubAccountIndices(const entity::account::Registry &registry,
+                          const std::unordered_set<Ledger::Index> &hubIndices) {
+  std::vector<Ledger::Index> out;
+  out.reserve(registry.records.size());
+
+  const auto count = static_cast<Ledger::Index>(registry.records.size());
   for (Ledger::Index idx = 0; idx < count; ++idx) {
     const auto &record = registry.records[idx];
 
     if (record.owner == entity::invalidPerson) {
-      continue; // unowned / external
+      continue;
+    }
+    if (hubIndices.contains(idx)) {
+      continue;
     }
 
-    if (hubIndices.contains(idx)) {
-      ledger.cash(idx) = detail::kHubCash;
-      ledger.setProtection(idx, ProtectionType::none, 0.0);
-      ledger.setBankTier(idx, BankTier::zeroFee, 0.0);
+    out.push_back(idx);
+  }
+
+  return out;
+}
+
+inline void
+seedHubAccounts(OpeningBalanceSeeder &seeder,
+                const entity::account::Registry &registry,
+                const std::unordered_set<Ledger::Index> &hubIndices) {
+  const auto count = static_cast<Ledger::Index>(registry.records.size());
+  for (Ledger::Index idx = 0; idx < count; ++idx) {
+    const auto &record = registry.records[idx];
+
+    if (record.owner == entity::invalidPerson) {
+      continue;
+    }
+    if (!hubIndices.contains(idx)) {
+      continue;
+    }
+
+    seeder.seedHubAccount(idx);
+  }
+}
+
+inline void seedOwnedAccounts(OpeningBalanceSeeder &seeder,
+                              const entity::account::Registry &registry,
+                              const entity::behavior::Table &personas,
+                              std::span<const Ledger::Index> accountIndices) {
+  for (const auto idx : accountIndices) {
+    if (idx >= registry.records.size()) {
+      throw std::out_of_range(
+          "seedOwnedAccounts: account index exceeds registry size");
+    }
+
+    const auto &record = registry.records[idx];
+    if (record.owner == entity::invalidPerson) {
       continue;
     }
 
     const auto &persona = detail::personaFor(personas, record.owner);
-    const auto profile = bufferProfile(persona.archetype.type);
-
-    // 1. Cash balance.
-    ledger.cash(idx) = detail::sampleMoney(rng, profile.balanceMedian,
-                                           rules.initialBalanceSigma, 1.0,
-                                           rules.enableConstraints);
-
-    // 2-3. Bank tier and overdraft fee amount.
-    const auto tier = detail::sampleTier(rng, rules.tierWeights);
-    const double fee =
-        detail::sampleOverdraftFee(rng, tier, rules.enableConstraints);
-    ledger.setBankTier(idx, tier, fee);
-
-    // 4-5. Protection type and buffer amount.
-    const auto protection = detail::sampleProtectionType(rng, profile.shares);
-    const double buffer =
-        detail::sampleBufferAmount(rng, protection, profile, rules);
-    ledger.setProtection(idx, protection, buffer);
-
-    // 6. LOC-specific parameters.
-    if (protection == ProtectionType::loc) {
-      const double apr = std::max(
-          0.0, probability::distributions::normal(
-                   rng, rules.locDefaults.aprMean, rules.locDefaults.aprSigma));
-
-      const int billingDay =
-          static_cast<int>(rng.uniformInt(rules.locDefaults.billingDayMin,
-                                          rules.locDefaults.billingDayMax + 1));
-
-      ledger.setLoc(idx, apr, billingDay);
-    }
+    seeder.seedOwnedAccount(idx, persona);
   }
 }
 

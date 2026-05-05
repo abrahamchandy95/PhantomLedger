@@ -6,6 +6,7 @@
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
+#include <span>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -98,12 +99,18 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
     ledger->addAccount(accounts_.registry->records[idx].id, idx);
   }
 
-  // Hub indices set — required by bootstrap() to assign infinite cash.
   const auto hubIndices = hubIndicesFromKeys(plan, *accounts_.lookup);
+  const auto ownedNonHubIndices =
+      clearing::ownedNonHubAccountIndices(*accounts_.registry, hubIndices);
 
-  clearing::bootstrap(*ledger, *rng_, *accounts_.registry, *accounts_.ownership,
-                      plan.personas().pack->table, hubIndices,
-                      *protections_.balanceRules);
+  clearing::requireLedgerSlots(*ledger, *accounts_.registry);
+
+  clearing::OpeningBalanceSeeder seeder{*ledger, *rng_,
+                                        *protections_.balanceRules};
+  clearing::seedHubAccounts(seeder, *accounts_.registry, hubIndices);
+  clearing::seedOwnedAccounts(
+      seeder, *accounts_.registry, plan.personas().pack->table,
+      std::span<const clearing::Ledger::Index>{ownedNonHubIndices});
 
   for (const auto idx : hubIndices) {
     ledger->createHub(idx);
