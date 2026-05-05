@@ -128,16 +128,16 @@ void SpenderEmissionLoop::RateSampler::recordAccepted(
 
 SpenderEmissionLoop::PaymentEmitter::PaymentEmitter(
     const market::Market &market, const PreparedRun::Routing &routing,
-    const routing::ResolvedAccounts &resolved,
+    const transactions::Factory &factory,
     ParallelLedgerView ledgerView) noexcept
-    : market_(market), routing_(routing), resolved_(resolved),
-      ledgerView_(ledgerView) {}
+    : market_(market), routing_(routing), factory_(factory),
+      resolved_(routing.resolvedAccounts()), ledgerView_(ledgerView) {}
 
 bool SpenderEmissionLoop::PaymentEmitter::accept(
     const routing::EmissionResult &result) {
   return ledgerView_
-      .transfer(result.srcIdx, result.dstIdx, result.transaction.amount,
-                result.transaction.session.channel)
+      .transfer(result.srcIdx, result.dstIdx, result.draft.amount,
+                result.draft.channel)
       .accepted();
 }
 
@@ -154,11 +154,13 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
     return std::nullopt;
   }
 
+  auto txn = factory_.make(maybeResult->draft);
+
   if (!accept(*maybeResult)) {
     return std::nullopt;
   }
 
-  return std::move(maybeResult->transaction);
+  return txn;
 }
 
 SpenderEmissionLoop::SpenderEmissionLoop(
@@ -168,7 +170,6 @@ SpenderEmissionLoop::SpenderEmissionLoop(
 
 void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
                               random::Rng &rng,
-                              const transactions::Factory &factory,
                               std::vector<transactions::Transaction> &outTxns) {
   const auto &spenders = population_.spenders;
 
@@ -206,7 +207,6 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
 
       actors::Event event{};
       event.spender = &spender;
-      event.factory = &factory;
       event.ts = rates_.timestampAtOffset(offsetSec);
       event.exploreP = exploreP;
 
