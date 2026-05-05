@@ -136,7 +136,7 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
           .window = window,
           .seed = seed,
       })
-      .balanceBook(pl::pipeline::stages::transfers::BalanceBookRules{
+      .openingBook(pl::pipeline::stages::transfers::OpeningBookProtections{
           .balanceRules = &balanceRules,
       })
       .creditCards(pl::pipeline::stages::transfers::CreditCardLifecycle{

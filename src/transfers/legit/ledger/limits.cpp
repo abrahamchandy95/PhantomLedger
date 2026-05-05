@@ -48,44 +48,62 @@ void applyCreditCardLimits(clearing::Ledger &ledger,
 
 } // namespace
 
+OpeningBook::OpeningBook(random::Rng &rng, Accounts accounts,
+                         Protections protections) noexcept
+    : rng_{&rng}, accounts_{accounts}, protections_{protections} {}
+
+OpeningBook &OpeningBook::rng(random::Rng &value) noexcept {
+  rng_ = &value;
+  return *this;
+}
+
+OpeningBook &OpeningBook::accounts(Accounts value) noexcept {
+  accounts_ = value;
+  return *this;
+}
+
+OpeningBook &OpeningBook::protections(Protections value) noexcept {
+  protections_ = value;
+  return *this;
+}
+
 std::unique_ptr<clearing::Ledger>
-buildBalanceBook(const BalanceBookRequest &request,
-                 const blueprints::LegitBuildPlan &plan) {
-  if (request.rules == nullptr) {
+OpeningBook::build(const blueprints::LegitBuildPlan &plan) const {
+  if (protections_.balanceRules == nullptr) {
     return nullptr;
   }
-  if (!request.rules->enableConstraints) {
+  if (!protections_.balanceRules->enableConstraints) {
     return nullptr;
   }
 
-  if (request.accounts == nullptr || request.accountsLookup == nullptr ||
-      request.ownership == nullptr) {
+  if (accounts_.registry == nullptr || accounts_.lookup == nullptr ||
+      accounts_.ownership == nullptr) {
     throw std::invalid_argument(
-        "buildBalanceBook requires accounts, accountsLookup and ownership");
+        "OpeningBook requires accounts, lookup and ownership");
   }
-  if (request.rng == nullptr) {
-    throw std::invalid_argument("buildBalanceBook requires a non-null rng");
+  if (rng_ == nullptr) {
+    throw std::invalid_argument("OpeningBook requires a non-null rng");
   }
   if (plan.personas.pack == nullptr) {
     throw std::invalid_argument(
-        "buildBalanceBook requires a populated PersonaPlan.pack");
+        "OpeningBook requires a populated PersonaPlan.pack");
   }
 
   auto ledger = std::make_unique<clearing::Ledger>();
   const auto count =
-      static_cast<clearing::Ledger::Index>(request.accounts->records.size());
+      static_cast<clearing::Ledger::Index>(accounts_.registry->records.size());
   ledger->initialize(count);
 
   for (clearing::Ledger::Index idx = 0; idx < count; ++idx) {
-    ledger->addAccount(request.accounts->records[idx].id, idx);
+    ledger->addAccount(accounts_.registry->records[idx].id, idx);
   }
 
   // Hub indices set — required by bootstrap() to assign infinite cash.
-  const auto hubIndices = hubIndicesFromKeys(plan, *request.accountsLookup);
+  const auto hubIndices = hubIndicesFromKeys(plan, *accounts_.lookup);
 
-  clearing::bootstrap(*ledger, *request.rng, *request.accounts,
-                      *request.ownership, plan.personas.pack->table, hubIndices,
-                      *request.rules);
+  clearing::bootstrap(*ledger, *rng_, *accounts_.registry, *accounts_.ownership,
+                      plan.personas.pack->table, hubIndices,
+                      *protections_.balanceRules);
 
   for (const auto idx : hubIndices) {
     ledger->createHub(idx);
@@ -94,19 +112,19 @@ buildBalanceBook(const BalanceBookRequest &request,
   // Burden buffers — 35% of the per-person monthly fixed obligation
   // total. Built from the obligations stream + insurance ledger; see
   // burdens.hpp for the windowing rationale.
-  if (request.portfolios != nullptr) {
+  if (protections_.portfolios != nullptr) {
     const auto personCount = static_cast<std::uint32_t>(plan.persons.size());
-    const auto monthlyBurdens =
-        buildMonthlyBurdens(*request.portfolios, personCount, plan.startDate);
-    clearing::addBurdenBuffer(*ledger, *request.ownership, monthlyBurdens,
+    const auto monthlyBurdens = buildMonthlyBurdens(
+        *protections_.portfolios, personCount, plan.startDate);
+    clearing::addBurdenBuffer(*ledger, *accounts_.ownership, monthlyBurdens,
                               personCount);
   }
 
   // Credit-card limits, applied last so they don't interact with
   // protection sampling above.
-  if (hasCreditCards(request.creditCards)) {
-    applyCreditCardLimits(*ledger, *request.creditCards,
-                          *request.accountsLookup);
+  if (hasCreditCards(protections_.creditCards)) {
+    applyCreditCardLimits(*ledger, *protections_.creditCards,
+                          *accounts_.lookup);
   }
 
   return ledger;

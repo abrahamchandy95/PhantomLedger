@@ -33,7 +33,7 @@ public:
   LegitTransferBuilder() = default;
   LegitTransferBuilder(random::Rng &rng, blueprints::LegitTimeframe timeframe,
                        blueprints::AccountCensus census,
-                       BalanceBookRequest openingBook) noexcept;
+                       OpeningBook openingBook) noexcept;
 
   LegitTransferBuilder &rng(random::Rng &value) noexcept;
   LegitTransferBuilder &timeframe(blueprints::LegitTimeframe value) noexcept;
@@ -43,7 +43,7 @@ public:
   LegitTransferBuilder &personas(blueprints::PersonaCatalog value) noexcept;
   LegitTransferBuilder &
   hubSelection(blueprints::HubSelectionRules value) noexcept;
-  LegitTransferBuilder &openingBook(BalanceBookRequest value) noexcept;
+  LegitTransferBuilder &openingBook(OpeningBook value) noexcept;
 
   LegitTransferBuilder &income(passes::IncomePass value) noexcept;
   LegitTransferBuilder &routines(passes::RoutinePass value) noexcept;
@@ -68,7 +68,7 @@ private:
   blueprints::PersonaCatalog personas_{};
   blueprints::HubSelectionRules hubSelection_{};
 
-  BalanceBookRequest openingBook_{};
+  OpeningBook openingBook_{};
 
   passes::IncomePass income_{};
   passes::RoutinePass routines_{};

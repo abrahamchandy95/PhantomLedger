@@ -42,9 +42,9 @@ public:
   SimulationPipeline &recurringIncome(
       const ::PhantomLedger::pipeline::stages::transfers::RecurringIncome
           &value);
-  SimulationPipeline &
-  balanceBook(::PhantomLedger::pipeline::stages::transfers::BalanceBookRules
-                  value) noexcept;
+  SimulationPipeline &openingBook(
+      ::PhantomLedger::pipeline::stages::transfers::OpeningBookProtections
+          value) noexcept;
   SimulationPipeline &
   creditCards(::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
                   value) noexcept;
@@ -81,7 +81,8 @@ private:
   ::PhantomLedger::pipeline::stages::transfers::RunScope transferScope_{};
   ::PhantomLedger::pipeline::stages::transfers::RecurringIncome
       recurringIncome_{};
-  ::PhantomLedger::pipeline::stages::transfers::BalanceBookRules balanceBook_{};
+  ::PhantomLedger::pipeline::stages::transfers::OpeningBookProtections
+      openingBook_{};
   ::PhantomLedger::pipeline::stages::transfers::CreditCardLifecycle
       creditCards_{};
   ::PhantomLedger::pipeline::stages::transfers::FamilyPrograms family_{};
