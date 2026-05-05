@@ -1,9 +1,4 @@
 #pragma once
-/*
-  The state machine itself lives in `delinquency.hpp` and is pure
-  data → data. This header is the *bridge* between that machine and
-  the transaction stream.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
@@ -11,50 +6,67 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/taxonomies/products/predicates.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/obligations/delinquency.hpp"
 #include "phantomledger/transfers/obligations/jitter.hpp"
 
-#include <vector>
+#include <optional>
 
 namespace PhantomLedger::transfers::obligations::installments {
 
-inline void postEvent(std::vector<transactions::Transaction> &out,
-                      const entity::product::PortfolioRegistry &registry,
-                      delinquency::StateMap &stateMap, random::Rng &rng,
-                      const transactions::Factory &factory,
-                      const entity::product::ObligationEvent &event,
-                      const entity::Key &personAcct, time::TimePoint endExcl) {
-  const auto *terms =
-      registry.installmentTerms(event.personId, event.productType);
-  if (terms == nullptr) {
-    return;
-  }
-
-  const double scheduled = primitives::utils::roundMoney(event.amount);
-  const delinquency::StateKey key{event.personId, event.productType};
-  auto &state = stateMap[key];
-
-  const auto outcome = delinquency::advance(rng, state, *terms, scheduled);
-  if (outcome.action == delinquency::Action::noPayment) {
-    return;
-  }
-
-  const auto ts = jitter::installmentTimestamp(
-      rng, event.timestamp, outcome.effectiveLateP, terms->lateDaysMin,
-      terms->lateDaysMax, outcome.forceLate);
-  if (ts >= endExcl) {
-    return;
-  }
-
-  out.push_back(factory.make(transactions::Draft{
-      .source = personAcct,
-      .destination = event.counterpartyAcct,
-      .amount = primitives::utils::roundMoney(outcome.amount),
-      .timestamp = time::toEpochSeconds(ts),
-      .channel = event.channel,
-  }));
+[[nodiscard]] inline bool
+tracks(const entity::product::PortfolioRegistry &registry,
+       const entity::product::ObligationEvent &event) noexcept {
+  return event.direction == entity::product::Direction::outflow &&
+         ::PhantomLedger::products::isInstallmentLoan(event.productType) &&
+         registry.installmentTerms(event.personId, event.productType) !=
+             nullptr;
 }
+
+class EventEmitter {
+public:
+  explicit EventEmitter(
+      const entity::product::PortfolioRegistry &registry) noexcept
+      : registry_(&registry) {}
+
+  [[nodiscard]] std::optional<transactions::Draft>
+  draftFor(random::Rng &rng, const entity::product::ObligationEvent &event,
+           const entity::Key &personAcct, time::TimePoint endExcl) {
+    const auto *terms =
+        registry_->installmentTerms(event.personId, event.productType);
+    if (terms == nullptr) {
+      return std::nullopt;
+    }
+
+    const double scheduled = primitives::utils::roundMoney(event.amount);
+    const delinquency::StateKey key{event.personId, event.productType};
+    auto &state = stateMap_[key];
+
+    const auto outcome = delinquency::advance(rng, state, *terms, scheduled);
+    if (outcome.action == delinquency::Action::noPayment) {
+      return std::nullopt;
+    }
+
+    const auto ts = jitter::installmentTimestamp(
+        rng, event.timestamp, outcome.effectiveLateP, terms->lateDaysMin,
+        terms->lateDaysMax, outcome.forceLate);
+    if (ts >= endExcl) {
+      return std::nullopt;
+    }
+
+    return transactions::Draft{
+        .source = personAcct,
+        .destination = event.counterpartyAcct,
+        .amount = primitives::utils::roundMoney(outcome.amount),
+        .timestamp = time::toEpochSeconds(ts),
+        .channel = event.channel,
+    };
+  }
+
+private:
+  const entity::product::PortfolioRegistry *registry_ = nullptr;
+  delinquency::StateMap stateMap_{};
+};
+
 } // namespace PhantomLedger::transfers::obligations::installments

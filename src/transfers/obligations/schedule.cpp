@@ -1,42 +1,59 @@
 #include "phantomledger/transfers/obligations/schedule.hpp"
 
-#include "phantomledger/taxonomies/products/predicates.hpp"
-#include "phantomledger/transfers/obligations/delinquency.hpp"
 #include "phantomledger/transfers/obligations/installments.hpp"
 #include "phantomledger/transfers/obligations/plain.hpp"
 
 #include <algorithm>
+#include <optional>
 
 namespace PhantomLedger::transfers::obligations {
+namespace {
+
+[[nodiscard]] std::optional<entity::Key>
+primaryAccount(const Population &population, entity::PersonId person) {
+  const auto acctIt = population.primaryAccounts->find(person);
+  if (acctIt == population.primaryAccounts->end()) {
+    return std::nullopt;
+  }
+  return acctIt->second;
+}
+
+void appendDraft(std::vector<transactions::Transaction> &out,
+                 const transactions::Factory &txf,
+                 const std::optional<transactions::Draft> &draft) {
+  if (!draft.has_value()) {
+    return;
+  }
+
+  out.push_back(txf.make(*draft));
+}
+
+} // namespace
+
+Scheduler::Scheduler(random::Rng &rng,
+                     const transactions::Factory &txf) noexcept
+    : rng_(&rng), txf_(&txf) {}
 
 std::vector<transactions::Transaction>
-scheduledPayments(const entity::product::PortfolioRegistry &registry,
-                  time::TimePoint start, time::TimePoint endExcl,
-                  const Population &population, random::Rng &rng,
-                  const transactions::Factory &txf) {
+Scheduler::generate(const entity::product::PortfolioRegistry &registry,
+                    time::HalfOpenInterval active,
+                    const Population &population) const {
   std::vector<transactions::Transaction> out;
-  delinquency::StateMap stateMap;
+  installments::EventEmitter installmentEvents{registry};
 
-  for (const auto &event : registry.allEvents(start, endExcl)) {
-    const auto acctIt = population.primaryAccounts->find(event.personId);
-    if (acctIt == population.primaryAccounts->end()) {
+  for (const auto &event : registry.allEvents(active.start, active.endExcl)) {
+    const auto personAcct = primaryAccount(population, event.personId);
+    if (!personAcct.has_value()) {
       continue;
     }
-    const entity::Key personAcct = acctIt->second;
 
-    const bool routeThroughStateMachine =
-        event.direction == entity::product::Direction::outflow &&
-        ::PhantomLedger::products::isInstallmentLoan(event.productType);
-
-    if (routeThroughStateMachine &&
-        registry.installmentTerms(event.personId, event.productType) !=
-            nullptr) {
-      installments::postEvent(out, registry, stateMap, rng, txf, event,
-                              personAcct,
-
-                              endExcl);
+    if (installments::tracks(registry, event)) {
+      appendDraft(out, *txf_,
+                  installmentEvents.draftFor(*rng_, event, *personAcct,
+                                             active.endExcl));
     } else {
-      plain::postEvent(out, rng, txf, event, personAcct, endExcl);
+      appendDraft(out, *txf_,
+                  plain::draftFor(*rng_, event, *personAcct, active.endExcl));
     }
   }
 
