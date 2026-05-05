@@ -29,10 +29,12 @@ public:
   DayDriver(DayDriver &&) noexcept = default;
   DayDriver &operator=(DayDriver &&) noexcept = default;
 
-  void prepare(market::Market &market, random::Rng &rng,
-               const transactions::Factory &factory, clearing::Ledger *ledger,
-               SpenderEmissionDriver::Threads emissionThreads,
-               double txnsPerMonth);
+  void resetFor(const market::Market &market);
+  void bindEmitter(const market::Market &market, random::Rng &rng,
+                   const transactions::Factory &factory,
+                   clearing::Ledger *ledger) noexcept;
+  void emissionThreads(SpenderEmissionDriver::Threads threads) noexcept;
+  void prepareEmission(double txnsPerMonth);
 
   void bindEmission(const PreparedRun::Budget &budget,
                     const PreparedRun::Routing &routing) noexcept;

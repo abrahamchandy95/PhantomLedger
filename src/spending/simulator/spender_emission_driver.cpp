@@ -39,16 +39,40 @@ rulesFrom(const SpenderEmissionDriver::Behavior &behavior) noexcept {
 SpenderEmissionDriver::SpenderEmissionDriver(Behavior behavior)
     : behavior_(behavior) {}
 
-void SpenderEmissionDriver::prepare(const market::Market &market,
-                                    random::Rng &rng,
-                                    const transactions::Factory &factory,
-                                    clearing::Ledger *ledger, Threads threads,
-                                    double txnsPerMonth) {
-  market_ = &market;
-  rng_ = &rng;
-  factory_ = &factory;
-  ledger_ = ledger;
-  threads_ = threads;
+SpenderEmissionDriver &
+SpenderEmissionDriver::bindMarket(const market::Market &value) noexcept {
+  market_ = &value;
+  return *this;
+}
+
+SpenderEmissionDriver &
+SpenderEmissionDriver::bindRng(random::Rng &value) noexcept {
+  rng_ = &value;
+  return *this;
+}
+
+SpenderEmissionDriver &SpenderEmissionDriver::bindFactory(
+    const transactions::Factory &value) noexcept {
+  factory_ = &value;
+  return *this;
+}
+
+SpenderEmissionDriver &
+SpenderEmissionDriver::bindLedger(clearing::Ledger *value) noexcept {
+  ledger_ = value;
+  return *this;
+}
+
+SpenderEmissionDriver &SpenderEmissionDriver::threads(Threads value) noexcept {
+  threads_ = value;
+  return *this;
+}
+
+void SpenderEmissionDriver::prepare(double txnsPerMonth) {
+  (void)market();
+  (void)rng();
+  (void)factory();
+
   budget_ = nullptr;
   routing_ = nullptr;
 
@@ -65,24 +89,24 @@ void SpenderEmissionDriver::bindRun(
 
 const market::Market &SpenderEmissionDriver::market() const {
   if (market_ == nullptr) {
-    throw std::logic_error("spending::SpenderEmissionDriver: prepare must be "
-                           "called before emission");
+    throw std::logic_error("spending::SpenderEmissionDriver: bindMarket must "
+                           "be called before prepare or emission");
   }
   return *market_;
 }
 
 random::Rng &SpenderEmissionDriver::rng() const {
   if (rng_ == nullptr) {
-    throw std::logic_error("spending::SpenderEmissionDriver: prepare must be "
-                           "called before emission");
+    throw std::logic_error("spending::SpenderEmissionDriver: bindRng must "
+                           "be called before prepare or emission");
   }
   return *rng_;
 }
 
 const transactions::Factory &SpenderEmissionDriver::factory() const {
   if (factory_ == nullptr) {
-    throw std::logic_error("spending::SpenderEmissionDriver: prepare must be "
-                           "called before emission");
+    throw std::logic_error("spending::SpenderEmissionDriver: bindFactory must "
+                           "be called before prepare or emission");
   }
   return *factory_;
 }
@@ -92,7 +116,7 @@ clearing::Ledger *SpenderEmissionDriver::ledger() const noexcept {
 }
 
 const SpenderEmissionDriver::Threads &
-SpenderEmissionDriver::threads() const noexcept {
+SpenderEmissionDriver::threading() const noexcept {
   return threads_;
 }
 
@@ -115,37 +139,37 @@ const PreparedRun::Routing &SpenderEmissionDriver::routing() const {
 void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   threadStates_.clear();
 
-  const auto &threading = threads();
-  if (!threading.parallel()) {
+  const auto &threadCfg = threading();
+  if (!threadCfg.parallel()) {
     return;
   }
 
-  if (threading.rngFactory == nullptr) {
+  if (threadCfg.rngFactory == nullptr) {
     throw std::runtime_error(
         "spending::SpenderEmissionDriver: parallel emission requires "
         "Threads::rngFactory");
   }
 
-  threadStates_.reserve(threading.count);
+  threadStates_.reserve(threadCfg.count);
 
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market().bounds().days) *
        (static_cast<double>(market().population().count()) / 30.0) *
        txnsPerMonth * kTxnReserveSlack) /
-      static_cast<double>(threading.count));
+      static_cast<double>(threadCfg.count));
 
   std::array<char, 16> idBuf{};
-  for (std::uint32_t t = 0; t < threading.count; ++t) {
+  for (std::uint32_t t = 0; t < threadCfg.count; ++t) {
     const auto idStr = renderUInt(idBuf, t);
-    auto threadRng = threading.rngFactory->rng({"spending_thread", idStr});
+    auto threadRng = threadCfg.rngFactory->rng({"spending_thread", idStr});
     threadStates_.emplace_back(std::move(threadRng));
     threadStates_.back().txns.reserve(perThreadReserve);
   }
 }
 
 void SpenderEmissionDriver::prepareLockArray() {
-  const auto &threading = threads();
-  if (!threading.parallel() || ledger() == nullptr) {
+  const auto &threadCfg = threading();
+  if (!threadCfg.parallel() || ledger() == nullptr) {
     lockArray_.resize(0);
     return;
   }
@@ -191,12 +215,12 @@ void SpenderEmissionDriver::emitSerial(
 void SpenderEmissionDriver::emitParallel(
     const PreparedRun::Population &population, RunState &state,
     const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  const auto &threading = threads();
+  const auto &threadCfg = threading();
   const auto spenderCount = population.spenders.size();
   const auto &routingSnapshot = routing();
 
-  runParallel(threading.count, [&](std::uint32_t threadIdx) {
-    const auto range = partitionRange(spenderCount, threading.count, threadIdx);
+  runParallel(threadCfg.count, [&](std::uint32_t threadIdx) {
+    const auto range = partitionRange(spenderCount, threadCfg.count, threadIdx);
 
     if (range.size() == 0) {
       return;
@@ -222,7 +246,7 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
                                     RunState &state,
                                     const actors::DayFrame &frame,
                                     std::span<const double> dailyMultipliers) {
-  if (!threads().parallel()) {
+  if (!threading().parallel()) {
     emitSerial(population, state, frame, dailyMultipliers);
     return;
   }
