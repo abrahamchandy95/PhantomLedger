@@ -134,28 +134,48 @@ std::vector<double> amountMultipliers(const blueprints::LegitBlueprint &plan) {
   return out;
 }
 
-family_rt::TransferRun makeTransferRun(
-    const blueprints::LegitBlueprint &plan, const family_relg::Graph &graph,
-    std::span<const double> multipliers, const FamilyLedgerSources &sources,
-    const random::RngFactory &rngFactory, const transactions::Factory &txf,
-    family_rt::CounterpartyRouting routing) noexcept {
-  family_rt::EducationPayees education{};
+family_rt::KinshipView
+makeKinship(const blueprints::LegitBlueprint &plan,
+            const family_relg::Graph &graph,
+            std::span<const double> multipliers) noexcept {
+  return family_rt::KinshipView{graph, personasView(plan), multipliers};
+}
 
-  if (sources.educationMerchants != nullptr) {
-    education = family_rt::EducationPayees{*sources.educationMerchants};
+family_rt::FamilyAccountDirectory
+makeAccounts(const FamilyLedgerSources &sources,
+             family_rt::CounterpartyRouting routing) noexcept {
+  return family_rt::FamilyAccountDirectory{*sources.accounts,
+                                           *sources.ownership, routing};
+}
+
+family_rt::EducationPayees
+makeEducation(const FamilyLedgerSources &sources) noexcept {
+  if (sources.educationMerchants == nullptr) {
+    return family_rt::EducationPayees{};
   }
 
-  return family_rt::TransferRun{
-      family_rt::KinshipView{graph, personasView(plan), multipliers},
-      family_rt::FamilyAccountDirectory{*sources.accounts, *sources.ownership,
-                                        routing},
-      education,
-      family_rt::PostingWindow{
-          windowFromPlan(plan),
-          std::span<const ::PhantomLedger::time::TimePoint>{
-              plan.monthStarts()}},
-      family_rt::TransferEmission{rngFactory, txf},
-  };
+  return family_rt::EducationPayees{*sources.educationMerchants};
+}
+
+family_rt::PostingWindow
+makePosting(const blueprints::LegitBlueprint &plan) noexcept {
+  return family_rt::PostingWindow{
+      windowFromPlan(plan),
+      std::span<const ::PhantomLedger::time::TimePoint>{plan.monthStarts()}};
+}
+
+family_rt::TransferEmission
+makeEmission(const random::RngFactory &rngFactory,
+             const transactions::Factory &txf) noexcept {
+  return family_rt::TransferEmission{rngFactory, txf};
+}
+
+family_rt::TransferRun
+makeTransferRun(family_rt::KinshipView kinship,
+                family_rt::FamilyAccountDirectory accounts,
+                family_rt::PostingWindow posting,
+                family_rt::TransferEmission emission) noexcept {
+  return family_rt::TransferRun{kinship, accounts, posting, emission};
 }
 
 std::vector<transactions::Transaction> generateFamilyTxns(
@@ -181,9 +201,11 @@ std::vector<transactions::Transaction> generateFamilyTxns(
                        scenario.retireeSupport());
   const auto multipliers = amountMultipliers(plan);
 
-  const auto run =
-      makeTransferRun(plan, graph, std::span<const double>{multipliers},
-                      sources, rngFactory, txf, transferModel->routing);
+  auto run = makeTransferRun(
+      makeKinship(plan, graph, std::span<const double>{multipliers}),
+      makeAccounts(sources, transferModel->routing), makePosting(plan),
+      makeEmission(rngFactory, txf));
+  run.education(makeEducation(sources));
 
   return generateFamilyTxns(run, *transferModel);
 }

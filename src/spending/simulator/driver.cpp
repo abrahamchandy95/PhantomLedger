@@ -53,7 +53,10 @@ std::vector<transactions::Transaction> Simulator::run() {
   }
 
   dayDriver_.resetFor(market_);
-  dayDriver_.bindEmitter(market_, rng_, factory_, ledger_);
+  dayDriver_.bindMarket(market_);
+  dayDriver_.bindRng(rng_);
+  dayDriver_.bindLedger(ledger_);
+  dayDriver_.bindFactory(factory_);
   dayDriver_.emissionThreads(emissionThreads_);
   dayDriver_.prepareEmission(planner_.txnsPerMonth());
 
@@ -73,7 +76,7 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {
-    dayDriver_.runDay(market_, rng_, ledger_, run, state, dayIndex);
+    dayDriver_.runDay(run, state, dayIndex);
   }
 
   dayDriver_.finish(state);

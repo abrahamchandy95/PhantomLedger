@@ -283,10 +283,14 @@ public:
   TransferRun() = default;
 
   TransferRun(KinshipView kinship, FamilyAccountDirectory accounts,
-              EducationPayees education, PostingWindow posting,
-              TransferEmission emission) noexcept
-      : kinship_(kinship), accounts_(accounts), education_(education),
-        posting_(posting), emission_(emission) {}
+              PostingWindow posting, TransferEmission emission) noexcept
+      : kinship_(kinship), accounts_(accounts), posting_(posting),
+        emission_(emission) {}
+
+  TransferRun &education(EducationPayees value) noexcept {
+    education_ = value;
+    return *this;
+  }
 
   [[nodiscard]] bool ready() const noexcept {
     return kinship_.ready() && accounts_.ready() && emission_.ready();
