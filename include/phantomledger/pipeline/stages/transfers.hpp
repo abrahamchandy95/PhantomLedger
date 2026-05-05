@@ -1,79 +1,25 @@
 #pragma once
 
-#include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/inflows/types.hpp"
+#include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
+#include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
+#include "phantomledger/pipeline/stages/transfers/legit_assembly.hpp"
+#include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 #include "phantomledger/pipeline/state.hpp"
-#include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/transfers/fraud/injector.hpp"
-#include "phantomledger/transfers/government/disability.hpp"
-#include "phantomledger/transfers/government/retirement.hpp"
-#include "phantomledger/transfers/insurance/rates.hpp"
-#include "phantomledger/transfers/legit/ledger/posting.hpp"
-#include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 #include <cstdint>
-#include <span>
-#include <unordered_map>
-#include <vector>
-
-namespace PhantomLedger::clearing {
-struct BalanceRules;
-} // namespace PhantomLedger::clearing
-
-namespace PhantomLedger::transfers::credit_cards {
-struct LifecycleRules;
-} // namespace PhantomLedger::transfers::credit_cards
-
-namespace PhantomLedger::transfers::legit::ledger {
-class LegitTransferBuilder;
-struct TransfersPayload;
-} // namespace PhantomLedger::transfers::legit::ledger
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
-using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
-    relatives::FamilyTransferScenario;
-
 class TransferStage {
 public:
-  struct RunScope {
-    ::PhantomLedger::time::Window window{};
-    std::uint64_t seed = 0;
-  };
-
-  struct IncomePrograms {
-    ::PhantomLedger::inflows::RecurringIncomeRules recurring{};
-    ::PhantomLedger::transfers::government::RetirementTerms retirement{};
-    ::PhantomLedger::transfers::government::DisabilityTerms disability{};
-  };
-
-  struct OpeningBalances {
-    const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
-  };
-
-  struct CardLifecycle {
-    const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-        *lifecycleRules = nullptr;
-  };
-
-  struct InsurancePrograms {
-    ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
-  };
-
-  struct ReplayOrdering {
-    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-        replayRules{};
-  };
-
-  struct FraudInjection {
-    const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
-    ::PhantomLedger::transfers::fraud::Injector::Rules injectorRules{};
-  };
-
-  struct HubSelection {
-    double fraction = 0.01;
-  };
+  using RunScope = LegitAssembly::RunScope;
+  using IncomePrograms = LegitAssembly::IncomePrograms;
+  using OpeningBalances = LegitAssembly::OpeningBalances;
+  using CardLifecycle = LegitAssembly::CardLifecycle;
+  using HubSelection = LegitAssembly::HubSelection;
+  using InsurancePrograms = ProductReplay::InsurancePrograms;
+  using ReplayOrdering = LedgerReplay::Ordering;
+  using FraudInjection = FraudEmission::Programs;
 
   TransferStage(::PhantomLedger::random::Rng &rng,
                 const ::PhantomLedger::pipeline::Entities &entities,
@@ -127,35 +73,16 @@ public:
   [[nodiscard]] ::PhantomLedger::pipeline::Transfers build() const;
 
 private:
-  using Transaction = ::PhantomLedger::transactions::Transaction;
-  using PrimaryAccounts = std::unordered_map<::PhantomLedger::entity::PersonId,
-                                             ::PhantomLedger::entity::Key>;
+  [[nodiscard]] const RunScope &runScope() const noexcept;
 
   ::PhantomLedger::random::Rng *rng_ = nullptr;
   const ::PhantomLedger::pipeline::Entities *entities_ = nullptr;
   const ::PhantomLedger::pipeline::Infra *infra_ = nullptr;
 
-  RunScope run_{};
-  IncomePrograms income_{};
-  OpeningBalances openingBalances_{};
-  CardLifecycle cardLifecycle_{};
-  FamilyTransferScenario familyTransfers_{};
-  InsurancePrograms insurance_{};
-  ReplayOrdering replay_{};
-  FraudInjection fraud_{};
-  HubSelection hubSelection_{};
-
-  [[nodiscard]] PrimaryAccounts primaryAccounts() const;
-  [[nodiscard]] ::PhantomLedger::transfers::legit::ledger::LegitTransferBuilder
-  makeLegitBuilder() const;
-  [[nodiscard]] std::vector<Transaction>
-  replayStream(const PrimaryAccounts &primaryAccounts,
-               ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-                   &legitPayload) const;
-  [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectionOutput
-  injectFraud(std::span<const Transaction> draftTxns,
-              const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-                  &legitPayload) const;
+  LegitAssembly legit_{};
+  ProductReplay products_{};
+  LedgerReplay ledger_{};
+  FraudEmission fraud_{};
 };
 
 } // namespace PhantomLedger::pipeline::stages::transfers
