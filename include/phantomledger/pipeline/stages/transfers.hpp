@@ -2,11 +2,9 @@
 
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/inflows/types.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/recurring/employment.hpp"
-#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
@@ -34,68 +32,8 @@ struct TransfersPayload;
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
-struct RunScope {
-  ::PhantomLedger::time::Window window{};
-  std::uint64_t seed = 0;
-};
-
-struct PopulationShape {
-  double hubFraction = 0.01;
-
-  void validate(::PhantomLedger::primitives::validate::Report &r) const {
-    namespace v = ::PhantomLedger::primitives::validate;
-    r.check([&] { v::unit("hubFraction", hubFraction); });
-  }
-};
-
-struct RecurringIncome {
-  ::PhantomLedger::recurring::EmploymentRules employment{};
-  ::PhantomLedger::recurring::LeaseRules lease{};
-
-  double salaryPaidFraction = 0.95;
-  double rentPaidFraction = 0.80;
-
-  void validate(::PhantomLedger::primitives::validate::Report &r) const {
-    namespace v = ::PhantomLedger::primitives::validate;
-
-    employment.validate(r);
-    lease.validate(r);
-
-    r.check([&] { v::unit("salaryPaidFraction", salaryPaidFraction); });
-    r.check([&] { v::unit("rentPaidFraction", rentPaidFraction); });
-  }
-};
-
-struct OpeningBookProtections {
-  const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
-};
-
-struct CreditCardLifecycle {
-  const ::PhantomLedger::transfers::credit_cards::LifecycleRules *lifecycle =
-      nullptr;
-};
-
 using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
     relatives::FamilyTransferScenario;
-
-struct GovernmentPrograms {
-  ::PhantomLedger::transfers::government::RetirementTerms retirement{};
-  ::PhantomLedger::transfers::government::DisabilityTerms disability{};
-};
-
-struct InsuranceClaims {
-  ::PhantomLedger::transfers::insurance::ClaimRates claimRates{};
-};
-
-struct LedgerReplay {
-  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-      preFraud{};
-};
-
-struct FraudInjection {
-  const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
-  ::PhantomLedger::transfers::fraud::Injector::Rules rules;
-};
 
 class TransferStage {
 public:
@@ -103,16 +41,40 @@ public:
                 const ::PhantomLedger::pipeline::Entities &entities,
                 const ::PhantomLedger::pipeline::Infra &infra) noexcept;
 
-  TransferStage &scope(RunScope value) noexcept;
-  TransferStage &income(const RecurringIncome &value);
-  TransferStage &openingBook(OpeningBookProtections value) noexcept;
-  TransferStage &creditCards(CreditCardLifecycle value) noexcept;
+  TransferStage &window(::PhantomLedger::time::Window value) noexcept;
+  TransferStage &seed(std::uint64_t value) noexcept;
+
+  TransferStage &
+  recurringIncome(const ::PhantomLedger::inflows::RecurringIncomeRules &value);
+  TransferStage &
+  employmentRules(const ::PhantomLedger::recurring::EmploymentRules &value);
+  TransferStage &
+  leaseRules(const ::PhantomLedger::recurring::LeaseRules &value);
+  TransferStage &salaryPaidFraction(double value) noexcept;
+  TransferStage &rentPaidFraction(double value) noexcept;
+
+  TransferStage &openingBalanceRules(
+      const ::PhantomLedger::clearing::BalanceRules *value) noexcept;
+  TransferStage &
+  creditLifecycle(const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+                      *value) noexcept;
   TransferStage &family(FamilyTransferScenario value) noexcept;
-  TransferStage &government(const GovernmentPrograms &value);
-  TransferStage &insurance(InsuranceClaims value) noexcept;
-  TransferStage &replay(LedgerReplay value) noexcept;
-  TransferStage &fraud(FraudInjection value) noexcept;
-  TransferStage &population(PopulationShape value) noexcept;
+
+  TransferStage &retirementBenefits(
+      const ::PhantomLedger::transfers::government::RetirementTerms &value);
+  TransferStage &disabilityBenefits(
+      const ::PhantomLedger::transfers::government::DisabilityTerms &value);
+  TransferStage &insuranceClaims(
+      ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept;
+
+  TransferStage &replayRules(
+      ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+          value) noexcept;
+  TransferStage &fraudProfile(
+      const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
+  TransferStage &
+  fraudRules(::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept;
+  TransferStage &hubFraction(double value) noexcept;
 
   [[nodiscard]] ::PhantomLedger::pipeline::Transfers build() const;
 
@@ -125,16 +87,23 @@ private:
   const ::PhantomLedger::pipeline::Entities *entities_ = nullptr;
   const ::PhantomLedger::pipeline::Infra *infra_ = nullptr;
 
-  RunScope run_{};
-  RecurringIncome income_{};
-  OpeningBookProtections openingBook_{};
-  CreditCardLifecycle creditCards_{};
+  ::PhantomLedger::time::Window window_{};
+  std::uint64_t seed_ = 0;
+
+  ::PhantomLedger::inflows::RecurringIncomeRules recurringIncome_{};
+  const ::PhantomLedger::clearing::BalanceRules *openingBalanceRules_ = nullptr;
+  const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+      *creditLifecycle_ = nullptr;
   FamilyTransferScenario familyScenario_{};
-  GovernmentPrograms government_{};
-  InsuranceClaims insurance_{};
-  LedgerReplay replay_{};
-  FraudInjection fraud_{};
-  PopulationShape population_{};
+  ::PhantomLedger::transfers::government::RetirementTerms retirement_{};
+  ::PhantomLedger::transfers::government::DisabilityTerms disability_{};
+  ::PhantomLedger::transfers::insurance::ClaimRates claimRates_{};
+  ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+      replayRules_{};
+  const ::PhantomLedger::entities::synth::people::Fraud *fraudProfile_ =
+      nullptr;
+  ::PhantomLedger::transfers::fraud::Injector::Rules fraudRules_{};
+  double hubFraction_ = 0.01;
 
   [[nodiscard]] PrimaryAccounts primaryAccounts() const;
   [[nodiscard]] ::PhantomLedger::transfers::legit::ledger::LegitTransferBuilder

@@ -131,20 +131,11 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
 
   pl::pipeline::SimulationPipeline pipeline{rng, window, entities, seed};
 
-  pipeline
-      .transferScope(pl::pipeline::stages::transfers::RunScope{
-          .window = window,
-          .seed = seed,
-      })
-      .openingBook(pl::pipeline::stages::transfers::OpeningBookProtections{
-          .balanceRules = &balanceRules,
-      })
-      .creditCards(pl::pipeline::stages::transfers::CreditCardLifecycle{
-          .lifecycle = &lifecycleRules,
-      })
-      .fraud(pl::pipeline::stages::transfers::FraudInjection{
-          .profile = &fraudProfile,
-      });
+  pipeline.transferWindow(window)
+      .transferSeed(seed)
+      .openingBalanceRules(&balanceRules)
+      .creditLifecycle(&lifecycleRules)
+      .fraudProfile(&fraudProfile);
 
   return pipeline.run();
 }

@@ -1,11 +1,9 @@
 #include "phantomledger/pipeline/stages/transfers.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/inflows/types.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/insurance/claims.hpp"
 #include "phantomledger/transfers/insurance/premiums.hpp"
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
@@ -31,6 +29,7 @@ namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
 namespace fraud = ::PhantomLedger::transfers::fraud;
 namespace insurance = ::PhantomLedger::transfers::insurance;
 namespace obligations = ::PhantomLedger::transfers::obligations;
+namespace validate = ::PhantomLedger::primitives::validate;
 
 using Transaction = ::PhantomLedger::transactions::Transaction;
 using ChannelReasonKey = ::PhantomLedger::pipeline::Transfers::ChannelReasonKey;
@@ -44,21 +43,18 @@ constexpr double kFraudHeadroomFraction = 0.05;
                                               kFraudHeadroomFraction);
 }
 
-[[nodiscard]] ::PhantomLedger::inflows::RecurringIncomeRules
-makeRecurringIncomeRules(const RecurringIncome &income) {
-  return ::PhantomLedger::inflows::RecurringIncomeRules{
-      .employment = income.employment,
-      .lease = income.lease,
-      .salaryPaidFraction = income.salaryPaidFraction,
-      .rentPaidFraction = income.rentPaidFraction,
-  };
+void validateHubFraction(double value) {
+  validate::Report report;
+  report.check([&] { validate::unit("hubFraction", value); });
+  report.throwIfFailed();
 }
 
 [[nodiscard]] blueprints::LegitTimeframe
-makeLegitTimeframe(RunScope run) noexcept {
+makeLegitTimeframe(::PhantomLedger::time::Window window,
+                   std::uint64_t seed) noexcept {
   return blueprints::LegitTimeframe{
-      .window = run.window,
-      .seed = run.seed,
+      .window = window,
+      .seed = seed,
   };
 }
 
@@ -87,17 +83,17 @@ makeLegitTimeframe(RunScope run) noexcept {
 
 [[nodiscard]] blueprints::HubSelectionRules
 makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
-                 PopulationShape population) noexcept {
+                 double hubFraction) noexcept {
   return blueprints::HubSelectionRules{
       .populationCount = entities.people.roster.count,
-      .fraction = population.hubFraction,
+      .fraction = hubFraction,
   };
 }
 
-[[nodiscard]] legit_ledger::OpeningBook
-makeOpeningBook(::PhantomLedger::random::Rng &rng,
-                const ::PhantomLedger::pipeline::Entities &entities,
-                OpeningBookProtections openingBook) noexcept {
+[[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
   return legit_ledger::OpeningBook{
       rng,
       legit_ledger::OpeningBook::Accounts{
@@ -106,18 +102,19 @@ makeOpeningBook(::PhantomLedger::random::Rng &rng,
           .ownership = &entities.accounts.ownership,
       },
       legit_ledger::OpeningBook::Protections{
-          .balanceRules = openingBook.balanceRules,
+          .balanceRules = balanceRules,
           .portfolios = &entities.portfolios,
           .creditCards = &entities.creditCards,
       },
   };
 }
 
-[[nodiscard]] legit_ledger::passes::IncomePass
-makeIncomePass(::PhantomLedger::random::Rng &rng,
-               const ::PhantomLedger::pipeline::Entities &entities,
-               const RecurringIncome &income,
-               const GovernmentPrograms &government) {
+[[nodiscard]] legit_ledger::passes::IncomePass makeIncomePass(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::inflows::RecurringIncomeRules &recurringIncome,
+    const ::PhantomLedger::transfers::government::RetirementTerms &retirement,
+    const ::PhantomLedger::transfers::government::DisabilityTerms &disability) {
   return legit_ledger::passes::IncomePass{
       &rng,
       legit_ledger::passes::AccountAccess{
@@ -125,18 +122,18 @@ makeIncomePass(::PhantomLedger::random::Rng &rng,
           .ownership = &entities.accounts.ownership,
       },
       &entities.counterparties,
-      makeRecurringIncomeRules(income),
+      recurringIncome,
       legit_ledger::passes::GovernmentBenefits{
-          .retirement = &government.retirement,
-          .disability = &government.disability,
+          .retirement = &retirement,
+          .disability = &disability,
       },
   };
 }
 
-[[nodiscard]] legit_ledger::passes::RoutinePass
-makeRoutinePass(::PhantomLedger::random::Rng &rng,
-                const ::PhantomLedger::pipeline::Entities &entities,
-                const RecurringIncome &income) {
+[[nodiscard]] legit_ledger::passes::RoutinePass makeRoutinePass(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::inflows::RecurringIncomeRules &recurringIncome) {
   return legit_ledger::passes::RoutinePass{
       &rng,
       legit_ledger::passes::RoutineResources{
@@ -145,7 +142,7 @@ makeRoutinePass(::PhantomLedger::random::Rng &rng,
           .portfolios = &entities.portfolios,
           .creditCards = &entities.creditCards,
       },
-      makeRecurringIncomeRules(income),
+      recurringIncome,
   };
 }
 
@@ -163,11 +160,12 @@ makeFamilyPass(const ::PhantomLedger::pipeline::Entities &entities) {
 [[nodiscard]] legit_ledger::passes::CreditLifecyclePass
 makeCreditPass(::PhantomLedger::random::Rng &rng,
                const ::PhantomLedger::pipeline::Entities &entities,
-               const CreditCardLifecycle &creditCards) {
+               const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+                   *lifecycleRules) {
   return legit_ledger::passes::CreditLifecyclePass{
       &rng,
       &entities.creditCards,
-      creditCards.lifecycle,
+      lifecycleRules,
   };
 }
 
@@ -234,24 +232,55 @@ TransferStage::TransferStage(
     const ::PhantomLedger::pipeline::Infra &infra) noexcept
     : rng_{&rng}, entities_{&entities}, infra_{&infra} {}
 
-TransferStage &TransferStage::scope(RunScope value) noexcept {
-  run_ = value;
+TransferStage &
+TransferStage::window(::PhantomLedger::time::Window value) noexcept {
+  window_ = value;
   return *this;
 }
 
-TransferStage &TransferStage::income(const RecurringIncome &value) {
-  income_ = value;
+TransferStage &TransferStage::seed(std::uint64_t value) noexcept {
+  seed_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::recurringIncome(
+    const ::PhantomLedger::inflows::RecurringIncomeRules &value) {
+  recurringIncome_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::employmentRules(
+    const ::PhantomLedger::recurring::EmploymentRules &value) {
+  recurringIncome_.employment = value;
   return *this;
 }
 
 TransferStage &
-TransferStage::openingBook(OpeningBookProtections value) noexcept {
-  openingBook_ = value;
+TransferStage::leaseRules(const ::PhantomLedger::recurring::LeaseRules &value) {
+  recurringIncome_.lease = value;
   return *this;
 }
 
-TransferStage &TransferStage::creditCards(CreditCardLifecycle value) noexcept {
-  creditCards_ = value;
+TransferStage &TransferStage::salaryPaidFraction(double value) noexcept {
+  recurringIncome_.salaryPaidFraction = value;
+  return *this;
+}
+
+TransferStage &TransferStage::rentPaidFraction(double value) noexcept {
+  recurringIncome_.rentPaidFraction = value;
+  return *this;
+}
+
+TransferStage &TransferStage::openingBalanceRules(
+    const ::PhantomLedger::clearing::BalanceRules *value) noexcept {
+  openingBalanceRules_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::creditLifecycle(
+    const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+        *value) noexcept {
+  creditLifecycle_ = value;
   return *this;
 }
 
@@ -260,28 +289,45 @@ TransferStage &TransferStage::family(FamilyTransferScenario value) noexcept {
   return *this;
 }
 
-TransferStage &TransferStage::government(const GovernmentPrograms &value) {
-  government_ = value;
+TransferStage &TransferStage::retirementBenefits(
+    const ::PhantomLedger::transfers::government::RetirementTerms &value) {
+  retirement_ = value;
   return *this;
 }
 
-TransferStage &TransferStage::insurance(InsuranceClaims value) noexcept {
-  insurance_ = value;
+TransferStage &TransferStage::disabilityBenefits(
+    const ::PhantomLedger::transfers::government::DisabilityTerms &value) {
+  disability_ = value;
   return *this;
 }
 
-TransferStage &TransferStage::replay(LedgerReplay value) noexcept {
-  replay_ = value;
+TransferStage &TransferStage::insuranceClaims(
+    ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept {
+  claimRates_ = value;
   return *this;
 }
 
-TransferStage &TransferStage::fraud(FraudInjection value) noexcept {
-  fraud_ = value;
+TransferStage &TransferStage::replayRules(
+    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
+        value) noexcept {
+  replayRules_ = value;
   return *this;
 }
 
-TransferStage &TransferStage::population(PopulationShape value) noexcept {
-  population_ = value;
+TransferStage &TransferStage::fraudProfile(
+    const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept {
+  fraudProfile_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::fraudRules(
+    ::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept {
+  fraudRules_ = value;
+  return *this;
+}
+
+TransferStage &TransferStage::hubFraction(double value) noexcept {
+  hubFraction_ = value;
   return *this;
 }
 
@@ -303,18 +349,19 @@ TransferStage::PrimaryAccounts TransferStage::primaryAccounts() const {
 legit_ledger::LegitTransferBuilder TransferStage::makeLegitBuilder() const {
   legit_ledger::LegitTransferBuilder builder{
       *rng_,
-      makeLegitTimeframe(run_),
+      makeLegitTimeframe(window_, seed_),
       makeAccountCensus(*entities_),
-      makeOpeningBook(*rng_, *entities_, openingBook_),
+      makeOpeningBook(*rng_, *entities_, openingBalanceRules_),
   };
 
   builder.counterparties(makeCounterpartyPools(*entities_))
       .personas(makePersonaCatalog(*entities_))
-      .hubSelection(makeHubSelection(*entities_, population_))
-      .income(makeIncomePass(*rng_, *entities_, income_, government_))
-      .routines(makeRoutinePass(*rng_, *entities_, income_))
+      .hubSelection(makeHubSelection(*entities_, hubFraction_))
+      .income(makeIncomePass(*rng_, *entities_, recurringIncome_, retirement_,
+                             disability_))
+      .routines(makeRoutinePass(*rng_, *entities_, recurringIncome_))
       .family(makeFamilyPass(*entities_))
-      .credit(makeCreditPass(*rng_, *entities_, creditCards_))
+      .credit(makeCreditPass(*rng_, *entities_, creditLifecycle_))
       .familyScenario(familyScenario_)
       .router(infra_->router);
 
@@ -331,15 +378,15 @@ std::vector<Transaction> TransferStage::replayStream(
 
   insurance::Population insPop{.primaryAccounts = &primaryAccounts};
 
-  auto premiumTxns = insurance::premiums(run_.window, *rng_, txf,
-                                         entities_->portfolios, insPop);
+  auto premiumTxns =
+      insurance::premiums(window_, *rng_, txf, entities_->portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
 
-  ::PhantomLedger::random::RngFactory claimsFactory{run_.seed};
-  insurance::ClaimScheduler claimScheduler{insurance_.claimRates, *rng_, txf,
+  ::PhantomLedger::random::RngFactory claimsFactory{seed_};
+  insurance::ClaimScheduler claimScheduler{claimRates_, *rng_, txf,
                                            claimsFactory};
   auto claimTxns =
-      claimScheduler.generate(run_.window, entities_->portfolios, insPop);
+      claimScheduler.generate(window_, entities_->portfolios, insPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
 
   obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
@@ -347,8 +394,8 @@ std::vector<Transaction> TransferStage::replayStream(
   auto obligationTxns =
       obligationsScheduler.generate(entities_->portfolios,
                                     ::PhantomLedger::time::HalfOpenInterval{
-                                        .start = run_.window.start,
-                                        .endExcl = run_.window.endExcl(),
+                                        .start = window_.start,
+                                        .endExcl = window_.endExcl(),
                                     },
                                     oblPop);
   stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
@@ -365,13 +412,13 @@ fraud::InjectionOutput TransferStage::injectFraud(
           .router = &infra_->router,
           .ringInfra = &infra_->ringInfra,
       },
-      fraud_.rules,
+      fraudRules_,
   };
 
   return injector.inject(
       fraud::Injector::FraudPopulation{
-          .profile = fraud_.profile,
-          .window = run_.window,
+          .profile = fraudProfile_,
+          .window = window_,
           .topology = &entities_->people.topology,
           .accounts = &entities_->accounts.registry,
           .ownership = &entities_->accounts.ownership,
@@ -387,8 +434,8 @@ fraud::InjectionOutput TransferStage::injectFraud(
 }
 
 ::PhantomLedger::pipeline::Transfers TransferStage::build() const {
-  primitives::validate::require(income_);
-  primitives::validate::require(population_);
+  validate::require(recurringIncome_);
+  validateHubFraction(hubFraction_);
 
   auto builder = makeLegitBuilder();
   legit_ledger::TransfersPayload legitPayload = builder.build();
@@ -406,7 +453,7 @@ fraud::InjectionOutput TransferStage::injectFraud(
   auto replaySortedStream = replayStream(primaryAccountsByPerson, legitPayload);
 
   auto preReplay =
-      runPreFraudReplay(*legitPayload.initialBook, *rng_, replay_.preFraud,
+      runPreFraudReplay(*legitPayload.initialBook, *rng_, replayRules_,
                         std::move(replaySortedStream));
 
   const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
@@ -417,7 +464,7 @@ fraud::InjectionOutput TransferStage::injectFraud(
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
   auto postReplay = runPostFraudReplay(*rng_, *legitPayload.initialBook,
-                                       replay_.preFraud, std::move(mergedTxns));
+                                       replayRules_, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
       entities_->accounts.lookup, postReplay.finalTxns);
