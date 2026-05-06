@@ -40,8 +40,8 @@ public:
   [[nodiscard]] static ::PhantomLedger::transfers::fraud::Injector::
       LegitCounterparties
       legitCounterparties(
-          const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-              &payload) noexcept;
+          const ::PhantomLedger::transfers::legit::ledger::LegitCounterparties
+              &counterparties) noexcept;
 
 private:
   Programs programs_{};

@@ -1,7 +1,5 @@
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 
-#include <span>
-
 namespace PhantomLedger::pipeline::stages::transfers {
 
 namespace fraud = ::PhantomLedger::transfers::fraud;
@@ -47,13 +45,11 @@ fraud::Injector::AccountView FraudEmission::accountView(
 }
 
 fraud::Injector::LegitCounterparties FraudEmission::legitCounterparties(
-    const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-        &payload) noexcept {
+    const ::PhantomLedger::transfers::legit::ledger::LegitCounterparties
+        &counterparties) noexcept {
   return fraud::Injector::LegitCounterparties{
-      .billerAccounts = std::span<const ::PhantomLedger::entity::Key>(
-          payload.billerAccounts.data(), payload.billerAccounts.size()),
-      .employers = std::span<const ::PhantomLedger::entity::Key>(
-          payload.employers.data(), payload.employers.size()),
+      .billerAccounts = counterparties.billerView(),
+      .employers = counterparties.employerView(),
   };
 }
 

@@ -49,23 +49,23 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
   auto builder = legit_.builder(rng, entities, infra);
   auto legitPayload = builder.build();
 
-  if (legitPayload.initialBook == nullptr) {
+  if (!legitPayload.openingBook.hasInitialBook()) {
     throw std::runtime_error(
         "transfers::TransferStage::build: legit builder produced no initial "
         "book");
   }
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, legitPayload.candidateTxns);
+      entities.accounts.lookup, legitPayload.txns.candidateTxns);
 
   const auto scope = legit_.runScope();
   const auto primaryAccountsByPerson = primaryAccounts(entities);
 
   auto replaySortedStream =
       products_.merge(scope.window, scope.seed, rng, entities, infra,
-                      primaryAccountsByPerson, legitPayload);
+                      primaryAccountsByPerson, legitPayload.txns);
 
-  auto preReplay = ledger_.preFraud(*legitPayload.initialBook, rng,
+  auto preReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook, rng,
                                     std::move(replaySortedStream));
 
   const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
@@ -81,15 +81,15 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
       FraudEmission::accountView(entities.accounts.registry,
                                  entities.accounts.ownership));
 
-  auto fraudOut =
-      fraudInjector.inject(scope.window, draftView,
-                           FraudEmission::legitCounterparties(legitPayload));
+  auto fraudOut = fraudInjector.inject(
+      scope.window, draftView,
+      FraudEmission::legitCounterparties(legitPayload.counterparties));
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
-  auto postReplay =
-      ledger_.postFraud(rng, *legitPayload.initialBook, std::move(mergedTxns));
+  auto postReplay = ledger_.postFraud(
+      rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
       entities.accounts.lookup, postReplay.finalTxns);

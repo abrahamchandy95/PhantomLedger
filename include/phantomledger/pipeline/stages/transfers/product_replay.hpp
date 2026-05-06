@@ -8,6 +8,7 @@
 #include "phantomledger/transfers/insurance/rates.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
 
+#include <cstdint>
 #include <unordered_map>
 #include <vector>
 
@@ -35,8 +36,8 @@ public:
         const ::PhantomLedger::pipeline::Entities &entities,
         const ::PhantomLedger::pipeline::Infra &infra,
         const PrimaryAccounts &primaryAccounts,
-        ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-            &legitPayload) const;
+        ::PhantomLedger::transfers::legit::ledger::LegitTxnStreams &legitTxns)
+      const;
 
 private:
   InsurancePrograms insurance_{};
