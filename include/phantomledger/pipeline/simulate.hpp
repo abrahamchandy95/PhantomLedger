@@ -17,8 +17,8 @@ public:
   using EntitySynthesis =
       ::PhantomLedger::pipeline::stages::entities::EntitySynthesis;
   using InfraStage = ::PhantomLedger::pipeline::stages::infra::AccessInfraStage;
-  using ObligationProducts =
-      ::PhantomLedger::pipeline::stages::products::ObligationPrograms;
+  using ProductSynthesis =
+      ::PhantomLedger::pipeline::stages::products::ObligationSynthesis;
   using TransferStage =
       ::PhantomLedger::pipeline::stages::transfers::TransferStage;
 
@@ -28,8 +28,7 @@ public:
 
   SimulationPipeline(::PhantomLedger::random::Rng &rng,
                      ::PhantomLedger::time::Window window,
-                     EntitySynthesis entities,
-                     ObligationProducts obligationProducts,
+                     EntitySynthesis entities, ProductSynthesis products,
                      std::uint64_t seed = 0);
 
   SimulationPipeline(const SimulationPipeline &) = delete;
@@ -40,8 +39,8 @@ public:
   [[nodiscard]] InfraStage &infraStage() noexcept;
   [[nodiscard]] const InfraStage &infraStage() const noexcept;
 
-  [[nodiscard]] ObligationProducts &obligationProducts() noexcept;
-  [[nodiscard]] const ObligationProducts &obligationProducts() const noexcept;
+  [[nodiscard]] ProductSynthesis &products() noexcept;
+  [[nodiscard]] const ProductSynthesis &products() const noexcept;
 
   [[nodiscard]] TransferStage &transferStage() noexcept;
   [[nodiscard]] const TransferStage &transferStage() const noexcept;
@@ -54,7 +53,7 @@ private:
   std::uint64_t seed_ = 0;
 
   EntitySynthesis entities_;
-  ObligationProducts obligationProducts_{};
+  ProductSynthesis products_{};
 
   InfraStage infra_{};
   TransferStage transfers_{};
@@ -69,7 +68,6 @@ simulate(::PhantomLedger::random::Rng &rng,
 simulate(::PhantomLedger::random::Rng &rng,
          ::PhantomLedger::time::Window window,
          SimulationPipeline::EntitySynthesis entities,
-         SimulationPipeline::ObligationProducts obligationProducts,
-         std::uint64_t seed = 0);
+         SimulationPipeline::ProductSynthesis products, std::uint64_t seed = 0);
 
 } // namespace PhantomLedger::pipeline

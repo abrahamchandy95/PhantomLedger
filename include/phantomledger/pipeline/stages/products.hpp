@@ -13,34 +13,54 @@
 
 namespace PhantomLedger::pipeline::stages::products {
 
-struct PersonProductRng {
-  std::uint64_t seed =
+class ObligationSynthesis {
+public:
+  using MortgageTerms =
+      ::PhantomLedger::entities::synth::products::MortgageTerms;
+  using AutoLoanTerms =
+      ::PhantomLedger::entities::synth::products::AutoLoanTerms;
+  using StudentLoanTerms =
+      ::PhantomLedger::entities::synth::products::StudentLoanTerms;
+  using TaxTerms = ::PhantomLedger::entities::synth::products::TaxTerms;
+  using InsuranceTerms =
+      ::PhantomLedger::entities::synth::products::InsuranceTerms;
+
+  ObligationSynthesis() = default;
+
+  ObligationSynthesis &seed(std::uint64_t value) noexcept;
+  ObligationSynthesis &mortgage(MortgageTerms value) noexcept;
+  ObligationSynthesis &autoLoan(AutoLoanTerms value) noexcept;
+  ObligationSynthesis &studentLoan(StudentLoanTerms value) noexcept;
+  ObligationSynthesis &tax(TaxTerms value) noexcept;
+  ObligationSynthesis &insurance(InsuranceTerms value) noexcept;
+
+  [[nodiscard]] std::uint64_t seed() const noexcept { return seed_; }
+  [[nodiscard]] const MortgageTerms &mortgage() const noexcept {
+    return mortgage_;
+  }
+  [[nodiscard]] const AutoLoanTerms &autoLoan() const noexcept {
+    return autoLoan_;
+  }
+  [[nodiscard]] const StudentLoanTerms &studentLoan() const noexcept {
+    return studentLoan_;
+  }
+  [[nodiscard]] const TaxTerms &tax() const noexcept { return tax_; }
+  [[nodiscard]] const InsuranceTerms &insurance() const noexcept {
+    return insurance_;
+  }
+
+  void synthesize(::PhantomLedger::pipeline::Entities &entities,
+                  ::PhantomLedger::time::Window window) const;
+
+private:
+  std::uint64_t seed_ =
       ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
-};
 
-struct InstallmentLending {
-  ::PhantomLedger::entities::synth::products::MortgageTerms mortgage{};
-  ::PhantomLedger::entities::synth::products::AutoLoanTerms autoLoan{};
-  ::PhantomLedger::entities::synth::products::StudentLoanTerms studentLoan{};
+  MortgageTerms mortgage_{};
+  AutoLoanTerms autoLoan_{};
+  StudentLoanTerms studentLoan_{};
+  TaxTerms tax_{};
+  InsuranceTerms insurance_{};
 };
-
-struct TaxWithholding {
-  ::PhantomLedger::entities::synth::products::TaxTerms tax{};
-};
-
-struct InsuranceCoverage {
-  ::PhantomLedger::entities::synth::products::InsuranceTerms insurance{};
-};
-
-struct ObligationPrograms {
-  PersonProductRng rng{};
-  InstallmentLending lending{};
-  TaxWithholding taxes{};
-  InsuranceCoverage coverage{};
-};
-
-void synthesize(::PhantomLedger::pipeline::Entities &entities,
-                ::PhantomLedger::time::Window window,
-                const ObligationPrograms &programs);
 
 } // namespace PhantomLedger::pipeline::stages::products
