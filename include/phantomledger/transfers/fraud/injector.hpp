@@ -55,20 +55,23 @@ public:
     std::span<const entity::Key> employers{};
   };
 
-  explicit Injector(Services services) noexcept;
-  Injector(Services services, Patterns patterns) noexcept;
+  Injector(Services services, RingView rings, AccountView accounts) noexcept;
+  Injector(Services services, RingView rings, AccountView accounts,
+           Patterns patterns) noexcept;
 
   [[nodiscard]] InjectionOutput
-  inject(RingView rings, AccountView accounts, time::Window window,
+  inject(time::Window window,
          std::span<const transactions::Transaction> baseTxns) const;
 
   [[nodiscard]] InjectionOutput
-  inject(RingView rings, AccountView accounts, time::Window window,
+  inject(time::Window window,
          std::span<const transactions::Transaction> baseTxns,
          LegitCounterparties counterparties) const;
 
 private:
   Services services_;
+  RingView rings_{};
+  AccountView accounts_{};
   Patterns patterns_{};
 };
 

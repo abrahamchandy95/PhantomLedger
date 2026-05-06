@@ -3,25 +3,13 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
-
-#include <span>
-
-namespace PhantomLedger::infra {
-class Router;
-struct SharedInfra;
-} // namespace PhantomLedger::infra
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
 class FraudEmission {
 public:
-  using Transaction = ::PhantomLedger::transactions::Transaction;
-
   struct Programs {
     const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
     ::PhantomLedger::transfers::fraud::Injector::Patterns patterns{};
@@ -35,17 +23,25 @@ public:
   FraudEmission &
   rules(::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept;
 
-  [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectionOutput
-  inject(::PhantomLedger::random::Rng &rng,
-         const ::PhantomLedger::infra::Router &router,
-         const ::PhantomLedger::infra::SharedInfra &ringInfra,
-         ::PhantomLedger::time::Window window,
-         const ::PhantomLedger::entity::person::Topology &topology,
-         const ::PhantomLedger::entity::account::Registry &accounts,
-         const ::PhantomLedger::entity::account::Ownership &ownership,
-         std::span<const Transaction> draftTxns,
-         const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-             &legitPayload) const;
+  [[nodiscard]] ::PhantomLedger::transfers::fraud::Injector
+  makeInjector(::PhantomLedger::transfers::fraud::Injector::Services services,
+               ::PhantomLedger::transfers::fraud::Injector::RingView rings,
+               ::PhantomLedger::transfers::fraud::Injector::AccountView
+                   accounts) const noexcept;
+
+  [[nodiscard]] ::PhantomLedger::transfers::fraud::Injector::RingView ringView(
+      const ::PhantomLedger::entity::person::Topology &topology) const noexcept;
+
+  [[nodiscard]] static ::PhantomLedger::transfers::fraud::Injector::AccountView
+  accountView(
+      const ::PhantomLedger::entity::account::Registry &registry,
+      const ::PhantomLedger::entity::account::Ownership &ownership) noexcept;
+
+  [[nodiscard]] static ::PhantomLedger::transfers::fraud::Injector::
+      LegitCounterparties
+      legitCounterparties(
+          const ::PhantomLedger::transfers::legit::ledger::TransfersPayload
+              &payload) noexcept;
 
 private:
   Programs programs_{};

@@ -71,10 +71,19 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
   const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
                                                preReplay.draftTxns.size()};
 
+  auto fraudInjector = fraud_.makeInjector(
+      ::PhantomLedger::transfers::fraud::Injector::Services{
+          .rng = rng,
+          .router = &infra.router,
+          .ringInfra = &infra.ringInfra,
+      },
+      fraud_.ringView(entities.people.topology),
+      FraudEmission::accountView(entities.accounts.registry,
+                                 entities.accounts.ownership));
+
   auto fraudOut =
-      fraud_.inject(rng, infra.router, infra.ringInfra, scope.window,
-                    entities.people.topology, entities.accounts.registry,
-                    entities.accounts.ownership, draftView, legitPayload);
+      fraudInjector.inject(scope.window, draftView,
+                           FraudEmission::legitCounterparties(legitPayload));
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));

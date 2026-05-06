@@ -23,33 +23,36 @@ namespace {
 
 } // namespace
 
-Injector::Injector(Services services) noexcept
-    : Injector(services, Patterns{}) {}
+Injector::Injector(Services services, RingView rings,
+                   AccountView accounts) noexcept
+    : Injector(services, rings, accounts, Patterns{}) {}
 
-Injector::Injector(Services services, Patterns patterns) noexcept
-    : services_(services), patterns_(patterns) {}
+Injector::Injector(Services services, RingView rings, AccountView accounts,
+                   Patterns patterns) noexcept
+    : services_(services), rings_(rings), accounts_(accounts),
+      patterns_(patterns) {}
 
 InjectionOutput
-Injector::inject(RingView rings, AccountView accounts, time::Window window,
+Injector::inject(time::Window window,
                  std::span<const transactions::Transaction> baseTxns) const {
-  return inject(rings, accounts, window, baseTxns, LegitCounterparties{});
+  return inject(window, baseTxns, LegitCounterparties{});
 }
 
 InjectionOutput
-Injector::inject(RingView rings, AccountView accounts, time::Window window,
+Injector::inject(time::Window window,
                  std::span<const transactions::Transaction> baseTxns,
                  LegitCounterparties counterparties) const {
-  if (rings.topology == nullptr || accounts.registry == nullptr ||
-      accounts.ownership == nullptr) {
+  if (rings_.topology == nullptr || accounts_.registry == nullptr ||
+      accounts_.ownership == nullptr) {
     throw std::invalid_argument(
         "Fraud injection requires topology, accounts and ownership");
   }
-  if (rings.profile == nullptr) {
+  if (rings_.profile == nullptr) {
     throw std::invalid_argument(
         "Fraud injection requires a non-null RingView.profile");
   }
 
-  if (rings.topology->rings.empty()) {
+  if (rings_.topology->rings.empty()) {
     return InjectionOutput{
         .txns = std::vector<transactions::Transaction>(baseTxns.begin(),
                                                        baseTxns.end()),
@@ -76,8 +79,8 @@ Injector::inject(RingView rings, AccountView accounts, time::Window window,
       .employers = std::vector<entity::Key>(counterparties.employers.begin(),
                                             counterparties.employers.end()),
   };
-  pools.allAccounts.reserve(accounts.registry->records.size());
-  for (const auto &record : accounts.registry->records) {
+  pools.allAccounts.reserve(accounts_.registry->records.size());
+  for (const auto &record : accounts_.registry->records) {
     pools.allAccounts.push_back(record.id);
   }
 
@@ -98,10 +101,10 @@ Injector::inject(RingView rings, AccountView accounts, time::Window window,
   };
 
   std::vector<Plan> ringPlans;
-  ringPlans.reserve(rings.topology->rings.size());
-  for (const auto &ring : rings.topology->rings) {
-    ringPlans.push_back(buildPlan(ring, *rings.topology, *accounts.registry,
-                                  *accounts.ownership));
+  ringPlans.reserve(rings_.topology->rings.size());
+  for (const auto &ring : rings_.topology->rings) {
+    ringPlans.push_back(buildPlan(ring, *rings_.topology, *accounts_.registry,
+                                  *accounts_.ownership));
   }
 
   std::vector<transactions::Transaction> camoTxns;
@@ -112,7 +115,7 @@ Injector::inject(RingView rings, AccountView accounts, time::Window window,
   }
 
   const auto targetIllicit = calculateIllicitBudget(
-      static_cast<double>(rings.profile->limits.targetIllicitP),
+      static_cast<double>(rings_.profile->limits.targetIllicitP),
       static_cast<std::int64_t>(baseTxns.size() + camoTxns.size()));
 
   std::vector<transactions::Transaction> out;
