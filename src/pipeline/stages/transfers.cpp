@@ -65,11 +65,11 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
       products_.merge(scope.window, scope.seed, rng, entities, infra,
                       primaryAccountsByPerson, legitPayload.txns);
 
-  auto preReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook, rng,
-                                    std::move(replaySortedStream));
+  auto candidateReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook,
+                                          rng, std::move(replaySortedStream));
 
-  const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
-                                               preReplay.draftTxns.size()};
+  const std::span<const Transaction> candidateView{candidateReplay.txns.data(),
+                                                   candidateReplay.txns.size()};
 
   auto fraudInjector = fraud_.makeInjector(
       ::PhantomLedger::transfers::fraud::Injector::Services{
@@ -82,26 +82,25 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
                                  entities.accounts.ownership));
 
   auto fraudOut = fraudInjector.inject(
-      scope.window, draftView,
+      scope.window, candidateView,
       FraudEmission::legitCounterparties(legitPayload.counterparties));
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
-  auto postReplay = ledger_.postFraud(
+  auto postedReplay = ledger_.postFraud(
       rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, postReplay.finalTxns);
+      entities.accounts.lookup, postedReplay.txns);
 
   ::PhantomLedger::pipeline::Transfers out{};
   out.legit = std::move(legitPayload);
   out.fraud.injectedCount = fraudOut.injectedCount;
-  out.draftTxns = std::move(preReplay.draftTxns);
-  out.finalTxns = std::move(postReplay.finalTxns);
-  out.finalBook = std::move(postReplay.finalBook);
-  out.dropCounts = std::move(preReplay.dropCounts);
-  out.dropCountsByChannel = std::move(preReplay.dropCountsByChannel);
+  out.ledger.candidate.txns = std::move(candidateReplay.txns);
+  out.ledger.candidate.drops = std::move(candidateReplay.drops);
+  out.ledger.posted.txns = std::move(postedReplay.txns);
+  out.ledger.posted.book = std::move(postedReplay.book);
 
   return out;
 }

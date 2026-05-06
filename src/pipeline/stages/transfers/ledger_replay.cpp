@@ -19,7 +19,7 @@ LedgerReplay &LedgerReplay::fundingBehavior(FundingBehavior value) noexcept {
   return *this;
 }
 
-LedgerReplay::PreFraud
+LedgerReplay::Candidate
 LedgerReplay::preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,
                        ::PhantomLedger::random::Rng &rng,
                        std::vector<Transaction> sorted) const {
@@ -32,15 +32,15 @@ LedgerReplay::preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,
 
   accumulator.extend(std::move(sorted), /*presorted=*/true);
 
-  PreFraud out;
-  out.draftTxns = accumulator.takeTxns();
-  out.dropCounts = accumulator.dropCounts();
-  out.dropCountsByChannel = accumulator.dropCountsByChannel();
+  Candidate out;
+  out.txns = accumulator.takeTxns();
+  out.drops.byReason = accumulator.dropCounts();
+  out.drops.byChannel = accumulator.dropCountsByChannel();
 
   return out;
 }
 
-LedgerReplay::PostFraud
+LedgerReplay::Posted
 LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
                         const ::PhantomLedger::clearing::Ledger &initialBook,
                         std::vector<Transaction> merged) const {
@@ -55,9 +55,9 @@ LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
       std::span<const Transaction>{merged.data(), merged.size()});
   accumulator.extend(std::move(sorted), /*presorted=*/true);
 
-  PostFraud out;
-  out.finalTxns = accumulator.takeTxns();
-  out.finalBook = std::move(bookCopy);
+  Posted out;
+  out.txns = accumulator.takeTxns();
+  out.book = std::move(bookCopy);
 
   return out;
 }

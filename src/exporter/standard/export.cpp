@@ -34,7 +34,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto &entities = result.entities;
   const auto &infra = result.infra;
-  const auto &transfers = result.transfers;
+  const auto &postedTxns = result.transfers.ledger.posted.txns;
 
   {
     auto w = openTable(outDir, schema::kPerson);
@@ -105,12 +105,12 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   {
     auto w = openTable(outDir, schema::kHasPaid);
-    writeHasPaidRows(w, transfers.finalTxns);
+    writeHasPaidRows(w, postedTxns);
   }
 
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
-    writeLedgerRows(w, transfers.finalTxns);
+    writeLedgerRows(w, postedTxns);
   }
 }
 

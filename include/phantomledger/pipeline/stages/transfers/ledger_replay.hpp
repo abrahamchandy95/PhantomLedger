@@ -6,10 +6,7 @@
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 
-#include <cstdint>
 #include <memory>
-#include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace PhantomLedger::pipeline::stages::transfers {
@@ -17,11 +14,6 @@ namespace PhantomLedger::pipeline::stages::transfers {
 class LedgerReplay {
 public:
   using Transaction = ::PhantomLedger::transactions::Transaction;
-  using ChannelReasonKey =
-      ::PhantomLedger::pipeline::Transfers::ChannelReasonKey;
-  using ChannelReasonHash =
-      ::PhantomLedger::pipeline::Transfers::ChannelReasonHash;
-
   using FundingBehavior =
       ::PhantomLedger::transfers::legit::ledger::ReplayFundingBehavior;
 
@@ -29,16 +21,14 @@ public:
     FundingBehavior funding{};
   };
 
-  struct PreFraud {
-    std::vector<Transaction> draftTxns;
-    std::unordered_map<std::string, std::uint32_t> dropCounts;
-    std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
-        dropCountsByChannel;
+  struct Candidate {
+    std::vector<Transaction> txns;
+    ::PhantomLedger::pipeline::ReplayDrops drops;
   };
 
-  struct PostFraud {
-    std::vector<Transaction> finalTxns;
-    std::unique_ptr<::PhantomLedger::clearing::Ledger> finalBook;
+  struct Posted {
+    std::vector<Transaction> txns;
+    std::unique_ptr<::PhantomLedger::clearing::Ledger> book;
   };
 
   LedgerReplay() = default;
@@ -46,12 +36,12 @@ public:
   LedgerReplay &ordering(Ordering value) noexcept;
   LedgerReplay &fundingBehavior(FundingBehavior value) noexcept;
 
-  [[nodiscard]] PreFraud
+  [[nodiscard]] Candidate
   preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,
            ::PhantomLedger::random::Rng &rng,
            std::vector<Transaction> sorted) const;
 
-  [[nodiscard]] PostFraud
+  [[nodiscard]] Posted
   postFraud(::PhantomLedger::random::Rng &rng,
             const ::PhantomLedger::clearing::Ledger &initialBook,
             std::vector<Transaction> merged) const;
