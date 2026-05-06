@@ -18,7 +18,7 @@ namespace PhantomLedger::transfers::fraud {
 
 class Injector {
 public:
-  struct Rules {
+  struct Patterns {
     TypologyWeights typology{};
     LayeringRules layering{};
     StructuringRules structuring{};
@@ -35,18 +35,19 @@ public:
   };
 
   struct Services {
-    random::Rng *rng = nullptr;
+    random::Rng &rng;
     const infra::Router *router = nullptr;
     const infra::SharedInfra *ringInfra = nullptr;
   };
 
-  struct FraudPopulation {
+  struct RingView {
     const entities::synth::people::Fraud *profile = nullptr;
-    time::Window window{};
     const entity::person::Topology *topology = nullptr;
-    const entity::account::Registry *accounts = nullptr;
+  };
+
+  struct AccountView {
+    const entity::account::Registry *registry = nullptr;
     const entity::account::Ownership *ownership = nullptr;
-    std::span<const transactions::Transaction> baseTxns{};
   };
 
   struct LegitCounterparties {
@@ -55,16 +56,20 @@ public:
   };
 
   explicit Injector(Services services) noexcept;
-  Injector(Services services, Rules rules) noexcept;
+  Injector(Services services, Patterns patterns) noexcept;
 
-  [[nodiscard]] InjectionOutput inject(const FraudPopulation &population) const;
   [[nodiscard]] InjectionOutput
-  inject(const FraudPopulation &population,
+  inject(RingView rings, AccountView accounts, time::Window window,
+         std::span<const transactions::Transaction> baseTxns) const;
+
+  [[nodiscard]] InjectionOutput
+  inject(RingView rings, AccountView accounts, time::Window window,
+         std::span<const transactions::Transaction> baseTxns,
          LegitCounterparties counterparties) const;
 
 private:
-  Services services_{};
-  Rules rules_{};
+  Services services_;
+  Patterns patterns_{};
 };
 
 } // namespace PhantomLedger::transfers::fraud

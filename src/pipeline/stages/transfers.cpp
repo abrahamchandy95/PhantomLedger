@@ -161,7 +161,7 @@ TransferStage &TransferStage::fraudProfile(
 }
 
 TransferStage &TransferStage::fraudRules(
-    ::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept {
+    ::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept {
   fraud_.rules(value);
   return *this;
 }

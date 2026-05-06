@@ -65,8 +65,8 @@ public:
           value) noexcept;
   TransferStage &fraudProfile(
       const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
-  TransferStage &
-  fraudRules(::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept;
+  TransferStage &fraudRules(
+      ::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept;
   TransferStage &hubFraction(double value) noexcept;
 
   [[nodiscard]] const RunScope &runScope() const noexcept;

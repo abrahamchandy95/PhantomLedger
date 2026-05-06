@@ -24,7 +24,7 @@ public:
 
   struct Programs {
     const ::PhantomLedger::entities::synth::people::Fraud *profile = nullptr;
-    ::PhantomLedger::transfers::fraud::Injector::Rules injectorRules{};
+    ::PhantomLedger::transfers::fraud::Injector::Patterns patterns{};
   };
 
   FraudEmission() = default;
@@ -33,7 +33,7 @@ public:
   FraudEmission &profile(
       const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
   FraudEmission &
-  rules(::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept;
+  rules(::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept;
 
   [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectionOutput
   inject(::PhantomLedger::random::Rng &rng,
