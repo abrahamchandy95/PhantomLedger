@@ -16,8 +16,8 @@ FraudEmission &FraudEmission::profile(
 }
 
 FraudEmission &FraudEmission::rules(
-    ::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept {
-  programs_.injectorRules = value;
+    ::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept {
+  programs_.patterns = value;
   return *this;
 }
 
@@ -34,22 +34,23 @@ fraud::InjectionOutput FraudEmission::inject(
         &legitPayload) const {
   fraud::Injector injector{
       fraud::Injector::Services{
-          .rng = &rng,
+          .rng = rng,
           .router = &router,
           .ringInfra = &ringInfra,
       },
-      programs_.injectorRules,
+      programs_.patterns,
   };
 
   return injector.inject(
-      fraud::Injector::FraudPopulation{
+      fraud::Injector::RingView{
           .profile = programs_.profile,
-          .window = window,
           .topology = &topology,
-          .accounts = &accounts,
-          .ownership = &ownership,
-          .baseTxns = draftTxns,
       },
+      fraud::Injector::AccountView{
+          .registry = &accounts,
+          .ownership = &ownership,
+      },
+      window, draftTxns,
       fraud::Injector::LegitCounterparties{
           .billerAccounts = std::span<const ::PhantomLedger::entity::Key>(
               legitPayload.billerAccounts.data(),
