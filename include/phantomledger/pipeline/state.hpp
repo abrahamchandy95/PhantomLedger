@@ -16,10 +16,10 @@
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/fraud/engine.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -49,24 +49,47 @@ struct Infra {
   ::PhantomLedger::infra::SharedInfra ringInfra;
 };
 
-struct Transfers {
-  transfers::legit::ledger::LegitTransferResult legit;
-  transfers::fraud::InjectionOutput fraud;
-
-  std::vector<transactions::Transaction> draftTxns;
-  std::vector<transactions::Transaction> finalTxns;
-
-  std::unique_ptr<clearing::Ledger> finalBook;
-
-  std::unordered_map<std::string, std::uint32_t> dropCounts;
-
+/// Drop accounting emitted by the chronological replay pass.
+struct ReplayDrops {
   using ChannelReasonKey = ::PhantomLedger::transfers::legit::ledger::
       ReplayDropLedger::ChannelReasonKey;
   using ChannelReasonHash = ::PhantomLedger::transfers::legit::ledger::
       ReplayDropLedger::ChannelReasonHash;
 
+  std::unordered_map<std::string, std::uint32_t> byReason;
   std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
-      dropCountsByChannel;
+      byChannel;
+};
+
+/// Ledger state after legitimate and product transfers have been replayed,
+/// before fraud is injected.
+struct CandidateLedgerReplay {
+  std::vector<transactions::Transaction> txns;
+  ReplayDrops drops;
+};
+
+/// Ledger state after fraud injection and the final replay pass.
+struct PostedLedgerReplay {
+  std::vector<transactions::Transaction> txns;
+  std::unique_ptr<clearing::Ledger> book;
+};
+
+/// Transfer ledger artifacts produced by the transfer stage.
+struct TransferLedger {
+  CandidateLedgerReplay candidate;
+  PostedLedgerReplay posted;
+};
+
+/// Fraud emission telemetry retained after the injected transaction stream has
+/// been folded into the posted ledger.
+struct FraudInjectionSummary {
+  std::size_t injectedCount = 0;
+};
+
+struct Transfers {
+  transfers::legit::ledger::LegitTransferResult legit;
+  FraudInjectionSummary fraud;
+  TransferLedger ledger;
 };
 
 } // namespace PhantomLedger::pipeline

@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <span>
 
 namespace PhantomLedger::exporter::aml {
 
@@ -33,12 +34,14 @@ deriveSimStart(std::span<const tx_ns::Transaction> finalTxns) {
   if (finalTxns.empty()) {
     return ::PhantomLedger::time::fromEpochSeconds(1735689600);
   }
+
   std::int64_t minTs = finalTxns.front().timestamp;
   for (const auto &tx : finalTxns) {
     if (tx.timestamp < minTs) {
       minTs = tx.timestamp;
     }
   }
+
   return ::PhantomLedger::time::fromEpochSeconds(minTs);
 }
 
@@ -51,18 +54,18 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto &entities = result.entities;
   const auto &infra = result.infra;
   const auto &transfers = result.transfers;
+  const auto &postedTxns = transfers.ledger.posted.txns;
+  const auto *postedBook = transfers.ledger.posted.book.get();
 
-  const auto simStart = deriveSimStart(transfers.finalTxns);
+  const auto simStart = deriveSimStart(postedTxns);
 
-  const auto ctx = vertices::buildSharedContext(entities, transfers.finalTxns);
+  const auto ctx = vertices::buildSharedContext(entities, postedTxns);
 
   const auto sars = ::PhantomLedger::exporter::aml::sar::generateSars(
       entities.people.roster, entities.people.topology,
-      entities.accounts.registry, entities.accounts.ownership,
-      transfers.finalTxns);
+      entities.accounts.registry, entities.accounts.ownership, postedTxns);
 
-  const auto txnBundle =
-      edges::classifyTransactionEdges(entities, transfers.finalTxns);
+  const auto txnBundle = edges::classifyTransactionEdges(entities, postedTxns);
 
   const auto minhashSets = edges::collectMinhashVertexSets(entities, ctx);
 
@@ -75,8 +78,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vtxDir, amlSchema::kAccount);
-    vertices::writeAccountRows(w, entities, transfers.finalBook.get(), ctx,
-                               simStart);
+    vertices::writeAccountRows(w, entities, postedBook, ctx, simStart);
   }
   {
     auto w = openTable(vtxDir, amlSchema::kCounterparty);
@@ -100,7 +102,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vtxDir, amlSchema::kTransaction);
-    vertices::writeTransactionRows(w, transfers.finalTxns);
+    vertices::writeTransactionRows(w, postedTxns);
   }
   {
     auto w = openTable(vtxDir, amlSchema::kSar);
@@ -135,7 +137,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     vertices::writeMinhashIdRows(w, minhashSets.state);
   }
   {
-
     auto w = openTable(vtxDir, amlSchema::kConnectedComponent);
     (void)w;
   }
@@ -301,8 +302,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
-    ::PhantomLedger::exporter::standard::writeLedgerRows(w,
-                                                         transfers.finalTxns);
+    ::PhantomLedger::exporter::standard::writeLedgerRows(w, postedTxns);
   }
 
   Summary summary;
@@ -314,12 +314,13 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       ++internalAccountCount;
     }
   }
+
   summary.internalAccountCount = internalAccountCount;
   summary.counterpartyCount = ctx.counterpartyIds.size();
 
-  summary.totalTxnCount = transfers.finalTxns.size();
+  summary.totalTxnCount = postedTxns.size();
   summary.illicitTxnCount = static_cast<std::size_t>(
-      std::count_if(transfers.finalTxns.begin(), transfers.finalTxns.end(),
+      std::count_if(postedTxns.begin(), postedTxns.end(),
                     [](const tx_ns::Transaction &tx) noexcept {
                       return tx.fraud.flag != 0;
                     }));
@@ -331,6 +332,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       ++soloFraudCount;
     }
   }
+
   summary.soloFraudCount = soloFraudCount;
   summary.sarsFiledCount = sars.size();
 

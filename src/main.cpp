@@ -300,10 +300,11 @@ runAmlExport(const pl::pipeline::SimulationResult &result,
 
 void printGenericSummary(const pl::pipeline::SimulationResult &result,
                          const CliArgs &args) {
-  const auto totalTxns = result.transfers.finalTxns.size();
+  const auto &postedTxns = result.transfers.ledger.posted.txns;
+  const auto totalTxns = postedTxns.size();
 
   std::size_t illicit = 0;
-  for (const auto &tx : result.transfers.finalTxns) {
+  for (const auto &tx : postedTxns) {
     if (tx.fraud.flag != 0) {
       ++illicit;
     }

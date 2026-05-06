@@ -33,12 +33,15 @@ buildAccountsByPerson(
   std::unordered_map<::PhantomLedger::entity::PersonId,
                      std::vector<::PhantomLedger::entity::Key>>
       out;
+
   for (const auto &record : registry.records) {
     if (record.owner == ::PhantomLedger::entity::invalidPerson) {
       continue;
     }
+
     out[record.owner].push_back(record.id);
   }
+
   return out;
 }
 
@@ -50,11 +53,13 @@ buildAccountToOwner(
                      ::PhantomLedger::entity::PersonId>
       out;
   out.reserve(registry.records.size());
+
   for (const auto &record : registry.records) {
     if (record.owner != ::PhantomLedger::entity::invalidPerson) {
       out.emplace(record.id, record.owner);
     }
   }
+
   return out;
 }
 
@@ -62,9 +67,11 @@ buildAccountToOwner(
 collectPartyIds(const ::PhantomLedger::entity::account::Registry &registry) {
   std::vector<::PhantomLedger::entity::Key> out;
   out.reserve(registry.records.size());
+
   for (const auto &record : registry.records) {
     out.push_back(record.id);
   }
+
   return out;
 }
 
@@ -85,7 +92,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto &entities = result.entities;
   const auto &infra = result.infra;
-  const auto &transfers = result.transfers;
+  const auto &postedTxns = result.transfers.ledger.posted.txns;
 
   const auto accountsByPerson =
       buildAccountsByPerson(entities.accounts.registry);
@@ -93,7 +100,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto partyIds = collectPartyIds(entities.accounts.registry);
   CanonicalInputs canonInputs{};
-  canonInputs.finalTxns = transfers.finalTxns;
+  canonInputs.finalTxns = postedTxns;
   canonInputs.devicesByPerson = &infra.devices.byPerson;
   canonInputs.ipsByPerson = &infra.ips.byPerson;
   canonInputs.accountToOwner = &accountToOwner;
@@ -109,16 +116,15 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(mlDir, schema::kMlTransfer);
-    writeTransferRows(w, transfers.finalTxns);
+    writeTransferRows(w, postedTxns);
   }
   {
     auto w = openTable(mlDir, schema::kMlAccountDevice);
-    writeAccountDeviceRows(w, transfers.finalTxns, infra.devices,
-                           accountsByPerson);
+    writeAccountDeviceRows(w, postedTxns, infra.devices, accountsByPerson);
   }
   {
     auto w = openTable(mlDir, schema::kMlAccountIp);
-    writeAccountIpRows(w, transfers.finalTxns, infra.ips, accountsByPerson);
+    writeAccountIpRows(w, postedTxns, infra.ips, accountsByPerson);
   }
 }
 
