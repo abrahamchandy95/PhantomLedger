@@ -25,18 +25,18 @@ namespace detail {
 
 class Generator {
 public:
-  Generator(const InflowSnapshot &snapshot, const transactions::Factory &txf)
-      : snapshot_(snapshot), txf_(txf), endExcl_(snapshot.timeframe.end()) {
-    txns_.reserve(static_cast<std::size_t>(snapshot.population.count) *
-                  snapshot.timeframe.monthStarts.size() * 3);
+  Generator(const Book &book, const transactions::Factory &txf)
+      : book_(book), txf_(txf), endExcl_(book.timeframe.end()) {
+    txns_.reserve(static_cast<std::size_t>(book.population.count) *
+                  book.timeframe.monthStarts.size() * 3);
   }
 
   [[nodiscard]] std::vector<transactions::Transaction> run() {
-    if (!snapshot_.revenue.available()) {
+    if (!book_.counterparties.available()) {
       return {};
     }
 
-    for (PersonId person = 1; person <= snapshot_.population.count; ++person) {
+    for (PersonId person = 1; person <= book_.population.count; ++person) {
       runPerson(person);
     }
 
@@ -46,14 +46,14 @@ public:
 
 private:
   void runPerson(PersonId person) {
-    const auto plan = source::assign(snapshot_, person);
+    const auto plan = source::assign(book_, person);
     if (!plan.has_value() || !plan->sources.any() || !plan->valid()) {
       return;
     }
 
     const auto personKey = std::to_string(static_cast<unsigned>(person));
 
-    for (const auto &monthStart : snapshot_.timeframe.monthStarts) {
+    for (const auto &monthStart : book_.timeframe.monthStarts) {
       runMonth(*plan, personKey, monthStart);
     }
   }
@@ -68,7 +68,7 @@ private:
     }
 
     flow::Cycle cycle{
-        rng, monthStart, snapshot_.timeframe.startDate, endExcl_, txf_, txns_,
+        rng, monthStart, book_.timeframe.startDate, endExcl_, txf_, txns_,
     };
 
     flow::clients(cycle, profile.client, plan.accounts.revenueDst,
@@ -89,11 +89,11 @@ private:
     const auto yearStr = std::to_string(cal.year);
     const auto monthStr = std::to_string(static_cast<int>(cal.month));
 
-    return snapshot_.entropy.factory.rng(
+    return book_.entropy.factory.rng(
         {"legit", "nonpayroll_income", personKey, yearStr, monthStr});
   }
 
-  const InflowSnapshot &snapshot_;
+  const Book &book_;
   const transactions::Factory &txf_;
   const time::TimePoint endExcl_;
   std::vector<transactions::Transaction> txns_;
@@ -103,8 +103,8 @@ private:
 
 /// Generate all non-payroll revenue transactions for the simulation.
 [[nodiscard]] inline std::vector<transactions::Transaction>
-generate(const InflowSnapshot &snapshot, const transactions::Factory &txf) {
-  return detail::Generator(snapshot, txf).run();
+generate(const Book &book, const transactions::Factory &txf) {
+  return detail::Generator(book, txf).run();
 }
 
 } // namespace PhantomLedger::inflows::revenue

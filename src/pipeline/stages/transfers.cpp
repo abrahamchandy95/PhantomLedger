@@ -1,7 +1,6 @@
 #include "phantomledger/pipeline/stages/transfers.hpp"
 
 #include "phantomledger/pipeline/invariants.hpp"
-#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <cstddef>
 #include <span>
@@ -11,8 +10,6 @@
 namespace PhantomLedger::pipeline::stages::transfers {
 
 namespace {
-
-namespace validate = ::PhantomLedger::primitives::validate;
 
 using Transaction = ::PhantomLedger::transactions::Transaction;
 
@@ -47,7 +44,6 @@ const FraudEmission &TransferStage::fraud() const noexcept { return fraud_; }
 TransferStage::build(::PhantomLedger::random::Rng &rng,
                      const ::PhantomLedger::pipeline::Entities &entities,
                      const ::PhantomLedger::pipeline::Infra &infra) const {
-  validate::require(legit_.incomePrograms().recurring);
   legit_.validate();
 
   auto builder = legit_.builder(rng, entities, infra);

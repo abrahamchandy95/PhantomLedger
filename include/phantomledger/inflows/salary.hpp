@@ -27,6 +27,40 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
+// ---------------------------------------------------------------
+// Salary subsystem rules. Owned here, not in a cross-cutting bag.
+// ---------------------------------------------------------------
+
+struct Rules {
+  recurring::EmploymentRules employment{};
+  double paidFraction = 0.95;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    employment.validate(r);
+    r.check([&] { v::unit("salaryPaidFraction", paidFraction); });
+  }
+};
+
+// ---------------------------------------------------------------
+// Payroll: the narrow view salary generation needs.
+// Replaces the old `InflowSnapshot` for this subsystem.
+// ---------------------------------------------------------------
+
+struct Payroll {
+  Timeframe timeframe;
+  Entropy entropy;
+  Population population;
+  PayrollCounterparties counterparties;
+  Rules rules{};
+
+  void validate(primitives::validate::Report &r) const {
+    timeframe.validate(r);
+    rules.validate(r);
+  }
+};
+
 namespace internal {
 
 struct PersonaProbability {
@@ -136,27 +170,26 @@ struct NumText {
 
 class Paymaster {
 public:
-  Paymaster(const InflowSnapshot &snapshot, random::Rng &rng,
+  Paymaster(const Payroll &payroll, random::Rng &rng,
             const transactions::Factory &txf,
             const std::function<double()> &salaryModel,
             std::vector<transactions::Transaction> &out)
-      : snapshot_(snapshot), rng_(rng), txf_(txf), salaryModel_(salaryModel),
-        out_(out), salaryGrowth_(snapshot.recurring.employment.salary,
-                                 snapshot.entropy.factory),
-        init_(snapshot.recurring.employment.job,
-              snapshot.recurring.employment.payroll, snapshot.entropy.factory),
-        advance_(snapshot.recurring.employment.job,
-                 snapshot.recurring.employment.payroll, salaryGrowth_,
-                 snapshot.entropy.factory),
+      : payroll_(payroll), rng_(rng), txf_(txf), salaryModel_(salaryModel),
+        out_(out),
+        salaryGrowth_(payroll.rules.employment.salary, payroll.entropy.factory),
+        init_(payroll.rules.employment.job, payroll.rules.employment.payroll,
+              payroll.entropy.factory),
+        advance_(payroll.rules.employment.job, payroll.rules.employment.payroll,
+                 salaryGrowth_, payroll.entropy.factory),
         salaryCalc_(salaryGrowth_) {}
 
   void pay(PersonId person) {
-    const auto dst = snapshot_.population.primary(person);
+    const auto dst = payroll_.population.primary(person);
     const NumText personId(static_cast<unsigned>(person));
     const auto personIdText = personId.str();
 
     auto state = start(personIdText);
-    const auto windowEnd = snapshot_.timeframe.end();
+    const auto windowEnd = payroll_.timeframe.end();
 
     while (true) {
       payJob(state, dst, personIdText);
@@ -175,13 +208,13 @@ private:
       return salaryModel_() * 12.0;
     };
 
-    return init_(personId, snapshot_.timeframe.startDate,
-                 snapshot_.payroll.employers, annualSalary);
+    return init_(personId, payroll_.timeframe.startDate,
+                 payroll_.counterparties.employers, annualSalary);
   }
 
   void payJob(const recurring::Employment &state, const Key &dst,
               std::string_view personId) {
-    const auto &timeframe = snapshot_.timeframe;
+    const auto &timeframe = payroll_.timeframe;
     const auto segmentEnd = std::min(state.end, timeframe.end());
 
     for (const auto &payDate :
@@ -196,7 +229,7 @@ private:
         timestamps::jittered(payDate, state.payroll.postingLagDays,
                              timestamps::kSalaryTimestampJitter, rng_);
 
-    if (!snapshot_.timeframe.contains(ts)) {
+    if (!payroll_.timeframe.contains(ts)) {
       return;
     }
 
@@ -217,14 +250,14 @@ private:
                                            std::string_view personId) const {
     const NumText switchId(static_cast<unsigned>(state.switchIndex));
 
-    auto advRng = snapshot_.entropy.factory.rng(
+    auto advRng = payroll_.entropy.factory.rng(
         {"employment_advance", personId, switchId.str()});
 
-    return advance_(advRng, personId, state.end, snapshot_.payroll.employers,
-                    state);
+    return advance_(advRng, personId, state.end,
+                    payroll_.counterparties.employers, state);
   }
 
-  const InflowSnapshot &snapshot_;
+  const Payroll &payroll_;
   random::Rng &rng_;
   const transactions::Factory &txf_;
   const std::function<double()> &salaryModel_;
@@ -239,38 +272,36 @@ private:
 } // namespace salary
 
 [[nodiscard]] inline std::vector<transactions::Transaction>
-generateSalaryTxns(const InflowSnapshot &snapshot, random::Rng &rng,
+generateSalaryTxns(const salary::Payroll &payroll, random::Rng &rng,
                    const transactions::Factory &txf,
                    const std::function<double()> &salaryModel) {
-  if (snapshot.payroll.employers.empty()) {
+  if (payroll.counterparties.employers.empty()) {
     return {};
   }
 
-  primitives::validate::require(snapshot.recurring.employment);
-  primitives::validate::unit("salaryPaidFraction",
-                             snapshot.recurring.salaryPaidFraction);
+  primitives::validate::require(payroll);
 
   const auto selector = selection::makeSelector(
       [&](PersonId person) {
-        return salary::candidate(snapshot.population, person);
+        return salary::candidate(payroll.population, person);
       },
       [&](PersonId person) {
-        return salary::baseProbability(snapshot.population, person);
+        return salary::baseProbability(payroll.population, person);
       });
 
-  const double scale = selector.fitScale(snapshot.population.count,
-                                         snapshot.recurring.salaryPaidFraction);
+  const double scale =
+      selector.fitScale(payroll.population.count, payroll.rules.paidFraction);
 
   if (scale <= 0.0) {
     return {};
   }
 
   std::vector<transactions::Transaction> txns;
-  txns.reserve(snapshot.population.count * 2);
+  txns.reserve(payroll.population.count * 2);
 
-  salary::Paymaster paymaster(snapshot, rng, txf, salaryModel, txns);
+  salary::Paymaster paymaster(payroll, rng, txf, salaryModel, txns);
 
-  for (PersonId person = 1; person <= snapshot.population.count; ++person) {
+  for (PersonId person = 1; person <= payroll.population.count; ++person) {
     if (!selector.selected(rng, person, scale)) {
       continue;
     }

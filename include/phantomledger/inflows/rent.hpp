@@ -24,6 +24,40 @@ namespace rent {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
+// ---------------------------------------------------------------
+// Rent subsystem rules. Owned here, not in a cross-cutting bag.
+// ---------------------------------------------------------------
+
+struct Rules {
+  recurring::LeaseRules lease{};
+  double paidFraction = 0.80;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+
+    lease.validate(r);
+    r.check([&] { v::unit("rentPaidFraction", paidFraction); });
+  }
+};
+
+// ---------------------------------------------------------------
+// RentRoll: the narrow view rent generation needs.
+// Replaces the old `InflowSnapshot` for this subsystem.
+// ---------------------------------------------------------------
+
+struct RentRoll {
+  Timeframe timeframe;
+  Entropy entropy;
+  Population population;
+  RentCounterparties counterparties;
+  Rules rules{};
+
+  void validate(primitives::validate::Report &r) const {
+    timeframe.validate(r);
+    rules.validate(r);
+  }
+};
+
 namespace internal {
 
 struct PersonaProbability {
@@ -130,32 +164,32 @@ struct RentPayer {
   return probability(population.persona(person));
 }
 
-[[nodiscard]] inline auto makePayerSelector(const InflowSnapshot &snapshot,
+[[nodiscard]] inline auto makePayerSelector(const RentRoll &rentRoll,
                                             const HomeownerCheck &isHomeowner) {
   return selection::makeSelector(
-      [&snapshot, &isHomeowner](PersonId person) {
-        return candidate(snapshot.population, person, isHomeowner);
+      [&rentRoll, &isHomeowner](PersonId person) {
+        return candidate(rentRoll.population, person, isHomeowner);
       },
-      [&snapshot](PersonId person) {
-        return baseProbability(snapshot.population, person);
+      [&rentRoll](PersonId person) {
+        return baseProbability(rentRoll.population, person);
       });
 }
 
 template <class Selector>
 [[nodiscard]] inline std::vector<RentPayer>
-selectPayers(const InflowSnapshot &snapshot, random::Rng &rng, double scale,
+selectPayers(const RentRoll &rentRoll, random::Rng &rng, double scale,
              const Selector &selector) {
   std::vector<RentPayer> out;
-  out.reserve(snapshot.population.count);
+  out.reserve(rentRoll.population.count);
 
-  for (PersonId person = 1; person <= snapshot.population.count; ++person) {
+  for (PersonId person = 1; person <= rentRoll.population.count; ++person) {
     if (!selector.selected(rng, person, scale)) {
       continue;
     }
 
     out.push_back(RentPayer{
         .person = person,
-        .account = snapshot.population.primary(person),
+        .account = rentRoll.population.primary(person),
     });
   }
 
@@ -172,34 +206,32 @@ struct PayerState {
 } // namespace rent
 
 [[nodiscard]] inline std::vector<transactions::Transaction>
-generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
+generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
                  const transactions::Factory &txf,
                  const std::function<double()> &rentModel,
                  const rent::HomeownerCheck &isHomeowner = rent::noHomeowners) {
   namespace recur = ::PhantomLedger::recurring;
 
-  if (snapshot.rent.landlords.empty()) {
+  if (rentRoll.counterparties.landlords.empty()) {
     return {};
   }
 
-  primitives::validate::require(snapshot.recurring.lease);
-  primitives::validate::unit("rentPaidFraction",
-                             snapshot.recurring.rentPaidFraction);
+  primitives::validate::require(rentRoll);
 
-  const auto selector = rent::makePayerSelector(snapshot, isHomeowner);
-  const double scale = selector.fitScale(snapshot.population.count,
-                                         snapshot.recurring.rentPaidFraction);
+  const auto selector = rent::makePayerSelector(rentRoll, isHomeowner);
+  const double scale =
+      selector.fitScale(rentRoll.population.count, rentRoll.rules.paidFraction);
 
   if (scale <= 0.0) {
     return {};
   }
 
-  const auto rentPayers = rent::selectPayers(snapshot, rng, scale, selector);
+  const auto rentPayers = rent::selectPayers(rentRoll, rng, scale, selector);
   if (rentPayers.empty()) {
     return {};
   }
 
-  const auto &rules = snapshot.recurring.lease;
+  const auto &rules = rentRoll.rules.lease;
   const recur::RentRouter router;
 
   std::vector<rent::PayerState> states;
@@ -211,56 +243,57 @@ generateRentTxns(const InflowSnapshot &snapshot, random::Rng &rng,
     ps.account = payer.account;
     ps.payerKey = std::to_string(static_cast<unsigned>(payer.account.number));
 
-    auto initRng = snapshot.entropy.factory.rng({"lease_init", ps.payerKey});
+    auto initRng = rentRoll.entropy.factory.rng({"lease_init", ps.payerKey});
 
-    ps.lease =
-        recur::initializeLease(rules, snapshot.entropy.factory, initRng,
-                               recur::LeaseInitInput{
-                                   .payerKey = ps.payerKey,
-                                   .startDate = snapshot.timeframe.startDate,
-                                   .landlords = snapshot.rent.landlords,
-                                   .rentSource = rentModel,
-                               });
+    ps.lease = recur::initializeLease(
+        rules, rentRoll.entropy.factory, initRng,
+        recur::LeaseInitInput{
+            .payerKey = ps.payerKey,
+            .startDate = rentRoll.timeframe.startDate,
+            .landlords = rentRoll.counterparties.landlords,
+            .rentSource = rentModel,
+        });
 
     states.push_back(std::move(ps));
   }
 
   std::vector<transactions::Transaction> txns;
-  txns.reserve(states.size() * snapshot.timeframe.monthStarts.size());
+  txns.reserve(states.size() * rentRoll.timeframe.monthStarts.size());
 
-  for (const auto &monthStart : snapshot.timeframe.monthStarts) {
+  for (const auto &monthStart : rentRoll.timeframe.monthStarts) {
     for (auto &ps : states) {
       while (monthStart >= ps.lease.end) {
-        auto advRng = snapshot.entropy.factory.rng(
+        auto advRng = rentRoll.entropy.factory.rng(
             {"lease_advance", ps.payerKey, std::to_string(ps.lease.moveIndex)});
 
-        ps.lease = recur::advanceLease(rules, snapshot.entropy.factory, advRng,
-                                       recur::LeaseAdvanceInput{
-                                           .payerKey = ps.payerKey,
-                                           .now = ps.lease.end,
-                                           .landlords = snapshot.rent.landlords,
-                                           .previous = ps.lease,
-                                           .resetRentSource = rentModel,
-                                       });
+        ps.lease = recur::advanceLease(
+            rules, rentRoll.entropy.factory, advRng,
+            recur::LeaseAdvanceInput{
+                .payerKey = ps.payerKey,
+                .now = ps.lease.end,
+                .landlords = rentRoll.counterparties.landlords,
+                .previous = ps.lease,
+                .resetRentSource = rentModel,
+            });
       }
 
       const auto txnTs = timestamps::jittered(
           monthStart, 0, timestamps::kRentTimestampJitter, rng);
 
-      if (!snapshot.timeframe.contains(txnTs)) {
+      if (!rentRoll.timeframe.contains(txnTs)) {
         continue;
       }
 
       const double amount =
-          recur::calculateRent(rules, snapshot.entropy.factory,
+          recur::calculateRent(rules, rentRoll.entropy.factory,
                                recur::RentQuery{
                                    .payerKey = ps.payerKey,
                                    .state = ps.lease,
                                    .payDate = monthStart,
                                });
 
-      const auto channel =
-          router.pick(rng, snapshot.rent.landlordType(ps.lease.landlordAcct));
+      const auto channel = router.pick(
+          rng, rentRoll.counterparties.landlordType(ps.lease.landlordAcct));
 
       txns.push_back(txf.make(transactions::Draft{
           .source = ps.account,

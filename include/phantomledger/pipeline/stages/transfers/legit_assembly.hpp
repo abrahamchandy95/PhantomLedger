@@ -1,9 +1,12 @@
 #pragma once
 
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/inflows/types.hpp"
+#include "phantomledger/inflows/rent.hpp"
+#include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/recurring/employment.hpp"
+#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/transfers/government/disability.hpp"
 #include "phantomledger/transfers/government/retirement.hpp"
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
@@ -31,8 +34,11 @@ public:
     std::uint64_t seed = 0;
   };
 
+  /// Income-side programs. Each subsystem owns its own rules; there is
+  /// no single cross-cutting "recurring rules" bag.
   struct IncomePrograms {
-    ::PhantomLedger::inflows::RecurringIncomeRules recurring{};
+    ::PhantomLedger::inflows::salary::Rules salary{};
+    ::PhantomLedger::inflows::rent::Rules rent{};
     ::PhantomLedger::transfers::government::RetirementTerms retirement{};
     ::PhantomLedger::transfers::government::DisabilityTerms disability{};
   };
@@ -62,8 +68,11 @@ public:
   LegitAssembly &window(::PhantomLedger::time::Window value) noexcept;
   LegitAssembly &seed(std::uint64_t value) noexcept;
 
+  // Granular rule setters route to the owning subsystem's struct.
   LegitAssembly &
-  recurringIncome(const ::PhantomLedger::inflows::RecurringIncomeRules &value);
+  salaryRules(const ::PhantomLedger::inflows::salary::Rules &value);
+  LegitAssembly &rentRules(const ::PhantomLedger::inflows::rent::Rules &value);
+
   LegitAssembly &
   employmentRules(const ::PhantomLedger::recurring::EmploymentRules &value);
   LegitAssembly &

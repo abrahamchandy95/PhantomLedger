@@ -7,6 +7,7 @@
 #include "phantomledger/inflows/revenue/draw.hpp"
 #include "phantomledger/inflows/revenue/profiles.hpp"
 #include "phantomledger/inflows/types.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <optional>
@@ -15,7 +16,20 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows::revenue::source {
+namespace PhantomLedger::inflows::revenue {
+
+struct Book {
+  Timeframe timeframe;
+  Entropy entropy;
+  Population population;
+  RevenueCounterparties counterparties;
+
+  void validate(primitives::validate::Report &r) const {
+    timeframe.validate(r);
+  }
+};
+
+namespace source {
 
 using Key = entity::Key;
 using PersonId = entity::PersonId;
@@ -178,10 +192,10 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
 
 /// Assign revenue sources for one person.
 /// Returns nullopt if the person is ineligible.
-[[nodiscard]] inline std::optional<Plan> assign(const InflowSnapshot &snapshot,
+[[nodiscard]] inline std::optional<Plan> assign(const Book &book,
                                                 PersonId person) {
-  const auto &population = snapshot.population;
-  const auto &counterparties = snapshot.revenue;
+  const auto &population = book.population;
+  const auto &counterparties = book.counterparties;
 
   if (!counterparties.available()) {
     return std::nullopt;
@@ -208,7 +222,7 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
 
   const auto personKey = std::to_string(static_cast<unsigned>(person));
   auto rng =
-      snapshot.entropy.factory.rng({"legit", "nonpayroll_income", personKey});
+      book.entropy.factory.rng({"legit", "nonpayroll_income", personKey});
 
   Sources sources{
       .clients = detail::counterpartySources(rng, counterparties.clients(),
@@ -238,4 +252,5 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
   };
 }
 
-} // namespace PhantomLedger::inflows::revenue::source
+} // namespace source
+} // namespace PhantomLedger::inflows::revenue

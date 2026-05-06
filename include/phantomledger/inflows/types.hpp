@@ -8,8 +8,6 @@
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/recurring/employment.hpp"
-#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -67,7 +65,6 @@ struct Timeframe {
 // ---------------------------------------------------------------
 
 struct Entropy {
-  std::uint64_t seed = 0;
   random::RngFactory factory{0};
 };
 
@@ -163,7 +160,11 @@ private:
 };
 
 // ---------------------------------------------------------------
-// Payroll counterparties
+// Counterparty views
+//
+// Each subsystem (salary / rent / revenue) consumes exactly one of these.
+// They live here only because they share trivial dependencies; they are
+// not bundled into any cross-cutting "snapshot" object.
 // ---------------------------------------------------------------
 
 struct PayrollCounterparties {
@@ -173,10 +174,6 @@ struct PayrollCounterparties {
     return !employers.empty();
   }
 };
-
-// ---------------------------------------------------------------
-// Rent counterparties
-// ---------------------------------------------------------------
 
 struct RentCounterparties {
   std::span<const Key> landlords;
@@ -201,10 +198,6 @@ struct RentCounterparties {
   }
 };
 
-// ---------------------------------------------------------------
-// Revenue counterparties
-// ---------------------------------------------------------------
-
 class RevenueCounterparties {
 public:
   const entity::counterparty::Directory *directory = nullptr;
@@ -215,7 +208,6 @@ public:
     if (directory == nullptr) {
       return {};
     }
-
     return view(directory->clients.accounts.all);
   }
 
@@ -223,7 +215,6 @@ public:
     if (directory == nullptr) {
       return {};
     }
-
     return view(directory->external.platforms);
   }
 
@@ -231,7 +222,6 @@ public:
     if (directory == nullptr) {
       return {};
     }
-
     return view(directory->external.processors);
   }
 
@@ -239,7 +229,6 @@ public:
     if (directory == nullptr) {
       return {};
     }
-
     return view(directory->external.ownerBusinesses);
   }
 
@@ -247,7 +236,6 @@ public:
     if (directory == nullptr) {
       return {};
     }
-
     return view(directory->external.brokerages);
   }
 
@@ -255,49 +243,6 @@ private:
   [[nodiscard]] static std::span<const Key>
   view(const std::vector<Key> &keys) noexcept {
     return {keys.data(), keys.size()};
-  }
-};
-
-// ---------------------------------------------------------------
-// Recurring income rules
-// ---------------------------------------------------------------
-
-struct RecurringIncomeRules {
-  recurring::EmploymentRules employment{};
-  recurring::LeaseRules lease{};
-
-  double salaryPaidFraction = 0.95;
-  double rentPaidFraction = 0.80;
-
-  void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-
-    employment.validate(r);
-    lease.validate(r);
-
-    r.check([&] { v::unit("salaryPaidFraction", salaryPaidFraction); });
-    r.check([&] { v::unit("rentPaidFraction", rentPaidFraction); });
-  }
-};
-
-// ---------------------------------------------------------------
-// InflowSnapshot
-// ---------------------------------------------------------------
-
-struct InflowSnapshot {
-  Timeframe timeframe;
-  Entropy entropy;
-  Population population;
-
-  PayrollCounterparties payroll;
-  RentCounterparties rent;
-  RevenueCounterparties revenue;
-
-  RecurringIncomeRules recurring{};
-
-  void validate(primitives::validate::Report &r) const {
-    timeframe.validate(r);
-    recurring.validate(r);
   }
 };
 

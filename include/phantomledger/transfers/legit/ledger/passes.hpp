@@ -3,7 +3,8 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/counterparties.hpp"
-#include "phantomledger/inflows/types.hpp"
+#include "phantomledger/inflows/rent.hpp"
+#include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/screenbook.hpp"
@@ -65,11 +66,11 @@ public:
 
   IncomePass(random::Rng *rng, AccountAccess accounts,
              const entity::counterparty::Directory *revenueCounterparties,
-             inflows::RecurringIncomeRules recurring,
+             inflows::salary::Rules salaryRules,
              GovernmentBenefits benefits = {}) noexcept
       : rng_(rng), accounts_(accounts),
-        revenueCounterparties_(revenueCounterparties), recurring_(recurring),
-        benefits_(benefits) {}
+        revenueCounterparties_(revenueCounterparties),
+        salaryRules_(std::move(salaryRules)), benefits_(benefits) {}
 
   [[nodiscard]] random::Rng *rng() const noexcept { return rng_; }
 
@@ -80,9 +81,8 @@ public:
     return revenueCounterparties_;
   }
 
-  [[nodiscard]] const inflows::RecurringIncomeRules &
-  recurring() const noexcept {
-    return recurring_;
+  [[nodiscard]] const inflows::salary::Rules &salaryRules() const noexcept {
+    return salaryRules_;
   }
 
   [[nodiscard]] GovernmentBenefits benefits() const noexcept {
@@ -93,7 +93,7 @@ private:
   random::Rng *rng_ = nullptr;
   AccountAccess accounts_{};
   const entity::counterparty::Directory *revenueCounterparties_ = nullptr;
-  inflows::RecurringIncomeRules recurring_{};
+  inflows::salary::Rules salaryRules_{};
   GovernmentBenefits benefits_{};
 };
 
@@ -103,13 +103,13 @@ public:
 
   RoutinePass(random::Rng *rng, AccountAccess accounts,
               RoutineResources resources,
-              inflows::RecurringIncomeRules recurring = {}) noexcept
+              inflows::rent::Rules rentRules = {}) noexcept
       : rng_(rng), accounts_(accounts), resources_(resources),
-        recurring_(recurring) {}
+        rentRules_(std::move(rentRules)) {}
 
   RoutinePass(random::Rng *rng, RoutineResources resources,
-              inflows::RecurringIncomeRules recurring = {}) noexcept
-      : RoutinePass(rng, AccountAccess{}, resources, recurring) {}
+              inflows::rent::Rules rentRules = {}) noexcept
+      : RoutinePass(rng, AccountAccess{}, resources, std::move(rentRules)) {}
 
   RoutinePass &accounts(AccountAccess value) noexcept {
     accounts_ = value;
@@ -133,9 +133,8 @@ public:
     return resources_;
   }
 
-  [[nodiscard]] const inflows::RecurringIncomeRules &
-  recurring() const noexcept {
-    return recurring_;
+  [[nodiscard]] const inflows::rent::Rules &rentRules() const noexcept {
+    return rentRules_;
   }
 
 private:
@@ -143,7 +142,7 @@ private:
   AccountAccess accounts_{};
   const transactions::Factory *txf_ = nullptr;
   RoutineResources resources_{};
-  inflows::RecurringIncomeRules recurring_{};
+  inflows::rent::Rules rentRules_{};
 };
 
 class FamilyPass {
