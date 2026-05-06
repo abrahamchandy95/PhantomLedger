@@ -61,9 +61,9 @@ struct Transfers {
   std::unordered_map<std::string, std::uint32_t> dropCounts;
 
   using ChannelReasonKey = ::PhantomLedger::transfers::legit::ledger::
-      ChronoReplayAccumulator::ChannelReasonKey;
+      ReplayDropLedger::ChannelReasonKey;
   using ChannelReasonHash = ::PhantomLedger::transfers::legit::ledger::
-      ChronoReplayAccumulator::ChannelReasonHash;
+      ReplayDropLedger::ChannelReasonHash;
 
   std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
       dropCountsByChannel;

@@ -147,10 +147,8 @@ TransferStage &TransferStage::insuranceClaims(
   return *this;
 }
 
-TransferStage &TransferStage::replayRules(
-    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-        value) noexcept {
-  ledger_.rules(value);
+TransferStage &TransferStage::fundingBehavior(FundingBehavior value) noexcept {
+  ledger_.fundingBehavior(value);
   return *this;
 }
 

@@ -15,15 +15,8 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-// ---------------------------------------------------------------------------
-// System counterparties for liquidity-event Transactions
-// ---------------------------------------------------------------------------
 [[nodiscard]] entity::Key bankFeeCollectionKey() noexcept;
 [[nodiscard]] entity::Key bankOdLocKey() noexcept;
-
-// ---------------------------------------------------------------------------
-// Drop reasons
-// ---------------------------------------------------------------------------
 
 namespace drop_reasons {
 
@@ -39,50 +32,81 @@ inline constexpr std::string_view kUnbooked = "unbooked";
 
 } // namespace drop_reasons
 
-// ---------------------------------------------------------------------------
-// Accumulator
-// ---------------------------------------------------------------------------
-
-class ChronoReplayAccumulator {
-public:
-  struct CureWindows {
-    std::int32_t sameDayHours = 10;
-    std::int32_t delayedHours = 36;
+struct ReplayFundingBehavior {
+  struct CureWindow {
+    std::int32_t cardHours = 10;
+    std::int32_t delayedDebitHours = 36;
   };
 
-  struct RetrySchedule {
+  struct RetryDelay {
     std::int32_t cardPaddingMinutes = 5;
-    std::int32_t achPaddingMinutes = 30;
-    std::int32_t firstBlindDelayHours = 18;
-    std::int32_t secondBlindDelayHours = 72;
+    std::int32_t debitPaddingMinutes = 30;
+    std::int32_t firstBlindHours = 18;
+    std::int32_t secondBlindHours = 72;
     double blindProbability = 0.55;
-
-    [[nodiscard]] std::int32_t
-    maxAttemptsFor(channels::Tag channel) const noexcept;
   };
 
-  struct OverdraftFeeLimits {
+  struct OverdraftFeeBudget {
     std::int32_t dailyCap = 3;
   };
 
-  struct Rules {
-    CureWindows cure{};
-    RetrySchedule retry{};
-    OverdraftFeeLimits overdraftFees{};
+  CureWindow cure{};
+  RetryDelay retry{};
+  OverdraftFeeBudget overdraftFees{};
+
+  [[nodiscard]] std::int32_t
+  maxAttemptsFor(channels::Tag channel) const noexcept;
+
+  [[nodiscard]] std::int32_t cureHoursFor(channels::Tag channel) const noexcept;
+
+  [[nodiscard]] std::int32_t
+  paddingMinutesFor(channels::Tag channel) const noexcept;
+
+  [[nodiscard]] std::int32_t
+  blindDelayHoursFor(std::int32_t retryCount) const noexcept;
+};
+
+class ReplayDropLedger {
+public:
+  using ChannelReasonKey = std::pair<std::string, std::string>;
+
+  struct ChannelReasonHash {
+    std::size_t operator()(const ChannelReasonKey &k) const noexcept;
   };
 
-  [[nodiscard]] static constexpr Rules defaults() noexcept { return {}; }
+  using Counts = std::unordered_map<std::string, std::uint32_t>;
+  using CountsByChannel =
+      std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>;
 
-  ChronoReplayAccumulator(clearing::Ledger *book, random::Rng *rng,
-                          Rules rules = defaults(),
-                          bool emitLiquidityEvents = true);
+  void record(std::string_view reason, channels::Tag channel);
+
+  [[nodiscard]] const Counts &byReason() const noexcept { return byReason_; }
+
+  [[nodiscard]] const CountsByChannel &byChannel() const noexcept {
+    return byChannel_;
+  }
+
+private:
+  Counts byReason_;
+  CountsByChannel byChannel_;
+};
+
+class ChronoReplayAccumulator {
+public:
+  [[nodiscard]] static constexpr ReplayFundingBehavior
+  defaultFundingBehavior() noexcept {
+    return {};
+  }
+
+  ChronoReplayAccumulator(
+      clearing::Ledger *book, random::Rng *rng,
+      ReplayFundingBehavior funding = defaultFundingBehavior(),
+      bool emitLiquidityEvents = true);
 
   bool append(const transactions::Transaction &txn);
 
   void extend(std::vector<transactions::Transaction> items,
               bool presorted = false);
-
-  // ---- Outputs ----
 
   [[nodiscard]] const std::vector<transactions::Transaction> &
   txns() const noexcept {
@@ -95,24 +119,20 @@ public:
 
   [[nodiscard]] const std::unordered_map<std::string, std::uint32_t> &
   dropCounts() const noexcept {
-    return dropCounts_;
+    return drops_.byReason();
   }
 
-  using ChannelReasonKey = std::pair<std::string, std::string>;
-  struct ChannelReasonHash {
-    std::size_t operator()(const ChannelReasonKey &k) const noexcept;
-  };
+  using ChannelReasonKey = ReplayDropLedger::ChannelReasonKey;
+  using ChannelReasonHash = ReplayDropLedger::ChannelReasonHash;
 
-  [[nodiscard]] const std::unordered_map<ChannelReasonKey, std::uint32_t,
-                                         ChannelReasonHash> &
+  [[nodiscard]] const ReplayDropLedger::CountsByChannel &
   dropCountsByChannel() const noexcept {
-    return dropCountsByChannel_;
+    return drops_.byChannel();
   }
 
   [[nodiscard]] clearing::Ledger *book() const noexcept { return book_; }
 
 private:
-  // ---- Heap entry ----
   enum class ItemKind : std::uint8_t {
     txn = 0,
     locBilling = 1,
@@ -135,10 +155,6 @@ private:
     }
   };
 
-  // ---- Drop bookkeeping ----
-  void recordDrop(std::string_view reason, channels::Tag channel);
-
-  // ---- Cure-window machinery ----
   void
   buildFutureInboundIndex(const std::vector<transactions::Transaction> &items);
 
@@ -160,16 +176,13 @@ private:
   [[nodiscard]] bool
   feeBudgetAllows(const clearing::LiquidityEvent &event) noexcept;
 
-  // ---- State ----
   clearing::Ledger *book_;
   random::Rng *rng_;
-  Rules rules_;
+  ReplayFundingBehavior funding_;
   bool emitLiquidityEvents_;
 
   std::vector<transactions::Transaction> txns_;
-  std::unordered_map<std::string, std::uint32_t> dropCounts_;
-  std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
-      dropCountsByChannel_;
+  ReplayDropLedger drops_;
 
   std::uint64_t nextSequence_ = 0;
 
