@@ -35,6 +35,9 @@ public:
   SimulationPipeline(SimulationPipeline &&) noexcept = delete;
   SimulationPipeline &operator=(SimulationPipeline &&) noexcept = delete;
 
+  [[nodiscard]] TransferStage &transferStage() noexcept;
+  [[nodiscard]] const TransferStage &transferStage() const noexcept;
+
   SimulationPipeline &infraWindow(::PhantomLedger::time::Window value) noexcept;
   SimulationPipeline &ringAccess(
       const ::PhantomLedger::infra::synth::rings::AccessRules &value) noexcept;
@@ -130,17 +133,7 @@ private:
   ObligationProducts obligationProducts_{};
 
   ::PhantomLedger::pipeline::stages::infra::AccessInfraStage infra_{};
-
-  TransferStage::RunScope transferScope_{};
-  TransferStage::IncomePrograms transferIncome_{};
-  TransferStage::OpeningBalances openingBalances_{};
-  TransferStage::CardLifecycle cardLifecycle_{};
-  ::PhantomLedger::pipeline::stages::transfers::FamilyTransferScenario
-      familyTransfers_{};
-  TransferStage::InsurancePrograms insurancePrograms_{};
-  TransferStage::ReplayOrdering replayOrdering_{};
-  TransferStage::FraudInjection fraudInjection_{};
-  TransferStage::HubSelection hubSelection_{};
+  TransferStage transfers_{};
 };
 
 [[nodiscard]] SimulationResult

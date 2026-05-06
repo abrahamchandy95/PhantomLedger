@@ -55,6 +55,16 @@ SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
     : rng_(&rng), window_(window), seed_(seed), entities_(entities),
       obligationProducts_(obligationProducts) {}
 
+SimulationPipeline::TransferStage &
+SimulationPipeline::transferStage() noexcept {
+  return transfers_;
+}
+
+const SimulationPipeline::TransferStage &
+SimulationPipeline::transferStage() const noexcept {
+  return transfers_;
+}
+
 SimulationPipeline &
 SimulationPipeline::infraWindow(::PhantomLedger::time::Window value) noexcept {
   infra_.window(value);
@@ -124,158 +134,158 @@ SimulationPipeline &SimulationPipeline::insuranceCoverage(
 
 SimulationPipeline &
 SimulationPipeline::transferScope(TransferStage::RunScope value) noexcept {
-  transferScope_ = value;
+  transfers_.runScope(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::transferIncome(const TransferStage::IncomePrograms &value) {
-  transferIncome_ = value;
+  transfers_.incomePrograms(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::openingBalances(
     TransferStage::OpeningBalances value) noexcept {
-  openingBalances_ = value;
+  transfers_.openingBalances(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::cardLifecycle(TransferStage::CardLifecycle value) noexcept {
-  cardLifecycle_ = value;
+  transfers_.cardLifecycle(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::familyTransfers(
     transferStage::FamilyTransferScenario value) noexcept {
-  familyTransfers_ = value;
+  transfers_.familyTransfers(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::insurancePrograms(
     TransferStage::InsurancePrograms value) noexcept {
-  insurancePrograms_ = value;
+  transfers_.insurancePrograms(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::replayOrdering(
     TransferStage::ReplayOrdering value) noexcept {
-  replayOrdering_ = value;
+  transfers_.replayOrdering(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::fraudInjection(
     TransferStage::FraudInjection value) noexcept {
-  fraudInjection_ = value;
+  transfers_.fraudInjection(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::hubSelection(TransferStage::HubSelection value) noexcept {
-  hubSelection_ = value;
+  transfers_.hubSelection(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::transferWindow(
     ::PhantomLedger::time::Window value) noexcept {
-  transferScope_.window = value;
+  transfers_.window(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::transferSeed(std::uint64_t value) noexcept {
-  transferScope_.seed = value;
+  transfers_.seed(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::recurringIncome(
     const ::PhantomLedger::inflows::RecurringIncomeRules &value) {
-  transferIncome_.recurring = value;
+  transfers_.recurringIncome(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::employmentRules(
     const ::PhantomLedger::recurring::EmploymentRules &value) {
-  transferIncome_.recurring.employment = value;
+  transfers_.employmentRules(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::leaseRules(
     const ::PhantomLedger::recurring::LeaseRules &value) {
-  transferIncome_.recurring.lease = value;
+  transfers_.leaseRules(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::salaryPaidFraction(double value) noexcept {
-  transferIncome_.recurring.salaryPaidFraction = value;
+  transfers_.salaryPaidFraction(value);
   return *this;
 }
 
 SimulationPipeline &
 SimulationPipeline::rentPaidFraction(double value) noexcept {
-  transferIncome_.recurring.rentPaidFraction = value;
+  transfers_.rentPaidFraction(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::openingBalanceRules(
     const ::PhantomLedger::clearing::BalanceRules *value) noexcept {
-  openingBalances_.balanceRules = value;
+  transfers_.openingBalanceRules(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::creditLifecycle(
     const ::PhantomLedger::transfers::credit_cards::LifecycleRules
         *value) noexcept {
-  cardLifecycle_.lifecycleRules = value;
+  transfers_.creditLifecycle(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::family(
     transferStage::FamilyTransferScenario value) noexcept {
-  familyTransfers_ = value;
+  transfers_.family(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::retirementBenefits(
     const ::PhantomLedger::transfers::government::RetirementTerms &value) {
-  transferIncome_.retirement = value;
+  transfers_.retirementBenefits(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::disabilityBenefits(
     const ::PhantomLedger::transfers::government::DisabilityTerms &value) {
-  transferIncome_.disability = value;
+  transfers_.disabilityBenefits(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::insuranceClaims(
     ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept {
-  insurancePrograms_.claimRates = value;
+  transfers_.insuranceClaims(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::replayRules(
     ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
         value) noexcept {
-  replayOrdering_.replayRules = value;
+  transfers_.replayRules(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::fraudProfile(
     const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept {
-  fraudInjection_.profile = value;
+  transfers_.fraudProfile(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::fraudRules(
     ::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept {
-  fraudInjection_.injectorRules = value;
+  transfers_.fraudRules(value);
   return *this;
 }
 
 SimulationPipeline &SimulationPipeline::hubFraction(double value) noexcept {
-  hubSelection_.fraction = value;
+  transfers_.hubFraction(value);
   return *this;
 }
 
@@ -321,18 +331,11 @@ SimulationResult SimulationPipeline::run() const {
 
   out.infra = infra_.build(*rng_, out.entities, window_);
 
-  transferStage::TransferStage transfers{*rng_, out.entities, out.infra};
-  transfers.runScope(activeTransferScope(transferScope_, window_, seed_))
-      .incomePrograms(transferIncome_)
-      .openingBalances(openingBalances_)
-      .cardLifecycle(cardLifecycle_)
-      .familyTransfers(familyTransfers_)
-      .insurancePrograms(insurancePrograms_)
-      .replayOrdering(replayOrdering_)
-      .fraudInjection(fraudInjection_)
-      .hubSelection(hubSelection_);
+  auto configuredTransfers = transfers_;
+  configuredTransfers.runScope(
+      activeTransferScope(configuredTransfers.runScope(), window_, seed_));
 
-  out.transfers = transfers.build();
+  out.transfers = configuredTransfers.build(*rng_, out.entities, out.infra);
 
   return out;
 }

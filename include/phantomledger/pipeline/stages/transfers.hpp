@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 #include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
 #include "phantomledger/pipeline/stages/transfers/legit_assembly.hpp"
@@ -21,9 +22,7 @@ public:
   using ReplayOrdering = LedgerReplay::Ordering;
   using FraudInjection = FraudEmission::Programs;
 
-  TransferStage(::PhantomLedger::random::Rng &rng,
-                const ::PhantomLedger::pipeline::Entities &entities,
-                const ::PhantomLedger::pipeline::Infra &infra) noexcept;
+  TransferStage() = default;
 
   TransferStage &runScope(RunScope value) noexcept;
   TransferStage &incomePrograms(const IncomePrograms &value);
@@ -70,15 +69,14 @@ public:
   fraudRules(::PhantomLedger::transfers::fraud::Injector::Rules value) noexcept;
   TransferStage &hubFraction(double value) noexcept;
 
-  [[nodiscard]] ::PhantomLedger::pipeline::Transfers build() const;
-
-private:
   [[nodiscard]] const RunScope &runScope() const noexcept;
 
-  ::PhantomLedger::random::Rng *rng_ = nullptr;
-  const ::PhantomLedger::pipeline::Entities *entities_ = nullptr;
-  const ::PhantomLedger::pipeline::Infra *infra_ = nullptr;
+  [[nodiscard]] ::PhantomLedger::pipeline::Transfers
+  build(::PhantomLedger::random::Rng &rng,
+        const ::PhantomLedger::pipeline::Entities &entities,
+        const ::PhantomLedger::pipeline::Infra &infra) const;
 
+private:
   LegitAssembly legit_{};
   ProductReplay products_{};
   LedgerReplay ledger_{};
