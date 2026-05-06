@@ -131,8 +131,9 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
 
   pl::pipeline::SimulationPipeline pipeline{rng, window, entities, seed};
 
-  pipeline.transferWindow(window)
-      .transferSeed(seed)
+  pipeline.transferStage()
+      .window(window)
+      .seed(seed)
       .openingBalanceRules(&balanceRules)
       .creditLifecycle(&lifecycleRules)
       .fraudProfile(&fraudProfile);
