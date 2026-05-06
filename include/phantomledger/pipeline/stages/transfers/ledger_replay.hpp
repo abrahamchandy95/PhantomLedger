@@ -22,9 +22,11 @@ public:
   using ChannelReasonHash =
       ::PhantomLedger::pipeline::Transfers::ChannelReasonHash;
 
+  using FundingBehavior =
+      ::PhantomLedger::transfers::legit::ledger::ReplayFundingBehavior;
+
   struct Ordering {
-    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-        replayRules{};
+    FundingBehavior funding{};
   };
 
   struct PreFraud {
@@ -42,9 +44,7 @@ public:
   LedgerReplay() = default;
 
   LedgerReplay &ordering(Ordering value) noexcept;
-  LedgerReplay &rules(
-      ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-          value) noexcept;
+  LedgerReplay &fundingBehavior(FundingBehavior value) noexcept;
 
   [[nodiscard]] PreFraud
   preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,

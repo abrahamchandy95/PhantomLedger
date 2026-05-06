@@ -20,6 +20,7 @@ public:
   using HubSelection = LegitAssembly::HubSelection;
   using InsurancePrograms = ProductReplay::InsurancePrograms;
   using ReplayOrdering = LedgerReplay::Ordering;
+  using FundingBehavior = LedgerReplay::FundingBehavior;
   using FraudInjection = FraudEmission::Programs;
 
   TransferStage() = default;
@@ -60,9 +61,7 @@ public:
   TransferStage &insuranceClaims(
       ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept;
 
-  TransferStage &replayRules(
-      ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-          value) noexcept;
+  TransferStage &fundingBehavior(FundingBehavior value) noexcept;
   TransferStage &fraudProfile(
       const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
   TransferStage &fraudRules(

@@ -14,10 +14,8 @@ LedgerReplay &LedgerReplay::ordering(Ordering value) noexcept {
   return *this;
 }
 
-LedgerReplay &LedgerReplay::rules(
-    ::PhantomLedger::transfers::legit::ledger::ChronoReplayAccumulator::Rules
-        value) noexcept {
-  ordering_.replayRules = value;
+LedgerReplay &LedgerReplay::fundingBehavior(FundingBehavior value) noexcept {
+  ordering_.funding = value;
   return *this;
 }
 
@@ -29,7 +27,7 @@ LedgerReplay::preFraud(const ::PhantomLedger::clearing::Ledger &initialBook,
       std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
 
   legit_ledger::ChronoReplayAccumulator accumulator(
-      bookCopy.get(), &rng, ordering_.replayRules,
+      bookCopy.get(), &rng, ordering_.funding,
       /*emitLiquidityEvents=*/true);
 
   accumulator.extend(std::move(sorted), /*presorted=*/true);
@@ -50,7 +48,7 @@ LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
       std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
 
   legit_ledger::ChronoReplayAccumulator accumulator(
-      bookCopy.get(), &rng, ordering_.replayRules,
+      bookCopy.get(), &rng, ordering_.funding,
       /*emitLiquidityEvents=*/false);
 
   auto sorted = legit_ledger::sortForReplay(

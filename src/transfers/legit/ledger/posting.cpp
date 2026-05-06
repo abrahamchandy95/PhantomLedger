@@ -8,8 +8,11 @@
 
 #include <algorithm>
 #include <cassert>
+#include <functional>
 #include <queue>
+#include <span>
 #include <string>
+#include <utility>
 
 namespace PhantomLedger::transfers::legit::ledger {
 
@@ -63,7 +66,6 @@ bool isCureInbound(const transactions::Transaction &txn) noexcept {
     return true;
   }
 
-  // Insurance claims and tax refunds.
   if (t == channels::tag(channels::Insurance::claim) ||
       t == channels::tag(channels::Product::taxRefund)) {
     return true;
@@ -82,11 +84,11 @@ bool isCureInbound(const transactions::Transaction &txn) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// ChronoReplayAccumulator::RetrySchedule
+// ReplayFundingBehavior
 // ---------------------------------------------------------------------------
 
-std::int32_t ChronoReplayAccumulator::RetrySchedule::maxAttemptsFor(
-    channels::Tag channel) const noexcept {
+std::int32_t
+ReplayFundingBehavior::maxAttemptsFor(channels::Tag channel) const noexcept {
   if (isCardLike(channel)) {
     return 1;
   }
@@ -96,12 +98,27 @@ std::int32_t ChronoReplayAccumulator::RetrySchedule::maxAttemptsFor(
   return 1;
 }
 
+std::int32_t
+ReplayFundingBehavior::cureHoursFor(channels::Tag channel) const noexcept {
+  return isCardLike(channel) ? cure.cardHours : cure.delayedDebitHours;
+}
+
+std::int32_t
+ReplayFundingBehavior::paddingMinutesFor(channels::Tag channel) const noexcept {
+  return isCardLike(channel) ? retry.cardPaddingMinutes
+                             : retry.debitPaddingMinutes;
+}
+
+std::int32_t ReplayFundingBehavior::blindDelayHoursFor(
+    std::int32_t retryCount) const noexcept {
+  return retryCount == 0 ? retry.firstBlindHours : retry.secondBlindHours;
+}
+
 // ---------------------------------------------------------------------------
 // System counterparty keys for liquidity-event Transactions
 // ---------------------------------------------------------------------------
 
 entity::Key bankFeeCollectionKey() noexcept {
-
   return entity::makeKey(entity::Role::business, entity::Bank::external,
                          /*number=*/0xFFFF'FF01ULL);
 }
@@ -112,15 +129,31 @@ entity::Key bankOdLocKey() noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// Hashes
+// ReplayDropLedger
 // ---------------------------------------------------------------------------
 
-std::size_t ChronoReplayAccumulator::ChannelReasonHash::operator()(
+std::size_t ReplayDropLedger::ChannelReasonHash::operator()(
     const ChannelReasonKey &k) const noexcept {
   const std::size_t h1 = std::hash<std::string>{}(k.first);
   const std::size_t h2 = std::hash<std::string>{}(k.second);
   return h1 ^ (h2 + 0x9e37'79b9ULL + (h1 << 6) + (h1 >> 2));
 }
+
+void ReplayDropLedger::record(std::string_view reason, channels::Tag channel) {
+  const std::string reasonStr(reason);
+  ++byReason_[reasonStr];
+
+  std::string channelName(channels::name(channel));
+  if (channelName.empty()) {
+    channelName = "none";
+  }
+
+  ++byChannel_[ChannelReasonKey{std::move(channelName), reasonStr}];
+}
+
+// ---------------------------------------------------------------------------
+// ChronoReplayAccumulator hashes
+// ---------------------------------------------------------------------------
 
 std::size_t ChronoReplayAccumulator::FeeKeyHash::operator()(
     const FeeKey &k) const noexcept {
@@ -133,9 +166,10 @@ std::size_t ChronoReplayAccumulator::FeeKeyHash::operator()(
 // ---------------------------------------------------------------------------
 
 ChronoReplayAccumulator::ChronoReplayAccumulator(clearing::Ledger *book,
-                                                 random::Rng *rng, Rules rules,
+                                                 random::Rng *rng,
+                                                 ReplayFundingBehavior funding,
                                                  bool emitLiquidityEvents)
-    : book_(book), rng_(rng), rules_(rules),
+    : book_(book), rng_(rng), funding_(funding),
       emitLiquidityEvents_(emitLiquidityEvents) {}
 
 bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
@@ -165,16 +199,17 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
     const auto reason = *decision.rejectReason();
     switch (reason) {
     case clearing::RejectReason::invalid:
-      recordDrop(drop_reasons::kInvalid, txn.session.channel);
+      drops_.record(drop_reasons::kInvalid, txn.session.channel);
       break;
     case clearing::RejectReason::unbooked:
-      recordDrop(drop_reasons::kUnbooked, txn.session.channel);
+      drops_.record(drop_reasons::kUnbooked, txn.session.channel);
       break;
     case clearing::RejectReason::unfunded:
-      recordDrop(drop_reasons::kInsufficientFunds, txn.session.channel);
+      drops_.record(drop_reasons::kInsufficientFunds, txn.session.channel);
       break;
     }
   }
+
   return false;
 }
 
@@ -213,7 +248,7 @@ void ChronoReplayAccumulator::extend(
     book_->accrueLocInterestThrough(item.timestamp);
 
     if (item.kind != ItemKind::txn) {
-      continue; // reserved for future LOC-billing kinds
+      continue;
     }
 
     currentTxn_ = &item.txn;
@@ -238,26 +273,24 @@ void ChronoReplayAccumulator::extend(
 
     const auto reason = *decision.rejectReason();
     if (reason != clearing::RejectReason::unfunded) {
-      // invalid / unbooked: terminal, no retry path is sensible.
       const auto reasonStr = (reason == clearing::RejectReason::invalid)
                                  ? drop_reasons::kInvalid
                                  : drop_reasons::kUnbooked;
-      recordDrop(reasonStr, item.txn.session.channel);
+      drops_.record(reasonStr, item.txn.session.channel);
       continue;
     }
 
-    // ---- Cure / blind retry ----
     const auto retryTs = resolveRetryTimestamp(item.txn, item.retryCount);
     if (retryTs == 0) {
-      recordDrop(terminalReason(item.txn.session.channel),
-                 item.txn.session.channel);
+      drops_.record(terminalReason(item.txn.session.channel),
+                    item.txn.session.channel);
       continue;
     }
 
     if (item.retryCount + 1 >
-        rules_.retry.maxAttemptsFor(item.txn.session.channel)) {
-      recordDrop(drop_reasons::kInsufficientFundsRetryExhausted,
-                 item.txn.session.channel);
+        funding_.maxAttemptsFor(item.txn.session.channel)) {
+      drops_.record(drop_reasons::kInsufficientFundsRetryExhausted,
+                    item.txn.session.channel);
       continue;
     }
 
@@ -273,9 +306,6 @@ void ChronoReplayAccumulator::extend(
     });
   }
 
-  // Final LOC sweep past the last seen timestamp so any periods that
-  // matured between the last txn and the simulation horizon get
-  // emitted.
   if (!items.empty()) {
     book_->accrueLocInterestThrough(items.back().timestamp + 1);
   }
@@ -300,23 +330,6 @@ void ChronoReplayAccumulator::extend(
 }
 
 // ---------------------------------------------------------------------------
-// Drop bookkeeping
-// ---------------------------------------------------------------------------
-
-void ChronoReplayAccumulator::recordDrop(std::string_view reason,
-                                         channels::Tag channel) {
-  const std::string reasonStr(reason);
-  ++dropCounts_[reasonStr];
-
-  std::string channelName(channels::name(channel));
-  if (channelName.empty()) {
-    channelName = "none";
-  }
-
-  ++dropCountsByChannel_[ChannelReasonKey{std::move(channelName), reasonStr}];
-}
-
-// ---------------------------------------------------------------------------
 // Cure-window machinery
 // ---------------------------------------------------------------------------
 
@@ -336,25 +349,23 @@ std::int64_t ChronoReplayAccumulator::resolveRetryTimestamp(
     const transactions::Transaction &txn, std::int32_t retryCount) {
   const auto cureTs = findFutureCure(txn);
   if (cureTs != 0) {
-    const auto paddingMinutes = isCardLike(txn.session.channel)
-                                    ? rules_.retry.cardPaddingMinutes
-                                    : rules_.retry.achPaddingMinutes;
-    return cureTs + static_cast<std::int64_t>(paddingMinutes) * 60;
+    return cureTs + static_cast<std::int64_t>(
+                        funding_.paddingMinutesFor(txn.session.channel)) *
+                        60;
   }
 
   if (rng_ == nullptr || !isRetryable(txn.session.channel) ||
-      retryCount >= rules_.retry.maxAttemptsFor(txn.session.channel)) {
+      retryCount >= funding_.maxAttemptsFor(txn.session.channel)) {
     return 0;
   }
 
-  if (!rng_->coin(rules_.retry.blindProbability)) {
+  if (!rng_->coin(funding_.retry.blindProbability)) {
     return 0;
   }
 
-  const auto delayHours = (retryCount == 0)
-                              ? rules_.retry.firstBlindDelayHours
-                              : rules_.retry.secondBlindDelayHours;
-  return txn.timestamp + static_cast<std::int64_t>(delayHours) * 3600;
+  return txn.timestamp +
+         static_cast<std::int64_t>(funding_.blindDelayHoursFor(retryCount)) *
+             3600;
 }
 
 std::int64_t ChronoReplayAccumulator::findFutureCure(
@@ -364,11 +375,10 @@ std::int64_t ChronoReplayAccumulator::findFutureCure(
     return 0;
   }
 
-  const auto cureHours = isCardLike(txn.session.channel)
-                             ? rules_.cure.sameDayHours
-                             : rules_.cure.delayedHours;
   const auto upper =
-      txn.timestamp + static_cast<std::int64_t>(cureHours) * 3600;
+      txn.timestamp +
+      static_cast<std::int64_t>(funding_.cureHoursFor(txn.session.channel)) *
+          3600;
 
   const auto &times = it->second;
   auto pos = std::upper_bound(times.begin(), times.end(), txn.timestamp);
@@ -400,15 +410,14 @@ void ChronoReplayAccumulator::installLiquiditySink() {
   if (book_ == nullptr) {
     return;
   }
+
   book_->setEmitLiquidity(emitLiquidityEvents_);
+
   if (!emitLiquidityEvents_) {
     book_->setLiquiditySink({});
     return;
   }
 
-  // Capture by raw `this` — the lambda's lifetime is bounded by
-  // {install,uninstall}LiquiditySink and the accumulator outlives both
-  // calls.
   book_->setLiquiditySink([this](const clearing::LiquidityEvent &event) {
     onLiquidityEvent(event);
   });
@@ -418,13 +427,12 @@ void ChronoReplayAccumulator::uninstallLiquiditySink() {
   if (book_ == nullptr) {
     return;
   }
+
   book_->setLiquiditySink({});
 }
 
 bool ChronoReplayAccumulator::feeBudgetAllows(
     const clearing::LiquidityEvent &event) noexcept {
-  // Only overdraft-fee events are budgeted. LOC interest is allowed
-  // through unconditionally.
   if (event.channel != channels::tag(channels::Liquidity::overdraftFee)) {
     return true;
   }
@@ -438,9 +446,11 @@ bool ChronoReplayAccumulator::feeBudgetAllows(
   const auto day = static_cast<std::int32_t>(event.timestamp / 86400);
   const FeeKey key{srcIdx, day};
   auto &count = feeTapsToday_[key];
-  if (count >= rules_.overdraftFees.dailyCap) {
+
+  if (count >= funding_.overdraftFees.dailyCap) {
     return false;
   }
+
   ++count;
   return true;
 }
@@ -455,7 +465,6 @@ void ChronoReplayAccumulator::onLiquidityEvent(
     return;
   }
 
-  // Pick the system-internal counterparty for this fee/interest.
   const auto target =
       (event.channel == channels::tag(channels::Liquidity::overdraftFee))
           ? bankFeeCollectionKey()
@@ -470,9 +479,11 @@ void ChronoReplayAccumulator::onLiquidityEvent(
       (event.channel == channels::tag(channels::Liquidity::overdraftFee))
           ? event.timestamp + 1
           : event.timestamp;
+
   tx.fraud.flag = 0;
   tx.fraud.ringId.reset();
   tx.session.channel = event.channel;
+
   if (currentTxn_ != nullptr) {
     tx.session.deviceId = currentTxn_->session.deviceId;
     tx.session.ipAddress = currentTxn_->session.ipAddress;
