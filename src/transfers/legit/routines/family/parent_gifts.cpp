@@ -7,6 +7,8 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family::parent_gifts {
 
@@ -48,48 +50,92 @@ collectGivingParents(std::span<const entity::PersonId> parents,
   return count;
 }
 
-[[nodiscard]] bool
-emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart,
-                std::span<const entity::PersonId> givingParents,
-                entity::Key childAcct, std::int64_t windowEndEpochSec,
-                const ParentGiftFlow &cfg, const TransferRun &run,
-                random::Rng &rng, std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.p)) {
-    return false;
+/// Stateful, narrow-purpose emitter for parent-gift transactions.
+/// Same pattern as `AllowanceEmitter`: holds the dependency views and
+/// the output sink so internal helpers stop carrying eight parameters.
+class ParentGiftEmitter {
+public:
+  ParentGiftEmitter(const TransferRun &run, const ParentGiftFlow &cfg,
+                    random::Rng &rng,
+                    std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  ParentGiftEmitter(const ParentGiftEmitter &) = delete;
+  ParentGiftEmitter &operator=(const ParentGiftEmitter &) = delete;
+
+  /// Try to emit one monthly gift from a randomly-picked giver to the
+  /// child's account. Returns true on success.
+  [[nodiscard]] bool tryEmit(entity::Key childAcct,
+                             std::span<const entity::PersonId> givingParents,
+                             ::PhantomLedger::time::TimePoint monthStart) {
+    if (!rng_.coin(cfg_.p)) {
+      return false;
+    }
+
+    const auto payer = pickPayer(givingParents);
+    if (!payer.has_value() || payer->account == childAcct) {
+      return false;
+    }
+
+    const auto ts = pickPostingTimestamp(monthStart, rng_);
+    if (ts >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto amount = sampleAmount(payer->person);
+    if (amount == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = payer->account,
+        .destination = childAcct,
+        .amount = amount,
+        .timestamp = ts,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::parentGift),
+    }));
+    return true;
   }
 
-  const auto parentIdx = static_cast<std::size_t>(
-      rng.uniformInt(0, static_cast<std::int64_t>(givingParents.size())));
-  const auto payerId = givingParents[parentIdx];
+private:
+  struct Payer {
+    entity::PersonId person;
+    entity::Key account;
+  };
 
-  const auto payerAcct = run.accounts().routedMemberAccount(payerId);
-  if (!payerAcct.has_value() || *payerAcct == childAcct) {
-    return false;
+  [[nodiscard]] std::optional<Payer>
+  pickPayer(std::span<const entity::PersonId> givingParents) {
+    if (givingParents.empty()) {
+      return std::nullopt;
+    }
+
+    const auto idx = static_cast<std::size_t>(
+        rng_.uniformInt(0, static_cast<std::int64_t>(givingParents.size())));
+    const auto person = givingParents[idx];
+
+    const auto acct = run_.accounts().routedMemberAccount(person);
+    if (!acct.has_value()) {
+      return std::nullopt;
+    }
+
+    return Payer{.person = person, .account = *acct};
   }
 
-  const auto ts = pickPostingTimestamp(monthStart, rng);
-  if (ts >= windowEndEpochSec) {
-    return false;
+  [[nodiscard]] double sampleAmount(entity::PersonId payer) {
+    const auto base = fhelp::pareto(rng_, cfg_.paretoXm, cfg_.paretoAlpha);
+    const auto multiplier = run_.kinship().amountMultiplier(payer);
+    return fhelp::sanitizeAmount(base * multiplier, kAmountFloor);
   }
 
-  const auto base = fhelp::pareto(rng, cfg.paretoXm, cfg.paretoAlpha);
-  const auto multiplier = run.kinship().amountMultiplier(payerId);
-  const auto amt = fhelp::sanitizeAmount(base * multiplier, kAmountFloor);
-  if (amt == 0.0) {
-    return false;
-  }
-
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = *payerAcct,
-      .destination = childAcct,
-      .amount = amt,
-      .timestamp = ts,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::parentGift),
-  }));
-  return true;
-}
+  const TransferRun &run_;
+  const ParentGiftFlow &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -111,7 +157,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
       static_cast<double>(personCount) *
       static_cast<double>(run.posting().monthStarts().size()) * cfg.p * 0.1));
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  ParentGiftEmitter emitter{run, cfg, rng, out};
 
   std::array<entity::PersonId, 2> givingParents{};
 
@@ -141,8 +187,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
     const std::span<const entity::PersonId> givingView{givingParents.data(),
                                                        givingCount};
     for (const auto monthStart : run.posting().monthStarts()) {
-      (void)emitMonthlyGift(monthStart, givingView, *childAcct,
-                            windowEndEpochSec, cfg, run, rng, out);
+      (void)emitter.tryEmit(*childAcct, givingView, monthStart);
     }
   }
 

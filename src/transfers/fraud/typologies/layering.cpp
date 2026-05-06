@@ -11,8 +11,10 @@
 
 namespace PhantomLedger::transfers::fraud::typologies::layering {
 
-std::vector<transactions::Transaction>
-generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
+std::vector<transactions::Transaction> generate(IllicitContext &ctx,
+                                                const Plan &plan,
+                                                std::int32_t budget,
+                                                const Rules &rules) {
   std::vector<transactions::Transaction> out;
   if (budget <= 0) {
     return out;
@@ -36,7 +38,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     return classic::generate(ctx, plan, budget);
   }
 
-  const auto &rules = ctx.layeringRules;
   const auto hops = static_cast<std::size_t>(rng.uniformInt(
       rules.minHops, static_cast<std::int64_t>(rules.maxHops) + 1));
 
