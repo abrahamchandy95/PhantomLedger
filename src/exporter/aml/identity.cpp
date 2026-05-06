@@ -165,7 +165,6 @@ constexpr const char *kZips[] = {
 constexpr std::size_t kCitiesCount = sizeof(kCities) / sizeof(kCities[0]);
 constexpr std::size_t kStatesCount = sizeof(kStates) / sizeof(kStates[0]);
 constexpr std::size_t kZipsCount = sizeof(kZips) / sizeof(kZips[0]);
-constexpr std::size_t kStreetsCount = sizeof(kStreets) / sizeof(kStreets[0]);
 
 // ────────── Address builder ──────────
 

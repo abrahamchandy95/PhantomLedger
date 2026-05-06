@@ -125,7 +125,7 @@ LegitTransferBuilder::accounts() const noexcept {
   return census_.accounts;
 }
 
-TransfersPayload LegitTransferBuilder::build() const {
+LegitTransferResult LegitTransferBuilder::build() const {
   if (rng_ == nullptr) {
     throw std::invalid_argument(
         "LegitTransferBuilder.build() requires a non-null rng");
@@ -133,7 +133,7 @@ TransfersPayload LegitTransferBuilder::build() const {
 
   const auto *accountRegistry = accounts();
   if (accountRegistry == nullptr || accountRegistry->records.empty()) {
-    return TransfersPayload{};
+    return LegitTransferResult{};
   }
 
   auto plan = blueprints::buildLegitBlueprint(
@@ -167,16 +167,17 @@ TransfersPayload LegitTransferBuilder::build() const {
 
   passes::addCredit(credit_, plan, txf, streams);
 
-  TransfersPayload payload;
-  payload.candidateTxns = streams.takeCandidates();
+  LegitTransferResult result;
+  result.txns.candidateTxns = streams.takeCandidates();
   auto counterparties = std::move(plan).takeCounterparties();
-  payload.hubAccounts = std::move(counterparties.hubAccounts);
-  payload.billerAccounts = std::move(counterparties.billerAccounts);
-  payload.employers = std::move(counterparties.employers);
-  payload.initialBook = std::move(initialBook);
-  payload.replaySortedTxns = streams.takeReplayReady();
+  result.counterparties.hubAccounts = std::move(counterparties.hubAccounts);
+  result.counterparties.billerAccounts =
+      std::move(counterparties.billerAccounts);
+  result.counterparties.employers = std::move(counterparties.employers);
+  result.openingBook.initialBook = std::move(initialBook);
+  result.txns.replaySortedTxns = streams.takeReplayReady();
 
-  return payload;
+  return result;
 }
 
 } // namespace PhantomLedger::transfers::legit::ledger

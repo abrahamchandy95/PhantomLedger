@@ -43,7 +43,7 @@ public:
   LegitTransferBuilder &
   router(const ::PhantomLedger::infra::Router *value) noexcept;
 
-  [[nodiscard]] TransfersPayload build() const;
+  [[nodiscard]] LegitTransferResult build() const;
 
 private:
   [[nodiscard]] const entity::account::Registry *accounts() const noexcept;

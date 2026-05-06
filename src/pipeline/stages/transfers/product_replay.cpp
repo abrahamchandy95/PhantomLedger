@@ -37,9 +37,9 @@ ProductReplay::merge(::PhantomLedger::time::Window window, std::uint64_t seed,
                      const ::PhantomLedger::pipeline::Entities &entities,
                      const ::PhantomLedger::pipeline::Infra &infra,
                      const PrimaryAccounts &primaryAccounts,
-                     ::PhantomLedger::transfers::legit::ledger::TransfersPayload
-                         &legitPayload) const {
-  std::vector<Transaction> stream = std::move(legitPayload.replaySortedTxns);
+                     ::PhantomLedger::transfers::legit::ledger::LegitTxnStreams
+                         &legitTxns) const {
+  std::vector<Transaction> stream = std::move(legitTxns.replaySortedTxns);
 
   ::PhantomLedger::transactions::Factory txf{rng, &infra.router,
                                              &infra.ringInfra};

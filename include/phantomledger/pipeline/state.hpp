@@ -50,7 +50,7 @@ struct Infra {
 };
 
 struct Transfers {
-  transfers::legit::ledger::TransfersPayload legit;
+  transfers::legit::ledger::LegitTransferResult legit;
   transfers::fraud::InjectionOutput fraud;
 
   std::vector<transactions::Transaction> draftTxns;
