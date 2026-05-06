@@ -17,9 +17,6 @@
 
 namespace PhantomLedger::transfers::fraud {
 
-// ---------------------------------------------------------------------------
-// Typology selection
-// ---------------------------------------------------------------------------
 using ::PhantomLedger::fraud::Typology;
 
 struct TypologyWeights {
@@ -61,51 +58,8 @@ struct TypologyWeights {
 };
 
 // ---------------------------------------------------------------------------
-// Per-typology and camouflage rules
+// Output of one injection pass.
 // ---------------------------------------------------------------------------
-
-struct LayeringRules {
-  std::int32_t minHops = 3;
-  std::int32_t maxHops = 8;
-
-  void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-
-    r.check([&] { v::ge("minHops", minHops, 1); });
-    r.check([&] { v::ge("maxHops", maxHops, minHops); });
-  }
-};
-
-struct StructuringRules {
-  double threshold = 10'000.0;
-  double epsilonMin = 50.0;
-  double epsilonMax = 400.0;
-  std::int32_t splitsMin = 3;
-  std::int32_t splitsMax = 12;
-
-  void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-
-    r.check([&] { v::positive("threshold", threshold); });
-    r.check([&] { v::ge("epsilonMax", epsilonMax, epsilonMin); });
-    r.check([&] { v::ge("splitsMin", splitsMin, 1); });
-    r.check([&] { v::ge("splitsMax", splitsMax, splitsMin); });
-  }
-};
-
-struct CamouflageRates {
-  double smallP2pPerDayP = 0.03;
-  double billMonthlyP = 0.35;
-  double salaryInboundP = 0.12;
-
-  void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-
-    r.check([&] { v::unit("smallP2pPerDayP", smallP2pPerDayP); });
-    r.check([&] { v::unit("billMonthlyP", billMonthlyP); });
-    r.check([&] { v::unit("salaryInboundP", salaryInboundP); });
-  }
-};
 
 struct InjectionOutput {
   std::vector<transactions::Transaction> txns;
@@ -113,7 +67,11 @@ struct InjectionOutput {
 };
 
 // ---------------------------------------------------------------------------
-// Execution contexts built by the injector and consumed by sub-generators.
+// Execution / window types shared by every typology and by camouflage.
+//
+// These contexts intentionally do *not* carry per-typology rules.
+// Each typology accepts its own rules as an explicit parameter so it
+// neither sees nor depends on rules belonging to other typologies.
 // ---------------------------------------------------------------------------
 
 struct Execution {
@@ -130,8 +88,7 @@ struct ActiveWindow {
   }
 };
 
-/// Pre-materialized account pools. Keeping these as vectors of Keys avoids
-/// re-walking the registry on every typology call.
+/// Pre-materialized account pools used by the camouflage layer.
 struct AccountPools {
   std::vector<entity::Key> allAccounts;
   std::vector<entity::Key> billerAccounts;
@@ -142,15 +99,12 @@ struct CamouflageContext {
   Execution execution;
   ActiveWindow window;
   const AccountPools *accounts = nullptr;
-  CamouflageRates rates{};
 };
 
 struct IllicitContext {
   Execution execution;
   ActiveWindow window;
   std::span<const entity::Key> billerAccounts{};
-  LayeringRules layeringRules{};
-  StructuringRules structuringRules{};
 };
 
 } // namespace PhantomLedger::transfers::fraud

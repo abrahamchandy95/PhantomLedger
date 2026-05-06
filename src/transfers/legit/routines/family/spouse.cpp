@@ -27,83 +27,118 @@ struct CoupleState {
   entity::Key lowerAcct{};
 };
 
-[[nodiscard]] std::optional<CoupleState>
-resolveCouple(entity::PersonId a, entity::PersonId b, const CoupleFlow &cfg,
-              const TransferRun &run, random::Rng &rng) {
-  if (!rng.coin(cfg.separateAccountsP)) {
-    return std::nullopt;
+/// Stateful, narrow-purpose emitter for spouse-to-spouse transfers.
+///
+/// Compared to its peers, this emitter has *two* public methods --
+/// `resolveCouple` (called once per pair) and `processCoupleMonth`
+/// (called once per pair-month). Both share the same dependencies, so
+/// holding them as members eliminates the redundant 5- and 7-parameter
+/// signatures that the original file used.
+class SpouseEmitter {
+public:
+  SpouseEmitter(const TransferRun &run, const CoupleFlow &cfg, random::Rng &rng,
+                std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  SpouseEmitter(const SpouseEmitter &) = delete;
+  SpouseEmitter &operator=(const SpouseEmitter &) = delete;
+
+  /// Resolve a candidate spouse pair into separate higher/lower
+  /// accounts, applying the `separateAccountsP` gate. Returns
+  /// `std::nullopt` if the couple is not eligible (shared account,
+  /// both external, gate failed).
+  [[nodiscard]] std::optional<CoupleState> resolveCouple(entity::PersonId a,
+                                                         entity::PersonId b) {
+    if (!rng_.coin(cfg_.separateAccountsP)) {
+      return std::nullopt;
+    }
+
+    const auto acctA = run_.accounts().routedMemberAccount(a);
+    const auto acctB = run_.accounts().routedMemberAccount(b);
+    if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
+      return std::nullopt;
+    }
+    if (encoding::isExternal(*acctA) && encoding::isExternal(*acctB)) {
+      return std::nullopt;
+    }
+
+    const auto powerA = run_.kinship().amountMultiplier(a);
+    const auto powerB = run_.kinship().amountMultiplier(b);
+
+    if (powerA >= powerB) {
+      return CoupleState{.higherAcct = *acctA, .lowerAcct = *acctB};
+    }
+    return CoupleState{.higherAcct = *acctB, .lowerAcct = *acctA};
   }
 
-  const auto acctA = run.accounts().routedMemberAccount(a);
-  const auto acctB = run.accounts().routedMemberAccount(b);
-  if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
-    return std::nullopt;
-  }
-  if (encoding::isExternal(*acctA) && encoding::isExternal(*acctB)) {
-    return std::nullopt;
-  }
+  /// Emit zero or more transfers for a single (couple, monthStart)
+  /// pair. The number of transfers is sampled from the configured
+  /// per-month range.
+  void processCoupleMonth(const CoupleState &couple,
+                          ::PhantomLedger::time::TimePoint monthStart) {
+    const auto count = static_cast<int>(
+        rng_.uniformInt(cfg_.txnsPerMonthMin,
+                        static_cast<std::int64_t>(cfg_.txnsPerMonthMax) + 1));
 
-  const auto powerA = run.kinship().amountMultiplier(a);
-  const auto powerB = run.kinship().amountMultiplier(b);
-
-  if (powerA >= powerB) {
-    return CoupleState{.higherAcct = *acctA, .lowerAcct = *acctB};
-  }
-  return CoupleState{.higherAcct = *acctB, .lowerAcct = *acctA};
-}
-
-[[nodiscard]] bool
-emitOneTransfer(::PhantomLedger::time::TimePoint monthStart,
-                const CoupleState &couple, std::int64_t windowEndEpochSec,
-                const CoupleFlow &cfg, const TransferRun &run, random::Rng &rng,
-                std::vector<transactions::Transaction> &out) {
-  const bool fromBreadwinner = rng.coin(cfg.breadwinnerFlowP);
-  const auto src = fromBreadwinner ? couple.higherAcct : couple.lowerAcct;
-  const auto dst = fromBreadwinner ? couple.lowerAcct : couple.higherAcct;
-
-  const auto day = rng.uniformInt(0, kPostingDayMaxExcl);
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
-
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  const auto ts = base + hour * 3600 + minute * 60;
-  if (ts >= windowEndEpochSec) {
-    return false;
+    for (int i = 0; i < count; ++i) {
+      (void)tryEmit(couple, monthStart);
+    }
   }
 
-  const auto raw =
-      dist::lognormalByMedian(rng, cfg.transferMedian, cfg.transferSigma);
-  const auto amt = fhelp::sanitizeAmount(raw, kAmountFloor);
-  if (amt == 0.0) {
-    return false;
+private:
+  /// Emit a single spouse transfer. Returns true on success.
+  [[nodiscard]] bool tryEmit(const CoupleState &couple,
+                             ::PhantomLedger::time::TimePoint monthStart) {
+    const bool fromBreadwinner = rng_.coin(cfg_.breadwinnerFlowP);
+    const auto src = fromBreadwinner ? couple.higherAcct : couple.lowerAcct;
+    const auto dst = fromBreadwinner ? couple.lowerAcct : couple.higherAcct;
+
+    const auto ts = pickPostingTimestamp(monthStart);
+    if (ts >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto amount = sampleAmount();
+    if (amount == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = src,
+        .destination = dst,
+        .amount = amount,
+        .timestamp = ts,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::spouseTransfer),
+    }));
+    return true;
   }
 
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = src,
-      .destination = dst,
-      .amount = amt,
-      .timestamp = ts,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::spouseTransfer),
-  }));
-  return true;
-}
+  [[nodiscard]] std::int64_t
+  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
+    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
+    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
+    const auto minute = rng_.uniformInt(0, 60);
 
-void processCoupleMonth(::PhantomLedger::time::TimePoint monthStart,
-                        const CoupleState &couple,
-                        std::int64_t windowEndEpochSec, const CoupleFlow &cfg,
-                        const TransferRun &run, random::Rng &rng,
-                        std::vector<transactions::Transaction> &out) {
-  const auto count = static_cast<int>(rng.uniformInt(
-      cfg.txnsPerMonthMin, static_cast<std::int64_t>(cfg.txnsPerMonthMax) + 1));
-
-  for (int i = 0; i < count; ++i) {
-    (void)emitOneTransfer(monthStart, couple, windowEndEpochSec, cfg, run, rng,
-                          out);
+    const auto base = ::PhantomLedger::time::toEpochSeconds(
+        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
+    return base + hour * 3600 + minute * 60;
   }
-}
+
+  [[nodiscard]] double sampleAmount() {
+    const auto raw =
+        dist::lognormalByMedian(rng_, cfg_.transferMedian, cfg_.transferSigma);
+    return fhelp::sanitizeAmount(raw, kAmountFloor);
+  }
+
+  const TransferRun &run_;
+  const CoupleFlow &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -126,7 +161,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
               run.posting().monthStarts().size() *
               static_cast<std::size_t>(std::max(1, avgPerMonth)));
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  SpouseEmitter emitter{run, cfg, rng, out};
 
   for (entity::PersonId p = 1; p <= personCount; ++p) {
     const auto spouse = run.kinship().spouseOf(p);
@@ -134,14 +169,13 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
       continue;
     }
 
-    const auto couple = resolveCouple(p, spouse, cfg, run, rng);
+    const auto couple = emitter.resolveCouple(p, spouse);
     if (!couple.has_value()) {
       continue;
     }
 
     for (const auto monthStart : run.posting().monthStarts()) {
-      processCoupleMonth(monthStart, *couple, windowEndEpochSec, cfg, run, rng,
-                         out);
+      emitter.processCoupleMonth(*couple, monthStart);
     }
   }
 

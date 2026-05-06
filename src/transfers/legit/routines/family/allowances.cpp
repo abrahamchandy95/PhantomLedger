@@ -7,6 +7,8 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
+#include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family::allowances {
 
@@ -55,71 +57,122 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
   };
 }
 
-[[nodiscard]] bool emitOnePayment(entity::PersonId studentId,
-                                  entity::Key childAcct,
-                                  std::span<const entity::PersonId> parents,
-                                  std::int64_t timestamp,
-                                  const AllowanceSchedule &cfg,
-                                  const TransferRun &run, random::Rng &rng,
-                                  std::vector<transactions::Transaction> &out) {
-  if (parents.empty()) {
-    return false;
+[[nodiscard]] std::size_t
+collectValidParents(std::array<entity::PersonId, 2> parentSlots,
+                    std::array<entity::PersonId, 2> &out) noexcept {
+  std::size_t n = 0;
+  for (const auto p : parentSlots) {
+    if (entity::valid(p)) {
+      out[n++] = p;
+    }
   }
-
-  const auto parentIdx = static_cast<std::size_t>(
-      rng.uniformInt(0, static_cast<std::int64_t>(parents.size())));
-  const auto payerId = parents[parentIdx];
-
-  const auto payerAcct = run.accounts().routedMemberAccount(payerId);
-  if (!payerAcct.has_value() || *payerAcct == childAcct) {
-    return false;
-  }
-
-  const auto rawAmt = fhelp::pareto(rng, cfg.paretoXm, cfg.paretoAlpha);
-  const auto amt = fhelp::sanitizeAmount(rawAmt, kAmountFloor);
-  if (amt == 0.0) {
-    return false;
-  }
-
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = *payerAcct,
-      .destination = childAcct,
-      .amount = amt,
-      .timestamp = timestamp,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::allowance),
-  }));
-  (void)studentId;
-  return true;
-}
-
-void walkSchedule(entity::PersonId studentId, entity::Key childAcct,
-                  std::span<const entity::PersonId> parents,
-                  const Schedule &schedule, std::int64_t windowEndEpochSec,
-                  const AllowanceSchedule &cfg, const TransferRun &run,
-                  random::Rng &rng,
-                  std::vector<transactions::Transaction> &out) {
-  std::int64_t ts = schedule.firstTs;
-
-  while (ts < windowEndEpochSec) {
-    (void)emitOnePayment(studentId, childAcct, parents, ts, cfg, run, rng, out);
-
-    const auto jitter = rng.uniformInt(kJitterMin, kJitterMaxExcl);
-    const auto stepDays =
-        static_cast<std::int64_t>(schedule.intervalDays) + jitter;
-    ts += stepDays * kSecondsPerDay;
-  }
+  return n;
 }
 
 [[nodiscard]] std::size_t estimateCapacity(std::uint32_t studentCount,
-                                           int windowDays) {
+                                           int windowDays) noexcept {
   if (studentCount == 0 || windowDays <= 0) {
     return 0;
   }
   const auto perStudent = static_cast<std::size_t>(windowDays) / 7U;
   return (studentCount * perStudent * 4U) / 5U;
 }
+
+/// Stateful, narrow-purpose emitter for allowance transactions over one
+/// posting window. Owns the dependency views and the output sink so that
+/// internal helpers do not have to thread eight unrelated arguments
+/// through every call.
+///
+/// This is *not* a generic "Context" or "Bundle" object:
+///   - it is named for the verb it performs (emit allowance txns);
+///   - it has a single reason to change (allowance emission semantics);
+///   - its public surface is one method (`walkSchedule`);
+///   - its fields are the dependencies of *that one job*, not a
+///     heterogeneous collection.
+///
+/// It mirrors the standard pattern used by LLVM's IRBuilder, Boost.Beast
+/// stream emitters, and gRPC writers: a small, locally-scoped class that
+/// holds the cursor + sinks for one coherent emission task.
+class AllowanceEmitter {
+public:
+  AllowanceEmitter(const TransferRun &run, const AllowanceSchedule &cfg,
+                   random::Rng &rng,
+                   std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  AllowanceEmitter(const AllowanceEmitter &) = delete;
+  AllowanceEmitter &operator=(const AllowanceEmitter &) = delete;
+
+  /// Walk the schedule for a single student, emitting zero or more
+  /// payments until the posting window ends.
+  void walkSchedule(entity::Key childAcct,
+                    std::span<const entity::PersonId> parents,
+                    Schedule schedule) {
+    std::int64_t ts = schedule.firstTs;
+
+    while (ts < windowEndEpochSec_) {
+      (void)tryEmit(childAcct, parents, ts);
+
+      const auto jitter = rng_.uniformInt(kJitterMin, kJitterMaxExcl);
+      const auto stepDays =
+          static_cast<std::int64_t>(schedule.intervalDays) + jitter;
+      ts += stepDays * kSecondsPerDay;
+    }
+  }
+
+private:
+  /// Emit a single allowance payment from a randomly-picked parent to
+  /// the child's account. Returns true on success.
+  [[nodiscard]] bool tryEmit(entity::Key childAcct,
+                             std::span<const entity::PersonId> parents,
+                             std::int64_t timestamp) {
+    const auto payerAcct = pickPayer(parents);
+    if (!payerAcct.has_value() || *payerAcct == childAcct) {
+      return false;
+    }
+
+    const auto amount = sampleAmount();
+    if (amount == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = *payerAcct,
+        .destination = childAcct,
+        .amount = amount,
+        .timestamp = timestamp,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::allowance),
+    }));
+    return true;
+  }
+
+  [[nodiscard]] std::optional<entity::Key>
+  pickPayer(std::span<const entity::PersonId> parents) {
+    if (parents.empty()) {
+      return std::nullopt;
+    }
+
+    const auto parentIdx = static_cast<std::size_t>(
+        rng_.uniformInt(0, static_cast<std::int64_t>(parents.size())));
+    const auto payerId = parents[parentIdx];
+
+    return run_.accounts().routedMemberAccount(payerId);
+  }
+
+  [[nodiscard]] double sampleAmount() {
+    const auto raw = fhelp::pareto(rng_, cfg_.paretoXm, cfg_.paretoAlpha);
+    return fhelp::sanitizeAmount(raw, kAmountFloor);
+  }
+
+  const TransferRun &run_;
+  const AllowanceSchedule &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -139,21 +192,17 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
 
   auto rng = run.emission().rng({"family", "allowances"});
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  AllowanceEmitter emitter{run, cfg, rng, out};
+
+  std::array<entity::PersonId, 2> parentBuf{};
 
   for (entity::PersonId student = 1; student <= personCount; ++student) {
     if (!pred::isStudent(run.kinship().persona(student))) {
       continue;
     }
 
-    const auto parentSlots = run.kinship().parentsOf(student);
-    std::array<entity::PersonId, 2> parentBuf{};
-    std::size_t parentCount = 0;
-    for (const auto p : parentSlots) {
-      if (entity::valid(p)) {
-        parentBuf[parentCount++] = p;
-      }
-    }
+    const auto parentCount =
+        collectValidParents(run.kinship().parentsOf(student), parentBuf);
     if (parentCount == 0) {
       continue;
     }
@@ -164,10 +213,11 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
     }
 
     const auto schedule = pickSchedule(rng, run.posting().start(), cfg.weeklyP);
-    walkSchedule(
-        student, *childAcct,
+
+    emitter.walkSchedule(
+        *childAcct,
         std::span<const entity::PersonId>{parentBuf.data(), parentCount},
-        schedule, windowEndEpochSec, cfg, run, rng, out);
+        schedule);
   }
 
   return out;

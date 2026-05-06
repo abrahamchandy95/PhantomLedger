@@ -4,33 +4,51 @@ namespace PhantomLedger::pipeline::stages::transfers {
 
 namespace fraud = ::PhantomLedger::transfers::fraud;
 
-FraudEmission &FraudEmission::programs(Programs value) noexcept {
-  programs_ = value;
-  return *this;
-}
-
 FraudEmission &FraudEmission::profile(
     const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept {
-  programs_.profile = value;
+  profile_ = value;
   return *this;
 }
 
-FraudEmission &FraudEmission::rules(
-    ::PhantomLedger::transfers::fraud::Injector::Patterns value) noexcept {
-  programs_.patterns = value;
+FraudEmission &
+FraudEmission::typologyWeights(fraud::TypologyWeights value) noexcept {
+  typologyWeights_ = value;
+  return *this;
+}
+
+FraudEmission &FraudEmission::layeringRules(
+    fraud::typologies::layering::Rules value) noexcept {
+  layeringRules_ = value;
+  return *this;
+}
+
+FraudEmission &FraudEmission::structuringRules(
+    fraud::typologies::structuring::Rules value) noexcept {
+  structuringRules_ = value;
+  return *this;
+}
+
+FraudEmission &
+FraudEmission::camouflageRates(fraud::camouflage::Rates value) noexcept {
+  camouflageRates_ = value;
   return *this;
 }
 
 fraud::Injector FraudEmission::makeInjector(
     fraud::Injector::Services services, fraud::Injector::RingView rings,
     fraud::Injector::AccountView accounts) const noexcept {
-  return fraud::Injector{services, rings, accounts, programs_.patterns};
+  fraud::Injector injector{services, rings, accounts};
+  injector.typologyWeights(typologyWeights_);
+  injector.layeringRules(layeringRules_);
+  injector.structuringRules(structuringRules_);
+  injector.camouflageRates(camouflageRates_);
+  return injector;
 }
 
 fraud::Injector::RingView FraudEmission::ringView(
     const ::PhantomLedger::entity::person::Topology &topology) const noexcept {
   return fraud::Injector::RingView{
-      .profile = programs_.profile,
+      .profile = profile_,
       .topology = &topology,
   };
 }

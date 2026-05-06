@@ -3,7 +3,12 @@
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
 #include "phantomledger/transfers/fraud/schedule.hpp"
-#include "phantomledger/transfers/fraud/typologies/dispatch.hpp"
+#include "phantomledger/transfers/fraud/typologies/classic.hpp"
+#include "phantomledger/transfers/fraud/typologies/funnel.hpp"
+#include "phantomledger/transfers/fraud/typologies/invoice.hpp"
+#include "phantomledger/transfers/fraud/typologies/layering.hpp"
+#include "phantomledger/transfers/fraud/typologies/mule.hpp"
+#include "phantomledger/transfers/fraud/typologies/structuring.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -25,12 +30,50 @@ namespace {
 
 Injector::Injector(Services services, RingView rings,
                    AccountView accounts) noexcept
-    : Injector(services, rings, accounts, Patterns{}) {}
+    : services_(services), rings_(rings), accounts_(accounts) {}
 
-Injector::Injector(Services services, RingView rings, AccountView accounts,
-                   Patterns patterns) noexcept
-    : services_(services), rings_(rings), accounts_(accounts),
-      patterns_(patterns) {}
+Injector &Injector::typologyWeights(TypologyWeights value) noexcept {
+  typologyWeights_ = value;
+  return *this;
+}
+
+Injector &Injector::layeringRules(typologies::layering::Rules value) noexcept {
+  layeringRules_ = value;
+  return *this;
+}
+
+Injector &
+Injector::structuringRules(typologies::structuring::Rules value) noexcept {
+  structuringRules_ = value;
+  return *this;
+}
+
+Injector &Injector::camouflageRates(camouflage::Rates value) noexcept {
+  camouflageRates_ = value;
+  return *this;
+}
+
+std::vector<transactions::Transaction>
+Injector::generateForTypology(IllicitContext &ctx, const Plan &plan,
+                              Typology typology, std::int32_t budget) const {
+  switch (typology) {
+  case Typology::classic:
+    return typologies::classic::generate(ctx, plan, budget);
+  case Typology::layering:
+    return typologies::layering::generate(ctx, plan, budget, layeringRules_);
+  case Typology::funnel:
+    return typologies::funnel::generate(ctx, plan, budget);
+  case Typology::structuring:
+    return typologies::structuring::generate(ctx, plan, budget,
+                                             structuringRules_);
+  case Typology::invoice:
+    return typologies::invoice::generate(ctx, plan, budget);
+  case Typology::mule:
+    return typologies::mule::generate(ctx, plan, budget);
+  }
+  // Unreachable in practice; preserves the original silent fallback.
+  return typologies::classic::generate(ctx, plan, budget);
+}
 
 InjectionOutput
 Injector::inject(time::Window window,
@@ -88,7 +131,6 @@ Injector::inject(time::Window window,
       .execution = execution,
       .window = activeWindow,
       .accounts = &pools,
-      .rates = patterns_.camouflage,
   };
 
   IllicitContext illicitCtx{
@@ -96,8 +138,6 @@ Injector::inject(time::Window window,
       .window = activeWindow,
       .billerAccounts = std::span<const entity::Key>(
           pools.billerAccounts.data(), pools.billerAccounts.size()),
-      .layeringRules = patterns_.layering,
-      .structuringRules = patterns_.structuring,
   };
 
   std::vector<Plan> ringPlans;
@@ -109,7 +149,7 @@ Injector::inject(time::Window window,
 
   std::vector<transactions::Transaction> camoTxns;
   for (const auto &plan : ringPlans) {
-    auto produced = camouflage::generate(camouflageCtx, plan);
+    auto produced = camouflage::generate(camouflageCtx, plan, camouflageRates_);
     camoTxns.insert(camoTxns.end(), std::make_move_iterator(produced.begin()),
                     std::make_move_iterator(produced.end()));
   }
@@ -145,9 +185,10 @@ Injector::inject(time::Window window,
     }
 
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
-    const auto typology = patterns_.typology.choose(services_.rng);
+    const auto typology = typologyWeights_.choose(services_.rng);
+
     auto produced =
-        typologies::generate(illicitCtx, ringPlans[ringIdx], typology, perRing);
+        generateForTypology(illicitCtx, ringPlans[ringIdx], typology, perRing);
 
     remainingBudget -= static_cast<std::int64_t>(produced.size());
     illicitTxns.insert(illicitTxns.end(),

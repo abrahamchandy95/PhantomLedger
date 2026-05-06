@@ -83,8 +83,8 @@ using recurring::PayrollRules;
 
 } // namespace
 
-std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
-                                                const Plan &plan) {
+std::vector<transactions::Transaction>
+generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
   const auto ringAccounts = plan.participantAccounts();
   if (ringAccounts.empty() || ctx.accounts == nullptr) {
     return {};
@@ -93,7 +93,6 @@ std::vector<transactions::Transaction> generate(CamouflageContext &ctx,
   std::vector<transactions::Transaction> out;
 
   random::Rng &rng = *ctx.execution.rng;
-  const auto &rates = ctx.rates;
   const auto startDate = ctx.window.startDate;
   const auto windowEndExcl = ctx.window.endExcl();
   const auto days = ctx.window.days;

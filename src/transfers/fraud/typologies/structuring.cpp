@@ -9,8 +9,10 @@
 
 namespace PhantomLedger::transfers::fraud::typologies::structuring {
 
-std::vector<transactions::Transaction>
-generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
+std::vector<transactions::Transaction> generate(IllicitContext &ctx,
+                                                const Plan &plan,
+                                                std::int32_t budget,
+                                                const Rules &rules) {
   std::vector<transactions::Transaction> out;
   if (budget <= 0) {
     return out;
@@ -32,7 +34,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                            ? typologies::pickOne(rng, plan.muleAccounts)
                            : typologies::pickOne(rng, plan.fraudAccounts);
 
-  const auto &rules = ctx.structuringRules;
   const double threshold = rules.threshold;
   const double epsMin = rules.epsilonMin;
   const double epsMax = rules.epsilonMax;
