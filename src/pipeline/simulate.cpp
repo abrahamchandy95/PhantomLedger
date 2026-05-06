@@ -5,7 +5,6 @@ namespace PhantomLedger::pipeline {
 namespace {
 
 namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
-namespace productStage = ::PhantomLedger::pipeline::stages::products;
 namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
 
 [[nodiscard]] ::PhantomLedger::time::Window
@@ -27,8 +26,8 @@ activeTransferSeed(std::uint64_t requested, std::uint64_t fallback) noexcept {
   return requested;
 }
 
-[[nodiscard]] transferStage::TransferStage::RunScope
-activeTransferScope(transferStage::TransferStage::RunScope requested,
+[[nodiscard]] transferStage::LegitAssembly::RunScope
+activeTransferScope(transferStage::LegitAssembly::RunScope requested,
                     ::PhantomLedger::time::Window fallbackWindow,
                     std::uint64_t fallbackSeed) noexcept {
   requested.window = activeTransferWindow(requested.window, fallbackWindow);
@@ -47,10 +46,10 @@ SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
 SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
                                        ::PhantomLedger::time::Window window,
                                        EntitySynthesis entities,
-                                       ObligationProducts obligationProducts,
+                                       ProductSynthesis products,
                                        std::uint64_t seed)
     : rng_(&rng), window_(window), seed_(seed), entities_(entities),
-      obligationProducts_(obligationProducts) {}
+      products_(products) {}
 
 SimulationPipeline::InfraStage &SimulationPipeline::infraStage() noexcept {
   return infra_;
@@ -61,14 +60,13 @@ SimulationPipeline::infraStage() const noexcept {
   return infra_;
 }
 
-SimulationPipeline::ObligationProducts &
-SimulationPipeline::obligationProducts() noexcept {
-  return obligationProducts_;
+SimulationPipeline::ProductSynthesis &SimulationPipeline::products() noexcept {
+  return products_;
 }
 
-const SimulationPipeline::ObligationProducts &
-SimulationPipeline::obligationProducts() const noexcept {
-  return obligationProducts_;
+const SimulationPipeline::ProductSynthesis &
+SimulationPipeline::products() const noexcept {
+  return products_;
 }
 
 SimulationPipeline::TransferStage &
@@ -119,13 +117,13 @@ SimulationResult SimulationPipeline::run() const {
   // all see the same account registry.
   entityStage::finalizeAccountRegistry(out.entities);
 
-  productStage::synthesize(out.entities, window_, obligationProducts_);
+  products_.synthesize(out.entities, window_);
 
   out.infra = infra_.build(*rng_, out.entities, window_);
 
   auto configuredTransfers = transfers_;
-  configuredTransfers.runScope(
-      activeTransferScope(configuredTransfers.runScope(), window_, seed_));
+  configuredTransfers.legit().runScope(activeTransferScope(
+      configuredTransfers.legit().runScope(), window_, seed_));
 
   out.transfers = configuredTransfers.build(*rng_, out.entities, out.infra);
 
@@ -139,14 +137,12 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
   return SimulationPipeline{rng, window, entities, seed}.run();
 }
 
-SimulationResult
-simulate(::PhantomLedger::random::Rng &rng,
-         ::PhantomLedger::time::Window window,
-         SimulationPipeline::EntitySynthesis entities,
-         SimulationPipeline::ObligationProducts obligationProducts,
-         std::uint64_t seed) {
-  return SimulationPipeline{rng, window, entities, obligationProducts, seed}
-      .run();
+SimulationResult simulate(::PhantomLedger::random::Rng &rng,
+                          ::PhantomLedger::time::Window window,
+                          SimulationPipeline::EntitySynthesis entities,
+                          SimulationPipeline::ProductSynthesis products,
+                          std::uint64_t seed) {
+  return SimulationPipeline{rng, window, entities, products, seed}.run();
 }
 
 } // namespace PhantomLedger::pipeline

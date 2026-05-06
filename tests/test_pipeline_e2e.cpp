@@ -132,11 +132,13 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
   pl::pipeline::SimulationPipeline pipeline{rng, window, entities, seed};
 
   pipeline.transferStage()
+      .legit()
       .window(window)
       .seed(seed)
       .openingBalanceRules(&balanceRules)
-      .creditLifecycle(&lifecycleRules)
-      .fraudProfile(&fraudProfile);
+      .creditLifecycle(&lifecycleRules);
+
+  pipeline.transferStage().fraud().profile(&fraudProfile);
 
   return pipeline.run();
 }
