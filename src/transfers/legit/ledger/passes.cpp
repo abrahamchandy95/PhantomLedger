@@ -2,6 +2,7 @@
 
 #include "phantomledger/inflows/rent.hpp"
 #include "phantomledger/inflows/revenue/generate.hpp"
+#include "phantomledger/inflows/revenue/sources.hpp"
 #include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/inflows/types.hpp"
 #include "phantomledger/math/amounts.hpp"
@@ -57,6 +58,36 @@ buildHubAccounts(const blueprints::LegitBlueprint &plan) {
   return hubs;
 }
 
+[[nodiscard]] pl_inflows::Timeframe
+buildTimeframe(const blueprints::LegitBlueprint &plan) {
+  return pl_inflows::Timeframe{
+      .startDate = plan.startDate(),
+      .days = plan.days(),
+      .monthStarts = plan.monthStarts(),
+  };
+}
+
+[[nodiscard]] pl_inflows::Entropy
+buildEntropy(const blueprints::LegitBlueprint &plan) {
+  return pl_inflows::Entropy{
+      .factory = random::RngFactory{plan.seed()},
+  };
+}
+
+[[nodiscard]] pl_inflows::Population
+buildPopulation(const blueprints::LegitBlueprint &plan,
+                const entity::account::Ownership &ownership,
+                const entity::account::Registry &registry,
+                pl_inflows::HubAccounts hubs) {
+  return pl_inflows::Population{
+      populationCount(plan),
+      registry,
+      ownership,
+      plan.personas().pack->assignment,
+      std::move(hubs),
+  };
+}
+
 [[nodiscard]] pl_inflows::PayrollCounterparties
 buildPayrollCounterparties(const blueprints::LegitBlueprint &plan) {
   return pl_inflows::PayrollCounterparties{
@@ -77,45 +108,63 @@ buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
 }
 
 [[nodiscard]] pl_inflows::RevenueCounterparties
-buildRevenueCounterparties(const IncomePass &pass) {
+buildRevenueCounterparties(const entity::counterparty::Directory *directory) {
   return pl_inflows::RevenueCounterparties{
-      .directory = pass.revenueCounterparties(),
+      .directory = directory,
   };
 }
 
-[[nodiscard]] pl_inflows::InflowSnapshot
-buildInflowSnapshot(const IncomePass &pass,
-                    const blueprints::LegitBlueprint &plan,
-                    const entity::account::Ownership &ownership,
-                    const entity::account::Registry &registry) {
-  auto snapshot = pl_inflows::InflowSnapshot{
-      .timeframe =
-          pl_inflows::Timeframe{
-              .startDate = plan.startDate(),
-              .days = plan.days(),
-              .monthStarts = plan.monthStarts(),
-          },
-      .entropy =
-          pl_inflows::Entropy{
-              .seed = plan.seed(),
-              .factory = random::RngFactory{plan.seed()},
-          },
+[[nodiscard]] pl_inflows::salary::Payroll
+buildPayroll(const blueprints::LegitBlueprint &plan,
+             const entity::account::Ownership &ownership,
+             const entity::account::Registry &registry,
+             const pl_inflows::salary::Rules &rules) {
+  auto payroll = pl_inflows::salary::Payroll{
+      .timeframe = buildTimeframe(plan),
+      .entropy = buildEntropy(plan),
       .population =
-          pl_inflows::Population{
-              populationCount(plan),
-              registry,
-              ownership,
-              plan.personas().pack->assignment,
-              buildHubAccounts(plan),
-          },
-      .payroll = buildPayrollCounterparties(plan),
-      .rent = buildRentCounterparties(plan),
-      .revenue = buildRevenueCounterparties(pass),
-      .recurring = pass.recurring(),
+          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .counterparties = buildPayrollCounterparties(plan),
+      .rules = rules,
   };
 
-  primitives::validate::require(snapshot);
-  return snapshot;
+  primitives::validate::require(payroll);
+  return payroll;
+}
+
+[[nodiscard]] pl_inflows::rent::RentRoll
+buildRentRoll(const blueprints::LegitBlueprint &plan,
+              const entity::account::Ownership &ownership,
+              const entity::account::Registry &registry,
+              const pl_inflows::rent::Rules &rules) {
+  auto rentRoll = pl_inflows::rent::RentRoll{
+      .timeframe = buildTimeframe(plan),
+      .entropy = buildEntropy(plan),
+      .population =
+          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .counterparties = buildRentCounterparties(plan),
+      .rules = rules,
+  };
+
+  primitives::validate::require(rentRoll);
+  return rentRoll;
+}
+
+[[nodiscard]] pl_inflows::revenue::Book
+buildRevenueBook(const blueprints::LegitBlueprint &plan,
+                 const entity::account::Ownership &ownership,
+                 const entity::account::Registry &registry,
+                 const entity::counterparty::Directory *directory) {
+  auto book = pl_inflows::revenue::Book{
+      .timeframe = buildTimeframe(plan),
+      .entropy = buildEntropy(plan),
+      .population =
+          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .counterparties = buildRevenueCounterparties(directory),
+  };
+
+  primitives::validate::require(book);
+  return book;
 }
 
 [[nodiscard]] pl_gov::Population
@@ -182,21 +231,15 @@ void addRent(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
   auto &rng = routineRng(pass);
   const auto accounts = routineAccounts(pass);
 
-  const auto incomePass = IncomePass{
-      pass.rng(),
-      accounts,
-      nullptr,
-      pass.recurring(),
-  };
-  const auto snap = buildInflowSnapshot(incomePass, plan, *accounts.ownership,
-                                        *accounts.registry);
+  const auto rentRoll = buildRentRoll(plan, *accounts.ownership,
+                                      *accounts.registry, pass.rentRules());
 
   const std::function<double()> rentModel = [&rng]() -> double {
     return ::PhantomLedger::math::amounts::kRent.sample(rng);
   };
 
   streams.add(
-      pl_inflows::generateRentTxns(snap, rng, routineTxf(pass), rentModel));
+      pl_inflows::generateRentTxns(rentRoll, rng, routineTxf(pass), rentModel));
 }
 
 void addSubscriptions(const RoutinePass &pass,
@@ -297,14 +340,15 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
 
   auto &mainRng = *pass.rng();
 
-  const auto snap =
-      buildInflowSnapshot(pass, plan, *accounts.ownership, *accounts.registry);
+  const auto payroll = buildPayroll(plan, *accounts.ownership,
+                                    *accounts.registry, pass.salaryRules());
 
   const std::function<double()> salaryModel = [&mainRng]() -> double {
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
   };
 
-  streams.add(pl_inflows::generateSalaryTxns(snap, mainRng, txf, salaryModel));
+  streams.add(
+      pl_inflows::generateSalaryTxns(payroll, mainRng, txf, salaryModel));
 
   const auto benefits = pass.benefits();
   if (govCps.valid() && benefits.retirement != nullptr &&
@@ -321,7 +365,10 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
                                            govCps.disability));
   }
 
-  streams.add(pl_inflows::revenue::generate(snap, txf));
+  const auto book =
+      buildRevenueBook(plan, *accounts.ownership, *accounts.registry,
+                       pass.revenueCounterparties());
+  streams.add(pl_inflows::revenue::generate(book, txf));
 }
 
 void addRoutines(const RoutinePass &pass,

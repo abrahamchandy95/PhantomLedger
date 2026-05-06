@@ -81,7 +81,7 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
 [[nodiscard]] legit_ledger::passes::IncomePass makeIncomePass(
     ::PhantomLedger::random::Rng &rng,
     const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::inflows::RecurringIncomeRules &recurringIncome,
+    const ::PhantomLedger::inflows::salary::Rules &salaryRules,
     const ::PhantomLedger::transfers::government::RetirementTerms &retirement,
     const ::PhantomLedger::transfers::government::DisabilityTerms &disability) {
   return legit_ledger::passes::IncomePass{
@@ -91,7 +91,7 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
           .ownership = &entities.accounts.ownership,
       },
       &entities.counterparties,
-      recurringIncome,
+      salaryRules,
       legit_ledger::passes::GovernmentBenefits{
           .retirement = &retirement,
           .disability = &disability,
@@ -99,10 +99,10 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
   };
 }
 
-[[nodiscard]] legit_ledger::passes::RoutinePass makeRoutinePass(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::inflows::RecurringIncomeRules &recurringIncome) {
+[[nodiscard]] legit_ledger::passes::RoutinePass
+makeRoutinePass(::PhantomLedger::random::Rng &rng,
+                const ::PhantomLedger::pipeline::Entities &entities,
+                const ::PhantomLedger::inflows::rent::Rules &rentRules) {
   return legit_ledger::passes::RoutinePass{
       &rng,
       legit_ledger::passes::AccountAccess{
@@ -115,7 +115,7 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
           .portfolios = &entities.portfolios,
           .creditCards = &entities.creditCards,
       },
-      recurringIncome,
+      rentRules,
   };
 }
 
@@ -186,31 +186,37 @@ LegitAssembly &LegitAssembly::seed(std::uint64_t value) noexcept {
   return *this;
 }
 
-LegitAssembly &LegitAssembly::recurringIncome(
-    const ::PhantomLedger::inflows::RecurringIncomeRules &value) {
-  income_.recurring = value;
+LegitAssembly &LegitAssembly::salaryRules(
+    const ::PhantomLedger::inflows::salary::Rules &value) {
+  income_.salary = value;
+  return *this;
+}
+
+LegitAssembly &
+LegitAssembly::rentRules(const ::PhantomLedger::inflows::rent::Rules &value) {
+  income_.rent = value;
   return *this;
 }
 
 LegitAssembly &LegitAssembly::employmentRules(
     const ::PhantomLedger::recurring::EmploymentRules &value) {
-  income_.recurring.employment = value;
+  income_.salary.employment = value;
   return *this;
 }
 
 LegitAssembly &
 LegitAssembly::leaseRules(const ::PhantomLedger::recurring::LeaseRules &value) {
-  income_.recurring.lease = value;
+  income_.rent.lease = value;
   return *this;
 }
 
 LegitAssembly &LegitAssembly::salaryPaidFraction(double value) noexcept {
-  income_.recurring.salaryPaidFraction = value;
+  income_.salary.paidFraction = value;
   return *this;
 }
 
 LegitAssembly &LegitAssembly::rentPaidFraction(double value) noexcept {
-  income_.recurring.rentPaidFraction = value;
+  income_.rent.paidFraction = value;
   return *this;
 }
 
@@ -262,9 +268,9 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
   out.counterparties(makeCounterpartyPools(entities))
       .personas(makePersonaCatalog(entities))
       .hubSelection(makeHubSelection(entities, hubSelection_.fraction))
-      .income(makeIncomePass(rng, entities, income_.recurring,
-                             income_.retirement, income_.disability))
-      .routines(makeRoutinePass(rng, entities, income_.recurring))
+      .income(makeIncomePass(rng, entities, income_.salary, income_.retirement,
+                             income_.disability))
+      .routines(makeRoutinePass(rng, entities, income_.rent))
       .family(makeFamilyPass(entities))
       .credit(makeCreditPass(rng, entities, cardLifecycle_.lifecycleRules))
       .familyScenario(familyTransfers_)
