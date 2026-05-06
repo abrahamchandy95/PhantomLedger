@@ -25,12 +25,6 @@ constexpr double kFraudHeadroomFraction = 0.05;
 
 } // namespace
 
-TransferStage::TransferStage(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::pipeline::Infra &infra) noexcept
-    : rng_{&rng}, entities_{&entities}, infra_{&infra} {}
-
 TransferStage &TransferStage::runScope(RunScope value) noexcept {
   legit_.runScope(value);
   return *this;
@@ -181,11 +175,14 @@ const TransferStage::RunScope &TransferStage::runScope() const noexcept {
   return legit_.runScope();
 }
 
-::PhantomLedger::pipeline::Transfers TransferStage::build() const {
+::PhantomLedger::pipeline::Transfers
+TransferStage::build(::PhantomLedger::random::Rng &rng,
+                     const ::PhantomLedger::pipeline::Entities &entities,
+                     const ::PhantomLedger::pipeline::Infra &infra) const {
   validate::require(legit_.incomePrograms().recurring);
   legit_.validate();
 
-  auto builder = legit_.builder(*rng_, *entities_, *infra_);
+  auto builder = legit_.builder(rng, entities, infra);
   auto legitPayload = builder.build();
 
   if (legitPayload.initialBook == nullptr) {
@@ -195,31 +192,31 @@ const TransferStage::RunScope &TransferStage::runScope() const noexcept {
   }
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities_->accounts.lookup, legitPayload.candidateTxns);
+      entities.accounts.lookup, legitPayload.candidateTxns);
 
-  const auto primaryAccountsByPerson = primaryAccounts(*entities_);
+  const auto primaryAccountsByPerson = primaryAccounts(entities);
   auto replaySortedStream =
-      products_.merge(runScope().window, runScope().seed, *rng_, *entities_,
-                      *infra_, primaryAccountsByPerson, legitPayload);
+      products_.merge(runScope().window, runScope().seed, rng, entities, infra,
+                      primaryAccountsByPerson, legitPayload);
 
-  auto preReplay = ledger_.preFraud(*legitPayload.initialBook, *rng_,
+  auto preReplay = ledger_.preFraud(*legitPayload.initialBook, rng,
                                     std::move(replaySortedStream));
 
   const std::span<const Transaction> draftView{preReplay.draftTxns.data(),
                                                preReplay.draftTxns.size()};
   auto fraudOut =
-      fraud_.inject(*rng_, infra_->router, infra_->ringInfra, runScope().window,
-                    entities_->people.topology, entities_->accounts.registry,
-                    entities_->accounts.ownership, draftView, legitPayload);
+      fraud_.inject(rng, infra.router, infra.ringInfra, runScope().window,
+                    entities.people.topology, entities.accounts.registry,
+                    entities.accounts.ownership, draftView, legitPayload);
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
 
-  auto postReplay = ledger_.postFraud(*rng_, *legitPayload.initialBook,
-                                      std::move(mergedTxns));
+  auto postReplay =
+      ledger_.postFraud(rng, *legitPayload.initialBook, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities_->accounts.lookup, postReplay.finalTxns);
+      entities.accounts.lookup, postReplay.finalTxns);
 
   ::PhantomLedger::pipeline::Transfers out{};
   out.legit = std::move(legitPayload);
