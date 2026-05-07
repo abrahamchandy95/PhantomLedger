@@ -1,6 +1,7 @@
 #include "phantomledger/pipeline/stages/transfers.hpp"
 
 #include "phantomledger/pipeline/invariants.hpp"
+#include "phantomledger/transactions/factory.hpp"
 
 #include <cstddef>
 #include <span>
@@ -61,9 +62,12 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
   const auto scope = legit_.runScope();
   const auto primaryAccountsByPerson = primaryAccounts(entities);
 
-  auto replaySortedStream =
-      products_.merge(scope.window, scope.seed, rng, entities, infra,
-                      primaryAccountsByPerson, legitPayload.txns);
+  ::PhantomLedger::transactions::Factory productTxf{rng, &infra.router,
+                                                    &infra.ringInfra};
+  ProductTxnEmitter productEmitter{scope.window, scope.seed, rng, productTxf};
+
+  auto replaySortedStream = products_.merge(
+      productEmitter, entities, primaryAccountsByPerson, legitPayload.txns);
 
   auto candidateReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook,
                                           rng, std::move(replaySortedStream));

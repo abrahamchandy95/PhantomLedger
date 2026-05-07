@@ -4,6 +4,7 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/insurance/rates.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
@@ -14,10 +15,41 @@
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
+using PrimaryAccounts = std::unordered_map<::PhantomLedger::entity::PersonId,
+                                           ::PhantomLedger::entity::Key>;
+
+class ProductTxnEmitter {
+public:
+  using Transaction = ::PhantomLedger::transactions::Transaction;
+
+  ProductTxnEmitter(::PhantomLedger::time::Window window, std::uint64_t seed,
+                    ::PhantomLedger::random::Rng &rng,
+                    const ::PhantomLedger::transactions::Factory &txf) noexcept;
+
+  [[nodiscard]] std::vector<Transaction>
+  premiums(const ::PhantomLedger::pipeline::Entities &entities,
+           const PrimaryAccounts &primaryAccounts);
+
+  [[nodiscard]] std::vector<Transaction>
+  claims(::PhantomLedger::transfers::insurance::ClaimRates rates,
+         const ::PhantomLedger::pipeline::Entities &entities,
+         const PrimaryAccounts &primaryAccounts);
+
+  [[nodiscard]] std::vector<Transaction>
+  obligations(const ::PhantomLedger::pipeline::Entities &entities,
+              const PrimaryAccounts &primaryAccounts);
+
+private:
+  ::PhantomLedger::time::Window window_{};
+  std::uint64_t seed_ = 0;
+  ::PhantomLedger::random::Rng &rng_;
+  const ::PhantomLedger::transactions::Factory &txf_;
+};
+
 class ProductReplay {
 public:
-  using PrimaryAccounts = std::unordered_map<::PhantomLedger::entity::PersonId,
-                                             ::PhantomLedger::entity::Key>;
+  using PrimaryAccounts =
+      ::PhantomLedger::pipeline::stages::transfers::PrimaryAccounts;
   using Transaction = ::PhantomLedger::transactions::Transaction;
 
   struct InsurancePrograms {
@@ -31,10 +63,8 @@ public:
       ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept;
 
   [[nodiscard]] std::vector<Transaction>
-  merge(::PhantomLedger::time::Window window, std::uint64_t seed,
-        ::PhantomLedger::random::Rng &rng,
+  merge(ProductTxnEmitter &emitter,
         const ::PhantomLedger::pipeline::Entities &entities,
-        const ::PhantomLedger::pipeline::Infra &infra,
         const PrimaryAccounts &primaryAccounts,
         ::PhantomLedger::transfers::legit::ledger::LegitTxnStreams &legitTxns)
       const;
@@ -43,7 +73,7 @@ private:
   InsurancePrograms insurance_{};
 };
 
-[[nodiscard]] ProductReplay::PrimaryAccounts
+[[nodiscard]] PrimaryAccounts
 primaryAccounts(const ::PhantomLedger::pipeline::Entities &entities);
 
 } // namespace PhantomLedger::pipeline::stages::transfers
