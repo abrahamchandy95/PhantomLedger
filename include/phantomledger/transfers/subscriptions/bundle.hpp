@@ -6,6 +6,7 @@
 #include "phantomledger/transfers/subscriptions/prices.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <stdexcept>
@@ -13,12 +14,11 @@
 
 namespace PhantomLedger::transfers::subscriptions {
 
-/// Knobs that drive bundle composition for one person.
+/// Knobs that drive one person's subscription bundle composition.
 struct BundleRules {
   std::int32_t minPerPerson = 4;
   std::int32_t maxPerPerson = 8;
   double debitP = 0.55;
-  std::int32_t dayJitter = 1;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
@@ -30,7 +30,6 @@ struct BundleRules {
       }
     });
     r.check([&] { v::unit("debitP", debitP); });
-    r.check([&] { v::ge("dayJitter", dayJitter, 0); });
   }
 
   void validate() const {
@@ -49,16 +48,6 @@ struct Sub {
   std::uint8_t day = 0;
 };
 
-/// Append one person's subscription bundle to `out`. Uses the
-/// configured rng to:
-///   * sample a total subscription count in [minPerPerson, maxPerPerson]
-///   * count debits via `debitP` Bernoulli trials
-///   * draw distinct prices without replacement via `choiceIndices`
-///   * draw biller and billing day uniformly per sub
-///
-/// Behavior parity note: the without-replacement price draw uses
-/// `choiceIndices` so this composes byte-identically with routines
-/// that previously inlined the same logic.
 inline void appendBundle(random::Rng &subRng, const BundleRules &rules,
                          const entity::Key &deposit,
                          std::span<const entity::Key> billerAccounts,
