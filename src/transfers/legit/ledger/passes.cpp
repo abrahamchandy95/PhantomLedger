@@ -23,6 +23,7 @@
 #include <functional>
 #include <span>
 #include <stdexcept>
+#include <utility>
 
 namespace PhantomLedger::transfers::legit::ledger::passes {
 
@@ -295,32 +296,41 @@ void addSpending(const RoutinePass &pass,
         "spending routine requires a non-null accountsLookup");
   }
 
-  streams.add(routines::spending::generateDayToDayTxns(
-      routines::spending::SpendingRoutine::Execution{
+  namespace routineSpending = routines::spending;
+
+  const routineSpending::SpendingRoutine routine;
+
+  const routineSpending::SpendingRoutine::CensusSource census{
+      .blueprint = plan,
+      .accounts =
+          routineSpending::SpendingRoutine::AccountSource{
+              .lookup = *resources.accountsLookup,
+              .registry = *accounts.registry,
+          },
+  };
+
+  const routineSpending::SpendingRoutine::PayeeDirectory payees{
+      .merchants = resources.merchants,
+      .creditCards = resources.creditCards,
+  };
+
+  const routineSpending::SpendingRoutine::ObligationSource obligationSource{
+      .portfolios = resources.portfolios,
+  };
+
+  const std::span<const transactions::Transaction> baseTxns(streams.screened());
+
+  auto market = routine.prepareMarket(census, payees, baseTxns);
+  auto obligations = routineSpending::SpendingRoutine::prepareObligations(
+      census, obligationSource, baseTxns, true);
+
+  streams.add(routine.run(
+      routineSpending::SpendingRoutine::Execution{
           .rng = routineRng(pass),
           .txf = routineTxf(pass),
+          .seed = plan.seed(),
       },
-      routines::spending::SpendingRoutine::CensusSource{
-          .blueprint = plan,
-          .accounts =
-              routines::spending::SpendingRoutine::AccountSource{
-                  .lookup = *resources.accountsLookup,
-                  .registry = *accounts.registry,
-              },
-      },
-      routines::spending::SpendingRoutine::PayeeDirectory{
-          .merchants = resources.merchants,
-          .creditCards = resources.creditCards,
-      },
-      routines::spending::SpendingRoutine::ObligationSource{
-          .portfolios = resources.portfolios,
-      },
-      routines::spending::SpendingRoutine::LedgerReplay{
-          .baseTxns =
-              std::span<const transactions::Transaction>(streams.screened()),
-          .screenBook = screen.fresh(),
-          .baseTxnsSorted = true,
-      }));
+      market, obligations, screen.fresh()));
 }
 
 } // namespace
