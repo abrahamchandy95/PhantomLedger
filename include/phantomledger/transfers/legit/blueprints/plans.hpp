@@ -232,22 +232,24 @@ public:
     return std::move(counterparties_);
   }
 
+  LegitBlueprint &addCounterparties(random::Rng &rng, AccountCensus census,
+                                    CounterpartyPools counterparties,
+                                    HubSelectionRules hubs);
+  LegitBlueprint &addPersonas(random::Rng &rng, LegitTimeframe timeframe,
+                              PersonaCatalog personas);
+
 private:
+  friend LegitBlueprint buildLegitBlueprint(LegitTimeframe timeframe,
+                                            AccountCensus census);
+
   std::uint64_t seed_ = 0;
   TransferCalendar calendar_{};
   AccountAccess accounts_{};
   CounterpartyAccess counterparties_{};
   PersonaAccess personas_{};
-
-  friend LegitBlueprint
-  buildLegitBlueprint(random::Rng &rng, LegitTimeframe timeframe,
-                      AccountCensus census, CounterpartyPools counterparties,
-                      PersonaCatalog personas, HubSelectionRules hubs);
 };
 
-[[nodiscard]] LegitBlueprint
-buildLegitBlueprint(random::Rng &rng, LegitTimeframe timeframe,
-                    AccountCensus census, CounterpartyPools counterparties = {},
-                    PersonaCatalog personas = {}, HubSelectionRules hubs = {});
+[[nodiscard]] LegitBlueprint buildLegitBlueprint(LegitTimeframe timeframe,
+                                                 AccountCensus census);
 
 } // namespace PhantomLedger::transfers::legit::blueprints
