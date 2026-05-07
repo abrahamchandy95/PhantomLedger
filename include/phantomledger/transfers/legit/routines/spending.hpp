@@ -4,12 +4,15 @@
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/spending/market/market.hpp"
+#include "phantomledger/spending/obligations/snapshot.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/routines/spending/behavior.hpp"
 
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -24,6 +27,7 @@ public:
   struct Execution {
     random::Rng &rng;
     const transactions::Factory &txf;
+    std::uint64_t seed = 0;
   };
 
   struct AccountSource {
@@ -59,9 +63,19 @@ public:
   SpendingRoutine &dynamics(DynamicsProfile value) noexcept;
   SpendingRoutine &emission(EmissionProfile value) noexcept;
 
+  [[nodiscard]] ::PhantomLedger::spending::market::Market
+  prepareMarket(const CensusSource &census, PayeeDirectory payees,
+                std::span<const transactions::Transaction> baseTxns) const;
+
+  [[nodiscard]] static ::PhantomLedger::spending::obligations::Snapshot
+  prepareObligations(const CensusSource &census, ObligationSource obligations,
+                     std::span<const transactions::Transaction> baseTxns,
+                     bool baseTxnsSorted);
+
   [[nodiscard]] std::vector<transactions::Transaction>
-  run(Execution execution, const CensusSource &census, PayeeDirectory payees,
-      ObligationSource obligations, LedgerReplay replay) const;
+  run(Execution execution, ::PhantomLedger::spending::market::Market &market,
+      const ::PhantomLedger::spending::obligations::Snapshot &obligations,
+      clearing::Ledger *screenBook = nullptr) const;
 
 private:
   SpendingHabits habits_{};
@@ -70,13 +84,5 @@ private:
   DynamicsProfile dynamics_{};
   EmissionProfile emission_{};
 };
-
-[[nodiscard]] std::vector<transactions::Transaction> generateDayToDayTxns(
-    SpendingRoutine::Execution execution,
-    const SpendingRoutine::CensusSource &census,
-    SpendingRoutine::PayeeDirectory payees = SpendingRoutine::PayeeDirectory{},
-    SpendingRoutine::ObligationSource obligations =
-        SpendingRoutine::ObligationSource{},
-    SpendingRoutine::LedgerReplay replay = SpendingRoutine::LedgerReplay{});
 
 } // namespace PhantomLedger::transfers::legit::routines::spending
