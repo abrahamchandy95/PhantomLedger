@@ -243,6 +243,33 @@ using AnnualRaiseSource = double (*)(const random::RngFactory &,
                                      const GrowthDist &,
                                      const AnnualRaiseInput &);
 
+class AnnualRaiseSeries {
+public:
+  AnnualRaiseSeries(const random::RngFactory &factory, std::string_view stream,
+                    std::string_view key,
+                    AnnualRaiseSource source = seededAnnualRaise)
+      : factory_(factory), stream_(stream), key_(key), source_(source) {
+    if (source_ == nullptr) {
+      throw std::invalid_argument("AnnualRaiseSeries requires a source");
+    }
+  }
+
+  [[nodiscard]] double forYear(const GrowthDist &dist, int year) const {
+    return source_(factory_, dist,
+                   AnnualRaiseInput{
+                       .stream = stream_,
+                       .key = key_,
+                       .year = year,
+                   });
+  }
+
+private:
+  const random::RngFactory &factory_;
+  std::string_view stream_;
+  std::string_view key_;
+  AnnualRaiseSource source_ = seededAnnualRaise;
+};
+
 inline void requireGrowthFactor(double factor, std::string_view field) {
   namespace v = primitives::validate;
 
@@ -251,16 +278,11 @@ inline void requireGrowthFactor(double factor, std::string_view field) {
 }
 
 /// Compound inflation + real raises over elapsed full years.
-[[nodiscard]] inline double
-compoundGrowth(const CompoundRules &rules, const random::RngFactory &factory,
-               std::string_view stream, std::string_view key,
-               time::TimePoint start, time::TimePoint now,
-               AnnualRaiseSource raiseSource = seededAnnualRaise) {
+[[nodiscard]] inline double compoundGrowth(const CompoundRules &rules,
+                                           const AnnualRaiseSeries &raises,
+                                           time::TimePoint start,
+                                           time::TimePoint now) {
   primitives::validate::require(rules);
-
-  if (raiseSource == nullptr) {
-    throw std::invalid_argument("compoundGrowth requires a raiseSource");
-  }
 
   const int years = anniversariesPassed(start, now);
   if (years <= 0) {
@@ -273,12 +295,7 @@ compoundGrowth(const CompoundRules &rules, const random::RngFactory &factory,
   for (int i = 0; i < years; ++i) {
     const int year = startCal.year + i;
 
-    const double realRaise = raiseSource(factory, rules.annualRaise,
-                                         AnnualRaiseInput{
-                                             .stream = stream,
-                                             .key = key,
-                                             .year = year,
-                                         });
+    const double realRaise = raises.forYear(rules.annualRaise, year);
 
     const double factor = 1.0 + rules.annualInflation + realRaise;
 
