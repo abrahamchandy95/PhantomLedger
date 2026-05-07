@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"
 
@@ -20,18 +21,17 @@ struct InfraAttribution {
 
 struct RoutingRules {
   double switchP = 0.05;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::between("switchP", switchP, 0.0, 1.0); });
+  }
 };
 
 class Router {
 public:
   Router() = default;
 
-  /// Build from pre-populated ownership and infra pools.
-  ///
-  /// ownerOf:          account Key -> person ID
-  /// devicesByPerson:  person ID -> list of device identities
-  /// ipsByPerson:      person ID -> list of IP addresses
-  /// rules.switchP:    probability of switching to an alternate device/ip
   static Router
   build(RoutingRules rules,
         std::unordered_map<entity::Key, entity::PersonId> ownerOf,
@@ -44,26 +44,9 @@ public:
     r.ownerOf_ = std::move(ownerOf);
     r.devicesByPerson_ = std::move(devicesByPerson);
     r.ipsByPerson_ = std::move(ipsByPerson);
-
-    // Sticky state starts at index 0 for every person that has a
-    // non-empty pool. Indices are stable because the pools themselves
-    // are immutable after build().
-    for (const auto &[person, devices] : r.devicesByPerson_) {
-      if (!devices.empty()) {
-        r.currentDeviceIdx_[person] = 0;
-      }
-    }
-    for (const auto &[person, ips] : r.ipsByPerson_) {
-      if (!ips.empty()) {
-        r.currentIpIdx_[person] = 0;
-      }
-    }
-
     return r;
   }
 
-  /// Resolve the owner of a source account without drawing any RNG.
-  /// Callers that need both device and IP can resolve once and reuse.
   [[nodiscard]] std::optional<entity::PersonId>
   ownerOf(const entity::Key &srcAcct) const {
     const auto it = ownerOf_.find(srcAcct);

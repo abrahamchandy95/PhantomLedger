@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"
 
@@ -10,20 +11,29 @@
 namespace PhantomLedger::infra {
 
 struct SharedInfraRules {
-  double deviceP = 0.85;
-  double ipP = 0.80;
+  double useSharedDeviceP = 0.85;
+  double useSharedIpP = 0.80;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check(
+        [&] { v::between("useSharedDeviceP", useSharedDeviceP, 0.0, 1.0); });
+    r.check([&] { v::between("useSharedIpP", useSharedIpP, 0.0, 1.0); });
+  }
 };
 
 struct SharedInfra {
   std::unordered_map<std::uint32_t, devices::Identity> ringDevice;
   std::unordered_map<std::uint32_t, network::Ipv4> ringIp;
 
-  double useSharedDeviceP = 0.85;
-  double useSharedIpP = 0.80;
+  // Defaults derive from SharedInfraRules{} so there is exactly one source
+  // of truth for shared-infra defaults; changing the rule struct is enough.
+  double useSharedDeviceP = SharedInfraRules{}.useSharedDeviceP;
+  double useSharedIpP = SharedInfraRules{}.useSharedIpP;
 
   void apply(SharedInfraRules rules) noexcept {
-    useSharedDeviceP = rules.deviceP;
-    useSharedIpP = rules.ipP;
+    useSharedDeviceP = rules.useSharedDeviceP;
+    useSharedIpP = rules.useSharedIpP;
   }
 
   [[nodiscard]] std::optional<devices::Identity>

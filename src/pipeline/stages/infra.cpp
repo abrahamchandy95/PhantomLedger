@@ -31,20 +31,19 @@ AccessInfraStage::window(::PhantomLedger::time::Window value) noexcept {
 }
 
 AccessInfraStage &AccessInfraStage::ringAccess(
-    const ::PhantomLedger::infra::synth::rings::AccessRules &value) noexcept {
+    ::PhantomLedger::infra::synth::rings::AccessRules value) noexcept {
   ringAccess_ = value;
   return *this;
 }
 
 AccessInfraStage &AccessInfraStage::deviceAssignment(
-    const ::PhantomLedger::infra::synth::devices::AssignmentRules
-        &value) noexcept {
+    ::PhantomLedger::infra::synth::devices::AssignmentRules value) noexcept {
   deviceAssignment_ = value;
   return *this;
 }
 
 AccessInfraStage &AccessInfraStage::ipAssignment(
-    const ::PhantomLedger::infra::synth::ips::AssignmentRules &value) noexcept {
+    ::PhantomLedger::infra::synth::ips::AssignmentRules value) noexcept {
   ipAssignment_ = value;
   return *this;
 }
@@ -63,11 +62,7 @@ AccessInfraStage &AccessInfraStage::sharedInfra(
 
 ::PhantomLedger::time::Window AccessInfraStage::activeWindow(
     ::PhantomLedger::time::Window fallback) const noexcept {
-  if (window_.days == 0) {
-    return fallback;
-  }
-
-  return window_;
+  return window_.value_or(fallback);
 }
 
 AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
