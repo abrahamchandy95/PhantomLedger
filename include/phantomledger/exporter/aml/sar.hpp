@@ -6,6 +6,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstdint>
 #include <span>
 #include <string>
 #include <vector>
@@ -25,12 +26,60 @@ struct SarRecord {
   std::vector<double> coveredAmounts;
 };
 
-/// Generate one SAR per ring + one per solo fraudster.
-[[nodiscard]] std::vector<SarRecord> generateSars(
+struct SarSubjectRole {
+  ::PhantomLedger::entity::PersonId person =
+      ::PhantomLedger::entity::invalidPerson;
+  std::string role;
+};
+
+struct SarRingSubject {
+  std::uint32_t ringId = 0;
+  std::vector<SarSubjectRole> subjects;
+};
+
+struct SarSoloSubject {
+  ::PhantomLedger::entity::PersonId person =
+      ::PhantomLedger::entity::invalidPerson;
+  std::vector<::PhantomLedger::entity::Key> accountIds;
+};
+
+class SarSubjectIndex {
+public:
+  [[nodiscard]] std::span<const ::PhantomLedger::entity::Key>
+  internalAccounts() const noexcept {
+    return internalAccounts_;
+  }
+
+  [[nodiscard]] std::span<const SarRingSubject> rings() const noexcept {
+    return rings_;
+  }
+
+  [[nodiscard]] std::span<const SarSoloSubject>
+  soloFraudsters() const noexcept {
+    return soloFraudsters_;
+  }
+
+private:
+  std::vector<::PhantomLedger::entity::Key> internalAccounts_;
+  std::vector<SarRingSubject> rings_;
+  std::vector<SarSoloSubject> soloFraudsters_;
+
+  friend SarSubjectIndex buildSarSubjectIndex(
+      const ::PhantomLedger::entity::person::Roster &peopleRoster,
+      const ::PhantomLedger::entity::person::Topology &topology,
+      const ::PhantomLedger::entity::account::Registry &accounts,
+      const ::PhantomLedger::entity::account::Ownership &ownership);
+};
+
+[[nodiscard]] SarSubjectIndex buildSarSubjectIndex(
     const ::PhantomLedger::entity::person::Roster &peopleRoster,
     const ::PhantomLedger::entity::person::Topology &topology,
     const ::PhantomLedger::entity::account::Registry &accounts,
-    const ::PhantomLedger::entity::account::Ownership &ownership,
+    const ::PhantomLedger::entity::account::Ownership &ownership);
+
+/// Generate one SAR per ring + one per solo fraudster.
+[[nodiscard]] std::vector<SarRecord> generateSars(
+    const SarSubjectIndex &subjects,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);
 
 } // namespace PhantomLedger::exporter::aml::sar
