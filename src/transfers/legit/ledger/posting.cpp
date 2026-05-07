@@ -16,41 +16,6 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-[[nodiscard]] static bool isCardLike(channels::Tag t) noexcept {
-  using channels::Legit;
-  if (t == channels::tag(Legit::atm) || t == channels::tag(Legit::merchant) ||
-      t == channels::tag(Legit::cardPurchase) ||
-      t == channels::tag(Legit::p2p)) {
-    return true;
-  }
-  return false;
-}
-
-[[nodiscard]] static bool isRetryable(channels::Tag t) noexcept {
-  using channels::Insurance;
-  using channels::Legit;
-  using channels::Product;
-
-  if (t == channels::tag(Legit::bill) ||
-      t == channels::tag(Legit::subscription) ||
-      t == channels::tag(Legit::externalUnknown)) {
-    return true;
-  }
-  if (channels::isRent(t)) {
-    return true;
-  }
-  if (t == channels::tag(Insurance::premium)) {
-    return true;
-  }
-  if (t == channels::tag(Product::mortgage) ||
-      t == channels::tag(Product::autoLoan) ||
-      t == channels::tag(Product::studentLoan) ||
-      t == channels::tag(Product::taxEstimated)) {
-    return true;
-  }
-  return false;
-}
-
 bool isCureInbound(const transactions::Transaction &txn) noexcept {
   if (encoding::isExternal(txn.source)) {
     return true;
@@ -89,10 +54,10 @@ bool isCureInbound(const transactions::Transaction &txn) noexcept {
 
 std::int32_t
 ReplayFundingBehavior::maxAttemptsFor(channels::Tag channel) const noexcept {
-  if (isCardLike(channel)) {
+  if (channels::isCardLike(channel)) {
     return 1;
   }
-  if (isRetryable(channel)) {
+  if (channels::isRetryable(channel)) {
     return 2;
   }
   return 1;
@@ -100,13 +65,14 @@ ReplayFundingBehavior::maxAttemptsFor(channels::Tag channel) const noexcept {
 
 std::int32_t
 ReplayFundingBehavior::cureHoursFor(channels::Tag channel) const noexcept {
-  return isCardLike(channel) ? cure.cardHours : cure.delayedDebitHours;
+  return channels::isCardLike(channel) ? cure.cardHours
+                                       : cure.delayedDebitHours;
 }
 
 std::int32_t
 ReplayFundingBehavior::paddingMinutesFor(channels::Tag channel) const noexcept {
-  return isCardLike(channel) ? retry.cardPaddingMinutes
-                             : retry.debitPaddingMinutes;
+  return channels::isCardLike(channel) ? retry.cardPaddingMinutes
+                                       : retry.debitPaddingMinutes;
 }
 
 std::int32_t ReplayFundingBehavior::blindDelayHoursFor(
@@ -354,7 +320,7 @@ std::int64_t ChronoReplayAccumulator::resolveRetryTimestamp(
                         60;
   }
 
-  if (rng_ == nullptr || !isRetryable(txn.session.channel) ||
+  if (rng_ == nullptr || !channels::isRetryable(txn.session.channel) ||
       retryCount >= funding_.maxAttemptsFor(txn.session.channel)) {
     return 0;
   }
@@ -393,10 +359,10 @@ std::int64_t ChronoReplayAccumulator::findFutureCure(
 
 std::string_view
 ChronoReplayAccumulator::terminalReason(channels::Tag channel) noexcept {
-  if (isCardLike(channel)) {
+  if (channels::isCardLike(channel)) {
     return drop_reasons::kInsufficientFundsInstantDecline;
   }
-  if (isRetryable(channel)) {
+  if (channels::isRetryable(channel)) {
     return drop_reasons::kInsufficientFundsTerminal;
   }
   return drop_reasons::kInsufficientFunds;
