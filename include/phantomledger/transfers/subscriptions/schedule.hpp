@@ -2,6 +2,7 @@
 
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -16,11 +17,28 @@ inline constexpr int kHourHighExcl = 7;
 inline constexpr int kMinuteLow = 0;
 inline constexpr int kMinuteHighExcl = 61;
 
+/// Scheduling knobs for posting a materialized subscription in each month.
+struct ScheduleRules {
+  std::int32_t dayJitter = 1;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::ge("subscriptions.dayJitter", dayJitter, 0); });
+  }
+
+  void validate() const {
+    primitives::validate::Report r;
+    validate(r);
+    r.throwIfFailed();
+  }
+};
+
 [[nodiscard]] inline std::int64_t
 cycleTimestamp(random::Rng &rng, time::TimePoint monthStart,
-               std::uint8_t baseDay, std::uint8_t dayJitter) noexcept {
+               std::uint8_t baseDay, const ScheduleRules &rules) noexcept {
+  const auto dayJitter = static_cast<std::uint8_t>(rules.dayJitter);
   const auto jitter =
-      (dayJitter == 0)
+      (dayJitter == 0U)
           ? std::int64_t{0}
           : rng.uniformInt(-static_cast<std::int64_t>(dayJitter),
                            static_cast<std::int64_t>(dayJitter) + 1);

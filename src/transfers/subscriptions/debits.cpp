@@ -5,21 +5,15 @@
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/clearing/screening.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transfers/subscriptions/schedule.hpp"
 
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
 namespace PhantomLedger::transfers::subscriptions {
-/*
- * Two-stages:
-    1. Per-person bundle assignment
-
-    2. Per-month cycle
- */
 namespace {
 
 inline constexpr channels::Tag kChannel =
@@ -41,161 +35,185 @@ struct PersonText {
   }
 };
 
-/// (timestamp, sub-index) pairs accumulated for a single month.
-/// Storing only the index keeps the sort key small and cache-friendly.
-struct Candidate {
-  std::int64_t ts = 0;
-  std::uint32_t subIdx = 0;
-};
+[[nodiscard]] transactions::Draft draftFrom(const Sub &sub,
+                                            std::int64_t timestamp) noexcept {
+  return transactions::Draft{
+      .source = sub.deposit,
+      .destination = sub.biller,
+      .amount = sub.amount,
+      .timestamp = timestamp,
+      .channel = kChannel,
+  };
+}
 
-class DebitEmitter {
-public:
-  /// Unscreened-mode constructor. The screened-mode constructor below
-  /// adds a `Screen` reference and tracks a base-cursor.
-  DebitEmitter(std::span<const Sub> subs, const transactions::Factory &txf,
-               std::vector<transactions::Transaction> &out) noexcept
-      : subs_(subs), txf_(txf), out_(out), screen_(nullptr) {}
+void sortCandidates(std::vector<Candidate> &month) {
+  std::stable_sort(month.begin(), month.end(),
+                   [](const Candidate &a, const Candidate &b) noexcept {
+                     return a.ts < b.ts;
+                   });
+}
 
-  DebitEmitter(std::span<const Sub> subs, const transactions::Factory &txf,
-               std::vector<transactions::Transaction> &out,
-               const Screen &screen) noexcept
-      : subs_(subs), txf_(txf), out_(out), screen_(&screen) {}
-
-  DebitEmitter(const DebitEmitter &) = delete;
-  DebitEmitter &operator=(const DebitEmitter &) = delete;
-
-  /// Emit one pre-sorted month's worth of candidates.
-  void emitMonth(std::span<const Candidate> sorted) {
-    if (screen_ == nullptr) {
-      emitWithoutScreen(sorted);
-    } else {
-      emitWithScreen(sorted);
-    }
-  }
-
-private:
-  /// No-screen fast path. Loop runs without a per-iteration branch.
-  void emitWithoutScreen(std::span<const Candidate> sorted) {
-    for (const auto &c : sorted) {
-      const auto &s = subs_[c.subIdx];
-      out_.push_back(txf_.make(transactions::Draft{
-          .source = s.deposit,
-          .destination = s.biller,
-          .amount = s.amount,
-          .timestamp = c.ts,
-          .channel = kChannel,
-      }));
-    }
-  }
-
-  void emitWithScreen(std::span<const Candidate> sorted) {
-    for (const auto &c : sorted) {
-      baseCursor_ = clearing::advanceBookThrough(
-          screen_->ledger, screen_->baseTxns, baseCursor_, c.ts,
-          /*inclusive=*/true);
-      const auto &s = subs_[c.subIdx];
-      const auto decision =
-          screen_->ledger->transfer(s.deposit, s.biller, s.amount, kChannel);
-      if (decision.rejected()) {
-        continue;
-      }
-      out_.push_back(txf_.make(transactions::Draft{
-          .source = s.deposit,
-          .destination = s.biller,
-          .amount = s.amount,
-          .timestamp = c.ts,
-          .channel = kChannel,
-      }));
-    }
-  }
-
-  std::span<const Sub> subs_;
-  const transactions::Factory &txf_;
-  std::vector<transactions::Transaction> &out_;
-  const Screen *screen_;
-  std::size_t baseCursor_ = 0;
-};
+void sortTransfers(std::vector<transactions::Transaction> &out) {
+  std::sort(
+      out.begin(), out.end(),
+      transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
+}
 
 } // namespace
 
-std::vector<transactions::Transaction>
-debits(const BundleRules &terms, const time::Window &window, random::Rng &rng,
-       const transactions::Factory &txf, const random::RngFactory &factory,
-       const Population &population, const Counterparties &counterparties,
-       const Screen &screen) {
-  std::vector<transactions::Transaction> out;
+BundleBuilder::BundleBuilder(const BundleRules &rules,
+                             const random::RngFactory &factory)
+    : rules_(&rules), factory_(&factory) {
+  rules.validate();
+}
 
-  if (counterparties.billerAccounts.empty() ||
-      population.primaryAccountByPerson.empty()) {
+std::vector<Sub> BundleBuilder::build(SubscriberAccounts subscribers,
+                                      BillerDirectory billers,
+                                      AccountExclusions exclusions) const {
+  std::vector<Sub> out;
+
+  if (subscribers.empty() || billers.empty()) {
     return out;
   }
 
-  time::Almanac almanac{window};
-  const auto monthStarts = almanac.monthAnchors();
-  if (monthStarts.empty()) {
-    return out;
-  }
-
-  // Stage 1: build the flat bundle of all materialized subs once.
-  std::vector<Sub> subs;
-  const auto personCount = population.primaryAccountByPerson.size();
-  for (std::size_t i = 0; i < personCount; ++i) {
-    const entity::Key &deposit = population.primaryAccountByPerson[i];
-    if (!entity::valid(deposit)) {
+  for (const auto &subscriber : subscribers.rows) {
+    if (!entity::valid(subscriber.deposit)) {
       continue;
     }
-    if (population.hubSet != nullptr && population.hubSet->contains(deposit)) {
+    if (exclusions.contains(subscriber.deposit)) {
       continue;
     }
-    const PersonText pid(static_cast<std::uint32_t>(i + 1));
-    auto subRng = factory.rng({"subscriptions", pid.view()});
-    appendBundle(subRng, terms, deposit, counterparties.billerAccounts, subs);
+
+    const PersonText pid(subscriber.person);
+    auto subRng = factory_->rng({"subscriptions", pid.view()});
+    appendBundle(subRng, *rules_, subscriber.deposit, billers.accounts, out);
   }
 
-  if (subs.empty()) {
-    return out;
-  }
-  out.reserve(monthStarts.size() * subs.size() / 2U);
+  return out;
+}
 
-  // Stage 2: per-month, build candidates, sort, screen, emit.
+ScheduleSampler::ScheduleSampler(time::Window window, ScheduleRules rules)
+    : window_(window), rules_(rules),
+      windowStartTs_(time::toEpochSeconds(window_.start)),
+      windowEndExclTs_(time::toEpochSeconds(window_.endExcl())) {
+  rules_.validate();
+
+  time::Almanac almanac{window_};
+  const auto anchors = almanac.monthAnchors();
+  monthStarts_.assign(anchors.begin(), anchors.end());
+}
+
+ScheduleSampler::ScheduleSampler(std::span<const time::TimePoint> monthStarts,
+                                 time::Window window, ScheduleRules rules)
+    : window_(window), rules_(rules),
+      monthStarts_(monthStarts.begin(), monthStarts.end()),
+      windowStartTs_(time::toEpochSeconds(window_.start)),
+      windowEndExclTs_(time::toEpochSeconds(window_.endExcl())) {
+  rules_.validate();
+}
+
+std::span<const time::TimePoint> ScheduleSampler::monthStarts() const noexcept {
+  return {monthStarts_.data(), monthStarts_.size()};
+}
+
+std::vector<Candidate>
+ScheduleSampler::candidates(random::Rng &rng, time::TimePoint monthStart,
+                            std::span<const Sub> subs) const {
   std::vector<Candidate> month;
   month.reserve(subs.size());
 
-  const auto windowStartTs = time::toEpochSeconds(window.start);
-  const auto endExclTs = time::toEpochSeconds(window.endExcl());
-  const bool screening = (screen.ledger != nullptr);
-
-  // Construct the right emitter once. The screening branch is fixed
-  // for the whole call so the hot per-candidate loop has no branch.
-  auto emitter = screening ? DebitEmitter{subs, txf, out, screen}
-                           : DebitEmitter{subs, txf, out};
-
-  for (const auto &monthStart : monthStarts) {
-    month.clear();
-    for (std::size_t i = 0; i < subs.size(); ++i) {
-      const auto ts =
-          cycleTimestamp(rng, monthStart, subs[i].day, terms.dayJitter);
-      if (ts < windowStartTs || ts >= endExclTs) {
-        continue;
-      }
-      month.push_back(Candidate{ts, static_cast<std::uint32_t>(i)});
+  for (std::size_t i = 0; i < subs.size(); ++i) {
+    const auto ts = cycleTimestamp(rng, monthStart, subs[i].day, rules_);
+    if (ts < windowStartTs_ || ts >= windowEndExclTs_) {
+      continue;
     }
+    month.push_back(Candidate{ts, static_cast<std::uint32_t>(i)});
+  }
+
+  sortCandidates(month);
+  return month;
+}
+
+DebitEmitter::DebitEmitter(const transactions::Factory &txf) noexcept
+    : txf_(&txf) {}
+
+DebitEmitter::DebitEmitter(const transactions::Factory &txf,
+                           const Screen &screen) noexcept
+    : txf_(&txf), screen_(&screen) {}
+
+std::vector<transactions::Transaction>
+DebitEmitter::emit(const ScheduleSampler &schedule, random::Rng &rng,
+                   std::span<const Sub> subs) const {
+  return debits(schedule, rng, *this, subs);
+}
+
+bool DebitEmitter::screens() const noexcept {
+  return screen_ != nullptr && screen_->ledger != nullptr;
+}
+
+void DebitEmitter::emitMonth(std::span<const Candidate> sorted,
+                             std::span<const Sub> subs,
+                             std::vector<transactions::Transaction> &out,
+                             std::size_t &baseCursor) const {
+  if (screens()) {
+    emitWithScreen(sorted, subs, out, baseCursor);
+  } else {
+    emitWithoutScreen(sorted, subs, out);
+  }
+}
+
+void DebitEmitter::emitWithoutScreen(
+    std::span<const Candidate> sorted, std::span<const Sub> subs,
+    std::vector<transactions::Transaction> &out) const {
+  for (const auto &candidate : sorted) {
+    const auto &sub = subs[candidate.subIdx];
+    out.push_back(txf_->make(draftFrom(sub, candidate.ts)));
+  }
+}
+
+void DebitEmitter::emitWithScreen(std::span<const Candidate> sorted,
+                                  std::span<const Sub> subs,
+                                  std::vector<transactions::Transaction> &out,
+                                  std::size_t &baseCursor) const {
+  for (const auto &candidate : sorted) {
+    baseCursor = clearing::advanceBookThrough(
+        screen_->ledger, screen_->baseTxns, baseCursor, candidate.ts,
+        /*inclusive=*/true);
+
+    const auto &sub = subs[candidate.subIdx];
+    const auto decision = screen_->ledger->transfer(sub.deposit, sub.biller,
+                                                    sub.amount, kChannel);
+    if (decision.rejected()) {
+      continue;
+    }
+
+    out.push_back(txf_->make(draftFrom(sub, candidate.ts)));
+  }
+}
+
+std::vector<transactions::Transaction> debits(const ScheduleSampler &schedule,
+                                              random::Rng &rng,
+                                              const DebitEmitter &emitter,
+                                              std::span<const Sub> subs) {
+  std::vector<transactions::Transaction> out;
+
+  if (subs.empty() || schedule.monthStarts().empty()) {
+    return out;
+  }
+
+  out.reserve(schedule.monthStarts().size() * subs.size() / 2U);
+
+  std::size_t baseCursor = 0;
+  for (const auto &monthStart : schedule.monthStarts()) {
+    auto month = schedule.candidates(rng, monthStart, subs);
     if (month.empty()) {
       continue;
     }
 
-    // Stable sort keeps the screen replay deterministic for ties.
-    std::stable_sort(month.begin(), month.end(),
-                     [](const Candidate &a, const Candidate &b) noexcept {
-                       return a.ts < b.ts;
-                     });
-
-    emitter.emitMonth(month);
+    emitter.emitMonth(month, subs, out, baseCursor);
   }
 
-  std::sort(
-      out.begin(), out.end(),
-      transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
+  sortTransfers(out);
   return out;
 }
 

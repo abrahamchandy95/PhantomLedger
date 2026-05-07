@@ -1,28 +1,19 @@
 #include "phantomledger/transfers/legit/routines/subscriptions.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transfers/subscriptions/schedule.hpp"
+#include "phantomledger/transfers/subscriptions/debits.hpp"
 
-#include <algorithm>
 #include <cstddef>
-#include <cstdint>
 #include <span>
-#include <string>
 #include <utility>
+#include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::subscriptions {
-
 namespace {
 
 namespace core = ::PhantomLedger::transfers::subscriptions;
-
-struct Candidate {
-  std::int64_t ts = 0;
-  std::uint32_t subIdx = 0;
-};
 
 [[nodiscard]] std::span<const entity::Key>
 billerAccounts(const blueprints::LegitBlueprint &plan) noexcept {
@@ -31,67 +22,48 @@ billerAccounts(const blueprints::LegitBlueprint &plan) noexcept {
       plan.counterparties().billerAccounts.size());
 }
 
-[[nodiscard]] std::vector<core::Sub>
-buildSubscriptionBundles(const blueprints::LegitBlueprint &plan,
-                         const entity::account::Registry &registry,
-                         const core::BundleRules &rules,
-                         std::span<const entity::Key> billers) {
-  std::vector<core::Sub> subs;
-  if (billers.empty()) {
-    return subs;
-  }
-
-  const random::RngFactory subFactory{plan.seed()};
-  subs.reserve(plan.persons().size() *
-               static_cast<std::size_t>(rules.maxPerPerson) / 2U);
+[[nodiscard]] std::vector<core::SubscriberAccount>
+subscriberAccounts(const blueprints::LegitBlueprint &plan,
+                   const entity::account::Registry &registry) {
+  std::vector<core::SubscriberAccount> out;
+  out.reserve(plan.persons().size());
 
   for (const auto person : plan.persons()) {
     const auto it = plan.primaryAcctRecordIx().find(person);
     if (it == plan.primaryAcctRecordIx().end()) {
       continue;
     }
-    const auto &record = registry.records[it->second];
-    if (plan.counterparties().hubSet.contains(record.id)) {
+    const auto recordIx = it->second;
+    if (recordIx >= registry.records.size()) {
       continue;
     }
 
-    const auto personStr = std::to_string(static_cast<std::uint64_t>(person));
-    auto subRng =
-        subFactory.rng({"subscriptions", std::string_view(personStr)});
-
-    core::appendBundle(subRng, rules, record.id, billers, subs);
-  }
-
-  return subs;
-}
-
-[[nodiscard]] std::vector<Candidate> buildMonthCandidates(
-    random::Rng &rng, time::TimePoint monthStart,
-    std::span<const core::Sub> subs, std::int64_t windowStartEpoch,
-    std::int64_t windowEndExclEpoch, const core::BundleRules &rules) {
-  std::vector<Candidate> month;
-  month.reserve(subs.size());
-
-  for (std::size_t i = 0; i < subs.size(); ++i) {
-    const auto ts =
-        core::cycleTimestamp(rng, monthStart, subs[i].day,
-                             static_cast<std::uint8_t>(rules.dayJitter));
-    if (ts < windowStartEpoch || ts >= windowEndExclEpoch) {
-      continue;
-    }
-    month.push_back(Candidate{
-        .ts = ts,
-        .subIdx = static_cast<std::uint32_t>(i),
+    out.push_back(core::SubscriberAccount{
+        .person = person,
+        .deposit = registry.records[recordIx].id,
     });
   }
 
-  // Stable sort keeps the screen-replay deterministic for ties.
-  std::stable_sort(month.begin(), month.end(),
-                   [](const Candidate &a, const Candidate &b) noexcept {
-                     return a.ts < b.ts;
-                   });
+  return out;
+}
 
-  return month;
+[[nodiscard]] std::vector<core::Sub>
+buildBundles(const blueprints::LegitBlueprint &plan,
+             const entity::account::Registry &registry,
+             const core::BundleRules &rules,
+             std::span<const entity::Key> billers) {
+  const auto subscribers = subscriberAccounts(plan, registry);
+  if (subscribers.empty() || billers.empty()) {
+    return {};
+  }
+
+  const random::RngFactory subFactory{plan.seed()};
+  const core::BundleBuilder builder{rules, subFactory};
+  return builder.build(
+      core::SubscriberAccounts{std::span<const core::SubscriberAccount>(
+          subscribers.data(), subscribers.size())},
+      core::BillerDirectory{billers},
+      core::AccountExclusions{.hubAccounts = &plan.counterparties().hubSet});
 }
 
 [[nodiscard]] transactions::Draft draftFrom(const core::Sub &sub,
@@ -111,9 +83,28 @@ buildSubscriptionBundles(const blueprints::LegitBlueprint &plan,
 } // namespace
 
 DebitEmitter::DebitEmitter(random::Rng &rng, const transactions::Factory &txf,
+                           ledger::SeededScreen &screen)
+    : rng_{rng}, txf_{txf}, screen_{screen} {
+  bundleRules_.validate();
+  scheduleRules_.validate();
+}
+
+DebitEmitter::DebitEmitter(random::Rng &rng, const transactions::Factory &txf,
                            ledger::SeededScreen &screen, BundleRules rules)
-    : rng_{rng}, txf_{txf}, screen_{screen}, rules_{rules} {
-  rules_.validate();
+    : DebitEmitter(rng, txf, screen) {
+  bundleRules(std::move(rules));
+}
+
+DebitEmitter &DebitEmitter::bundleRules(BundleRules rules) {
+  rules.validate();
+  bundleRules_ = rules;
+  return *this;
+}
+
+DebitEmitter &DebitEmitter::scheduleRules(ScheduleRules rules) {
+  rules.validate();
+  scheduleRules_ = rules;
+  return *this;
 }
 
 std::vector<transactions::Transaction>
@@ -129,23 +120,21 @@ DebitEmitter::emitDebits(const blueprints::LegitBlueprint &plan,
     return out;
   }
 
-  const auto subs = buildSubscriptionBundles(plan, registry, rules_, billers);
+  const auto subs = buildBundles(plan, registry, bundleRules_, billers);
   if (subs.empty()) {
     return out;
   }
 
   const auto channel = channels::tag(channels::Legit::subscription);
+  const core::ScheduleSampler schedule{
+      std::span<const time::TimePoint>(plan.monthStarts().data(),
+                                       plan.monthStarts().size()),
+      plan.calendar().window(), scheduleRules_};
 
-  const auto endExcl =
-      plan.startDate() + time::Days{static_cast<int>(plan.days())};
-  const auto windowStartEpoch = time::toEpochSeconds(plan.startDate());
-  const auto windowEndExclEpoch = time::toEpochSeconds(endExcl);
+  out.reserve(schedule.monthStarts().size() * subs.size() / 2U);
 
-  out.reserve(plan.monthStarts().size() * subs.size() / 2U);
-
-  for (const auto &monthStart : plan.monthStarts()) {
-    const auto month = buildMonthCandidates(
-        rng_, monthStart, subs, windowStartEpoch, windowEndExclEpoch, rules_);
+  for (const auto &monthStart : schedule.monthStarts()) {
+    const auto month = schedule.candidates(rng_, monthStart, subs);
     if (month.empty()) {
       continue;
     }
