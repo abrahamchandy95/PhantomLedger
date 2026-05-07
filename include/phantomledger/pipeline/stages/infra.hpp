@@ -6,17 +6,13 @@
 #include "phantomledger/infra/synth/rings.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/transactions/infra/router.hpp"
+#include "phantomledger/transactions/infra/shared.hpp"
+
+#include <cstdint>
+#include <unordered_map>
 
 namespace PhantomLedger::pipeline::stages::infra {
-
-struct RoutingBehavior {
-  double switchP = 0.05;
-};
-
-struct SharedInfraUse {
-  double deviceP = 0.85;
-  double ipP = 0.80;
-};
 
 class AccessInfraStage {
 public:
@@ -31,8 +27,10 @@ public:
   AccessInfraStage &
   ipAssignment(const ::PhantomLedger::infra::synth::ips::AssignmentRules
                    &value) noexcept;
-  AccessInfraStage &routingBehavior(RoutingBehavior value) noexcept;
-  AccessInfraStage &sharedInfra(SharedInfraUse value) noexcept;
+  AccessInfraStage &
+  routerRules(::PhantomLedger::infra::RoutingRules value) noexcept;
+  AccessInfraStage &
+  sharedInfra(::PhantomLedger::infra::SharedInfraRules value) noexcept;
 
   [[nodiscard]] ::PhantomLedger::pipeline::Infra
   build(::PhantomLedger::random::Rng &rng,
@@ -40,27 +38,48 @@ public:
         ::PhantomLedger::time::Window fallbackWindow) const;
 
 private:
+  using RingPlans = std::unordered_map<std::uint32_t,
+                                       ::PhantomLedger::infra::synth::RingPlan>;
+
   [[nodiscard]] ::PhantomLedger::time::Window
   activeWindow(::PhantomLedger::time::Window fallback) const noexcept;
-  void applySharedInfra(::PhantomLedger::pipeline::Infra &out) const noexcept;
+
+  [[nodiscard]] RingPlans buildRingPlans(
+      ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+      const ::PhantomLedger::entities::synth::people::Pack &people) const;
+
+  [[nodiscard]] ::PhantomLedger::infra::synth::devices::Output
+  buildDevices(::PhantomLedger::random::Rng &rng,
+               ::PhantomLedger::time::Window window,
+               const ::PhantomLedger::entity::person::Roster &people,
+               const RingPlans &ringPlans) const;
+
+  [[nodiscard]] ::PhantomLedger::infra::synth::ips::Output
+  buildIps(::PhantomLedger::random::Rng &rng,
+           ::PhantomLedger::time::Window window,
+           const ::PhantomLedger::entity::person::Roster &people,
+           const RingPlans &ringPlans) const;
+
+  [[nodiscard]] ::PhantomLedger::infra::Router
+  buildRouter(const ::PhantomLedger::entity::account::Registry &accounts,
+              const ::PhantomLedger::infra::synth::devices::Output &devices,
+              const ::PhantomLedger::infra::synth::ips::Output &ips) const;
+
+  [[nodiscard]] ::PhantomLedger::infra::SharedInfra buildSharedInfra(
+      const ::PhantomLedger::infra::synth::devices::Output &devices,
+      const ::PhantomLedger::infra::synth::ips::Output &ips) const;
 
   ::PhantomLedger::time::Window window_{};
   ::PhantomLedger::infra::synth::rings::AccessRules ringAccess_{};
   ::PhantomLedger::infra::synth::devices::AssignmentRules deviceAssignment_{};
   ::PhantomLedger::infra::synth::ips::AssignmentRules ipAssignment_{};
-  RoutingBehavior routingBehavior_{};
-  SharedInfraUse sharedInfra_{};
+  ::PhantomLedger::infra::RoutingRules routerRules_{};
+  ::PhantomLedger::infra::SharedInfraRules sharedInfra_{};
 };
 
 [[nodiscard]] ::PhantomLedger::pipeline::Infra
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
-      ::PhantomLedger::time::Window window,
-      const ::PhantomLedger::infra::synth::rings::AccessRules &ringAccess = {},
-      const ::PhantomLedger::infra::synth::devices::AssignmentRules
-          &deviceAssignment = {},
-      const ::PhantomLedger::infra::synth::ips::AssignmentRules &ipAssignment =
-          {},
-      RoutingBehavior routing = {}, SharedInfraUse shared = {});
+      ::PhantomLedger::time::Window window);
 
 } // namespace PhantomLedger::pipeline::stages::infra

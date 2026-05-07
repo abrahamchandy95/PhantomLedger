@@ -1,9 +1,4 @@
 #pragma once
-/*
- * Routes a transaction to a specific (device, ip) pair based on the
- * account owner. Uses a "sticky current device/ip" per person that
- * occasionally switches with a configured probability.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
@@ -13,6 +8,7 @@
 #include <cstddef>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::infra {
@@ -20,6 +16,10 @@ namespace PhantomLedger::infra {
 struct InfraAttribution {
   std::optional<devices::Identity> device;
   std::optional<network::Ipv4> ip;
+};
+
+struct RoutingRules {
+  double switchP = 0.05;
 };
 
 class Router {
@@ -31,16 +31,16 @@ public:
   /// ownerOf:          account Key -> person ID
   /// devicesByPerson:  person ID -> list of device identities
   /// ipsByPerson:      person ID -> list of IP addresses
-  /// switchP:          probability of switching to an alternate device/ip
+  /// rules.switchP:    probability of switching to an alternate device/ip
   static Router
-  build(double switchP,
+  build(RoutingRules rules,
         std::unordered_map<entity::Key, entity::PersonId> ownerOf,
         std::unordered_map<entity::PersonId, std::vector<devices::Identity>>
             devicesByPerson,
         std::unordered_map<entity::PersonId, std::vector<network::Ipv4>>
             ipsByPerson) {
     Router r;
-    r.switchP_ = switchP;
+    r.rules_ = rules;
     r.ownerOf_ = std::move(ownerOf);
     r.devicesByPerson_ = std::move(devicesByPerson);
     r.ipsByPerson_ = std::move(ipsByPerson);
@@ -124,7 +124,7 @@ private:
     // the n-1 non-current slots in one go and map back via a shift,
     // which is both guaranteed-different and cheaper than a rejection
     // loop.
-    if (items.size() > 1 && rng.coin(switchP_)) {
+    if (items.size() > 1 && rng.coin(rules_.switchP)) {
       const auto curIdx = curIt->second;
       auto pickIdx = rng.choiceIndex(items.size() - 1);
       if (pickIdx >= curIdx) {
@@ -136,7 +136,7 @@ private:
     return items[curIt->second];
   }
 
-  double switchP_ = 0.05;
+  RoutingRules rules_{};
 
   std::unordered_map<entity::Key, entity::PersonId> ownerOf_;
   std::unordered_map<entity::PersonId, std::vector<devices::Identity>>

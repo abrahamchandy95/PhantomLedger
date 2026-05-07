@@ -1,14 +1,4 @@
 #pragma once
-/*
- * Shared fraud-ring infrastructure state.
- *
- * Maps ring_id → (shared_device_id, shared_ip).
- *
- * During fraud transactions (ring_id >= 0), the TransactionFactory will
- * use the shared ring device/IP with high probability instead of the
- * person's normal infrastructure. This creates the device/IP clustering
- * signal that GraphSAGE needs to detect mule accounts.
- */
 
 #include "phantomledger/transactions/devices/identity.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"
@@ -19,12 +9,22 @@
 
 namespace PhantomLedger::infra {
 
+struct SharedInfraRules {
+  double deviceP = 0.85;
+  double ipP = 0.80;
+};
+
 struct SharedInfra {
   std::unordered_map<std::uint32_t, devices::Identity> ringDevice;
   std::unordered_map<std::uint32_t, network::Ipv4> ringIp;
 
   double useSharedDeviceP = 0.85;
   double useSharedIpP = 0.80;
+
+  void apply(SharedInfraRules rules) noexcept {
+    useSharedDeviceP = rules.deviceP;
+    useSharedIpP = rules.ipP;
+  }
 
   [[nodiscard]] std::optional<devices::Identity>
   deviceForRing(std::int32_t ringId) const {
