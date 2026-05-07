@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <span>
 
 namespace PhantomLedger::transfers::legit::routines::family::tuition {
 
@@ -29,111 +30,11 @@ inline constexpr std::int64_t kInstallmentDayJitterExcl = 5;
 inline constexpr std::int64_t kInstallmentHourMin = 8;
 inline constexpr std::int64_t kInstallmentHourMaxExcl = 18;
 
-struct Plan {
+struct InstallmentPlan {
   int installments = 0;
   double installmentBase = 0.0;
   std::int64_t semesterStartEpoch = 0;
 };
-
-[[nodiscard]] Plan buildPlan(const TuitionSchedule &cfg,
-                             ::PhantomLedger::time::TimePoint firstMonthStart,
-                             random::Rng &rng) {
-  const auto count = static_cast<int>(
-      rng.uniformInt(cfg.instMin, static_cast<std::int64_t>(cfg.instMax) + 1));
-
-  const auto rawTotal = dist::lognormal(rng, cfg.mu, cfg.sigma);
-  const auto total = std::max(kTotalTuitionFloor, rawTotal);
-
-  const auto base =
-      fhelp::roundCents(total / static_cast<double>(std::max(1, count)));
-
-  const auto offsetDays = rng.uniformInt(0, kSemesterStartJitterDaysExcl);
-  const auto anchorEpoch =
-      ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
-          firstMonthStart, static_cast<int>(offsetDays)));
-
-  return Plan{
-      .installments = count,
-      .installmentBase = base,
-      .semesterStartEpoch = anchorEpoch,
-  };
-}
-
-[[nodiscard]] bool
-emitInstallment(int stepIndex, const Plan &plan, entity::Key payerAcct,
-                entity::Key payeeAcct, std::int64_t windowEndEpochSec,
-                const TransferRun &run, random::Rng &rng,
-                std::vector<transactions::Transaction> &out) {
-  const auto baseTs =
-      plan.semesterStartEpoch +
-      static_cast<std::int64_t>(stepIndex) * kInstallmentSpacingDays * 86400;
-  if (baseTs >= windowEndEpochSec) {
-    return false;
-  }
-
-  const auto jitterDay = rng.uniformInt(0, kInstallmentDayJitterExcl);
-  const auto jitterHour =
-      rng.uniformInt(kInstallmentHourMin, kInstallmentHourMaxExcl);
-  const auto jitterMin = rng.uniformInt(0, 60);
-
-  const auto ts =
-      baseTs + jitterDay * 86400 + jitterHour * 3600 + jitterMin * 60;
-  if (ts >= windowEndEpochSec) {
-    return false;
-  }
-
-  const auto noise = kInstallmentNoiseSigma * dist::standardNormal(rng);
-  const auto amt = fhelp::sanitizeAmount(plan.installmentBase * (1.0 + noise),
-                                         kInstallmentAmountFloor);
-  if (amt == 0.0) {
-    return false;
-  }
-
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = payerAcct,
-      .destination = payeeAcct,
-      .amount = amt,
-      .timestamp = ts,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::tuition),
-  }));
-  return true;
-}
-
-void processStudent(entity::PersonId student,
-                    std::span<const entity::PersonId> parents,
-                    entity::Key payeeAcct, const TuitionSchedule &cfg,
-                    std::int64_t windowEndEpochSec, const TransferRun &run,
-                    random::Rng &rng,
-                    std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.p)) {
-    return;
-  }
-
-  const auto parentIdx = static_cast<std::size_t>(
-      rng.uniformInt(0, static_cast<std::int64_t>(parents.size())));
-  const auto payerId = parents[parentIdx];
-
-  const auto payerAcct = run.accounts().localMemberAccount(payerId);
-  if (!payerAcct.has_value() || *payerAcct == payeeAcct) {
-    return;
-  }
-
-  if (run.posting().monthStarts().empty()) {
-    return;
-  }
-
-  const auto plan = buildPlan(cfg, run.posting().firstMonthStart(), rng);
-
-  for (int i = 0; i < plan.installments; ++i) {
-    if (!emitInstallment(i, plan, *payerAcct, payeeAcct, windowEndEpochSec, run,
-                         rng, out)) {
-      break;
-    }
-    (void)student;
-  }
-}
 
 [[nodiscard]] std::size_t estimateCapacity(std::size_t studentCount,
                                            const TuitionSchedule &cfg) {
@@ -146,6 +47,139 @@ void processStudent(entity::PersonId student,
   return static_cast<std::size_t>(static_cast<double>(studentCount) *
                                   avgInstallments * cfg.p);
 }
+
+/// Stateful, narrow-purpose emitter for tuition installment
+/// transactions. Each call to `processStudent` resolves a payer,
+/// builds an installment plan, and emits installments until either
+/// the plan is exhausted or the posting window ends.
+class TuitionEmitter {
+public:
+  TuitionEmitter(const TransferRun &run, const TuitionSchedule &cfg,
+                 random::Rng &rng,
+                 std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  TuitionEmitter(const TuitionEmitter &) = delete;
+  TuitionEmitter &operator=(const TuitionEmitter &) = delete;
+
+  /// Process one student, given their parent pool and the schoolside
+  /// payee account.
+  void processStudent(std::span<const entity::PersonId> parents,
+                      entity::Key payeeAcct) {
+    if (!rng_.coin(cfg_.p)) {
+      return;
+    }
+
+    const auto payerAcct = pickPayer(parents, payeeAcct);
+    if (!payerAcct.has_value()) {
+      return;
+    }
+
+    if (run_.posting().monthStarts().empty()) {
+      return;
+    }
+
+    const auto plan = buildPlan(run_.posting().firstMonthStart());
+
+    for (int i = 0; i < plan.installments; ++i) {
+      if (!tryEmitInstallment(i, plan, *payerAcct, payeeAcct)) {
+        break;
+      }
+    }
+  }
+
+private:
+  [[nodiscard]] std::optional<entity::Key>
+  pickPayer(std::span<const entity::PersonId> parents, entity::Key payeeAcct) {
+    if (parents.empty()) {
+      return std::nullopt;
+    }
+
+    const auto parentIdx = static_cast<std::size_t>(
+        rng_.uniformInt(0, static_cast<std::int64_t>(parents.size())));
+    const auto payerId = parents[parentIdx];
+
+    const auto payerAcct = run_.accounts().localMemberAccount(payerId);
+    if (!payerAcct.has_value() || *payerAcct == payeeAcct) {
+      return std::nullopt;
+    }
+    return *payerAcct;
+  }
+
+  [[nodiscard]] InstallmentPlan
+  buildPlan(::PhantomLedger::time::TimePoint firstMonthStart) {
+    const auto count = static_cast<int>(rng_.uniformInt(
+        cfg_.instMin, static_cast<std::int64_t>(cfg_.instMax) + 1));
+
+    const auto rawTotal = dist::lognormal(rng_, cfg_.mu, cfg_.sigma);
+    const auto total = std::max(kTotalTuitionFloor, rawTotal);
+
+    const auto base =
+        fhelp::roundCents(total / static_cast<double>(std::max(1, count)));
+
+    const auto offsetDays = rng_.uniformInt(0, kSemesterStartJitterDaysExcl);
+    const auto anchorEpoch =
+        ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
+            firstMonthStart, static_cast<int>(offsetDays)));
+
+    return InstallmentPlan{
+        .installments = count,
+        .installmentBase = base,
+        .semesterStartEpoch = anchorEpoch,
+    };
+  }
+
+  /// Emit one installment. Returns false if the window cap is hit so
+  /// the caller stops; returns true on either successful emission or
+  /// per-installment skip.
+  [[nodiscard]] bool tryEmitInstallment(int stepIndex,
+                                        const InstallmentPlan &plan,
+                                        entity::Key payerAcct,
+                                        entity::Key payeeAcct) {
+    const auto baseTs =
+        plan.semesterStartEpoch +
+        static_cast<std::int64_t>(stepIndex) * kInstallmentSpacingDays * 86400;
+    if (baseTs >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto jitterDay = rng_.uniformInt(0, kInstallmentDayJitterExcl);
+    const auto jitterHour =
+        rng_.uniformInt(kInstallmentHourMin, kInstallmentHourMaxExcl);
+    const auto jitterMin = rng_.uniformInt(0, 60);
+
+    const auto ts =
+        baseTs + jitterDay * 86400 + jitterHour * 3600 + jitterMin * 60;
+    if (ts >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto noise = kInstallmentNoiseSigma * dist::standardNormal(rng_);
+    const auto amt = fhelp::sanitizeAmount(plan.installmentBase * (1.0 + noise),
+                                           kInstallmentAmountFloor);
+    if (amt == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = payerAcct,
+        .destination = payeeAcct,
+        .amount = amt,
+        .timestamp = ts,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::tuition),
+    }));
+    return true;
+  }
+
+  const TransferRun &run_;
+  const TuitionSchedule &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -176,7 +210,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
   }
   out.reserve(estimateCapacity(studentCount, cfg));
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  TuitionEmitter emitter{run, cfg, rng, out};
 
   for (entity::PersonId student = 1; student <= personCount; ++student) {
     if (!pred::isStudent(run.kinship().persona(student))) {
@@ -195,10 +229,9 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
       continue;
     }
 
-    processStudent(
-        student,
+    emitter.processStudent(
         std::span<const entity::PersonId>{parentBuf.data(), parentCount},
-        *payeeAcct, cfg, windowEndEpochSec, run, rng, out);
+        *payeeAcct);
   }
 
   return out;

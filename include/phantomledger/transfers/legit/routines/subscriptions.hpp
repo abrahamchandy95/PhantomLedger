@@ -6,40 +6,34 @@
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
+#include "phantomledger/transfers/subscriptions/bundle.hpp"
 
-#include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::subscriptions {
 
-struct Config {
-  std::int32_t minPerPerson = 4;
-  std::int32_t maxPerPerson = 8;
-  double debitP = 0.55;
-  std::int32_t dayJitter = 1;
+using BundleRules = ::PhantomLedger::transfers::subscriptions::BundleRules;
 
-  void validate() const;
-};
+inline constexpr BundleRules kDefaultBundleRules{};
 
-inline constexpr Config kDefaultConfig{};
-
-class Generator {
+class DebitEmitter {
 public:
-  Generator(random::Rng &rng, const transactions::Factory &txf,
-            ledger::SeededScreen &screen, Config cfg = kDefaultConfig);
+  DebitEmitter(random::Rng &rng, const transactions::Factory &txf,
+               ledger::SeededScreen &screen,
+               BundleRules rules = kDefaultBundleRules);
 
-  Generator(const Generator &) = delete;
-  Generator &operator=(const Generator &) = delete;
+  DebitEmitter(const DebitEmitter &) = delete;
+  DebitEmitter &operator=(const DebitEmitter &) = delete;
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  generate(const blueprints::LegitBlueprint &plan,
-           const entity::account::Registry &registry);
+  emitDebits(const blueprints::LegitBlueprint &plan,
+             const entity::account::Registry &registry);
 
 private:
   random::Rng &rng_;
   const transactions::Factory &txf_;
   ledger::SeededScreen &screen_;
-  Config cfg_;
+  BundleRules rules_;
 };
 
 } // namespace PhantomLedger::transfers::legit::routines::subscriptions

@@ -34,76 +34,95 @@ resolveHeirs(entity::PersonId retiree, const TransferRun &run) {
       run.kinship().supportingChildrenOf(retiree)};
 }
 
-[[nodiscard]] std::int64_t
-pickEventTimestamp(::PhantomLedger::time::TimePoint windowStart, int windowDays,
-                   random::Rng &rng) {
-  const auto day = rng.uniformInt(0, std::max<std::int64_t>(1, windowDays));
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
+class InheritanceEmitter {
+public:
+  InheritanceEmitter(const TransferRun &run, const InheritanceEvent &cfg,
+                     random::Rng &rng,
+                     std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
 
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(windowStart, static_cast<int>(day)));
-  return base + hour * 3600 + minute * 60;
-}
+  InheritanceEmitter(const InheritanceEmitter &) = delete;
+  InheritanceEmitter &operator=(const InheritanceEmitter &) = delete;
 
-void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
-                double perHeirAmount, std::int64_t timestamp,
-                const TransferRun &run,
-                std::vector<transactions::Transaction> &out) {
-  const auto heirAcct = run.accounts().routedMemberAccount(heir);
-  if (!heirAcct.has_value() || *heirAcct == retireeAcct) {
-    return;
+  /// Process one retiree. Drops out early on the eventP gate, on
+  /// missing heirs, or on a missing retiree account.
+  void processRetiree(entity::PersonId retiree) {
+    if (!rng_.coin(cfg_.eventP)) {
+      return;
+    }
+
+    const auto heirs = resolveHeirs(retiree, run_);
+    if (heirs.empty()) {
+      return;
+    }
+
+    const auto retireeAcct = run_.accounts().localMemberAccount(retiree);
+    if (!retireeAcct.has_value()) {
+      return;
+    }
+
+    const auto perHeir = sampleEstateShare(heirs.size());
+    const auto ts = pickEventTimestamp();
+    if (ts >= windowEndEpochSec_) {
+      return;
+    }
+
+    for (const auto heir : heirs) {
+      emitToHeir(heir, *retireeAcct, perHeir, ts);
+    }
   }
 
-  const auto amt = fhelp::sanitizeAmount(perHeirAmount, kPerHeirAmountFloor);
-  if (amt == 0.0) {
-    return;
+private:
+  [[nodiscard]] double sampleEstateShare(std::size_t heirCount) {
+    const auto rawTotal =
+        dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
+    const auto total = std::max(kTotalFloor, rawTotal);
+    return fhelp::roundCents(total / static_cast<double>(heirCount));
   }
 
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = retireeAcct,
-      .destination = *heirAcct,
-      .amount = amt,
-      .timestamp = timestamp,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::inheritance),
-  }));
-}
+  [[nodiscard]] std::int64_t pickEventTimestamp() {
+    const auto windowDays = run_.posting().days();
+    const auto day = rng_.uniformInt(0, std::max<std::int64_t>(1, windowDays));
+    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
+    const auto minute = rng_.uniformInt(0, 60);
 
-void processRetiree(entity::PersonId retiree, std::int64_t windowEndEpochSec,
-                    const InheritanceEvent &cfg, const TransferRun &run,
-                    random::Rng &rng,
-                    std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.eventP)) {
-    return;
+    const auto base =
+        ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
+            run_.posting().start(), static_cast<int>(day)));
+    return base + hour * 3600 + minute * 60;
   }
 
-  const auto heirs = resolveHeirs(retiree, run);
-  if (heirs.empty()) {
-    return;
+  void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
+                  double perHeirAmount, std::int64_t timestamp) {
+    const auto heirAcct = run_.accounts().routedMemberAccount(heir);
+    if (!heirAcct.has_value() || *heirAcct == retireeAcct) {
+      return;
+    }
+
+    const auto amount =
+        fhelp::sanitizeAmount(perHeirAmount, kPerHeirAmountFloor);
+    if (amount == 0.0) {
+      return;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = retireeAcct,
+        .destination = *heirAcct,
+        .amount = amount,
+        .timestamp = timestamp,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::inheritance),
+    }));
   }
 
-  const auto retireeAcct = run.accounts().localMemberAccount(retiree);
-  if (!retireeAcct.has_value()) {
-    return;
-  }
-
-  const auto rawTotal = dist::lognormalByMedian(rng, cfg.median, cfg.sigma);
-  const auto total = std::max(kTotalFloor, rawTotal);
-  const auto perHeir =
-      fhelp::roundCents(total / static_cast<double>(heirs.size()));
-
-  const auto ts =
-      pickEventTimestamp(run.posting().start(), run.posting().days(), rng);
-  if (ts >= windowEndEpochSec) {
-    return;
-  }
-
-  for (const auto heir : heirs) {
-    emitToHeir(heir, *retireeAcct, perHeir, ts, run, out);
-  }
-}
+  const TransferRun &run_;
+  const InheritanceEvent &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -123,13 +142,13 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
 
   out.reserve(16);
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  InheritanceEmitter emitter{run, cfg, rng, out};
 
   for (entity::PersonId retiree = 1; retiree <= personCount; ++retiree) {
     if (!pred::isRetired(run.kinship().persona(retiree))) {
       continue;
     }
-    processRetiree(retiree, windowEndEpochSec, cfg, run, rng, out);
+    emitter.processRetiree(retiree);
   }
 
   return out;

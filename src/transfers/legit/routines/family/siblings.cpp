@@ -42,87 +42,118 @@ void collectAdults(std::span<const entity::PersonId> members,
   }
 }
 
-[[nodiscard]] std::optional<ResolvedPair>
-resolvePair(entity::PersonId a, entity::PersonId b, const TransferRun &run) {
-  if (run.kinship().spouseOf(a) == b) {
-    return std::nullopt;
+/// Stateful, narrow-purpose emitter for sibling-to-sibling transfers.
+///
+/// Like `SpouseEmitter`, this exposes two public methods because the
+/// resolution step runs once per pair while the emit step runs once
+/// per (pair, month). Both share the same dependency views.
+class SiblingEmitter {
+public:
+  SiblingEmitter(const TransferRun &run, const SiblingFlow &cfg,
+                 random::Rng &rng,
+                 std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  SiblingEmitter(const SiblingEmitter &) = delete;
+  SiblingEmitter &operator=(const SiblingEmitter &) = delete;
+
+  /// Process one candidate sibling pair across all month-starts.
+  /// Drops out early on the activeP gate, the spouse-of check, or
+  /// account-resolution failures.
+  void processPair(entity::PersonId a, entity::PersonId b) {
+    if (!rng_.coin(cfg_.activeP)) {
+      return;
+    }
+
+    const auto pair = resolvePair(a, b);
+    if (!pair.has_value()) {
+      return;
+    }
+
+    for (const auto monthStart : run_.posting().monthStarts()) {
+      (void)tryEmitMonthly(*pair, monthStart);
+    }
   }
 
-  const auto acctA = run.accounts().routedMemberAccount(a);
-  const auto acctB = run.accounts().routedMemberAccount(b);
-  if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
-    return std::nullopt;
+private:
+  [[nodiscard]] std::optional<ResolvedPair> resolvePair(entity::PersonId a,
+                                                        entity::PersonId b) {
+    if (run_.kinship().spouseOf(a) == b) {
+      return std::nullopt;
+    }
+
+    const auto acctA = run_.accounts().routedMemberAccount(a);
+    const auto acctB = run_.accounts().routedMemberAccount(b);
+    if (!acctA.has_value() || !acctB.has_value() || *acctA == *acctB) {
+      return std::nullopt;
+    }
+
+    if (encoding::isExternal(*acctA) && encoding::isExternal(*acctB)) {
+      return std::nullopt;
+    }
+
+    return ResolvedPair{
+        .personA = a, .personB = b, .acctA = *acctA, .acctB = *acctB};
   }
 
-  if (encoding::isExternal(*acctA) && encoding::isExternal(*acctB)) {
-    return std::nullopt;
+  /// Try to emit one monthly transfer for this pair. Returns true on
+  /// success.
+  [[nodiscard]] bool
+  tryEmitMonthly(const ResolvedPair &pair,
+                 ::PhantomLedger::time::TimePoint monthStart) {
+    if (!rng_.coin(cfg_.monthlyP)) {
+      return false;
+    }
+
+    const bool aToB = rng_.coin(0.5);
+    const auto src = aToB ? pair.acctA : pair.acctB;
+    const auto dst = aToB ? pair.acctB : pair.acctA;
+
+    const auto ts = pickPostingTimestamp(monthStart);
+    if (ts >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto amount = sampleAmount();
+    if (amount == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = src,
+        .destination = dst,
+        .amount = amount,
+        .timestamp = ts,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::siblingTransfer),
+    }));
+    return true;
   }
 
-  return ResolvedPair{
-      .personA = a, .personB = b, .acctA = *acctA, .acctB = *acctB};
-}
+  [[nodiscard]] std::int64_t
+  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
+    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
+    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
+    const auto minute = rng_.uniformInt(0, 60);
 
-[[nodiscard]] bool
-emitMonthlyTransfer(::PhantomLedger::time::TimePoint monthStart,
-                    const ResolvedPair &pair, std::int64_t windowEndEpochSec,
-                    const SiblingFlow &cfg, const TransferRun &run,
-                    random::Rng &rng,
-                    std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.monthlyP)) {
-    return false;
+    const auto base = ::PhantomLedger::time::toEpochSeconds(
+        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
+    return base + hour * 3600 + minute * 60;
   }
 
-  const bool aToB = rng.coin(0.5);
-  const auto src = aToB ? pair.acctA : pair.acctB;
-  const auto dst = aToB ? pair.acctB : pair.acctA;
-
-  const auto day = rng.uniformInt(0, kPostingDayMaxExcl);
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
-
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  const auto ts = base + hour * 3600 + minute * 60;
-  if (ts >= windowEndEpochSec) {
-    return false;
+  [[nodiscard]] double sampleAmount() {
+    const auto raw = dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
+    return fhelp::sanitizeAmount(raw, kAmountFloor);
   }
 
-  const auto raw = dist::lognormalByMedian(rng, cfg.median, cfg.sigma);
-  const auto amt = fhelp::sanitizeAmount(raw, kAmountFloor);
-  if (amt == 0.0) {
-    return false;
-  }
-
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = src,
-      .destination = dst,
-      .amount = amt,
-      .timestamp = ts,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::siblingTransfer),
-  }));
-  return true;
-}
-
-void processPair(entity::PersonId a, entity::PersonId b,
-                 std::int64_t windowEndEpochSec, const SiblingFlow &cfg,
-                 const TransferRun &run, random::Rng &rng,
-                 std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.activeP)) {
-    return;
-  }
-
-  const auto pair = resolvePair(a, b, run);
-  if (!pair.has_value()) {
-    return;
-  }
-
-  for (const auto monthStart : run.posting().monthStarts()) {
-    (void)emitMonthlyTransfer(monthStart, *pair, windowEndEpochSec, cfg, run,
-                              rng, out);
-  }
-}
+  const TransferRun &run_;
+  const SiblingFlow &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -140,7 +171,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
 
   auto rng = run.emission().rng({"family", "siblings"});
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  SiblingEmitter emitter{run, cfg, rng, out};
 
   std::vector<entity::PersonId> adults;
   adults.reserve(8);
@@ -155,8 +186,7 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
 
     for (std::size_t i = 0; i < adults.size(); ++i) {
       for (std::size_t j = i + 1; j < adults.size(); ++j) {
-        processPair(adults[i], adults[j], windowEndEpochSec, cfg, run, rng,
-                    out);
+        emitter.processPair(adults[i], adults[j]);
       }
     }
   }

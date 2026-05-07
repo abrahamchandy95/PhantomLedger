@@ -21,59 +21,87 @@ inline constexpr std::int64_t kPostingHourMin = 8;
 inline constexpr std::int64_t kPostingHourMaxExcl = 20;
 inline constexpr double kAmountFloor = 10.0;
 
-[[nodiscard]] bool
-emitMonthlyGift(::PhantomLedger::time::TimePoint monthStart, entity::Key gpAcct,
-                entity::Key gcAcct, std::int64_t windowEndEpochSec,
-                const GrandparentGiftFlow &cfg, const TransferRun &run,
-                random::Rng &rng, std::vector<transactions::Transaction> &out) {
-  if (!rng.coin(cfg.p)) {
-    return false;
+/// Stateful, narrow-purpose emitter for grandparent-to-grandchild
+/// gift transactions. Same pattern as `AllowanceEmitter`: dependency
+/// views and sinks are members; only routine-shape arguments cross
+/// method boundaries.
+class GrandparentGiftEmitter {
+public:
+  GrandparentGiftEmitter(const TransferRun &run, const GrandparentGiftFlow &cfg,
+                         random::Rng &rng,
+                         std::vector<transactions::Transaction> &out) noexcept
+      : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowEndEpochSec_(run.posting().endEpochSec()) {}
+
+  GrandparentGiftEmitter(const GrandparentGiftEmitter &) = delete;
+  GrandparentGiftEmitter &operator=(const GrandparentGiftEmitter &) = delete;
+
+  /// Walk all month-starts for one (grandparent, grandchild) pair,
+  /// emitting zero or more gifts.
+  void processPair(entity::PersonId grandparent, entity::PersonId grandchild) {
+    const auto gpAcct = run_.accounts().localMemberAccount(grandparent);
+    const auto gcAcct = run_.accounts().localMemberAccount(grandchild);
+    if (!gpAcct.has_value() || !gcAcct.has_value() || *gpAcct == *gcAcct) {
+      return;
+    }
+
+    for (const auto monthStart : run_.posting().monthStarts()) {
+      (void)tryEmit(*gpAcct, *gcAcct, monthStart);
+    }
   }
 
-  const auto day = rng.uniformInt(0, kPostingDayMaxExcl);
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
+private:
+  /// Try to emit a single monthly gift. Returns true on success.
+  [[nodiscard]] bool tryEmit(entity::Key gpAcct, entity::Key gcAcct,
+                             ::PhantomLedger::time::TimePoint monthStart) {
+    if (!rng_.coin(cfg_.p)) {
+      return false;
+    }
 
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  const auto ts = base + hour * 3600 + minute * 60;
-  if (ts >= windowEndEpochSec) {
-    return false;
+    const auto ts = pickPostingTimestamp(monthStart);
+    if (ts >= windowEndEpochSec_) {
+      return false;
+    }
+
+    const auto amount = sampleAmount();
+    if (amount == 0.0) {
+      return false;
+    }
+
+    out_.push_back(run_.emission().make(transactions::Draft{
+        .source = gpAcct,
+        .destination = gcAcct,
+        .amount = amount,
+        .timestamp = ts,
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = channels::tag(channels::Family::grandparentGift),
+    }));
+    return true;
   }
 
-  const auto raw = dist::lognormalByMedian(rng, cfg.median, cfg.sigma);
-  const auto amt = fhelp::sanitizeAmount(raw, kAmountFloor);
-  if (amt == 0.0) {
-    return false;
+  [[nodiscard]] std::int64_t
+  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
+    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
+    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
+    const auto minute = rng_.uniformInt(0, 60);
+
+    const auto base = ::PhantomLedger::time::toEpochSeconds(
+        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
+    return base + hour * 3600 + minute * 60;
   }
 
-  out.push_back(run.emission().make(transactions::Draft{
-      .source = gpAcct,
-      .destination = gcAcct,
-      .amount = amt,
-      .timestamp = ts,
-      .isFraud = 0,
-      .ringId = -1,
-      .channel = channels::tag(channels::Family::grandparentGift),
-  }));
-  return true;
-}
-
-void processPair(entity::PersonId grandparent, entity::PersonId grandchild,
-                 std::int64_t windowEndEpochSec, const GrandparentGiftFlow &cfg,
-                 const TransferRun &run, random::Rng &rng,
-                 std::vector<transactions::Transaction> &out) {
-  const auto gpAcct = run.accounts().localMemberAccount(grandparent);
-  const auto gcAcct = run.accounts().localMemberAccount(grandchild);
-  if (!gpAcct.has_value() || !gcAcct.has_value() || *gpAcct == *gcAcct) {
-    return;
+  [[nodiscard]] double sampleAmount() {
+    const auto raw = dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
+    return fhelp::sanitizeAmount(raw, kAmountFloor);
   }
 
-  for (const auto monthStart : run.posting().monthStarts()) {
-    (void)emitMonthlyGift(monthStart, *gpAcct, *gcAcct, windowEndEpochSec, cfg,
-                          run, rng, out);
-  }
-}
+  const TransferRun &run_;
+  const GrandparentGiftFlow &cfg_;
+  random::Rng &rng_;
+  std::vector<transactions::Transaction> &out_;
+  std::int64_t windowEndEpochSec_;
+};
 
 } // namespace
 
@@ -91,7 +119,7 @@ generate(const TransferRun &run, const GrandparentGiftFlow &cfg) {
 
   auto rng = run.emission().rng({"family", "grandparent_gifts"});
 
-  const auto windowEndEpochSec = run.posting().endEpochSec();
+  GrandparentGiftEmitter emitter{run, cfg, rng, out};
 
   for (entity::PersonId gp = 1; gp <= personCount; ++gp) {
     if (!pred::isRetired(run.kinship().persona(gp))) {
@@ -105,7 +133,7 @@ generate(const TransferRun &run, const GrandparentGiftFlow &cfg) {
       }
       const auto &grandchildren = run.kinship().childrenOf(parent);
       for (const auto gc : grandchildren) {
-        processPair(gp, gc, windowEndEpochSec, cfg, run, rng, out);
+        emitter.processPair(gp, gc);
       }
     }
   }
