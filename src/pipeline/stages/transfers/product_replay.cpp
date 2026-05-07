@@ -1,7 +1,6 @@
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/insurance/claims.hpp"
 #include "phantomledger/transfers/insurance/premiums.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
@@ -19,6 +18,43 @@ namespace obligations = ::PhantomLedger::transfers::obligations;
 
 } // namespace
 
+ProductTxnEmitter::ProductTxnEmitter(
+    ::PhantomLedger::time::Window window, std::uint64_t seed,
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::transactions::Factory &txf) noexcept
+    : window_(window), seed_(seed), rng_(rng), txf_(txf) {}
+
+std::vector<ProductTxnEmitter::Transaction>
+ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Entities &entities,
+                            const PrimaryAccounts &primaryAccounts) {
+  insurance::Population population{.primaryAccounts = &primaryAccounts};
+  return insurance::premiums(window_, rng_, txf_, entities.portfolios,
+                             population);
+}
+
+std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
+    ::PhantomLedger::transfers::insurance::ClaimRates rates,
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const PrimaryAccounts &primaryAccounts) {
+  insurance::Population population{.primaryAccounts = &primaryAccounts};
+  ::PhantomLedger::random::RngFactory claimsFactory{seed_};
+  insurance::ClaimScheduler scheduler{rates, rng_, txf_, claimsFactory};
+  return scheduler.generate(window_, entities.portfolios, population);
+}
+
+std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const PrimaryAccounts &primaryAccounts) {
+  obligations::Population population{.primaryAccounts = &primaryAccounts};
+  obligations::Scheduler scheduler{rng_, txf_};
+  return scheduler.generate(entities.portfolios,
+                            ::PhantomLedger::time::HalfOpenInterval{
+                                .start = window_.start,
+                                .endExcl = window_.endExcl(),
+                            },
+                            population);
+}
+
 ProductReplay &
 ProductReplay::insurancePrograms(InsurancePrograms value) noexcept {
   insurance_ = value;
@@ -32,47 +68,29 @@ ProductReplay &ProductReplay::insuranceClaims(
 }
 
 std::vector<ProductReplay::Transaction>
-ProductReplay::merge(::PhantomLedger::time::Window window, std::uint64_t seed,
-                     ::PhantomLedger::random::Rng &rng,
+ProductReplay::merge(ProductTxnEmitter &emitter,
                      const ::PhantomLedger::pipeline::Entities &entities,
-                     const ::PhantomLedger::pipeline::Infra &infra,
                      const PrimaryAccounts &primaryAccounts,
                      ::PhantomLedger::transfers::legit::ledger::LegitTxnStreams
                          &legitTxns) const {
   std::vector<Transaction> stream = std::move(legitTxns.replaySortedTxns);
 
-  ::PhantomLedger::transactions::Factory txf{rng, &infra.router,
-                                             &infra.ringInfra};
+  stream = legit_ledger::mergeReplaySorted(
+      std::move(stream), emitter.premiums(entities, primaryAccounts));
 
-  insurance::Population insPop{.primaryAccounts = &primaryAccounts};
+  stream = legit_ledger::mergeReplaySorted(
+      std::move(stream),
+      emitter.claims(insurance_.claimRates, entities, primaryAccounts));
 
-  auto premiumTxns =
-      insurance::premiums(window, rng, txf, entities.portfolios, insPop);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), premiumTxns);
-
-  ::PhantomLedger::random::RngFactory claimsFactory{seed};
-  insurance::ClaimScheduler claimScheduler{insurance_.claimRates, rng, txf,
-                                           claimsFactory};
-  auto claimTxns = claimScheduler.generate(window, entities.portfolios, insPop);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), claimTxns);
-
-  obligations::Population oblPop{.primaryAccounts = &primaryAccounts};
-  obligations::Scheduler obligationsScheduler{rng, txf};
-  auto obligationTxns =
-      obligationsScheduler.generate(entities.portfolios,
-                                    ::PhantomLedger::time::HalfOpenInterval{
-                                        .start = window.start,
-                                        .endExcl = window.endExcl(),
-                                    },
-                                    oblPop);
-  stream = legit_ledger::mergeReplaySorted(std::move(stream), obligationTxns);
+  stream = legit_ledger::mergeReplaySorted(
+      std::move(stream), emitter.obligations(entities, primaryAccounts));
 
   return stream;
 }
 
-ProductReplay::PrimaryAccounts
+PrimaryAccounts
 primaryAccounts(const ::PhantomLedger::pipeline::Entities &entities) {
-  ProductReplay::PrimaryAccounts out;
+  PrimaryAccounts out;
   out.reserve(entities.accounts.registry.records.size());
 
   for (const auto &record : entities.accounts.registry.records) {
