@@ -269,11 +269,24 @@ extractPersons(AccountCensus census) {
 
 } // namespace
 
-LegitBlueprint buildLegitBlueprint(random::Rng &rng, LegitTimeframe timeframe,
-                                   AccountCensus census,
-                                   CounterpartyPools counterparties,
-                                   PersonaCatalog personas,
-                                   HubSelectionRules hubs) {
+LegitBlueprint &
+LegitBlueprint::addCounterparties(random::Rng &rng, AccountCensus census,
+                                  CounterpartyPools counterparties,
+                                  HubSelectionRules hubs) {
+  counterparties_ = buildCounterpartyAccess(rng, census, counterparties, hubs,
+                                            accounts_.persons);
+  return *this;
+}
+
+LegitBlueprint &LegitBlueprint::addPersonas(random::Rng &rng,
+                                            LegitTimeframe timeframe,
+                                            PersonaCatalog personas) {
+  personas_ = buildPersonaAccess(rng, timeframe, personas, accounts_.persons);
+  return *this;
+}
+
+LegitBlueprint buildLegitBlueprint(LegitTimeframe timeframe,
+                                   AccountCensus census) {
   LegitBlueprint plan;
 
   plan.calendar_.startDate = timeframe.window.start;
@@ -283,13 +296,6 @@ LegitBlueprint buildLegitBlueprint(random::Rng &rng, LegitTimeframe timeframe,
   plan.accounts_.registry = census.accounts;
   plan.accounts_.ownedSlices = ownedAccountSlicesByPerson(census);
   plan.accounts_.persons = extractPersons(census);
-
-  plan.counterparties_ = buildCounterpartyAccess(rng, census, counterparties,
-                                                 hubs, plan.accounts_.persons);
-
-  plan.personas_ =
-      buildPersonaAccess(rng, timeframe, personas, plan.accounts_.persons);
-
   plan.accounts_.primaryRecordIx = primaryAcctRecordIxByPerson(census);
 
   const auto endExcl =

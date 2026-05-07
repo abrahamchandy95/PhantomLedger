@@ -136,8 +136,9 @@ LegitTransferResult LegitTransferBuilder::build() const {
     return LegitTransferResult{};
   }
 
-  auto plan = blueprints::buildLegitBlueprint(
-      *rng_, timeframe_, census_, counterparties_, personas_, hubSelection_);
+  auto plan = blueprints::buildLegitBlueprint(timeframe_, census_);
+  plan.addCounterparties(*rng_, census_, counterparties_, hubSelection_)
+      .addPersonas(*rng_, timeframe_, personas_);
 
   auto initialBook = openingBook_.build(plan);
 
