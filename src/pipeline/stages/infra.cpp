@@ -49,13 +49,14 @@ AccessInfraStage &AccessInfraStage::ipAssignment(
   return *this;
 }
 
-AccessInfraStage &
-AccessInfraStage::routingBehavior(RoutingBehavior value) noexcept {
-  routingBehavior_ = value;
+AccessInfraStage &AccessInfraStage::routerRules(
+    ::PhantomLedger::infra::RoutingRules value) noexcept {
+  routerRules_ = value;
   return *this;
 }
 
-AccessInfraStage &AccessInfraStage::sharedInfra(SharedInfraUse value) noexcept {
+AccessInfraStage &AccessInfraStage::sharedInfra(
+    ::PhantomLedger::infra::SharedInfraRules value) noexcept {
   sharedInfra_ = value;
   return *this;
 }
@@ -69,12 +70,47 @@ AccessInfraStage &AccessInfraStage::sharedInfra(SharedInfraUse value) noexcept {
   return window_;
 }
 
-void AccessInfraStage::applySharedInfra(
-    ::PhantomLedger::pipeline::Infra &out) const noexcept {
-  out.ringInfra.ringDevice = out.devices.ringMap;
-  out.ringInfra.ringIp = out.ips.ringMap;
-  out.ringInfra.useSharedDeviceP = sharedInfra_.deviceP;
-  out.ringInfra.useSharedIpP = sharedInfra_.ipP;
+AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
+    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+    const ::PhantomLedger::entities::synth::people::Pack &people) const {
+  return ::PhantomLedger::infra::synth::rings::build(
+      rng, window, people.topology.rings, people.topology, ringAccess_);
+}
+
+::PhantomLedger::infra::synth::devices::Output AccessInfraStage::buildDevices(
+    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+    const ::PhantomLedger::entity::person::Roster &people,
+    const RingPlans &ringPlans) const {
+  return ::PhantomLedger::infra::synth::devices::build(
+      rng, window, people, ringPlans, deviceAssignment_);
+}
+
+::PhantomLedger::infra::synth::ips::Output AccessInfraStage::buildIps(
+    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
+    const ::PhantomLedger::entity::person::Roster &people,
+    const RingPlans &ringPlans) const {
+  return ::PhantomLedger::infra::synth::ips::build(rng, window, people,
+                                                   ringPlans, ipAssignment_);
+}
+
+::PhantomLedger::infra::Router AccessInfraStage::buildRouter(
+    const ::PhantomLedger::entity::account::Registry &accounts,
+    const ::PhantomLedger::infra::synth::devices::Output &devices,
+    const ::PhantomLedger::infra::synth::ips::Output &ips) const {
+  return ::PhantomLedger::infra::Router::build(
+      routerRules_, buildOwnerMap(accounts),
+      devices.byPerson, // copy — Router owns its pools
+      ips.byPerson);
+}
+
+::PhantomLedger::infra::SharedInfra AccessInfraStage::buildSharedInfra(
+    const ::PhantomLedger::infra::synth::devices::Output &devices,
+    const ::PhantomLedger::infra::synth::ips::Output &ips) const {
+  ::PhantomLedger::infra::SharedInfra out;
+  out.ringDevice = devices.ringMap;
+  out.ringIp = ips.ringMap;
+  out.apply(sharedInfra_);
+  return out;
 }
 
 ::PhantomLedger::pipeline::Infra
@@ -82,24 +118,14 @@ AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
                         const ::PhantomLedger::pipeline::Entities &entities,
                         ::PhantomLedger::time::Window fallbackWindow) const {
   const auto window = activeWindow(fallbackWindow);
+
   ::PhantomLedger::pipeline::Infra out;
-
-  out.ringPlans = ::PhantomLedger::infra::synth::rings::build(
-      rng, window, entities.people.topology.rings, entities.people.topology,
-      ringAccess_);
-
-  out.devices = ::PhantomLedger::infra::synth::devices::build(
-      rng, window, entities.people.roster, out.ringPlans, deviceAssignment_);
-
-  out.ips = ::PhantomLedger::infra::synth::ips::build(
-      rng, window, entities.people.roster, out.ringPlans, ipAssignment_);
-
-  out.router = ::PhantomLedger::infra::Router::build(
-      routingBehavior_.switchP, buildOwnerMap(entities.accounts.registry),
-      out.devices.byPerson, // copy — Router owns its pools
-      out.ips.byPerson);
-
-  applySharedInfra(out);
+  out.ringPlans = buildRingPlans(rng, window, entities.people);
+  out.devices =
+      buildDevices(rng, window, entities.people.roster, out.ringPlans);
+  out.ips = buildIps(rng, window, entities.people.roster, out.ringPlans);
+  out.router = buildRouter(entities.accounts.registry, out.devices, out.ips);
+  out.ringInfra = buildSharedInfra(out.devices, out.ips);
 
   return out;
 }
@@ -107,20 +133,8 @@ AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
 ::PhantomLedger::pipeline::Infra
 build(::PhantomLedger::random::Rng &rng,
       const ::PhantomLedger::pipeline::Entities &entities,
-      ::PhantomLedger::time::Window window,
-      const ::PhantomLedger::infra::synth::rings::AccessRules &ringAccess,
-      const ::PhantomLedger::infra::synth::devices::AssignmentRules
-          &deviceAssignment,
-      const ::PhantomLedger::infra::synth::ips::AssignmentRules &ipAssignment,
-      RoutingBehavior routing, SharedInfraUse shared) {
-  AccessInfraStage stage;
-  return stage.window(window)
-      .ringAccess(ringAccess)
-      .deviceAssignment(deviceAssignment)
-      .ipAssignment(ipAssignment)
-      .routingBehavior(routing)
-      .sharedInfra(shared)
-      .build(rng, entities, window);
+      ::PhantomLedger::time::Window window) {
+  return AccessInfraStage{}.build(rng, entities, window);
 }
 
 } // namespace PhantomLedger::pipeline::stages::infra
