@@ -1,5 +1,7 @@
 #include "phantomledger/pipeline/stages/infra.hpp"
 
+#include "phantomledger/primitives/validate/checks.hpp"
+
 #include <unordered_map>
 
 namespace PhantomLedger::pipeline::stages::infra {
@@ -112,6 +114,15 @@ AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
 AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
                         const ::PhantomLedger::pipeline::Entities &entities,
                         ::PhantomLedger::time::Window fallbackWindow) const {
+
+  ::PhantomLedger::primitives::validate::Report report;
+  ringAccess_.validate(report);
+  deviceAssignment_.validate(report);
+  ipAssignment_.validate(report);
+  routerRules_.validate(report);
+  sharedInfra_.validate(report);
+  report.throwIfFailed();
+
   const auto window = activeWindow(fallbackWindow);
 
   ::PhantomLedger::pipeline::Infra out;

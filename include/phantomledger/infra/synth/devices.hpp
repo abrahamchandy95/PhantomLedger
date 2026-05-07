@@ -5,6 +5,7 @@
 #include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/infra/synth/types.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <cstdint>
 #include <unordered_map>
@@ -15,6 +16,13 @@ struct AssignmentRules {
   double legitDeviceNoiseP = 0.05;
 
   double secondDeviceP = 0.20;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check(
+        [&] { v::between("legitDeviceNoiseP", legitDeviceNoiseP, 0.0, 1.0); });
+    r.check([&] { v::between("secondDeviceP", secondDeviceP, 0.0, 1.0); });
+  }
 };
 
 [[nodiscard]] Output
