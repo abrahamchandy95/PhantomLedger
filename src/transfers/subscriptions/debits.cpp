@@ -48,11 +48,6 @@ struct Candidate {
   std::uint32_t subIdx = 0;
 };
 
-/// Stateful, narrow-purpose emitter for subscription debit
-/// transactions. Two-mode emitter: screened or unscreened. The mode
-/// is fixed at construction so the per-iteration branch stays
-/// hoisted out of the hot loop, preserving the data-oriented
-/// performance characteristic of the original.
 class DebitEmitter {
 public:
   /// Unscreened-mode constructor. The screened-mode constructor below
@@ -93,8 +88,6 @@ private:
     }
   }
 
-  /// Screened path. Walks the base-txn cursor monotonically forward
-  /// across the pre-sorted candidate slice.
   void emitWithScreen(std::span<const Candidate> sorted) {
     for (const auto &c : sorted) {
       baseCursor_ = clearing::advanceBookThrough(
@@ -126,7 +119,7 @@ private:
 } // namespace
 
 std::vector<transactions::Transaction>
-debits(const BundleTerms &terms, const time::Window &window, random::Rng &rng,
+debits(const BundleRules &terms, const time::Window &window, random::Rng &rng,
        const transactions::Factory &txf, const random::RngFactory &factory,
        const Population &population, const Counterparties &counterparties,
        const Screen &screen) {

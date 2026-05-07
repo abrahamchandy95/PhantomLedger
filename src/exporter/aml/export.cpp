@@ -61,9 +61,12 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto ctx = vertices::buildSharedContext(entities, postedTxns);
 
+  const auto sarSubjects =
+      ::PhantomLedger::exporter::aml::sar::buildSarSubjectIndex(
+          entities.people.roster, entities.people.topology,
+          entities.accounts.registry, entities.accounts.ownership);
   const auto sars = ::PhantomLedger::exporter::aml::sar::generateSars(
-      entities.people.roster, entities.people.topology,
-      entities.accounts.registry, entities.accounts.ownership, postedTxns);
+      sarSubjects, postedTxns);
 
   const auto txnBundle = edges::classifyTransactionEdges(entities, postedTxns);
 

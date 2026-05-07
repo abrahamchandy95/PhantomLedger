@@ -7,7 +7,7 @@
 #include <cstdio>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
+#include <utility>
 
 namespace PhantomLedger::exporter::aml::sar {
 
@@ -17,23 +17,80 @@ namespace tx_ns = ::PhantomLedger::transactions;
 namespace ent = ::PhantomLedger::entity;
 namespace t_ns = ::PhantomLedger::time;
 
+struct FraudTxnGroups {
+  std::unordered_map<std::uint32_t, std::vector<tx_ns::Transaction>> byRing;
+  std::vector<tx_ns::Transaction> solo;
+};
+
+struct ActivityPeriod {
+  double total = 0.0;
+  std::int64_t firstTs = 0;
+  std::int64_t lastTs = 0;
+};
+
 [[nodiscard]] double round2(double v) noexcept {
   return std::round(v * 100.0) / 100.0;
 }
 
+[[nodiscard]] bool hasAccount(std::span<const ent::Key> sortedAccounts,
+                              const ent::Key &key) noexcept {
+  return std::binary_search(sortedAccounts.begin(), sortedAccounts.end(), key);
+}
+
 [[nodiscard]] std::unordered_map<ent::Key, double>
 accountActivityAmounts(std::span<const tx_ns::Transaction> txns,
-                       const std::unordered_set<ent::Key> &internalAccounts) {
+                       std::span<const ent::Key> accounts) {
   std::unordered_map<ent::Key, double> amounts;
   for (const auto &tx : txns) {
-    if (internalAccounts.count(tx.source) != 0) {
+    if (hasAccount(accounts, tx.source)) {
       amounts[tx.source] += tx.amount;
     }
-    if (internalAccounts.count(tx.target) != 0) {
+    if (hasAccount(accounts, tx.target)) {
       amounts[tx.target] += tx.amount;
     }
   }
   return amounts;
+}
+
+[[nodiscard]] ActivityPeriod
+activityPeriod(std::span<const tx_ns::Transaction> txns) noexcept {
+  ActivityPeriod out;
+  if (txns.empty()) {
+    return out;
+  }
+
+  out.firstTs = txns.front().timestamp;
+  out.lastTs = txns.front().timestamp;
+  for (const auto &tx : txns) {
+    out.total += tx.amount;
+    if (tx.timestamp < out.firstTs) {
+      out.firstTs = tx.timestamp;
+    } else if (tx.timestamp > out.lastTs) {
+      out.lastTs = tx.timestamp;
+    }
+  }
+
+  return out;
+}
+
+[[nodiscard]] std::vector<ent::Key>
+sortedKeys(const std::unordered_map<ent::Key, double> &activity) {
+  std::vector<ent::Key> keys;
+  keys.reserve(activity.size());
+  for (const auto &kv : activity) {
+    keys.push_back(kv.first);
+  }
+  std::sort(keys.begin(), keys.end());
+  return keys;
+}
+
+void fillCoveredAccounts(SarRecord &sar,
+                         const std::unordered_map<ent::Key, double> &activity) {
+  sar.coveredAccountIds = sortedKeys(activity);
+  sar.coveredAmounts.reserve(sar.coveredAccountIds.size());
+  for (const auto &key : sar.coveredAccountIds) {
+    sar.coveredAmounts.push_back(round2(activity.at(key)));
+  }
 }
 
 [[nodiscard]] std::string
@@ -91,186 +148,219 @@ sliceOf(const std::vector<ent::PersonId> &store,
                                         slice.size};
 }
 
-} // namespace
+void appendSarRingSubjects(SarRingSubject &out,
+                           std::span<const ent::PersonId> people,
+                           std::string_view role) {
+  out.subjects.reserve(out.subjects.size() + people.size());
+  for (const auto person : people) {
+    out.subjects.push_back(SarSubjectRole{
+        .person = person,
+        .role = std::string{role},
+    });
+  }
+}
 
-std::vector<SarRecord>
-generateSars(const ent::person::Roster &peopleRoster,
-             const ent::person::Topology &topology,
-             const ent::account::Registry &accounts,
-             const ent::account::Ownership &ownership,
-             std::span<const tx_ns::Transaction> finalTxns) {
+[[nodiscard]] SarRingSubject ringSubject(const ent::person::Topology &topology,
+                                         const ent::person::Ring &ring) {
+  SarRingSubject out;
+  out.ringId = ring.id;
 
-  std::vector<SarRecord> out;
+  const auto fraudSlice = sliceOf(topology.fraudStore, ring.frauds);
+  const auto muleSlice = sliceOf(topology.muleStore, ring.mules);
+  out.subjects.reserve(fraudSlice.size() + muleSlice.size());
+  appendSarRingSubjects(out, fraudSlice, "subject");
+  appendSarRingSubjects(out, muleSlice, "beneficiary");
 
-  std::unordered_set<ent::Key> internalAccounts;
-  internalAccounts.reserve(accounts.records.size());
-  for (const auto &rec : accounts.records) {
-    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
-      internalAccounts.insert(rec.id);
+  return out;
+}
+
+[[nodiscard]] std::vector<ent::PersonId>
+soloFraudsters(const ent::person::Roster &peopleRoster) {
+  std::vector<ent::PersonId> out;
+  for (ent::PersonId p = 1; p <= peopleRoster.count; ++p) {
+    if (peopleRoster.has(p, ent::person::Flag::soloFraud)) {
+      out.push_back(p);
     }
   }
+  std::sort(out.begin(), out.end());
+  return out;
+}
 
-  std::unordered_map<std::uint32_t, std::vector<tx_ns::Transaction>>
-      fraudByRing;
-  std::vector<tx_ns::Transaction> fraudSolo;
+[[nodiscard]] SarSoloSubject
+soloSubject(ent::PersonId person, const ent::account::Registry &accounts,
+            const ent::account::Ownership &ownership) {
+  SarSoloSubject out;
+  out.person = person;
+
+  const auto offset = ownership.byPersonOffset[person - 1];
+  const auto end = (person < ownership.byPersonOffset.size())
+                       ? ownership.byPersonOffset[person]
+                       : ownership.byPersonIndex.size();
+  if (offset == end) {
+    return out;
+  }
+
+  out.accountIds.reserve(end - offset);
+  for (auto i = offset; i < end; ++i) {
+    const auto recIdx = ownership.byPersonIndex[i];
+    out.accountIds.push_back(accounts.records[recIdx].id);
+  }
+
+  std::sort(out.accountIds.begin(), out.accountIds.end());
+  out.accountIds.erase(
+      std::unique(out.accountIds.begin(), out.accountIds.end()),
+      out.accountIds.end());
+
+  return out;
+}
+
+[[nodiscard]] FraudTxnGroups
+fraudTxnGroups(std::span<const tx_ns::Transaction> finalTxns) {
+  FraudTxnGroups out;
   for (const auto &tx : finalTxns) {
     if (tx.fraud.flag == 0) {
       continue;
     }
     if (tx.fraud.ringId.has_value()) {
-      fraudByRing[*tx.fraud.ringId].push_back(tx);
+      out.byRing[*tx.fraud.ringId].push_back(tx);
     } else {
-      fraudSolo.push_back(tx);
+      out.solo.push_back(tx);
     }
   }
+  return out;
+}
 
-  for (const auto &ring : topology.rings) {
-    const auto it = fraudByRing.find(ring.id);
-    if (it == fraudByRing.end() || it->second.empty()) {
-      continue;
-    }
-    const auto &ringTxns = it->second;
+void applyActivity(SarRecord &sar, std::span<const tx_ns::Transaction> txns) {
+  const auto activity = activityPeriod(txns);
+  const auto activityStart = t_ns::fromEpochSeconds(activity.firstTs);
+  const auto activityEnd = t_ns::fromEpochSeconds(activity.lastTs);
 
-    double total = 0.0;
-    std::int64_t firstTs = ringTxns.front().timestamp;
-    std::int64_t lastTs = ringTxns.front().timestamp;
-    for (const auto &tx : ringTxns) {
-      total += tx.amount;
-      if (tx.timestamp < firstTs) {
-        firstTs = tx.timestamp;
-      } else if (tx.timestamp > lastTs) {
-        lastTs = tx.timestamp;
-      }
-    }
-    const auto activityStart = t_ns::fromEpochSeconds(firstTs);
-    const auto activityEnd = t_ns::fromEpochSeconds(lastTs);
-    const auto filingDate = activityEnd + t_ns::Days{30};
+  sar.filingDate = activityEnd + t_ns::Days{30};
+  sar.amountInvolved = round2(activity.total);
+  sar.activityStart = activityStart;
+  sar.activityEnd = activityEnd;
+}
 
-    const auto violation = violationTypeForRing(ringTxns);
-
-    SarRecord sar;
-    sar.sarId = sarRingId(ring.id);
-    sar.filingDate = filingDate;
-    sar.amountInvolved = round2(total);
-    sar.activityStart = activityStart;
-    sar.activityEnd = activityEnd;
-    sar.violationType = violation;
-
-    // Subjects: ring fraud personas first, then mules.
-    const auto fraudSlice = sliceOf(topology.fraudStore, ring.frauds);
-    const auto muleSlice = sliceOf(topology.muleStore, ring.mules);
-    sar.subjectPersonIds.reserve(fraudSlice.size() + muleSlice.size());
-    sar.subjectRoles.reserve(fraudSlice.size() + muleSlice.size());
-    for (const auto pid : fraudSlice) {
-      sar.subjectPersonIds.push_back(pid);
-      sar.subjectRoles.emplace_back("subject");
-    }
-    for (const auto pid : muleSlice) {
-      sar.subjectPersonIds.push_back(pid);
-      sar.subjectRoles.emplace_back("beneficiary");
-    }
-
-    // Covered accounts — sorted Keys with rounded activity totals.
-    auto activity = accountActivityAmounts(ringTxns, internalAccounts);
-    std::vector<ent::Key> coveredKeys;
-    coveredKeys.reserve(activity.size());
-    for (const auto &kv : activity) {
-      coveredKeys.push_back(kv.first);
-    }
-    std::sort(coveredKeys.begin(), coveredKeys.end());
-    sar.coveredAccountIds = std::move(coveredKeys);
-    sar.coveredAmounts.reserve(sar.coveredAccountIds.size());
-    for (const auto &k : sar.coveredAccountIds) {
-      sar.coveredAmounts.push_back(round2(activity[k]));
-    }
-
-    out.push_back(std::move(sar));
+void applySubjects(SarRecord &sar, std::span<const SarSubjectRole> subjects) {
+  sar.subjectPersonIds.reserve(subjects.size());
+  sar.subjectRoles.reserve(subjects.size());
+  for (const auto &subject : subjects) {
+    sar.subjectPersonIds.push_back(subject.person);
+    sar.subjectRoles.push_back(subject.role);
   }
+}
 
-  // ────────── Solo fraudster SARs ──────────
+[[nodiscard]] SarRecord ringSar(const SarRingSubject &ring,
+                                std::span<const tx_ns::Transaction> txns,
+                                std::span<const ent::Key> internalAccounts) {
+  SarRecord sar;
+  sar.sarId = sarRingId(ring.ringId);
+  applyActivity(sar, txns);
+  sar.violationType = violationTypeForRing(txns);
+  applySubjects(sar, ring.subjects);
+  fillCoveredAccounts(sar, accountActivityAmounts(txns, internalAccounts));
+  return sar;
+}
 
-  // Collect solo-fraud personIds in deterministic order.
-  std::vector<ent::PersonId> soloIds;
-  for (ent::PersonId p = 1; p <= peopleRoster.count; ++p) {
-    if (peopleRoster.has(p, ent::person::Flag::soloFraud)) {
-      soloIds.push_back(p);
+[[nodiscard]] std::vector<tx_ns::Transaction>
+transactionsForSubject(std::span<const tx_ns::Transaction> txns,
+                       const SarSoloSubject &subject) {
+  std::vector<tx_ns::Transaction> out;
+  for (const auto &tx : txns) {
+    if (hasAccount(subject.accountIds, tx.source) ||
+        hasAccount(subject.accountIds, tx.target)) {
+      out.push_back(tx);
     }
   }
-  std::sort(soloIds.begin(), soloIds.end());
+  return out;
+}
 
-  for (const auto pid : soloIds) {
+[[nodiscard]] SarRecord soloSar(const SarSoloSubject &subject,
+                                std::span<const tx_ns::Transaction> txns) {
+  SarRecord sar;
+  sar.sarId = sarSoloId(subject.person);
+  applyActivity(sar, txns);
+  sar.violationType = "suspicious_activity";
+  sar.subjectPersonIds.push_back(subject.person);
+  sar.subjectRoles.emplace_back("subject");
+  fillCoveredAccounts(sar, accountActivityAmounts(txns, subject.accountIds));
+  return sar;
+}
 
-    if (pid == 0 || pid > peopleRoster.count) {
+void appendRingSars(std::vector<SarRecord> &out,
+                    const SarSubjectIndex &subjects,
+                    const FraudTxnGroups &txns) {
+  for (const auto &ring : subjects.rings()) {
+    const auto it = txns.byRing.find(ring.ringId);
+    if (it == txns.byRing.end() || it->second.empty()) {
       continue;
     }
-    const auto offset = ownership.byPersonOffset[pid - 1];
-    const auto end = (pid < ownership.byPersonOffset.size())
-                         ? ownership.byPersonOffset[pid]
-                         : ownership.byPersonIndex.size();
-    if (offset == end) {
-      continue;
-    }
+    out.push_back(ringSar(ring, it->second, subjects.internalAccounts()));
+  }
+}
 
-    std::unordered_set<ent::Key> personAccts;
-    personAccts.reserve(end - offset);
-    for (auto i = offset; i < end; ++i) {
-      const auto regIdx = ownership.byPersonIndex[i];
-      personAccts.insert(accounts.records[regIdx].id);
-    }
-
-    std::vector<tx_ns::Transaction> myTxns;
-    for (const auto &tx : fraudSolo) {
-      if (personAccts.count(tx.source) != 0 ||
-          personAccts.count(tx.target) != 0) {
-        myTxns.push_back(tx);
-      }
-    }
+void appendSoloSars(std::vector<SarRecord> &out,
+                    const SarSubjectIndex &subjects,
+                    std::span<const tx_ns::Transaction> txns) {
+  for (const auto &subject : subjects.soloFraudsters()) {
+    const auto myTxns = transactionsForSubject(txns, subject);
     if (myTxns.empty()) {
       continue;
     }
+    out.push_back(soloSar(subject, myTxns));
+  }
+}
 
-    double total = 0.0;
-    std::int64_t firstTs = myTxns.front().timestamp;
-    std::int64_t lastTs = myTxns.front().timestamp;
-    for (const auto &tx : myTxns) {
-      total += tx.amount;
-      if (tx.timestamp < firstTs) {
-        firstTs = tx.timestamp;
-      } else if (tx.timestamp > lastTs) {
-        lastTs = tx.timestamp;
-      }
+} // namespace
+
+SarSubjectIndex buildSarSubjectIndex(const ent::person::Roster &peopleRoster,
+                                     const ent::person::Topology &topology,
+                                     const ent::account::Registry &accounts,
+                                     const ent::account::Ownership &ownership) {
+  SarSubjectIndex out;
+
+  out.internalAccounts_.reserve(accounts.records.size());
+  for (const auto &rec : accounts.records) {
+    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
+      out.internalAccounts_.push_back(rec.id);
     }
-    const auto activityStart = t_ns::fromEpochSeconds(firstTs);
-    const auto activityEnd = t_ns::fromEpochSeconds(lastTs);
-    const auto filingDate = activityEnd + t_ns::Days{30};
-
-    SarRecord sar;
-    sar.sarId = sarSoloId(pid);
-    sar.filingDate = filingDate;
-    sar.amountInvolved = round2(total);
-    sar.activityStart = activityStart;
-    sar.activityEnd = activityEnd;
-    sar.violationType = "suspicious_activity";
-    sar.subjectPersonIds.push_back(pid);
-    sar.subjectRoles.emplace_back("subject");
-
-    auto activity = accountActivityAmounts(myTxns, personAccts);
-    std::vector<ent::Key> coveredKeys;
-    coveredKeys.reserve(activity.size());
-    for (const auto &kv : activity) {
-      coveredKeys.push_back(kv.first);
-    }
-    std::sort(coveredKeys.begin(), coveredKeys.end());
-    sar.coveredAccountIds = std::move(coveredKeys);
-    sar.coveredAmounts.reserve(sar.coveredAccountIds.size());
-    for (const auto &k : sar.coveredAccountIds) {
-      sar.coveredAmounts.push_back(round2(activity[k]));
-    }
-
-    out.push_back(std::move(sar));
   }
 
-  (void)peopleRoster;
+  std::sort(out.internalAccounts_.begin(), out.internalAccounts_.end());
+  out.internalAccounts_.erase(
+      std::unique(out.internalAccounts_.begin(), out.internalAccounts_.end()),
+      out.internalAccounts_.end());
+
+  out.rings_.reserve(topology.rings.size());
+  for (const auto &ring : topology.rings) {
+    out.rings_.push_back(ringSubject(topology, ring));
+  }
+
+  const auto soloIds = soloFraudsters(peopleRoster);
+  out.soloFraudsters_.reserve(soloIds.size());
+  for (const auto person : soloIds) {
+    if (person == ent::invalidPerson || person > peopleRoster.count) {
+      continue;
+    }
+    auto subject = soloSubject(person, accounts, ownership);
+    if (subject.accountIds.empty()) {
+      continue;
+    }
+    out.soloFraudsters_.push_back(std::move(subject));
+  }
+
+  return out;
+}
+
+std::vector<SarRecord>
+generateSars(const SarSubjectIndex &subjects,
+             std::span<const tx_ns::Transaction> finalTxns) {
+  std::vector<SarRecord> out;
+
+  const auto txns = fraudTxnGroups(finalTxns);
+  appendRingSars(out, subjects, txns);
+  appendSoloSars(out, subjects, txns.solo);
+
   return out;
 }
 
