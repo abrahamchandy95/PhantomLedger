@@ -6,9 +6,7 @@
 #include "phantomledger/transfers/subscriptions/prices.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
-#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -16,14 +14,15 @@
 namespace PhantomLedger::transfers::subscriptions {
 
 /// Knobs that drive bundle composition for one person.
-struct BundleTerms {
-  std::uint8_t minPerPerson = 4;
-  std::uint8_t maxPerPerson = 8;
+struct BundleRules {
+  std::int32_t minPerPerson = 4;
+  std::int32_t maxPerPerson = 8;
   double debitP = 0.55;
-  std::uint8_t dayJitter = 1;
+  std::int32_t dayJitter = 1;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
+    r.check([&] { v::ge("minPerPerson", minPerPerson, 0); });
     r.check([&] {
       if (maxPerPerson < minPerPerson) {
         throw std::invalid_argument(
@@ -31,6 +30,13 @@ struct BundleTerms {
       }
     });
     r.check([&] { v::unit("debitP", debitP); });
+    r.check([&] { v::ge("dayJitter", dayJitter, 0); });
+  }
+
+  void validate() const {
+    primitives::validate::Report r;
+    validate(r);
+    r.throwIfFailed();
   }
 };
 
@@ -43,18 +49,30 @@ struct Sub {
   std::uint8_t day = 0;
 };
 
-// Append one person's subscription bundle
-
-inline void appendBundle(random::Rng &subRng, const BundleTerms &terms,
+/// Append one person's subscription bundle to `out`. Uses the
+/// configured rng to:
+///   * sample a total subscription count in [minPerPerson, maxPerPerson]
+///   * count debits via `debitP` Bernoulli trials
+///   * draw distinct prices without replacement via `choiceIndices`
+///   * draw biller and billing day uniformly per sub
+///
+/// Behavior parity note: the without-replacement price draw uses
+/// `choiceIndices` so this composes byte-identically with routines
+/// that previously inlined the same logic.
+inline void appendBundle(random::Rng &subRng, const BundleRules &rules,
                          const entity::Key &deposit,
                          std::span<const entity::Key> billerAccounts,
                          std::vector<Sub> &out) {
-  const auto nTotal = subRng.uniformInt(
-      terms.minPerPerson, static_cast<std::int64_t>(terms.maxPerPerson) + 1);
+  if (billerAccounts.empty()) {
+    return;
+  }
 
-  std::int64_t nDebit = 0;
-  for (std::int64_t i = 0; i < nTotal; ++i) {
-    if (subRng.coin(terms.debitP)) {
+  const auto nTotal = static_cast<std::int32_t>(subRng.uniformInt(
+      rules.minPerPerson, static_cast<std::int64_t>(rules.maxPerPerson) + 1));
+
+  std::int32_t nDebit = 0;
+  for (std::int32_t i = 0; i < nTotal; ++i) {
+    if (subRng.coin(rules.debitP)) {
       ++nDebit;
     }
   }
@@ -62,28 +80,21 @@ inline void appendBundle(random::Rng &subRng, const BundleTerms &terms,
     return;
   }
 
-  const auto nPick =
-      static_cast<std::size_t>(std::min<std::int64_t>(nDebit, kPricePoolSize));
+  const auto nPick = static_cast<std::size_t>(std::min<std::int32_t>(
+      nDebit, static_cast<std::int32_t>(kPricePoolSize)));
 
-  std::array<std::uint8_t, kPricePoolSize> idx{};
-  std::iota(idx.begin(), idx.end(), std::uint8_t{0});
-  for (std::size_t i = 0; i < nPick; ++i) {
-    const auto j = static_cast<std::size_t>(
-        subRng.uniformInt(static_cast<std::int64_t>(i),
-                          static_cast<std::int64_t>(kPricePoolSize)));
-    std::swap(idx[i], idx[j]);
-  }
+  const auto priceIdx =
+      subRng.choiceIndices(kPricePoolSize, nPick, /*replace=*/false);
 
   out.reserve(out.size() + nPick);
   for (std::size_t i = 0; i < nPick; ++i) {
-    const auto billerIdx = static_cast<std::size_t>(
-        subRng.uniformInt(0, static_cast<std::int64_t>(billerAccounts.size())));
-    const auto day =
-        static_cast<std::uint8_t>(subRng.uniformInt(1, 29)); // [1, 28]
+    const auto billerIdx = subRng.choiceIndex(billerAccounts.size());
+    const auto day = static_cast<std::uint8_t>(subRng.uniformInt(1, 29));
+
     out.push_back(Sub{
         .deposit = deposit,
         .biller = billerAccounts[billerIdx],
-        .amount = kPricePool[idx[i]],
+        .amount = kPricePool[priceIdx[i]],
         .day = day,
     });
   }

@@ -8,15 +8,13 @@
 
 namespace PhantomLedger::transfers::subscriptions {
 
-/// Day-of-month bounds.
 inline constexpr int kDayMin = 1;
 inline constexpr int kDayMax = 28;
 
-/// Within-day jitter ranges
 inline constexpr int kHourLow = 0;
-inline constexpr int kHourHighExcl = 6; // [0, 5]
+inline constexpr int kHourHighExcl = 7;
 inline constexpr int kMinuteLow = 0;
-inline constexpr int kMinuteHighExcl = 60; // [0, 59]
+inline constexpr int kMinuteHighExcl = 61;
 
 [[nodiscard]] inline std::int64_t
 cycleTimestamp(random::Rng &rng, time::TimePoint monthStart,

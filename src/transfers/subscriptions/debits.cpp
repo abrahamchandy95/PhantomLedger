@@ -48,49 +48,80 @@ struct Candidate {
   std::uint32_t subIdx = 0;
 };
 
-/// No-screen fast path. The conditional on screening is hoisted to
-/// the call site so this loop runs without a per-iteration branch.
-void emitWithoutScreen(std::span<const Candidate> sorted,
-                       std::span<const Sub> subs,
-                       const transactions::Factory &txf,
-                       std::vector<transactions::Transaction> &out) {
-  for (const auto &c : sorted) {
-    const auto &s = subs[c.subIdx];
-    out.push_back(txf.make(transactions::Draft{
-        .source = s.deposit,
-        .destination = s.biller,
-        .amount = s.amount,
-        .timestamp = c.ts,
-        .channel = kChannel,
-    }));
-  }
-}
+/// Stateful, narrow-purpose emitter for subscription debit
+/// transactions. Two-mode emitter: screened or unscreened. The mode
+/// is fixed at construction so the per-iteration branch stays
+/// hoisted out of the hot loop, preserving the data-oriented
+/// performance characteristic of the original.
+class DebitEmitter {
+public:
+  /// Unscreened-mode constructor. The screened-mode constructor below
+  /// adds a `Screen` reference and tracks a base-cursor.
+  DebitEmitter(std::span<const Sub> subs, const transactions::Factory &txf,
+               std::vector<transactions::Transaction> &out) noexcept
+      : subs_(subs), txf_(txf), out_(out), screen_(nullptr) {}
 
-/// Screened path. Walks the base-txn cursor monotonically forward
-/// across the pre-sorted candidate slice.
-void emitWithScreen(std::span<const Candidate> sorted,
-                    std::span<const Sub> subs, const transactions::Factory &txf,
-                    const Screen &screen, std::size_t &baseCursor,
-                    std::vector<transactions::Transaction> &out) {
-  for (const auto &c : sorted) {
-    baseCursor = clearing::advanceBookThrough(screen.ledger, screen.baseTxns,
-                                              baseCursor, c.ts,
-                                              /*inclusive=*/true);
-    const auto &s = subs[c.subIdx];
-    const auto decision =
-        screen.ledger->transfer(s.deposit, s.biller, s.amount, kChannel);
-    if (decision.rejected()) {
-      continue;
+  DebitEmitter(std::span<const Sub> subs, const transactions::Factory &txf,
+               std::vector<transactions::Transaction> &out,
+               const Screen &screen) noexcept
+      : subs_(subs), txf_(txf), out_(out), screen_(&screen) {}
+
+  DebitEmitter(const DebitEmitter &) = delete;
+  DebitEmitter &operator=(const DebitEmitter &) = delete;
+
+  /// Emit one pre-sorted month's worth of candidates.
+  void emitMonth(std::span<const Candidate> sorted) {
+    if (screen_ == nullptr) {
+      emitWithoutScreen(sorted);
+    } else {
+      emitWithScreen(sorted);
     }
-    out.push_back(txf.make(transactions::Draft{
-        .source = s.deposit,
-        .destination = s.biller,
-        .amount = s.amount,
-        .timestamp = c.ts,
-        .channel = kChannel,
-    }));
   }
-}
+
+private:
+  /// No-screen fast path. Loop runs without a per-iteration branch.
+  void emitWithoutScreen(std::span<const Candidate> sorted) {
+    for (const auto &c : sorted) {
+      const auto &s = subs_[c.subIdx];
+      out_.push_back(txf_.make(transactions::Draft{
+          .source = s.deposit,
+          .destination = s.biller,
+          .amount = s.amount,
+          .timestamp = c.ts,
+          .channel = kChannel,
+      }));
+    }
+  }
+
+  /// Screened path. Walks the base-txn cursor monotonically forward
+  /// across the pre-sorted candidate slice.
+  void emitWithScreen(std::span<const Candidate> sorted) {
+    for (const auto &c : sorted) {
+      baseCursor_ = clearing::advanceBookThrough(
+          screen_->ledger, screen_->baseTxns, baseCursor_, c.ts,
+          /*inclusive=*/true);
+      const auto &s = subs_[c.subIdx];
+      const auto decision =
+          screen_->ledger->transfer(s.deposit, s.biller, s.amount, kChannel);
+      if (decision.rejected()) {
+        continue;
+      }
+      out_.push_back(txf_.make(transactions::Draft{
+          .source = s.deposit,
+          .destination = s.biller,
+          .amount = s.amount,
+          .timestamp = c.ts,
+          .channel = kChannel,
+      }));
+    }
+  }
+
+  std::span<const Sub> subs_;
+  const transactions::Factory &txf_;
+  std::vector<transactions::Transaction> &out_;
+  const Screen *screen_;
+  std::size_t baseCursor_ = 0;
+};
 
 } // namespace
 
@@ -139,8 +170,12 @@ debits(const BundleTerms &terms, const time::Window &window, random::Rng &rng,
 
   const auto windowStartTs = time::toEpochSeconds(window.start);
   const auto endExclTs = time::toEpochSeconds(window.endExcl());
-  std::size_t baseCursor = 0;
   const bool screening = (screen.ledger != nullptr);
+
+  // Construct the right emitter once. The screening branch is fixed
+  // for the whole call so the hot per-candidate loop has no branch.
+  auto emitter = screening ? DebitEmitter{subs, txf, out, screen}
+                           : DebitEmitter{subs, txf, out};
 
   for (const auto &monthStart : monthStarts) {
     month.clear();
@@ -162,11 +197,7 @@ debits(const BundleTerms &terms, const time::Window &window, random::Rng &rng,
                        return a.ts < b.ts;
                      });
 
-    if (screening) {
-      emitWithScreen(month, subs, txf, screen, baseCursor, out);
-    } else {
-      emitWithoutScreen(month, subs, txf, out);
-    }
+    emitter.emitMonth(month);
   }
 
   std::sort(

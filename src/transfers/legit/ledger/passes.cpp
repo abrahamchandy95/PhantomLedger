@@ -250,12 +250,12 @@ void addSubscriptions(const RoutinePass &pass,
   auto subscriptionScreen = SeededScreen::sorted(
       screen.fresh(),
       std::span<const transactions::Transaction>(streams.screened()));
-  auto subscriptions = routines::subscriptions::Generator{
+  auto subscriptions = routines::subscriptions::DebitEmitter{
       routineRng(pass),
       routineTxf(pass),
       subscriptionScreen,
   };
-  streams.add(subscriptions.generate(plan, *accounts.registry));
+  streams.add(subscriptions.emitDebits(plan, *accounts.registry));
 }
 
 void addAtm(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
