@@ -77,4 +77,23 @@ template <ChannelEnum E>
   return detail::kPaydayInbound[value.value];
 }
 
+// Card-like channels — channels whose settlement looks like a card
+// transaction (immediate or near-immediate posting via the card rails).
+// Cross-group predicate: not a single channel-group membership test.
+[[nodiscard]] constexpr bool isCardLike(Tag value) noexcept {
+  return is(value, Legit::atm) || is(value, Legit::merchant) ||
+         is(value, Legit::cardPurchase) || is(value, Legit::p2p);
+}
+
+// Channels whose initial posting attempt may need to be retried (e.g.
+// scheduled debits that can fail on insufficient funds and be reissued).
+// Cross-group predicate spanning Legit, Rent, Insurance, and Product.
+[[nodiscard]] constexpr bool isRetryable(Tag value) noexcept {
+  return is(value, Legit::bill) || is(value, Legit::subscription) ||
+         is(value, Legit::externalUnknown) || isRent(value) ||
+         is(value, Insurance::premium) || is(value, Product::mortgage) ||
+         is(value, Product::autoLoan) || is(value, Product::studentLoan) ||
+         is(value, Product::taxEstimated);
+}
+
 } // namespace PhantomLedger::channels
