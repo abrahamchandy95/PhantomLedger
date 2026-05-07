@@ -194,10 +194,13 @@ inline void requireRentAmount(double amount, std::string_view field) {
   primitives::validate::require(query.state);
   internal::requireKey(query.payerKey, "payerKey");
 
+  const growth::AnnualRaiseSeries raises{factory, "rent_real_raise",
+                                         query.payerKey};
+
   const double amount =
-      query.state.baseRent *
-      growth::compoundGrowth(rules.growth.annual, factory, "rent_real_raise",
-                             query.payerKey, query.state.start, query.payDate);
+      query.state.baseRent * growth::compoundGrowth(rules.growth.annual, raises,
+                                                    query.state.start,
+                                                    query.payDate);
 
   primitives::validate::finite("rentAmount", amount);
 

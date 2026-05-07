@@ -185,8 +185,9 @@ public:
   [[nodiscard]] double compound(std::string_view personId,
                                 time::TimePoint start,
                                 time::TimePoint now) const {
-    return growth::compoundGrowth(rules_.annual, factory_, "salary_real_raise",
-                                  personId, start, now);
+    const growth::AnnualRaiseSeries raises{factory_, "salary_real_raise",
+                                           personId};
+    return growth::compoundGrowth(rules_.annual, raises, start, now);
   }
 
   [[nodiscard]] double jobSwitchBump(std::string_view personId,
