@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/primitives/time/calendar.hpp"
+
 #include <array>
 #include <cstdint>
 #include <filesystem>
@@ -7,6 +9,7 @@
 #include <string_view>
 
 namespace PhantomLedger::run {
+
 enum class UseCase : std::uint8_t {
   standard = 0,
   muleMl = 1,
@@ -48,10 +51,11 @@ inline constexpr std::array<UseCase, 3> kAllUseCases{
 struct RunOptions {
   UseCase usecase = UseCase::standard;
   std::int64_t days = 365;
+  std::int32_t population = 70'000;
+  std::uint64_t seed = 0xDEADBEEFULL;
   std::filesystem::path outDir = "out_bank_data";
   bool showTransactions = false;
-  bool progress = true;
-  bool includeStandardExport = true;
+  ::PhantomLedger::time::CalendarDate startDate{2025, 1, 1};
 };
 
 } // namespace PhantomLedger::run

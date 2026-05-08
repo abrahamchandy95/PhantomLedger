@@ -8,9 +8,6 @@
 namespace PhantomLedger::exporter::mule_ml {
 
 struct Options {
-
-  bool includeStandardExport = false;
-
   bool showTransactions = false;
 
   const ::PhantomLedger::entities::synth::pii::PoolSet *piiPools = nullptr;

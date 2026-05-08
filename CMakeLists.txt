@@ -144,6 +144,11 @@ set(PL_RELATIONSHIPS_SOURCES
 
 set(PL_RUN_SOURCES
     src/run/progress.cpp
+    src/run/setup.cpp
+)
+
+set(PL_CLI_SOURCES
+    src/cli/args.cpp
 )
 
 set(PL_EXPORTER_SOURCES
@@ -189,6 +194,7 @@ set(PL_ALL_SOURCES
     ${PL_LEGIT_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
     ${PL_RUN_SOURCES}
+    ${PL_CLI_SOURCES}
     ${PL_EXPORTER_SOURCES}
     ${PL_INFRA_SYNTH_SOURCES}
     ${PL_PIPELINE_SOURCES}

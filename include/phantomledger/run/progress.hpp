@@ -7,10 +7,6 @@
 
 namespace PhantomLedger::run::progress {
 
-void setEnabled(bool enabled) noexcept;
-
-[[nodiscard]] bool enabled() noexcept;
-
 void status(std::string_view message);
 
 class Stage {
@@ -24,9 +20,7 @@ public:
   Stage &operator=(Stage &&) = delete;
 
   void tick(std::size_t n = 1) noexcept;
-
   void setProgress(std::size_t current) noexcept;
-
   void done() noexcept;
 
 private:

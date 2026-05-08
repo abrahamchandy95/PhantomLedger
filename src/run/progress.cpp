@@ -1,6 +1,5 @@
 #include "phantomledger/run/progress.hpp"
 
-#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <iostream>
@@ -10,10 +9,7 @@ namespace PhantomLedger::run::progress {
 
 namespace {
 
-std::atomic<bool> g_enabled{false};
-
 constexpr auto kRenderInterval = std::chrono::milliseconds{100};
-
 constexpr std::size_t kBarWidth = 32;
 
 [[nodiscard]] std::string formatElapsed(std::chrono::steady_clock::duration d) {
@@ -32,25 +28,14 @@ constexpr std::size_t kBarWidth = 32;
 
 } // namespace
 
-void setEnabled(bool e) noexcept {
-  g_enabled.store(e, std::memory_order_relaxed);
-}
-
-bool enabled() noexcept { return g_enabled.load(std::memory_order_relaxed); }
-
-void status(std::string_view message) {
-  if (!enabled()) {
-    return;
-  }
-  std::cerr << message << '\n';
-}
+void status(std::string_view message) { std::cerr << message << '\n'; }
 
 // ────────────────────────────── Stage ──────────────────────────────
 
 Stage::Stage(std::string label, std::size_t total)
     : label_(std::move(label)), total_(total),
       startTime_(std::chrono::steady_clock::now()), lastRender_(startTime_),
-      active_(enabled() && total > 0) {
+      active_(total > 0) {
   if (active_) {
     render(/*force=*/true);
   }
@@ -109,7 +94,6 @@ void Stage::render(bool force) noexcept {
   bar.push_back(']');
 
   const auto elapsed = formatElapsed(now - startTime_);
-
   std::cerr << '\r' << label_ << ' ' << bar << ' ' << current_ << '/' << total_
             << " (" << static_cast<int>(pct) << "%)"
             << " [" << elapsed << "]    ";
