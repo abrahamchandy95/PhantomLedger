@@ -82,13 +82,8 @@ SimulationPipeline::transferStage() const noexcept {
 SimulationResult SimulationPipeline::run() const {
   SimulationResult out;
 
-  // EntitySynthesis is now flat. Population, identity, and every
-  // calibration field sit at the top level — no PeopleSynthesis or
-  // CounterpartySynthesis indirection.
-  entityStage::validate(entities_.population);
-
   const auto identity =
-      entityStage::withDefaultStart(entities_.identity, window_.start);
+      entityStage::defaultStart(entities_.identity, window_.start);
 
   out.entities.people =
       entityStage::buildPeople(*rng_, entities_.population, entities_.fraud);

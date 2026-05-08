@@ -17,6 +17,7 @@
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <cstdint>
 
@@ -26,78 +27,76 @@ struct Entities;
 
 namespace PhantomLedger::pipeline::stages::entities {
 
+namespace pl = ::PhantomLedger;
+namespace synth = pl::entities::synth;
+namespace entity = pl::entity;
+
 struct IdentitySource {
-  const ::PhantomLedger::entities::synth::pii::PoolSet *pools = nullptr;
-  ::PhantomLedger::time::TimePoint simStart;
-  ::PhantomLedger::entities::synth::pii::LocaleMix localeMix;
+  const synth::pii::PoolSet *pools = nullptr;
+  pl::time::TimePoint simStart;
+  synth::pii::LocaleMix localeMix;
 };
 
 struct EntitySynthesis {
-  // ─── User-owned: required, no defaults ─────────────────────────
   std::int32_t population;
   IdentitySource identity;
 
-  // ─── Calibration: research-backed defaults ─────────────────────
-  ::PhantomLedger::entities::synth::people::Fraud fraud{};
-  ::PhantomLedger::entities::synth::personas::Mix personaMix{};
-  ::PhantomLedger::entities::synth::accounts::Sizing accountsSizing{};
-  ::PhantomLedger::entities::synth::merchants::GenerationPlan merchants{};
-  ::PhantomLedger::entities::synth::landlords::GenerationPlan landlords{};
-  ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
-      counterpartyTargets{};
-  ::PhantomLedger::entities::synth::cards::IssuanceRules cards{};
+  synth::people::Fraud fraud{};
+  synth::personas::Mix personaMix{};
+  synth::accounts::Sizing accountsSizing{};
+  synth::merchants::GenerationPlan merchants{};
+  synth::landlords::GenerationPlan landlords{};
+  synth::counterparties::CounterpartyTargets counterpartyTargets{};
+  synth::cards::IssuanceRules cards{};
+  void validate(pl::primitives::validate::Report &r) const {
+    r.check([&] {
+      pl::primitives::validate::nonNegative("population", population);
+    });
+
+    accountsSizing.validate(r);
+    merchants.validate(r);
+    landlords.validate(r);
+    counterpartyTargets.validate(r);
+  }
 };
 
-void validate(std::int32_t population);
-void validate(const ::PhantomLedger::entities::synth::accounts::Sizing &sizing);
+[[nodiscard]] IdentitySource defaultStart(IdentitySource identity,
+                                          pl::time::TimePoint fallbackStart);
 
-[[nodiscard]] IdentitySource
-withDefaultStart(IdentitySource identity,
-                 ::PhantomLedger::time::TimePoint fallbackStart);
+[[nodiscard]] synth::people::Pack
+buildPeople(pl::random::Rng &rng, std::int32_t population,
+            const synth::people::Fraud &fraud = {});
 
-[[nodiscard]] ::PhantomLedger::entities::synth::people::Pack
-buildPeople(::PhantomLedger::random::Rng &rng, std::int32_t population,
-            const ::PhantomLedger::entities::synth::people::Fraud &fraud = {});
+[[nodiscard]] synth::accounts::Pack
+buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
+              std::int32_t population,
+              const synth::accounts::Sizing &sizing = {});
 
-[[nodiscard]] ::PhantomLedger::entities::synth::accounts::Pack buildAccounts(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::entities::synth::people::Pack &people,
-    std::int32_t population,
-    const ::PhantomLedger::entities::synth::accounts::Sizing &sizing = {});
+[[nodiscard]] synth::personas::Pack
+buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
+              const synth::personas::Mix &mix = {});
 
-[[nodiscard]] ::PhantomLedger::entities::synth::personas::Pack
-buildPersonas(::PhantomLedger::random::Rng &rng,
-              const ::PhantomLedger::entities::synth::people::Pack &people,
-              const ::PhantomLedger::entities::synth::personas::Mix &mix = {});
-
-[[nodiscard]] ::PhantomLedger::entity::pii::Roster
-buildPii(::PhantomLedger::random::Rng &rng,
-         const ::PhantomLedger::entities::synth::personas::Pack &personas,
+[[nodiscard]] entity::pii::Roster
+buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
          IdentitySource identity);
 
-[[nodiscard]] ::PhantomLedger::entity::merchant::Catalog
-buildMerchants(::PhantomLedger::random::Rng &rng, std::int32_t population,
-               const ::PhantomLedger::entities::synth::merchants::GenerationPlan
-                   &plan = {});
+[[nodiscard]] entity::merchant::Catalog
+buildMerchants(pl::random::Rng &rng, std::int32_t population,
+               const synth::merchants::GenerationPlan &plan = {});
 
-[[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack
-buildLandlords(::PhantomLedger::random::Rng &rng, std::int32_t population,
-               const ::PhantomLedger::entities::synth::landlords::GenerationPlan
-                   &plan = {});
+[[nodiscard]] synth::landlords::Pack
+buildLandlords(pl::random::Rng &rng, std::int32_t population,
+               const synth::landlords::GenerationPlan &plan = {});
 
-[[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
-    const ::PhantomLedger::entities::synth::personas::Pack &personas,
-    const ::PhantomLedger::entities::synth::people::Pack &people,
-    std::uint64_t topLevelSeed,
-    const ::PhantomLedger::entities::synth::cards::IssuanceRules &issuance =
-        {});
+[[nodiscard]] entity::card::Registry
+issueCreditCards(const synth::personas::Pack &personas,
+                 const synth::people::Pack &people, std::uint64_t topLevelSeed,
+                 const synth::cards::IssuanceRules &issuance = {});
 
-[[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
-buildCounterparties(
-    ::PhantomLedger::random::Rng &rng, std::int32_t population,
-    const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
-        &targets = {});
+[[nodiscard]] entity::counterparty::Directory buildCounterparties(
+    pl::random::Rng &rng, std::int32_t population,
+    const synth::counterparties::CounterpartyTargets &targets = {});
 
-void finalizeAccountRegistry(::PhantomLedger::pipeline::Entities &entities);
+void finalizeAccountRegistry(pl::pipeline::Entities &entities);
 
 } // namespace PhantomLedger::pipeline::stages::entities
