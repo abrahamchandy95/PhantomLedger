@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 
-#include "phantomledger/probability/distributions/beta.hpp"
+#include "phantomledger/primitives/random/distributions/beta.hpp"
 
 #include <algorithm>
 

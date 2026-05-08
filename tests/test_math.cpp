@@ -1,9 +1,9 @@
+#include "phantomledger/primitives/random/distributions/beta.hpp"
+#include "phantomledger/primitives/random/distributions/binomial.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/poisson.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
-#include "phantomledger/probability/distributions/beta.hpp"
-#include "phantomledger/probability/distributions/binomial.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
-#include "phantomledger/probability/distributions/poisson.hpp"
 
 #include "test_support.hpp"
 

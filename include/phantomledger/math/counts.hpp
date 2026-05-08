@@ -1,10 +1,10 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/gamma.hpp"
+#include "phantomledger/primitives/random/distributions/poisson.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/gamma.hpp"
-#include "phantomledger/probability/distributions/poisson.hpp"
 
 #include <algorithm>
 

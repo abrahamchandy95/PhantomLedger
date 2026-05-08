@@ -1,10 +1,10 @@
 #include "phantomledger/transfers/channels/insurance/claims.hpp"
 
 #include "phantomledger/entities/products/insurance.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 

@@ -1,6 +1,6 @@
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 
-#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 
 #include <algorithm>
 #include <cmath>

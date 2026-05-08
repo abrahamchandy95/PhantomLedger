@@ -2,9 +2,9 @@
 
 #include "phantomledger/activity/recurring/payroll.hpp"
 #include "phantomledger/math/amounts.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 

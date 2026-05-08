@@ -1,7 +1,7 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/binomial.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/probability/distributions/binomial.hpp"
 
 #include <algorithm>
 #include <cstdint>

@@ -1,8 +1,8 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 
 #include <algorithm>
 #include <cstdint>

@@ -1,9 +1,9 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/gamma.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
-#include "phantomledger/probability/distributions/gamma.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"

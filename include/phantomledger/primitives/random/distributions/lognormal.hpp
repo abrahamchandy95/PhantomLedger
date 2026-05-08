@@ -1,7 +1,7 @@
 #pragma once
 
+#include "normal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
 
 #include <cmath>
 #include <stdexcept>

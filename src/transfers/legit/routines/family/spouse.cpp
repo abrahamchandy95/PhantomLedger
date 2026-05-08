@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/legit/routines/family/spouse.hpp"
 
 #include "phantomledger/entities/encoding/external.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/legit/routines/family/helpers.hpp"
@@ -27,13 +27,6 @@ struct CoupleState {
   entity::Key lowerAcct{};
 };
 
-/// Stateful, narrow-purpose emitter for spouse-to-spouse transfers.
-///
-/// Compared to its peers, this emitter has *two* public methods --
-/// `resolveCouple` (called once per pair) and `processCoupleMonth`
-/// (called once per pair-month). Both share the same dependencies, so
-/// holding them as members eliminates the redundant 5- and 7-parameter
-/// signatures that the original file used.
 class SpouseEmitter {
 public:
   SpouseEmitter(const TransferRun &run, const CoupleFlow &cfg, random::Rng &rng,
@@ -44,10 +37,6 @@ public:
   SpouseEmitter(const SpouseEmitter &) = delete;
   SpouseEmitter &operator=(const SpouseEmitter &) = delete;
 
-  /// Resolve a candidate spouse pair into separate higher/lower
-  /// accounts, applying the `separateAccountsP` gate. Returns
-  /// `std::nullopt` if the couple is not eligible (shared account,
-  /// both external, gate failed).
   [[nodiscard]] std::optional<CoupleState> resolveCouple(entity::PersonId a,
                                                          entity::PersonId b) {
     if (!rng_.coin(cfg_.separateAccountsP)) {

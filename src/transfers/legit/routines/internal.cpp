@@ -1,9 +1,9 @@
 #include "phantomledger/transfers/legit/routines/internal.hpp"
 
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 

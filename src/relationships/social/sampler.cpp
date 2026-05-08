@@ -1,6 +1,6 @@
 #include "phantomledger/relationships/social/sampler.hpp"
 
-#include "phantomledger/probability/distributions/cdf.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 
 #include <algorithm>
 #include <cstddef>

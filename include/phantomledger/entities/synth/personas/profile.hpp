@@ -1,10 +1,10 @@
 #pragma once
 
 #include "phantomledger/entities/behaviors.hpp"
+#include "phantomledger/primitives/random/distributions/beta.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/probability/distributions/beta.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
 #include "phantomledger/taxonomies/personas/archetypes.hpp"
 
 #include <algorithm>

@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/fraud/typologies/invoice.hpp"
 
-#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
