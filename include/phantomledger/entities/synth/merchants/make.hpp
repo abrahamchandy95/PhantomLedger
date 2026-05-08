@@ -4,6 +4,7 @@
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/synth/merchants/weights.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
@@ -30,6 +31,20 @@ struct GenerationPlan {
   struct Banking {
     double internalP = 0.02;
   } banking;
+
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
+
+    r.check([&] { v::positive("core.corePerTenK", core.corePerTenK); });
+    r.check([&] { v::nonNegative("core.coreFloor", core.coreFloor); });
+    r.check([&] { v::positive("core.sizeSigma", core.sizeSigma); });
+
+    r.check([&] { v::nonNegative("tail.perTenK", tail.perTenK); });
+    r.check([&] { v::unit("tail.share", tail.share); });
+    r.check([&] { v::positive("tail.sizeSigma", tail.sizeSigma); });
+
+    r.check([&] { v::unit("banking.internalP", banking.internalP); });
+  }
 };
 
 using identifiers::Bank;
@@ -44,9 +59,6 @@ namespace detail {
 
 } // namespace detail
 
-/// Build the merchant catalog. Returns the catalog directly — there is
-/// no Pack wrapper, because there is nothing else to bundle alongside
-/// it. Drop one level of indirection at every consumer.
 [[nodiscard]] inline entity::merchant::Catalog
 makeCatalog(random::Rng &rng, int population, const GenerationPlan &plan = {}) {
   const int coreCount =

@@ -5,6 +5,7 @@
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/landlords/scale.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 
@@ -52,6 +53,13 @@ struct InBankProbability {
   [[nodiscard]] constexpr double forType(landlord::Type type) const noexcept {
     return byType[enumTax::toIndex(type)];
   }
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    for (double p : byType) {
+      r.check([&] {
+        ::PhantomLedger::primitives::validate::unit("inBankP.byType", p);
+      });
+    }
+  }
 };
 
 struct GenerationPlan {
@@ -65,6 +73,18 @@ struct GenerationPlan {
   }};
 
   InBankProbability inBankP;
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
+
+    r.check([&] { v::nonNegative("perTenK", perTenK); });
+    r.check([&] { v::nonNegative("floor", floor); });
+
+    for (const auto &share : mix) {
+      r.check([&] { v::nonNegative("mix.weight", share.weight); });
+    }
+
+    inBankP.validate(r);
+  }
 };
 
 using identifiers::Bank;

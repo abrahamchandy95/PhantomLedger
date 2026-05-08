@@ -12,139 +12,112 @@
 #include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/entities/synth/products/institutional.hpp"
 #include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 
 #include <array>
 #include <cassert>
 #include <span>
-#include <stdexcept>
 #include <vector>
 
 namespace PhantomLedger::pipeline::stages::entities {
 
-void validate(std::int32_t population) {
-  if (population < 0) {
-    throw std::invalid_argument("entities: population must be >= 0");
-  }
-}
-
-void validate(
-    const ::PhantomLedger::entities::synth::accounts::Sizing &sizing) {
-  if (sizing.maxAccountsPerPerson < 1) {
-    throw std::invalid_argument("entities: maxAccountsPerPerson must be >= 1");
-  }
-}
-
-[[nodiscard]] IdentitySource
-withDefaultStart(IdentitySource identity,
-                 ::PhantomLedger::time::TimePoint fallbackStart) {
-  if (identity.simStart == ::PhantomLedger::time::TimePoint{}) {
+[[nodiscard]] IdentitySource defaultStart(IdentitySource identity,
+                                          pl::time::TimePoint fallbackStart) {
+  if (identity.simStart == pl::time::TimePoint{}) {
     identity.simStart = fallbackStart;
   }
 
   return identity;
 }
 
-[[nodiscard]] ::PhantomLedger::entities::synth::people::Pack
-buildPeople(::PhantomLedger::random::Rng &rng, std::int32_t population,
-            const ::PhantomLedger::entities::synth::people::Fraud &fraud) {
-  validate(population);
+[[nodiscard]] synth::people::Pack
+buildPeople(pl::random::Rng &rng, std::int32_t population,
+            const synth::people::Fraud &fraud) {
+  pl::primitives::validate::nonNegative("population", population);
 
-  return ::PhantomLedger::entities::synth::people::make(rng, population, fraud);
+  return synth::people::make(rng, population, fraud);
 }
 
-[[nodiscard]] ::PhantomLedger::entities::synth::accounts::Pack buildAccounts(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::entities::synth::people::Pack &people,
-    std::int32_t population,
-    const ::PhantomLedger::entities::synth::accounts::Sizing &sizing) {
-  validate(population);
-  validate(sizing);
+[[nodiscard]] synth::accounts::Pack
+buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
+              std::int32_t population, const synth::accounts::Sizing &sizing) {
+  pl::primitives::validate::nonNegative("population", population);
 
-  return ::PhantomLedger::entities::synth::accounts::makePack(
-      rng, people.roster, sizing.maxAccountsPerPerson);
+  pl::primitives::validate::require(sizing);
+
+  return synth::accounts::makePack(rng, people.roster,
+                                   sizing.maxAccountsPerPerson);
 }
 
-[[nodiscard]] ::PhantomLedger::entities::synth::personas::Pack
-buildPersonas(::PhantomLedger::random::Rng &rng,
-              const ::PhantomLedger::entities::synth::people::Pack &people,
-              const ::PhantomLedger::entities::synth::personas::Mix &mix) {
+[[nodiscard]] synth::personas::Pack
+buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
+              const synth::personas::Mix &mix) {
   const std::uint64_t personasSeed = rng.nextU64();
 
-  return ::PhantomLedger::entities::synth::personas::makePack(
-      rng, people.roster.count, personasSeed, mix);
+  return synth::personas::makePack(rng, people.roster.count, personasSeed, mix);
 }
 
-[[nodiscard]] ::PhantomLedger::entity::pii::Roster
-buildPii(::PhantomLedger::random::Rng &rng,
-         const ::PhantomLedger::entities::synth::personas::Pack &personas,
+[[nodiscard]] entity::pii::Roster
+buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
          IdentitySource identity) {
   assert(identity.pools != nullptr &&
          "buildPii: IdentitySource::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
 
-  return ::PhantomLedger::entities::synth::pii::make(
-      rng, personas.assignment, identity.simStart, identity.localeMix,
-      *identity.pools);
+  return synth::pii::make(rng, personas.assignment, identity.simStart,
+                          identity.localeMix, *identity.pools);
 }
 
-[[nodiscard]] ::PhantomLedger::entity::merchant::Catalog buildMerchants(
-    ::PhantomLedger::random::Rng &rng, std::int32_t population,
-    const ::PhantomLedger::entities::synth::merchants::GenerationPlan &plan) {
-  validate(population);
-
-  return ::PhantomLedger::entities::synth::merchants::makeCatalog(
-      rng, population, plan);
+[[nodiscard]] entity::merchant::Catalog
+buildMerchants(pl::random::Rng &rng, std::int32_t population,
+               const synth::merchants::GenerationPlan &plan) {
+  pl::primitives::validate::nonNegative("population", population);
+  pl::primitives::validate::require(plan);
+  return synth::merchants::makeCatalog(rng, population, plan);
 }
 
-[[nodiscard]] ::PhantomLedger::entities::synth::landlords::Pack buildLandlords(
-    ::PhantomLedger::random::Rng &rng, std::int32_t population,
-    const ::PhantomLedger::entities::synth::landlords::GenerationPlan &plan) {
-  validate(population);
+[[nodiscard]] synth::landlords::Pack
+buildLandlords(pl::random::Rng &rng, std::int32_t population,
+               const synth::landlords::GenerationPlan &plan) {
+  pl::primitives::validate::nonNegative("population", population);
 
-  return ::PhantomLedger::entities::synth::landlords::makePack(rng, population,
-                                                               plan);
+  pl::primitives::validate::require(plan);
+
+  return synth::landlords::makePack(rng, population, plan);
 }
 
-[[nodiscard]] ::PhantomLedger::entity::card::Registry issueCreditCards(
-    const ::PhantomLedger::entities::synth::personas::Pack &personas,
-    const ::PhantomLedger::entities::synth::people::Pack &people,
-    std::uint64_t topLevelSeed,
-    const ::PhantomLedger::entities::synth::cards::IssuanceRules &issuance) {
-  return ::PhantomLedger::entities::synth::cards::issue(
-      ::PhantomLedger::entities::synth::cards::deriveCardSeed(topLevelSeed),
-      personas.table, people.roster.count, issuance);
+[[nodiscard]] entity::card::Registry
+issueCreditCards(const synth::personas::Pack &personas,
+                 const synth::people::Pack &people, std::uint64_t topLevelSeed,
+                 const synth::cards::IssuanceRules &issuance) {
+  return synth::cards::issue(synth::cards::deriveCardSeed(topLevelSeed),
+                             personas.table, people.roster.count, issuance);
 }
 
-[[nodiscard]] ::PhantomLedger::entity::counterparty::Directory
-buildCounterparties(
-    ::PhantomLedger::random::Rng &rng, std::int32_t population,
-    const ::PhantomLedger::entities::synth::counterparties::CounterpartyTargets
-        &targets) {
-  validate(population);
+[[nodiscard]] entity::counterparty::Directory
+buildCounterparties(pl::random::Rng &rng, std::int32_t population,
+                    const synth::counterparties::CounterpartyTargets &targets) {
+  pl::primitives::validate::nonNegative("population", population);
 
-  return ::PhantomLedger::entities::synth::counterparties::make(rng, population,
-                                                                targets);
+  pl::primitives::validate::require(targets);
+
+  return synth::counterparties::make(rng, population, targets);
 }
 
-void finalizeAccountRegistry(::PhantomLedger::pipeline::Entities &entities) {
-  using ::PhantomLedger::entities::synth::accounts::addAccounts;
-  using Key = ::PhantomLedger::entity::Key;
-  namespace institutional =
-      ::PhantomLedger::entities::synth::products::institutional;
+void finalizeAccountRegistry(pl::pipeline::Entities &entities) {
+  using synth::accounts::addAccounts;
+  using Key = entity::Key;
+  namespace institutional = synth::products::institutional;
 
-  // 1. Bank-internal system accounts referenced by ChronoReplayAccumulator
-  //    liquidity events (overdraft fees, OD line of credit).
   const std::array<Key, 3> systemKeys{
-      ::PhantomLedger::transfers::legit::ledger::bankFeeCollectionKey(),
-      ::PhantomLedger::transfers::legit::ledger::bankOdLocKey(),
-      ::PhantomLedger::entity::makeKey(::PhantomLedger::entity::Role::merchant,
-                                       ::PhantomLedger::entity::Bank::external,
-                                       /*number=*/1ULL),
+      pl::transfers::legit::ledger::bankFeeCollectionKey(),
+      pl::transfers::legit::ledger::bankOdLocKey(),
+      entity::makeKey(entity::Role::merchant, entity::Bank::external,
+                      /*number=*/1ULL),
   };
   addAccounts(entities.accounts, std::span<const Key>{systemKeys},
               /*external=*/true);
 
-  // 2. Institutional product counterparties.
   const std::array<Key, 7> institutionalKeys{
       institutional::mortgageLender(),  institutional::autoLender(),
       institutional::studentServicer(), institutional::irsTreasury(),
@@ -154,10 +127,6 @@ void finalizeAccountRegistry(::PhantomLedger::pipeline::Entities &entities) {
   addAccounts(entities.accounts, std::span<const Key>{institutionalKeys},
               /*external=*/true);
 
-  // 3. Merchant counterparty IDs — destinations for the spending pass.
-  //    `entities.merchants` is now an `entity::merchant::Catalog` directly
-  //    (not a Pack wrapper), so we read `.records` instead of
-  //    `.catalog.records`.
   {
     std::vector<Key> keys;
     keys.reserve(entities.merchants.records.size());
@@ -168,7 +137,6 @@ void finalizeAccountRegistry(::PhantomLedger::pipeline::Entities &entities) {
                 /*external=*/true);
   }
 
-  // 4. Landlord account IDs — destinations for the rent pass.
   {
     std::vector<Key> keys;
     keys.reserve(entities.landlords.roster.records.size());

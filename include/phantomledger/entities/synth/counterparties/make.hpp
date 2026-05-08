@@ -3,6 +3,7 @@
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <algorithm>
@@ -27,11 +28,23 @@ struct ScaledCount {
 
     return std::max(minCount, scaled);
   }
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    namespace v = ::PhantomLedger::primitives::validate;
+    r.check([&] { v::nonNegative("perTenK", perTenK); });
+    r.check([&] { v::nonNegative("minCount", minCount); });
+  }
 };
 
 struct BankedPoolTargets {
   ScaledCount count{};
   double internalBankP = 0.0;
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    count.validate(r);
+    r.check([&] {
+      ::PhantomLedger::primitives::validate::unit("internalBankP",
+                                                  internalBankP);
+    });
+  }
 };
 
 struct ExternalPoolTargets {
@@ -39,6 +52,13 @@ struct ExternalPoolTargets {
   ScaledCount processors{.perTenK = 1.0, .minCount = 2};
   ScaledCount ownerBusinesses{.perTenK = 200.0, .minCount = 25};
   ScaledCount brokerages{.perTenK = 40.0, .minCount = 5};
+
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    platforms.validate(r);
+    processors.validate(r);
+    ownerBusinesses.validate(r);
+    brokerages.validate(r);
+  }
 };
 
 struct CounterpartyTargets {
@@ -53,6 +73,11 @@ struct CounterpartyTargets {
   };
 
   ExternalPoolTargets external{};
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    employers.validate(r);
+    clients.validate(r);
+    external.validate(r);
+  }
 };
 
 namespace detail {
