@@ -10,7 +10,7 @@
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
-#include "phantomledger/transfers/credit_cards/lifecycle.hpp"
+#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
 #include <chrono>
 #include <cstdint>

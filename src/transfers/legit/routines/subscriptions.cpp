@@ -3,7 +3,7 @@
 #include "phantomledger/entropy/random/factory.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transfers/subscriptions/debits.hpp"
+#include "phantomledger/transfers/channels/subscriptions/debits.hpp"
 
 #include <cstddef>
 #include <span>
