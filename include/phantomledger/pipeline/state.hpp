@@ -2,11 +2,11 @@
 
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
-#include "phantomledger/entities/synth/merchants/pack.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
@@ -32,7 +32,7 @@ struct Entities {
   entities::synth::people::Pack people;
   entities::synth::accounts::Pack accounts;
   entity::pii::Roster pii;
-  entities::synth::merchants::Pack merchants;
+  entity::merchant::Catalog merchants;
   entities::synth::landlords::Pack landlords;
   entities::synth::personas::Pack personas;
   entity::card::Registry creditCards;
@@ -80,8 +80,6 @@ struct TransferLedger {
   PostedLedgerReplay posted;
 };
 
-/// Fraud emission telemetry retained after the injected transaction stream has
-/// been folded into the posted ledger.
 struct FraudInjectionSummary {
   std::size_t injectedCount = 0;
 };

@@ -2,7 +2,6 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/synth/merchants/pack.hpp"
 #include "phantomledger/entities/synth/merchants/weights.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
@@ -45,8 +44,11 @@ namespace detail {
 
 } // namespace detail
 
-[[nodiscard]] inline Pack makePack(random::Rng &rng, int population,
-                                   const GenerationPlan &plan = {}) {
+/// Build the merchant catalog. Returns the catalog directly — there is
+/// no Pack wrapper, because there is nothing else to bundle alongside
+/// it. Drop one level of indirection at every consumer.
+[[nodiscard]] inline entity::merchant::Catalog
+makeCatalog(random::Rng &rng, int population, const GenerationPlan &plan = {}) {
   const int coreCount =
       std::max(plan.core.coreFloor,
                static_cast<int>(
@@ -79,8 +81,8 @@ namespace detail {
   const double coreShare = 1.0 - plan.tail.share;
   const double tailShare = plan.tail.share;
 
-  Pack out;
-  out.catalog.records.reserve(static_cast<std::size_t>(total));
+  entity::merchant::Catalog out;
+  out.records.reserve(static_cast<std::size_t>(total));
 
   for (int i = 0; i < total; ++i) {
     const auto category =
@@ -95,7 +97,7 @@ namespace detail {
             ? coreWeights[static_cast<std::size_t>(i)] * coreShare
             : tailWeights[static_cast<std::size_t>(i - coreCount)] * tailShare;
 
-    out.catalog.records.push_back(entity::merchant::Record{
+    out.records.push_back(entity::merchant::Record{
         .label = entity::merchant::Label{serial},
         .counterpartyId = detail::makeId(internal, serial),
         .category = category,

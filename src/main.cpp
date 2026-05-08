@@ -1,4 +1,5 @@
 #include "phantomledger/entities/synth/pii/pools.hpp"
+#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
@@ -10,27 +11,37 @@
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
-#include <cerrno>
+#include <algorithm>
+#include <cassert>
+#include <charconv>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <limits>
 #include <optional>
+#include <print>
 #include <string>
 #include <string_view>
-#include <vector>
+#include <system_error>
+#include <utility>
 
 namespace {
 
 namespace pl = ::PhantomLedger;
+namespace pii = pl::entities::synth::pii;
 
+// TODO: make this file light
+
+// TODO: improve cli args - progress always true, explicit usecase only out
 struct CliArgs {
   pl::run::UseCase usecase = pl::run::UseCase::standard;
   std::int64_t days = 365;
-  std::int32_t population = 10'000;
+  std::int32_t population = 70'000;
   std::uint64_t seed = 0xDEADBEEFULL;
   std::filesystem::path outDir = "out_bank_data";
   bool showTransactions = false;
@@ -51,7 +62,7 @@ void printUsage(const char *prog) {
                "  --days N                          Simulation length in days "
                "(default: 365)\n"
                "  --population N                    Total population "
-               "(default: 10000)\n"
+               "(default: 70000)\n"
                "  --seed N                          Top-level RNG seed "
                "(default: 0xDEADBEEF)\n"
                "  --out PATH                        Output directory "
@@ -68,20 +79,18 @@ void printUsage(const char *prog) {
                prog);
 }
 
+// TODO: lift parseInt / parseU64 / parseDate into a cli/parsers.hpp helper
+// module once a second consumer appears
 [[nodiscard]] std::optional<std::int64_t> parseInt(std::string_view s) {
   if (s.empty()) {
     return std::nullopt;
   }
 
-  std::string buf{s};
-  char *end = nullptr;
-  errno = 0;
-
-  const auto value = std::strtoll(buf.c_str(), &end, 10);
-  if (end != buf.c_str() + buf.size() || errno == ERANGE) {
+  std::int64_t value{};
+  const auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+  if (ec != std::errc{} || ptr != s.data() + s.size()) {
     return std::nullopt;
   }
-
   return value;
 }
 
@@ -90,15 +99,25 @@ void printUsage(const char *prog) {
     return std::nullopt;
   }
 
-  std::string buf{s};
-  char *end = nullptr;
-  errno = 0;
+  int base = 10;
+  if (s.starts_with("0x") || s.starts_with("0X")) {
+    base = 16;
+    s.remove_prefix(2);
+  } else if (s.starts_with('0') && s.size() > 1) {
+    base = 8;
+    s.remove_prefix(1);
+  }
 
-  const auto value = std::strtoull(buf.c_str(), &end, 0);
-  if (end != buf.c_str() + buf.size() || errno == ERANGE) {
+  if (s.empty()) {
     return std::nullopt;
   }
 
+  std::uint64_t value{};
+  const auto [ptr, ec] =
+      std::from_chars(s.data(), s.data() + s.size(), value, base);
+  if (ec != std::errc{} || ptr != s.data() + s.size()) {
+    return std::nullopt;
+  }
   return value;
 }
 
@@ -127,8 +146,10 @@ parseDate(std::string_view s) {
 [[nodiscard]] CliArgs parseArgs(int argc, char **argv) {
   CliArgs args;
 
-  const auto die = [&](const std::string &msg) -> void {
-    std::fprintf(stderr, "%s\n\n", msg.c_str());
+  auto die = [&]<typename... T>(std::format_string<T...> fmt,
+                                T &&...formatArgs) {
+    std::println(stderr, fmt, std::forward<T>(formatArgs)...);
+    std::println(stderr, "");
     printUsage(argv[0]);
     std::exit(2);
   };
@@ -136,11 +157,9 @@ parseDate(std::string_view s) {
   const auto requireValue = [&](int &i,
                                 std::string_view flag) -> std::string_view {
     if (i + 1 >= argc) {
-      die("Missing value for " + std::string{flag});
+      die("Missing value for {}", flag);
     }
-
-    ++i;
-    return std::string_view{argv[i]};
+    return argv[++i];
   };
 
   for (int i = 1; i < argc; ++i) {
@@ -153,24 +172,21 @@ parseDate(std::string_view s) {
 
     if (arg == "--usecase") {
       const auto value = requireValue(i, arg);
-      const auto parsed = pl::run::parseUseCase(value);
-      if (!parsed) {
-        die("Unknown --usecase value: " + std::string{value});
+      if (const auto parsed = pl::run::parseUseCase(value)) {
+        args.usecase = *parsed;
+      } else {
+        die("Unknown --usecase value: {}", value);
       }
-
-      args.usecase = *parsed;
       continue;
     }
 
     if (arg == "--days") {
       const auto value = requireValue(i, arg);
-      const auto parsed = parseInt(value);
-      if (!parsed || *parsed < 1) {
-        die("--days must be a positive integer (got " + std::string{value} +
-            ")");
+      if (const auto parsed = parseInt(value); parsed && *parsed > 0) {
+        args.days = *parsed;
+      } else {
+        die("--days must be a positive integer (got {})", value);
       }
-
-      args.days = *parsed;
       continue;
     }
 
@@ -179,40 +195,34 @@ parseDate(std::string_view s) {
       const auto parsed = parseInt(value);
       if (!parsed || *parsed < 1 ||
           *parsed > std::numeric_limits<std::int32_t>::max()) {
-        die("--population must fit in a positive int32 (got " +
-            std::string{value} + ")");
+        die("--population must fit in a positive int32 (got {})", value);
       }
-
       args.population = static_cast<std::int32_t>(*parsed);
       continue;
     }
 
     if (arg == "--seed") {
       const auto value = requireValue(i, arg);
-      const auto parsed = parseU64(value);
-      if (!parsed) {
-        die("--seed must be a non-negative integer (got " + std::string{value} +
-            ")");
+      if (const auto parsed = parseU64(value)) {
+        args.seed = *parsed;
+      } else {
+        die("--seed must be a non-negative integer (got {})", value);
       }
-
-      args.seed = *parsed;
       continue;
     }
 
     if (arg == "--out") {
-      const auto value = requireValue(i, arg);
-      args.outDir = std::filesystem::path{value};
+      args.outDir = requireValue(i, arg);
       continue;
     }
 
     if (arg == "--start") {
       const auto value = requireValue(i, arg);
-      const auto parsed = parseDate(value);
-      if (!parsed) {
-        die("--start must be YYYY-MM-DD (got " + std::string{value} + ")");
+      if (const auto parsed = parseDate(value)) {
+        args.startDate = *parsed;
+      } else {
+        die("--start must be YYYY-MM-DD (got {})", value);
       }
-
-      args.startDate = *parsed;
       continue;
     }
 
@@ -231,41 +241,67 @@ parseDate(std::string_view s) {
       continue;
     }
 
-    die("Unknown argument: " + std::string{arg});
+    die("Unknown argument: {}", arg);
   }
 
   return args;
 }
 
-[[nodiscard]] pl::entities::synth::pii::PoolSet
-buildDefaultPoolSet(std::uint64_t seed) {
-  pl::entities::synth::pii::PoolSet poolSet;
-  pl::entities::synth::pii::PoolSizes sizes;
+[[nodiscard]] std::size_t
+poolSizeForFraction(double fraction, std::int32_t population) noexcept {
+  constexpr std::size_t kPoolFloor = 1'000;
+  constexpr std::size_t kPoolCap = 50'000;
 
-  const auto derived = static_cast<std::uint32_t>(seed ^ 0xA5A5A5A5ULL);
-  poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
-      pl::entities::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
-                                                derived);
-
-  return poolSet;
+  const auto expected = static_cast<std::size_t>(
+      std::ceil(static_cast<double>(population) * fraction));
+  const std::size_t targetN =
+      (expected > kPoolCap / 4) ? kPoolCap : expected * 4;
+  return std::max(kPoolFloor, targetN);
 }
 
+[[nodiscard]] std::uint32_t derivePoolSeed(std::uint64_t topLevelSeed,
+                                           std::size_t countryIdx) noexcept {
+  constexpr std::uint64_t kPoolSeedDomain = 0xA5A5A5A5ULL;
+  constexpr std::uint64_t kCountryMixer = 0x9E3779B9ULL;
+  return static_cast<std::uint32_t>(
+      topLevelSeed ^ kPoolSeedDomain ^
+      (static_cast<std::uint64_t>(countryIdx) * kCountryMixer));
+}
+
+[[nodiscard]] pii::LocalePool generateLocalePool(pl::locale::Country country,
+                                                 double fraction,
+                                                 std::int32_t population,
+                                                 std::uint64_t seed) {
+  assert(fraction > 0.0 && "Caller must filter zero-weight countries.");
+
+  const auto idx = pl::taxonomies::enums::toIndex(country);
+  const auto poolN = poolSizeForFraction(fraction, population);
+
+  const pii::PoolSizes sizes{
+      .firstNames = poolN,
+      .middleNames = poolN,
+      .lastNames = poolN,
+      .streets = poolN,
+  };
+
+  return pii::buildLocalePool(country, sizes, derivePoolSeed(seed, idx));
+}
+
+/// Build the EntitySynthesis config tree.
+///
+/// The struct is flat. main provides the user-owned fields explicitly
+/// (`population`, `identity`); calibration fields use their
+/// research-backed defaults via designated-init omission.
 [[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
-buildEntitySynthesis(const CliArgs &args,
-                     const pl::entities::synth::pii::PoolSet &poolSet,
-                     pl::time::TimePoint simStart) {
+createSynthesisConfig(const CliArgs &args, const pii::PoolSet &pools,
+                      const pii::LocaleMix &mix, pl::time::TimePoint simStart) {
   return pl::pipeline::stages::entities::EntitySynthesis{
-      .people =
-          pl::pipeline::stages::entities::PeopleSynthesis{
-              .identity =
-                  pl::pipeline::stages::entities::IdentitySource{
-                      .pools = poolSet,
-                      .simStart = simStart,
-                  },
-              .population =
-                  pl::pipeline::stages::entities::PopulationSizing{
-                      .count = args.population,
-                  },
+      .population = args.population,
+      .identity =
+          pl::pipeline::stages::entities::IdentitySource{
+              .pools = &pools,
+              .simStart = simStart,
+              .localeMix = mix,
           },
   };
 }
@@ -274,18 +310,15 @@ void runStandardExport(const pl::pipeline::SimulationResult &result,
                        const CliArgs &args) {
   pl::exporter::standard::Options opts;
   opts.showTransactions = args.showTransactions;
-
   pl::exporter::standard::exportAll(result, args.outDir, opts);
 }
 
 void runMuleMlExport(const pl::pipeline::SimulationResult &result,
-                     const CliArgs &args,
-                     const pl::entities::synth::pii::PoolSet *piiPools) {
+                     const CliArgs &args, const pii::PoolSet *piiPools) {
   pl::exporter::mule_ml::Options opts;
   opts.showTransactions = args.showTransactions;
   opts.includeStandardExport = !args.mlOnly;
   opts.piiPools = piiPools;
-
   pl::exporter::mule_ml::exportAll(result, args.outDir, opts);
 }
 
@@ -294,7 +327,6 @@ runAmlExport(const pl::pipeline::SimulationResult &result,
              const CliArgs &args) {
   pl::exporter::aml::Options opts;
   opts.showTransactions = args.showTransactions;
-
   return pl::exporter::aml::exportAll(result, args.outDir, opts);
 }
 
@@ -350,13 +382,32 @@ int main(int argc, char **argv) {
     window.start = pl::time::makeTime(args.startDate);
     window.days = static_cast<int>(args.days);
 
-    const auto poolSet = buildDefaultPoolSet(args.seed);
-    const auto entitySynthesis =
-        buildEntitySynthesis(args, poolSet, window.start);
+    const auto mix = pii::LocaleMix::usBankDefault();
+
+    double totalWeight = 0.0;
+    for (const auto w : mix.weights) {
+      totalWeight += w;
+    }
+
+    pii::PoolSet poolSet;
+    if (totalWeight > 0.0) {
+      for (const auto country : pl::locale::kCountries) {
+        const auto idx = pl::taxonomies::enums::toIndex(country);
+        const auto weight = mix.weights[idx];
+        if (weight <= 0.0) {
+          continue;
+        }
+        poolSet.byCountry[idx] = generateLocalePool(
+            country, weight / totalWeight, args.population, args.seed);
+      }
+    }
+
+    const auto entityConfig =
+        createSynthesisConfig(args, poolSet, mix, window.start);
 
     auto rng = pl::random::Rng::fromSeed(args.seed);
     const auto result =
-        pl::pipeline::simulate(rng, window, entitySynthesis, args.seed);
+        pl::pipeline::simulate(rng, window, entityConfig, args.seed);
 
     switch (args.usecase) {
     case pl::run::UseCase::standard:

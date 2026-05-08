@@ -82,39 +82,45 @@ SimulationPipeline::transferStage() const noexcept {
 SimulationResult SimulationPipeline::run() const {
   SimulationResult out;
 
-  entityStage::validate(entities_.people.population);
+  // EntitySynthesis is now flat. Population, identity, and every
+  // calibration field sit at the top level — no PeopleSynthesis or
+  // CounterpartySynthesis indirection.
+  entityStage::validate(entities_.population);
 
   const auto identity =
-      entityStage::withDefaultStart(entities_.people.identity, window_.start);
+      entityStage::withDefaultStart(entities_.identity, window_.start);
 
-  out.entities.people = entityStage::buildPeople(
-      *rng_, entities_.people.population, entities_.people.fraud);
+  out.entities.people =
+      entityStage::buildPeople(*rng_, entities_.population, entities_.fraud);
 
-  out.entities.accounts = entityStage::buildAccounts(
-      *rng_, out.entities.people, entities_.people.population);
+  out.entities.accounts = entityStage::buildAccounts(*rng_, out.entities.people,
+                                                     entities_.population,
+                                                     entities_.accountsSizing);
 
-  out.entities.personas = entityStage::buildPersonas(
-      *rng_, out.entities.people, entities_.people.personaMix);
+  out.entities.personas = entityStage::buildPersonas(*rng_, out.entities.people,
+                                                     entities_.personaMix);
 
   out.entities.pii =
       entityStage::buildPii(*rng_, out.entities.personas, identity);
 
+  // buildMerchants returns entity::merchant::Catalog directly.
   out.entities.merchants = entityStage::buildMerchants(
-      *rng_, entities_.people.population, entities_.counterparties.merchants);
+      *rng_, entities_.population, entities_.merchants);
 
   out.entities.landlords = entityStage::buildLandlords(
-      *rng_, entities_.people.population, entities_.counterparties.landlords);
+      *rng_, entities_.population, entities_.landlords);
 
+  // issueCreditCards takes the user's top-level seed and derives the
+  // card-subsystem subseed via deriveCardSeed (cards/seeds.hpp).
   out.entities.creditCards = entityStage::issueCreditCards(
-      out.entities.personas, out.entities.people, entities_.cards);
+      out.entities.personas, out.entities.people, seed_, entities_.cards);
 
-  out.entities.counterparties =
-      entityStage::buildCounterparties(*rng_, entities_.people.population,
-                                       entities_.counterparties.counterparties);
+  out.entities.counterparties = entityStage::buildCounterparties(
+      *rng_, entities_.population, entities_.counterpartyTargets);
 
   // Register every external endpoint after entity construction and before
-  // transfers so validation, balance bootstrap, standard export, and AML export
-  // all see the same account registry.
+  // transfers so validation, balance bootstrap, standard export, and AML
+  // export all see the same account registry.
   entityStage::finalizeAccountRegistry(out.entities);
 
   products_.synthesize(out.entities, window_);

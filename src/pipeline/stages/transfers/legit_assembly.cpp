@@ -111,7 +111,7 @@ makeRoutinePass(::PhantomLedger::random::Rng &rng,
       },
       legit_ledger::passes::RoutineResources{
           .accountsLookup = &entities.accounts.lookup,
-          .merchants = &entities.merchants.catalog,
+          .merchants = &entities.merchants,
           .portfolios = &entities.portfolios,
           .creditCards = &entities.creditCards,
       },
@@ -126,7 +126,7 @@ makeFamilyPass(const ::PhantomLedger::pipeline::Entities &entities) {
           .registry = &entities.accounts.registry,
           .ownership = &entities.accounts.ownership,
       },
-      &entities.merchants.catalog,
+      &entities.merchants,
   };
 }
 
