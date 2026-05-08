@@ -3,7 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"

@@ -6,12 +6,11 @@
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
 #include <cstdint>
 #include <stdexcept>
-#include <utility>
 
 namespace PhantomLedger::entities::synth::pii {
 

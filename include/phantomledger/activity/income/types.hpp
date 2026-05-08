@@ -5,7 +5,7 @@
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/landlords.hpp"
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
@@ -59,10 +59,6 @@ struct Timeframe {
     r.check([&] { v::nonNegative("days", days); });
   }
 };
-
-// ---------------------------------------------------------------
-// Entropy
-// ---------------------------------------------------------------
 
 struct Entropy {
   random::RngFactory factory{0};

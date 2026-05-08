@@ -1,14 +1,6 @@
 #pragma once
-/*
- * Transaction factory.
- *
- * Constructs final Transaction records from Drafts by attaching
- * infrastructure routing (device_id, ip_address). During fraud
- * transactions, the factory uses shared ring infra with high
- * probability, falling back to personal infra.
- */
 
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"

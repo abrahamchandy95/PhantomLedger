@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"

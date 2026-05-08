@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 

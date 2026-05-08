@@ -1,6 +1,6 @@
 #include "phantomledger/relationships/family/builder.hpp"
 
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/relationships/family/links.hpp"
 #include "phantomledger/relationships/family/partition.hpp"
 #include "phantomledger/relationships/family/support.hpp"

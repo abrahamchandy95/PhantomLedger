@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
 
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/limits.hpp"

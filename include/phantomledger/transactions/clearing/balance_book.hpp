@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/behaviors.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "normal.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <algorithm>
 #include <cmath>

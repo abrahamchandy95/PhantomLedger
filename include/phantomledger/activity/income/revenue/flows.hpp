@@ -4,7 +4,7 @@
 #include "phantomledger/activity/income/revenue/draw.hpp"
 #include "phantomledger/activity/income/revenue/profiles.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"

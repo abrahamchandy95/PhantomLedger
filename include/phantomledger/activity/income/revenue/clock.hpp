@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/income/revenue/draw.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 

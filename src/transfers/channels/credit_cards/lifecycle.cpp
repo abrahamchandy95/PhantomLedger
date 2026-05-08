@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
-#include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
 #include "phantomledger/transfers/channels/credit_cards/detail/session.hpp"

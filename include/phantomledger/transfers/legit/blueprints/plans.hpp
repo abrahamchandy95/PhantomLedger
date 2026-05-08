@@ -5,7 +5,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"

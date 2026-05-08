@@ -1,5 +1,5 @@
-#include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 
 #include "test_support.hpp"

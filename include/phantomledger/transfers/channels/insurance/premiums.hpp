@@ -1,13 +1,8 @@
 #pragma once
-/*
- * Insurance premium emitter.
- * Claims continue to fire normally and are handled by the sibling
- * `claims.hpp` API.
- */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"

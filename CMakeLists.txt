@@ -25,14 +25,11 @@ FetchContent_MakeAvailable(faker-cxx)
 
 set(BUILD_TESTING ON CACHE BOOL "" FORCE)
 
-set(PL_ENTROPY_SOURCES
-    src/entropy/crypto/blake2b.cpp
-    src/entropy/random/rng.cpp
-)
-
 set(PL_PRIMITIVES_SOURCES
     src/primitives/time/almanac.cpp
     src/primitives/time/calendar.cpp
+    src/primitives/crypto/blake2b.cpp
+    src/primitives/random/rng.cpp
 )
 
 set(PL_TRANSACTIONS_SOURCES
@@ -183,7 +180,6 @@ set(PL_PIPELINE_SOURCES
 )
 
 set(PL_ALL_SOURCES
-    ${PL_ENTROPY_SOURCES}
     ${PL_PRIMITIVES_SOURCES}
     ${PL_TRANSACTIONS_SOURCES}
     ${PL_ENTITIES_SOURCES}

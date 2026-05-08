@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entropy/crypto/blake2b.hpp"
+#include "phantomledger/primitives/crypto/blake2b.hpp"
 
 #include <array>
 #include <concepts>

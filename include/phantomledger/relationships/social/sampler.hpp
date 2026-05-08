@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/relationships/social/communities.hpp"
 
 #include <cstdint>

@@ -3,7 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/synth/merchants/weights.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"

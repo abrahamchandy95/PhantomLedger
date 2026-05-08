@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/primitives/hashing/combine.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
 

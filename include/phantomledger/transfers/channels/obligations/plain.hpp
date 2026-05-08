@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/draft.hpp"

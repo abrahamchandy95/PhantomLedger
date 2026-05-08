@@ -15,7 +15,7 @@
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 

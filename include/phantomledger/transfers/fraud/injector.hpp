@@ -4,7 +4,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
@@ -20,18 +20,6 @@
 
 namespace PhantomLedger::transfers::fraud {
 
-/// Injects camouflage and illicit fraud transactions into a stream of
-/// otherwise-legitimate transactions.
-///
-/// **SOLID note.** The previous version of this header carried an
-/// `Injector::Patterns` struct that bundled `TypologyWeights`,
-/// `LayeringRules`, `StructuringRules`, and `CamouflageRates` together.
-/// That was a Single-Responsibility violation: each rule set has its
-/// own reason to change and is owned by a different subsystem. The
-/// rules now live next to the typology / layer that uses them, and
-/// the `Injector` exposes per-component setters. Adding a new
-/// typology with new rules adds one file and one setter; nothing
-/// else has to change.
 class Injector {
 public:
   struct Services {

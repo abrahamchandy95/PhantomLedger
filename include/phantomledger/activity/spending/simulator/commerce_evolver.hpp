@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/activity/spending/market/market.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/math/evolution.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
 

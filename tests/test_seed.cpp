@@ -1,4 +1,4 @@
-#include "phantomledger/entropy/random/seed.hpp"
+#include "phantomledger/primitives/random/seed.hpp"
 
 #include "test_support.hpp"
 

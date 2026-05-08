@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"

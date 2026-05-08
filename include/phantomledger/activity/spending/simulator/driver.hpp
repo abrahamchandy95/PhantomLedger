@@ -5,7 +5,7 @@
 #include "phantomledger/activity/spending/simulator/day_driver.hpp"
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"

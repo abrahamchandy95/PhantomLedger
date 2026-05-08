@@ -1,10 +1,10 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/infra/synth/devices.hpp"
 #include "phantomledger/infra/synth/ips.hpp"
 #include "phantomledger/infra/synth/rings.hpp"
 #include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
@@ -19,9 +19,6 @@ class AccessInfraStage {
 public:
   AccessInfraStage() = default;
 
-  // All setters take by value: every rule struct here is a small POD
-  // (4-32 bytes), so by-value is no more expensive than const& and gives
-  // the API a single, consistent shape.
   AccessInfraStage &window(::PhantomLedger::time::Window value) noexcept;
   AccessInfraStage &
   ringAccess(::PhantomLedger::infra::synth::rings::AccessRules value) noexcept;
