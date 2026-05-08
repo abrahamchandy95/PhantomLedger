@@ -1,9 +1,9 @@
 #pragma once
 
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/infra/synth/types.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 

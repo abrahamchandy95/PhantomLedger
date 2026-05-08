@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/dynamics/momentum/state.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <span>
 

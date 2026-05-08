@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/routines/subscriptions.hpp"
 
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/channels/subscriptions/debits.hpp"

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"

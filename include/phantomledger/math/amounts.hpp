@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/probability/distributions/gamma.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"

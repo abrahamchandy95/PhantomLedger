@@ -12,7 +12,7 @@
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 

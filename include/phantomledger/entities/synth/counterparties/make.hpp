@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 

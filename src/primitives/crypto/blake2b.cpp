@@ -1,4 +1,4 @@
-#include "phantomledger/entropy/crypto/blake2b.hpp"
+#include "phantomledger/primitives/crypto/blake2b.hpp"
 
 #include <algorithm>
 #include <array>

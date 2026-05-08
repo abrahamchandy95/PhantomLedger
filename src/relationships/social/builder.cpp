@@ -1,6 +1,6 @@
 #include "phantomledger/relationships/social/builder.hpp"
 
-#include "phantomledger/entropy/random/factory.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/probability/distributions/gamma.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"

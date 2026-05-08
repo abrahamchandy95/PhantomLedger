@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/products/portfolio.hpp"
-#include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/channels/insurance/premiums.hpp"

@@ -3,7 +3,7 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"

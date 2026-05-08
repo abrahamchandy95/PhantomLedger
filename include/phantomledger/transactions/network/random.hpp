@@ -2,7 +2,7 @@
 
 #include "format.hpp"
 #include "ipv4.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
 #include <string>

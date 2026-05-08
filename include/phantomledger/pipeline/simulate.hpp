@@ -1,11 +1,11 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
 #include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/pipeline/stages/transfers.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
 #include <cstdint>

@@ -5,7 +5,7 @@
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/personas/profile.hpp"
 #include "phantomledger/entities/synth/personas/seeds.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
 

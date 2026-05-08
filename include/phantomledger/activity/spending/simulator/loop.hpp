@@ -8,7 +8,7 @@
 #include "phantomledger/activity/spending/routing/emission_result.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 

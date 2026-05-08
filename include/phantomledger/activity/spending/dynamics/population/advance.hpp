@@ -5,10 +5,10 @@
 #include "phantomledger/activity/spending/dynamics/momentum/state.hpp"
 #include "phantomledger/activity/spending/dynamics/momentum/update.hpp"
 #include "phantomledger/activity/spending/dynamics/paycheck/boost.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/math/dormancy.hpp"
 #include "phantomledger/math/momentus.hpp"
 #include "phantomledger/math/paycheck.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 
 #include <algorithm>

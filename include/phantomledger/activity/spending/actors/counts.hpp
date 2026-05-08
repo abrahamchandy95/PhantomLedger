@@ -3,7 +3,7 @@
 #include "phantomledger/activity/spending/actors/day.hpp"
 #include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/activity/spending/liquidity/factor.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>

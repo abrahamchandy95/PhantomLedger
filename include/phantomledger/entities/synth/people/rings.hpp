@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/probability/distributions/beta.hpp"
 #include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/probability/distributions/poisson.hpp"

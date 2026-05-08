@@ -2,8 +2,8 @@
 
 #include "phantomledger/activity/spending/actors/day.hpp"
 #include "phantomledger/activity/spending/market/bounds.hpp"
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/math/seasonal.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
 

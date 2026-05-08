@@ -1,11 +1,11 @@
 #pragma once
 
-#include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 #include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
 #include "phantomledger/pipeline/stages/transfers/legit_assembly.hpp"
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 #include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/primitives/random/rng.hpp"
 
 namespace PhantomLedger::pipeline::stages::transfers {
 

@@ -1,4 +1,4 @@
-#include "phantomledger/entropy/random/pcg64.hpp"
+#include "phantomledger/primitives/random/pcg64.hpp"
 
 #include "test_support.hpp"
 
