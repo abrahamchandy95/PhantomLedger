@@ -6,7 +6,6 @@
 #include "phantomledger/exporter/mule_ml/party.hpp"
 #include "phantomledger/exporter/mule_ml/transfer.hpp"
 #include "phantomledger/exporter/schema.hpp"
-#include "phantomledger/exporter/standard/export.hpp"
 
 #include <filesystem>
 #include <unordered_map>
@@ -79,14 +78,6 @@ collectPartyIds(const ::PhantomLedger::entity::account::Registry &registry) {
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
-  std::filesystem::create_directories(outDir);
-
-  if (options.includeStandardExport) {
-    ::PhantomLedger::exporter::standard::Options stdOpts{};
-    stdOpts.showTransactions = options.showTransactions;
-    ::PhantomLedger::exporter::standard::exportAll(result, outDir, stdOpts);
-  }
-
   const auto mlDir = outDir / "ml_ready";
   std::filesystem::create_directories(mlDir);
 
