@@ -1,10 +1,4 @@
 #pragma once
-/*
- * Identity primitives.
- * Key is the hashable ID type used across the registry; PersonId is
- * a strong typedef over u32 for a person index in the population
- * roster.
- */
 
 #include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/taxonomies/identifiers/predicates.hpp"

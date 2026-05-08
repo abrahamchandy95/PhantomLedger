@@ -18,7 +18,6 @@ enum class Flag : std::uint8_t {
   return static_cast<std::uint8_t>(f);
 }
 
-/// Per-ring slice (offset + length) into one of the topology stores.
 struct Slice {
   std::uint32_t offset = 0;
   std::uint32_t size = 0;
@@ -41,8 +40,6 @@ struct Roster {
   }
 };
 
-/// Stores are concatenated across rings; Ring's Slices pick out the
-/// contiguous run for a given ring.
 struct Topology {
   std::vector<PersonId> memberStore;
   std::vector<PersonId> fraudStore;

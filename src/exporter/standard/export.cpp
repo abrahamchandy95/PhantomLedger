@@ -68,13 +68,12 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   {
     auto w = openTable(outDir, schema::kMerchant);
-    writeMerchantRows(w, entities.merchants.catalog);
+    writeMerchantRows(w, entities.merchants);
   }
 
   {
     auto w = openTable(outDir, schema::kExternalAccount);
-    writeExternalAccountRows(w, entities.accounts.registry,
-                             entities.merchants.catalog,
+    writeExternalAccountRows(w, entities.accounts.registry, entities.merchants,
                              entities.landlords.roster);
   }
 

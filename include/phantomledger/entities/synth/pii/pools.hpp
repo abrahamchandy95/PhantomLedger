@@ -5,6 +5,7 @@
 #include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -33,12 +34,24 @@ struct LocalePool {
   std::vector<ZipEntry> zipTable;
 };
 
-/// Aggregate of all locale pools, indexed by `Country`.
 struct PoolSet {
   std::array<LocalePool, locale::kCountryCount> byCountry{};
 
   [[nodiscard]] const LocalePool &forCountry(locale::Country c) const noexcept {
-    return byCountry[enumTax::toIndex(c)];
+    const auto &pool = byCountry[enumTax::toIndex(c)];
+
+    assert(pool.country == c &&
+           "PoolSet::forCountry: locale pool slot is unfilled (country tag "
+           "mismatch). buildDefaultPoolSet (or equivalent) did not populate "
+           "this country, but the LocaleMix routes records here. Fill every "
+           "country with positive weight in the mix.");
+
+    assert(
+        !pool.firstNames.empty() &&
+        "PoolSet::forCountry: locale pool has no firstNames. Slot was "
+        "tagged with the right country but never filled by buildLocalePool.");
+
+    return pool;
   }
 };
 

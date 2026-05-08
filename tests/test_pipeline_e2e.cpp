@@ -1,10 +1,10 @@
 #include "phantomledger/entities/synth/pii/pools.hpp"
+#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
-#include "phantomledger/pipeline/stages/transfers.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
@@ -69,6 +69,10 @@ void expectNonEmptyFile(const fs::path &path) {
   return fs::temp_directory_path() / (prefix + buf);
 }
 
+/// Build a US-only PII pool. The accompanying LocaleMix in the test
+/// configuration is `usOnly()`, so no other country's slot will ever be
+/// consulted — the `PoolSet::forCountry` assert in non-US slots stays
+/// dormant by design.
 [[nodiscard]] pl::entities::synth::pii::PoolSet
 buildPoolSet(std::uint64_t seed) {
   pl::entities::synth::pii::PoolSet poolSet;
@@ -88,24 +92,26 @@ buildPoolSet(std::uint64_t seed) {
   return window;
 }
 
+/// Build the EntitySynthesis config tree for the small E2E test.
+///
+/// The struct is flat: `population` and `identity` are top-level
+/// user-owned fields, `fraud` is a top-level calibration field. All
+/// remaining calibration siblings (personaMix, accountsSizing,
+/// merchants/landlords/counterpartyTargets plans, cards) keep their
+/// research-backed defaults via designated-init omission.
 [[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
 smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
                      pl::time::TimePoint simStart,
                      const pl::entities::synth::people::Fraud &fraudProfile) {
   return pl::pipeline::stages::entities::EntitySynthesis{
-      .people =
-          pl::pipeline::stages::entities::PeopleSynthesis{
-              .identity =
-                  pl::pipeline::stages::entities::IdentitySource{
-                      .pools = poolSet,
-                      .simStart = simStart,
-                  },
-              .population =
-                  pl::pipeline::stages::entities::PopulationSizing{
-                      .count = 100,
-                  },
-              .fraud = fraudProfile,
+      .population = 100,
+      .identity =
+          pl::pipeline::stages::entities::IdentitySource{
+              .pools = &poolSet,
+              .simStart = simStart,
+              .localeMix = pl::entities::synth::pii::LocaleMix::usOnly(),
           },
+      .fraud = fraudProfile,
   };
 }
 
