@@ -1,10 +1,10 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"

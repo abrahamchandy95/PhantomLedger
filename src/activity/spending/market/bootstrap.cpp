@@ -2,9 +2,9 @@
 
 #include "phantomledger/activity/spending/market/cards.hpp"
 #include "phantomledger/activity/spending/market/population/paydays.hpp"
+#include "phantomledger/primitives/random/distributions/beta.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
-#include "phantomledger/probability/distributions/beta.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 
 #include <algorithm>
 #include <array>

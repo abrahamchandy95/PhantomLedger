@@ -1,6 +1,6 @@
 #include "phantomledger/relationships/family/partition.hpp"
 
-#include "phantomledger/probability/distributions/cdf.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/relationships/family/network.hpp"
 
 #include <algorithm>

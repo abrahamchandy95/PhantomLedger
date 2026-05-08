@@ -2,10 +2,10 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
+#include "phantomledger/primitives/random/distributions/beta.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/poisson.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/probability/distributions/beta.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
-#include "phantomledger/probability/distributions/poisson.hpp"
 
 #include <algorithm>
 #include <cmath>

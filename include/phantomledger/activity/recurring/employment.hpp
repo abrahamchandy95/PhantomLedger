@@ -3,12 +3,12 @@
 #include "phantomledger/activity/recurring/growth.hpp"
 #include "phantomledger/activity/recurring/payroll.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/recurring/types.hpp"
 
 #include <algorithm>

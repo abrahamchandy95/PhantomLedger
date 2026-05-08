@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/legit/routines/family/siblings.hpp"
 
 #include "phantomledger/entities/encoding/external.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"

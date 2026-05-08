@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/legit/routines/family/tuition.hpp"
 
-#include "phantomledger/probability/distributions/lognormal.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"

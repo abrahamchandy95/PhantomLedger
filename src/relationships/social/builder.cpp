@@ -1,9 +1,9 @@
 #include "phantomledger/relationships/social/builder.hpp"
 
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
+#include "phantomledger/primitives/random/distributions/gamma.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
-#include "phantomledger/probability/distributions/gamma.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
 #include "phantomledger/relationships/social/communities.hpp"
 #include "phantomledger/relationships/social/sampler.hpp"
 

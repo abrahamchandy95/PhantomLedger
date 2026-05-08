@@ -4,7 +4,7 @@
 #include "phantomledger/entities/synth/products/dates.hpp"
 #include "phantomledger/entities/synth/products/installment_emission.hpp"
 #include "phantomledger/entities/synth/products/institutional.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
+#include "phantomledger/primitives/random/distributions/normal.hpp"
 
 #include <algorithm>
 #include <cmath>

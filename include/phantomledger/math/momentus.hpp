@@ -1,8 +1,8 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
 
 #include <algorithm>
 

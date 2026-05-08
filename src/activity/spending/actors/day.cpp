@@ -1,6 +1,6 @@
 #include "phantomledger/activity/spending/actors/day.hpp"
 
-#include "phantomledger/probability/distributions/gamma.hpp"
+#include "phantomledger/primitives/random/distributions/gamma.hpp"
 
 #include <algorithm>
 
@@ -12,7 +12,7 @@ Day buildDay(time::TimePoint windowStart, double dayShockShape,
   day.dayIndex = dayIndex;
   day.start = time::addDays(windowStart, static_cast<int>(dayIndex));
 
-  // TODO(integration): time::weekday(TimePoint) -> int 0-6 (Mon-Sun).
+  // TODO:(integration): time::weekday(TimePoint) -> int 0-6 (Mon-Sun).
   // If your calendar primitive exposes a different name (e.g.
   // time::dayOfWeek) substitute here.
   const int wd = time::weekday(day.start);

@@ -1,12 +1,12 @@
 #pragma once
 
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/random/distributions/normal.hpp"
+#include "phantomledger/primitives/random/distributions/uniform.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
-#include "phantomledger/probability/distributions/normal.hpp"
-#include "phantomledger/probability/distributions/uniform.hpp"
 
 #include <algorithm>
 #include <cmath>

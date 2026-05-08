@@ -4,9 +4,9 @@
 #include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/landlords/scale.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/cdf.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 
 #include <array>

@@ -4,9 +4,9 @@
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/cards/seeds.hpp"
+#include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/probability/distributions/lognormal.hpp"
 
 #include <algorithm>
 #include <cassert>
