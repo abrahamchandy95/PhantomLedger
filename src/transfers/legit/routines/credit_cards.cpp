@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/legit/routines/credit_cards.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/transfers/credit_cards/lifecycle.hpp"
+#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
 #include <stdexcept>
 #include <unordered_map>

@@ -4,10 +4,10 @@
 #include "phantomledger/entropy/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
+#include "phantomledger/transfers/channels/subscriptions/bundle.hpp"
+#include "phantomledger/transfers/channels/subscriptions/schedule.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
-#include "phantomledger/transfers/subscriptions/bundle.hpp"
-#include "phantomledger/transfers/subscriptions/schedule.hpp"
 
 #include <vector>
 

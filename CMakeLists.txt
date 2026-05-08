@@ -46,18 +46,18 @@ set(PL_ENTITIES_SOURCES
 )
 
 set(PL_TRANSFERS_SOURCES
-    src/transfers/credit_cards/cycle.cpp
-    src/transfers/credit_cards/dispute.cpp
-    src/transfers/credit_cards/lifecycle.cpp
-    src/transfers/credit_cards/payment.cpp
-    src/transfers/credit_cards/session.cpp
-    src/transfers/credit_cards/statement.cpp
-    src/transfers/government/disability.cpp
-    src/transfers/government/retirement.cpp
-    src/transfers/insurance/claims.cpp
-    src/transfers/insurance/premiums.cpp
-    src/transfers/obligations/schedule.cpp
-    src/transfers/subscriptions/debits.cpp
+    src/transfers/channels/credit_cards/cycle.cpp
+    src/transfers/channels/credit_cards/dispute.cpp
+    src/transfers/channels/credit_cards/lifecycle.cpp
+    src/transfers/channels/credit_cards/payment.cpp
+    src/transfers/channels/credit_cards/session.cpp
+    src/transfers/channels/credit_cards/statement.cpp
+    src/transfers/channels/government/disability.cpp
+    src/transfers/channels/government/retirement.cpp
+    src/transfers/channels/insurance/claims.cpp
+    src/transfers/channels/insurance/premiums.cpp
+    src/transfers/channels/obligations/schedule.cpp
+    src/transfers/channels/subscriptions/debits.cpp
 )
 
 set(PL_SPENDING_SOURCES

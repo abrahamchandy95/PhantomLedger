@@ -6,7 +6,7 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/insurance/rates.hpp"
+#include "phantomledger/transfers/channels/insurance/rates.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
 
 #include <cstdint>

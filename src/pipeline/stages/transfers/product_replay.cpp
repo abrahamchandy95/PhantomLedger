@@ -1,10 +1,10 @@
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 
 #include "phantomledger/entropy/random/factory.hpp"
-#include "phantomledger/transfers/insurance/claims.hpp"
-#include "phantomledger/transfers/insurance/premiums.hpp"
+#include "phantomledger/transfers/channels/insurance/claims.hpp"
+#include "phantomledger/transfers/channels/insurance/premiums.hpp"
+#include "phantomledger/transfers/channels/obligations/schedule.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
-#include "phantomledger/transfers/obligations/schedule.hpp"
 
 #include <utility>
 
