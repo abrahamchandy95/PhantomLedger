@@ -1,7 +1,7 @@
 #pragma once
 
+#include "phantomledger/activity/spending/market/commerce/contacts.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/spending/market/commerce/contacts.hpp"
 
 #include <algorithm>
 #include <cstdint>

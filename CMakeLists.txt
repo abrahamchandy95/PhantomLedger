@@ -61,21 +61,21 @@ set(PL_TRANSFERS_SOURCES
 )
 
 set(PL_SPENDING_SOURCES
-    src/spending/actors/day.cpp
-    src/spending/dynamics/monthly/evolution.cpp
-    src/spending/market/bootstrap.cpp
-    src/spending/routing/payments.cpp
-    src/spending/simulator/commerce_evolver.cpp
-    src/spending/simulator/day_driver.cpp
-    src/spending/simulator/day_source.cpp
-    src/spending/simulator/driver.cpp
-    src/spending/simulator/loop.cpp
-    src/spending/simulator/population_dynamics.cpp
-    src/spending/simulator/run.cpp
-    src/spending/simulator/run_planner.cpp
-    src/spending/simulator/spender_emission_driver.cpp
-    src/spending/spenders/prepare.cpp
-    src/spending/spenders/targets.cpp
+    src/activity/spending/actors/day.cpp
+    src/activity/spending/dynamics/monthly/evolution.cpp
+    src/activity/spending/market/bootstrap.cpp
+    src/activity/spending/routing/payments.cpp
+    src/activity/spending/simulator/commerce_evolver.cpp
+    src/activity/spending/simulator/day_driver.cpp
+    src/activity/spending/simulator/day_source.cpp
+    src/activity/spending/simulator/driver.cpp
+    src/activity/spending/simulator/loop.cpp
+    src/activity/spending/simulator/population_dynamics.cpp
+    src/activity/spending/simulator/run.cpp
+    src/activity/spending/simulator/run_planner.cpp
+    src/activity/spending/simulator/spender_emission_driver.cpp
+    src/activity/spending/spenders/prepare.cpp
+    src/activity/spending/spenders/targets.cpp
 )
 
 set(PL_FRAUD_SOURCES

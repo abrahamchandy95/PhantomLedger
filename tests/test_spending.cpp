@@ -1,8 +1,8 @@
-#include "phantomledger/spending/liquidity/factor.hpp"
-#include "phantomledger/spending/liquidity/multiplier.hpp"
-#include "phantomledger/spending/liquidity/snapshot.hpp"
-#include "phantomledger/spending/routing/channel.hpp"
-#include "phantomledger/spending/spenders/targets.hpp"
+#include "phantomledger/activity/spending/liquidity/factor.hpp"
+#include "phantomledger/activity/spending/liquidity/multiplier.hpp"
+#include "phantomledger/activity/spending/liquidity/snapshot.hpp"
+#include "phantomledger/activity/spending/routing/channel.hpp"
+#include "phantomledger/activity/spending/spenders/targets.hpp"
 
 #include "test_support.hpp"
 

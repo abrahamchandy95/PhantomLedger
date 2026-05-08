@@ -1,10 +1,10 @@
 #pragma once
 
+#include "phantomledger/activity/income/rent.hpp"
+#include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/counterparties.hpp"
-#include "phantomledger/inflows/rent.hpp"
-#include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/screenbook.hpp"
