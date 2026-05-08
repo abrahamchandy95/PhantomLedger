@@ -1,15 +1,15 @@
 #pragma once
 
+#include "phantomledger/activity/spending/actors/explore.hpp"
+#include "phantomledger/activity/spending/dynamics/population/advance.hpp"
+#include "phantomledger/activity/spending/liquidity/multiplier.hpp"
+#include "phantomledger/activity/spending/market/bootstrap.hpp"
+#include "phantomledger/activity/spending/routing/channel.hpp"
+#include "phantomledger/activity/spending/routing/payments.hpp"
+#include "phantomledger/activity/spending/simulator/day_source.hpp"
+#include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/math/evolution.hpp"
 #include "phantomledger/math/seasonal.hpp"
-#include "phantomledger/spending/actors/explore.hpp"
-#include "phantomledger/spending/dynamics/population/advance.hpp"
-#include "phantomledger/spending/liquidity/multiplier.hpp"
-#include "phantomledger/spending/market/bootstrap.hpp"
-#include "phantomledger/spending/routing/channel.hpp"
-#include "phantomledger/spending/routing/payments.hpp"
-#include "phantomledger/spending/simulator/day_source.hpp"
-#include "phantomledger/spending/simulator/run_planner.hpp"
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 

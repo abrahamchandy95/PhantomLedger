@@ -1,10 +1,10 @@
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 
+#include "phantomledger/activity/recurring/payroll.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/probability/distributions/cdf.hpp"
-#include "phantomledger/recurring/payroll.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 

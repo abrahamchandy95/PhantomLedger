@@ -1,11 +1,11 @@
 #pragma once
 
+#include "phantomledger/activity/spending/market/market.hpp"
+#include "phantomledger/activity/spending/obligations/snapshot.hpp"
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/spending/market/market.hpp"
-#include "phantomledger/spending/obligations/snapshot.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"

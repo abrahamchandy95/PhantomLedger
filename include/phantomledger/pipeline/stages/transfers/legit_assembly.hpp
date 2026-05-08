@@ -1,12 +1,12 @@
 #pragma once
 
+#include "phantomledger/activity/income/rent.hpp"
+#include "phantomledger/activity/income/salary.hpp"
+#include "phantomledger/activity/recurring/employment.hpp"
+#include "phantomledger/activity/recurring/lease.hpp"
 #include "phantomledger/entropy/random/rng.hpp"
-#include "phantomledger/inflows/rent.hpp"
-#include "phantomledger/inflows/salary.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/recurring/employment.hpp"
-#include "phantomledger/recurring/lease.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
 #include "phantomledger/transfers/channels/government/retirement.hpp"
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
