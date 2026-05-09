@@ -27,8 +27,6 @@ struct DisabilityTerms {
   }
 };
 
-/// Emit disability benefit deposits inside the window. Sorted by
-/// timestamp on return.
 [[nodiscard]] std::vector<transactions::Transaction>
 disabilityBenefits(const DisabilityTerms &terms, const time::Window &window,
                    random::Rng &rng, const transactions::Factory &txf,

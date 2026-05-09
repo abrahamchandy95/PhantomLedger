@@ -7,7 +7,7 @@
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/dispute.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute_behavior.hpp"
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 
@@ -37,13 +37,13 @@ struct LifecycleRules {
 
 inline constexpr LifecycleRules kDefaultLifecycleRules{};
 
-/// Generates credit-card lifecycle transactions for a window.
+// Generates credit-card lifecycle transactions for a window.
 class Lifecycle {
 public:
   Lifecycle(const LifecycleRules &rules, const transactions::Factory &factory,
             const random::RngFactory &rngFactory, LedgerView ledger);
 
-  /// Generate lifecycle transactions for the window.
+  // Generate lifecycle transactions for the window.
   [[nodiscard]] std::vector<transactions::Transaction>
   generate(const time::Window &window,
            std::span<const transactions::Transaction> txns) const;

@@ -1,15 +1,10 @@
 #pragma once
 
-#include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
-
-#include <optional>
 
 namespace PhantomLedger::transfers::credit_cards {
 
+/// Day-offset windows for post-purchase merchant credits.
 struct DisputeWindow {
   int refundMin = 1;
   int refundMax = 14;
@@ -25,6 +20,7 @@ struct DisputeWindow {
   }
 };
 
+/// Per-purchase probabilities of a refund or a chargeback occurring.
 struct DisputeRates {
   double refundProbability = 0.006;
   double chargebackProbability = 0.001;
@@ -36,6 +32,7 @@ struct DisputeRates {
   }
 };
 
+/// Aggregate dispute behavior
 struct DisputeBehavior {
   DisputeWindow window{};
   DisputeRates rates{};
@@ -47,10 +44,5 @@ struct DisputeBehavior {
 };
 
 inline constexpr DisputeBehavior kDefaultDisputeBehavior{};
-
-[[nodiscard]] std::optional<transactions::Transaction> sampleMerchantCredit(
-    const DisputeWindow &window, const DisputeRates &rates, random::Rng &rng,
-    const transactions::Transaction &purchase, time::TimePoint windowEndExcl,
-    const transactions::Factory &factory);
 
 } // namespace PhantomLedger::transfers::credit_cards

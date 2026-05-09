@@ -4,7 +4,7 @@
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
-#include "phantomledger/transfers/channels/credit_cards/dispute.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute_sampler.hpp"
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 
@@ -79,6 +79,7 @@ void Session::run(Cycle cycle) {
 
 void Session::collectPurchases(Cycle cycle) {
   const std::int64_t cycleEndEpoch = time::toEpochSeconds(cycle.endExcl);
+  const DisputeSampler sampler{env_.disputes, env_.factory};
 
   while (state_.purchaseCursor < purchases_.indices.size()) {
     const auto txnIx = purchases_.indices[state_.purchaseCursor];
@@ -89,9 +90,7 @@ void Session::collectPurchases(Cycle cycle) {
 
     events_.push_back(purchase);
 
-    auto credit =
-        sampleMerchantCredit(env_.disputes.window, env_.disputes.rates, rng_,
-                             purchase, cycle.windowEndExcl, env_.factory);
+    auto credit = sampler.sample(rng_, purchase, cycle.windowEndExcl);
     if (credit.has_value()) {
       state_.deferredCredits.push_back(*credit);
       out_.push_back(std::move(*credit));
