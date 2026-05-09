@@ -44,10 +44,9 @@ buildLegitPool(const entity::person::Roster &people) {
 
 } // namespace
 
-Output build(random::Rng &rng, time::Window window,
-             const entity::person::Roster &people,
-             const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-             const AssignmentRules &rules) {
+Output AssignmentRules::build(
+    random::Rng &rng, time::Window window, const entity::person::Roster &people,
+    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const {
   Output out;
   const auto reserveHint =
       static_cast<std::size_t>(people.count) * 12U / 10U + ringPlans.size();
@@ -62,7 +61,7 @@ Output build(random::Rng &rng, time::Window window,
   const auto windowDays = window.days;
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
-    const std::uint32_t nDev = rng.coin(rules.secondDeviceP) ? 2U : 1U;
+    const std::uint32_t nDev = rng.coin(secondDeviceP) ? 2U : 1U;
 
     for (std::uint32_t slot = 1; slot <= nDev; ++slot) {
       const auto id = DeviceIdentity::person(p, slot);
@@ -97,7 +96,7 @@ Output build(random::Rng &rng, time::Window window,
     if (!pool::contains(remainingIndex, anchor)) {
       continue;
     }
-    if (!rng.coin(rules.legitDeviceNoiseP)) {
+    if (!rng.coin(legitDeviceNoiseP)) {
       continue;
     }
 
@@ -107,7 +106,6 @@ Output build(random::Rng &rng, time::Window window,
       break;
     }
 
-    // 1-3 peers (uniformInt(1, 4) is half-open => [1, 3]).
     const auto cap = std::min<std::size_t>(remaining.size(), 3U);
     const auto extraCount = static_cast<std::size_t>(
         rng.uniformInt(1, static_cast<std::int64_t>(cap) + 1));
@@ -147,7 +145,6 @@ Output build(random::Rng &rng, time::Window window,
       });
     }
 
-    // Remove peers from the remaining pool. Anchor is already gone.
     for (const auto pid : peers) {
       if (pool::contains(remainingIndex, pid)) {
         pool::swapDelete(remaining, remainingIndex, pid);

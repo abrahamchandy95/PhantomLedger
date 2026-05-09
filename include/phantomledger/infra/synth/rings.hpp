@@ -26,11 +26,11 @@ struct AccessRules {
     r.check([&] { v::between("sharedDeviceP", sharedDeviceP, 0.0, 1.0); });
     r.check([&] { v::between("sharedIpP", sharedIpP, 0.0, 1.0); });
   }
-};
 
-[[nodiscard]] std::unordered_map<std::uint32_t, RingPlan>
-build(random::Rng &rng, time::Window window,
-      std::span<const entity::person::Ring> rings,
-      const entity::person::Topology &topology, const AccessRules &rules = {});
+  [[nodiscard]] std::unordered_map<std::uint32_t, RingPlan>
+  build(random::Rng &rng, time::Window window,
+        std::span<const entity::person::Ring> rings,
+        const entity::person::Topology &topology) const;
+};
 
 } // namespace PhantomLedger::infra::synth::rings

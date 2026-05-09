@@ -77,22 +77,22 @@ membersOf(const entity::person::Ring &ring,
 } // namespace
 
 std::unordered_map<std::uint32_t, RingPlan>
-build(random::Rng &rng, time::Window window,
-      std::span<const entity::person::Ring> rings,
-      const entity::person::Topology &topology, const AccessRules &rules) {
+AccessRules::build(random::Rng &rng, time::Window window,
+                   std::span<const entity::person::Ring> rings,
+                   const entity::person::Topology &topology) const {
   std::unordered_map<std::uint32_t, RingPlan> plans;
   plans.reserve(rings.size());
 
   for (const auto &ring : rings) {
-    const auto [firstSeen, lastSeen] = sampleWindow(rng, window, rules);
+    const auto [firstSeen, lastSeen] = sampleWindow(rng, window, *this);
     const auto members = membersOf(ring, topology);
 
     RingPlan plan{};
     plan.ringId = ring.id;
     plan.firstSeen = firstSeen;
     plan.lastSeen = lastSeen;
-    plan.sharedDeviceMembers = sampleMembers(rng, members, rules.sharedDeviceP);
-    plan.sharedIpMembers = sampleMembers(rng, members, rules.sharedIpP);
+    plan.sharedDeviceMembers = sampleMembers(rng, members, sharedDeviceP);
+    plan.sharedIpMembers = sampleMembers(rng, members, sharedIpP);
 
     plans.emplace(ring.id, std::move(plan));
   }

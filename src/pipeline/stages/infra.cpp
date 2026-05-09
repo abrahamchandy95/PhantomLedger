@@ -70,24 +70,21 @@ AccessInfraStage &AccessInfraStage::sharedInfra(
 AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
     ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
     const ::PhantomLedger::entities::synth::people::Pack &people) const {
-  return ::PhantomLedger::infra::synth::rings::build(
-      rng, window, people.topology.rings, people.topology, ringAccess_);
+  return ringAccess_.build(rng, window, people.topology.rings, people.topology);
 }
 
 ::PhantomLedger::infra::synth::devices::Output AccessInfraStage::buildDevices(
     ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
     const ::PhantomLedger::entity::person::Roster &people,
     const RingPlans &ringPlans) const {
-  return ::PhantomLedger::infra::synth::devices::build(
-      rng, window, people, ringPlans, deviceAssignment_);
+  return deviceAssignment_.build(rng, window, people, ringPlans);
 }
 
 ::PhantomLedger::infra::synth::ips::Output AccessInfraStage::buildIps(
     ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
     const ::PhantomLedger::entity::person::Roster &people,
     const RingPlans &ringPlans) const {
-  return ::PhantomLedger::infra::synth::ips::build(rng, window, people,
-                                                   ringPlans, ipAssignment_);
+  return ipAssignment_.build(rng, window, people, ringPlans);
 }
 
 ::PhantomLedger::infra::Router AccessInfraStage::buildRouter(

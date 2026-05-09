@@ -23,12 +23,11 @@ struct AssignmentRules {
         [&] { v::between("legitDeviceNoiseP", legitDeviceNoiseP, 0.0, 1.0); });
     r.check([&] { v::between("secondDeviceP", secondDeviceP, 0.0, 1.0); });
   }
-};
 
-[[nodiscard]] Output
-build(random::Rng &rng, time::Window window,
-      const entity::person::Roster &people,
-      const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-      const AssignmentRules &rules = {});
+  [[nodiscard]] Output
+  build(random::Rng &rng, time::Window window,
+        const entity::person::Roster &people,
+        const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const;
+};
 
 } // namespace PhantomLedger::infra::synth::devices

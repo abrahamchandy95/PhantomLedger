@@ -51,10 +51,9 @@ buildLegitPool(const entity::person::Roster &people) {
 
 } // namespace
 
-Output build(random::Rng &rng, time::Window window,
-             const entity::person::Roster &people,
-             const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-             const AssignmentRules &rules) {
+Output AssignmentRules::build(
+    random::Rng &rng, time::Window window, const entity::person::Roster &people,
+    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const {
   Output out;
 
   const auto reserveHint =
@@ -73,8 +72,8 @@ Output build(random::Rng &rng, time::Window window,
   const auto windowDays = window.days;
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
-    const std::uint32_t nIp = 1U + (rng.coin(rules.extraIpP1) ? 1U : 0U) +
-                              (rng.coin(rules.extraIpP2) ? 1U : 0U);
+    const std::uint32_t nIp =
+        1U + (rng.coin(extraIpP1) ? 1U : 0U) + (rng.coin(extraIpP2) ? 1U : 0U);
 
     for (std::uint32_t i = 0; i < nIp; ++i) {
       const auto ip = network::randomIpv4(rng);
@@ -106,7 +105,7 @@ Output build(random::Rng &rng, time::Window window,
     if (!pool::contains(remainingIndex, anchor)) {
       continue;
     }
-    if (!rng.coin(rules.legitIpNoiseP)) {
+    if (!rng.coin(legitIpNoiseP)) {
       continue;
     }
 
