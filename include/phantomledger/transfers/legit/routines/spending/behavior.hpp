@@ -5,7 +5,6 @@
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"
 #include "phantomledger/activity/spending/market/bootstrap.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
-#include "phantomledger/activity/spending/routing/payments.hpp"
 #include "phantomledger/activity/spending/simulator/day_source.hpp"
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/math/evolution.hpp"

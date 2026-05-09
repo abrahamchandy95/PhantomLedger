@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/primitives/validate/checks.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -59,7 +61,6 @@ struct ChannelWeights {
 };
 
 [[nodiscard]] inline Slot pickSlot(const ChannelCdf &cdf, double u) noexcept {
-  // Unrolled — branch predictor handles the four-way ladder cleanly.
   if (u < cdf[0]) {
     return Slot::merchant;
   }
@@ -71,5 +72,17 @@ struct ChannelWeights {
   }
   return Slot::externalUnknown;
 }
+
+struct PaymentRoutingRules {
+  double preferKnownBillersP = 0.85;
+  std::uint16_t merchantRetryLimit = 6;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::unit("preferKnownBillersP", preferKnownBillersP); });
+  }
+};
+
+inline constexpr PaymentRoutingRules kDefaultPaymentRoutingRules{};
 
 } // namespace PhantomLedger::spending::routing
