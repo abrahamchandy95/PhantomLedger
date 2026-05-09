@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/actors/day.hpp"
+#include "phantomledger/activity/spending/actors/event.hpp"
 #include "phantomledger/activity/spending/actors/explore.hpp"
 #include "phantomledger/activity/spending/clearing/parallel_ledger_view.hpp"
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"

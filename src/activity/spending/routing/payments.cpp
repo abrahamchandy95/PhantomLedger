@@ -1,6 +1,5 @@
-#include "phantomledger/activity/spending/routing/payments.hpp"
+#include "phantomledger/activity/spending/routing/router.hpp"
 
-#include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -26,39 +25,6 @@ inline constexpr channels::Tag kMerchantChannel =
 inline constexpr channels::Tag kCardChannel =
     channels::tag(channels::Legit::cardPurchase);
 
-[[nodiscard]] std::uint32_t
-pickMerchantIndex(random::Rng &rng, const market::commerce::View &commerce,
-                  const actors::Spender &spender, double exploreP,
-                  std::uint16_t maxRetries) {
-  const auto favRow = commerce.favorites().rowOf(spender.personIndex);
-  const bool exploring = rng.coin(exploreP);
-
-  if (!exploring && !favRow.empty()) {
-    const auto slot = rng.choiceIndex(favRow.size());
-    return favRow[slot];
-  }
-
-  // Explore branch: draw from global CDF and reject favorites a few times.
-  const auto &cdf = commerce.merchCdf();
-  std::uint32_t pick = static_cast<std::uint32_t>(
-      probability::distributions::sampleIndex(cdf, rng.nextDouble()));
-
-  if (favRow.empty()) {
-    return pick;
-  }
-
-  for (std::uint16_t attempt = 0; attempt < maxRetries; ++attempt) {
-    const bool isFav =
-        std::find(favRow.begin(), favRow.end(), pick) != favRow.end();
-    if (!isFav) {
-      return pick;
-    }
-    pick = static_cast<std::uint32_t>(
-        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
-  }
-  return pick;
-}
-
 struct PaymentRoute {
   entity::Key srcKey{};
   clearing::Ledger::Index srcIdx = clearing::Ledger::invalid;
@@ -82,31 +48,28 @@ struct PaymentRoute {
 
 // ----------------------------- Bill --------------------------------
 
-EmissionResult emitBill(random::Rng &rng, const market::Market &market,
-                        const PaymentRoutingRules &policy,
-                        const ResolvedAccounts &resolved,
-                        const actors::Event &event) {
-  const auto &commerce = market.commerce();
+EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
+  const auto &commerce = market_.commerce();
   const auto billerRow = commerce.billers().rowOf(event.spender->personIndex);
 
   std::uint32_t billerIdx = 0;
-  if (!billerRow.empty() && rng.coin(policy.preferKnownBillersP)) {
-    const auto slot = rng.choiceIndex(billerRow.size());
+  if (!billerRow.empty() && rng_.coin(policy_.preferKnownBillersP)) {
+    const auto slot = rng_.choiceIndex(billerRow.size());
     billerIdx = billerRow[slot];
   } else {
     const auto &cdf = commerce.billerCdf();
     billerIdx = static_cast<std::uint32_t>(
-        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
+        probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
   }
 
   const auto *catalog = commerce.catalog();
   const entity::Key dst = catalog->records[billerIdx].counterpartyId;
 
-  const auto dstIdx = billerIdx < resolved.merchantCounterpartyIdx.size()
-                          ? resolved.merchantCounterpartyIdx[billerIdx]
+  const auto dstIdx = billerIdx < resolved_.merchantCounterpartyIdx.size()
+                          ? resolved_.merchantCounterpartyIdx[billerIdx]
                           : clearing::Ledger::invalid;
 
-  const double amount = math::amounts::kBill.sample(rng);
+  const double amount = math::amounts::kBill.sample(rng_);
 
   EmissionResult result;
   result.draft = transactions::Draft{
@@ -125,15 +88,12 @@ EmissionResult emitBill(random::Rng &rng, const market::Market &market,
 
 // --------------------------- External ------------------------------
 
-EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
-                            const ResolvedAccounts &resolved,
-                            const actors::Event &event) {
-  (void)market;
+EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
   const entity::Key dst =
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
   const double amount = primitives::utils::floorAndRound(
-      math::amounts::kExternalUnknown.sample(rng),
+      math::amounts::kExternalUnknown.sample(rng_),
       /*floor=*/1.0);
 
   EmissionResult result;
@@ -147,33 +107,31 @@ EmissionResult emitExternal(random::Rng &rng, const market::Market &market,
       .channel = kExternalChannel,
   };
   result.srcIdx = event.spender->depositAccountIdx;
-  result.dstIdx = resolved.externalUnknownIdx;
+  result.dstIdx = resolved_.externalUnknownIdx;
   return result;
 }
 
 // ----------------------------- P2P ---------------------------------
 
-std::optional<EmissionResult> emitP2p(random::Rng &rng,
-                                      const market::Market &market,
-                                      const ResolvedAccounts &resolved,
-                                      const actors::Event &event) {
-  const auto &commerce = market.commerce();
+std::optional<EmissionResult>
+PaymentRouter::emitP2p(const actors::Event &event) {
+  const auto &commerce = market_.commerce();
   const auto contactRow = commerce.contacts().rowOf(event.spender->personIndex);
 
   if (contactRow.empty()) {
     return std::nullopt;
   }
 
-  const auto slot = rng.choiceIndex(contactRow.size());
+  const auto slot = rng_.choiceIndex(contactRow.size());
   const auto contactPersonIndex = contactRow[slot];
 
-  if (contactPersonIndex >= market.population().count()) {
+  if (contactPersonIndex >= market_.population().count()) {
     return std::nullopt;
   }
 
   const auto contactPerson =
       static_cast<entity::PersonId>(contactPersonIndex + 1);
-  const auto dst = market.population().primary(contactPerson);
+  const auto dst = market_.population().primary(contactPerson);
 
   if (!entity::valid(dst) || dst == event.spender->depositAccount) {
     return std::nullopt;
@@ -181,12 +139,12 @@ std::optional<EmissionResult> emitP2p(random::Rng &rng,
 
   // Reads cached `amountMultiplier` directly.
   const double raw =
-      math::amounts::kP2P.sample(rng) * event.spender->amountMultiplier;
+      math::amounts::kP2P.sample(rng_) * event.spender->amountMultiplier;
   const double amount = primitives::utils::floorAndRound(raw, /*floor=*/1.0);
 
   // Pre-resolved destination index for the recipient.
-  const auto dstIdx = contactPersonIndex < resolved.personPrimaryIdx.size()
-                          ? resolved.personPrimaryIdx[contactPersonIndex]
+  const auto dstIdx = contactPersonIndex < resolved_.personPrimaryIdx.size()
+                          ? resolved_.personPrimaryIdx[contactPersonIndex]
                           : clearing::Ledger::invalid;
 
   EmissionResult result;
@@ -206,34 +164,64 @@ std::optional<EmissionResult> emitP2p(random::Rng &rng,
 
 // --------------------------- Merchant ------------------------------
 
-std::optional<EmissionResult> emitMerchant(random::Rng &rng,
-                                           const market::Market &market,
-                                           const PaymentRoutingRules &policy,
-                                           const ResolvedAccounts &resolved,
-                                           const actors::Event &event) {
-  const auto &commerce = market.commerce();
+std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
+                                               double exploreP) {
+  const auto &commerce = market_.commerce();
+  const auto favRow = commerce.favorites().rowOf(spender.personIndex);
+  const bool exploring = rng_.coin(exploreP);
+
+  if (!exploring && !favRow.empty()) {
+    const auto slot = rng_.choiceIndex(favRow.size());
+    return favRow[slot];
+  }
+
+  // Explore branch: draw from global CDF and reject favorites a few times.
+  const auto &cdf = commerce.merchCdf();
+  std::uint32_t pick = static_cast<std::uint32_t>(
+      probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
+
+  if (favRow.empty()) {
+    return pick;
+  }
+
+  for (std::uint16_t attempt = 0; attempt < policy_.merchantRetryLimit;
+       ++attempt) {
+    const bool isFav =
+        std::find(favRow.begin(), favRow.end(), pick) != favRow.end();
+    if (!isFav) {
+      return pick;
+    }
+    pick = static_cast<std::uint32_t>(
+        probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
+  }
+  return pick;
+}
+
+std::optional<EmissionResult>
+PaymentRouter::emitMerchant(const actors::Event &event) {
+  const auto &commerce = market_.commerce();
   const auto *catalog = commerce.catalog();
   if (catalog == nullptr) {
     return std::nullopt;
   }
 
-  const std::uint32_t merchantIdx = pickMerchantIndex(
-      rng, commerce, *event.spender, event.exploreP, policy.merchantRetryLimit);
+  const std::uint32_t merchantIdx =
+      pickMerchantIndex(*event.spender, event.exploreP);
 
   const auto &record = catalog->records[merchantIdx];
   const auto dst = record.counterpartyId;
   const auto category = record.category;
 
-  const double rawAmount = math::amounts::merchantAmount(rng, category) *
+  const double rawAmount = math::amounts::merchantAmount(rng_, category) *
                            event.spender->amountMultiplier;
   const double amount =
       primitives::utils::floorAndRound(rawAmount, /*floor=*/1.0);
 
-  const auto route = selectPaymentRoute(rng, *event.spender);
+  const auto route = selectPaymentRoute(rng_, *event.spender);
 
   // Pre-resolved destination index for the merchant counterparty.
-  const auto dstIdx = merchantIdx < resolved.merchantCounterpartyIdx.size()
-                          ? resolved.merchantCounterpartyIdx[merchantIdx]
+  const auto dstIdx = merchantIdx < resolved_.merchantCounterpartyIdx.size()
+                          ? resolved_.merchantCounterpartyIdx[merchantIdx]
                           : clearing::Ledger::invalid;
 
   EmissionResult result;
@@ -249,6 +237,25 @@ std::optional<EmissionResult> emitMerchant(random::Rng &rng,
   result.srcIdx = route.srcIdx;
   result.dstIdx = dstIdx;
   return result;
+}
+
+// --------------------------- Dispatch ------------------------------
+
+std::optional<EmissionResult> PaymentRouter::route(Slot slot,
+                                                   const actors::Event &event) {
+  switch (slot) {
+  case Slot::merchant:
+    return emitMerchant(event);
+  case Slot::bill:
+    return emitBill(event);
+  case Slot::p2p:
+    return emitP2p(event);
+  case Slot::externalUnknown:
+    return emitExternal(event);
+  case Slot::kCount:
+    break;
+  }
+  return std::nullopt;
 }
 
 } // namespace PhantomLedger::spending::routing
