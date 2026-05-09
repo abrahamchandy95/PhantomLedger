@@ -1,17 +1,13 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/government/recipients.hpp"
-
-#include <vector>
+#include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
+#include "phantomledger/transfers/channels/government/benefits_emitter.hpp"
 
 namespace PhantomLedger::transfers::government {
 
-/// Knobs for the disability subsystem only.
 struct DisabilityTerms {
   double eligibleP = 0.04;
   double median = 1630.0;
@@ -27,10 +23,17 @@ struct DisabilityTerms {
   }
 };
 
-[[nodiscard]] std::vector<transactions::Transaction>
-disabilityBenefits(const DisabilityTerms &terms, const time::Window &window,
-                   random::Rng &rng, const transactions::Factory &txf,
-                   const Population &population,
-                   const entity::Key &disabilityCounterparty);
+[[nodiscard]] inline bool isDisabilityEligible(personas::Type t) noexcept {
+  return t != personas::Type::retiree && t != personas::Type::student;
+}
+
+[[nodiscard]] inline BenefitProgram
+disabilityProgram(entity::Key counterparty) noexcept {
+  return BenefitProgram{
+      .eligible = &isDisabilityEligible,
+      .source = counterparty,
+      .channel = channels::tag(channels::Government::disability),
+  };
+}
 
 } // namespace PhantomLedger::transfers::government

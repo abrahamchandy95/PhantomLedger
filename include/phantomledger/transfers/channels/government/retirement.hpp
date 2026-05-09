@@ -1,13 +1,10 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/government/recipients.hpp"
-
-#include <vector>
+#include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/personas/types.hpp"
+#include "phantomledger/transfers/channels/government/benefits_emitter.hpp"
 
 namespace PhantomLedger::transfers::government {
 
@@ -26,10 +23,17 @@ struct RetirementTerms {
   }
 };
 
-[[nodiscard]] std::vector<transactions::Transaction>
-retirementBenefits(const RetirementTerms &terms, const time::Window &window,
-                   random::Rng &rng, const transactions::Factory &txf,
-                   const Population &population,
-                   const entity::Key &ssaCounterparty);
+[[nodiscard]] inline bool isRetirementEligible(personas::Type t) noexcept {
+  return t == personas::Type::retiree;
+}
+
+[[nodiscard]] inline BenefitProgram
+retirementProgram(entity::Key counterparty) noexcept {
+  return BenefitProgram{
+      .eligible = &isRetirementEligible,
+      .source = counterparty,
+      .channel = channels::tag(channels::Government::socialSecurity),
+  };
+}
 
 } // namespace PhantomLedger::transfers::government
