@@ -2,6 +2,7 @@
 
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
+#include "phantomledger/transfers/channels/government/monthly_deposit_emitter.hpp"
 #include "phantomledger/transfers/channels/government/recipients.hpp"
 
 #include <algorithm>
@@ -19,9 +20,9 @@ retirementBenefits(const RetirementTerms &terms, const time::Window &window,
     return {};
   }
 
-  auto recipients = select(
-      population, rng, terms.eligibleP, terms.median, terms.sigma, terms.floor,
-      [](personas::Type t) { return t == personas::Type::retiree; });
+  auto recipients = select(population, rng, terms, [](personas::Type t) {
+    return t == personas::Type::retiree;
+  });
 
   auto out = deposits.emit(
       std::span<const Recipient>{recipients},

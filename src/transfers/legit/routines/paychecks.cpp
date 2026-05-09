@@ -1,36 +1,21 @@
 #include "phantomledger/transfers/legit/routines/paychecks.hpp"
 
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
 #include <cmath>
-#include <unordered_map>
 
 namespace PhantomLedger::transfers::legit::routines::paychecks {
 
-namespace {
-
-struct SplitConfig {
-  entity::Key secondary;
-  double fraction = 0.0;
-};
-
-} // namespace
-
-std::vector<transactions::Transaction>
-splitDeposits(random::Rng &rng, const blueprints::LegitBlueprint &plan,
-              const transactions::Factory &txf,
-              const entity::account::Ownership &ownership,
-              const entity::account::Registry &registry,
-              std::span<const transactions::Transaction> existingTxns) {
-  std::vector<transactions::Transaction> out;
-  if (plan.persons().empty() || existingTxns.empty()) {
-    return out;
+SplitsByPrimary planSplitters(random::Rng &rng,
+                              const blueprints::LegitBlueprint &plan,
+                              const entity::account::Ownership &ownership,
+                              const entity::account::Registry &registry) {
+  SplitsByPrimary splitsByPrimary;
+  if (plan.persons().empty()) {
+    return splitsByPrimary;
   }
-
-  std::unordered_map<entity::Key, SplitConfig> splittersByPrimary;
-  splittersByPrimary.reserve(plan.persons().size() / 4);
+  splitsByPrimary.reserve(plan.persons().size() / 4);
 
   const auto &hubSet = plan.counterparties().hubSet;
 
@@ -74,10 +59,18 @@ splitDeposits(random::Rng &rng, const blueprints::LegitBlueprint &plan,
     }
 
     const double fraction = 0.10 + 0.25 * rng.nextDouble();
-    splittersByPrimary.emplace(primary, SplitConfig{secondary, fraction});
+    splitsByPrimary.emplace(primary, Split{secondary, fraction});
   }
 
-  if (splittersByPrimary.empty()) {
+  return splitsByPrimary;
+}
+
+std::vector<transactions::Transaction>
+emitSplitTransfers(random::Rng &rng, const transactions::Factory &txf,
+                   const SplitsByPrimary &splits,
+                   std::span<const transactions::Transaction> existingTxns) {
+  std::vector<transactions::Transaction> out;
+  if (splits.empty() || existingTxns.empty()) {
     return out;
   }
 
@@ -91,8 +84,8 @@ splitDeposits(random::Rng &rng, const blueprints::LegitBlueprint &plan,
       continue;
     }
 
-    const auto it = splittersByPrimary.find(txn.target);
-    if (it == splittersByPrimary.end()) {
+    const auto it = splits.find(txn.target);
+    if (it == splits.end()) {
       continue;
     }
 

@@ -220,10 +220,13 @@ void addSplitDeposits(const RoutinePass &pass,
                       const blueprints::LegitBlueprint &plan,
                       TxnStreams &streams) {
   const auto accounts = routineAccounts(pass);
+  auto &rng = routineRng(pass);
 
-  streams.add(routines::paychecks::splitDeposits(
-      routineRng(pass), plan, routineTxf(pass), *accounts.ownership,
-      *accounts.registry,
+  auto splitters = routines::paychecks::planSplitters(
+      rng, plan, *accounts.ownership, *accounts.registry);
+
+  streams.add(routines::paychecks::emitSplitTransfers(
+      rng, routineTxf(pass), splitters,
       std::span<const transactions::Transaction>(streams.candidates())));
 }
 
