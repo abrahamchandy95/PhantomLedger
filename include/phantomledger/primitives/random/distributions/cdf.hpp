@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace PhantomLedger::distributions {
+namespace PhantomLedger::probability::distributions {
 
 namespace detail {
 
@@ -65,4 +65,4 @@ buildCdf(std::span<const double> weights) {
   return sampleIndex(std::span<const double>{cdf}, u);
 }
 
-} // namespace PhantomLedger::distributions
+} // namespace PhantomLedger::probability::distributions

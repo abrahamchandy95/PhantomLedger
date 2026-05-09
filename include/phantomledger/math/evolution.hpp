@@ -42,10 +42,7 @@ template <class It>
 
 } // namespace detail
 
-/// Evolve favorite merchant indices in place. First tries weighted
-/// sampling from the global popularity CDF (organic discovery of
-/// popular merchants); falls back to uniform if the weighted draw
-/// keeps colliding with the existing set.
+/// Evolve favorite merchant indices in place
 inline void evolveFavorites(random::Rng &rng, const Config &cfg,
                             std::vector<std::uint32_t> &favorites,
                             std::span<const double> merchCdf,
@@ -57,8 +54,8 @@ inline void evolveFavorites(random::Rng &rng, const Config &cfg,
     bool added = false;
 
     for (int attempt = 0; attempt < 10 && !added; ++attempt) {
-      const auto candidate =
-          static_cast<std::uint32_t>(PhantomLedger::distributions::sampleIndex(
+      const auto candidate = static_cast<std::uint32_t>(
+          PhantomLedger::probability::distributions::sampleIndex(
               merchCdf, rng.nextDouble()));
       if (!detail::contains(favorites.begin(), favorites.end(), candidate)) {
         favorites.push_back(candidate);

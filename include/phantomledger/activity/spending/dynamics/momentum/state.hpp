@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/math/momentus.hpp"
+#include "phantomledger/math/momentum.hpp"
 
 namespace PhantomLedger::spending::dynamics::momentum {
 

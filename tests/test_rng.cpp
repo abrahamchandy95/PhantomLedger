@@ -135,7 +135,7 @@ void testWeightedIndex() {
   int counts[4] = {};
   const int N = 100000;
   for (int i = 0; i < N; ++i) {
-    auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+    auto idx = probability::distributions::sampleIndex(cdf, rng.nextDouble());
     PL_CHECK(idx < 4);
     ++counts[idx];
   }

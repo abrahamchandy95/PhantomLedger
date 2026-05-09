@@ -8,8 +8,6 @@
 
 namespace PhantomLedger::probability::distributions {
 
-/// Sample from LogNormal parameterized by the median.
-///
 /// median(X) = exp(mu), so mu = log(median).
 [[nodiscard]] inline double lognormalByMedian(random::Rng &rng, double median,
                                               double sigma) {
@@ -24,8 +22,6 @@ namespace PhantomLedger::probability::distributions {
   return std::exp(mu + sigma * standardNormal(rng));
 }
 
-/// Sample from LogNormal parameterized by mean and sigma (NumPy convention).
-///
 /// X ~ LogNormal(mean, sigma) means log(X) ~ Normal(mean, sigma^2).
 [[nodiscard]] inline double lognormal(random::Rng &rng, double mean,
                                       double sigma) {

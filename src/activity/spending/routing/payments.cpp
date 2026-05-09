@@ -41,7 +41,7 @@ pickMerchantIndex(random::Rng &rng, const market::commerce::View &commerce,
   // Explore branch: draw from global CDF and reject favorites a few times.
   const auto &cdf = commerce.merchCdf();
   std::uint32_t pick = static_cast<std::uint32_t>(
-      distributions::sampleIndex(cdf, rng.nextDouble()));
+      probability::distributions::sampleIndex(cdf, rng.nextDouble()));
 
   if (favRow.empty()) {
     return pick;
@@ -54,7 +54,7 @@ pickMerchantIndex(random::Rng &rng, const market::commerce::View &commerce,
       return pick;
     }
     pick = static_cast<std::uint32_t>(
-        distributions::sampleIndex(cdf, rng.nextDouble()));
+        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
   }
   return pick;
 }
@@ -96,16 +96,12 @@ EmissionResult emitBill(random::Rng &rng, const market::Market &market,
   } else {
     const auto &cdf = commerce.billerCdf();
     billerIdx = static_cast<std::uint32_t>(
-        distributions::sampleIndex(cdf, rng.nextDouble()));
+        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
   }
 
   const auto *catalog = commerce.catalog();
   const entity::Key dst = catalog->records[billerIdx].counterpartyId;
 
-  // Pre-resolved destination index. Falls back to `invalid` (external)
-  // when the table is empty (no ledger configured) or the slot is
-  // out-of-range — the latter shouldn't happen in practice but the
-  // bounds check is free.
   const auto dstIdx = billerIdx < resolved.merchantCounterpartyIdx.size()
                           ? resolved.merchantCounterpartyIdx[billerIdx]
                           : clearing::Ledger::invalid;

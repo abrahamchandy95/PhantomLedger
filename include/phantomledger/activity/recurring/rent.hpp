@@ -18,8 +18,8 @@ template <std::size_t N> struct ChannelTable {
   std::array<double, N> cdf;
 
   [[nodiscard]] channels::Tag pick(random::Rng &rng) const {
-    const auto idx = distributions::sampleIndex(std::span<const double>{cdf},
-                                                rng.nextDouble());
+    const auto idx = probability::distributions::sampleIndex(
+        std::span<const double>{cdf}, rng.nextDouble());
     return channels[idx];
   }
 };

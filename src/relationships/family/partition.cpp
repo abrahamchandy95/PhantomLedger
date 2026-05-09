@@ -24,7 +24,7 @@ namespace {
     weights.push_back(std::pow(static_cast<double>(s), -alpha));
   }
 
-  return distributions::buildCdf(std::span<const double>{weights});
+  return probability::distributions::buildCdf(std::span<const double>{weights});
 }
 
 [[nodiscard]] std::uint32_t drawHouseholdSize(random::Rng &rng,
@@ -34,7 +34,8 @@ namespace {
     return 1U;
   }
 
-  const auto idx = distributions::sampleIndex(sizeCdf, rng.nextDouble());
+  const auto idx =
+      probability::distributions::sampleIndex(sizeCdf, rng.nextDouble());
   const auto raw = static_cast<std::uint32_t>(2U + idx);
   return std::min(raw, static_cast<std::uint32_t>(maxSize));
 }

@@ -62,7 +62,7 @@ std::vector<double> buildMerchCdf(const entity::merchant::Catalog &catalog) {
     weights.push_back(rec.weight);
   }
 
-  return distributions::buildCdf(weights);
+  return probability::distributions::buildCdf(weights);
 }
 
 std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
@@ -81,7 +81,7 @@ std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
     return fallback;
   }
 
-  return distributions::buildCdf(weights);
+  return probability::distributions::buildCdf(weights);
 }
 
 // ---------- Per-person picks ----------
@@ -94,7 +94,7 @@ void uniqueWeightedPick(random::Rng &rng, const std::vector<double> &cdf,
   std::uint16_t tries = 0;
   while (out.size() < k && tries < maxTries) {
     const auto idx = static_cast<std::uint32_t>(
-        distributions::sampleIndex(cdf, rng.nextDouble()));
+        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
 
     ++tries;
 

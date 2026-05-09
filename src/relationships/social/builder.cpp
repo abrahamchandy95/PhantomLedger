@@ -18,7 +18,7 @@ namespace PhantomLedger::relationships::social {
 
 namespace {
 
-namespace cdf = ::PhantomLedger::distributions;
+namespace cdf = ::PhantomLedger::probability::distributions;
 namespace probdist = ::PhantomLedger::probability::distributions;
 namespace commerce = ::PhantomLedger::spending::market::commerce;
 
