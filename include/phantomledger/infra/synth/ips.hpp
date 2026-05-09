@@ -24,12 +24,11 @@ struct AssignmentRules {
     r.check([&] { v::between("extraIpP1", extraIpP1, 0.0, 1.0); });
     r.check([&] { v::between("extraIpP2", extraIpP2, 0.0, 1.0); });
   }
-};
 
-[[nodiscard]] Output
-build(random::Rng &rng, time::Window window,
-      const entity::person::Roster &people,
-      const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
-      const AssignmentRules &rules = {});
+  [[nodiscard]] Output
+  build(random::Rng &rng, time::Window window,
+        const entity::person::Roster &people,
+        const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const;
+};
 
 } // namespace PhantomLedger::infra::synth::ips
