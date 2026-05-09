@@ -8,7 +8,7 @@
 #include <optional>
 #include <string_view>
 
-namespace PhantomLedger::run {
+namespace PhantomLedger::app {
 
 enum class UseCase : std::uint8_t {
   standard = 0,
@@ -58,4 +58,4 @@ struct RunOptions {
   ::PhantomLedger::time::CalendarDate startDate{2025, 1, 1};
 };
 
-} // namespace PhantomLedger::run
+} // namespace PhantomLedger::app

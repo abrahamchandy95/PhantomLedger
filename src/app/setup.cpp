@@ -1,10 +1,10 @@
-#include "phantomledger/run/setup.hpp"
+#include "phantomledger/app/setup.hpp"
 
+#include "phantomledger/app/options.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/run/options.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace PhantomLedger::run::setup {
+namespace PhantomLedger::app::setup {
 
 namespace {
 
@@ -101,4 +101,4 @@ buildEntitySynthesis(const RunOptions &opts, const pii::PoolSet &pools,
   };
 }
 
-} // namespace PhantomLedger::run::setup
+} // namespace PhantomLedger::app::setup

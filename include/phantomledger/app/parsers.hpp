@@ -8,7 +8,7 @@
 #include <string_view>
 #include <system_error>
 
-namespace PhantomLedger::cli {
+namespace PhantomLedger::app::cli {
 
 [[nodiscard]] inline std::optional<std::int64_t>
 parseInt(std::string_view s) noexcept {
@@ -74,4 +74,4 @@ parseDate(std::string_view s) noexcept {
   };
 }
 
-} // namespace PhantomLedger::cli
+} // namespace PhantomLedger::app::cli

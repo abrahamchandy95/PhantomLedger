@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace PhantomLedger::run::progress {
+namespace PhantomLedger::app::progress {
 
 void status(std::string_view message);
 
@@ -34,4 +34,4 @@ private:
   void render(bool force) noexcept;
 };
 
-} // namespace PhantomLedger::run::progress
+} // namespace PhantomLedger::app::progress
