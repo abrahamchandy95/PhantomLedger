@@ -7,6 +7,7 @@
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -14,6 +15,7 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <vector>
@@ -21,59 +23,6 @@
 namespace PhantomLedger::inflows::revenue::flow {
 
 using Key = entity::Key;
-
-// ---------------------------------------------------------------
-// Cycle — one month of flow drafting
-// ---------------------------------------------------------------
-
-class Cycle {
-public:
-  Cycle(random::Rng &rng, time::TimePoint monthStart,
-        time::TimePoint windowStart, time::TimePoint endExcl,
-        const transactions::Factory &txf,
-        std::vector<transactions::Transaction> &txns)
-      : rng_(rng), monthStart_(monthStart), windowStart_(windowStart),
-        endExcl_(endExcl), txf_(txf), txns_(txns) {}
-
-  [[nodiscard]] random::Rng &rng() noexcept { return rng_; }
-
-  [[nodiscard]] time::TimePoint ts(BusinessDayWindow window) {
-    return businessDayTs(monthStart_, rng_, window);
-  }
-
-  void append(const Key &src, const Key &dst, double amount,
-              time::TimePoint timestamp, channels::Tag channel) {
-    if (amount <= 0.0) {
-      return;
-    }
-
-    if (timestamp < windowStart_ || timestamp >= endExcl_) {
-      return;
-    }
-
-    txns_.push_back(txf_.make(transactions::Draft{
-        .source = src,
-        .destination = dst,
-        .amount = primitives::utils::roundMoney(amount),
-        .timestamp = time::toEpochSeconds(timestamp),
-        .isFraud = 0,
-        .ringId = -1,
-        .channel = channel,
-    }));
-  }
-
-private:
-  random::Rng &rng_;
-  time::TimePoint monthStart_;
-  time::TimePoint windowStart_;
-  time::TimePoint endExcl_;
-  const transactions::Factory &txf_;
-  std::vector<transactions::Transaction> &txns_;
-};
-
-// ---------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------
 
 namespace detail {
 
@@ -87,47 +36,6 @@ struct Rule {
                                    double sigma, double floor) {
   return std::max(
       floor, probability::distributions::lognormalByMedian(rng, median, sigma));
-}
-
-inline void counterparty(Cycle &cycle,
-                         const CounterpartyRevenueProfile &profile,
-                         const Key &dst, std::span<const Key> sources,
-                         const Rule &rule) {
-  if (sources.empty()) {
-    return;
-  }
-
-  const int n =
-      paymentCount(cycle.rng(), profile.paymentsMin, profile.paymentsMax);
-
-  for (int i = 0; i < n; ++i) {
-    const auto src = pickOne(cycle.rng(), sources);
-    if (!src.has_value()) {
-      continue;
-    }
-
-    cycle.append(*src, dst,
-                 amount(cycle.rng(), profile.median, profile.sigma, rule.floor),
-                 cycle.ts(rule.window), rule.channel);
-  }
-}
-
-inline void singleSource(Cycle &cycle,
-                         const SingleSourceRevenueProfile &profile,
-                         const Key &dst, std::optional<Key> src,
-                         const Rule &rule) {
-  if (!src.has_value()) {
-    return;
-  }
-
-  const int n =
-      paymentCount(cycle.rng(), profile.paymentsMin, profile.paymentsMax);
-
-  for (int i = 0; i < n; ++i) {
-    cycle.append(*src, dst,
-                 amount(cycle.rng(), profile.median, profile.sigma, rule.floor),
-                 cycle.ts(rule.window), rule.channel);
-  }
 }
 
 inline constexpr Rule kClients{
@@ -192,33 +100,114 @@ inline constexpr Rule kInvestments{
 
 } // namespace detail
 
-// ---------------------------------------------------------------
-// Public flow drafters
-// ---------------------------------------------------------------
+// one month flow
+class Cycle {
+public:
+  Cycle(random::Rng &rng, time::Window window, time::TimePoint monthStart,
+        const transactions::Factory &factory) noexcept
+      : rng_(rng), window_(window), monthStart_(monthStart), factory_(factory) {
+  }
 
-inline void clients(Cycle &cycle, const CounterpartyRevenueProfile &profile,
-                    const Key &dst, std::span<const Key> sources) {
-  detail::counterparty(cycle, profile, dst, sources, detail::kClients);
-}
+  // -------- public verbs (one per flow type) --------
 
-inline void platforms(Cycle &cycle, const CounterpartyRevenueProfile &profile,
-                      const Key &dst, std::span<const Key> sources) {
-  detail::counterparty(cycle, profile, dst, sources, detail::kPlatforms);
-}
+  void clients(const CounterpartyRevenueProfile &profile, const Key &dst,
+               std::span<const Key> sources) {
+    counterparty(profile, dst, sources, detail::kClients);
+  }
 
-inline void settlements(Cycle &cycle, const SingleSourceRevenueProfile &profile,
-                        const Key &dst, std::optional<Key> src) {
-  detail::singleSource(cycle, profile, dst, src, detail::kSettlements);
-}
+  void platforms(const CounterpartyRevenueProfile &profile, const Key &dst,
+                 std::span<const Key> sources) {
+    counterparty(profile, dst, sources, detail::kPlatforms);
+  }
 
-inline void draws(Cycle &cycle, const SingleSourceRevenueProfile &profile,
-                  const Key &dst, std::optional<Key> src) {
-  detail::singleSource(cycle, profile, dst, src, detail::kDraws);
-}
+  void settlements(const SingleSourceRevenueProfile &profile, const Key &dst,
+                   std::optional<Key> src) {
+    singleSource(profile, dst, src, detail::kSettlements);
+  }
 
-inline void investments(Cycle &cycle, const SingleSourceRevenueProfile &profile,
-                        const Key &dst, std::optional<Key> src) {
-  detail::singleSource(cycle, profile, dst, src, detail::kInvestments);
-}
+  void draws(const SingleSourceRevenueProfile &profile, const Key &dst,
+             std::optional<Key> src) {
+    singleSource(profile, dst, src, detail::kDraws);
+  }
+
+  void investments(const SingleSourceRevenueProfile &profile, const Key &dst,
+                   std::optional<Key> src) {
+    singleSource(profile, dst, src, detail::kInvestments);
+  }
+
+  /// Move all generated transactions into the caller's sink.
+  /// Rvalue-qualified to express one-shot consumption: after the
+  /// move, this Cycle is empty and should be discarded.
+  void drainInto(std::vector<transactions::Transaction> &sink) && {
+    sink.insert(sink.end(), std::make_move_iterator(txns_.begin()),
+                std::make_move_iterator(txns_.end()));
+    txns_.clear();
+  }
+
+private:
+  void counterparty(const CounterpartyRevenueProfile &profile, const Key &dst,
+                    std::span<const Key> sources, const detail::Rule &rule) {
+    if (sources.empty()) {
+      return;
+    }
+
+    const int n = paymentCount(rng_, profile.paymentsMin, profile.paymentsMax);
+
+    for (int i = 0; i < n; ++i) {
+      const auto src = pickOne(rng_, sources);
+      if (!src.has_value()) {
+        continue;
+      }
+
+      append(*src, dst,
+             detail::amount(rng_, profile.median, profile.sigma, rule.floor),
+             rule);
+    }
+  }
+
+  void singleSource(const SingleSourceRevenueProfile &profile, const Key &dst,
+                    std::optional<Key> src, const detail::Rule &rule) {
+    if (!src.has_value()) {
+      return;
+    }
+
+    const int n = paymentCount(rng_, profile.paymentsMin, profile.paymentsMax);
+
+    for (int i = 0; i < n; ++i) {
+      append(*src, dst,
+             detail::amount(rng_, profile.median, profile.sigma, rule.floor),
+             rule);
+    }
+  }
+
+  void append(const Key &src, const Key &dst, double amount,
+              const detail::Rule &rule) {
+    if (amount <= 0.0) {
+      return;
+    }
+
+    const auto timestamp = businessDayTs(monthStart_, rng_, rule.window);
+
+    if (timestamp < window_.start || timestamp >= window_.endExcl()) {
+      return;
+    }
+
+    txns_.push_back(factory_.make(transactions::Draft{
+        .source = src,
+        .destination = dst,
+        .amount = primitives::utils::roundMoney(amount),
+        .timestamp = time::toEpochSeconds(timestamp),
+        .isFraud = 0,
+        .ringId = -1,
+        .channel = rule.channel,
+    }));
+  }
+
+  random::Rng &rng_;
+  time::Window window_;
+  time::TimePoint monthStart_;
+  const transactions::Factory &factory_;
+  std::vector<transactions::Transaction> txns_;
+};
 
 } // namespace PhantomLedger::inflows::revenue::flow
