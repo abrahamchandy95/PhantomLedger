@@ -24,10 +24,18 @@ struct OverdraftFeeAssessment {
   }
 };
 
+struct CashTransition {
+  double before = 0.0;
+  double after = 0.0;
+
+  [[nodiscard]] constexpr bool crossed() const noexcept {
+    return before >= 0.0 && after < 0.0;
+  }
+};
+
 [[nodiscard]] constexpr OverdraftFeeAssessment
 assessOverdraftFee(ProtectionType protection, channels::Tag channel,
-                   double cashBefore, double cashAfter,
-                   double feeAmount) noexcept {
+                   CashTransition transition, double feeAmount) noexcept {
   if (protection != ProtectionType::courtesy &&
       protection != ProtectionType::linked) {
     return {};
@@ -37,8 +45,7 @@ assessOverdraftFee(ProtectionType protection, channels::Tag channel,
     return {};
   }
 
-  const bool crossed = cashBefore >= 0.0 && cashAfter < 0.0;
-  if (!crossed) {
+  if (!transition.crossed()) {
     return {};
   }
 
@@ -185,13 +192,7 @@ void Ledger::setProtection(Index idx, ProtectionType type,
     locTracker_.disable(idx);
     break;
   case ProtectionType::loc:
-    // LOC credit limit lives in the overdraft slot so totalLiquidity()
-    // and the funding check see it through the existing code path.
-    // APR + billingDay arrive later via setLoc().
     overdrafts_[idx] = bufferAmount;
-    // Register with the tracker at zero APR/day 0; setLoc() fills in
-    // the real values. This keeps the tracker's enabled-flag in sync
-    // with the protection type even if the caller forgets setLoc.
     locTracker_.enable(idx, 0.0, 0);
     break;
   }
@@ -236,58 +237,62 @@ void Ledger::setEmitLiquidity(bool emit) noexcept { emitLiquidity_ = emit; }
 
 // --- Core transfer logic ---
 
-TransferDecision Ledger::applyTransfer(Index srcIdx, Index dstIdx,
-                                       double amount, channels::Tag channel,
+TransferDecision Ledger::applyTransfer(const Posting &posting,
                                        double &srcCashBefore) noexcept {
   srcCashBefore = 0.0;
 
-  if (amount <= 0.0 || !std::isfinite(amount)) {
+  if (posting.amount <= 0.0 || !std::isfinite(posting.amount)) {
     return TransferDecision::reject(RejectReason::invalid);
   }
 
-  const bool srcExternal = (srcIdx == invalid);
-  const bool dstExternal = (dstIdx == invalid);
+  const bool srcExternal = (posting.srcIdx == invalid);
+  const bool dstExternal = (posting.dstIdx == invalid);
 
   if (srcExternal && dstExternal) {
     return TransferDecision::reject(RejectReason::unbooked);
   }
 
   if (srcExternal) {
-    cash_[dstIdx] += amount;
+    cash_[posting.dstIdx] += posting.amount;
     return TransferDecision::accept();
   }
 
-  const bool srcHub = isHub(srcIdx);
-  srcCashBefore = cash_[srcIdx];
+  const bool srcHub = isHub(posting.srcIdx);
+  srcCashBefore = cash_[posting.srcIdx];
 
-  if (!srcHub && !channels::isLiquidity(channel)) {
+  if (!srcHub && !channels::isLiquidity(posting.channel)) {
     const bool selfTransfer =
-        channels::is(channel, channels::Legit::selfTransfer);
+        channels::is(posting.channel, channels::Legit::selfTransfer);
     const double spendable =
-        selfTransfer ? cash_[srcIdx] : totalLiquidity(srcIdx);
-    if (spendable < amount) {
+        selfTransfer ? cash_[posting.srcIdx] : totalLiquidity(posting.srcIdx);
+    if (spendable < posting.amount) {
       return TransferDecision::reject(RejectReason::unfunded);
     }
   }
 
   if (dstExternal) {
     if (!srcHub) {
-      cash_[srcIdx] -= amount;
+      cash_[posting.srcIdx] -= posting.amount;
     }
     return TransferDecision::accept();
   }
 
   if (!srcHub) {
-    cash_[srcIdx] -= amount;
+    cash_[posting.srcIdx] -= posting.amount;
   }
-  cash_[dstIdx] += amount;
+  cash_[posting.dstIdx] += posting.amount;
   return TransferDecision::accept();
 }
 
 TransferDecision Ledger::transfer(Index srcIdx, Index dstIdx, double amount,
                                   channels::Tag channel) noexcept {
   double srcCashBefore = 0.0;
-  return applyTransfer(srcIdx, dstIdx, amount, channel, srcCashBefore);
+  return applyTransfer(Posting{.srcIdx = srcIdx,
+                               .dstIdx = dstIdx,
+                               .amount = amount,
+                               .channel = channel,
+                               .timestamp = 0},
+                       srcCashBefore);
 }
 
 TransferDecision Ledger::transfer(const entity::Key &src,
@@ -325,31 +330,32 @@ void Ledger::debitAndEmit(Index idx, double amount, channels::Tag channel,
   }
 }
 
-TransferDecision Ledger::transferAt(Index srcIdx, Index dstIdx, double amount,
-                                    channels::Tag channel,
-                                    std::int64_t timestamp) noexcept {
+TransferDecision Ledger::transferAt(const Posting &posting) noexcept {
   // Roll LOC integrals forward on both legs using pre-transfer cash.
-  if (isValid(srcIdx)) {
-    locTracker_.update(srcIdx, cash_[srcIdx], timestamp);
+  if (isValid(posting.srcIdx)) {
+    locTracker_.update(posting.srcIdx, cash_[posting.srcIdx],
+                       posting.timestamp);
   }
-  if (isValid(dstIdx)) {
-    locTracker_.update(dstIdx, cash_[dstIdx], timestamp);
+  if (isValid(posting.dstIdx)) {
+    locTracker_.update(posting.dstIdx, cash_[posting.dstIdx],
+                       posting.timestamp);
   }
 
   double srcCashBefore = 0.0;
-  const auto decision =
-      applyTransfer(srcIdx, dstIdx, amount, channel, srcCashBefore);
+  const auto decision = applyTransfer(posting, srcCashBefore);
 
-  if (decision.rejected() || !emitLiquidity_ || srcIdx == invalid) {
+  if (decision.rejected() || !emitLiquidity_ || posting.srcIdx == invalid) {
     return decision;
   }
 
-  const auto fee =
-      assessOverdraftFee(protectionType_[srcIdx], channel, srcCashBefore,
-                         cash_[srcIdx], overdraftFeeAmount_[srcIdx]);
+  const auto fee = assessOverdraftFee(
+      protectionType_[posting.srcIdx], posting.channel,
+      CashTransition{.before = srcCashBefore, .after = cash_[posting.srcIdx]},
+      overdraftFeeAmount_[posting.srcIdx]);
   if (fee) {
-    debitAndEmit(srcIdx, fee.amount,
-                 channels::tag(channels::Liquidity::overdraftFee), timestamp);
+    debitAndEmit(posting.srcIdx, fee.amount,
+                 channels::tag(channels::Liquidity::overdraftFee),
+                 posting.timestamp);
   }
 
   return decision;

@@ -150,8 +150,13 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
   const auto srcIdx = book_->findAccount(txn.source);
   const auto dstIdx = book_->findAccount(txn.target);
 
-  const auto decision = book_->transferAt(srcIdx, dstIdx, txn.amount,
-                                          txn.session.channel, txn.timestamp);
+  const auto decision = book_->transferAt(clearing::Ledger::Posting{
+      .srcIdx = srcIdx,
+      .dstIdx = dstIdx,
+      .amount = txn.amount,
+      .channel = txn.session.channel,
+      .timestamp = txn.timestamp,
+  });
 
   currentTxn_ = nullptr;
   uninstallLiquiditySink();
@@ -222,9 +227,13 @@ void ChronoReplayAccumulator::extend(
     const auto srcIdx = book_->findAccount(item.txn.source);
     const auto dstIdx = book_->findAccount(item.txn.target);
 
-    const auto decision =
-        book_->transferAt(srcIdx, dstIdx, item.txn.amount,
-                          item.txn.session.channel, item.txn.timestamp);
+    const auto decision = book_->transferAt(clearing::Ledger::Posting{
+        .srcIdx = srcIdx,
+        .dstIdx = dstIdx,
+        .amount = item.txn.amount,
+        .channel = item.txn.session.channel,
+        .timestamp = item.txn.timestamp,
+    });
 
     currentTxn_ = nullptr;
 

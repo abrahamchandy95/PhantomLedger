@@ -93,8 +93,13 @@ public:
 
     const auto srcIdx = book_->findAccount(source);
     const auto dstIdx = book_->findAccount(destination);
-    const auto decision =
-        book_->transferAt(srcIdx, dstIdx, amount, channel, timestamp);
+    const auto decision = book_->transferAt(clearing::Ledger::Posting{
+        .srcIdx = srcIdx,
+        .dstIdx = dstIdx,
+        .amount = amount,
+        .channel = channel,
+        .timestamp = timestamp,
+    });
     return decision.accepted();
   }
 
