@@ -16,10 +16,6 @@ class PortfolioRegistry {
 public:
   PortfolioRegistry() = default;
 
-  // --- Component access ---
-  //
-  // Prefer these when a caller only needs one concern.
-
   [[nodiscard]] InsuranceLedger &insurance() noexcept { return insurance_; }
   [[nodiscard]] const InsuranceLedger &insurance() const noexcept {
     return insurance_;
