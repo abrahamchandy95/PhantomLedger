@@ -64,8 +64,12 @@ buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
          "buildPii: IdentitySource::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
 
-  return synth::pii::make(rng, personas.assignment, identity.simStart,
-                          identity.localeMix, *identity.pools);
+  const synth::pii::IdentityContext context{
+      .simStart = identity.simStart,
+      .mix = identity.localeMix,
+      .pools = identity.pools,
+  };
+  return synth::pii::make(rng, personas.assignment, context);
 }
 
 [[nodiscard]] entity::merchant::Catalog

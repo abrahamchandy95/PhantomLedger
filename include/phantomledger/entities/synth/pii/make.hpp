@@ -2,73 +2,72 @@
 
 #include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
+#include <cassert>
 #include <cstdint>
-#include <stdexcept>
 
 namespace PhantomLedger::entities::synth::pii {
 
-[[nodiscard]] inline entity::pii::Record
-buildRecord(entity::PersonId person, random::Rng &rng,
-            const entity::behavior::Assignment &personas,
-            time::TimePoint simStart, const LocaleMix &mix,
-            const PoolSet &pools) {
-  const auto country = sampleCountry(rng, mix);
-  const auto &pool = pools.forCountry(country);
+struct IdentityContext {
+  time::TimePoint simStart{};
+  LocaleMix mix{};
+  const PoolSet *pools = nullptr;
+};
+
+class Generator {
+public:
+  Generator(random::Rng &rng, const entity::behavior::Assignment &personas,
+            const IdentityContext &context) noexcept
+      : rng_(&rng), personas_(&personas), context_(context) {
+    assert(context_.pools != nullptr &&
+           "pii::Generator: IdentityContext::pools must be set");
+  }
+
+  [[nodiscard]] entity::pii::Roster make();
+
+private:
+  [[nodiscard]] entity::pii::Record buildRecord(entity::PersonId person);
+
+  random::Rng *rng_;
+  const entity::behavior::Assignment *personas_;
+  IdentityContext context_;
+};
+
+inline entity::pii::Record Generator::buildRecord(entity::PersonId person) {
+  const auto country = sampleCountry(*rng_, context_.mix);
+  const auto &pool = context_.pools->forCountry(country);
 
   entity::pii::Record rec{};
   rec.country = country;
   rec.email = sampleEmail(person);
-  rec.name = sampleName(rng, pool);
-  rec.ssn = sampleSsn(rng, country);
-  rec.phone = samplePhone(rng, country);
-  rec.dob = sampleDob(rng, personas.byPerson[person - 1], simStart);
-  rec.address = sampleAddress(rng, pool);
+  rec.name = sampleName(*rng_, pool);
+  rec.ssn = sampleSsn(*rng_, country);
+  rec.phone = samplePhone(*rng_, country);
+  rec.dob =
+      sampleDob(*rng_, personas_->byPerson[person - 1], context_.simStart);
+  rec.address = sampleAddress(*rng_, pool);
   return rec;
 }
 
-template <typename Sink>
-inline void generate(random::Rng &rng,
-                     const entity::behavior::Assignment &personas,
-                     time::TimePoint simStart, const LocaleMix &mix,
-                     const PoolSet &pools, Sink &&sink) {
-  const auto population = personas.byPerson.size();
-  for (std::uint64_t p = 1; p <= population; ++p) {
-    const auto person = static_cast<entity::PersonId>(p);
-    const auto rec = buildRecord(person, rng, personas, simStart, mix, pools);
-    sink(person, rec);
-  }
-}
-
-[[nodiscard]] inline entity::pii::Roster
-make(random::Rng &rng, const entity::behavior::Assignment &personas,
-     time::TimePoint simStart, const LocaleMix &mix, const PoolSet &pools) {
+inline entity::pii::Roster Generator::make() {
+  const auto population = personas_->byPerson.size();
   entity::pii::Roster out;
-  out.records.reserve(personas.byPerson.size());
-
-  generate(rng, personas, simStart, mix, pools,
-           [&out](entity::PersonId, const entity::pii::Record &rec) {
-             out.records.push_back(rec);
-           });
-
+  out.records.reserve(population);
+  for (std::uint64_t p = 1; p <= population; ++p) {
+    out.records.push_back(buildRecord(static_cast<entity::PersonId>(p)));
+  }
   return out;
 }
 
 [[nodiscard]] inline entity::pii::Roster
-make(random::Rng &rng, const entity::person::Roster &people,
-     const entity::behavior::Assignment &personas, time::TimePoint simStart,
-     const LocaleMix &mix, const PoolSet &pools) {
-  if (people.count != personas.byPerson.size()) {
-    throw std::invalid_argument(
-        "pii::make: people roster size != persona assignment size");
-  }
-  return make(rng, personas, simStart, mix, pools);
+make(random::Rng &rng, const entity::behavior::Assignment &personas,
+     const IdentityContext &context) {
+  return Generator{rng, personas, context}.make();
 }
 
 } // namespace PhantomLedger::entities::synth::pii
