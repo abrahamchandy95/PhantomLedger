@@ -132,18 +132,20 @@ public:
     return transfer(srcIdx, dstIdx, amount, channels::tag(channel));
   }
 
-  [[nodiscard]] TransferDecision transferAt(Index srcIdx, Index dstIdx,
-                                            double amount,
-                                            channels::Tag channel,
-                                            std::int64_t timestamp) noexcept;
+  /// A timestamped, indexed posting against the ledger: where money
+  /// moves from, where it moves to, how much, on which channel, and
+  /// when. The `timestamp` is consumed by `transferAt` to roll the
+  /// LOC accrual integrals forward; it's ignored when the same
+  /// struct flows through plain `transfer`.
+  struct Posting {
+    Index srcIdx = invalid;
+    Index dstIdx = invalid;
+    double amount = 0.0;
+    channels::Tag channel{};
+    std::int64_t timestamp = 0;
+  };
 
-  template <channels::ChannelEnum Channel>
-  [[nodiscard]] TransferDecision transferAt(Index srcIdx, Index dstIdx,
-                                            double amount, Channel channel,
-                                            std::int64_t timestamp) noexcept {
-    return transferAt(srcIdx, dstIdx, amount, channels::tag(channel),
-                      timestamp);
-  }
+  [[nodiscard]] TransferDecision transferAt(const Posting &posting) noexcept;
 
   void accrueLocInterestThrough(std::int64_t timestamp) noexcept;
 
@@ -160,9 +162,7 @@ private:
   [[nodiscard]] bool isValid(Index idx) const noexcept;
   [[nodiscard]] double totalLiquidity(Index idx) const noexcept;
 
-  [[nodiscard]] TransferDecision applyTransfer(Index srcIdx, Index dstIdx,
-                                               double amount,
-                                               channels::Tag channel,
+  [[nodiscard]] TransferDecision applyTransfer(const Posting &posting,
                                                double &srcCashBefore) noexcept;
 
   void debitAndEmit(Index idx, double amount, channels::Tag channel,
