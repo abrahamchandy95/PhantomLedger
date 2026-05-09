@@ -4,6 +4,7 @@
 #include "phantomledger/activity/income/revenue/sources.hpp"
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -26,7 +27,8 @@ namespace detail {
 class Generator {
 public:
   Generator(const Book &book, const transactions::Factory &txf)
-      : book_(book), txf_(txf), endExcl_(book.timeframe.end()) {
+      : book_(book), txf_(txf),
+        window_{book.timeframe.startDate, book.timeframe.days} {
     txns_.reserve(static_cast<std::size_t>(book.population.count) *
                   book.timeframe.monthStarts.size() * 3);
   }
@@ -67,20 +69,20 @@ private:
       return;
     }
 
-    flow::Cycle cycle{
-        rng, monthStart, book_.timeframe.startDate, endExcl_, txf_, txns_,
-    };
+    flow::Cycle cycle{rng, window_, monthStart, txf_};
 
-    flow::clients(cycle, profile.client, plan.accounts.revenueDst,
+    cycle.clients(profile.client, plan.accounts.revenueDst,
                   plan.sources.clients);
-    flow::platforms(cycle, profile.platform, plan.accounts.revenueDst,
+    cycle.platforms(profile.platform, plan.accounts.revenueDst,
                     plan.sources.platforms);
-    flow::settlements(cycle, profile.settlement, plan.accounts.revenueDst,
+    cycle.settlements(profile.settlement, plan.accounts.revenueDst,
                       plan.sources.processor);
-    flow::draws(cycle, profile.ownerDraw, plan.accounts.personal,
+    cycle.draws(profile.ownerDraw, plan.accounts.personal,
                 plan.sources.drawSrc);
-    flow::investments(cycle, profile.investment, plan.accounts.personal,
+    cycle.investments(profile.investment, plan.accounts.personal,
                       plan.sources.investmentSrc);
+
+    std::move(cycle).drainInto(txns_);
   }
 
   [[nodiscard]] random::Rng monthRng(std::string_view personKey,
@@ -95,7 +97,7 @@ private:
 
   const Book &book_;
   const transactions::Factory &txf_;
-  const time::TimePoint endExcl_;
+  const time::Window window_;
   std::vector<transactions::Transaction> txns_;
 };
 
