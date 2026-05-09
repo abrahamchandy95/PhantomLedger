@@ -23,9 +23,11 @@ constexpr double kFraudHeadroomFraction = 0.05;
 
 } // namespace
 
-LegitAssembly &TransferStage::legit() noexcept { return legit_; }
+legit::LegitAssembly &TransferStage::legit() noexcept { return legit_; }
 
-const LegitAssembly &TransferStage::legit() const noexcept { return legit_; }
+const legit::LegitAssembly &TransferStage::legit() const noexcept {
+  return legit_;
+}
 
 ProductReplay &TransferStage::products() noexcept { return products_; }
 

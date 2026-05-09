@@ -22,7 +22,7 @@ namespace PhantomLedger::transfers::credit_cards {
 struct LifecycleRules;
 } // namespace PhantomLedger::transfers::credit_cards
 
-namespace PhantomLedger::pipeline::stages::transfers {
+namespace PhantomLedger::transfers::legit {
 
 using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
     relatives::FamilyTransferScenario;
@@ -34,8 +34,6 @@ public:
     std::uint64_t seed = 0;
   };
 
-  /// Income-side programs. Each subsystem owns its own rules; there is
-  /// no single cross-cutting "recurring rules" bag.
   struct IncomePrograms {
     ::PhantomLedger::inflows::salary::Rules salary{};
     ::PhantomLedger::inflows::rent::Rules rent{};
@@ -116,4 +114,4 @@ private:
   HubSelection hubSelection_{};
 };
 
-} // namespace PhantomLedger::pipeline::stages::transfers
+} // namespace PhantomLedger::transfers::legit
