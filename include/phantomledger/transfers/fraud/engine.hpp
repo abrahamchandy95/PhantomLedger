@@ -50,9 +50,10 @@ struct TypologyWeights {
       return Typology::classic;
     }
 
-    const auto cdf = distributions::buildCdf(
+    const auto cdf = probability::distributions::buildCdf(
         std::span<const double>(weights.data(), weights.size()));
-    const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+    const auto idx =
+        probability::distributions::sampleIndex(cdf, rng.nextDouble());
     return static_cast<Typology>(idx);
   }
 };

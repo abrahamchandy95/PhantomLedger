@@ -100,7 +100,7 @@ using identifiers::Role;
     weights[i] = plan.mix[i].weight;
   }
 
-  const auto cdf = distributions::buildCdf(weights);
+  const auto cdf = probability::distributions::buildCdf(weights);
 
   Pack out;
   out.roster.records.reserve(static_cast<std::size_t>(total));
@@ -110,7 +110,8 @@ using identifiers::Role;
   std::uint64_t externalSerial = 0;
 
   for (int i = 0; i < total; ++i) {
-    const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+    const auto idx =
+        probability::distributions::sampleIndex(cdf, rng.nextDouble());
     const auto type = plan.mix[idx].type;
     const auto typeIdx = enumTax::toIndex(type);
 

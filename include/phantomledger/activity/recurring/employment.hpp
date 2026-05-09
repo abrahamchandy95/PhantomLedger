@@ -129,9 +129,9 @@ samplePayrollProfile(const PayrollRules &rules,
       weights.monthly,
   };
 
-  const auto cdf = distributions::buildCdf(cadenceWeights);
-  const auto cadence =
-      kPayCadences[distributions::sampleIndex(cdf, rng.nextDouble())];
+  const auto cdf = probability::distributions::buildCdf(cadenceWeights);
+  const auto cadence = kPayCadences[probability::distributions::sampleIndex(
+      cdf, rng.nextDouble())];
 
   int weekday = rules.defaultWeekday;
   if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&

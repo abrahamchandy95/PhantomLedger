@@ -11,7 +11,7 @@ namespace PhantomLedger::relationships::social {
 
 namespace {
 
-namespace dist = ::PhantomLedger::distributions;
+namespace dist = ::PhantomLedger::probability::distributions;
 
 inline constexpr int kLocalMaxTries = 8;
 inline constexpr int kGlobalMaxTries = 8;

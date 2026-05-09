@@ -32,9 +32,10 @@ using recurring::PayrollRules;
       kRules.weights.monthly,
   };
 
-  const auto cdf = distributions::buildCdf(cadenceWeights);
-  const auto cadence = recurring::kPayCadences[distributions::sampleIndex(
-      cdf, rng.nextDouble())];
+  const auto cdf = probability::distributions::buildCdf(cadenceWeights);
+  const auto cadence =
+      recurring::kPayCadences[probability::distributions::sampleIndex(
+          cdf, rng.nextDouble())];
 
   int weekday = kRules.defaultWeekday;
   if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&

@@ -200,8 +200,9 @@ hasPrimaryAccount(const entity::account::Ownership &ownership,
       weights.standardFee,
   };
 
-  const auto cdf = distributions::buildCdf(tierWeights);
-  const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+  const auto cdf = probability::distributions::buildCdf(tierWeights);
+  const auto idx =
+      probability::distributions::sampleIndex(cdf, rng.nextDouble());
 
   return kBankTiers[idx];
 }
@@ -227,8 +228,9 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
       shares.none(),
   };
 
-  const auto cdf = distributions::buildCdf(weights);
-  const auto idx = distributions::sampleIndex(cdf, rng.nextDouble());
+  const auto cdf = probability::distributions::buildCdf(weights);
+  const auto idx =
+      probability::distributions::sampleIndex(cdf, rng.nextDouble());
 
   return kProtectionSamplingOrder[idx];
 }

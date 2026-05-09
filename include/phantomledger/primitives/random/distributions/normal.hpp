@@ -7,12 +7,6 @@
 
 namespace PhantomLedger::probability::distributions {
 
-/// Sample one variate from the standard normal distribution N(0, 1).
-///
-/// Uses Box-Muller: two uniform draws produce one standard normal.
-/// We discard the second variate for simplicity; the hot path draws
-/// one value at a time and the PCG64 is fast enough that wasting
-/// one draw is cheaper than maintaining paired state.
 [[nodiscard]] inline double standardNormal(random::Rng &rng) {
   double u1 = rng.nextDouble();
   const double u2 = rng.nextDouble();

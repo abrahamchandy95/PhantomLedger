@@ -140,13 +140,10 @@ set(PL_RELATIONSHIPS_SOURCES
     src/relationships/social/sampler.cpp
 )
 
-set(PL_RUN_SOURCES
-    src/run/progress.cpp
-    src/run/setup.cpp
-)
-
-set(PL_CLI_SOURCES
-    src/cli/args.cpp
+set(PL_APP_SOURCES
+    src/app/cli.cpp
+    src/app/progress.cpp
+    src/app/setup.cpp
 )
 
 set(PL_EXPORTER_SOURCES
@@ -189,8 +186,7 @@ set(PL_ALL_SOURCES
     ${PL_PRODUCTS_SOURCES}
     ${PL_LEGIT_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
-    ${PL_RUN_SOURCES}
-    ${PL_CLI_SOURCES}
+    ${PL_APP_SOURCES}
     ${PL_EXPORTER_SOURCES}
     ${PL_INFRA_SYNTH_SOURCES}
     ${PL_PIPELINE_SOURCES}
@@ -210,7 +206,7 @@ foreach(src IN LISTS PL_DISCOVERED_SOURCES)
     list(APPEND PL_DISCOVERED_SOURCES_REL "${rel}")
 endforeach()
 
-list(REMOVE_ITEM PL_DISCOVERED_SOURCES_REL "src/main.cpp")
+list(REMOVE_ITEM PL_DISCOVERED_SOURCES_REL "src/app/main.cpp")
 
 list(SORT PL_ALL_SOURCES)
 list(SORT PL_DISCOVERED_SOURCES_REL)
@@ -304,7 +300,7 @@ endif()
 # Executable
 # ---------------------------------------------------------------------
 
-add_executable(phantomledger src/main.cpp)
+add_executable(phantomledger src/app/main.cpp)
 target_link_libraries(phantomledger PRIVATE phantomledger_core)
 
 if(MSVC)
