@@ -1,4 +1,6 @@
-#include "phantomledger/cli/args.hpp"
+#include "phantomledger/app/cli.hpp"
+#include "phantomledger/app/options.hpp"
+#include "phantomledger/app/setup.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
@@ -8,8 +10,6 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/run/options.hpp"
-#include "phantomledger/run/setup.hpp"
 
 #include <cstddef>
 #include <cstdio>
@@ -20,7 +20,7 @@ namespace {
 namespace pl = ::PhantomLedger;
 
 void printGenericSummary(const pl::pipeline::SimulationResult &result,
-                         const pl::run::RunOptions &opts) {
+                         const pl::app::RunOptions &opts) {
   const auto &postedTxns = result.transfers.ledger.posted.txns;
   const auto totalTxns = postedTxns.size();
 
@@ -43,7 +43,7 @@ void printGenericSummary(const pl::pipeline::SimulationResult &result,
 }
 
 void printAmlSummary(const pl::exporter::aml::Summary &summary,
-                     const pl::run::RunOptions &opts) {
+                     const pl::app::RunOptions &opts) {
 
   const double ratio = (summary.totalTxnCount == 0)
                            ? 0.0
@@ -69,23 +69,23 @@ int main(int argc, char **argv) {
 
   try {
 
-    const auto opts = cli::parse(argc, argv);
+    const auto opts = app::cli::parse(argc, argv);
 
     time::Window window;
     window.start = time::makeTime(opts.startDate);
     window.days = static_cast<int>(opts.days);
 
     const auto mix = pii::LocaleMix::usBankDefault();
-    const auto pools = run::setup::buildPoolSet(opts, mix);
+    const auto pools = app::setup::buildPoolSet(opts, mix);
     const auto entityConfig =
-        run::setup::buildEntitySynthesis(opts, pools, mix, window.start);
+        app::setup::buildEntitySynthesis(opts, pools, mix, window.start);
 
     auto rng = random::Rng::fromSeed(opts.seed);
     const auto result =
         pipeline::simulate(rng, window, entityConfig, opts.seed);
 
     switch (opts.usecase) {
-    case run::UseCase::standard: {
+    case app::UseCase::standard: {
       exporter::standard::Options exportOpts;
       exportOpts.showTransactions = opts.showTransactions;
       exporter::standard::exportAll(result, opts.outDir, exportOpts);
@@ -93,7 +93,7 @@ int main(int argc, char **argv) {
       break;
     }
 
-    case run::UseCase::muleMl: {
+    case app::UseCase::muleMl: {
       exporter::mule_ml::Options exportOpts;
       exportOpts.showTransactions = opts.showTransactions;
       exportOpts.piiPools = &pools;
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
       break;
     }
 
-    case run::UseCase::aml: {
+    case app::UseCase::aml: {
       exporter::aml::Options exportOpts;
       exportOpts.showTransactions = opts.showTransactions;
       const auto summary =

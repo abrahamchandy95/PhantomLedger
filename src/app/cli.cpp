@@ -1,7 +1,7 @@
-#include "phantomledger/cli/args.hpp"
+#include "phantomledger/app/cli.hpp"
 
-#include "phantomledger/cli/parsers.hpp"
-#include "phantomledger/run/options.hpp"
+#include "phantomledger/app/options.hpp"
+#include "phantomledger/app/parsers.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <utility>
 
-namespace PhantomLedger::cli {
+namespace PhantomLedger::app::cli {
 
 namespace {
 
@@ -56,8 +56,8 @@ void printUsage(const char *prog, std::FILE *stream) noexcept {
   writeUsage(prog, stream);
 }
 
-pl::run::RunOptions parse(int argc, char **argv) {
-  pl::run::RunOptions opts;
+pl::app::RunOptions parse(int argc, char **argv) {
+  pl::app::RunOptions opts;
 
   auto die = [&]<typename... T>(std::format_string<T...> fmt,
                                 T &&...formatArgs) {
@@ -85,7 +85,7 @@ pl::run::RunOptions parse(int argc, char **argv) {
 
     if (arg == "--usecase") {
       const auto value = requireValue(i, arg);
-      if (const auto parsed = pl::run::parseUseCase(value)) {
+      if (const auto parsed = pl::app::parseUseCase(value)) {
         opts.usecase = *parsed;
       } else {
         die("Unknown --usecase value: {}", value);
@@ -150,4 +150,4 @@ pl::run::RunOptions parse(int argc, char **argv) {
   return opts;
 }
 
-} // namespace PhantomLedger::cli
+} // namespace PhantomLedger::app::cli

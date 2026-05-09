@@ -1,11 +1,11 @@
-#include "phantomledger/run/progress.hpp"
+#include "phantomledger/app/progress.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <iostream>
 #include <utility>
 
-namespace PhantomLedger::run::progress {
+namespace PhantomLedger::app::progress {
 
 namespace {
 
@@ -100,4 +100,4 @@ void Stage::render(bool force) noexcept {
   std::cerr.flush();
 }
 
-} // namespace PhantomLedger::run::progress
+} // namespace PhantomLedger::app::progress
