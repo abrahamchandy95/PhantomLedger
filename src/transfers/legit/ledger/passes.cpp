@@ -7,6 +7,7 @@
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/transfers/channels/government/benefits_emitter.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
 #include "phantomledger/transfers/channels/government/recipients.hpp"
 #include "phantomledger/transfers/channels/government/retirement.hpp"
@@ -360,9 +361,6 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
   };
 
-  streams.add(
-      pl_inflows::generateSalaryTxns(payroll, mainRng, txf, salaryModel));
-
   const auto benefits = pass.benefits();
   if (govCps.valid() && benefits.retirement != nullptr &&
       benefits.disability != nullptr) {
@@ -370,12 +368,12 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
         plan, *accounts.ownership, *accounts.registry);
     const auto window = windowFromPlan(plan);
 
-    streams.add(pl_gov::retirementBenefits(
-        *benefits.retirement, window, mainRng, txf, govPopulation, govCps.ssa));
+    pl_gov::BenefitsEmitter emitter{window, mainRng, txf, govPopulation};
 
-    streams.add(pl_gov::disabilityBenefits(*benefits.disability, window,
-                                           mainRng, txf, govPopulation,
-                                           govCps.disability));
+    streams.add(emitter.emit(*benefits.retirement,
+                             pl_gov::retirementProgram(govCps.ssa)));
+    streams.add(emitter.emit(*benefits.disability,
+                             pl_gov::disabilityProgram(govCps.disability)));
   }
 
   const auto book =

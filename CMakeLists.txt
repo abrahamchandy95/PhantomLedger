@@ -49,8 +49,6 @@ set(PL_TRANSFERS_SOURCES
     src/transfers/channels/credit_cards/payment.cpp
     src/transfers/channels/credit_cards/session.cpp
     src/transfers/channels/credit_cards/statement.cpp
-    src/transfers/channels/government/disability.cpp
-    src/transfers/channels/government/retirement.cpp
     src/transfers/channels/insurance/claims.cpp
     src/transfers/channels/insurance/premiums.cpp
     src/transfers/channels/obligations/schedule.cpp
