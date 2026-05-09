@@ -126,6 +126,17 @@ struct BalanceRules {
 
   TierWeights tierWeights{};
   LocDefaults locDefaults{};
+
+  [[nodiscard]] double sampleMoney(random::Rng &rng, double median,
+                                   double sigma, double floor) const {
+    const double safeMedian =
+        enableConstraints ? std::max(median, 0.01) : median;
+    const double safeSigma = enableConstraints ? std::max(0.0, sigma) : sigma;
+    return primitives::utils::floorAndRound(
+        probability::distributions::lognormalByMedian(rng, safeMedian,
+                                                      safeSigma),
+        floor);
+  }
 };
 
 namespace detail {
@@ -143,22 +154,6 @@ inline constexpr std::array<ProtectionType, kProtectionTypeCount>
     };
 
 static_assert(kProtectionSamplingOrder.size() == kProtectionTypeCount);
-
-[[nodiscard]] inline double clampSigma(double sigma,
-                                       bool enableConstraints) noexcept {
-  return enableConstraints ? std::max(0.0, sigma) : sigma;
-}
-
-[[nodiscard]] inline double sampleMoney(random::Rng &rng, double median,
-                                        double sigma, double floor,
-                                        bool enableConstraints) {
-  const double safeMedian = enableConstraints ? std::max(median, 0.01) : median;
-  const double safeSigma = clampSigma(sigma, enableConstraints);
-
-  return primitives::utils::floorAndRound(
-      probability::distributions::lognormalByMedian(rng, safeMedian, safeSigma),
-      floor);
-}
 
 [[nodiscard]] inline const entity::behavior::Persona &
 personaFor(const entity::behavior::Table &personas, entity::PersonId owner) {
@@ -208,15 +203,14 @@ hasPrimaryAccount(const entity::account::Ownership &ownership,
 }
 
 [[nodiscard]] inline double sampleOverdraftFee(random::Rng &rng, BankTier tier,
-                                               bool enableConstraints) {
+                                               const BalanceRules &rules) {
   const auto profile = tierFeeProfile(tier);
 
   if (profile.median <= 0.0) {
     return 0.0;
   }
 
-  return sampleMoney(rng, profile.median, profile.sigma, 0.0,
-                     enableConstraints);
+  return rules.sampleMoney(rng, profile.median, profile.sigma, 0.0);
 }
 
 [[nodiscard]] inline ProtectionType
@@ -244,16 +238,15 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
     return 0.0;
 
   case ProtectionType::courtesy:
-    return sampleMoney(rng, prof.courtesyMedian, rules.courtesySigma, 0.0,
-                       rules.enableConstraints);
+    return rules.sampleMoney(rng, prof.courtesyMedian, rules.courtesySigma,
+                             0.0);
 
   case ProtectionType::linked:
-    return sampleMoney(rng, prof.linkedMedian, rules.linkedSigma, 0.0,
-                       rules.enableConstraints);
+    return rules.sampleMoney(rng, prof.linkedMedian, rules.linkedSigma, 0.0);
 
   case ProtectionType::loc:
-    return sampleMoney(rng, prof.locCreditLimitMedian,
-                       rules.locCreditLimitSigma, 0.0, rules.enableConstraints);
+    return rules.sampleMoney(rng, prof.locCreditLimitMedian,
+                             rules.locCreditLimitSigma, 0.0);
   }
 
   return 0.0;
@@ -278,14 +271,12 @@ public:
     const auto profile = bufferProfile(persona.archetype.type);
 
     // 1. Cash balance.
-    ledger().cash(idx) = detail::sampleMoney(rng(), profile.balanceMedian,
-                                             rules_.initialBalanceSigma, 1.0,
-                                             rules_.enableConstraints);
+    ledger().cash(idx) = rules_.sampleMoney(rng(), profile.balanceMedian,
+                                            rules_.initialBalanceSigma, 1.0);
 
     // 2-3. Bank tier and overdraft fee amount.
     const auto tier = detail::sampleTier(rng(), rules_.tierWeights);
-    const double fee =
-        detail::sampleOverdraftFee(rng(), tier, rules_.enableConstraints);
+    const double fee = detail::sampleOverdraftFee(rng(), tier, rules_);
     ledger().setBankTier(idx, tier, fee);
 
     // 4-5. Protection type and buffer amount.
@@ -389,14 +380,12 @@ inline void seedOwnedAccounts(OpeningBalanceSeeder &seeder,
   }
 }
 
+inline constexpr double kBurdenBufferFraction = 0.35;
+
 inline void addBurdenBuffer(Ledger &ledger,
                             const entity::account::Ownership &ownership,
                             const std::vector<double> &monthlyBurdens,
-                            std::uint32_t people, double fraction = 0.35) {
-  if (fraction <= 0.0) {
-    return;
-  }
-
+                            std::uint32_t people) {
   for (entity::PersonId person = 1; person <= people; ++person) {
     const auto burdenIndex = static_cast<std::size_t>(person - 1);
 
@@ -418,8 +407,8 @@ inline void addBurdenBuffer(Ledger &ledger,
     const double burden = monthlyBurdens[burdenIndex];
 
     if (burden > 0.0) {
-      ledger.cash(idx) =
-          primitives::utils::roundMoney(ledger.cash(idx) + fraction * burden);
+      ledger.cash(idx) = primitives::utils::roundMoney(
+          ledger.cash(idx) + kBurdenBufferFraction * burden);
     }
   }
 }

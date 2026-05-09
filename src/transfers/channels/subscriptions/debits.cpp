@@ -177,8 +177,8 @@ void DebitEmitter::emitWithScreen(std::span<const Candidate> sorted,
                                   std::size_t &baseCursor) const {
   for (const auto &candidate : sorted) {
     baseCursor = clearing::advanceBookThrough(
-        screen_->ledger, screen_->baseTxns, baseCursor, candidate.ts,
-        /*inclusive=*/true);
+        screen_->ledger, screen_->baseTxns, baseCursor,
+        clearing::TimeBound{.until = candidate.ts, .inclusive = true});
 
     const auto &sub = subs[candidate.subIdx];
     const auto decision = screen_->ledger->transfer(sub.deposit, sub.biller,
