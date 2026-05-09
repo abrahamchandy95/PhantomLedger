@@ -6,7 +6,7 @@
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
-#include "phantomledger/activity/spending/routing/dispatch.hpp"
+#include "phantomledger/activity/spending/routing/router.hpp"
 #include "phantomledger/activity/spending/spenders/targets.hpp"
 #include "phantomledger/math/timing.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
@@ -147,8 +147,8 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
   const routing::Slot slot =
       routing::pickSlot(routing_.channelCdf, rng.nextDouble());
 
-  auto maybeResult = routing::routeTxn(rng, market_, routing_.paymentRules,
-                                       resolved_, slot, event);
+  routing::PaymentRouter router{rng, market_, routing_.paymentRules, resolved_};
+  auto maybeResult = router.route(slot, event);
 
   if (!maybeResult.has_value()) {
     return std::nullopt;
