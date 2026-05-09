@@ -1,10 +1,10 @@
-#include "phantomledger/pipeline/stages/transfers/legit_assembly.hpp"
+#include "phantomledger/transfers/legit/assembly.hpp"
 
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
 
-namespace PhantomLedger::pipeline::stages::transfers {
+namespace PhantomLedger::transfers::legit {
 
 namespace {
 
@@ -279,4 +279,4 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
   return out;
 }
 
-} // namespace PhantomLedger::pipeline::stages::transfers
+} // namespace PhantomLedger::transfers::legit

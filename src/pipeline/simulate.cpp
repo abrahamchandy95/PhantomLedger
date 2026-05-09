@@ -1,11 +1,13 @@
 #include "phantomledger/pipeline/simulate.hpp"
 
+#include "phantomledger/transfers/legit/assembly.hpp"
+
 namespace PhantomLedger::pipeline {
 
 namespace {
 
 namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
-namespace transferStage = ::PhantomLedger::pipeline::stages::transfers;
+namespace legit = ::PhantomLedger::transfers::legit;
 
 [[nodiscard]] ::PhantomLedger::time::Window
 activeTransferWindow(::PhantomLedger::time::Window requested,
@@ -26,8 +28,8 @@ activeTransferSeed(std::uint64_t requested, std::uint64_t fallback) noexcept {
   return requested;
 }
 
-[[nodiscard]] transferStage::LegitAssembly::RunScope
-activeTransferScope(transferStage::LegitAssembly::RunScope requested,
+[[nodiscard]] legit::LegitAssembly::RunScope
+activeTransferScope(legit::LegitAssembly::RunScope requested,
                     ::PhantomLedger::time::Window fallbackWindow,
                     std::uint64_t fallbackSeed) noexcept {
   requested.window = activeTransferWindow(requested.window, fallbackWindow);
