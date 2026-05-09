@@ -28,30 +28,11 @@ namespace {
 
 } // namespace
 
-Injector::Injector(Services services, RingView rings,
-                   AccountView accounts) noexcept
-    : services_(services), rings_(rings), accounts_(accounts) {}
-
-Injector &Injector::typologyWeights(TypologyWeights value) noexcept {
-  typologyWeights_ = value;
-  return *this;
-}
-
-Injector &Injector::layeringRules(typologies::layering::Rules value) noexcept {
-  layeringRules_ = value;
-  return *this;
-}
-
-Injector &
-Injector::structuringRules(typologies::structuring::Rules value) noexcept {
-  structuringRules_ = value;
-  return *this;
-}
-
-Injector &Injector::camouflageRates(camouflage::Rates value) noexcept {
-  camouflageRates_ = value;
-  return *this;
-}
+Injector::Injector(InjectorServices services, InjectorRingView rings,
+                   InjectorAccountView accounts,
+                   const Behavior &behavior) noexcept
+    : services_(services), rings_(rings), accounts_(accounts),
+      behavior_(behavior) {}
 
 std::vector<transactions::Transaction>
 Injector::generateForTypology(IllicitContext &ctx, const Plan &plan,
@@ -60,12 +41,13 @@ Injector::generateForTypology(IllicitContext &ctx, const Plan &plan,
   case Typology::classic:
     return typologies::classic::generate(ctx, plan, budget);
   case Typology::layering:
-    return typologies::layering::generate(ctx, plan, budget, layeringRules_);
+    return typologies::layering::generate(ctx, plan, budget,
+                                          behavior_.layering);
   case Typology::funnel:
     return typologies::funnel::generate(ctx, plan, budget);
   case Typology::structuring:
     return typologies::structuring::generate(ctx, plan, budget,
-                                             structuringRules_);
+                                             behavior_.structuring);
   case Typology::invoice:
     return typologies::invoice::generate(ctx, plan, budget);
   case Typology::mule:
@@ -78,13 +60,13 @@ Injector::generateForTypology(IllicitContext &ctx, const Plan &plan,
 InjectionOutput
 Injector::inject(time::Window window,
                  std::span<const transactions::Transaction> baseTxns) const {
-  return inject(window, baseTxns, LegitCounterparties{});
+  return inject(window, baseTxns, InjectorLegitCounterparties{});
 }
 
 InjectionOutput
 Injector::inject(time::Window window,
                  std::span<const transactions::Transaction> baseTxns,
-                 LegitCounterparties counterparties) const {
+                 InjectorLegitCounterparties counterparties) const {
   if (rings_.topology == nullptr || accounts_.registry == nullptr ||
       accounts_.ownership == nullptr) {
     throw std::invalid_argument(
@@ -92,7 +74,7 @@ Injector::inject(time::Window window,
   }
   if (rings_.profile == nullptr) {
     throw std::invalid_argument(
-        "Fraud injection requires a non-null RingView.profile");
+        "Fraud injection requires a non-null InjectorRingView.profile");
   }
 
   if (rings_.topology->rings.empty()) {
@@ -149,7 +131,8 @@ Injector::inject(time::Window window,
 
   std::vector<transactions::Transaction> camoTxns;
   for (const auto &plan : ringPlans) {
-    auto produced = camouflage::generate(camouflageCtx, plan, camouflageRates_);
+    auto produced =
+        camouflage::generate(camouflageCtx, plan, behavior_.camouflage);
     camoTxns.insert(camoTxns.end(), std::make_move_iterator(produced.begin()),
                     std::make_move_iterator(produced.end()));
   }
@@ -185,7 +168,7 @@ Injector::inject(time::Window window,
     }
 
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
-    const auto typology = typologyWeights_.choose(services_.rng);
+    const auto typology = behavior_.typologies.choose(services_.rng);
 
     auto produced =
         generateForTypology(illicitCtx, ringPlans[ringIdx], typology, perRing);
