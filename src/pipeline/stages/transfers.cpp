@@ -2,6 +2,7 @@
 
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/transactions/factory.hpp"
+#include "phantomledger/transfers/fraud/injector.hpp"
 
 #include <cstddef>
 #include <span>
@@ -77,15 +78,17 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
   const std::span<const Transaction> candidateView{candidateReplay.txns.data(),
                                                    candidateReplay.txns.size()};
 
-  auto fraudInjector = fraud_.makeInjector(
-      ::PhantomLedger::transfers::fraud::Injector::Services{
+  auto fraudInjector = ::PhantomLedger::transfers::fraud::Injector{
+      ::PhantomLedger::transfers::fraud::InjectorServices{
           .rng = rng,
           .router = &infra.router,
           .ringInfra = &infra.ringInfra,
       },
       fraud_.ringView(entities.people.topology),
       FraudEmission::accountView(entities.accounts.registry,
-                                 entities.accounts.ownership));
+                                 entities.accounts.ownership),
+      fraud_.resolvedBehavior(),
+  };
 
   auto fraudOut = fraudInjector.inject(
       scope.window, candidateView,
