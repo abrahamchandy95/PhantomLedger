@@ -3,7 +3,6 @@
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
-#include "phantomledger/activity/spending/routing/payments.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 

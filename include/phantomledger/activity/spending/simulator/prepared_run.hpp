@@ -2,7 +2,6 @@
 
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/emission_result.hpp"
-#include "phantomledger/activity/spending/routing/payments.hpp"
 #include "phantomledger/activity/spending/simulator/payday_index.hpp"
 #include "phantomledger/activity/spending/spenders/prepared.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
