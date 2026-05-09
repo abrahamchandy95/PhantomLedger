@@ -1,11 +1,4 @@
 #pragma once
-/*
- * Balance screening utility.
- *
- * Advances a Ledger through a sorted sequence of base transactions
- * up to a given timestamp, so that upstream generators can check
- * affordability against a seeded balance state.
- */
 
 #include "ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -16,33 +9,27 @@
 
 namespace PhantomLedger::clearing {
 
-/// Apply base transactions from baseTxns[startIdx..] whose timestamps
-/// are before (or at, if inclusive) `untilTs`. Returns the new index
-/// past the last consumed transaction.
-///
-/// If the ledger pointer is null, returns startIdx unchanged.
+struct TimeBound {
+  std::int64_t until = 0;
+  bool inclusive = false;
+
+  /// True if `ts` falls within this bound
+  [[nodiscard]] constexpr bool includes(std::int64_t ts) const noexcept {
+    return inclusive ? ts <= until : ts < until;
+  }
+};
+
 inline std::size_t
 advanceBookThrough(Ledger *ledger,
                    std::span<const transactions::Transaction> baseTxns,
-                   std::size_t startIdx, std::int64_t untilTs, bool inclusive) {
+                   std::size_t startIdx, TimeBound bound) {
   if (ledger == nullptr) {
     return startIdx;
   }
 
   auto idx = startIdx;
-  while (idx < baseTxns.size()) {
+  while (idx < baseTxns.size() && bound.includes(baseTxns[idx].timestamp)) {
     const auto &txn = baseTxns[idx];
-
-    if (inclusive) {
-      if (txn.timestamp > untilTs) {
-        break;
-      }
-    } else {
-      if (txn.timestamp >= untilTs) {
-        break;
-      }
-    }
-
     (void)ledger->transfer(txn.source, txn.target, txn.amount,
                            txn.session.channel);
     ++idx;

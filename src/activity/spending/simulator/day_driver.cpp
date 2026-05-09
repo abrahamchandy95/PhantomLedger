@@ -106,10 +106,10 @@ void DayDriver::runDay(const PreparedRun &run, RunState &state,
 void DayDriver::advanceLedgerToDay(const PreparedRun::LedgerReplay &replay,
                                    RunState &state,
                                    const actors::DayFrame &frame) const {
-  const auto newBaseIdx =
-      clearing::advanceBookThrough(ledger_, replay.txns, state.baseIdx(),
-                                   time::toEpochSeconds(frame.day.start),
-                                   /*inclusive=*/false);
+  const auto newBaseIdx = clearing::advanceBookThrough(
+      ledger_, replay.txns, state.baseIdx(),
+      clearing::TimeBound{.until = time::toEpochSeconds(frame.day.start),
+                          .inclusive = false});
 
   state.setBaseIdx(newBaseIdx);
 }

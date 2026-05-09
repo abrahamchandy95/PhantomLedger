@@ -78,8 +78,9 @@ public:
   }
 
   void advanceThrough(std::int64_t timestamp, bool inclusive = true) {
-    seedIdx_ = clearing::advanceBookThrough(book_, seedTxns_, seedIdx_,
-                                            timestamp, inclusive);
+    seedIdx_ = clearing::advanceBookThrough(
+        book_, seedTxns_, seedIdx_,
+        clearing::TimeBound{.until = timestamp, .inclusive = inclusive});
   }
 
   [[nodiscard]] bool acceptTransfer(const entity::Key &source,
