@@ -24,10 +24,6 @@ namespace rent {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
-// ---------------------------------------------------------------
-// Rent subsystem rules. Owned here, not in a cross-cutting bag.
-// ---------------------------------------------------------------
-
 struct Rules {
   recurring::LeaseRules lease{};
   double paidFraction = 0.80;
@@ -40,10 +36,9 @@ struct Rules {
   }
 };
 
-// ---------------------------------------------------------------
-// RentRoll: the narrow view rent generation needs.
-// Replaces the old `InflowSnapshot` for this subsystem.
-// ---------------------------------------------------------------
+using HomeownerCheck = std::function<bool(PersonId)>;
+
+inline bool noHomeowners(PersonId) { return false; }
 
 struct RentRoll {
   Timeframe timeframe;
@@ -51,6 +46,7 @@ struct RentRoll {
   Population population;
   RentCounterparties counterparties;
   Rules rules{};
+  HomeownerCheck isHomeowner = noHomeowners;
 
   void validate(primitives::validate::Report &r) const {
     timeframe.validate(r);
@@ -143,10 +139,6 @@ inline constexpr auto kProbabilityByPersona = kProbabilityBuild.values;
   return internal::probabilityFor(type);
 }
 
-using HomeownerCheck = std::function<bool(PersonId)>;
-
-inline bool noHomeowners(PersonId) { return false; }
-
 struct RentPayer {
   PersonId person;
   Key account;
@@ -208,8 +200,7 @@ struct PayerState {
 [[nodiscard]] inline std::vector<transactions::Transaction>
 generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
                  const transactions::Factory &txf,
-                 const std::function<double()> &rentModel,
-                 const rent::HomeownerCheck &isHomeowner = rent::noHomeowners) {
+                 const std::function<double()> &rentModel) {
   namespace recur = ::PhantomLedger::recurring;
 
   if (rentRoll.counterparties.landlords.empty()) {
@@ -218,7 +209,7 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
 
   primitives::validate::require(rentRoll);
 
-  const auto selector = rent::makePayerSelector(rentRoll, isHomeowner);
+  const auto selector = rent::makePayerSelector(rentRoll, rentRoll.isHomeowner);
   const double scale =
       selector.fitScale(rentRoll.population.count, rentRoll.rules.paidFraction);
 
