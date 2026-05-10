@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/obligation_stream.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
@@ -60,7 +60,7 @@ struct TaxTerms {
 class TaxEmitter {
 public:
   TaxEmitter(::PhantomLedger::random::Rng &rng,
-             ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+             ::PhantomLedger::entity::product::ObligationStream &obligations,
              ::PhantomLedger::time::Window window, TaxTerms terms = {});
 
   [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
@@ -68,7 +68,7 @@ public:
 
 private:
   ::PhantomLedger::random::Rng *rng_;
-  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::entity::product::ObligationStream *obligations_;
   ::PhantomLedger::time::Window window_;
   TaxTerms terms_;
 };

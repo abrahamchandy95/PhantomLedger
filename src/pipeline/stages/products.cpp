@@ -56,10 +56,10 @@ void ObligationSynthesis::synthesize(
                                                   window, autoLoan_};
     productSynth::StudentLoanEmitter studentLoanEmitter{
         local, entities.portfolios, window, studentLoan_};
-    productSynth::TaxEmitter taxEmitter{local, entities.portfolios, window,
-                                        tax_};
-    productSynth::InsuranceEmitter insuranceEmitter{local, entities.portfolios,
-                                                    insurance_};
+    productSynth::TaxEmitter taxEmitter{
+        local, entities.portfolios.obligations(), window, tax_};
+    productSynth::InsuranceEmitter insuranceEmitter{
+        local, entities.portfolios.insurance(), insurance_};
 
     const bool hasMortgage = mortgageEmitter.emit(person, persona);
     const bool hasAutoLoan = autoLoanEmitter.emit(person, persona);

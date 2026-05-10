@@ -14,7 +14,8 @@ namespace PhantomLedger::transfers::insurance {
 
 std::vector<transactions::Transaction>
 PremiumGenerator::generate(const time::Window &window,
-                           const entity::product::PortfolioRegistry &portfolios,
+                           const entity::product::InsuranceLedger &insurance,
+                           const entity::product::LoanTermsLedger &loans,
                            const Population &population) const {
   using entity::Key;
   using entity::PersonId;
@@ -49,7 +50,7 @@ PremiumGenerator::generate(const time::Window &window,
     }
   };
 
-  portfolios.forEachInsuredPerson(
+  insurance.forEach(
       [&](PersonId person, const entity::product::InsuranceHoldings &holdings) {
         const auto acctIt = population.primaryAccounts->find(person);
         if (acctIt == population.primaryAccounts->end()) {
@@ -63,7 +64,7 @@ PremiumGenerator::generate(const time::Window &window,
         }
 
         if (const auto &policy = holdings.homePolicy();
-            policy.has_value() && !portfolios.hasMortgage(person)) {
+            policy.has_value() && !loans.hasMortgage(person)) {
           postPolicy(payer, *policy);
         }
 

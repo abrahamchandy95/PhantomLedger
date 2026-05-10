@@ -1,7 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/insurance_ledger.hpp"
+#include "phantomledger/entities/products/loan_terms_ledger.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -12,13 +13,10 @@
 
 namespace PhantomLedger::transfers::insurance {
 
-/// Population view shared across both premium and claim emitters.
 struct Population {
   const std::unordered_map<entity::PersonId, entity::Key> *primaryAccounts =
       nullptr;
 };
-
-/// Emits monthly premium debits for every insured person
 
 class PremiumGenerator {
 public:
@@ -27,7 +25,8 @@ public:
 
   [[nodiscard]] std::vector<transactions::Transaction>
   generate(const time::Window &window,
-           const entity::product::PortfolioRegistry &portfolios,
+           const entity::product::InsuranceLedger &insurance,
+           const entity::product::LoanTermsLedger &loans,
            const Population &population) const;
 
 private:

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/insurance_ledger.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
@@ -105,17 +105,16 @@ struct LoanAnchors {
 
 class InsuranceEmitter {
 public:
-  InsuranceEmitter(
-      ::PhantomLedger::random::Rng &rng,
-      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-      InsuranceTerms terms = {});
+  InsuranceEmitter(::PhantomLedger::random::Rng &rng,
+                   ::PhantomLedger::entity::product::InsuranceLedger &insurance,
+                   InsuranceTerms terms = {});
 
   [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
                           personaTax::Type persona, LoanAnchors anchors);
 
 private:
   ::PhantomLedger::random::Rng *rng_;
-  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
+  ::PhantomLedger::entity::product::InsuranceLedger *insurance_;
   InsuranceTerms terms_;
 };
 
