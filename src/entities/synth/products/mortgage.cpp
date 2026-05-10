@@ -45,16 +45,15 @@ sampleMortgageAgeDays(::PhantomLedger::random::Rng &rng) {
 
 } // namespace
 
-MortgageEmitter::MortgageEmitter(
-    ::PhantomLedger::random::Rng &rng,
-    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-    ::PhantomLedger::time::Window window, MortgageTerms terms)
-    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
-      terms_{std::move(terms)} {}
+MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
+                                 ::PhantomLedger::time::Window window,
+                                 MortgageTerms terms)
+    : rng_{&rng}, window_{window}, terms_{std::move(terms)} {}
 
-[[nodiscard]] bool
-MortgageEmitter::emit(::PhantomLedger::entity::PersonId person,
-                      personaTax::Type persona) {
+[[nodiscard]] bool MortgageEmitter::emit(
+    ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
+    ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+    ::PhantomLedger::entity::product::ObligationStream &obligations) {
   if (rng_->nextDouble() >= terms_.adoption.probability(persona)) {
     return false;
   }
@@ -68,7 +67,7 @@ MortgageEmitter::emit(::PhantomLedger::entity::PersonId person,
 
   constexpr std::int32_t kMortgageTermMonths = 360;
 
-  addInstallmentProduct(*portfolios_, window_,
+  addInstallmentProduct(loans, obligations, window_,
                         InstallmentIssue{
                             .person = person,
                             .productType = product::ProductType::mortgage,

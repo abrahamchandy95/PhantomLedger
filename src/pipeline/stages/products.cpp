@@ -50,21 +50,23 @@ void ObligationSynthesis::synthesize(
     auto local = productSynth::personRng(seed_, person);
     const auto persona = assignment.byPerson[person - 1];
 
-    productSynth::MortgageEmitter mortgageEmitter{local, entities.portfolios,
-                                                  window, mortgage_};
-    productSynth::AutoLoanEmitter autoLoanEmitter{local, entities.portfolios,
-                                                  window, autoLoan_};
-    productSynth::StudentLoanEmitter studentLoanEmitter{
-        local, entities.portfolios, window, studentLoan_};
-    productSynth::TaxEmitter taxEmitter{
-        local, entities.portfolios.obligations(), window, tax_};
+    auto &loans = entities.portfolios.loans();
+    auto &obligations = entities.portfolios.obligations();
+
+    productSynth::MortgageEmitter mortgageEmitter{local, window, mortgage_};
+    productSynth::AutoLoanEmitter autoLoanEmitter{local, window, autoLoan_};
+    productSynth::StudentLoanEmitter studentLoanEmitter{local, window,
+                                                        studentLoan_};
+    productSynth::TaxEmitter taxEmitter{local, obligations, window, tax_};
     productSynth::InsuranceEmitter insuranceEmitter{
         local, entities.portfolios.insurance(), insurance_};
 
-    const bool hasMortgage = mortgageEmitter.emit(person, persona);
-    const bool hasAutoLoan = autoLoanEmitter.emit(person, persona);
+    const bool hasMortgage =
+        mortgageEmitter.emit(person, persona, loans, obligations);
+    const bool hasAutoLoan =
+        autoLoanEmitter.emit(person, persona, loans, obligations);
 
-    (void)studentLoanEmitter.emit(person, persona);
+    (void)studentLoanEmitter.emit(person, persona, loans, obligations);
     (void)taxEmitter.emit(person, persona);
 
     (void)insuranceEmitter.emit(

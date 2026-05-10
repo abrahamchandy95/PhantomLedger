@@ -1,7 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/loan_terms_ledger.hpp"
+#include "phantomledger/entities/products/obligation_stream.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
@@ -79,17 +80,17 @@ struct AutoLoanTerms {
 
 class AutoLoanEmitter {
 public:
-  AutoLoanEmitter(
-      ::PhantomLedger::random::Rng &rng,
-      ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-      ::PhantomLedger::time::Window window, AutoLoanTerms terms = {});
+  AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
+                  ::PhantomLedger::time::Window window,
+                  AutoLoanTerms terms = {});
 
-  [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
-                          personaTax::Type persona);
+  [[nodiscard]] bool
+  emit(::PhantomLedger::entity::PersonId person, personaTax::Type persona,
+       ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+       ::PhantomLedger::entity::product::ObligationStream &obligations);
 
 private:
   ::PhantomLedger::random::Rng *rng_;
-  ::PhantomLedger::entity::product::PortfolioRegistry *portfolios_;
   ::PhantomLedger::time::Window window_;
   AutoLoanTerms terms_;
 };

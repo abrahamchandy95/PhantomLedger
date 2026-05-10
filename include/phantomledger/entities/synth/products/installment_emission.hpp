@@ -2,7 +2,8 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/installment_terms.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/loan_terms_ledger.hpp"
+#include "phantomledger/entities/products/obligation_stream.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
@@ -39,7 +40,8 @@ struct InstallmentIssue {
 };
 
 void addInstallmentProduct(
-    ::PhantomLedger::entity::product::PortfolioRegistry &out,
+    ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+    ::PhantomLedger::entity::product::ObligationStream &obligations,
     ::PhantomLedger::time::Window window, const InstallmentIssue &issue);
 
 } // namespace PhantomLedger::entities::synth::products

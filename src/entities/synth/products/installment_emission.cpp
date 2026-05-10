@@ -80,10 +80,11 @@ void emitInstallmentSchedule(product::ObligationStream &stream,
 } // namespace
 
 void addInstallmentProduct(
-    ::PhantomLedger::entity::product::PortfolioRegistry &out,
+    ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+    ::PhantomLedger::entity::product::ObligationStream &obligations,
     ::PhantomLedger::time::Window window, const InstallmentIssue &issue) {
-  out.loans().set(issue.person, issue.productType, issue.terms);
-  emitInstallmentSchedule(out.obligations(), issue, window);
+  loans.set(issue.person, issue.productType, issue.terms);
+  emitInstallmentSchedule(obligations, issue, window);
 }
 
 } // namespace PhantomLedger::entities::synth::products
