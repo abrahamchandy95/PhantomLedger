@@ -1,5 +1,6 @@
 #include "phantomledger/app/cli.hpp"
 #include "phantomledger/app/options.hpp"
+#include "phantomledger/app/progress.hpp"
 #include "phantomledger/app/setup.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
@@ -66,6 +67,7 @@ void printAmlSummary(const pl::exporter::aml::Summary &summary,
 int main(int argc, char **argv) {
   using namespace ::PhantomLedger;
   namespace pii = entities::synth::pii;
+  namespace pg = app::progress;
 
   try {
 
@@ -75,15 +77,18 @@ int main(int argc, char **argv) {
     window.start = time::makeTime(opts.startDate);
     window.days = static_cast<int>(opts.days);
 
+    pg::status("Building entity synthesis config...");
     const auto mix = pii::LocaleMix::usBankDefault();
     const auto pools = app::setup::buildPoolSet(opts, mix);
     const auto entityConfig =
         app::setup::buildEntitySynthesis(opts, pools, mix, window.start);
 
+    pg::status("Running simulation...");
     auto rng = random::Rng::fromSeed(opts.seed);
     const auto result =
         pipeline::simulate(rng, window, entityConfig, opts.seed);
 
+    pg::status("Exporting...");
     switch (opts.usecase) {
     case app::UseCase::standard: {
       exporter::standard::Options exportOpts;
@@ -112,6 +117,7 @@ int main(int argc, char **argv) {
     }
     }
 
+    pg::status("Done.");
     return 0;
   } catch (const std::exception &e) {
     std::fprintf(stderr, "fatal: %s\n", e.what());

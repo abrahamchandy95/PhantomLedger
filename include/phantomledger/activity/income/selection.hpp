@@ -12,20 +12,12 @@ namespace PhantomLedger::inflows::selection {
 
 using PersonId = entity::PersonId;
 
-// Selector<CandidateFn, BaseFn>
-//
-// Two callbacks:
-//   - candidate(PersonId) -> bool:  is this person eligible at all?
-//   - baseProbability(PersonId) -> double:  base p before scale
-
 template <class CandidateFn, class BaseFn> class Selector {
 public:
   Selector(CandidateFn candidate, BaseFn baseProbability)
       : candidate_(std::move(candidate)),
         baseProbability_(std::move(baseProbability)) {}
 
-  // Kept for external callers that want the average share at a given
-  // scale. Not used on the fitScale hot path.
   [[nodiscard]] double paidShare(std::uint32_t personCount,
                                  double scale) const {
     if (scale <= 0.0) {
