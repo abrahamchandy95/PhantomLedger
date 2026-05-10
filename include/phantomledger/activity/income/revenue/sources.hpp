@@ -188,7 +188,7 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
   }
 
   const auto personal = population.primary(person);
-  if (population.hubs.contains(personal)) {
+  if (population.hubs().contains(personal)) {
     return std::nullopt;
   }
 

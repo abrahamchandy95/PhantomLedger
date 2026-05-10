@@ -274,18 +274,18 @@ generateSalaryTxns(const salary::Payroll &payroll, random::Rng &rng,
       });
 
   const double scale =
-      selector.fitScale(payroll.population.count, payroll.rules.paidFraction);
+      selector.fitScale(payroll.population.count(), payroll.rules.paidFraction);
 
   if (scale <= 0.0) {
     return {};
   }
 
   std::vector<transactions::Transaction> txns;
-  txns.reserve(payroll.population.count * 2);
+  txns.reserve(payroll.population.count() * 2);
 
   salary::Paymaster paymaster(payroll, rng, txf, salaryModel);
 
-  for (PersonId person = 1; person <= payroll.population.count; ++person) {
+  for (PersonId person = 1; person <= payroll.population.count(); ++person) {
     if (!selector.selected(rng, person, scale)) {
       continue;
     }

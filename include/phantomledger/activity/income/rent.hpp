@@ -172,9 +172,9 @@ template <class Selector>
 selectPayers(const RentRoll &rentRoll, random::Rng &rng, double scale,
              const Selector &selector) {
   std::vector<RentPayer> out;
-  out.reserve(rentRoll.population.count);
+  out.reserve(rentRoll.population.count());
 
-  for (PersonId person = 1; person <= rentRoll.population.count; ++person) {
+  for (PersonId person = 1; person <= rentRoll.population.count(); ++person) {
     if (!selector.selected(rng, person, scale)) {
       continue;
     }
@@ -210,8 +210,8 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
   primitives::validate::require(rentRoll);
 
   const auto selector = rent::makePayerSelector(rentRoll, rentRoll.isHomeowner);
-  const double scale =
-      selector.fitScale(rentRoll.population.count, rentRoll.rules.paidFraction);
+  const double scale = selector.fitScale(rentRoll.population.count(),
+                                         rentRoll.rules.paidFraction);
 
   if (scale <= 0.0) {
     return {};
