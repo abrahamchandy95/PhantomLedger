@@ -24,34 +24,16 @@ namespace {
   return partition(households, rng, personCount);
 }
 
-[[nodiscard]] Links runLinks(const Households &households,
-                             const Dependents &dependents,
-                             const random::RngFactory &factory,
-                             const Partition &part, const BuildInputs &inputs) {
+[[nodiscard]] Links runLinks(const random::RngFactory &factory,
+                             const LinkInputs &inputs) {
   auto rng = factory.rng({"family", "links"});
-  const LinkInputs li{
-      .households = &households,
-      .dependents = &dependents,
-      .partition = &part,
-      .personas = inputs.personas,
-      .personCount = inputs.personCount,
-  };
-  return buildLinks(li, rng);
+  return buildLinks(inputs, rng);
 }
 
-[[nodiscard]] SupportTies runSupport(const RetireeSupport &retireeSupport,
-                                     const random::RngFactory &factory,
-                                     const Partition &part, const Links &links,
-                                     const BuildInputs &inputs) {
+[[nodiscard]] SupportTies runSupport(const random::RngFactory &factory,
+                                     const SupportInputs &inputs) {
   auto rng = factory.rng({"family", "support"});
-  const SupportInputs si{
-      .support = &retireeSupport,
-      .partition = &part,
-      .links = &links,
-      .personas = inputs.personas,
-      .personCount = inputs.personCount,
-  };
-  return buildSupportTies(si, rng);
+  return buildSupportTies(inputs, rng);
 }
 
 [[nodiscard]] Graph fold(Partition &&part, Links &&links,
@@ -83,8 +65,20 @@ Graph build(const BuildInputs &inputs, const Households &households,
   const random::RngFactory factory{inputs.baseSeed};
 
   auto partition = runPartition(households, factory, inputs.personCount);
-  auto links = runLinks(households, dependents, factory, partition, inputs);
-  auto support = runSupport(retireeSupport, factory, partition, links, inputs);
+  auto links = runLinks(factory, LinkInputs{
+                                     .households = &households,
+                                     .dependents = &dependents,
+                                     .partition = &partition,
+                                     .personas = inputs.personas,
+                                     .personCount = inputs.personCount,
+                                 });
+  auto support = runSupport(factory, SupportInputs{
+                                         .support = &retireeSupport,
+                                         .partition = &partition,
+                                         .links = &links,
+                                         .personas = inputs.personas,
+                                         .personCount = inputs.personCount,
+                                     });
 
   return fold(std::move(partition), std::move(links), std::move(support));
 }
