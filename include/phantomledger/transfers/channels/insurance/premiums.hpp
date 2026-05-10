@@ -18,10 +18,21 @@ struct Population {
       nullptr;
 };
 
-[[nodiscard]] std::vector<transactions::Transaction>
-premiums(const time::Window &window, random::Rng &rng,
-         const transactions::Factory &txf,
-         const entity::product::PortfolioRegistry &portfolios,
-         const Population &population);
+/// Emits monthly premium debits for every insured person
+
+class PremiumGenerator {
+public:
+  PremiumGenerator(random::Rng &rng, const transactions::Factory &txf) noexcept
+      : rng_(&rng), txf_(&txf) {}
+
+  [[nodiscard]] std::vector<transactions::Transaction>
+  generate(const time::Window &window,
+           const entity::product::PortfolioRegistry &portfolios,
+           const Population &population) const;
+
+private:
+  random::Rng *rng_;
+  const transactions::Factory *txf_;
+};
 
 } // namespace PhantomLedger::transfers::insurance

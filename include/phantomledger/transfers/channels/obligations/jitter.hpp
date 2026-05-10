@@ -16,19 +16,31 @@ namespace PhantomLedger::transfers::obligations::jitter {
   return ts + time::Days{days} + time::Hours{hours} + time::Minutes{minutes};
 }
 
+/// Late-payment behavior for a single installment
+struct LateSpec {
+  double lateP = 0.0;
+  std::int32_t daysMin = 0;
+  std::int32_t daysMax = 0;
+  bool forceLate = false;
+
+  [[nodiscard]] bool shouldBeLate(random::Rng &rng) const {
+    return forceLate || rng.coin(lateP);
+  }
+
+  [[nodiscard]] std::int32_t sampleDelayDays(random::Rng &rng) const {
+    if (daysMax <= 0) {
+      return 0;
+    }
+    return static_cast<std::int32_t>(rng.uniformInt(daysMin, daysMax + 1));
+  }
+};
+
 /// Timestamp for a realized installment payment.
 [[nodiscard]] inline time::TimePoint
-installmentTimestamp(random::Rng &rng, time::TimePoint dueTs, double lateP,
-                     std::int32_t lateDaysMin, std::int32_t lateDaysMax,
-                     bool forceLate) {
-  const bool beLate = forceLate || rng.coin(lateP);
-
-  if (beLate) {
-    int delayDays = 0;
-    if (lateDaysMax > 0) {
-      delayDays =
-          static_cast<int>(rng.uniformInt(lateDaysMin, lateDaysMax + 1));
-    }
+installmentTimestamp(random::Rng &rng, time::TimePoint dueTs,
+                     const LateSpec &late) {
+  if (late.shouldBeLate(rng)) {
+    const auto delayDays = late.sampleDelayDays(rng);
     const auto hour = rng.uniformInt(8, 22);
     const auto minute = rng.uniformInt(0, 60);
     return dueTs + time::Days{delayDays} + time::Hours{hour} +

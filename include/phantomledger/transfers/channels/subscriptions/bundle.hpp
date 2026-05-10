@@ -39,8 +39,6 @@ struct BundleRules {
   }
 };
 
-/// One materialized subscription. 32-byte flat layout so the per-month
-/// loop walks contiguous memory.
 struct Sub {
   entity::Key deposit;
   entity::Key biller;
@@ -48,45 +46,55 @@ struct Sub {
   std::uint8_t day = 0;
 };
 
-inline void appendBundle(random::Rng &subRng, const BundleRules &rules,
-                         const entity::Key &deposit,
-                         std::span<const entity::Key> billerAccounts,
-                         std::vector<Sub> &out) {
-  if (billerAccounts.empty()) {
-    return;
-  }
+class BundleEmitter {
+public:
+  BundleEmitter(const BundleRules &rules,
+                std::span<const entity::Key> billerAccounts) noexcept
+      : rules_(&rules), billerAccounts_(billerAccounts) {}
 
-  const auto nTotal = static_cast<std::int32_t>(subRng.uniformInt(
-      rules.minPerPerson, static_cast<std::int64_t>(rules.maxPerPerson) + 1));
+  void emit(random::Rng &subRng, const entity::Key &deposit,
+            std::vector<Sub> &out) const {
+    if (billerAccounts_.empty()) {
+      return;
+    }
 
-  std::int32_t nDebit = 0;
-  for (std::int32_t i = 0; i < nTotal; ++i) {
-    if (subRng.coin(rules.debitP)) {
-      ++nDebit;
+    const auto nTotal = static_cast<std::int32_t>(
+        subRng.uniformInt(rules_->minPerPerson,
+                          static_cast<std::int64_t>(rules_->maxPerPerson) + 1));
+
+    std::int32_t nDebit = 0;
+    for (std::int32_t i = 0; i < nTotal; ++i) {
+      if (subRng.coin(rules_->debitP)) {
+        ++nDebit;
+      }
+    }
+    if (nDebit == 0) {
+      return;
+    }
+
+    const auto nPick = static_cast<std::size_t>(std::min<std::int32_t>(
+        nDebit, static_cast<std::int32_t>(kPricePoolSize)));
+
+    const auto priceIdx =
+        subRng.choiceIndices(kPricePoolSize, nPick, /*replace=*/false);
+
+    out.reserve(out.size() + nPick);
+    for (std::size_t i = 0; i < nPick; ++i) {
+      const auto billerIdx = subRng.choiceIndex(billerAccounts_.size());
+      const auto day = static_cast<std::uint8_t>(subRng.uniformInt(1, 29));
+
+      out.push_back(Sub{
+          .deposit = deposit,
+          .biller = billerAccounts_[billerIdx],
+          .amount = kPricePool[priceIdx[i]],
+          .day = day,
+      });
     }
   }
-  if (nDebit == 0) {
-    return;
-  }
 
-  const auto nPick = static_cast<std::size_t>(std::min<std::int32_t>(
-      nDebit, static_cast<std::int32_t>(kPricePoolSize)));
-
-  const auto priceIdx =
-      subRng.choiceIndices(kPricePoolSize, nPick, /*replace=*/false);
-
-  out.reserve(out.size() + nPick);
-  for (std::size_t i = 0; i < nPick; ++i) {
-    const auto billerIdx = subRng.choiceIndex(billerAccounts.size());
-    const auto day = static_cast<std::uint8_t>(subRng.uniformInt(1, 29));
-
-    out.push_back(Sub{
-        .deposit = deposit,
-        .biller = billerAccounts[billerIdx],
-        .amount = kPricePool[priceIdx[i]],
-        .day = day,
-    });
-  }
-}
+private:
+  const BundleRules *rules_;
+  std::span<const entity::Key> billerAccounts_;
+};
 
 } // namespace PhantomLedger::transfers::subscriptions

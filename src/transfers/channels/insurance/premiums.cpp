@@ -12,60 +12,14 @@
 
 namespace PhantomLedger::transfers::insurance {
 
-namespace {
-
-using entity::Key;
-using entity::PersonId;
-using entity::product::InsurancePolicy;
-
-class PremiumEmitter {
-public:
-  PremiumEmitter(random::Rng &rng, const transactions::Factory &txf,
-                 time::Almanac &almanac, time::TimePoint start,
-                 time::TimePoint endExcl,
-                 std::vector<transactions::Transaction> &out) noexcept
-      : rng_(rng), txf_(txf), almanac_(almanac), start_(start),
-        endExcl_(endExcl), out_(out) {}
-
-  PremiumEmitter(const PremiumEmitter &) = delete;
-  PremiumEmitter &operator=(const PremiumEmitter &) = delete;
-
-  /// Post all monthly billing anchors for one policy from one payer.
-  void postPolicy(const Key &payer, const InsurancePolicy &policy) {
-    const int day = std::clamp(policy.billingDay, 1, 28);
-    const auto anchors = almanac_.monthly(start_, endExcl_, day);
-    const auto channel = channels::tag(channels::Insurance::premium);
-
-    for (const auto base : anchors) {
-      const auto ts = base + time::Hours{rng_.uniformInt(0, 6)} +
-                      time::Minutes{rng_.uniformInt(0, 60)};
-
-      out_.push_back(txf_.make(transactions::Draft{
-          .source = payer,
-          .destination = policy.carrierAcct,
-          .amount = primitives::utils::roundMoney(policy.monthlyPremium),
-          .timestamp = time::toEpochSeconds(ts),
-          .channel = channel,
-      }));
-    }
-  }
-
-private:
-  random::Rng &rng_;
-  const transactions::Factory &txf_;
-  time::Almanac &almanac_;
-  time::TimePoint start_;
-  time::TimePoint endExcl_;
-  std::vector<transactions::Transaction> &out_;
-};
-
-} // namespace
-
 std::vector<transactions::Transaction>
-premiums(const time::Window &window, random::Rng &rng,
-         const transactions::Factory &txf,
-         const entity::product::PortfolioRegistry &portfolios,
-         const Population &population) {
+PremiumGenerator::generate(const time::Window &window,
+                           const entity::product::PortfolioRegistry &portfolios,
+                           const Population &population) const {
+  using entity::Key;
+  using entity::PersonId;
+  using entity::product::InsurancePolicy;
+
   std::vector<transactions::Transaction> out;
 
   time::Almanac almanac{window};
@@ -74,8 +28,26 @@ premiums(const time::Window &window, random::Rng &rng,
   }
 
   const auto endExcl = window.endExcl();
+  const auto channel = channels::tag(channels::Insurance::premium);
 
-  PremiumEmitter emitter{rng, txf, almanac, window.start, endExcl, out};
+  // Post all monthly billing anchors for one policy from one payer.
+  auto postPolicy = [&](const Key &payer, const InsurancePolicy &policy) {
+    const int day = std::clamp(policy.billingDay, 1, 28);
+    const auto anchors = almanac.monthly(window.start, endExcl, day);
+
+    for (const auto base : anchors) {
+      const auto ts = base + time::Hours{rng_->uniformInt(0, 6)} +
+                      time::Minutes{rng_->uniformInt(0, 60)};
+
+      out.push_back(txf_->make(transactions::Draft{
+          .source = payer,
+          .destination = policy.carrierAcct,
+          .amount = primitives::utils::roundMoney(policy.monthlyPremium),
+          .timestamp = time::toEpochSeconds(ts),
+          .channel = channel,
+      }));
+    }
+  };
 
   portfolios.forEachInsuredPerson(
       [&](PersonId person, const entity::product::InsuranceHoldings &holdings) {
@@ -87,16 +59,16 @@ premiums(const time::Window &window, random::Rng &rng,
         const Key payer = acctIt->second;
 
         if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
-          emitter.postPolicy(payer, *policy);
+          postPolicy(payer, *policy);
         }
 
         if (const auto &policy = holdings.homePolicy();
             policy.has_value() && !portfolios.hasMortgage(person)) {
-          emitter.postPolicy(payer, *policy);
+          postPolicy(payer, *policy);
         }
 
         if (const auto &policy = holdings.lifePolicy(); policy.has_value()) {
-          emitter.postPolicy(payer, *policy);
+          postPolicy(payer, *policy);
         }
       });
 

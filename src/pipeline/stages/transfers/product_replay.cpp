@@ -28,8 +28,8 @@ std::vector<ProductTxnEmitter::Transaction>
 ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Entities &entities,
                             const PrimaryAccounts &primaryAccounts) {
   insurance::Population population{.primaryAccounts = &primaryAccounts};
-  return insurance::premiums(window_, rng_, txf_, entities.portfolios,
-                             population);
+  insurance::PremiumGenerator generator{rng_, txf_};
+  return generator.generate(window_, entities.portfolios, population);
 }
 
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
