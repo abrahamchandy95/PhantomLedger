@@ -25,9 +25,11 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
 
   const auto burst =
       sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        /*tailPaddingDays=*/10,
-                        /*minBurstDays=*/3,
-                        /*maxBurstDays=*/8);
+                        BurstShape{
+                            .tailPaddingDays = 10,
+                            .minDays = 3,
+                            .maxDays = 8,
+                        });
 
   // Target: mule if available, otherwise fraud.
   const auto &target = !plan.muleAccounts.empty()
@@ -60,7 +62,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
       const double eps = epsMin + epsRange * rng.nextDouble();
       const double amount = std::max(50.0, threshold - eps);
       const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                      /*minHour=*/8, /*maxHour=*/22);
+                                      HourRange{.min = 8, .max = 22});
 
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,

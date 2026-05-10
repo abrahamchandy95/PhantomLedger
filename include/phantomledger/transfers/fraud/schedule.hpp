@@ -26,18 +26,26 @@ struct BurstWindow {
   std::int32_t durationDays = 0;
 };
 
-[[nodiscard]] inline BurstWindow
-sampleBurstWindow(random::Rng &rng, time::TimePoint startDate,
-                  std::int32_t totalDays, std::int32_t tailPaddingDays,
-                  std::int32_t minBurstDays, std::int32_t maxBurstDays) {
-  const auto maxStartOffset =
-      std::max<std::int32_t>(1, totalDays - tailPaddingDays);
+struct BurstShape {
+  std::int32_t tailPaddingDays = 0;
+  std::int32_t minDays = 0;
+  std::int32_t maxDays = 0;
 
-  const auto offsetDays = static_cast<std::int32_t>(
-      rng.uniformInt(0, static_cast<std::int64_t>(maxStartOffset) + 1));
+  [[nodiscard]] std::int32_t
+  maxStartOffset(std::int32_t totalDays) const noexcept {
+    return std::max<std::int32_t>(1, totalDays - tailPaddingDays);
+  }
+};
+
+[[nodiscard]] inline BurstWindow sampleBurstWindow(random::Rng &rng,
+                                                   time::TimePoint startDate,
+                                                   std::int32_t totalDays,
+                                                   const BurstShape &shape) {
+  const auto offsetDays = static_cast<std::int32_t>(rng.uniformInt(
+      0, static_cast<std::int64_t>(shape.maxStartOffset(totalDays)) + 1));
 
   const auto burstDays = static_cast<std::int32_t>(rng.uniformInt(
-      minBurstDays, static_cast<std::int64_t>(maxBurstDays) + 1));
+      shape.minDays, static_cast<std::int64_t>(shape.maxDays) + 1));
 
   return BurstWindow{
       .baseDate = startDate + time::Days{offsetDays},
@@ -45,18 +53,26 @@ sampleBurstWindow(random::Rng &rng, time::TimePoint startDate,
   };
 }
 
+struct HourRange {
+  std::int32_t min = 0;
+  std::int32_t max = 23;
+
+  [[nodiscard]] std::int32_t pick(random::Rng &rng) const {
+    return static_cast<std::int32_t>(
+        rng.uniformInt(min, static_cast<std::int64_t>(max) + 1));
+  }
+};
+
 [[nodiscard]] inline time::TimePoint sampleTimestamp(random::Rng &rng,
                                                      time::TimePoint baseDate,
                                                      std::int32_t maxDaysOffset,
-                                                     std::int32_t minHour,
-                                                     std::int32_t maxHour) {
+                                                     HourRange hours) {
   const auto dayBound = std::max<std::int32_t>(1, maxDaysOffset);
 
   const auto dayOffset = static_cast<std::int32_t>(
       rng.uniformInt(0, static_cast<std::int64_t>(dayBound) + 1));
 
-  const auto hour = static_cast<std::int32_t>(
-      rng.uniformInt(minHour, static_cast<std::int64_t>(maxHour) + 1));
+  const auto hour = hours.pick(rng);
 
   const auto minute = static_cast<std::int32_t>(rng.uniformInt(0, 61));
 

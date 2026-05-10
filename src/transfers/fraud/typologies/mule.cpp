@@ -13,7 +13,6 @@ namespace PhantomLedger::transfers::fraud::typologies::mule {
 
 namespace {
 
-/// Round a positive amount to two decimals, with a minimum floor.
 [[nodiscard]] inline double roundCents(double amount, double floor_) {
   const double clamped = std::max(floor_, amount);
   return std::round(clamped * 100.0) / 100.0;
@@ -38,9 +37,11 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   const auto burst =
       sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        /*tailPaddingDays=*/14,
-                        /*minBurstDays=*/3,
-                        /*maxBurstDays=*/11);
+                        BurstShape{
+                            .tailPaddingDays = 14,
+                            .minDays = 3,
+                            .maxDays = 11,
+                        });
 
   const auto inChannel = channels::tag(channels::Fraud::muleIn);
   const auto forwardChannel = channels::tag(channels::Fraud::muleForward);
@@ -71,7 +72,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       continue;
     }
 
-    // Forward targets: organizers if any, else other mules.
     std::vector<entity::Key> forwardTargets;
     if (!plan.fraudAccounts.empty()) {
       forwardTargets = plan.fraudAccounts;
@@ -98,7 +98,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
         continue;
       }
 
-      // Inbound amount: mostly fraud-scale, 40% chance to swap in 3× P2P.
       double inboundAmt = math::amounts::kFraud.sample(rng);
       if (rng.coin(0.40)) {
         inboundAmt = math::amounts::kP2P.sample(rng) * 3.0;
@@ -107,7 +106,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
       const auto inboundTs =
           sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                          /*minHour=*/7, /*maxHour=*/22);
+                          HourRange{.min = 7, .max = 22});
 
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,
