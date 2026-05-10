@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -42,7 +43,7 @@ struct BalanceSnapshot {
 [[nodiscard]] BalanceSnapshot
 integrateBalance(const entity::Key &cardAccount, double openingBalance,
                  std::span<const transactions::Transaction> events,
-                 time::TimePoint t0, time::TimePoint t1) noexcept;
+                 time::HalfOpenInterval cycle) noexcept;
 
 [[nodiscard]] double minimumDue(const BillingTerms &terms,
                                 double statementAbs) noexcept;

@@ -35,18 +35,18 @@ double intervalDays(time::TimePoint a, time::TimePoint b) noexcept {
 BalanceSnapshot
 integrateBalance(const entity::Key &cardAccount, double openingBalance,
                  std::span<const transactions::Transaction> events,
-                 time::TimePoint t0, time::TimePoint t1) noexcept {
-  if (t1 <= t0) {
+                 time::HalfOpenInterval cycle) noexcept {
+  if (cycle.endExcl <= cycle.start) {
     return {openingBalance, openingBalance};
   }
 
   double balance = openingBalance;
   double dollarDayIntegral = 0.0;
-  time::TimePoint prev = t0;
+  time::TimePoint prev = cycle.start;
 
   for (const auto &ev : events) {
     const auto ts = time::fromEpochSeconds(ev.timestamp);
-    if (ts < t0 || ts >= t1) {
+    if (ts < cycle.start || ts >= cycle.endExcl) {
       continue;
     }
     dollarDayIntegral += balance * intervalDays(prev, ts);
@@ -55,9 +55,9 @@ integrateBalance(const entity::Key &cardAccount, double openingBalance,
   }
 
   // Tail segment from the last event up to the cycle close.
-  dollarDayIntegral += balance * intervalDays(prev, t1);
+  dollarDayIntegral += balance * intervalDays(prev, cycle.endExcl);
 
-  const double total = intervalDays(t0, t1);
+  const double total = intervalDays(cycle.start, cycle.endExcl);
   if (total <= 0.0) {
     return {balance, balance};
   }
