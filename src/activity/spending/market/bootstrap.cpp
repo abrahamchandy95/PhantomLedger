@@ -86,27 +86,35 @@ std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
 
 // ---------- Per-person picks ----------
 
-void uniqueWeightedPick(random::Rng &rng, const std::vector<double> &cdf,
-                        std::uint16_t k, std::uint16_t maxTries,
-                        std::vector<std::uint32_t> &out) {
-  out.reserve(static_cast<std::size_t>(k));
+class WeightedPicker {
+public:
+  explicit WeightedPicker(std::uint16_t maxTries) noexcept
+      : maxTries_(maxTries) {}
 
-  std::uint16_t tries = 0;
-  while (out.size() < k && tries < maxTries) {
-    const auto idx = static_cast<std::uint32_t>(
-        probability::distributions::sampleIndex(cdf, rng.nextDouble()));
+  void pick(random::Rng &rng, const std::vector<double> &cdf, std::uint16_t k,
+            std::vector<std::uint32_t> &out) const {
+    out.reserve(static_cast<std::size_t>(k));
 
-    ++tries;
+    std::uint16_t tries = 0;
+    while (out.size() < k && tries < maxTries_) {
+      const auto idx = static_cast<std::uint32_t>(
+          probability::distributions::sampleIndex(cdf, rng.nextDouble()));
 
-    if (std::find(out.begin(), out.end(), idx) == out.end()) {
-      out.push_back(idx);
+      ++tries;
+
+      if (std::find(out.begin(), out.end(), idx) == out.end()) {
+        out.push_back(idx);
+      }
+    }
+
+    if (out.empty() && !cdf.empty()) {
+      out.push_back(0);
     }
   }
 
-  if (out.empty() && !cdf.empty()) {
-    out.push_back(0);
-  }
-}
+private:
+  std::uint16_t maxTries_;
+};
 
 [[nodiscard]] random::Rng makePerPersonRng(random::RngFactory &factory,
                                            std::uint32_t personIndex) {
@@ -175,6 +183,8 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
                                         commerce::kNoBurstDay);
   std::vector<std::uint16_t> burstLen(sources.census.count, 0u);
 
+  const WeightedPicker picker{payees.picking.maxPickAttempts};
+
   for (std::uint32_t i = 0; i < sources.census.count; ++i) {
     auto rng = makePerPersonRng(factory, i);
 
@@ -182,8 +192,7 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
         rng.uniformInt(payees.favoriteMin, payees.favoriteMax + 1));
 
     rowScratch.clear();
-    uniqueWeightedPick(rng, merchCdf, favK, payees.picking.maxPickAttempts,
-                       rowScratch);
+    picker.pick(rng, merchCdf, favK, rowScratch);
 
     favFlat.insert(favFlat.end(), rowScratch.begin(), rowScratch.end());
     favOffsets.push_back(static_cast<std::uint32_t>(favFlat.size()));
@@ -192,8 +201,7 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
         rng.uniformInt(payees.billerMin, payees.billerMax + 1));
 
     rowScratch.clear();
-    uniqueWeightedPick(rng, billerCdf, billK, payees.picking.maxPickAttempts,
-                       rowScratch);
+    picker.pick(rng, billerCdf, billK, rowScratch);
 
     billFlat.insert(billFlat.end(), rowScratch.begin(), rowScratch.end());
     billOffsets.push_back(static_cast<std::uint32_t>(billFlat.size()));
