@@ -106,7 +106,7 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
   return pl::pipeline::stages::entities::EntitySynthesis{
       .population = 100,
       .identity =
-          pl::pipeline::stages::entities::IdentitySource{
+          pl::entities::synth::pii::IdentityContext{
               .pools = &poolSet,
               .simStart = simStart,
               .localeMix = pl::entities::synth::pii::LocaleMix::usOnly(),

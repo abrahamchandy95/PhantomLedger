@@ -13,8 +13,7 @@
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/kinds.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
-#include "phantomledger/entities/synth/pii/samplers.hpp"
+#include "phantomledger/entities/synth/pii/identity.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -31,16 +30,9 @@ namespace pl = ::PhantomLedger;
 namespace synth = pl::entities::synth;
 namespace entity = pl::entity;
 
-struct IdentitySource {
-  const synth::pii::PoolSet *pools = nullptr;
-  pl::time::TimePoint simStart;
-  synth::pii::LocaleMix localeMix;
-};
-
 struct EntitySynthesis {
   std::int32_t population;
-  IdentitySource identity;
-
+  synth::pii::IdentityContext identity;
   synth::people::Fraud fraud{};
   synth::personas::Mix personaMix{};
   synth::accounts::Sizing accountsSizing{};
@@ -48,11 +40,11 @@ struct EntitySynthesis {
   synth::landlords::GenerationPlan landlords{};
   synth::counterparties::CounterpartyTargets counterpartyTargets{};
   synth::cards::IssuanceRules cards{};
+
   void validate(pl::primitives::validate::Report &r) const {
     r.check([&] {
       pl::primitives::validate::nonNegative("population", population);
     });
-
     accountsSizing.validate(r);
     merchants.validate(r);
     landlords.validate(r);
@@ -60,8 +52,9 @@ struct EntitySynthesis {
   }
 };
 
-[[nodiscard]] IdentitySource defaultStart(IdentitySource identity,
-                                          pl::time::TimePoint fallbackStart);
+[[nodiscard]] synth::pii::IdentityContext
+defaultStart(synth::pii::IdentityContext identity,
+             pl::time::TimePoint fallbackStart);
 
 [[nodiscard]] synth::people::Pack
 buildPeople(pl::random::Rng &rng, std::int32_t population,
@@ -78,7 +71,7 @@ buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
 
 [[nodiscard]] entity::pii::Roster
 buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
-         IdentitySource identity);
+         synth::pii::IdentityContext identity);
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,

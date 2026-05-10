@@ -3,6 +3,7 @@
 #include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/synth/pii/identity.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -12,12 +13,6 @@
 #include <cstdint>
 
 namespace PhantomLedger::entities::synth::pii {
-
-struct IdentityContext {
-  time::TimePoint simStart{};
-  LocaleMix mix{};
-  const PoolSet *pools = nullptr;
-};
 
 class Generator {
 public:
@@ -39,7 +34,7 @@ private:
 };
 
 inline entity::pii::Record Generator::buildRecord(entity::PersonId person) {
-  const auto country = sampleCountry(*rng_, context_.mix);
+  const auto country = sampleCountry(*rng_, context_.localeMix);
   const auto &pool = context_.pools->forCountry(country);
 
   entity::pii::Record rec{};
