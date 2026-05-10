@@ -33,6 +33,11 @@ struct Drivers {
 
 inline constexpr Drivers kDefaultDrivers{};
 
+struct PaydaySignal {
+  std::span<const std::uint32_t> persons{};
+  std::span<const double> sensitivities{};
+};
+
 class Cohort {
 public:
   Cohort() = default;
@@ -54,16 +59,14 @@ public:
   }
 
   void advanceAll(random::Rng &rng, const Drivers &drivers,
-                  std::span<const std::uint32_t> paydayPersonIndices,
-                  std::span<const double> sensitivities,
-                  std::span<double> outDailyMult) {
+                  const PaydaySignal &payday, std::span<double> outDailyMult) {
     std::fill(outDailyMult.begin(), outDailyMult.end(), 1.0);
 
     momentum::accumulate(rng, drivers.momentum, momentum_, outDailyMult);
     dormancy::accumulate(rng, drivers.dormancy, dormancy_, outDailyMult);
 
-    paycheck::triggerForPaydays(drivers.paycheck, paycheck_, sensitivities,
-                                paydayPersonIndices);
+    paycheck::triggerForPaydays(drivers.paycheck, paycheck_,
+                                payday.sensitivities, payday.persons);
     paycheck::accumulate(paycheck_, outDailyMult);
   }
 

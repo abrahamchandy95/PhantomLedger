@@ -34,10 +34,8 @@ void CommerceEvolver::evolveIfNeeded(market::Market &market, random::Rng &rng,
 
   auto &commerce = market.commerceMutable();
 
-  dynamics::monthly::evolveAll(
-      rng, config_, commerce, commerce.merchCdf(),
-      static_cast<std::uint32_t>(commerce.merchCdf().size()),
-      market.population().count());
+  dynamics::monthly::evolveAll(rng, config_, commerce,
+                               market.population().count());
 }
 
 } // namespace PhantomLedger::spending::simulator
