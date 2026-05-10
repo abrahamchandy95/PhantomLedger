@@ -91,11 +91,6 @@ Injector::inject(time::Window window,
       .rng = &services_.rng,
   };
 
-  ActiveWindow activeWindow{
-      .startDate = window.start,
-      .days = window.days,
-  };
-
   AccountPools pools{
       .allAccounts = {},
       .billerAccounts =
@@ -111,13 +106,13 @@ Injector::inject(time::Window window,
 
   CamouflageContext camouflageCtx{
       .execution = execution,
-      .window = activeWindow,
+      .window = window,
       .accounts = &pools,
   };
 
   IllicitContext illicitCtx{
       .execution = execution,
-      .window = activeWindow,
+      .window = window,
       .billerAccounts = std::span<const entity::Key>(
           pools.billerAccounts.data(), pools.billerAccounts.size()),
   };

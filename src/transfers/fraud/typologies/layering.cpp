@@ -22,13 +22,12 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
 
   random::Rng &rng = *ctx.execution.rng;
 
-  const auto burst =
-      sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        BurstShape{
-                            .tailPaddingDays = 10,
-                            .minDays = 3,
-                            .maxDays = 7,
-                        });
+  const auto burst = sampleBurstWindow(rng, ctx.window.start, ctx.window.days,
+                                       BurstShape{
+                                           .tailPaddingDays = 10,
+                                           .minDays = 3,
+                                           .maxDays = 7,
+                                       });
 
   std::vector<entity::Key> nodes;
   nodes.reserve(plan.muleAccounts.size() + plan.fraudAccounts.size());
@@ -55,7 +54,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
   const auto hopChannel = channels::tag(channels::Fraud::layeringHop);
   const auto outChannel = channels::tag(channels::Fraud::layeringOut);
 
-  // ---- Phase 1: victim → entry (60% per victim) -----------------------
   for (const auto &victim : plan.victimAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -81,7 +79,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
     }
   }
 
-  // ---- Phase 2: chain hops (1–3 transfers per edge) ------------------
   for (std::size_t i = 0; i + 1 < chain.size(); ++i) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -113,7 +110,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
     }
   }
 
-  // ---- Phase 3: exit → cashout (single optional emission) ------------
   if (static_cast<std::int32_t>(out.size()) < budget) {
     const auto &cashout =
         !plan.fraudAccounts.empty()

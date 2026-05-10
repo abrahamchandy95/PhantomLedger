@@ -25,7 +25,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
   const auto baseRange = std::max<std::int32_t>(1, ctx.window.days - 14);
   const auto baseOffsetDays = static_cast<std::int32_t>(
       rng.uniformInt(0, static_cast<std::int64_t>(baseRange) + 1));
-  const auto baseDate = ctx.window.startDate + time::Days{baseOffsetDays};
+  const auto baseDate = ctx.window.start + time::Days{baseOffsetDays};
 
   // weeks = max(1, min(6, days // 7))
   const auto weeks =
