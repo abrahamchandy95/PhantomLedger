@@ -48,7 +48,7 @@ population::View buildPopulationView(const population::Census &census) {
 
   population::Paydays paydays(std::move(offsets), std::move(flat));
 
-  return population::View(census.count, std::move(primary), std::move(kinds),
+  return population::View(std::move(primary), std::move(kinds),
                           std::move(objects), std::move(paydays));
 }
 
@@ -86,6 +86,11 @@ std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
 
 // ---------- Per-person picks ----------
 
+/// Sampler that draws K unique indices from a discrete CDF, retrying
+/// up to `maxTries_` times on collisions before falling back to a
+/// safe default. `maxTries` is loop-invariant across the per-person
+/// loop, so it's captured at construction; the rng + cdf vary per
+/// call.
 class WeightedPicker {
 public:
   explicit WeightedPicker(std::uint16_t maxTries) noexcept

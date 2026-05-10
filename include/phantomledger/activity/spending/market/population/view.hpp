@@ -15,13 +15,14 @@ class View {
 public:
   View() = default;
 
-  View(std::uint32_t count, std::vector<entity::Key> primary,
-       std::vector<personas::Type> kinds,
+  View(std::vector<entity::Key> primary, std::vector<personas::Type> kinds,
        std::vector<entity::behavior::Persona> objects, Paydays paydays)
-      : count_(count), primary_(std::move(primary)), kinds_(std::move(kinds)),
+      : primary_(std::move(primary)), kinds_(std::move(kinds)),
         objects_(std::move(objects)), paydays_(std::move(paydays)) {}
 
-  [[nodiscard]] std::uint32_t count() const noexcept { return count_; }
+  [[nodiscard]] std::uint32_t count() const noexcept {
+    return static_cast<std::uint32_t>(primary_.size());
+  }
 
   [[nodiscard]] entity::Key primary(entity::PersonId p) const noexcept {
     return primary_[index(p)];
@@ -48,7 +49,6 @@ private:
     return static_cast<std::size_t>(p - 1);
   }
 
-  std::uint32_t count_ = 0;
   std::vector<entity::Key> primary_;
   std::vector<personas::Type> kinds_;
   std::vector<entity::behavior::Persona> objects_;
