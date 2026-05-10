@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/insurance_ledger.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -18,10 +18,9 @@ public:
                  const transactions::Factory &txf,
                  const random::RngFactory &claimRngs) noexcept;
 
-  /// Emit claim transactions across the window. Sorted by timestamp on return.
   [[nodiscard]] std::vector<transactions::Transaction>
   generate(const time::Window &window,
-           const entity::product::PortfolioRegistry &portfolios,
+           const entity::product::InsuranceLedger &insurance,
            const Population &population) const;
 
 private:

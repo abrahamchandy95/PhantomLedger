@@ -115,7 +115,7 @@ ClaimScheduler::ClaimScheduler(const ClaimRates &rates,
 
 std::vector<transactions::Transaction>
 ClaimScheduler::generate(const time::Window &window,
-                         const entity::product::PortfolioRegistry &portfolios,
+                         const entity::product::InsuranceLedger &insurance,
                          const Population &population) const {
   std::vector<transactions::Transaction> out;
 
@@ -124,30 +124,29 @@ ClaimScheduler::generate(const time::Window &window,
     return out;
   }
 
-  portfolios.forEachInsuredPerson(
-      [&](PersonId person, const product::InsuranceHoldings &holdings) {
-        const auto acctIt = population.primaryAccounts->find(person);
-        if (acctIt == population.primaryAccounts->end()) {
-          return;
-        }
+  insurance.forEach([&](PersonId person,
+                        const product::InsuranceHoldings &holdings) {
+    const auto acctIt = population.primaryAccounts->find(person);
+    if (acctIt == population.primaryAccounts->end()) {
+      return;
+    }
 
-        const Key payer = acctIt->second;
+    const Key payer = acctIt->second;
 
-        // Per-person sub-RNG isolates claim occurrence and amount sampling.
-        auto personRng =
-            claimRngs_->rng({"insurance_claims",
-                             std::to_string(static_cast<unsigned>(person))});
+    // Per-person sub-RNG isolates claim occurrence and amount sampling.
+    auto personRng = claimRngs_->rng(
+        {"insurance_claims", std::to_string(static_cast<unsigned>(person))});
 
-        if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
-          emitter.tryPost(personRng, *policy, rates_->autoPayout(), payer);
-        }
+    if (const auto &policy = holdings.autoPolicy(); policy.has_value()) {
+      emitter.tryPost(personRng, *policy, rates_->autoPayout(), payer);
+    }
 
-        if (const auto &policy = holdings.homePolicy(); policy.has_value()) {
-          emitter.tryPost(personRng, *policy, rates_->homePayout(), payer);
-        }
+    if (const auto &policy = holdings.homePolicy(); policy.has_value()) {
+      emitter.tryPost(personRng, *policy, rates_->homePayout(), payer);
+    }
 
-        // Life insurance: death events are not modeled.
-      });
+    // Life insurance: death events are not modeled.
+  });
 
   std::sort(
       out.begin(), out.end(),

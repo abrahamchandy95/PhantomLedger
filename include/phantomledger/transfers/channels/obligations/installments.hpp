@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/event.hpp"
-#include "phantomledger/entities/products/portfolio.hpp"
+#include "phantomledger/entities/products/loan_terms_ledger.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -16,25 +16,22 @@
 namespace PhantomLedger::transfers::obligations::installments {
 
 [[nodiscard]] inline bool
-tracks(const entity::product::PortfolioRegistry &registry,
+tracks(const entity::product::LoanTermsLedger &loans,
        const entity::product::ObligationEvent &event) noexcept {
   return event.direction == entity::product::Direction::outflow &&
          ::PhantomLedger::products::isInstallmentLoan(event.productType) &&
-         registry.installmentTerms(event.personId, event.productType) !=
-             nullptr;
+         loans.get(event.personId, event.productType) != nullptr;
 }
 
 class EventEmitter {
 public:
-  explicit EventEmitter(
-      const entity::product::PortfolioRegistry &registry) noexcept
-      : registry_(&registry) {}
+  explicit EventEmitter(const entity::product::LoanTermsLedger &loans) noexcept
+      : loans_(&loans) {}
 
   [[nodiscard]] std::optional<transactions::Draft>
   draftFor(random::Rng &rng, const entity::product::ObligationEvent &event,
            const entity::Key &personAcct, time::TimePoint endExcl) {
-    const auto *terms =
-        registry_->installmentTerms(event.personId, event.productType);
+    const auto *terms = loans_->get(event.personId, event.productType);
     if (terms == nullptr) {
       return std::nullopt;
     }
@@ -70,7 +67,7 @@ public:
   }
 
 private:
-  const entity::product::PortfolioRegistry *registry_ = nullptr;
+  const entity::product::LoanTermsLedger *loans_ = nullptr;
   delinquency::StateMap stateMap_{};
 };
 

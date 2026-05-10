@@ -39,7 +39,8 @@ Scheduler::generate(const entity::product::PortfolioRegistry &registry,
                     time::HalfOpenInterval active,
                     const Population &population) const {
   std::vector<transactions::Transaction> out;
-  installments::EventEmitter installmentEvents{registry};
+  const auto &loans = registry.loans();
+  installments::EventEmitter installmentEvents{loans};
 
   for (const auto &event : registry.allEvents(active.start, active.endExcl)) {
     const auto personAcct = primaryAccount(population, event.personId);
@@ -47,7 +48,7 @@ Scheduler::generate(const entity::product::PortfolioRegistry &registry,
       continue;
     }
 
-    if (installments::tracks(registry, event)) {
+    if (installments::tracks(loans, event)) {
       appendDraft(out, *txf_,
                   installmentEvents.draftFor(*rng_, event, *personAcct,
                                              active.endExcl));

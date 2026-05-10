@@ -39,7 +39,8 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
   insurance::Population population{.primaryAccounts = &primaryAccounts};
   ::PhantomLedger::random::RngFactory claimsFactory{seed_};
   insurance::ClaimScheduler scheduler{rates, rng_, txf_, claimsFactory};
-  return scheduler.generate(window_, entities.portfolios, population);
+  return scheduler.generate(window_, entities.portfolios.insurance(),
+                            population);
 }
 
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
