@@ -1,14 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/products/event.hpp"
 #include "phantomledger/entities/products/insurance_ledger.hpp"
 #include "phantomledger/entities/products/loan_terms_ledger.hpp"
 #include "phantomledger/entities/products/obligation_stream.hpp"
-#include "phantomledger/primitives/time/calendar.hpp"
-
-#include <span>
-#include <utility>
 
 namespace PhantomLedger::entity::product {
 
@@ -29,45 +23,6 @@ public:
   }
   [[nodiscard]] const ObligationStream &obligations() const noexcept {
     return obligations_;
-  }
-
-  void setInsurance(entity::PersonId person, InsuranceHoldings holdings) {
-    insurance_.set(person, std::move(holdings));
-  }
-
-  [[nodiscard]] const InsuranceHoldings *
-  insurance(entity::PersonId person) const noexcept {
-    return insurance_.get(person);
-  }
-
-  template <typename F> void forEachInsuredPerson(F &&visit) const {
-    insurance_.forEach(std::forward<F>(visit));
-  }
-
-  void setInstallmentTerms(entity::PersonId person, ProductType productType,
-                           InstallmentTerms terms) {
-    loans_.set(person, productType, terms);
-  }
-
-  [[nodiscard]] const InstallmentTerms *
-  installmentTerms(entity::PersonId person,
-                   ProductType productType) const noexcept {
-    return loans_.get(person, productType);
-  }
-
-  [[nodiscard]] bool hasMortgage(entity::PersonId person) const noexcept {
-    return loans_.hasMortgage(person);
-  }
-
-  void addEvent(ObligationEvent event) {
-    obligations_.append(std::move(event));
-  }
-
-  void sortEvents() { obligations_.sort(); }
-
-  [[nodiscard]] std::span<const ObligationEvent>
-  allEvents(time::TimePoint start, time::TimePoint endExcl) const noexcept {
-    return obligations_.between(start, endExcl);
   }
 
 private:

@@ -35,14 +35,14 @@ Scheduler::Scheduler(random::Rng &rng,
     : rng_(&rng), txf_(&txf) {}
 
 std::vector<transactions::Transaction>
-Scheduler::generate(const entity::product::PortfolioRegistry &registry,
+Scheduler::generate(const entity::product::LoanTermsLedger &loans,
+                    const entity::product::ObligationStream &obligations,
                     time::HalfOpenInterval active,
                     const Population &population) const {
   std::vector<transactions::Transaction> out;
-  const auto &loans = registry.loans();
   installments::EventEmitter installmentEvents{loans};
 
-  for (const auto &event : registry.allEvents(active.start, active.endExcl)) {
+  for (const auto &event : obligations.between(active.start, active.endExcl)) {
     const auto personAcct = primaryAccount(population, event.personId);
     if (!personAcct.has_value()) {
       continue;
