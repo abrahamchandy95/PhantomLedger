@@ -45,14 +45,6 @@ SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
                                        std::uint64_t seed)
     : rng_(&rng), window_(window), seed_(seed), entities_(entities) {}
 
-SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
-                                       ::PhantomLedger::time::Window window,
-                                       EntitySynthesis entities,
-                                       ProductSynthesis products,
-                                       std::uint64_t seed)
-    : rng_(&rng), window_(window), seed_(seed), entities_(entities),
-      products_(products) {}
-
 SimulationPipeline::InfraStage &SimulationPipeline::infraStage() noexcept {
   return infra_;
 }
@@ -138,14 +130,6 @@ SimulationResult simulate(::PhantomLedger::random::Rng &rng,
                           SimulationPipeline::EntitySynthesis entities,
                           std::uint64_t seed) {
   return SimulationPipeline{rng, window, entities, seed}.run();
-}
-
-SimulationResult simulate(::PhantomLedger::random::Rng &rng,
-                          ::PhantomLedger::time::Window window,
-                          SimulationPipeline::EntitySynthesis entities,
-                          SimulationPipeline::ProductSynthesis products,
-                          std::uint64_t seed) {
-  return SimulationPipeline{rng, window, entities, products, seed}.run();
 }
 
 } // namespace PhantomLedger::pipeline

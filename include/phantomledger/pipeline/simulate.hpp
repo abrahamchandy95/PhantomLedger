@@ -26,11 +26,6 @@ public:
                      ::PhantomLedger::time::Window window,
                      EntitySynthesis entities, std::uint64_t seed = 0);
 
-  SimulationPipeline(::PhantomLedger::random::Rng &rng,
-                     ::PhantomLedger::time::Window window,
-                     EntitySynthesis entities, ProductSynthesis products,
-                     std::uint64_t seed = 0);
-
   SimulationPipeline(const SimulationPipeline &) = delete;
   SimulationPipeline &operator=(const SimulationPipeline &) = delete;
   SimulationPipeline(SimulationPipeline &&) noexcept = delete;
@@ -63,11 +58,5 @@ private:
 simulate(::PhantomLedger::random::Rng &rng,
          ::PhantomLedger::time::Window window,
          SimulationPipeline::EntitySynthesis entities, std::uint64_t seed = 0);
-
-[[nodiscard]] SimulationResult
-simulate(::PhantomLedger::random::Rng &rng,
-         ::PhantomLedger::time::Window window,
-         SimulationPipeline::EntitySynthesis entities,
-         SimulationPipeline::ProductSynthesis products, std::uint64_t seed = 0);
 
 } // namespace PhantomLedger::pipeline
