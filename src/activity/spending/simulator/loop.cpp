@@ -71,29 +71,34 @@ double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
 }
 
 double SpenderEmissionLoop::RateSampler::latentBaseRateFor(
-    const actors::Spender &spender, double combinedMult,
-    double liquidityMult) const {
+    const actors::Spender &spender, DailyMultipliers mults) const {
   const std::uint64_t remainingPersonDays =
       std::max<std::uint64_t>(std::uint64_t{1}, state_.remainingPersonDays());
 
   const double targetRealizedPerDay =
       state_.remainingTargetTxns() / static_cast<double>(remainingPersonDays);
 
-  return spenders::baseRateForTarget(spender, frame_.day.shock,
-                                     frame_.weekdayMult, targetRealizedPerDay,
-                                     combinedMult, liquidityMult);
+  return spenders::baseRateForTarget(spender,
+                                     actors::RatePieces{
+                                         .weekdayMult = frame_.weekdayMult,
+                                         .dynamicsMultiplier = mults.combined,
+                                         .liquidityMultiplier = mults.liquidity,
+                                         .dayShock = frame_.day.shock,
+                                     },
+                                     targetRealizedPerDay);
 }
 
 std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
     random::Rng &rng, const actors::Spender &spender, double latentBaseRate,
-    double combinedMult, double liquidityMult) const {
+    DailyMultipliers mults) const {
   return actors::sampleTransactionCount(
-      rng, spender, frame_,
+      rng, spender,
       actors::RatePieces{
           .baseRate = latentBaseRate,
           .weekdayMult = frame_.weekdayMult,
-          .dynamicsMultiplier = combinedMult,
-          .liquidityMultiplier = liquidityMult,
+          .dynamicsMultiplier = mults.combined,
+          .liquidityMultiplier = mults.liquidity,
+          .dayShock = frame_.day.shock,
       },
       budget_.personLimit);
 }
@@ -180,12 +185,13 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
 
     const double liquidityMult = rates_.liquidityMultiplierFor(prepared);
     const double combinedMult = rates_.combinedMultiplierFor(personIndex);
+    const RateSampler::DailyMultipliers mults{.combined = combinedMult,
+                                              .liquidity = liquidityMult};
 
-    const double latentBaseRate =
-        rates_.latentBaseRateFor(spender, combinedMult, liquidityMult);
+    const double latentBaseRate = rates_.latentBaseRateFor(spender, mults);
 
-    const auto txnCount = rates_.transactionCountFor(
-        rng, spender, latentBaseRate, combinedMult, liquidityMult);
+    const auto txnCount =
+        rates_.transactionCountFor(rng, spender, latentBaseRate, mults);
 
     rates_.consumeOnePersonDay();
 

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "phantomledger/activity/spending/actors/day.hpp"
 #include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/activity/spending/liquidity/factor.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -17,17 +16,20 @@ struct RatePieces {
   double weekdayMult = 1.0;
   double dynamicsMultiplier = 1.0;
   double liquidityMultiplier = 1.0;
+  double dayShock = 1.0;
+
+  [[nodiscard]] double suppression(const Spender &spender) const noexcept {
+    const double dyn = std::max(0.0, dynamicsMultiplier);
+    return spender.rateMultiplier * weekdayMult * dayShock * dyn *
+           liquidity::countFactor(liquidityMultiplier);
+  }
 };
 
 [[nodiscard]] inline std::uint32_t
 sampleTransactionCount(random::Rng &rng, const Spender &spender,
-                       const DayFrame &frame, const RatePieces &ratePieces,
+                       const RatePieces &ratePieces,
                        std::optional<std::uint32_t> personLimit) noexcept {
-  const double dyn = std::max(0.0, ratePieces.dynamicsMultiplier);
-
-  const double rate = ratePieces.baseRate * spender.rateMultiplier *
-                      ratePieces.weekdayMult * frame.day.shock * dyn *
-                      liquidity::countFactor(ratePieces.liquidityMultiplier);
+  const double rate = ratePieces.baseRate * ratePieces.suppression(spender);
 
   if (rate <= 0.0) {
     return 0;
