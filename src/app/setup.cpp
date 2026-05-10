@@ -93,7 +93,7 @@ buildEntitySynthesis(const RunOptions &opts, const pii::PoolSet &pools,
   return pl::pipeline::stages::entities::EntitySynthesis{
       .population = opts.population,
       .identity =
-          pl::pipeline::stages::entities::IdentitySource{
+          pii::IdentityContext{
               .pools = &pools,
               .simStart = simStart,
               .localeMix = mix,

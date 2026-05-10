@@ -21,8 +21,9 @@
 
 namespace PhantomLedger::pipeline::stages::entities {
 
-[[nodiscard]] IdentitySource defaultStart(IdentitySource identity,
-                                          pl::time::TimePoint fallbackStart) {
+[[nodiscard]] synth::pii::IdentityContext
+defaultStart(synth::pii::IdentityContext identity,
+             pl::time::TimePoint fallbackStart) {
   if (identity.simStart == pl::time::TimePoint{}) {
     identity.simStart = fallbackStart;
   }
@@ -59,17 +60,12 @@ buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
 
 [[nodiscard]] entity::pii::Roster
 buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
-         IdentitySource identity) {
+         synth::pii::IdentityContext identity) {
   assert(identity.pools != nullptr &&
-         "buildPii: IdentitySource::pools must be set. main is the sole "
+         "buildPii: IdentityContext::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
 
-  const synth::pii::IdentityContext context{
-      .simStart = identity.simStart,
-      .mix = identity.localeMix,
-      .pools = identity.pools,
-  };
-  return synth::pii::make(rng, personas.assignment, context);
+  return synth::pii::make(rng, personas.assignment, identity);
 }
 
 [[nodiscard]] entity::merchant::Catalog
