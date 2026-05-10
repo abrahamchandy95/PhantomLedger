@@ -1,10 +1,12 @@
-CMAKE ?= cmake
+CMAKE     ?= cmake
 BUILD_DIR ?= build
-CONFIG ?= Debug
-TESTS ?= ON
-PYTHON ?= OFF
+CONFIG    ?= Release
+TESTS     ?= ON
+PYTHON    ?= OFF
+BIN       ?= phantomledger
+ARGS      ?=
 
-.PHONY: refresh build test clean rebuild
+.PHONY: refresh build test clean rebuild run run-help run-fast
 
 refresh:
 	$(CMAKE) -S . -B $(BUILD_DIR) \
@@ -18,6 +20,16 @@ build: refresh
 
 test: build
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+run: build
+	./$(BUILD_DIR)/$(BIN) $(ARGS)
+
+run-help: build
+	./$(BUILD_DIR)/$(BIN) --help
+
+run-fast:
+	$(CMAKE) --build $(BUILD_DIR) --target $(BIN) -j
+	./$(BUILD_DIR)/$(BIN) $(ARGS)
 
 clean:
 	$(CMAKE) -E rm -rf $(BUILD_DIR)

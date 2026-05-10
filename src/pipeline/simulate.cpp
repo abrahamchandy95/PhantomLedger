@@ -1,5 +1,7 @@
 #include "phantomledger/pipeline/simulate.hpp"
 
+#include "phantomledger/transactions/clearing/balance_book.hpp"
+#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 #include "phantomledger/transfers/legit/assembly.hpp"
 
 namespace PhantomLedger::pipeline {
@@ -92,24 +94,18 @@ SimulationResult SimulationPipeline::run() const {
   out.entities.pii =
       entityStage::buildPii(*rng_, out.entities.personas, identity);
 
-  // buildMerchants returns entity::merchant::Catalog directly.
   out.entities.merchants = entityStage::buildMerchants(
       *rng_, entities_.population, entities_.merchants);
 
   out.entities.landlords = entityStage::buildLandlords(
       *rng_, entities_.population, entities_.landlords);
 
-  // issueCreditCards takes the user's top-level seed and derives the
-  // card-subsystem subseed via deriveCardSeed (cards/seeds.hpp).
   out.entities.creditCards = entityStage::issueCreditCards(
       out.entities.personas, out.entities.people, seed_, entities_.cards);
 
   out.entities.counterparties = entityStage::buildCounterparties(
       *rng_, entities_.population, entities_.counterpartyTargets);
 
-  // Register every external endpoint after entity construction and before
-  // transfers so validation, balance bootstrap, standard export, and AML
-  // export all see the same account registry.
   entityStage::finalizeAccountRegistry(out.entities);
 
   products_.synthesize(out.entities, window_);
@@ -119,7 +115,10 @@ SimulationResult SimulationPipeline::run() const {
   auto configuredTransfers = transfers_;
   configuredTransfers.legit().runScope(activeTransferScope(
       configuredTransfers.legit().runScope(), window_, seed_));
-
+  configuredTransfers.legit().creditLifecycle(
+      &::PhantomLedger::transfers::credit_cards::kDefaultLifecycleRules);
+  configuredTransfers.legit().openingBalanceRules(
+      &::PhantomLedger::clearing::kDefaultBalanceRules);
   out.transfers = configuredTransfers.build(*rng_, out.entities, out.infra);
 
   return out;

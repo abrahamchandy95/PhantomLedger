@@ -139,6 +139,8 @@ struct BalanceRules {
   }
 };
 
+inline constexpr BalanceRules kDefaultBalanceRules{};
+
 namespace detail {
 
 inline constexpr double kHubCash = 1e18;
