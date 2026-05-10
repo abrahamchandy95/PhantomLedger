@@ -38,16 +38,16 @@ namespace PhantomLedger::entities::synth::people {
 
   int consumed = 0;
   for (int ring = 0; ring < ringCount; ++ring) {
-    RingPlan plan{};
-    if (!sampleRing(rng, fraud, ceiling - consumed, population - consumed,
-                    plan)) {
+    const auto plan =
+        sampleRing(rng, fraud, ceiling - consumed, population - consumed);
+    if (!plan.has_value()) {
       break;
     }
 
-    sizes.push_back(plan.size);
-    muleCounts.push_back(plan.mules);
-    victimCounts.push_back(plan.victims);
-    consumed += plan.size;
+    sizes.push_back(plan->size);
+    muleCounts.push_back(plan->mules);
+    victimCounts.push_back(plan->victims);
+    consumed += plan->size;
   }
 
   int ringPeople = 0;
@@ -163,7 +163,7 @@ namespace PhantomLedger::entities::synth::people {
     rings.push_back(std::move(ring));
   }
 
-  injectMultiRingMules(rng, fraud, rings, muleHomes, out.roster.count);
+  injectMultiRingMules(rng, fraud, rings, muleHomes);
 
   int soloCount =
       sampleSolos(rng, fraud, population, std::max(0, ceiling - ringPeople));
