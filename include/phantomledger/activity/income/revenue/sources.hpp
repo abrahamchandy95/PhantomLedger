@@ -34,20 +34,12 @@ namespace source {
 using Key = entity::Key;
 using PersonId = entity::PersonId;
 
-// ---------------------------------------------------------------
-// Accounts
-// ---------------------------------------------------------------
-
 struct Accounts {
   Key personal;
   Key revenueDst;
   std::optional<Key> business;
   std::optional<Key> brokerage;
 };
-
-// ---------------------------------------------------------------
-// Sources
-// ---------------------------------------------------------------
 
 struct Sources {
   std::vector<Key> clients;
@@ -60,11 +52,11 @@ struct Sources {
     return !clients.empty() || !platforms.empty() || processor.has_value() ||
            drawSrc.has_value() || investmentSrc.has_value();
   }
-};
 
-// ---------------------------------------------------------------
-// Plan
-// ---------------------------------------------------------------
+  void applyFallback(personas::Type persona, random::Rng &rng,
+                     const RevenueCounterparties &counterparties,
+                     const Accounts &accounts);
+};
 
 struct Plan {
   PersonId person = 0;
@@ -75,10 +67,6 @@ struct Plan {
 
   [[nodiscard]] bool valid() const noexcept { return profile != nullptr; }
 };
-
-// ---------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------
 
 namespace detail {
 
@@ -142,18 +130,20 @@ source(random::Rng &rng, std::span<const Key> pool,
   return pickOne(rng, pool);
 }
 
-inline void applyFallback(personas::Type persona, random::Rng &rng,
-                          const RevenueCounterparties &counterparties,
-                          const Accounts &accounts, Sources &sources) {
-  if (sources.any()) {
+} // namespace detail
+
+inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
+                                   const RevenueCounterparties &counterparties,
+                                   const Accounts &accounts) {
+  if (any()) {
     return;
   }
 
   switch (persona) {
   case personas::Type::freelancer: {
-    const auto clients = counterparties.clients();
-    if (!clients.empty()) {
-      sources.clients = choiceK(rng, clients, 1, 2);
+    const auto clientPool = counterparties.clients();
+    if (!clientPool.empty()) {
+      clients = choiceK(rng, clientPool, 1, 2);
     }
     break;
   }
@@ -161,20 +151,20 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
   case personas::Type::smallBusiness: {
     const auto ownerBusinesses = counterparties.ownerBusinesses();
     if (!accounts.business.has_value() && !ownerBusinesses.empty()) {
-      sources.drawSrc = pickOne(rng, ownerBusinesses);
+      drawSrc = pickOne(rng, ownerBusinesses);
     }
     break;
   }
 
   case personas::Type::highNetWorth: {
     if (accounts.brokerage.has_value()) {
-      sources.investmentSrc = accounts.brokerage;
+      investmentSrc = accounts.brokerage;
       break;
     }
 
     const auto brokerages = counterparties.brokerages();
     if (!brokerages.empty()) {
-      sources.investmentSrc = pickOne(rng, brokerages);
+      investmentSrc = pickOne(rng, brokerages);
     }
     break;
   }
@@ -184,14 +174,6 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
   }
 }
 
-} // namespace detail
-
-// ---------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------
-
-/// Assign revenue sources for one person.
-/// Returns nullopt if the person is ineligible.
 [[nodiscard]] inline std::optional<Plan> assign(const Book &book,
                                                 PersonId person) {
   const auto &population = book.population;
@@ -241,7 +223,7 @@ inline void applyFallback(personas::Type persona, random::Rng &rng,
                                             profile->investment),
   };
 
-  detail::applyFallback(persona, rng, counterparties, accounts, sources);
+  sources.applyFallback(persona, rng, counterparties, accounts);
 
   return Plan{
       .person = person,
