@@ -178,10 +178,11 @@ makeTransferRun(family_rt::KinshipView kinship,
   return family_rt::TransferRun{kinship, accounts, posting, emission};
 }
 
-std::vector<transactions::Transaction> generateFamilyTxns(
-    const blueprints::LegitBlueprint &plan, const FamilyLedgerSources &sources,
-    const random::RngFactory &rngFactory, const transactions::Factory &txf,
-    const FamilyTransferScenario &scenario) {
+std::vector<transactions::Transaction>
+generateFamilyTxns(const blueprints::LegitBlueprint &plan,
+                   const FamilyLedgerSources &sources,
+                   const family_rt::TransferEmission &emission,
+                   const FamilyTransferScenario &scenario) {
   const auto *transferModel = scenario.transfers();
   if (transferModel == nullptr) {
     return {};
@@ -204,7 +205,7 @@ std::vector<transactions::Transaction> generateFamilyTxns(
   auto run = makeTransferRun(
       makeKinship(plan, graph, std::span<const double>{multipliers}),
       makeAccounts(sources, transferModel->routing), makePosting(plan),
-      makeEmission(rngFactory, txf));
+      emission);
   run.education(makeEducation(sources));
 
   return generateFamilyTxns(run, *transferModel);

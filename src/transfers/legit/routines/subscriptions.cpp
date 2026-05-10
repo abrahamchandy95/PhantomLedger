@@ -143,8 +143,13 @@ DebitEmitter::emitDebits(const blueprints::LegitBlueprint &plan,
       screen_.advanceThrough(candidate.ts, /*inclusive=*/true);
 
       const auto &sub = subs[candidate.subIdx];
-      if (!screen_.acceptTransfer(sub.deposit, sub.biller, sub.amount, channel,
-                                  candidate.ts)) {
+      if (!screen_.acceptTransfer(ledger::KeyedTransfer{
+              .source = sub.deposit,
+              .destination = sub.biller,
+              .amount = sub.amount,
+              .channel = channel,
+              .timestamp = candidate.ts,
+          })) {
         continue;
       }
 

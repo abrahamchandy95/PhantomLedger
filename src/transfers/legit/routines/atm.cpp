@@ -176,8 +176,13 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
       continue;
     }
 
-    if (!screen_.acceptTransfer(cand.depositAcct, atmNetworkAcct, cand.amount,
-                                channel, cand.timestamp)) {
+    if (!screen_.acceptTransfer(ledger::KeyedTransfer{
+            .source = cand.depositAcct,
+            .destination = atmNetworkAcct,
+            .amount = cand.amount,
+            .channel = channel,
+            .timestamp = cand.timestamp,
+        })) {
       continue;
     }
 

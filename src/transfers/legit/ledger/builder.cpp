@@ -16,6 +16,7 @@ namespace PhantomLedger::transfers::legit::ledger {
 namespace {
 
 namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
+namespace family_rt = ::PhantomLedger::transfers::legit::routines::family;
 
 [[nodiscard]] relatives::FamilyLedgerSources
 familySourcesFrom(const passes::FamilyPass &pass) noexcept {
@@ -160,9 +161,9 @@ LegitTransferResult LegitTransferBuilder::build() const {
   }
 
   const random::RngFactory familyRngFactory{plan.seed()};
-  streams.add(relatives::generateFamilyTxns(plan, familySourcesFrom(family_),
-                                            familyRngFactory, txf,
-                                            familyScenario_));
+  streams.add(relatives::generateFamilyTxns(
+      plan, familySourcesFrom(family_),
+      family_rt::TransferEmission{familyRngFactory, txf}, familyScenario_));
 
   passes::addCredit(credit_, plan, txf, streams);
 
