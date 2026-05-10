@@ -24,19 +24,18 @@ namespace commerce = ::PhantomLedger::spending::market::commerce;
 
 [[nodiscard]] std::vector<double>
 buildAttractiveness(random::Rng &rng, std::uint32_t personCount,
-                    std::span<const std::uint8_t> hubFlags, double sigma,
-                    double hubMultiplier) {
+                    std::span<const std::uint8_t> hubFlags, const Social &cfg) {
   std::vector<double> attract(personCount, 0.0);
 
   for (std::uint32_t i = 0; i < personCount; ++i) {
-    attract[i] = probdist::lognormal(rng, /*mu=*/0.0, sigma);
+    attract[i] = probdist::lognormal(rng, /*mu=*/0.0, cfg.influenceSigma);
   }
 
   if (!hubFlags.empty()) {
     const auto limit = std::min<std::size_t>(hubFlags.size(), attract.size());
     for (std::size_t i = 0; i < limit; ++i) {
       if (hubFlags[i] != 0) {
-        attract[i] *= hubMultiplier;
+        attract[i] *= cfg.hubMultiplier;
       }
     }
   }
@@ -130,8 +129,7 @@ commerce::Contacts build(const Social &cfg, const BuildInputs &inputs) {
 
   auto attractRng = factory.rng({"social", "attractiveness"});
   auto attract =
-      buildAttractiveness(attractRng, inputs.personCount, inputs.hubFlags,
-                          cfg.influenceSigma, cfg.hubMultiplier);
+      buildAttractiveness(attractRng, inputs.personCount, inputs.hubFlags, cfg);
 
   const ContactSampler sampler(std::move(attract), communities, cfg.localProb,
                                cfg.crossProb());
