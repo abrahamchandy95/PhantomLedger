@@ -48,13 +48,36 @@ void seatCouple(std::span<const entity::PersonId> adults, random::Rng &rng,
   return rng.coin(studentDependentP);
 }
 
-[[nodiscard]] std::span<const entity::PersonId>
-parentPoolFor(std::span<const entity::PersonId> localAdults,
-              std::span<const entity::PersonId> globalAdults, random::Rng &rng,
-              double studentCoresidesP) noexcept {
-  const bool useLocal = !localAdults.empty() && rng.coin(studentCoresidesP);
-  return useLocal ? localAdults : globalAdults;
-}
+/// Two candidate parent pools — the local household's adults and the
+/// global adult population. Captures the local-vs-global selection
+/// idiom: prefer the local pool when non-empty AND the co-residence
+/// coin lands; otherwise fall back to the global pool.
+struct AdultPools {
+  std::span<const entity::PersonId> local{};
+  std::span<const entity::PersonId> global{};
+
+  [[nodiscard]] std::span<const entity::PersonId>
+  pickPool(random::Rng &rng, double coresidesP) const noexcept {
+    const bool useLocal = !local.empty() && rng.coin(coresidesP);
+    return useLocal ? local : global;
+  }
+};
+
+/// A finalized "draft N parents from this pool" decision, ready to be
+/// realized via `pickIndices(rng)`. Empty when the pool is empty or
+/// the count is zero.
+struct ParentDraft {
+  std::span<const entity::PersonId> pool{};
+  std::uint32_t count = 0;
+
+  [[nodiscard]] bool empty() const noexcept {
+    return pool.empty() || count == 0;
+  }
+
+  [[nodiscard]] std::vector<std::size_t> pickIndices(random::Rng &rng) const {
+    return rng.choiceIndices(pool.size(), count, /*replace=*/false);
+  }
+};
 
 [[nodiscard]] std::uint32_t parentCountFor(std::size_t poolSize,
                                            random::Rng &rng,
@@ -65,40 +88,50 @@ parentPoolFor(std::span<const entity::PersonId> localAdults,
   return 1U;
 }
 
-void seatParents(entity::PersonId student,
-                 std::span<const entity::PersonId> pool, std::uint32_t count,
-                 random::Rng &rng,
-                 std::vector<std::array<entity::PersonId, 2>> &parentsOf,
-                 std::vector<std::vector<entity::PersonId>> &childrenOf) {
-  const auto picked = rng.choiceIndices(pool.size(), count, /*replace=*/false);
+/// Per-household assignment of parents to students. Captures the
+/// rng + dependency probabilities + Links output buffer at
+/// construction so the per-student call only needs the student id
+/// and the (local, global) adult pools.
+class ParentAssigner {
+public:
+  ParentAssigner(random::Rng &rng, const Dependents &dependents,
+                 Links &out) noexcept
+      : rng_(rng), dependents_(dependents), out_(out) {}
 
-  auto &slots = parentsOf[student - 1];
-  for (std::size_t i = 0; i < picked.size(); ++i) {
-    const auto parent = pool[picked[i]];
-    slots[i] = parent;
-    childrenOf[parent - 1].push_back(student);
-  }
-}
+  void assignFor(entity::PersonId student, const AdultPools &pools) {
+    if (!studentIsDependent(rng_, dependents_.studentDependentP)) {
+      return;
+    }
 
-void assignParentsForStudent(
-    entity::PersonId student, std::span<const entity::PersonId> localAdults,
-    std::span<const entity::PersonId> globalAdults,
-    const Dependents &dependents, random::Rng &rng,
-    std::vector<std::array<entity::PersonId, 2>> &parentsOf,
-    std::vector<std::vector<entity::PersonId>> &childrenOf) {
-  if (!studentIsDependent(rng, dependents.studentDependentP)) {
-    return;
-  }
+    const auto pool = pools.pickPool(rng_, dependents_.studentCoresidesP);
+    if (pool.empty()) {
+      return;
+    }
 
-  const auto pool = parentPoolFor(localAdults, globalAdults, rng,
-                                  dependents.studentCoresidesP);
-  if (pool.empty()) {
-    return;
+    const auto count =
+        parentCountFor(pool.size(), rng_, dependents_.twoParentP);
+    seat(student, ParentDraft{.pool = pool, .count = count});
   }
 
-  const auto count = parentCountFor(pool.size(), rng, dependents.twoParentP);
-  seatParents(student, pool, count, rng, parentsOf, childrenOf);
-}
+private:
+  void seat(entity::PersonId student, const ParentDraft &draft) {
+    if (draft.empty()) {
+      return;
+    }
+
+    const auto picked = draft.pickIndices(rng_);
+    auto &slots = out_.parentsOf[student - 1];
+    for (std::size_t i = 0; i < picked.size(); ++i) {
+      const auto parent = draft.pool[picked[i]];
+      slots[i] = parent;
+      out_.childrenOf[parent - 1].push_back(student);
+    }
+  }
+
+  random::Rng &rng_;
+  const Dependents &dependents_;
+  Links &out_;
+};
 
 [[nodiscard]] std::vector<entity::PersonId>
 collectGlobalAdults(std::span<const ::PhantomLedger::personas::Type> personas,
@@ -178,6 +211,8 @@ void assignParents(const LinkInputs &inputs, random::Rng &rng, Links &out) {
   adults.reserve(static_cast<std::size_t>(households.maxSize));
   students.reserve(static_cast<std::size_t>(households.maxSize));
 
+  ParentAssigner assigner{rng, dep, out};
+
   const auto hhCount = part.householdCount();
   for (std::uint32_t h = 0; h < hhCount; ++h) {
     const auto lo = part.offsets[h];
@@ -191,10 +226,12 @@ void assignParents(const LinkInputs &inputs, random::Rng &rng, Links &out) {
       continue;
     }
 
-    const std::span<const entity::PersonId> localAdultsView{adults};
+    const AdultPools pools{
+        .local = std::span<const entity::PersonId>{adults},
+        .global = globalAdultsView,
+    };
     for (const auto student : students) {
-      assignParentsForStudent(student, localAdultsView, globalAdultsView, dep,
-                              rng, out.parentsOf, out.childrenOf);
+      assigner.assignFor(student, pools);
     }
   }
 }
