@@ -136,10 +136,11 @@ makeTransferRun(family_rt::KinshipView kinship,
                 family_rt::PostingWindow posting,
                 family_rt::TransferEmission emission) noexcept;
 
-[[nodiscard]] std::vector<transactions::Transaction> generateFamilyTxns(
-    const blueprints::LegitBlueprint &plan, const FamilyLedgerSources &sources,
-    const random::RngFactory &rngFactory, const transactions::Factory &txf,
-    const FamilyTransferScenario &scenario);
+[[nodiscard]] std::vector<transactions::Transaction>
+generateFamilyTxns(const blueprints::LegitBlueprint &plan,
+                   const FamilyLedgerSources &sources,
+                   const family_rt::TransferEmission &emission,
+                   const FamilyTransferScenario &scenario);
 
 [[nodiscard]] std::vector<transactions::Transaction>
 generateFamilyTxns(const family_rt::TransferRun &run,

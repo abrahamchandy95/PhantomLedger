@@ -30,7 +30,7 @@ struct ActivePerson {
 
 struct Candidate {
   std::int64_t timestamp = 0;
-  std::size_t personIdx = 0; // index into activePeople
+  std::size_t personIdx = 0;
   double amount = 0.0;
 };
 
@@ -270,8 +270,13 @@ Generator::generate(const blueprints::LegitBlueprint &plan, Config cfg) {
       continue;
     }
 
-    if (!screen_.acceptTransfer(source, destination, candidate.amount, channel,
-                                candidate.timestamp)) {
+    if (!screen_.acceptTransfer(ledger::KeyedTransfer{
+            .source = source,
+            .destination = destination,
+            .amount = candidate.amount,
+            .channel = channel,
+            .timestamp = candidate.timestamp,
+        })) {
       continue;
     }
 

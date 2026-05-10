@@ -14,6 +14,25 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
+struct KeyedTransfer {
+  entity::Key source{};
+  entity::Key destination{};
+  double amount = 0.0;
+  channels::Tag channel{};
+  std::int64_t timestamp = 0;
+
+  [[nodiscard]] clearing::Ledger::Posting
+  resolve(const clearing::Ledger &book) const {
+    return clearing::Ledger::Posting{
+        .srcIdx = book.findAccount(source),
+        .dstIdx = book.findAccount(destination),
+        .amount = amount,
+        .channel = channel,
+        .timestamp = timestamp,
+    };
+  }
+};
+
 class SeededScreen {
 public:
   [[nodiscard]] static SeededScreen
@@ -83,24 +102,11 @@ public:
         clearing::TimeBound{.until = timestamp, .inclusive = inclusive});
   }
 
-  [[nodiscard]] bool acceptTransfer(const entity::Key &source,
-                                    const entity::Key &destination,
-                                    double amount, channels::Tag channel,
-                                    std::int64_t timestamp) {
+  [[nodiscard]] bool acceptTransfer(const KeyedTransfer &transfer) {
     if (book_ == nullptr) {
       return true;
     }
-
-    const auto srcIdx = book_->findAccount(source);
-    const auto dstIdx = book_->findAccount(destination);
-    const auto decision = book_->transferAt(clearing::Ledger::Posting{
-        .srcIdx = srcIdx,
-        .dstIdx = dstIdx,
-        .amount = amount,
-        .channel = channel,
-        .timestamp = timestamp,
-    });
-    return decision.accepted();
+    return book_->transferAt(transfer.resolve(*book_)).accepted();
   }
 
 private:

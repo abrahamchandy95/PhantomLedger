@@ -106,7 +106,9 @@ buildCensusScratch(const blueprints::LegitBlueprint &plan,
   }
 
   out.paydayStorage = blueprints::buildPaydaysByPerson(
-      baseTxns, registry, lookup, plan.startDate(), plan.days(),
+      baseTxns,
+      blueprints::LegitAccountIndex{.registry = &registry, .lookup = &lookup},
+      time::Window{.start = plan.startDate(), .days = plan.days()},
       out.personCount);
 
   out.paydaySets.reserve(out.personCount);
