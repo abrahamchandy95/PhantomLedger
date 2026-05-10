@@ -82,7 +82,6 @@ buildPopulation(const blueprints::LegitBlueprint &plan,
                 const entity::account::Registry &registry,
                 pl_inflows::HubAccounts hubs) {
   return pl_inflows::Population{
-      populationCount(plan),
       registry,
       ownership,
       plan.personas().pack->assignment,

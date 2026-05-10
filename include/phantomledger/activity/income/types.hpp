@@ -70,12 +70,13 @@ struct Entropy {
 
 class Population {
 public:
-  Population(std::uint32_t count, const entity::account::Registry &accounts,
+  Population(const entity::account::Registry &accounts,
              const entity::account::Ownership &ownership,
              const entity::behavior::Assignment &personas,
              HubAccounts hubs = {}) noexcept
-      : count(count), hubs(std::move(hubs)), accounts_(accounts),
-        ownership_(ownership), personas_(personas) {}
+      : count(static_cast<std::uint32_t>(personas.byPerson.size())),
+        hubs(std::move(hubs)), accounts_(accounts), ownership_(ownership),
+        personas_(personas) {}
 
   [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
     return accounts_;
@@ -154,14 +155,6 @@ private:
   const entity::account::Ownership &ownership_;
   const entity::behavior::Assignment &personas_;
 };
-
-// ---------------------------------------------------------------
-// Counterparty views
-//
-// Each subsystem (salary / rent / revenue) consumes exactly one of these.
-// They live here only because they share trivial dependencies; they are
-// not bundled into any cross-cutting "snapshot" object.
-// ---------------------------------------------------------------
 
 struct PayrollCounterparties {
   std::span<const Key> employers;
