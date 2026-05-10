@@ -29,7 +29,8 @@ ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Entities &entities,
                             const PrimaryAccounts &primaryAccounts) {
   insurance::Population population{.primaryAccounts = &primaryAccounts};
   insurance::PremiumGenerator generator{rng_, txf_};
-  return generator.generate(window_, entities.portfolios, population);
+  return generator.generate(window_, entities.portfolios.insurance(),
+                            entities.portfolios.loans(), population);
 }
 
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(

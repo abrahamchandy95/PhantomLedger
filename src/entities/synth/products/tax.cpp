@@ -141,9 +141,9 @@ void emitTaxFiling(product::ObligationStream &stream,
 
 TaxEmitter::TaxEmitter(
     ::PhantomLedger::random::Rng &rng,
-    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::entity::product::ObligationStream &obligations,
     ::PhantomLedger::time::Window window, TaxTerms terms)
-    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
+    : rng_{&rng}, obligations_{&obligations}, window_{window},
       terms_{std::move(terms)} {}
 
 [[nodiscard]] bool TaxEmitter::emit(::PhantomLedger::entity::PersonId person,
@@ -161,9 +161,8 @@ TaxEmitter::TaxEmitter(
     return false;
   }
 
-  auto &obligations = portfolios_->obligations();
-  emitTaxQuarterlies(obligations, person, quarterly, window_);
-  emitTaxFiling(obligations, person, filing, window_);
+  emitTaxQuarterlies(*obligations_, person, quarterly, window_);
+  emitTaxFiling(*obligations_, person, filing, window_);
 
   return true;
 }

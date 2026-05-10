@@ -44,9 +44,9 @@ namespace product = ::PhantomLedger::entity::product;
 
 InsuranceEmitter::InsuranceEmitter(
     ::PhantomLedger::random::Rng &rng,
-    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::entity::product::InsuranceLedger &insurance,
     InsuranceTerms terms)
-    : rng_{&rng}, portfolios_{&portfolios}, terms_{std::move(terms)} {}
+    : rng_{&rng}, insurance_{&insurance}, terms_{std::move(terms)} {}
 
 [[nodiscard]] bool
 InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
@@ -100,11 +100,11 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     return false;
   }
 
-  portfolios_->insurance().set(person, product::InsuranceHoldings{
-                                           std::move(autoPol),
-                                           std::move(homePol),
-                                           std::move(lifePol),
-                                       });
+  insurance_->set(person, product::InsuranceHoldings{
+                              std::move(autoPol),
+                              std::move(homePol),
+                              std::move(lifePol),
+                          });
 
   return true;
 }
