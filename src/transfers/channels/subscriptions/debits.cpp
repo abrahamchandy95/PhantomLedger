@@ -76,6 +76,8 @@ std::vector<Sub> BundleBuilder::build(SubscriberAccounts subscribers,
     return out;
   }
 
+  const BundleEmitter emitter{*rules_, billers.accounts};
+
   for (const auto &subscriber : subscribers.rows) {
     if (!entity::valid(subscriber.deposit)) {
       continue;
@@ -86,7 +88,7 @@ std::vector<Sub> BundleBuilder::build(SubscriberAccounts subscribers,
 
     const PersonText pid(subscriber.person);
     auto subRng = factory_->rng({"subscriptions", pid.view()});
-    appendBundle(subRng, *rules_, subscriber.deposit, billers.accounts, out);
+    emitter.emit(subRng, subscriber.deposit, out);
   }
 
   return out;

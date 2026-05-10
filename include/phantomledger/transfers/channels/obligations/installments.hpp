@@ -48,9 +48,14 @@ public:
       return std::nullopt;
     }
 
-    const auto ts = jitter::installmentTimestamp(
-        rng, event.timestamp, outcome.effectiveLateP, terms->lateDaysMin,
-        terms->lateDaysMax, outcome.forceLate);
+    const auto ts =
+        jitter::installmentTimestamp(rng, event.timestamp,
+                                     jitter::LateSpec{
+                                         .lateP = outcome.effectiveLateP,
+                                         .daysMin = terms->lateDaysMin,
+                                         .daysMax = terms->lateDaysMax,
+                                         .forceLate = outcome.forceLate,
+                                     });
     if (ts >= endExcl) {
       return std::nullopt;
     }
