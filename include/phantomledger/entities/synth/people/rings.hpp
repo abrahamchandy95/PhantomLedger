@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace PhantomLedger::entities::synth::people {
@@ -38,11 +39,12 @@ struct TempRing {
                          rate * (static_cast<double>(population) / 10000.0))));
 }
 
-[[nodiscard]] inline bool sampleRing(random::Rng &rng, const Fraud &cfg,
-                                     int remainingBudget, int eligibleVictims,
-                                     RingPlan &out) {
+[[nodiscard]] inline std::optional<RingPlan> sampleRing(random::Rng &rng,
+                                                        const Fraud &cfg,
+                                                        int remainingBudget,
+                                                        int eligibleVictims) {
   if (remainingBudget < cfg.size.min) {
-    return false;
+    return std::nullopt;
   }
 
   int ringSize = static_cast<int>(std::round(
@@ -50,7 +52,7 @@ struct TempRing {
   ringSize = std::clamp(ringSize, cfg.size.min, cfg.size.max);
   ringSize = std::min(ringSize, remainingBudget);
   if (ringSize < cfg.size.min) {
-    return false;
+    return std::nullopt;
   }
 
   double muleFrac =
@@ -67,8 +69,7 @@ struct TempRing {
   victimCount = std::clamp(victimCount, cfg.victims.min, cfg.victims.max);
   victimCount = std::min(victimCount, std::max(0, eligibleVictims));
 
-  out = RingPlan{.size = ringSize, .mules = muleCount, .victims = victimCount};
-  return true;
+  return RingPlan{.size = ringSize, .mules = muleCount, .victims = victimCount};
 }
 
 [[nodiscard]] inline int sampleSolos(random::Rng &rng, const Fraud &cfg,
@@ -89,14 +90,17 @@ struct TempRing {
   return std::find(rings.begin(), rings.end(), ringId) != rings.end();
 }
 
-inline void injectMultiRingMules(random::Rng &rng, const Fraud &cfg,
-                                 std::vector<TempRing> &rings,
-                                 std::vector<std::vector<std::uint32_t>> &home,
-                                 entity::PersonId people) {
+inline void
+injectMultiRingMules(random::Rng &rng, const Fraud &cfg,
+                     std::vector<TempRing> &rings,
+                     std::vector<std::vector<std::uint32_t>> &home) {
   const auto ringCount = static_cast<std::uint32_t>(rings.size());
-  if (ringCount < 2) {
+  if (ringCount < 2 || home.empty()) {
     return;
   }
+
+  // `home` is sized population + 1; person ids are 1..population.
+  const auto people = static_cast<entity::PersonId>(home.size() - 1);
 
   for (entity::PersonId mule = 1; mule <= people; ++mule) {
     auto &homes = home[mule];
