@@ -37,15 +37,25 @@ namespace {
   return std::clamp(requested, std::size_t{1}, personCount);
 }
 
+struct Population {
+  AccountCensus census{};
+  const std::vector<entity::PersonId> *persons = nullptr;
+
+  [[nodiscard]] bool empty() const noexcept {
+    return persons == nullptr || persons->empty();
+  }
+};
+
 [[nodiscard]] std::vector<entity::Key>
-selectHubAccounts(random::Rng &rng, AccountCensus census,
-                  const HubSelectionRules &hubs,
-                  const std::vector<entity::PersonId> &persons) {
-  if (persons.empty() || census.accounts == nullptr ||
+selectHubAccounts(random::Rng &rng, const Population &pop,
+                  const HubSelectionRules &hubs) {
+  const auto &census = pop.census;
+  if (pop.empty() || census.accounts == nullptr ||
       census.ownership == nullptr) {
     return {};
   }
 
+  const auto &persons = *pop.persons;
   const auto count = hubCountFor(hubs, persons.size());
   if (count == 0) {
     return {};
@@ -166,11 +176,10 @@ resolveLandlords(CounterpartyPools counterparties,
 }
 
 [[nodiscard]] CounterpartyAccess
-buildCounterpartyAccess(random::Rng &rng, AccountCensus census,
+buildCounterpartyAccess(random::Rng &rng, const Population &pop,
                         CounterpartyPools counterparties,
-                        const HubSelectionRules &hubs,
-                        const std::vector<entity::PersonId> &persons) {
-  const auto *accounts = census.accounts;
+                        const HubSelectionRules &hubs) {
+  const auto *accounts = pop.census.accounts;
 
   if (accounts == nullptr || accounts->records.empty()) {
     throw std::invalid_argument("AccountCensus.accounts must be non-empty "
@@ -179,7 +188,7 @@ buildCounterpartyAccess(random::Rng &rng, AccountCensus census,
 
   CounterpartyAccess plan;
 
-  plan.hubAccounts = selectHubAccounts(rng, census, hubs, persons);
+  plan.hubAccounts = selectHubAccounts(rng, pop, hubs);
   plan.hubSet.reserve(plan.hubAccounts.size());
   plan.hubSet.insert(plan.hubAccounts.begin(), plan.hubAccounts.end());
 
@@ -273,8 +282,8 @@ LegitBlueprint &
 LegitBlueprint::addCounterparties(random::Rng &rng, AccountCensus census,
                                   CounterpartyPools counterparties,
                                   HubSelectionRules hubs) {
-  counterparties_ = buildCounterpartyAccess(rng, census, counterparties, hubs,
-                                            accounts_.persons);
+  const Population pop{.census = census, .persons = &accounts_.persons};
+  counterparties_ = buildCounterpartyAccess(rng, pop, counterparties, hubs);
   return *this;
 }
 
