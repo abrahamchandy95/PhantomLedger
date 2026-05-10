@@ -4,7 +4,7 @@
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/behavior.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
-#include "phantomledger/transfers/fraud/injector_views.hpp"
+#include "phantomledger/transfers/fraud/injector_inputs.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
 
 #include <cstdint>

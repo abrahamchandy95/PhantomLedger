@@ -7,7 +7,7 @@
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/dispute_behavior.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute/behavior.hpp"
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 
@@ -41,6 +41,9 @@ struct Cycle {
   time::TimePoint windowEndExcl;
 };
 
+/// All per-card session inputs the issuer hands to a Session: the
+/// resolved card terms (`account`) plus the purchase txns indexed
+/// against this card (`txns` + `indices`).
 struct CardPurchases {
   Account account;
   std::span<const transactions::Transaction> txns;

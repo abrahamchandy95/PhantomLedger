@@ -7,7 +7,7 @@
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/dispute_behavior.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute/behavior.hpp"
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 

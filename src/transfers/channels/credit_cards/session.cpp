@@ -4,7 +4,7 @@
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
-#include "phantomledger/transfers/channels/credit_cards/dispute_sampler.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute/sampler.hpp"
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 
