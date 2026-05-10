@@ -147,9 +147,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
 
   const transactions::Factory txf(*rng_, router_);
 
-  passes::GovernmentCounterparties govCps{};
-
-  passes::addIncome(income_, plan, txf, streams, govCps);
+  passes::addIncome(income_, plan, txf, streams);
 
   if (census_.ownership != nullptr && census_.accounts != nullptr) {
     auto routinePass = routines_;

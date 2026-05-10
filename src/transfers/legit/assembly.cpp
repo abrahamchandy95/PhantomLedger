@@ -78,24 +78,22 @@ makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
   };
 }
 
-[[nodiscard]] legit_ledger::passes::IncomePass makeIncomePass(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::inflows::salary::Rules &salaryRules,
-    const ::PhantomLedger::transfers::government::RetirementTerms &retirement,
-    const ::PhantomLedger::transfers::government::DisabilityTerms &disability) {
+[[nodiscard]] legit_ledger::passes::IncomePass
+makeIncomePass(::PhantomLedger::random::Rng &rng,
+               const ::PhantomLedger::pipeline::Entities &entities,
+               const ::PhantomLedger::inflows::salary::Rules &salaryRules,
+               legit_ledger::passes::GovernmentSetup government) {
   return legit_ledger::passes::IncomePass{
       &rng,
       legit_ledger::passes::AccountAccess{
           .registry = &entities.accounts.registry,
           .ownership = &entities.accounts.ownership,
       },
-      &entities.counterparties,
-      salaryRules,
-      legit_ledger::passes::GovernmentBenefits{
-          .retirement = &retirement,
-          .disability = &disability,
+      legit_ledger::passes::SalarySetup{
+          .revenueCounterparties = &entities.counterparties,
+          .rules = salaryRules,
       },
+      government,
   };
 }
 
@@ -268,8 +266,12 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
   out.counterparties(makeCounterpartyPools(entities))
       .personas(makePersonaCatalog(entities))
       .hubSelection(makeHubSelection(entities, hubSelection_.fraction))
-      .income(makeIncomePass(rng, entities, income_.salary, income_.retirement,
-                             income_.disability))
+      .income(makeIncomePass(rng, entities, income_.salary,
+                             legit_ledger::passes::GovernmentSetup{
+                                 .counterparties = {},
+                                 .retirement = &income_.retirement,
+                                 .disability = &income_.disability,
+                             }))
       .routines(makeRoutinePass(rng, entities, income_.rent))
       .family(makeFamilyPass(entities))
       .credit(makeCreditPass(rng, entities, cardLifecycle_.lifecycleRules))
