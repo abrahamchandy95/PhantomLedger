@@ -1,4 +1,4 @@
-#include "phantomledger/transfers/channels/credit_cards/dispute_sampler.hpp"
+#include "phantomledger/transfers/channels/credit_cards/dispute/sampler.hpp"
 
 #include "phantomledger/transactions/draft.hpp"
 

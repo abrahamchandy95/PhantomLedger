@@ -44,7 +44,7 @@ set(PL_ENTITIES_SOURCES
 
 set(PL_TRANSFERS_SOURCES
     src/transfers/channels/credit_cards/cycle.cpp
-    src/transfers/channels/credit_cards/dispute_sampler.cpp
+    src/transfers/channels/credit_cards/dispute/sampler.cpp
     src/transfers/channels/credit_cards/lifecycle.cpp
     src/transfers/channels/credit_cards/payment.cpp
     src/transfers/channels/credit_cards/session.cpp
