@@ -7,10 +7,6 @@
 
 namespace PhantomLedger::transactions {
 
-/// Raw transfer specification before infrastructure attribution.
-///
-/// The factory converts this into a full `Transaction` by attaching
-/// device/IP from the routing layer.
 struct Draft {
   entity::Key source;
   entity::Key destination;

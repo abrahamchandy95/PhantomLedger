@@ -23,13 +23,12 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
 
   random::Rng &rng = *ctx.execution.rng;
 
-  const auto burst =
-      sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        BurstShape{
-                            .tailPaddingDays = 10,
-                            .minDays = 3,
-                            .maxDays = 8,
-                        });
+  const auto burst = sampleBurstWindow(rng, ctx.window.start, ctx.window.days,
+                                       BurstShape{
+                                           .tailPaddingDays = 10,
+                                           .minDays = 3,
+                                           .maxDays = 8,
+                                       });
 
   // Target: mule if available, otherwise fraud.
   const auto &target = !plan.muleAccounts.empty()

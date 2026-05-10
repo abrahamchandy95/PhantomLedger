@@ -48,13 +48,12 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   random::Rng &rng = *ctx.execution.rng;
 
-  const auto burst =
-      sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        BurstShape{
-                            .tailPaddingDays = 7,
-                            .minDays = 2,
-                            .maxDays = 6,
-                        });
+  const auto burst = sampleBurstWindow(rng, ctx.window.start, ctx.window.days,
+                                       BurstShape{
+                                           .tailPaddingDays = 7,
+                                           .minDays = 2,
+                                           .maxDays = 6,
+                                       });
 
   const auto fraudChannel = channels::tag(channels::Fraud::classic);
   const auto cycleChannel = channels::tag(channels::Fraud::cycle);
@@ -62,6 +61,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
   const DraftMaker fraudDraft{plan.ringId, fraudChannel};
   const DraftMaker cycleDraft{plan.ringId, cycleChannel};
 
+  // ---- Phase 1: victim → mule -----------------------------------------
   for (const auto &victim : plan.victimAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -81,6 +81,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     }
   }
 
+  // ---- Phase 2: mule → fraud ------------------------------------------
   for (const auto &mule : plan.muleAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -109,6 +110,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     }
   }
 
+  // ---- Phase 3: cycle pass through ring nodes -------------------------
   const auto nodes = plan.participantAccounts();
   if (nodes.size() < 3 || static_cast<std::int32_t>(out.size()) >= budget) {
     return out;

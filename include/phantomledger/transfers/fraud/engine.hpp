@@ -3,7 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -11,7 +11,6 @@
 
 #include <array>
 #include <cstddef>
-#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -58,35 +57,14 @@ struct TypologyWeights {
   }
 };
 
-// ---------------------------------------------------------------------------
-// Output of one injection pass.
-// ---------------------------------------------------------------------------
-
 struct InjectionOutput {
   std::vector<transactions::Transaction> txns;
   std::size_t injectedCount = 0;
 };
 
-// ---------------------------------------------------------------------------
-// Execution / window types shared by every typology and by camouflage.
-//
-// These contexts intentionally do *not* carry per-typology rules.
-// Each typology accepts its own rules as an explicit parameter so it
-// neither sees nor depends on rules belonging to other typologies.
-// ---------------------------------------------------------------------------
-
 struct Execution {
   transactions::Factory txf;
   random::Rng *rng = nullptr;
-};
-
-struct ActiveWindow {
-  time::TimePoint startDate{};
-  std::int32_t days = 0;
-
-  [[nodiscard]] time::TimePoint endExcl() const noexcept {
-    return startDate + time::Days{days};
-  }
 };
 
 /// Pre-materialized account pools used by the camouflage layer.
@@ -98,13 +76,13 @@ struct AccountPools {
 
 struct CamouflageContext {
   Execution execution;
-  ActiveWindow window;
+  time::Window window;
   const AccountPools *accounts = nullptr;
 };
 
 struct IllicitContext {
   Execution execution;
-  ActiveWindow window;
+  time::Window window;
   std::span<const entity::Key> billerAccounts{};
 };
 

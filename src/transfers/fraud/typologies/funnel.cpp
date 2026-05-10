@@ -20,13 +20,12 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   random::Rng &rng = *ctx.execution.rng;
 
-  const auto burst =
-      sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        BurstShape{
-                            .tailPaddingDays = 10,
-                            .minDays = 2,
-                            .maxDays = 6,
-                        });
+  const auto burst = sampleBurstWindow(rng, ctx.window.start, ctx.window.days,
+                                       BurstShape{
+                                           .tailPaddingDays = 10,
+                                           .minDays = 2,
+                                           .maxDays = 6,
+                                       });
 
   const auto pool = plan.participantAccounts();
   if (pool.size() < 2) {

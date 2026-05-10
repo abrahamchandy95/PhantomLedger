@@ -94,7 +94,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
   std::vector<transactions::Transaction> out;
 
   random::Rng &rng = *ctx.execution.rng;
-  const auto startDate = ctx.window.startDate;
+  const auto startDate = ctx.window.start;
   const auto windowEndExcl = ctx.window.endExcl();
   const auto days = ctx.window.days;
 
