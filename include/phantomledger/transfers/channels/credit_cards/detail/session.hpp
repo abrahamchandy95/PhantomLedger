@@ -41,7 +41,8 @@ struct Cycle {
   time::TimePoint windowEndExcl;
 };
 
-struct Purchases {
+struct CardPurchases {
+  Account account;
   std::span<const transactions::Transaction> txns;
   std::span<const std::uint32_t> indices;
 };
@@ -56,8 +57,8 @@ struct Environment {
 
 class Session {
 public:
-  Session(const Environment &env, Account account, Purchases purchases,
-          random::Rng rng, std::vector<transactions::Transaction> &out);
+  Session(const Environment &env, CardPurchases card, random::Rng rng,
+          std::vector<transactions::Transaction> &out);
 
   void run(Cycle cycle);
 
@@ -79,8 +80,7 @@ private:
   void book(const transactions::Draft &draft, double balanceDelta);
 
   const Environment &env_;
-  Account account_;
-  Purchases purchases_;
+  CardPurchases card_;
   State state_{};
   random::Rng rng_;
   std::vector<transactions::Transaction> &out_;

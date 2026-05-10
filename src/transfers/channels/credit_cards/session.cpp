@@ -29,10 +29,9 @@ inline constexpr int kDaysPerYear = 365;
 
 } // namespace
 
-Session::Session(const Environment &env, Account account, Purchases purchases,
-                 random::Rng rng, std::vector<transactions::Transaction> &out)
-    : env_(env), account_(account), purchases_(purchases), rng_(std::move(rng)),
-      out_(out) {}
+Session::Session(const Environment &env, CardPurchases card, random::Rng rng,
+                 std::vector<transactions::Transaction> &out)
+    : env_(env), card_(card), rng_(std::move(rng)), out_(out) {}
 
 void Session::run(Cycle cycle) {
   events_.clear();
@@ -42,8 +41,9 @@ void Session::run(Cycle cycle) {
   drainDueCredits(cycle);
   sortEventsByTime();
 
-  const auto snapshot = integrateBalance(account_.card, state_.balance, events_,
-                                         cycle.start, cycle.endExcl);
+  const auto snapshot = integrateBalance(
+      card_.account.card, state_.balance, events_,
+      time::HalfOpenInterval{.start = cycle.start, .endExcl = cycle.endExcl});
   state_.balance = snapshot.ending;
 
   accrueInterest(snapshot.average, cycle);
@@ -81,9 +81,9 @@ void Session::collectPurchases(Cycle cycle) {
   const std::int64_t cycleEndEpoch = time::toEpochSeconds(cycle.endExcl);
   const DisputeSampler sampler{env_.disputes, env_.factory};
 
-  while (state_.purchaseCursor < purchases_.indices.size()) {
-    const auto txnIx = purchases_.indices[state_.purchaseCursor];
-    const auto &purchase = purchases_.txns[txnIx];
+  while (state_.purchaseCursor < card_.indices.size()) {
+    const auto txnIx = card_.indices[state_.purchaseCursor];
+    const auto &purchase = card_.txns[txnIx];
     if (purchase.timestamp >= cycleEndEpoch) {
       break;
     }
@@ -134,7 +134,8 @@ void Session::accrueInterest(double averageBalance, Cycle cycle) {
   }
   const double interval = intervalDays(cycle.start, cycle.endExcl);
   const double debtAvg = std::max(0.0, -averageBalance);
-  const double rawInterest = debtAvg * (account_.apr / kDaysPerYear) * interval;
+  const double rawInterest =
+      debtAvg * (card_.account.apr / kDaysPerYear) * interval;
   const auto interest = billableInterest(rawInterest);
   if (!interest.has_value()) {
     return;
@@ -142,7 +143,7 @@ void Session::accrueInterest(double averageBalance, Cycle cycle) {
 
   book(
       transactions::Draft{
-          .source = account_.card,
+          .source = card_.account.card,
           .destination = env_.issuerAccount,
           .amount = *interest,
           .timestamp =
@@ -158,7 +159,7 @@ Session::PaymentIntent Session::draftPayment(double statementAbs,
                                              double minimumDueAmt,
                                              time::TimePoint due) {
   PaymentIntent intent{};
-  switch (account_.autopay) {
+  switch (card_.account.autopay) {
   case entity::card::Autopay::full:
     intent.amount = statementAbs;
     intent.when = samplePaymentTime(env_.payments.timing, rng_, due, true);
@@ -186,8 +187,8 @@ void Session::postPayment(const PaymentIntent &intent,
   }
   book(
       transactions::Draft{
-          .source = account_.funding,
-          .destination = account_.card,
+          .source = card_.account.funding,
+          .destination = card_.account.card,
           .amount = intent.amount,
           .timestamp = time::toEpochSeconds(intent.when),
           .channel = channels::tag(channels::Credit::payment),
@@ -206,7 +207,7 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
 
   book(
       transactions::Draft{
-          .source = account_.card,
+          .source = card_.account.card,
           .destination = env_.issuerAccount,
           .amount = fee,
           .timestamp = time::toEpochSeconds(feeTs),
