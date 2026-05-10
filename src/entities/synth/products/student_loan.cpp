@@ -59,16 +59,15 @@ sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
 
 } // namespace
 
-StudentLoanEmitter::StudentLoanEmitter(
-    ::PhantomLedger::random::Rng &rng,
-    ::PhantomLedger::entity::product::PortfolioRegistry &portfolios,
-    ::PhantomLedger::time::Window window, StudentLoanTerms terms)
-    : rng_{&rng}, portfolios_{&portfolios}, window_{window},
-      terms_{std::move(terms)} {}
+StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
+                                       ::PhantomLedger::time::Window window,
+                                       StudentLoanTerms terms)
+    : rng_{&rng}, window_{window}, terms_{std::move(terms)} {}
 
-[[nodiscard]] bool
-StudentLoanEmitter::emit(::PhantomLedger::entity::PersonId person,
-                         personaTax::Type persona) {
+[[nodiscard]] bool StudentLoanEmitter::emit(
+    ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
+    ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+    ::PhantomLedger::entity::product::ObligationStream &obligations) {
   if (rng_->nextDouble() >= terms_.adoption.probability(persona)) {
     return false;
   }
@@ -85,7 +84,7 @@ StudentLoanEmitter::emit(::PhantomLedger::entity::PersonId person,
   const auto repaymentStart =
       ::PhantomLedger::time::addMonths(window_.start, -repaymentAgeMonths);
 
-  addInstallmentProduct(*portfolios_, window_,
+  addInstallmentProduct(loans, obligations, window_,
                         InstallmentIssue{
                             .person = person,
                             .productType = product::ProductType::studentLoan,
