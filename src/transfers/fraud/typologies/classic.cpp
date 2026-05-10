@@ -12,21 +12,30 @@ namespace PhantomLedger::transfers::fraud::typologies::classic {
 
 namespace {
 
-inline transactions::Draft makeDraft(const entity::Key &source,
-                                     const entity::Key &destination,
-                                     double amount, time::TimePoint ts,
-                                     std::uint32_t ringId,
-                                     channels::Tag channel) {
-  return transactions::Draft{
-      .source = source,
-      .destination = destination,
-      .amount = amount,
-      .timestamp = time::toEpochSeconds(ts),
-      .isFraud = 1,
-      .ringId = static_cast<std::int32_t>(ringId),
-      .channel = channel,
-  };
-}
+class DraftMaker {
+public:
+  DraftMaker(std::uint32_t ringId, channels::Tag channel) noexcept
+      : ringId_(ringId), channel_(channel) {}
+
+  [[nodiscard]] transactions::Draft make(const entity::Key &source,
+                                         const entity::Key &destination,
+                                         double amount,
+                                         time::TimePoint ts) const {
+    return transactions::Draft{
+        .source = source,
+        .destination = destination,
+        .amount = amount,
+        .timestamp = time::toEpochSeconds(ts),
+        .isFraud = 1,
+        .ringId = static_cast<std::int32_t>(ringId_),
+        .channel = channel_,
+    };
+  }
+
+private:
+  std::uint32_t ringId_;
+  channels::Tag channel_;
+};
 
 } // namespace
 
@@ -41,14 +50,18 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   const auto burst =
       sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        /*tailPaddingDays=*/7,
-                        /*minBurstDays=*/2,
-                        /*maxBurstDays=*/6);
+                        BurstShape{
+                            .tailPaddingDays = 7,
+                            .minDays = 2,
+                            .maxDays = 6,
+                        });
 
   const auto fraudChannel = channels::tag(channels::Fraud::classic);
   const auto cycleChannel = channels::tag(channels::Fraud::cycle);
 
-  // ---- Phase 1: victim → mule -----------------------------------------
+  const DraftMaker fraudDraft{plan.ringId, fraudChannel};
+  const DraftMaker cycleDraft{plan.ringId, cycleChannel};
+
   for (const auto &victim : plan.victimAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -59,16 +72,15 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
     const auto &mule = typologies::pickOne(rng, plan.muleAccounts);
     const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                    /*minHour=*/8, /*maxHour=*/22);
+                                    HourRange{.min = 8, .max = 22});
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
-            makeDraft(victim, mule, math::amounts::kFraud.sample(rng), ts,
-                      plan.ringId, fraudChannel))) {
+            fraudDraft.make(victim, mule, math::amounts::kFraud.sample(rng),
+                            ts))) {
       break;
     }
   }
 
-  // ---- Phase 2: mule → fraud ------------------------------------------
   for (const auto &mule : plan.muleAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -87,17 +99,16 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
       const auto &fraudAcct = typologies::pickOne(rng, plan.fraudAccounts);
       const auto ts = sampleTimestamp(rng, burst.baseDate, spanDays,
-                                      /*minHour=*/0, /*maxHour=*/24);
+                                      HourRange{.min = 0, .max = 24});
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,
-              makeDraft(mule, fraudAcct, math::amounts::kFraud.sample(rng), ts,
-                        plan.ringId, fraudChannel))) {
+              fraudDraft.make(mule, fraudAcct,
+                              math::amounts::kFraud.sample(rng), ts))) {
         break;
       }
     }
   }
 
-  // ---- Phase 3: cycle pass through ring nodes -------------------------
   const auto nodes = plan.participantAccounts();
   if (nodes.size() < 3 || static_cast<std::int32_t>(out.size()) >= budget) {
     return out;
@@ -125,11 +136,11 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       const auto &dst = cycleNodes[(idx + 1) % cycleNodes.size()];
 
       const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                      /*minHour=*/0, /*maxHour=*/24);
+                                      HourRange{.min = 0, .max = 24});
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,
-              makeDraft(src, dst, math::amounts::kFraudCycle.sample(rng), ts,
-                        plan.ringId, cycleChannel))) {
+              cycleDraft.make(src, dst, math::amounts::kFraudCycle.sample(rng),
+                              ts))) {
         break;
       }
     }

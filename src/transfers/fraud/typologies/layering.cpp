@@ -24,9 +24,11 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
 
   const auto burst =
       sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        /*tailPaddingDays=*/10,
-                        /*minBurstDays=*/3,
-                        /*maxBurstDays=*/7);
+                        BurstShape{
+                            .tailPaddingDays = 10,
+                            .minDays = 3,
+                            .maxDays = 7,
+                        });
 
   std::vector<entity::Key> nodes;
   nodes.reserve(plan.muleAccounts.size() + plan.fraudAccounts.size());
@@ -63,7 +65,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
     }
 
     const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                    /*minHour=*/8, /*maxHour=*/22);
+                                    HourRange{.min = 8, .max = 22});
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
             transactions::Draft{
@@ -94,7 +96,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
       }
 
       const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                      /*minHour=*/0, /*maxHour=*/24);
+                                      HourRange{.min = 0, .max = 24});
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,
               transactions::Draft{
@@ -119,7 +121,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
             : nodes[rng.choiceIndex(nodes.size())];
 
     const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                    /*minHour=*/0, /*maxHour=*/24);
+                                    HourRange{.min = 0, .max = 24});
     (void)typologies::appendBoundedTxn(
         ctx, out, budget,
         transactions::Draft{

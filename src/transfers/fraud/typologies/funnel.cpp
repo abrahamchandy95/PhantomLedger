@@ -22,12 +22,12 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   const auto burst =
       sampleBurstWindow(rng, ctx.window.startDate, ctx.window.days,
-                        /*tailPaddingDays=*/10,
-                        /*minBurstDays=*/2,
-                        /*maxBurstDays=*/6);
+                        BurstShape{
+                            .tailPaddingDays = 10,
+                            .minDays = 2,
+                            .maxDays = 6,
+                        });
 
-  // Pool: organizers + mules. Need >= 2 to have a distinct collector and
-  // at least one separable cash-out path; otherwise fall back to classic.
   const auto pool = plan.participantAccounts();
   if (pool.size() < 2) {
     return classic::generate(ctx, plan, budget);
@@ -35,8 +35,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   const auto &collector = pool[rng.choiceIndex(pool.size())];
 
-  // Cash-out targets: up to 4 distinct nodes from pool, with collector
-  // removed if present and there's at least one other candidate.
   auto cashouts =
       typologies::pickK(rng, pool, std::min<std::size_t>(4, pool.size()));
   if (cashouts.size() > 1) {
@@ -47,7 +45,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
   const auto inChannel = channels::tag(channels::Fraud::funnelIn);
   const auto outChannel = channels::tag(channels::Fraud::funnelOut);
 
-  // ---- Inbound: victims + mules → collector --------------------------
   std::vector<entity::Key> sources;
   sources.reserve(plan.victimAccounts.size() + plan.muleAccounts.size());
   sources.insert(sources.end(), plan.victimAccounts.begin(),
@@ -64,7 +61,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     }
 
     const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                    /*minHour=*/8, /*maxHour=*/22);
+                                    HourRange{.min = 8, .max = 22});
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
             transactions::Draft{
@@ -80,7 +77,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     }
   }
 
-  // ---- Outbound: collector → cash-out targets ------------------------
   const auto outboundCount = static_cast<std::int32_t>(rng.uniformInt(6, 17));
   for (std::int32_t i = 0; i < outboundCount; ++i) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
@@ -92,7 +88,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                           : collector;
 
     const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
-                                    /*minHour=*/0, /*maxHour=*/24);
+                                    HourRange{.min = 0, .max = 24});
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
             transactions::Draft{
