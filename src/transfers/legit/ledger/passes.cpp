@@ -340,8 +340,7 @@ void addSpending(const RoutinePass &pass,
 } // namespace
 
 void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
-               const transactions::Factory &txf, TxnStreams &streams,
-               const GovernmentCounterparties &govCps) {
+               const transactions::Factory &txf, TxnStreams &streams) {
   if (pass.rng() == nullptr) {
     throw std::invalid_argument("passes::addIncome requires a non-null rng");
   }
@@ -353,32 +352,37 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
   }
 
   auto &mainRng = *pass.rng();
+  const auto &salary = pass.salary();
 
-  const auto payroll = buildPayroll(plan, *accounts.ownership,
-                                    *accounts.registry, pass.salaryRules());
+  const auto payroll =
+      buildPayroll(plan, *accounts.ownership, *accounts.registry, salary.rules);
 
   const std::function<double()> salaryModel = [&mainRng]() -> double {
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
   };
 
-  const auto benefits = pass.benefits();
-  if (govCps.valid() && benefits.retirement != nullptr &&
-      benefits.disability != nullptr) {
+  streams.add(
+      pl_inflows::generateSalaryTxns(payroll, mainRng, txf, salaryModel));
+
+  const auto &government = pass.government();
+  if (government.active()) {
     const auto govPopulation = buildGovernmentPopulation(
         plan, *accounts.ownership, *accounts.registry);
     const auto window = windowFromPlan(plan);
 
     pl_gov::BenefitsEmitter emitter{window, mainRng, txf, govPopulation};
 
-    streams.add(emitter.emit(*benefits.retirement,
-                             pl_gov::retirementProgram(govCps.ssa)));
-    streams.add(emitter.emit(*benefits.disability,
-                             pl_gov::disabilityProgram(govCps.disability)));
+    streams.add(
+        emitter.emit(*government.retirement,
+                     pl_gov::retirementProgram(government.counterparties.ssa)));
+    streams.add(emitter.emit(
+        *government.disability,
+        pl_gov::disabilityProgram(government.counterparties.disability)));
   }
 
   const auto book =
       buildRevenueBook(plan, *accounts.ownership, *accounts.registry,
-                       pass.revenueCounterparties());
+                       salary.revenueCounterparties);
   streams.add(pl_inflows::revenue::generate(book, txf));
 }
 

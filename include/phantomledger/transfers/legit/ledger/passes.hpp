@@ -48,9 +48,27 @@ struct AccountAccess {
   const entity::account::Ownership *ownership = nullptr;
 };
 
-struct GovernmentBenefits {
+/// Salary-side income inputs: the directory of revenue counterparties
+/// (employers, payors, etc.) plus the rules for sizing salary draws.
+struct SalarySetup {
+  const entity::counterparty::Directory *revenueCounterparties = nullptr;
+  inflows::salary::Rules rules{};
+};
+
+/// Government-benefits configuration: the source counterparties (SSA,
+/// disability office) paired with the term tables that describe the
+/// retirement and disability programs they administer. A
+/// default-constructed instance has `counterparties.valid() == false`,
+/// in which case the gov-benefits branch is skipped.
+struct GovernmentSetup {
+  GovernmentCounterparties counterparties{};
   const government::RetirementTerms *retirement = nullptr;
   const government::DisabilityTerms *disability = nullptr;
+
+  [[nodiscard]] bool active() const noexcept {
+    return counterparties.valid() && retirement != nullptr &&
+           disability != nullptr;
+  }
 };
 
 struct RoutineResources {
@@ -64,37 +82,26 @@ class IncomePass {
 public:
   IncomePass() = default;
 
-  IncomePass(random::Rng *rng, AccountAccess accounts,
-             const entity::counterparty::Directory *revenueCounterparties,
-             inflows::salary::Rules salaryRules,
-             GovernmentBenefits benefits = {}) noexcept
-      : rng_(rng), accounts_(accounts),
-        revenueCounterparties_(revenueCounterparties),
-        salaryRules_(std::move(salaryRules)), benefits_(benefits) {}
+  IncomePass(random::Rng *rng, AccountAccess accounts, SalarySetup salary,
+             GovernmentSetup government = {}) noexcept
+      : rng_(rng), accounts_(accounts), salary_(std::move(salary)),
+        government_(government) {}
 
   [[nodiscard]] random::Rng *rng() const noexcept { return rng_; }
 
   [[nodiscard]] AccountAccess accounts() const noexcept { return accounts_; }
 
-  [[nodiscard]] const entity::counterparty::Directory *
-  revenueCounterparties() const noexcept {
-    return revenueCounterparties_;
-  }
+  [[nodiscard]] const SalarySetup &salary() const noexcept { return salary_; }
 
-  [[nodiscard]] const inflows::salary::Rules &salaryRules() const noexcept {
-    return salaryRules_;
-  }
-
-  [[nodiscard]] GovernmentBenefits benefits() const noexcept {
-    return benefits_;
+  [[nodiscard]] const GovernmentSetup &government() const noexcept {
+    return government_;
   }
 
 private:
   random::Rng *rng_ = nullptr;
   AccountAccess accounts_{};
-  const entity::counterparty::Directory *revenueCounterparties_ = nullptr;
-  inflows::salary::Rules salaryRules_{};
-  GovernmentBenefits benefits_{};
+  SalarySetup salary_{};
+  GovernmentSetup government_{};
 };
 
 class RoutinePass {
@@ -193,8 +200,7 @@ private:
 };
 
 void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
-               const transactions::Factory &txf, TxnStreams &streams,
-               const GovernmentCounterparties &govCps = {});
+               const transactions::Factory &txf, TxnStreams &streams);
 
 void addRoutines(const RoutinePass &pass,
                  const blueprints::LegitBlueprint &plan, TxnStreams &streams,
