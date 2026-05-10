@@ -49,7 +49,8 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
     const PrimaryAccounts &primaryAccounts) {
   obligations::Population population{.primaryAccounts = &primaryAccounts};
   obligations::Scheduler scheduler{rng_, txf_};
-  return scheduler.generate(entities.portfolios,
+  return scheduler.generate(entities.portfolios.loans(),
+                            entities.portfolios.obligations(),
                             ::PhantomLedger::time::HalfOpenInterval{
                                 .start = window_.start,
                                 .endExcl = window_.endExcl(),

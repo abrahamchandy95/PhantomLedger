@@ -33,9 +33,9 @@ buildMonthlyBurdens(const entity::product::PortfolioRegistry &registry,
     return burdens;
   }
 
-  // ---- Pass 1: obligations stream (loans + tax) ----
   const auto windowEndExcl = addMonths(windowStart, kBurdenWindowMonths);
-  const auto events = registry.allEvents(windowStart, windowEndExcl);
+  const auto events =
+      registry.obligations().between(windowStart, windowEndExcl);
 
   for (const auto &event : events) {
     if (event.direction != entity::product::Direction::outflow) {
@@ -59,8 +59,8 @@ buildMonthlyBurdens(const entity::product::PortfolioRegistry &registry,
     burden /= static_cast<double>(kBurdenWindowMonths);
   }
 
-  // ---- Pass 2: insurance premiums (skip home if person has mortgage) ----
-  registry.forEachInsuredPerson(
+  const auto &loans = registry.loans();
+  registry.insurance().forEach(
       [&](entity::PersonId person,
           const entity::product::InsuranceHoldings &holdings) {
         const auto idx = static_cast<std::size_t>(person) - 1;
@@ -77,7 +77,7 @@ buildMonthlyBurdens(const entity::product::PortfolioRegistry &registry,
         }
 
         if (const auto &policy = holdings.homePolicy();
-            policy.has_value() && !registry.hasMortgage(person)) {
+            policy.has_value() && !loans.hasMortgage(person)) {
           burdens[idx] += policy->monthlyPremium;
         }
       });
