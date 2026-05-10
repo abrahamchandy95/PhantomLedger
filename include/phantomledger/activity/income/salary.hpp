@@ -27,10 +27,6 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
-// ---------------------------------------------------------------
-// Salary subsystem rules. Owned here, not in a cross-cutting bag.
-// ---------------------------------------------------------------
-
 struct Rules {
   recurring::EmploymentRules employment{};
   double paidFraction = 0.95;
@@ -42,11 +38,6 @@ struct Rules {
     r.check([&] { v::unit("salaryPaidFraction", paidFraction); });
   }
 };
-
-// ---------------------------------------------------------------
-// Payroll: the narrow view salary generation needs.
-// Replaces the old `InflowSnapshot` for this subsystem.
-// ---------------------------------------------------------------
 
 struct Payroll {
   Timeframe timeframe;
@@ -172,10 +163,8 @@ class Paymaster {
 public:
   Paymaster(const Payroll &payroll, random::Rng &rng,
             const transactions::Factory &txf,
-            const std::function<double()> &salaryModel,
-            std::vector<transactions::Transaction> &out)
+            const std::function<double()> &salaryModel)
       : payroll_(payroll), rng_(rng), txf_(txf), salaryModel_(salaryModel),
-        out_(out),
         salaryGrowth_(payroll.rules.employment.salary, payroll.entropy.factory),
         init_(payroll.rules.employment.job, payroll.rules.employment.payroll,
               payroll.entropy.factory),
@@ -183,7 +172,7 @@ public:
                  salaryGrowth_, payroll.entropy.factory),
         salaryCalc_(salaryGrowth_) {}
 
-  void pay(PersonId person) {
+  void pay(PersonId person, std::vector<transactions::Transaction> &out) {
     const auto dst = payroll_.population.primary(person);
     const NumText personId(static_cast<unsigned>(person));
     const auto personIdText = personId.str();
@@ -192,7 +181,7 @@ public:
     const auto windowEnd = payroll_.timeframe.end();
 
     while (true) {
-      payJob(state, dst, personIdText);
+      payJob(state, dst, personIdText, out);
 
       if (state.end >= windowEnd) {
         break;
@@ -213,37 +202,33 @@ private:
   }
 
   void payJob(const recurring::Employment &state, const Key &dst,
-              std::string_view personId) {
+              std::string_view personId,
+              std::vector<transactions::Transaction> &out) {
     const auto &timeframe = payroll_.timeframe;
     const auto segmentEnd = std::min(state.end, timeframe.end());
 
     for (const auto &payDate :
          recurring::paydatesForWindow(state, timeframe.startDate, segmentEnd)) {
-      payDateTx(state, dst, personId, payDate);
+      const auto ts =
+          timestamps::jittered(payDate, state.payroll.postingLagDays,
+                               timestamps::kSalaryTimestampJitter, rng_);
+
+      if (!timeframe.contains(ts)) {
+        continue;
+      }
+
+      const double amount = salaryCalc_(personId, state, payDate);
+
+      out.push_back(txf_.make(transactions::Draft{
+          .source = state.employerAcct,
+          .destination = dst,
+          .amount = amount,
+          .timestamp = time::toEpochSeconds(ts),
+          .isFraud = 0,
+          .ringId = -1,
+          .channel = salary::channel,
+      }));
     }
-  }
-
-  void payDateTx(const recurring::Employment &state, const Key &dst,
-                 std::string_view personId, time::TimePoint payDate) {
-    const auto ts =
-        timestamps::jittered(payDate, state.payroll.postingLagDays,
-                             timestamps::kSalaryTimestampJitter, rng_);
-
-    if (!payroll_.timeframe.contains(ts)) {
-      return;
-    }
-
-    const double amount = salaryCalc_(personId, state, payDate);
-
-    out_.push_back(txf_.make(transactions::Draft{
-        .source = state.employerAcct,
-        .destination = dst,
-        .amount = amount,
-        .timestamp = time::toEpochSeconds(ts),
-        .isFraud = 0,
-        .ringId = -1,
-        .channel = salary::channel,
-    }));
   }
 
   [[nodiscard]] recurring::Employment next(const recurring::Employment &state,
@@ -261,7 +246,6 @@ private:
   random::Rng &rng_;
   const transactions::Factory &txf_;
   const std::function<double()> &salaryModel_;
-  std::vector<transactions::Transaction> &out_;
 
   recurring::SalaryGrowthModel salaryGrowth_;
   recurring::EmploymentInitializer init_;
@@ -299,14 +283,14 @@ generateSalaryTxns(const salary::Payroll &payroll, random::Rng &rng,
   std::vector<transactions::Transaction> txns;
   txns.reserve(payroll.population.count * 2);
 
-  salary::Paymaster paymaster(payroll, rng, txf, salaryModel, txns);
+  salary::Paymaster paymaster(payroll, rng, txf, salaryModel);
 
   for (PersonId person = 1; person <= payroll.population.count; ++person) {
     if (!selector.selected(rng, person, scale)) {
       continue;
     }
 
-    paymaster.pay(person);
+    paymaster.pay(person, txns);
   }
 
   sortTransfers(txns);
