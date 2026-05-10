@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/activity/spending/actors/counts.hpp"
 #include "phantomledger/activity/spending/actors/spender.hpp"
 
 #include <cstdint>
@@ -11,9 +12,7 @@ namespace PhantomLedger::spending::spenders {
                                      std::uint32_t days) noexcept;
 
 [[nodiscard]] double baseRateForTarget(const actors::Spender &spender,
-                                       double dayShock, double weekdayMult,
-                                       double targetRealizedPerDay,
-                                       double dynamicsMultiplier,
-                                       double liquidityMultiplier) noexcept;
+                                       const actors::RatePieces &ratePieces,
+                                       double targetRealizedPerDay) noexcept;
 
 } // namespace PhantomLedger::spending::spenders

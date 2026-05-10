@@ -1,9 +1,5 @@
 #include "phantomledger/activity/spending/spenders/targets.hpp"
 
-#include "phantomledger/activity/spending/liquidity/factor.hpp"
-
-#include <algorithm>
-
 namespace PhantomLedger::spending::spenders {
 
 double totalTargetTxns(double txnsPerMonth, std::uint32_t activeSpenders,
@@ -12,17 +8,14 @@ double totalTargetTxns(double txnsPerMonth, std::uint32_t activeSpenders,
          (static_cast<double>(days) / 30.0);
 }
 
-double baseRateForTarget(const actors::Spender &spender, double dayShock,
-                         double weekdayMult, double targetRealizedPerDay,
-                         double dynamicsMultiplier,
-                         double liquidityMultiplier) noexcept {
+double baseRateForTarget(const actors::Spender &spender,
+                         const actors::RatePieces &ratePieces,
+                         double targetRealizedPerDay) noexcept {
   if (targetRealizedPerDay <= 0.0) {
     return 0.0;
   }
 
-  const double suppression = spender.rateMultiplier * weekdayMult * dayShock *
-                             std::max(0.0, dynamicsMultiplier) *
-                             liquidity::countFactor(liquidityMultiplier);
+  const double suppression = ratePieces.suppression(spender);
 
   if (suppression <= 0.0) {
     return 0.0;

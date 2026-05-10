@@ -42,14 +42,17 @@ public:
     [[nodiscard]] double
     liquidityMultiplierFor(const spenders::PreparedSpender &prepared);
 
+    struct DailyMultipliers {
+      double combined = 1.0;
+      double liquidity = 1.0;
+    };
+
     [[nodiscard]] double latentBaseRateFor(const actors::Spender &spender,
-                                           double combinedMult,
-                                           double liquidityMult) const;
+                                           DailyMultipliers mults) const;
 
     [[nodiscard]] std::uint32_t
     transactionCountFor(random::Rng &rng, const actors::Spender &spender,
-                        double latentBaseRate, double combinedMult,
-                        double liquidityMult) const;
+                        double latentBaseRate, DailyMultipliers mults) const;
 
     [[nodiscard]] double exploreProbabilityFor(const actors::Spender &spender,
                                                double liquidityMult) const;
