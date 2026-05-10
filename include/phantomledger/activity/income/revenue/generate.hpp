@@ -29,7 +29,7 @@ public:
   Generator(const Book &book, const transactions::Factory &txf)
       : book_(book), txf_(txf),
         window_{book.timeframe.startDate, book.timeframe.days} {
-    txns_.reserve(static_cast<std::size_t>(book.population.count) *
+    txns_.reserve(static_cast<std::size_t>(book.population.count()) *
                   book.timeframe.monthStarts.size() * 3);
   }
 
@@ -38,7 +38,7 @@ public:
       return {};
     }
 
-    for (PersonId person = 1; person <= book_.population.count; ++person) {
+    for (PersonId person = 1; person <= book_.population.count(); ++person) {
       runPerson(person);
     }
 

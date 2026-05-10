@@ -74,8 +74,8 @@ public:
              const entity::account::Ownership &ownership,
              const entity::behavior::Assignment &personas,
              HubAccounts hubs = {}) noexcept
-      : count(static_cast<std::uint32_t>(personas.byPerson.size())),
-        hubs(std::move(hubs)), accounts_(accounts), ownership_(ownership),
+      : count_(static_cast<std::uint32_t>(personas.byPerson.size())),
+        hubs_(std::move(hubs)), accounts_(accounts), ownership_(ownership),
         personas_(personas) {}
 
   [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
@@ -85,13 +85,16 @@ public:
   [[nodiscard]] const entity::account::Ownership &ownership() const noexcept {
     return ownership_;
   }
+  [[nodiscard]] std::uint32_t count() const noexcept { return count_; }
+
+  [[nodiscard]] const HubAccounts &hubs() const noexcept { return hubs_; }
 
   [[nodiscard]] const entity::behavior::Assignment &personas() const noexcept {
     return personas_;
   }
 
   [[nodiscard]] bool exists(PersonId person) const noexcept {
-    return person >= 1 && person <= count;
+    return person >= 1 && person <= count_;
   }
 
   [[nodiscard]] bool hasAccount(PersonId person) const noexcept {
@@ -125,7 +128,7 @@ public:
   [[nodiscard]] bool isHub(PersonId person) const noexcept {
     assert(hasAccount(person));
 
-    return hubs.contains(primary(person));
+    return hubs_.contains(primary(person));
   }
 
   [[nodiscard]] personas::Type persona(PersonId person) const noexcept {
@@ -147,10 +150,9 @@ public:
     return false;
   }
 
-  std::uint32_t count = 0;
-  HubAccounts hubs;
-
 private:
+  std::uint32_t count_ = 0;
+  HubAccounts hubs_;
   const entity::account::Registry &accounts_;
   const entity::account::Ownership &ownership_;
   const entity::behavior::Assignment &personas_;
