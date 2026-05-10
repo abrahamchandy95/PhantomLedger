@@ -29,7 +29,11 @@ std::span<const double> PopulationDynamics::dailyMultipliers() const noexcept {
 
 void PopulationDynamics::advance(random::Rng &rng,
                                  std::span<const std::uint32_t> paydayPersons) {
-  cohort_.advanceAll(rng, drivers_, paydayPersons, sensitivities_,
+  cohort_.advanceAll(rng, drivers_,
+                     dynamics::population::PaydaySignal{
+                         .persons = paydayPersons,
+                         .sensitivities = sensitivities_,
+                     },
                      dailyMultBuffer_);
 }
 

@@ -42,21 +42,48 @@ template <class It>
 
 } // namespace detail
 
+struct MerchantPool {
+  std::span<const double> cdf{};
+  std::uint32_t totalCount = 0;
+
+  /// Popularity-weighted draw via the merchant CDF.
+  [[nodiscard]] std::uint32_t samplerIndex(random::Rng &rng) const {
+    return static_cast<std::uint32_t>(
+        PhantomLedger::probability::distributions::sampleIndex(
+            cdf, rng.nextDouble()));
+  }
+
+  /// Uniform fallback when the CDF draw collides repeatedly.
+  [[nodiscard]] std::uint32_t randomIndex(random::Rng &rng) const {
+    return static_cast<std::uint32_t>(rng.choiceIndex(totalCount));
+  }
+};
+
+struct ContactRow {
+  std::span<std::uint32_t> row{};
+  std::uint32_t personIdx = 0;
+  std::uint32_t nPeople = 0;
+
+  [[nodiscard]] bool isValidNew(std::uint32_t candidate) const noexcept {
+    if (candidate == personIdx) {
+      return false;
+    }
+    return !detail::contains(row.begin(), row.end(), candidate);
+  }
+};
+
 /// Evolve favorite merchant indices in place
 inline void evolveFavorites(random::Rng &rng, const Config &cfg,
                             std::vector<std::uint32_t> &favorites,
-                            std::span<const double> merchCdf,
-                            std::uint32_t totalMerchants) {
+                            const MerchantPool &pool) {
   // --- Add pass ---
   if (rng.coin(cfg.merchantAddP) &&
       favorites.size() < static_cast<std::size_t>(cfg.maxFavorites) &&
-      favorites.size() < totalMerchants) {
+      favorites.size() < pool.totalCount) {
     bool added = false;
 
     for (int attempt = 0; attempt < 10 && !added; ++attempt) {
-      const auto candidate = static_cast<std::uint32_t>(
-          PhantomLedger::probability::distributions::sampleIndex(
-              merchCdf, rng.nextDouble()));
+      const auto candidate = pool.samplerIndex(rng);
       if (!detail::contains(favorites.begin(), favorites.end(), candidate)) {
         favorites.push_back(candidate);
         added = true;
@@ -64,8 +91,7 @@ inline void evolveFavorites(random::Rng &rng, const Config &cfg,
     }
 
     for (int attempt = 0; attempt < 10 && !added; ++attempt) {
-      const auto candidate =
-          static_cast<std::uint32_t>(rng.choiceIndex(totalMerchants));
+      const auto candidate = pool.randomIndex(rng);
       if (!detail::contains(favorites.begin(), favorites.end(), candidate)) {
         favorites.push_back(candidate);
         added = true;
@@ -80,13 +106,9 @@ inline void evolveFavorites(random::Rng &rng, const Config &cfg,
   }
 }
 
-/// Evolve a fixed-width contact row. Up to one slot mutates per call:
-/// either an add (replace a slot with a fresh contact) or a drop
-/// (duplicate an existing contact, reducing effective diversity).
 inline void evolveContacts(random::Rng &rng, const Config &cfg,
-                           std::span<std::uint32_t> contactsRow,
-                           std::uint32_t personIdx, std::uint32_t nPeople) {
-  const auto degree = contactsRow.size();
+                           const ContactRow &contact) {
+  const auto degree = contact.row.size();
   if (degree == 0) {
     return;
   }
@@ -94,16 +116,13 @@ inline void evolveContacts(random::Rng &rng, const Config &cfg,
   if (rng.coin(cfg.contactAddP)) {
     for (int attempt = 0; attempt < 10; ++attempt) {
       const auto candidate =
-          static_cast<std::uint32_t>(rng.choiceIndex(nPeople));
-      if (candidate == personIdx) {
+          static_cast<std::uint32_t>(rng.choiceIndex(contact.nPeople));
+      if (!contact.isValidNew(candidate)) {
         continue;
       }
-      if (!detail::contains(contactsRow.begin(), contactsRow.end(),
-                            candidate)) {
-        const auto slot = rng.choiceIndex(degree);
-        contactsRow[slot] = candidate;
-        break;
-      }
+      const auto slot = rng.choiceIndex(degree);
+      contact.row[slot] = candidate;
+      break;
     }
   }
 
@@ -111,7 +130,7 @@ inline void evolveContacts(random::Rng &rng, const Config &cfg,
     const auto dropSlot = rng.choiceIndex(degree);
     const auto keepSlot = rng.choiceIndex(degree);
     if (dropSlot != keepSlot) {
-      contactsRow[dropSlot] = contactsRow[keepSlot];
+      contact.row[dropSlot] = contact.row[keepSlot];
     }
   }
 }
