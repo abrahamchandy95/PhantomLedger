@@ -11,6 +11,7 @@
 #include "phantomledger/activity/spending/simulator/population_dynamics.hpp"
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
+#include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
@@ -276,7 +277,7 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
 
   const plSimulator::SpenderEmissionDriver::Threads emissionThreads{
       .rngFactory = &rngFactory,
-      .count = 1,
+      .count = plSimulator::resolveThreadCount(),
   };
 
   plSimulator::Simulator simulator(market, execution.rng, execution.txf,

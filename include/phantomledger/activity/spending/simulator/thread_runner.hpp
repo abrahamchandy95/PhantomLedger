@@ -21,8 +21,6 @@ partitionRange(std::size_t total, std::uint32_t threadCount,
   }
   const std::size_t base = total / threadCount;
   const std::size_t rem = total % threadCount;
-  // Spread the `rem` extra items over the first `rem` threads. Keeps
-  // chunks within ±1 of each other regardless of how `total` divides.
   const std::size_t begin =
       threadIdx * base + (threadIdx < rem ? threadIdx : rem);
   const std::size_t extra = (threadIdx < rem) ? 1 : 0;
@@ -30,8 +28,10 @@ partitionRange(std::size_t total, std::uint32_t threadCount,
   return {begin, end};
 }
 
-/// Spawn `threadCount` workers, each running `body(threadIdx)`, and
-/// join all of them before returning.
+[[nodiscard]] inline std::uint32_t resolveThreadCount() noexcept {
+  const auto hw = std::thread::hardware_concurrency();
+  return hw == 0 ? std::uint32_t{1} : hw;
+}
 
 template <typename Body>
 inline void runParallel(std::uint32_t threadCount, Body &&body) {
