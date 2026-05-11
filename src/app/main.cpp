@@ -110,6 +110,7 @@ int main(int argc, char **argv) {
     case app::UseCase::aml: {
       exporter::aml::Options exportOpts;
       exportOpts.showTransactions = opts.showTransactions;
+      exportOpts.piiPools = &pools;
       const auto summary =
           exporter::aml::exportAll(result, opts.outDir, exportOpts);
       printAmlSummary(summary, opts);

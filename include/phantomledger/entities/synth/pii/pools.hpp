@@ -20,6 +20,7 @@ struct PoolSizes {
   std::size_t middleNames = 50'000;
   std::size_t lastNames = 50'000;
   std::size_t streets = 50'000;
+  std::size_t businessNames = 10'000;
 };
 
 struct LocalePool {
@@ -30,6 +31,8 @@ struct LocalePool {
   std::vector<std::string> lastNames;
 
   std::vector<std::string> streets;
+
+  std::vector<std::string> businessNames;
 
   std::vector<ZipEntry> zipTable;
 };

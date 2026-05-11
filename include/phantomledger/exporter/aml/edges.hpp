@@ -32,7 +32,8 @@ struct TransactionEdgeBundle {
 
 [[nodiscard]] TransactionEdgeBundle classifyTransactionEdges(
     const ::PhantomLedger::pipeline::Entities &entities,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);
+    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
+    const vertices::SharedContext &ctx);
 
 struct MinhashVertexSets {
   std::set<std::string> name;
@@ -72,6 +73,8 @@ void writeLoggedFromRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const ::PhantomLedger::pipeline::Entities &entities,
     const ::PhantomLedger::infra::synth::devices::Output &devices);
+
+// ── Identity-by-id edges — pool-free ──
 
 void writeCustomerHasNameRows(
     ::PhantomLedger::exporter::csv::Writer &w,
@@ -151,29 +154,37 @@ void writeBankHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
                           const vertices::SharedContext &ctx,
                           ::PhantomLedger::time::TimePoint simStart);
 
+// ── Minhash-shingle edges — need name/address content from the pool ──
+
 void writeCustomerHasNameMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStreetLine1MinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressCityMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStateMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeAccountHasNameMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+    const ::PhantomLedger::pipeline::Entities &entities,
+    const vertices::SharedContext &ctx);
 
 void writeCounterpartyHasNameMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,

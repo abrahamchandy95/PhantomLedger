@@ -1,9 +1,13 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 
 #include "phantomledger/exporter/aml/shared.hpp"
+#include "phantomledger/taxonomies/locale/us_banks.hpp"
 
 #include <array>
+#include <charconv>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <string_view>
 
@@ -11,10 +15,88 @@ namespace PhantomLedger::exporter::aml::identity {
 
 namespace {
 
-[[nodiscard]] std::string personIdKey(::PhantomLedger::entity::PersonId p) {
-  char buf[16];
-  std::snprintf(buf, sizeof(buf), "C%010u", static_cast<unsigned>(p));
-  return std::string{buf};
+namespace pii_ns = ::PhantomLedger::entities::synth::pii;
+
+// ────────────────────────────────────────────────────────────────────
+// Small helpers
+// ────────────────────────────────────────────────────────────────────
+
+template <std::size_t N>
+void appendBytes(StackString<N> &out, std::string_view bytes) noexcept {
+  const auto cap = N - out.len;
+  const auto take = bytes.size() < cap ? bytes.size() : cap;
+  std::memcpy(out.data.data() + out.len, bytes.data(), take);
+  out.len = static_cast<std::uint8_t>(out.len + take);
+}
+
+template <std::size_t N>
+void appendUnsignedZeroPadded(StackString<N> &out, unsigned value,
+                              std::size_t width) noexcept {
+  char tmp[12];
+  std::size_t pos = sizeof(tmp);
+  do {
+    tmp[--pos] = static_cast<char>('0' + (value % 10U));
+    value /= 10U;
+  } while (value != 0U && pos > 0);
+  const auto digits = sizeof(tmp) - pos;
+  for (std::size_t i = digits; i < width; ++i) {
+    if (out.len < N) {
+      out.data[out.len++] = '0';
+    }
+  }
+  appendBytes(out, std::string_view{tmp + pos, digits});
+}
+
+// Render "<prefix><customerId>" — used for the rendered id fields.
+// `customerId` already has its own prefix (e.g. "C0000000001"), so this
+// is a straight concatenation into a stack buffer with no heap traffic.
+template <std::size_t N>
+StackString<N> renderPersonId(std::string_view prefix,
+                              ::PhantomLedger::entity::PersonId p) noexcept {
+  StackString<N> out;
+  appendBytes(out, prefix);
+  // "C%010u"
+  if (out.len < N) {
+    out.data[out.len++] = 'C';
+  }
+  appendUnsignedZeroPadded(out, static_cast<unsigned>(p), 10);
+  return out;
+}
+
+template <std::size_t N>
+StackString<N> renderRawId(std::string_view prefix,
+                           std::string_view rawId) noexcept {
+  StackString<N> out;
+  appendBytes(out, prefix);
+  appendBytes(out, rawId);
+  return out;
+}
+
+// `stableU64` needs a string seed for the customer flavour of the
+// pool indexing (occupation, marital status, address sub-detail). The
+// rendered C-id is short and fits comfortably on the stack.
+struct PersonSeed {
+  std::array<char, 12> bytes{}; // 'C' + 10 digits + NUL room
+  std::uint8_t len = 0;
+  [[nodiscard]] std::string_view view() const noexcept {
+    return {bytes.data(), len};
+  }
+};
+
+[[nodiscard]] PersonSeed
+personSeed(::PhantomLedger::entity::PersonId p) noexcept {
+  PersonSeed s;
+  s.bytes[s.len++] = 'C';
+  // 10-digit zero-padded.
+  char tmp[10];
+  auto value = static_cast<unsigned>(p);
+  for (int i = 9; i >= 0; --i) {
+    tmp[i] = static_cast<char>('0' + (value % 10U));
+    value /= 10U;
+  }
+  std::memcpy(s.bytes.data() + s.len, tmp, sizeof(tmp));
+  s.len = static_cast<std::uint8_t>(s.len + sizeof(tmp));
+  return s;
 }
 
 // ────────── Pool helpers ──────────
@@ -26,13 +108,12 @@ pick(const std::array<std::string_view, N> &items,
   return items[seed % N];
 }
 
-template <std::size_t N>
-[[nodiscard]] std::string_view pick(const char *const (&items)[N],
-                                    std::uint64_t seed) noexcept {
-  return std::string_view{items[seed % N]};
-}
-
-// ────────── Occupation pools ──────────
+// ────────── Occupation / marital pools ──────────
+//
+// All entries are string literals → static storage duration. Views into
+// these arrays remain valid for the entire program lifetime, which is
+// what lets `occupation()` and `maritalStatus()` return `string_view`s
+// safely.
 
 inline constexpr std::array<std::string_view, 3> kOccStudent{
     "student",
@@ -61,6 +142,10 @@ inline constexpr std::array<std::string_view, 4> kOccHnw{
     "physician",
 };
 
+inline constexpr std::array<std::string_view, 5> kSingleStatuses{
+    "single", "single", "single", "divorced", "widowed",
+};
+
 // ────────── Marriage probability by persona (× 100, integer math) ──────────
 
 [[nodiscard]] unsigned
@@ -83,125 +168,69 @@ marriedPctFor(::PhantomLedger::personas::Type p) noexcept {
   return 50;
 }
 
-constexpr const char *kFirstNames[] = {
-    "James",   "Mary",   "Robert",  "Patricia",  "John",    "Jennifer",
-    "Michael", "Linda",  "David",   "Elizabeth", "William", "Barbara",
-    "Richard", "Susan",  "Joseph",  "Jessica",   "Thomas",  "Sarah",
-    "Charles", "Karen",  "Daniel",  "Lisa",      "Matthew", "Nancy",
-    "Anthony", "Betty",  "Mark",    "Margaret",  "Donald",  "Sandra",
-    "Steven",  "Ashley", "Paul",    "Kimberly",  "Andrew",  "Emily",
-    "Joshua",  "Donna",  "Kenneth", "Michelle",  "Kevin",   "Carol",
-    "Brian",   "Amanda", "George",  "Dorothy",   "Timothy", "Melissa",
-    "Wei",     "Aisha",  "Liam",    "Sofia",     "Mateo",   "Olga",
-};
+// ────────── Pool-indexed lookups ──────────
+//
+// All three of these are guarded against an empty pool — if the
+// LocalePool was constructed with size 0, we fall back to a safe
+// empty view rather than indexing UB. In practice the pool is never
+// empty (assertions in `PoolSet::forCountry` enforce that), but the
+// guards keep these noexcept-correct.
 
-constexpr const char *kLastNames[] = {
-    "Smith",    "Johnson", "Williams",  "Brown",    "Jones",     "Garcia",
-    "Miller",   "Davis",   "Rodriguez", "Martinez", "Hernandez", "Lopez",
-    "Gonzalez", "Wilson",  "Anderson",  "Thomas",   "Taylor",    "Moore",
-    "Jackson",  "Martin",  "Lee",       "Perez",    "Thompson",  "White",
-    "Harris",   "Sanchez", "Clark",     "Ramirez",  "Lewis",     "Robinson",
-    "Walker",   "Young",   "Allen",     "King",     "Wright",    "Scott",
-    "Torres",   "Nguyen",  "Hill",      "Flores",   "Green",     "Adams",
-    "Nelson",   "Baker",   "Hall",      "Rivera",   "Campbell",  "Chen",
-    "Patel",    "Kim",     "Muller",    "Santos",   "Yamamoto",  "Khan",
-    "Petrov",   "O'Brien", "Johansson", "Rossi",    "Dubois",
-};
+template <typename Vec>
+[[nodiscard]] std::string_view poolPick(const Vec &v,
+                                        std::uint64_t seed) noexcept {
+  if (v.empty()) {
+    return {};
+  }
+  return v[seed % v.size()];
+}
 
-constexpr const char *kMiddleInitials[] = {
-    "A", "B", "C", "D", "E", "F", "G", "H", "J",
-    "K", "L", "M", "N", "P", "R", "S", "T", "W",
-};
+// ────────── Address detail (per-record) ──────────
+//
+// `streetLine2` is the only synthesized address byte sequence — the
+// rest of the row is a direct lookup into the pool's `streets` and
+// `zipTable`. We synthesize "Apt N" into a stack buffer roughly 20% of
+// the time, preserving the previous code's behaviour.
 
-// ────────── Counterparty business-name pools ──────────
+void fillStreetLine2(StackString<24> &out, std::uint64_t seedHash) noexcept {
+  if ((seedHash % 5U) != 0U) {
+    return;
+  }
+  const auto apt = 1U + static_cast<unsigned>((seedHash >> 4U) % 500U);
+  appendBytes(out, std::string_view{"Apt "});
+  // Up to 3 digits, no padding.
+  char tmp[6];
+  auto r = std::to_chars(tmp, tmp + sizeof(tmp), apt);
+  appendBytes(out,
+              std::string_view{tmp, static_cast<std::size_t>(r.ptr - tmp)});
+}
 
-constexpr const char *kCpPrefixes[] = {
-    "National", "Pacific", "Eagle",    "Summit",   "Atlas",    "Prime",
-    "Metro",    "Global",  "Sterling", "Heritage", "Apex",     "Liberty",
-    "Coastal",  "Pioneer", "Horizon",  "Diamond",  "Pinnacle", "Titan",
-};
+// ────────── Address builder shared between counterparty & bank ──────────
+//
+// Persons take a different path because they already have indices on
+// their `pii::Record::address`. CP / bank addresses don't have a Record,
+// so we derive the indices from a stable hash of their id string.
 
-constexpr const char *kCpSuffixes[] = {
-    "LLC", "Inc", "Corp", "Ltd", "Co", "Group", "Services",
-};
-
-// ────────── Bank name pool ──────────
-
-constexpr const char *kBankNames[] = {
-    "First National Bank", "Pacific Trust",   "Heritage Savings",
-    "Metro Credit Union",  "Atlas Financial", "Liberty Bank",
-    "Summit Bank",         "Coastal Federal", "Pioneer Trust",
-    "Sterling Savings",
-};
-
-// ────────── Address pools ──────────
-
-constexpr const char *kStreets[] = {
-    "Main St",   "Oak Ave",         "Maple Dr", "Cedar Ln",  "Elm St",
-    "Pine Rd",   "Washington Blvd", "Park Ave", "Lake Dr",   "River Rd",
-    "Hill St",   "Sunset Blvd",     "Broadway", "Market St", "Highland Ave",
-    "Valley Rd", "Forest Dr",
-};
-
-constexpr const char *kCities[] = {
-    "New York",      "Los Angeles", "Chicago",   "Houston",   "Phoenix",
-    "Philadelphia",  "San Antonio", "San Diego", "Dallas",    "Austin",
-    "Jacksonville",  "San Jose",    "Columbus",  "Charlotte", "Indianapolis",
-    "San Francisco", "Seattle",     "Denver",    "Nashville", "Portland",
-    "Miami",         "Atlanta",     "Boston",    "Tampa",     "Minneapolis",
-};
-
-constexpr const char *kStates[] = {
-    "NY", "CA", "IL", "TX", "AZ", "PA", "FL", "OH", "GA", "NC",
-    "WA", "CO", "TN", "OR", "MN", "MA", "IN", "MO", "NV", "VA",
-};
-
-constexpr const char *kZips[] = {
-    "10001", "90012", "60601", "77002", "85004", "19107", "33130",
-    "43215", "30303", "28202", "98101", "80202", "37203", "97201",
-    "55401", "02108", "46204", "63101", "89101", "22201",
-};
-
-constexpr std::size_t kCitiesCount = sizeof(kCities) / sizeof(kCities[0]);
-constexpr std::size_t kStatesCount = sizeof(kStates) / sizeof(kStates[0]);
-constexpr std::size_t kZipsCount = sizeof(kZips) / sizeof(kZips[0]);
-
-// ────────── Address builder ──────────
-
-[[nodiscard]] AddressRecord buildAddress(std::string_view seedKey,
-                                         std::string_view nameSpace,
-                                         std::string_view addressType) {
+[[nodiscard]] AddressRecord
+buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
+                     std::string_view addressType,
+                     const pii_ns::LocalePool &usPool) {
   const auto x = stableU64({seedKey, nameSpace});
 
-  const unsigned streetNum = 100U + static_cast<unsigned>(x % 9900U);
-  const auto street = pick(kStreets, x >> 8U);
-  const auto cityIdx = static_cast<std::size_t>((x >> 16U) % kCitiesCount);
-  const auto stateIdx = cityIdx % kStatesCount;
-  const auto zipIdx = cityIdx % kZipsCount;
+  AddressRecord out;
+  out.id = renderRawId<32>(std::string_view{"ADDR_"}, seedKey);
 
-  const bool hasUnit = ((x >> 24U) % 5U) == 0U;
-  std::string line2;
-  if (hasUnit) {
-    char buf[24];
-    std::snprintf(buf, sizeof(buf), "Apt %u",
-                  1U + static_cast<unsigned>((x >> 28U) % 500U));
-    line2 = buf;
+  out.streetLine1 = poolPick(usPool.streets, x);
+  fillStreetLine2(out.streetLine2, x >> 24U);
+
+  if (!usPool.zipTable.empty()) {
+    const auto &zip = usPool.zipTable[static_cast<std::size_t>(x >> 16U) %
+                                      usPool.zipTable.size()];
+    out.city = zip.city;
+    out.state = zip.adminCode;
+    out.postalCode = zip.postalCode;
   }
 
-  AddressRecord out;
-  out.id.reserve(5 + seedKey.size());
-  out.id.append("ADDR_");
-  out.id.append(seedKey);
-
-  out.streetLine1.reserve(8 + street.size());
-  out.streetLine1.append(std::to_string(streetNum));
-  out.streetLine1.push_back(' ');
-  out.streetLine1.append(street);
-
-  out.streetLine2 = std::move(line2);
-  out.city = kCities[cityIdx];
-  out.state = kStates[stateIdx];
-  out.postalCode = kZips[zipIdx];
   out.country = "US";
   out.addressType = addressType;
   out.isHighRiskGeo = false;
@@ -210,27 +239,31 @@ constexpr std::size_t kZipsCount = sizeof(kZips) / sizeof(kZips[0]);
 
 } // namespace
 
-std::string customerType(::PhantomLedger::personas::Type persona) {
+// ────────────────────────────────────────────────────────────────────
+// Pure code/rating lookups
+// ────────────────────────────────────────────────────────────────────
+
+std::string_view
+customerType(::PhantomLedger::personas::Type persona) noexcept {
   return persona == ::PhantomLedger::personas::Type::smallBusiness
-             ? "business"
-             : "individual";
+             ? std::string_view{"business"}
+             : std::string_view{"individual"};
 }
 
-std::string maritalStatus(::PhantomLedger::entity::PersonId personId,
-                          ::PhantomLedger::personas::Type persona) {
-  const auto seedKey = personIdKey(personId);
-  const auto x = stableU64({seedKey, "marital"});
+std::string_view
+maritalStatus(::PhantomLedger::entity::PersonId personId,
+              ::PhantomLedger::personas::Type persona) noexcept {
+  const auto seed = personSeed(personId);
+  const auto x = stableU64({seed.view(), "marital"});
   const auto pct = marriedPctFor(persona);
   if ((x % 100U) < pct) {
     return "married";
   }
-  static constexpr std::array<std::string_view, 5> kSingleStatuses{
-      "single", "single", "single", "divorced", "widowed",
-  };
-  return std::string{pick(kSingleStatuses, x >> 8U)};
+  return pick(kSingleStatuses, x >> 8U);
 }
 
-std::string networthCode(::PhantomLedger::personas::Type persona) {
+std::string_view
+networthCode(::PhantomLedger::personas::Type persona) noexcept {
   using ::PhantomLedger::personas::Type;
   switch (persona) {
   case Type::student:
@@ -249,7 +282,7 @@ std::string networthCode(::PhantomLedger::personas::Type persona) {
   return "B";
 }
 
-std::string incomeCode(::PhantomLedger::personas::Type persona) {
+std::string_view incomeCode(::PhantomLedger::personas::Type persona) noexcept {
   using ::PhantomLedger::personas::Type;
   switch (persona) {
   case Type::student:
@@ -268,29 +301,29 @@ std::string incomeCode(::PhantomLedger::personas::Type persona) {
   return "3";
 }
 
-std::string occupation(::PhantomLedger::entity::PersonId personId,
-                       ::PhantomLedger::personas::Type persona) {
-  const auto seedKey = personIdKey(personId);
-  const auto x = stableU64({seedKey, "occupation"});
+std::string_view occupation(::PhantomLedger::entity::PersonId personId,
+                            ::PhantomLedger::personas::Type persona) noexcept {
+  const auto seed = personSeed(personId);
+  const auto x = stableU64({seed.view(), "occupation"});
   using ::PhantomLedger::personas::Type;
   switch (persona) {
   case Type::student:
-    return std::string{pick(kOccStudent, x)};
+    return pick(kOccStudent, x);
   case Type::retiree:
-    return std::string{pick(kOccRetired, x)};
+    return pick(kOccRetired, x);
   case Type::salaried:
-    return std::string{pick(kOccSalaried, x)};
+    return pick(kOccSalaried, x);
   case Type::freelancer:
-    return std::string{pick(kOccFreelancer, x)};
+    return pick(kOccFreelancer, x);
   case Type::smallBusiness:
-    return std::string{pick(kOccSmallBiz, x)};
+    return pick(kOccSmallBiz, x);
   case Type::highNetWorth:
-    return std::string{pick(kOccHnw, x)};
+    return pick(kOccHnw, x);
   }
-  return std::string{pick(kOccSalaried, x)};
+  return pick(kOccSalaried, x);
 }
 
-std::string riskRating(bool isFraud, bool isMule, bool isVictim) {
+std::string_view riskRating(bool isFraud, bool isMule, bool isVictim) noexcept {
   if (isFraud || isMule) {
     return "very_high";
   }
@@ -303,43 +336,51 @@ std::string riskRating(bool isFraud, bool isMule, bool isVictim) {
 ::PhantomLedger::time::TimePoint
 onboardingDate(::PhantomLedger::entity::PersonId personId,
                ::PhantomLedger::time::TimePoint simStart) {
-  const auto seedKey = personIdKey(personId);
-  const auto x = stableU64({seedKey, "onboarding"});
+  const auto seed = personSeed(personId);
+  const auto x = stableU64({seed.view(), "onboarding"});
   const auto daysBefore = 90 + static_cast<int>(x % (365U * 5U));
   return simStart - ::PhantomLedger::time::Days{daysBefore};
 }
 
-NameRecord nameForPerson(::PhantomLedger::entity::PersonId personId) {
-  const auto seedKey = personIdKey(personId);
-  const auto x = stableU64({seedKey, "name"});
+// ────────────────────────────────────────────────────────────────────
+// Name producers
+//
+// `nameForPerson` reads the indices already assigned to the person's
+// `pii::Record` and views into the matching pool slots. No hashing,
+// no allocation, no duplicate data.
+// ────────────────────────────────────────────────────────────────────
 
+NameRecord nameForPerson(::PhantomLedger::entity::PersonId personId,
+                         const ::PhantomLedger::entity::pii::Roster &pii,
+                         const pii_ns::LocalePool &usPool) {
   NameRecord out;
-  out.id.reserve(3 + seedKey.size());
-  out.id.append("NM_");
-  out.id.append(seedKey);
-  out.firstName = pick(kFirstNames, x);
-  out.lastName = pick(kLastNames, x >> 8U);
-  out.middleName = pick(kMiddleInitials, x >> 16U);
+  out.id = renderPersonId<24>(std::string_view{"NM_"}, personId);
+
+  const auto &rec = pii.at(personId);
+
+  if (rec.name.firstIdx < usPool.firstNames.size()) {
+    out.firstName = usPool.firstNames[rec.name.firstIdx];
+  }
+  if (rec.name.middleIdx != ::PhantomLedger::entity::pii::kNoMiddleIdx &&
+      rec.name.middleIdx < usPool.middleNames.size()) {
+    out.middleName = usPool.middleNames[rec.name.middleIdx];
+  }
+  if (rec.name.lastIdx < usPool.lastNames.size()) {
+    out.lastName = usPool.lastNames[rec.name.lastIdx];
+  }
   return out;
 }
 
-NameRecord nameForCounterparty(std::string_view counterpartyId) {
+NameRecord nameForCounterparty(std::string_view counterpartyId,
+                               const pii_ns::LocalePool &usPool) {
   const auto x = stableU64({counterpartyId, "cp_name"});
 
   NameRecord out;
-  out.id.reserve(3 + counterpartyId.size());
-  out.id.append("NM_");
-  out.id.append(counterpartyId);
-
-  std::string full;
-  const auto prefix = pick(kCpPrefixes, x);
-  const auto suffix = pick(kCpSuffixes, x >> 8U);
-  full.reserve(prefix.size() + 1 + suffix.size());
-  full.append(prefix);
-  full.push_back(' ');
-  full.append(suffix);
-
-  out.firstName = std::move(full);
+  out.id = renderRawId<24>(std::string_view{"NM_"}, counterpartyId);
+  // Business names land in the firstName slot to preserve the existing
+  // output schema (the AML "name" table writes `firstName,middleName,
+  // lastName`, and counterparty rows have always been one logical field).
+  out.firstName = poolPick(usPool.businessNames, x);
   return out;
 }
 
@@ -347,10 +388,9 @@ NameRecord nameForBank(std::string_view bankId) {
   const auto x = stableU64({bankId, "bank_name"});
 
   NameRecord out;
-  out.id.reserve(3 + bankId.size());
-  out.id.append("NM_");
-  out.id.append(bankId);
-  out.firstName = pick(kBankNames, x);
+  out.id = renderRawId<24>(std::string_view{"NM_"}, bankId);
+  // Real US bank names, US-only by design (see us_banks.hpp).
+  out.firstName = ::PhantomLedger::locale::us::bankNameBySeed(x);
   return out;
 }
 
@@ -361,16 +401,89 @@ std::string routingNumberForId(std::string_view bankId) {
   return std::to_string(routing);
 }
 
-AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId) {
-  return buildAddress(personIdKey(personId), "address", "residential");
+// ────────────────────────────────────────────────────────────────────
+// Address producers
+// ────────────────────────────────────────────────────────────────────
+
+AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
+                               const ::PhantomLedger::entity::pii::Roster &pii,
+                               const pii_ns::LocalePool &usPool) {
+  AddressRecord out;
+  out.id = renderPersonId<32>(std::string_view{"ADDR_"}, personId);
+
+  const auto &rec = pii.at(personId);
+
+  if (rec.address.streetIdx < usPool.streets.size()) {
+    out.streetLine1 = usPool.streets[rec.address.streetIdx];
+  }
+  if (rec.address.zipTableIdx < usPool.zipTable.size()) {
+    const auto &zip = usPool.zipTable[rec.address.zipTableIdx];
+    out.city = zip.city;
+    out.state = zip.adminCode;
+    out.postalCode = zip.postalCode;
+  }
+
+  // Apartment hint — deterministic, ~20% of rows, derived from the
+  // person id only (so the same person always gets the same Apt N if
+  // they get one at all). Independent from the pool indices because the
+  // pool already covers most of the address rendering.
+  const auto seed = personSeed(personId);
+  const auto hash = stableU64({seed.view(), "address_apt"});
+  fillStreetLine2(out.streetLine2, hash);
+
+  out.country = "US";
+  out.addressType = "residential";
+  out.isHighRiskGeo = false;
+  return out;
 }
 
-AddressRecord addressForCounterparty(std::string_view counterpartyId) {
-  return buildAddress(counterpartyId, "cp_address", "commercial");
+AddressRecord addressForCounterparty(std::string_view counterpartyId,
+                                     const pii_ns::LocalePool &usPool) {
+  return buildAddressFromHash(counterpartyId, "cp_address", "commercial",
+                              usPool);
 }
 
-AddressRecord addressForBank(std::string_view bankId) {
-  return buildAddress(bankId, "bank_address", "commercial");
+AddressRecord addressForBank(std::string_view bankId,
+                             const pii_ns::LocalePool &usPool) {
+  return buildAddressFromHash(bankId, "bank_address", "commercial", usPool);
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Id-only helpers — pool-free
+//
+// Each thin wrapper delegates to the same `renderPersonId` /
+// `renderRawId` routine that the full producers use, so the output is
+// byte-identical to `nameForPerson(p).id`, `addressForBank(bid).id`,
+// etc. The full producer just throws away the pool work, gives you the
+// id-bearing StackString directly.
+// ────────────────────────────────────────────────────────────────────
+
+StackString<24>
+nameIdForPerson(::PhantomLedger::entity::PersonId personId) noexcept {
+  return renderPersonId<24>(std::string_view{"NM_"}, personId);
+}
+
+StackString<32>
+addressIdForPerson(::PhantomLedger::entity::PersonId personId) noexcept {
+  return renderPersonId<32>(std::string_view{"ADDR_"}, personId);
+}
+
+StackString<24>
+nameIdForCounterparty(std::string_view counterpartyId) noexcept {
+  return renderRawId<24>(std::string_view{"NM_"}, counterpartyId);
+}
+
+StackString<32>
+addressIdForCounterparty(std::string_view counterpartyId) noexcept {
+  return renderRawId<32>(std::string_view{"ADDR_"}, counterpartyId);
+}
+
+StackString<24> nameIdForBank(std::string_view bankId) noexcept {
+  return renderRawId<24>(std::string_view{"NM_"}, bankId);
+}
+
+StackString<32> addressIdForBank(std::string_view bankId) noexcept {
+  return renderRawId<32>(std::string_view{"ADDR_"}, bankId);
 }
 
 } // namespace PhantomLedger::exporter::aml::identity

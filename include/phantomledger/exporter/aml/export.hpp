@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/pipeline/result.hpp"
 
 #include <filesystem>
@@ -8,6 +9,8 @@ namespace PhantomLedger::exporter::aml {
 
 struct Options {
   bool showTransactions = false;
+
+  const ::PhantomLedger::entities::synth::pii::PoolSet *piiPools = nullptr;
 };
 
 /// Summary statistics returned to the caller for printout.
