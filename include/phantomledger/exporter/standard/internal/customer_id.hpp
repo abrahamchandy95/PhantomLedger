@@ -21,6 +21,8 @@ customerIdFor(::PhantomLedger::entity::PersonId p) {
 renderDeviceId(::PhantomLedger::devices::Identity id) {
   using ::PhantomLedger::devices::OwnerType;
   switch (id.ownerType) {
+  case OwnerType::none:
+    return {};
   case OwnerType::person: {
     const auto customerKey = ::PhantomLedger::entity::makeKey(
         ::PhantomLedger::entity::Role::customer,

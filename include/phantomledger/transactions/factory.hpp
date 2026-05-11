@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/taxonomies/channels/predicates.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
@@ -34,7 +35,6 @@ public:
     bool deviceResolved = false;
     bool ipResolved = false;
 
-    // Try shared ring infra first for fraud transactions.
     if (draft.ringId >= 0 && ringInfra_ != nullptr) {
       const auto sharedDevice = ringInfra_->deviceForRing(draft.ringId);
       if (sharedDevice.has_value() && rng_.coin(ringInfra_->useSharedDeviceP)) {
@@ -49,9 +49,11 @@ public:
       }
     }
 
-    // Fall back to personal infra. Resolve the owner once; then route
-    // only the legs that still need a value.
-    if (router_ != nullptr && (!deviceResolved || !ipResolved)) {
+    const bool isCustomerSession =
+        !channels::isExternallyInitiated(draft.channel);
+
+    if (router_ != nullptr && isCustomerSession &&
+        (!deviceResolved || !ipResolved)) {
       const auto owner = router_->ownerOf(draft.source);
       if (owner.has_value()) {
         if (!deviceResolved) {

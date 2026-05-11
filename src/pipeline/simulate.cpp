@@ -2,50 +2,83 @@
 
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
+#include "phantomledger/transfers/fraud/behavior.hpp"
 #include "phantomledger/transfers/legit/assembly.hpp"
+
+#include <cstdint>
+#include <utility>
 
 namespace PhantomLedger::pipeline {
 
 namespace {
 
-namespace entityStage = ::PhantomLedger::pipeline::stages::entities;
+namespace entityStage = stages::entities;
 namespace legit = ::PhantomLedger::transfers::legit;
+namespace fraud = ::PhantomLedger::transfers::fraud;
+namespace credit_cards = ::PhantomLedger::transfers::credit_cards;
+namespace clearing = ::PhantomLedger::clearing;
 
-[[nodiscard]] ::PhantomLedger::time::Window
-activeTransferWindow(::PhantomLedger::time::Window requested,
-                     ::PhantomLedger::time::Window fallback) noexcept {
-  if (requested.days == 0) {
-    return fallback;
+using SynthFraud = ::PhantomLedger::entities::synth::people::Fraud;
+
+[[nodiscard]] auto resolveRunScope(legit::LegitAssembly::RunScope scope,
+                                   time::Window fallbackWindow,
+                                   std::uint64_t fallbackSeed) noexcept
+    -> legit::LegitAssembly::RunScope {
+  if (scope.window.days == 0) {
+    scope.window = fallbackWindow;
   }
-
-  return requested;
+  if (scope.seed == 0) {
+    scope.seed = fallbackSeed;
+  }
+  return scope;
 }
 
-[[nodiscard]] std::uint64_t
-activeTransferSeed(std::uint64_t requested, std::uint64_t fallback) noexcept {
-  if (requested == 0) {
-    return fallback;
-  }
+void configureTransferStage(SimulationPipeline::TransferStage &stage,
+                            time::Window window, std::uint64_t seed,
+                            const SynthFraud &fraudProfile) noexcept {
+  stage.legit().runScope(
+      resolveRunScope(stage.legit().runScope(), window, seed));
+  stage.legit().openingBalanceRules(&clearing::kDefaultBalanceRules);
+  stage.legit().creditLifecycle(&credit_cards::kDefaultLifecycleRules);
 
-  return requested;
+  stage.fraud().profile(&fraudProfile);
+  stage.fraud().behavior(&fraud::kDefaultBehavior);
 }
 
-[[nodiscard]] legit::LegitAssembly::RunScope
-activeTransferScope(legit::LegitAssembly::RunScope requested,
-                    ::PhantomLedger::time::Window fallbackWindow,
-                    std::uint64_t fallbackSeed) noexcept {
-  requested.window = activeTransferWindow(requested.window, fallbackWindow);
-  requested.seed = activeTransferSeed(requested.seed, fallbackSeed);
-  return requested;
+// Entity construction
+
+[[nodiscard]] Entities
+buildEntities(random::Rng &rng, time::Window window,
+              const SimulationPipeline::EntitySynthesis &cfg,
+              std::uint64_t seed) {
+  const auto identity = entityStage::defaultStart(cfg.identity, window.start);
+
+  Entities out;
+  out.people = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
+  out.accounts = entityStage::buildAccounts(rng, out.people, cfg.population,
+                                            cfg.accountsSizing);
+  out.personas = entityStage::buildPersonas(rng, out.people, cfg.personaMix);
+  out.pii = entityStage::buildPii(rng, out.personas, identity);
+  out.merchants =
+      entityStage::buildMerchants(rng, cfg.population, cfg.merchants);
+  out.landlords =
+      entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
+  out.creditCards =
+      entityStage::issueCreditCards(out.personas, out.people, seed, cfg.cards);
+  out.counterparties = entityStage::buildCounterparties(
+      rng, cfg.population, cfg.counterpartyTargets);
+
+  entityStage::finalizeAccountRegistry(out);
+  return out;
 }
 
 } // namespace
 
-SimulationPipeline::SimulationPipeline(::PhantomLedger::random::Rng &rng,
-                                       ::PhantomLedger::time::Window window,
+SimulationPipeline::SimulationPipeline(random::Rng &rng, time::Window window,
                                        EntitySynthesis entities,
                                        std::uint64_t seed)
-    : rng_(&rng), window_(window), seed_(seed), entities_(entities) {}
+    : rng_(&rng), window_(window), seed_(seed), entities_(std::move(entities)) {
+}
 
 SimulationPipeline::InfraStage &SimulationPipeline::infraStage() noexcept {
   return infra_;
@@ -78,57 +111,21 @@ SimulationPipeline::transferStage() const noexcept {
 SimulationResult SimulationPipeline::run() const {
   SimulationResult out;
 
-  const auto identity =
-      entityStage::defaultStart(entities_.identity, window_.start);
-
-  out.entities.people =
-      entityStage::buildPeople(*rng_, entities_.population, entities_.fraud);
-
-  out.entities.accounts = entityStage::buildAccounts(*rng_, out.entities.people,
-                                                     entities_.population,
-                                                     entities_.accountsSizing);
-
-  out.entities.personas = entityStage::buildPersonas(*rng_, out.entities.people,
-                                                     entities_.personaMix);
-
-  out.entities.pii =
-      entityStage::buildPii(*rng_, out.entities.personas, identity);
-
-  out.entities.merchants = entityStage::buildMerchants(
-      *rng_, entities_.population, entities_.merchants);
-
-  out.entities.landlords = entityStage::buildLandlords(
-      *rng_, entities_.population, entities_.landlords);
-
-  out.entities.creditCards = entityStage::issueCreditCards(
-      out.entities.personas, out.entities.people, seed_, entities_.cards);
-
-  out.entities.counterparties = entityStage::buildCounterparties(
-      *rng_, entities_.population, entities_.counterpartyTargets);
-
-  entityStage::finalizeAccountRegistry(out.entities);
-
+  out.entities = buildEntities(*rng_, window_, entities_, seed_);
   products_.synthesize(out.entities, window_);
-
   out.infra = infra_.build(*rng_, out.entities, window_);
 
-  auto configuredTransfers = transfers_;
-  configuredTransfers.legit().runScope(activeTransferScope(
-      configuredTransfers.legit().runScope(), window_, seed_));
-  configuredTransfers.legit().creditLifecycle(
-      &::PhantomLedger::transfers::credit_cards::kDefaultLifecycleRules);
-  configuredTransfers.legit().openingBalanceRules(
-      &::PhantomLedger::clearing::kDefaultBalanceRules);
-  out.transfers = configuredTransfers.build(*rng_, out.entities, out.infra);
+  auto stage = transfers_;
+  configureTransferStage(stage, window_, seed_, entities_.fraud);
+  out.transfers = stage.build(*rng_, out.entities, out.infra);
 
   return out;
 }
 
-SimulationResult simulate(::PhantomLedger::random::Rng &rng,
-                          ::PhantomLedger::time::Window window,
+SimulationResult simulate(random::Rng &rng, time::Window window,
                           SimulationPipeline::EntitySynthesis entities,
                           std::uint64_t seed) {
-  return SimulationPipeline{rng, window, entities, seed}.run();
+  return SimulationPipeline{rng, window, std::move(entities), seed}.run();
 }
 
 } // namespace PhantomLedger::pipeline

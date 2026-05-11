@@ -7,17 +7,20 @@
 namespace PhantomLedger::devices {
 
 enum class OwnerType : std::uint8_t {
-  person,
-  ring,
-  legitShared,
+  person = 0,
+  ring = 1,
+  legitShared = 2,
+  none = 3,
 };
 
 struct Identity {
-  OwnerType ownerType = OwnerType::person;
+  OwnerType ownerType = OwnerType::none;
   std::uint64_t ownerId = 0;
   std::uint32_t slot = 0;
 
   auto operator<=>(const Identity &) const = default;
+
+  [[nodiscard]] static constexpr Identity none() noexcept { return Identity{}; }
 
   [[nodiscard]] static constexpr Identity person(std::uint64_t ownerId,
                                                  std::uint32_t slot) noexcept {
@@ -27,6 +30,10 @@ struct Identity {
   [[nodiscard]] static constexpr Identity
   ring(std::uint64_t ringId, std::uint32_t slot = 0) noexcept {
     return Identity{OwnerType::ring, ringId, slot};
+  }
+
+  [[nodiscard]] constexpr bool assigned() const noexcept {
+    return ownerType != OwnerType::none;
   }
 };
 
