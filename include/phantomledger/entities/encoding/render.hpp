@@ -5,11 +5,12 @@
 #include "phantomledger/entities/encoding/numeric.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <stdexcept>
-#include <string>
+#include <string_view>
 
 namespace PhantomLedger::encoding {
 
@@ -64,16 +65,28 @@ inline std::size_t write(char *out, const entity::Key &id) {
   return write(out, spec, id.number);
 }
 
-[[nodiscard]] inline std::string render(Layout layout, std::uint64_t number) {
-  std::string out;
-  out.resize(renderedSize(layout, number));
-  write(out.data(), layout, number);
-  return out;
-}
+template <std::size_t N> struct RenderedId {
+  std::array<char, N> bytes{};
+  std::uint8_t length = 0;
 
-[[nodiscard]] inline std::string format(const entity::Key &id) {
-  const auto spec = checkedLayout(id);
-  return render(spec, id.number);
+  [[nodiscard]] constexpr std::string_view view() const noexcept {
+    return std::string_view{bytes.data(), length};
+  }
+
+  [[nodiscard]] constexpr bool empty() const noexcept { return length == 0; }
+
+  [[nodiscard]] friend constexpr bool
+  operator==(const RenderedId &lhs, std::string_view rhs) noexcept {
+    return lhs.view() == rhs;
+  }
+};
+
+using RenderedKey = RenderedId<32>;
+
+[[nodiscard]] inline RenderedKey format(const entity::Key &id) {
+  RenderedKey out;
+  out.length = static_cast<std::uint8_t>(write(out.bytes.data(), id));
+  return out;
 }
 
 } // namespace PhantomLedger::encoding

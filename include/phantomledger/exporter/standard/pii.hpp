@@ -1,12 +1,13 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/standard/internal/customer_id.hpp"
 
 namespace PhantomLedger::exporter::standard {
+
+namespace common = ::PhantomLedger::exporter::common;
 
 inline void writePhoneRows(::PhantomLedger::exporter::csv::Writer &w,
                            const ::PhantomLedger::entity::pii::Roster &roster) {
@@ -25,10 +26,10 @@ inline void writeEmailRows(::PhantomLedger::exporter::csv::Writer &w,
 inline void
 writeHasPhoneRows(::PhantomLedger::exporter::csv::Writer &w,
                   const ::PhantomLedger::entity::pii::Roster &roster) {
-  // Dense index — record at `i` belongs to PersonId `i + 1`.
   for (std::size_t i = 0; i < roster.records.size(); ++i) {
     const auto person = static_cast<::PhantomLedger::entity::PersonId>(i + 1);
-    w.writeRow(detail::customerIdFor(person), roster.records[i].phone.view());
+    w.writeRow(common::renderCustomerId(person).view(),
+               roster.records[i].phone.view());
   }
 }
 
@@ -37,7 +38,8 @@ writeHasEmailRows(::PhantomLedger::exporter::csv::Writer &w,
                   const ::PhantomLedger::entity::pii::Roster &roster) {
   for (std::size_t i = 0; i < roster.records.size(); ++i) {
     const auto person = static_cast<::PhantomLedger::entity::PersonId>(i + 1);
-    w.writeRow(detail::customerIdFor(person), roster.records[i].email.view());
+    w.writeRow(common::renderCustomerId(person).view(),
+               roster.records[i].email.view());
   }
 }
 

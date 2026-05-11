@@ -2,8 +2,8 @@
 
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/standard/internal/customer_id.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/infra/synth/ips_output.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -21,6 +21,10 @@
 namespace PhantomLedger::exporter::mule_ml {
 
 namespace detail {
+
+namespace common = ::PhantomLedger::exporter::common;
+namespace enc = ::PhantomLedger::encoding;
+namespace t = ::PhantomLedger::time;
 
 struct AccountItemKey {
   ::PhantomLedger::entity::Key account;
@@ -62,7 +66,6 @@ inline void touchEdge(EdgeAggregate &agg, std::int64_t ts,
     }
     ++agg.count;
   } else {
-
     if (agg.count == 0) {
       agg.firstTs = ts;
       agg.lastTs = ts;
@@ -77,7 +80,6 @@ inline void touchEdge(EdgeAggregate &agg, std::int64_t ts,
   }
 }
 
-/// Sort the aggregation map's keys for deterministic output.
 [[nodiscard]] inline std::vector<std::pair<AccountItemKey, EdgeAggregate>>
 sortedEdges(const EdgeMap &edges) {
   std::vector<std::pair<AccountItemKey, EdgeAggregate>> out;
@@ -94,11 +96,38 @@ sortedEdges(const EdgeMap &edges) {
   return out;
 }
 
-} // namespace detail
+inline void writeKeyCells(::PhantomLedger::exporter::csv::Writer &w,
+                          const AccountItemKey &key) {
+  w.cell(enc::format(key.account).view()).cell(key.item);
+}
 
-// ---------------------------------------------------------------------
-// Account_Device.csv
-// ---------------------------------------------------------------------
+inline void writeCountCell(::PhantomLedger::exporter::csv::Writer &w,
+                           const EdgeAggregate &agg) {
+  w.cell(agg.count);
+}
+
+inline void writeTimeRangeCells(::PhantomLedger::exporter::csv::Writer &w,
+                                const EdgeAggregate &agg) {
+  w.cell(t::formatTimestamp(t::fromEpochSeconds(agg.firstTs)))
+      .cell(t::formatTimestamp(t::fromEpochSeconds(agg.lastTs)));
+}
+
+inline void writeEdgeRow(::PhantomLedger::exporter::csv::Writer &w,
+                         const AccountItemKey &key, const EdgeAggregate &agg) {
+  writeKeyCells(w, key);
+  writeCountCell(w, agg);
+  writeTimeRangeCells(w, agg);
+  w.endRow();
+}
+
+inline void emitSortedRows(::PhantomLedger::exporter::csv::Writer &w,
+                           const EdgeMap &edges) {
+  for (const auto &[key, agg] : sortedEdges(edges)) {
+    writeEdgeRow(w, key, agg);
+  }
+}
+
+} // namespace detail
 
 inline void writeAccountDeviceRows(
     ::PhantomLedger::exporter::csv::Writer &w,
@@ -110,26 +139,22 @@ inline void writeAccountDeviceRows(
   detail::EdgeMap edges;
   edges.reserve(finalTxns.size() / 4 + 1);
 
-  // Phase 1 — txn aggregation.
   for (const auto &tx : finalTxns) {
-    const auto deviceStr =
-        ::PhantomLedger::exporter::standard::detail::renderDeviceId(
-            tx.session.deviceId);
-    if (deviceStr.empty()) {
+    const auto deviceBuf = detail::common::renderDeviceId(tx.session.deviceId);
+    if (deviceBuf.empty()) {
       continue;
     }
-    detail::AccountItemKey key{tx.source, deviceStr};
+    detail::AccountItemKey key{tx.source, std::string{deviceBuf.view()}};
     detail::touchEdge(edges[std::move(key)], tx.timestamp,
                       /*incrementCount=*/true);
   }
 
   for (const auto &usage : devices.usages) {
-    const auto deviceStr =
-        ::PhantomLedger::exporter::standard::detail::renderDeviceId(
-            usage.deviceId);
-    if (deviceStr.empty()) {
+    const auto deviceBuf = detail::common::renderDeviceId(usage.deviceId);
+    if (deviceBuf.empty()) {
       continue;
     }
+    const std::string deviceStr{deviceBuf.view()};
     const auto firstSeenEpoch =
         ::PhantomLedger::time::toEpochSeconds(usage.firstSeen);
     const auto lastSeenEpoch =
@@ -147,15 +172,7 @@ inline void writeAccountDeviceRows(
     }
   }
 
-  // Phase 3 — emit sorted rows.
-  for (const auto &[key, agg] : detail::sortedEdges(edges)) {
-    w.writeRow(::PhantomLedger::encoding::format(key.account), key.item,
-               agg.count,
-               ::PhantomLedger::time::formatTimestamp(
-                   ::PhantomLedger::time::fromEpochSeconds(agg.firstTs)),
-               ::PhantomLedger::time::formatTimestamp(
-                   ::PhantomLedger::time::fromEpochSeconds(agg.lastTs)));
-  }
+  detail::emitSortedRows(w, edges);
 }
 
 inline void writeAccountIpRows(
@@ -200,14 +217,7 @@ inline void writeAccountIpRows(
     }
   }
 
-  for (const auto &[key, agg] : detail::sortedEdges(edges)) {
-    w.writeRow(::PhantomLedger::encoding::format(key.account), key.item,
-               agg.count,
-               ::PhantomLedger::time::formatTimestamp(
-                   ::PhantomLedger::time::fromEpochSeconds(agg.firstTs)),
-               ::PhantomLedger::time::formatTimestamp(
-                   ::PhantomLedger::time::fromEpochSeconds(agg.lastTs)));
-  }
+  detail::emitSortedRows(w, edges);
 }
 
 } // namespace PhantomLedger::exporter::mule_ml

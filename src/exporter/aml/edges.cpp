@@ -4,10 +4,8 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
-#include "phantomledger/exporter/standard/internal/customer_id.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <cstdio>
 #include <map>
 #include <string>
@@ -26,11 +24,12 @@ namespace t_ns = ::PhantomLedger::time;
 namespace pl = ::PhantomLedger::pipeline;
 
 [[nodiscard]] std::string renderKey(const ent::Key &k) {
-  return ::PhantomLedger::encoding::format(k);
+  return std::string(::PhantomLedger::encoding::format(k).view());
 }
 
 [[nodiscard]] std::string customerIdFor(ent::PersonId p) {
-  return ::PhantomLedger::exporter::standard::detail::customerIdFor(p);
+  return std::string(
+      ::PhantomLedger::exporter::common::renderCustomerId(p).view());
 }
 
 template <class Fn>
@@ -240,9 +239,9 @@ void writeUsesDeviceRows(
   std::map<std::pair<ent::PersonId, std::string>, DeviceAgg> agg;
 
   for (const auto &usage : devices.usages) {
-    const auto idStr =
-        ::PhantomLedger::exporter::standard::detail::renderDeviceId(
-            usage.deviceId);
+    const std::string idStr{
+        ::PhantomLedger::exporter::common::renderDeviceId(usage.deviceId)
+            .view()};
     auto &slot = agg[{usage.personId, idStr}];
     touchDeviceAgg(slot, usage.firstSeen, usage.lastSeen);
   }
@@ -265,9 +264,9 @@ void writeLoggedFromRows(
   });
 
   for (const auto &usage : devices.usages) {
-    const auto idStr =
-        ::PhantomLedger::exporter::standard::detail::renderDeviceId(
-            usage.deviceId);
+    const std::string idStr{
+        ::PhantomLedger::exporter::common::renderDeviceId(usage.deviceId)
+            .view()};
     const auto it = accountsByPerson.find(usage.personId);
     if (it == accountsByPerson.end()) {
       continue;

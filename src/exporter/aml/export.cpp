@@ -4,9 +4,9 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/schema.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
+#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
-#include "phantomledger/exporter/standard/transfers.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -305,7 +305,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
-    ::PhantomLedger::exporter::standard::writeLedgerRows(w, postedTxns);
+    ::PhantomLedger::exporter::common::writeLedgerRows(w, postedTxns);
   }
 
   Summary summary;

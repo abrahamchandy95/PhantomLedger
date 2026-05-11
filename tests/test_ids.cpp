@@ -1,4 +1,3 @@
-#include "phantomledger/entities/encoding/device.hpp"
 #include "phantomledger/entities/encoding/external.hpp"
 #include "phantomledger/entities/encoding/landlord.hpp"
 #include "phantomledger/entities/encoding/named.hpp"
@@ -54,26 +53,6 @@ void testFactoryZeroThrows() {
   std::printf("  PASS: factory zero throws\n");
 }
 
-void testDeviceId() {
-  PL_CHECK_EQ(encoding::deviceId("C00000000123", 1),
-              std::string("D00000000123_1"));
-  PL_CHECK_EQ(encoding::deviceId("C00000000001", 3),
-              std::string("D00000000001_3"));
-
-  PL_CHECK_THROWS(encoding::deviceId("C00000000001", 0));
-  PL_CHECK_THROWS(encoding::deviceId("A0000000001", 1));
-  PL_CHECK_THROWS(encoding::deviceId("", 1));
-
-  std::printf("  PASS: deviceId\n");
-}
-
-void testFraudDeviceId() {
-  PL_CHECK_EQ(encoding::fraudDeviceId(0), std::string("FD0000"));
-  PL_CHECK_EQ(encoding::fraudDeviceId(1), std::string("FD0001"));
-  PL_CHECK_EQ(encoding::fraudDeviceId(9999), std::string("FD9999"));
-  std::printf("  PASS: fraudDeviceId\n");
-}
-
 void testRandomIp() {
   auto rng = random::Rng::fromSeed(42);
 
@@ -123,8 +102,6 @@ int main() {
   std::printf("=== ID Tests ===\n");
   testConvenienceFactories();
   testFactoryZeroThrows();
-  testDeviceId();
-  testFraudDeviceId();
   testRandomIp();
   testRandomIpDeterministic();
   testIsExternal();
