@@ -22,7 +22,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
-#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -51,18 +50,11 @@ struct Infra {
 
 /// Drop accounting emitted by the chronological replay pass.
 struct ReplayDrops {
-  using ChannelReasonKey = ::PhantomLedger::transfers::legit::ledger::
-      ReplayDropLedger::ChannelReasonKey;
-  using ChannelReasonHash = ::PhantomLedger::transfers::legit::ledger::
-      ReplayDropLedger::ChannelReasonHash;
-
-  std::unordered_map<std::string, std::uint32_t> byReason;
-  std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>
+  ::PhantomLedger::transfers::legit::ledger::ReplayDropLedger::Counts byReason;
+  ::PhantomLedger::transfers::legit::ledger::ReplayDropLedger::CountsByChannel
       byChannel;
 };
 
-/// Ledger state after legitimate and product transfers have been replayed,
-/// before fraud is injected.
 struct CandidateLedgerReplay {
   std::vector<transactions::Transaction> txns;
   ReplayDrops drops;

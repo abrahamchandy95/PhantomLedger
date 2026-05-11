@@ -17,7 +17,7 @@ namespace PhantomLedger::network {
 }
 
 [[nodiscard]] inline std::string randomIp(random::Rng &rng) {
-  return format(randomIpv4(rng));
+  return std::string{format(randomIpv4(rng)).view()};
 }
 
 } // namespace PhantomLedger::network

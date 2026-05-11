@@ -5,6 +5,7 @@
 #include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/taxonomies/locale/names.hpp"
 
 #include <cassert>
 #include <cstdio>
@@ -24,6 +25,9 @@ namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace pl = ::PhantomLedger::pipeline;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
+namespace loc = ::PhantomLedger::locale;
+
+inline constexpr auto kUsCountry = loc::code(loc::Country::us);
 
 // ──────────────────────────────────────────────────────────────────────
 // Small leaf-level helpers
@@ -39,10 +43,17 @@ customerIdFor(ent::PersonId p) noexcept {
   return ::PhantomLedger::exporter::common::renderCustomerId(p);
 }
 
+// transactionId is defined in shared.hpp — returns a TransactionId
+// stack buffer that flows through csv::Writer via implicit conversion,
+// or has .view() called explicitly at storage-into-std::string sites.
+
 [[nodiscard]] bool isExternalKey(const ent::Key &k) noexcept {
   return k.bank == ent::Bank::external;
 }
 
+/// Same accessor pattern as vertices.cpp: every content-using writer
+/// goes through this so a hand-built SharedContext with a null pool
+/// fails loudly in debug builds.
 [[nodiscard]] const pii_ns::LocalePool &
 poolFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.usPool != nullptr &&
@@ -77,6 +88,9 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
   }
 }
 
+/// Concatenate the four address fields into a single buffer used by
+/// the minhash address shingler. Reuses a thread-local buffer so per-
+/// row allocation cost is amortized to ~0.
 [[nodiscard]] std::string_view joinAddress(std::string &scratch,
                                            const identity::AddressRecord &a) {
   scratch.clear();
@@ -105,6 +119,10 @@ classifyTransactionEdges(const pl::Entities &entities,
   TransactionEdgeBundle out;
   const auto &usPool = poolFor(ctx);
 
+  // Memoize counterparty business names — the same external key shows
+  // up across many transactions, and `nameForCounterparty` does a hash
+  // + pool indirection we'd otherwise repeat per row. The cache key is
+  // the entity::Key itself (POD); we render once on insertion.
   std::unordered_map<ent::Key, std::string> cpNames;
 
   out.sendRows.reserve(finalTxns.size());
@@ -120,39 +138,35 @@ classifyTransactionEdges(const pl::Entities &entities,
     return it->second;
   };
 
+  // No per-row renderKey / transactionId calls. All storage is the
+  // raw entity::Key (POD) plus the 1-based transaction index. The
+  // edge writers below render each at write time.
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
-    const auto txnId = transactionId(idx);
-    ++idx;
-
     const bool srcExt = isExternalKey(tx.source);
     const bool dstExt = isExternalKey(tx.target);
 
-    // Stack-buffer renderings — zero allocation.
-    const auto srcRendered = renderKey(tx.source);
-    const auto dstRendered = renderKey(tx.target);
-
     if (srcExt) {
-      out.cpSendRows.emplace_back(srcRendered.view(), txnId,
-                                  cpNameFor(tx.source));
-      out.cpSenders.emplace(srcRendered.view());
+      out.cpSendRows.emplace_back(tx.source, idx, cpNameFor(tx.source));
+      out.cpSenders.insert(tx.source);
       if (!dstExt) {
-        out.receivedFromCpPairs.emplace(dstRendered.view(), srcRendered.view());
+        out.receivedFromCpPairs.emplace(tx.target, tx.source);
       }
     } else {
-      out.sendRows.emplace_back(srcRendered.view(), txnId);
+      out.sendRows.emplace_back(tx.source, idx);
       if (dstExt) {
-        out.sentToCpPairs.emplace(srcRendered.view(), dstRendered.view());
+        out.sentToCpPairs.emplace(tx.source, tx.target);
       }
     }
 
     if (dstExt) {
-      out.cpReceiveRows.emplace_back(dstRendered.view(), txnId,
-                                     cpNameFor(tx.target));
-      out.cpReceivers.emplace(dstRendered.view());
+      out.cpReceiveRows.emplace_back(tx.target, idx, cpNameFor(tx.target));
+      out.cpReceivers.insert(tx.target);
     } else {
-      out.receiveRows.emplace_back(dstRendered.view(), txnId);
+      out.receiveRows.emplace_back(tx.target, idx);
     }
+
+    ++idx;
   }
 
   (void)entities;
@@ -225,23 +239,25 @@ void writeAccountHasPrimaryCustomerRows(
 
 void writeAcctTxnRows(::PhantomLedger::exporter::csv::Writer &w,
                       std::span<const TransactionEdgeBundle::AcctTxnRow> rows) {
-  for (const auto &[acct, txn] : rows) {
-    w.writeRow(acct, txn);
+  // Rows store (entity::Key, txn-index). Render both at write time —
+  // each call is a stack-buffer fill, zero allocation.
+  for (const auto &[acct, idx] : rows) {
+    w.writeRow(renderKey(acct), transactionId(idx));
   }
 }
 
 void writeCpTxnRows(::PhantomLedger::exporter::csv::Writer &w,
                     std::span<const TransactionEdgeBundle::CpTxnRow> rows) {
-  for (const auto &row : rows) {
-    w.writeRow(std::get<0>(row), std::get<1>(row), std::get<2>(row));
+  // (entity::Key, txn-index, owned cp-business-name).
+  for (const auto &[cp, idx, name] : rows) {
+    w.writeRow(renderKey(cp), transactionId(idx), name);
   }
 }
 
-void writeAcctCpPairRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const std::set<std::pair<std::string, std::string>> &pairs) {
+void writeAcctCpPairRows(::PhantomLedger::exporter::csv::Writer &w,
+                         const std::set<std::pair<ent::Key, ent::Key>> &pairs) {
   for (const auto &[acct, cp] : pairs) {
-    w.writeRow(acct, cp);
+    w.writeRow(renderKey(acct), renderKey(cp));
   }
 }
 
@@ -355,7 +371,7 @@ void writeCustomerAssociatedWithCountryRows(
     t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    w.writeRow(customerIdFor(p), std::string_view{"US"}, ts);
+    w.writeRow(customerIdFor(p), kUsCountry, ts);
   }
 }
 
@@ -387,7 +403,7 @@ void writeAccountAssociatedWithCountryRows(
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
     }
-    w.writeRow(renderKey(rec.id), std::string_view{"US"}, ts);
+    w.writeRow(renderKey(rec.id), kUsCountry, ts);
   }
 }
 
@@ -405,7 +421,7 @@ void writeAddressInCountryRows(::PhantomLedger::exporter::csv::Writer &w,
 
   const auto emit = [&](identity::StackString<32> id) {
     if (emitted.emplace(id.view()).second) {
-      w.writeRow(id, std::string_view{"US"}, ts);
+      w.writeRow(id, kUsCountry, ts);
     }
   };
 
@@ -415,7 +431,7 @@ void writeAddressInCountryRows(::PhantomLedger::exporter::csv::Writer &w,
   for (const auto &cpId : ctx.counterpartyIds) {
     emit(identity::addressIdForCounterparty(cpId));
   }
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     emit(identity::addressIdForBank(bankId));
   }
 }
@@ -442,7 +458,7 @@ void writeCounterpartyAssociatedWithCountryRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const vertices::SharedContext &ctx) {
   for (const auto &cpId : ctx.counterpartyIds) {
-    w.writeRow(cpId, std::string_view{"US"});
+    w.writeRow(cpId, kUsCountry);
   }
 }
 
@@ -492,24 +508,27 @@ void writeSarCoversRows(
 }
 
 void writeBeneficiaryBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                              const std::set<std::string> &cpReceivers) {
-  for (const auto &cpId : cpReceivers) {
-    w.writeRow(counterpartyBankId(cpId), cpId);
+                              const std::set<ent::Key> &cpReceivers) {
+  // Render once per cp, reuse for both columns.
+  for (const auto &cpKey : cpReceivers) {
+    const auto rendered = renderKey(cpKey);
+    w.writeRow(counterpartyBankId(rendered), rendered);
   }
 }
 
 void writeOriginatorBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                             const std::set<std::string> &cpSenders) {
-  for (const auto &cpId : cpSenders) {
-    w.writeRow(counterpartyBankId(cpId), cpId);
+                             const std::set<ent::Key> &cpSenders) {
+  for (const auto &cpKey : cpSenders) {
+    const auto rendered = renderKey(cpKey);
+    w.writeRow(counterpartyBankId(rendered), rendered);
   }
 }
 
 void writeBankAssociatedWithCountryRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const vertices::SharedContext &ctx) {
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
-    w.writeRow(bankId, std::string_view{"US"});
+  for (const auto &bankId : ctx.bankIds) {
+    w.writeRow(bankId, kUsCountry);
   }
 }
 
@@ -517,7 +536,7 @@ void writeBankHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
                              const vertices::SharedContext &ctx,
                              t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     w.writeRow(bankId, identity::addressIdForBank(bankId), ts);
   }
 }
@@ -526,7 +545,7 @@ void writeBankHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
                           const vertices::SharedContext &ctx,
                           t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     w.writeRow(bankId, identity::nameIdForBank(bankId), ts);
   }
 }
@@ -615,7 +634,7 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
 
   // Precompute the minhash id list per person — many accounts share an
   // owner, so this avoids re-shingling for each one.
-  std::unordered_map<ent::PersonId, std::vector<std::string>> mhByPerson;
+  std::unordered_map<ent::PersonId, std::vector<minhash::BucketId>> mhByPerson;
   mhByPerson.reserve(entities.people.roster.count);
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto nm = identity::nameForPerson(p, pii, usPool);

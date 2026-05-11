@@ -5,6 +5,9 @@
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
+#include "phantomledger/taxonomies/channels/predicates.hpp"
+#include "phantomledger/taxonomies/locale/names.hpp"
+#include "phantomledger/taxonomies/lookup.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
@@ -24,6 +27,9 @@ namespace ent = ::PhantomLedger::entity;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
+namespace loc = ::PhantomLedger::locale;
+
+inline constexpr auto kUsCountry = loc::code(loc::Country::us);
 
 // ──────────────────────────────────────────────────────────────────────
 // Small leaf-level helpers
@@ -113,6 +119,10 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
     }
   }
 
+  // Bank id set: derive from counterpartyIds once, here, instead of
+  // rebuilding it per call inside each bank-edge writer.
+  ctx.bankIds = allBankIds(ctx.counterpartyIds);
+
   ctx.personaByPerson = entities.personas.assignment.byPerson;
 
   // Last-transaction-per-account index, used by writeAccountRows.
@@ -160,7 +170,7 @@ inline void writeRiskAndOriginCells(::PhantomLedger::exporter::csv::Writer &w,
                                     std::string_view riskRating,
                                     t_ns::TimePoint onboardingDate) {
   w.cell(riskRating)
-      .cell(std::string_view{"US"})
+      .cell(kUsCountry)
       .cell(t_ns::formatTimestamp(onboardingDate));
 }
 
@@ -261,7 +271,7 @@ void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto cpName = identity::nameForCounterparty(cpId, usPool);
     const auto bankName = identity::nameForBank(bankId);
     w.writeRow(cpId, cpName.firstName, identity::routingNumberForId(bankId),
-               bankName.firstName, std::string_view{"US"});
+               bankName.firstName, kUsCountry);
   }
 }
 
@@ -316,7 +326,7 @@ void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
   for (const auto &cpId : ctx.counterpartyIds) {
     emitName(identity::nameForCounterparty(cpId, usPool));
   }
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     emitName(identity::nameForBank(bankId));
   }
 }
@@ -341,7 +351,7 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
   for (const auto &cpId : ctx.counterpartyIds) {
     emitAddr(identity::addressForCounterparty(cpId, usPool));
   }
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     emitAddr(identity::addressForBank(bankId, usPool));
   }
 }
@@ -351,12 +361,12 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
 // ──────────────────────────────────────────────────────────────────────
 
 void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w) {
-  w.writeRow(std::string_view{"US"}, std::string_view{"United States"}, 0.1);
+  w.writeRow(kUsCountry, std::string_view{"United States"}, 0.1);
 }
 
 void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
                    const SharedContext &ctx) {
-  for (const auto &bankId : allBankIds(ctx.counterpartyIds)) {
+  for (const auto &bankId : ctx.bankIds) {
     w.writeRow(bankId);
   }
 }
@@ -387,12 +397,9 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-void writeMinhashIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                        const std::set<std::string> &minhashIds) {
-  for (const auto &id : minhashIds) {
-    w.writeRow(id);
-  }
-}
+// writeMinhashIdRows is defined inline as a template in vertices.hpp
+// so it can accept both set<string> (city/state) and set<BucketId>
+// (name/address/street).
 
 // ──────────────────────────────────────────────────────────────────────
 // Device rows
@@ -433,7 +440,10 @@ void recordOwnerIp(DeviceIpMap &out,
   if (personIt == ips.byPerson.end() || personIt->second.empty()) {
     return;
   }
-  out[dev] = ::PhantomLedger::network::format(personIt->second.front());
+  // `network::format` returns a stack buffer; materialize the owning
+  // std::string at the map-storage boundary.
+  const auto ipBuf = ::PhantomLedger::network::format(personIt->second.front());
+  out[dev] = std::string{ipBuf.view()};
 }
 
 [[nodiscard]] std::string_view osFor(std::string_view deviceTypeName) noexcept {
@@ -481,7 +491,7 @@ void writeDeviceRows(
     const auto window =
         (windowIt != seen.end()) ? windowIt->second : DeviceSeenWindow{};
 
-    w.writeRow(idBuf.view(), deviceTypeName, ipStr, std::string_view{"US"}, os,
+    w.writeRow(idBuf.view(), deviceTypeName, ipStr, kUsCountry, os,
                t_ns::formatTimestamp(window.firstSeen),
                t_ns::formatTimestamp(window.lastSeen),
                static_cast<std::uint8_t>(record.flagged));
@@ -494,97 +504,65 @@ void writeDeviceRows(
 
 namespace {
 
-[[nodiscard]] bool isCreditChannel(std::string_view name) noexcept {
-  static constexpr std::array<std::string_view, 13> kCredit{
-      "salary",
-      "gov_social_security",
-      "gov_pension",
-      "gov_disability",
-      "tax_refund",
-      "insurance_claim",
-      "client_ach_credit",
-      "card_settlement",
-      "platform_payout",
-      "owner_draw",
-      "investment_inflow",
-      "cc_refund",
-      "cc_chargeback",
-  };
-  for (const auto v : kCredit) {
-    if (name == v) {
-      return true;
-    }
-  }
-  return false;
+namespace ch = ::PhantomLedger::channels;
+
+[[nodiscard]] bool isCreditChannel(ch::Tag tag) noexcept {
+  return ch::isPaydayInbound(tag) || ch::is(tag, ch::Product::taxRefund) ||
+         ch::is(tag, ch::Insurance::claim) || ch::is(tag, ch::Credit::refund) ||
+         ch::is(tag, ch::Credit::chargeback);
 }
 
-[[nodiscard]] std::string_view
-channelPurpose(std::string_view channel) noexcept {
-  if (channel == "salary")
-    return "payroll";
-  if (channel == "rent" || channel == "rent_ach" || channel == "rent_portal" ||
-      channel == "rent_p2p" || channel == "rent_check") {
-    return "rent_payment";
-  }
-  if (channel == "p2p")
-    return "peer_transfer";
-  if (channel == "bill")
-    return "bill_payment";
-  if (channel == "merchant" || channel == "card_purchase")
-    return "purchase";
-  if (channel == "subscription")
-    return "subscription";
-  if (channel == "atm_withdrawal")
-    return "cash_withdrawal";
-  if (channel == "self_transfer")
-    return "internal_transfer";
-  if (channel == "external_unknown")
-    return "wire_transfer";
-  if (channel == "insurance_premium")
-    return "insurance";
-  if (channel == "insurance_claim")
-    return "insurance_claim";
-  if (channel == "mortgage_payment" || channel == "auto_loan_payment" ||
-      channel == "student_loan_payment") {
-    return "loan_payment";
-  }
-  if (channel == "tax_estimated_payment" || channel == "tax_balance_due") {
-    return "tax_payment";
-  }
-  if (channel == "tax_refund")
-    return "tax_refund";
-  if (channel == "gov_social_security" || channel == "gov_pension" ||
-      channel == "gov_disability") {
-    return "government_benefit";
-  }
-  if (channel == "cc_payment")
-    return "credit_card_payment";
-  if (channel == "cc_interest")
-    return "interest_charge";
-  if (channel == "cc_late_fee")
-    return "fee";
-  if (channel == "cc_refund")
-    return "refund";
-  if (channel == "cc_chargeback")
-    return "chargeback";
-  if (channel == "client_ach_credit" || channel == "card_settlement" ||
-      channel == "platform_payout") {
-    return "business_income";
-  }
-  if (channel == "owner_draw")
-    return "business_draw";
-  if (channel == "investment_inflow")
-    return "investment";
-  return "other";
+inline constexpr auto kPurposeEntries =
+    std::to_array<::PhantomLedger::lookup::Entry<ch::Tag>>({
+        {"payroll", ch::tag(ch::Legit::salary)},
+        {"purchase", ch::tag(ch::Legit::merchant)},
+        {"purchase", ch::tag(ch::Legit::cardPurchase)},
+        {"bill_payment", ch::tag(ch::Legit::bill)},
+        {"peer_transfer", ch::tag(ch::Legit::p2p)},
+        {"wire_transfer", ch::tag(ch::Legit::externalUnknown)},
+        {"cash_withdrawal", ch::tag(ch::Legit::atm)},
+        {"internal_transfer", ch::tag(ch::Legit::selfTransfer)},
+        {"subscription", ch::tag(ch::Legit::subscription)},
+        {"business_income", ch::tag(ch::Legit::clientAchCredit)},
+        {"business_income", ch::tag(ch::Legit::cardSettlement)},
+        {"business_income", ch::tag(ch::Legit::platformPayout)},
+        {"business_draw", ch::tag(ch::Legit::ownerDraw)},
+        {"investment", ch::tag(ch::Legit::investmentInflow)},
+        {"rent_payment", ch::tag(ch::Rent::generic)},
+        {"rent_payment", ch::tag(ch::Rent::ach)},
+        {"rent_payment", ch::tag(ch::Rent::portal)},
+        {"rent_payment", ch::tag(ch::Rent::p2p)},
+        {"rent_payment", ch::tag(ch::Rent::check)},
+        {"government_benefit", ch::tag(ch::Government::socialSecurity)},
+        {"government_benefit", ch::tag(ch::Government::pension)},
+        {"government_benefit", ch::tag(ch::Government::disability)},
+        {"insurance", ch::tag(ch::Insurance::premium)},
+        {"insurance_claim", ch::tag(ch::Insurance::claim)},
+        {"loan_payment", ch::tag(ch::Product::mortgage)},
+        {"loan_payment", ch::tag(ch::Product::autoLoan)},
+        {"loan_payment", ch::tag(ch::Product::studentLoan)},
+        {"tax_payment", ch::tag(ch::Product::taxEstimated)},
+        {"tax_payment", ch::tag(ch::Product::taxBalanceDue)},
+        {"tax_refund", ch::tag(ch::Product::taxRefund)},
+        {"credit_card_payment", ch::tag(ch::Credit::payment)},
+        {"interest_charge", ch::tag(ch::Credit::interest)},
+        {"fee", ch::tag(ch::Credit::lateFee)},
+        {"refund", ch::tag(ch::Credit::refund)},
+        {"chargeback", ch::tag(ch::Credit::chargeback)},
+    });
+
+inline constexpr auto kPurposeTable =
+    ::PhantomLedger::lookup::reverseTable<256>(
+        kPurposeEntries, [](ch::Tag t) { return t.value; });
+
+[[nodiscard]] std::string_view channelPurpose(ch::Tag tag) noexcept {
+  const auto p = kPurposeTable[tag.value];
+  return p.empty() ? std::string_view{"other"} : p;
 }
 
-[[nodiscard]] int riskScore(const tx_ns::Transaction &tx,
-                            std::string_view /*channelName*/) noexcept {
+[[nodiscard]] int riskScore(const tx_ns::Transaction &tx) noexcept {
   return (tx.fraud.flag != 0) ? 10 : 0;
 }
-
-// transactionId is defined in shared.hpp — returns a TransactionId
-// stack buffer that flows through csv::Writer via implicit conversion.
 
 } // namespace
 
@@ -592,16 +570,16 @@ void writeTransactionRows(::PhantomLedger::exporter::csv::Writer &w,
                           std::span<const tx_ns::Transaction> finalTxns) {
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
-    const auto channelName =
-        ::PhantomLedger::channels::name(tx.session.channel);
-    const auto purpose = channelPurpose(channelName);
-    const auto credDeb = isCreditChannel(channelName) ? "C" : "D";
+    const auto channelTag = tx.session.channel;
+    const auto channelName = ch::name(channelTag);
+    const auto purpose = channelPurpose(channelTag);
+    const auto credDeb = isCreditChannel(channelTag) ? "C" : "D";
     const double amount = round2(tx.amount);
 
     w.writeRow(transactionId(idx), std::string_view{credDeb},
                t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)),
-               channelName, purpose, riskScore(tx, channelName),
-               std::string_view{"USD"}, amount, 1.0, amount);
+               channelName, purpose, riskScore(tx), std::string_view{"USD"},
+               amount, 1.0, amount);
     ++idx;
   }
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
@@ -9,7 +10,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <string>
 #include <string_view>
 
 namespace PhantomLedger::exporter::aml::identity {
@@ -51,7 +51,6 @@ onboardingDate(::PhantomLedger::entity::PersonId personId,
                ::PhantomLedger::time::TimePoint simStart);
 
 struct NameRecord {
-  // "NM_C0000000001" / "NM_<counterparty-id>" / "NM_<bank-id>".
   StackString<24> id;
   std::string_view firstName;
   std::string_view middleName;
@@ -81,7 +80,10 @@ nameForPerson(::PhantomLedger::entity::PersonId personId,
 
 [[nodiscard]] NameRecord nameForBank(std::string_view bankId);
 
-[[nodiscard]] std::string routingNumberForId(std::string_view bankId);
+using RoutingNumber = ::PhantomLedger::encoding::RenderedId<16>;
+
+[[nodiscard]] RoutingNumber
+routingNumberForId(std::string_view bankId) noexcept;
 
 [[nodiscard]] AddressRecord addressForPerson(
     ::PhantomLedger::entity::PersonId personId,

@@ -51,10 +51,10 @@ buildChannelCdf(double merchantP, double billsP, double p2pP,
 }
 
 struct ChannelWeights {
-  double merchantP = 0.0;
-  double billsP = 0.0;
-  double p2pP = 0.0;
-  double externalUnknownP = 0.0;
+  double merchantP = 0.82;
+  double billsP = 0.10;
+  double p2pP = 0.08;
+  double externalUnknownP = 0.05;
   [[nodiscard]] constexpr ChannelCdf cdf() const noexcept {
     return buildChannelCdf(merchantP, billsP, p2pP, externalUnknownP);
   }
@@ -74,7 +74,7 @@ struct ChannelWeights {
 }
 
 struct PaymentRoutingRules {
-  double preferKnownBillersP = 0.85;
+  double preferKnownBillersP = 0.55;
   std::uint16_t merchantRetryLimit = 6;
 
   void validate(primitives::validate::Report &r) const {

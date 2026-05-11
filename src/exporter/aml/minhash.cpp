@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <charconv>
 #include <cstring>
 
 namespace PhantomLedger::exporter::aml::minhash {
@@ -144,20 +145,30 @@ std::array<std::uint32_t, kSignatureLen> signature(std::string_view text) {
   return out;
 }
 
-std::vector<std::string>
+std::vector<BucketId>
 bucketIds(std::string_view prefix,
           std::array<std::uint32_t, kSignatureLen> signature) {
-  std::vector<std::string> out;
+  std::vector<BucketId> out;
   out.reserve(kSignatureLen);
   for (std::size_t i = 0; i < kSignatureLen; ++i) {
-    std::string s;
-    s.reserve(prefix.size() + 16);
-    s.append(prefix);
-    s.push_back('_');
-    s.append(std::to_string(i));
-    s.push_back('_');
-    s.append(std::to_string(signature[i]));
-    out.push_back(std::move(s));
+    BucketId id;
+    char *cursor = id.bytes.data();
+    char *const end = id.bytes.data() + id.bytes.size();
+
+    std::memcpy(cursor, prefix.data(), prefix.size());
+    cursor += prefix.size();
+    *cursor++ = '_';
+    {
+      const auto r = std::to_chars(cursor, end, i);
+      cursor = r.ptr;
+    }
+    *cursor++ = '_';
+    {
+      const auto r = std::to_chars(cursor, end, signature[i]);
+      cursor = r.ptr;
+    }
+    id.length = static_cast<std::uint8_t>(cursor - id.bytes.data());
+    out.push_back(id);
   }
   return out;
 }
@@ -188,8 +199,8 @@ namespace {
 
 } // namespace
 
-std::vector<std::string> nameMinhashIds(std::string_view firstName,
-                                        std::string_view lastName) {
+std::vector<BucketId> nameMinhashIds(std::string_view firstName,
+                                     std::string_view lastName) {
   std::string combined;
   combined.reserve(firstName.size() + lastName.size() + 1);
   combined.append(firstName);
@@ -200,11 +211,11 @@ std::vector<std::string> nameMinhashIds(std::string_view firstName,
   return bucketIds("NMH", signature(normalize(combined)));
 }
 
-std::vector<std::string> addressMinhashIds(std::string_view fullAddress) {
+std::vector<BucketId> addressMinhashIds(std::string_view fullAddress) {
   return bucketIds("AMH", signature(normalize(fullAddress)));
 }
 
-std::vector<std::string> streetMinhashIds(std::string_view streetLine1) {
+std::vector<BucketId> streetMinhashIds(std::string_view streetLine1) {
   return bucketIds("SMH", signature(normalize(streetLine1)));
 }
 
