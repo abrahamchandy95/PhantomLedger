@@ -1,6 +1,7 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 
 #include "phantomledger/exporter/aml/shared.hpp"
+#include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/taxonomies/locale/us_banks.hpp"
 
 #include <array>
@@ -8,7 +9,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <string>
 #include <string_view>
 
 namespace PhantomLedger::exporter::aml::identity {
@@ -16,10 +16,6 @@ namespace PhantomLedger::exporter::aml::identity {
 namespace {
 
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
-
-// ────────────────────────────────────────────────────────────────────
-// Small helpers
-// ────────────────────────────────────────────────────────────────────
 
 template <std::size_t N>
 void appendBytes(StackString<N> &out, std::string_view bytes) noexcept {
@@ -47,9 +43,6 @@ void appendUnsignedZeroPadded(StackString<N> &out, unsigned value,
   appendBytes(out, std::string_view{tmp + pos, digits});
 }
 
-// Render "<prefix><customerId>" — used for the rendered id fields.
-// `customerId` already has its own prefix (e.g. "C0000000001"), so this
-// is a straight concatenation into a stack buffer with no heap traffic.
 template <std::size_t N>
 StackString<N> renderPersonId(std::string_view prefix,
                               ::PhantomLedger::entity::PersonId p) noexcept {
@@ -72,11 +65,8 @@ StackString<N> renderRawId(std::string_view prefix,
   return out;
 }
 
-// `stableU64` needs a string seed for the customer flavour of the
-// pool indexing (occupation, marital status, address sub-detail). The
-// rendered C-id is short and fits comfortably on the stack.
 struct PersonSeed {
-  std::array<char, 12> bytes{}; // 'C' + 10 digits + NUL room
+  std::array<char, 12> bytes{};
   std::uint8_t len = 0;
   [[nodiscard]] std::string_view view() const noexcept {
     return {bytes.data(), len};
@@ -107,13 +97,6 @@ pick(const std::array<std::string_view, N> &items,
      std::uint64_t seed) noexcept {
   return items[seed % N];
 }
-
-// ────────── Occupation / marital pools ──────────
-//
-// All entries are string literals → static storage duration. Views into
-// these arrays remain valid for the entire program lifetime, which is
-// what lets `occupation()` and `maritalStatus()` return `string_view`s
-// safely.
 
 inline constexpr std::array<std::string_view, 3> kOccStudent{
     "student",
@@ -168,14 +151,6 @@ marriedPctFor(::PhantomLedger::personas::Type p) noexcept {
   return 50;
 }
 
-// ────────── Pool-indexed lookups ──────────
-//
-// All three of these are guarded against an empty pool — if the
-// LocalePool was constructed with size 0, we fall back to a safe
-// empty view rather than indexing UB. In practice the pool is never
-// empty (assertions in `PoolSet::forCountry` enforce that), but the
-// guards keep these noexcept-correct.
-
 template <typename Vec>
 [[nodiscard]] std::string_view poolPick(const Vec &v,
                                         std::uint64_t seed) noexcept {
@@ -184,13 +159,6 @@ template <typename Vec>
   }
   return v[seed % v.size()];
 }
-
-// ────────── Address detail (per-record) ──────────
-//
-// `streetLine2` is the only synthesized address byte sequence — the
-// rest of the row is a direct lookup into the pool's `streets` and
-// `zipTable`. We synthesize "Apt N" into a stack buffer roughly 20% of
-// the time, preserving the previous code's behaviour.
 
 void fillStreetLine2(StackString<24> &out, std::uint64_t seedHash) noexcept {
   if ((seedHash % 5U) != 0U) {
@@ -204,12 +172,6 @@ void fillStreetLine2(StackString<24> &out, std::uint64_t seedHash) noexcept {
   appendBytes(out,
               std::string_view{tmp, static_cast<std::size_t>(r.ptr - tmp)});
 }
-
-// ────────── Address builder shared between counterparty & bank ──────────
-//
-// Persons take a different path because they already have indices on
-// their `pii::Record::address`. CP / bank addresses don't have a Record,
-// so we derive the indices from a stable hash of their id string.
 
 [[nodiscard]] AddressRecord
 buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
@@ -231,7 +193,8 @@ buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
     out.postalCode = zip.postalCode;
   }
 
-  out.country = "US";
+  out.country =
+      ::PhantomLedger::locale::code(::PhantomLedger::locale::Country::us);
   out.addressType = addressType;
   out.isHighRiskGeo = false;
   return out;
@@ -377,9 +340,6 @@ NameRecord nameForCounterparty(std::string_view counterpartyId,
 
   NameRecord out;
   out.id = renderRawId<24>(std::string_view{"NM_"}, counterpartyId);
-  // Business names land in the firstName slot to preserve the existing
-  // output schema (the AML "name" table writes `firstName,middleName,
-  // lastName`, and counterparty rows have always been one logical field).
   out.firstName = poolPick(usPool.businessNames, x);
   return out;
 }
@@ -389,16 +349,19 @@ NameRecord nameForBank(std::string_view bankId) {
 
   NameRecord out;
   out.id = renderRawId<24>(std::string_view{"NM_"}, bankId);
-  // Real US bank names, US-only by design (see us_banks.hpp).
   out.firstName = ::PhantomLedger::locale::us::bankNameBySeed(x);
   return out;
 }
 
-std::string routingNumberForId(std::string_view bankId) {
+RoutingNumber routingNumberForId(std::string_view bankId) noexcept {
   const auto x = stableU64({bankId, "routing"});
   // 9-digit ABA-style: in [100_000_000, 999_999_999].
   const auto routing = (x % 900'000'000ULL) + 100'000'000ULL;
-  return std::to_string(routing);
+  RoutingNumber out;
+  const auto r = std::to_chars(out.bytes.data(),
+                               out.bytes.data() + out.bytes.size(), routing);
+  out.length = static_cast<std::uint8_t>(r.ptr - out.bytes.data());
+  return out;
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -423,15 +386,12 @@ AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
     out.postalCode = zip.postalCode;
   }
 
-  // Apartment hint — deterministic, ~20% of rows, derived from the
-  // person id only (so the same person always gets the same Apt N if
-  // they get one at all). Independent from the pool indices because the
-  // pool already covers most of the address rendering.
   const auto seed = personSeed(personId);
   const auto hash = stableU64({seed.view(), "address_apt"});
   fillStreetLine2(out.streetLine2, hash);
 
-  out.country = "US";
+  out.country =
+      ::PhantomLedger::locale::code(::PhantomLedger::locale::Country::us);
   out.addressType = "residential";
   out.isHighRiskGeo = false;
   return out;
@@ -447,16 +407,6 @@ AddressRecord addressForBank(std::string_view bankId,
                              const pii_ns::LocalePool &usPool) {
   return buildAddressFromHash(bankId, "bank_address", "commercial", usPool);
 }
-
-// ────────────────────────────────────────────────────────────────────
-// Id-only helpers — pool-free
-//
-// Each thin wrapper delegates to the same `renderPersonId` /
-// `renderRawId` routine that the full producers use, so the output is
-// byte-identical to `nameForPerson(p).id`, `addressForBank(bid).id`,
-// etc. The full producer just throws away the pool work, gives you the
-// id-bearing StackString directly.
-// ────────────────────────────────────────────────────────────────────
 
 StackString<24>
 nameIdForPerson(::PhantomLedger::entity::PersonId personId) noexcept {

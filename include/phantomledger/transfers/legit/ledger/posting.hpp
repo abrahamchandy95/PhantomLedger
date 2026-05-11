@@ -68,15 +68,57 @@ struct ReplayFundingBehavior {
 
 class ReplayDropLedger {
 public:
-  using ChannelReasonKey = std::pair<std::string, std::string>;
+  struct ReasonHash {
+    using is_transparent = void;
+    std::size_t operator()(std::string_view s) const noexcept {
+      return std::hash<std::string_view>{}(s);
+    }
+  };
+  struct ReasonEq {
+    using is_transparent = void;
+    bool operator()(std::string_view a, std::string_view b) const noexcept {
+      return a == b;
+    }
+  };
+  using Counts =
+      std::unordered_map<std::string, std::uint32_t, ReasonHash, ReasonEq>;
+
+  using ChannelReasonKey = std::pair<std::string, channels::Tag>;
+  using ChannelReasonLookupKey = std::pair<std::string_view, channels::Tag>;
 
   struct ChannelReasonHash {
-    std::size_t operator()(const ChannelReasonKey &k) const noexcept;
-  };
+    using is_transparent = void;
+    std::size_t operator()(const ChannelReasonKey &k) const noexcept {
+      return mix(std::hash<std::string_view>{}(k.first), k.second.value);
+    }
+    std::size_t operator()(const ChannelReasonLookupKey &k) const noexcept {
+      return mix(std::hash<std::string_view>{}(k.first), k.second.value);
+    }
 
-  using Counts = std::unordered_map<std::string, std::uint32_t>;
+  private:
+    static std::size_t mix(std::size_t h1, std::uint8_t tag) noexcept {
+      return h1 ^ (static_cast<std::size_t>(tag) + 0x9e37'79b9ULL + (h1 << 6) +
+                   (h1 >> 2));
+    }
+  };
+  struct ChannelReasonEq {
+    using is_transparent = void;
+    bool operator()(const ChannelReasonKey &a,
+                    const ChannelReasonKey &b) const noexcept {
+      return a.second == b.second && a.first == b.first;
+    }
+    bool operator()(const ChannelReasonKey &a,
+                    const ChannelReasonLookupKey &b) const noexcept {
+      return a.second == b.second && a.first == b.first;
+    }
+    bool operator()(const ChannelReasonLookupKey &a,
+                    const ChannelReasonKey &b) const noexcept {
+      return a.second == b.second && a.first == b.first;
+    }
+  };
   using CountsByChannel =
-      std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash>;
+      std::unordered_map<ChannelReasonKey, std::uint32_t, ChannelReasonHash,
+                         ChannelReasonEq>;
 
   void record(std::string_view reason, channels::Tag channel);
 
@@ -117,13 +159,13 @@ public:
     return std::move(txns_);
   }
 
-  [[nodiscard]] const std::unordered_map<std::string, std::uint32_t> &
-  dropCounts() const noexcept {
+  [[nodiscard]] const ReplayDropLedger::Counts &dropCounts() const noexcept {
     return drops_.byReason();
   }
 
   using ChannelReasonKey = ReplayDropLedger::ChannelReasonKey;
   using ChannelReasonHash = ReplayDropLedger::ChannelReasonHash;
+  using ChannelReasonEq = ReplayDropLedger::ChannelReasonEq;
 
   [[nodiscard]] const ReplayDropLedger::CountsByChannel &
   dropCountsByChannel() const noexcept {

@@ -14,7 +14,9 @@ namespace PhantomLedger::spending::simulator {
 class RunPlanner {
 public:
   struct TransactionLoad {
-    double txnsPerMonth = 0.0;
+
+    double txnsPerMonth = 40.0;
+
     std::uint32_t personDailyLimit = 0;
   };
 

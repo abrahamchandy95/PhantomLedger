@@ -33,7 +33,6 @@ stableU64(std::initializer_list<std::string_view> parts) noexcept {
 
 [[nodiscard]] inline TransactionId transactionId(std::size_t idx1) noexcept {
   TransactionId out;
-
   const auto n =
       std::snprintf(out.bytes.data(), out.bytes.size(), "TXN_%012zu", idx1);
   out.length = static_cast<std::uint8_t>(n > 0 ? n : 0);
@@ -52,8 +51,25 @@ counterpartyBankId(std::string_view counterpartyId) noexcept {
 }
 
 // ────────────────────────────────────────────────────────────────────
-// FUTURE: cache the result on SharedContext so we build it once at
-// export start instead of rebuilding for every bank-edge writer.
+// allBankIds — set of every bank id referenced by any counterparty,
+// plus `kOurBankId` for the internal institution.
+//
+// Init-time helper: called exactly once per AML export run, inside
+// `buildSharedContext`, to populate `SharedContext::bankIds`. Edge
+// and vertex writers should NOT call this directly — they iterate
+// `ctx.bankIds` instead, which is built once and read many times.
+//
+// The std::set<std::string> return type matches `SharedContext::bankIds`
+// so the cache assignment is a single move.
+//
+// Per-call cost:
+//   • counterpartyBankId: 0 allocations (returns stack buffer)
+//   • set::emplace per element: 1 allocation (owned by the set)
+//
+// FUTURE: a follow-up round will switch counterpartyIds and bankIds
+// to set<RenderedKey>/set<BankId> respectively, eliminating even the
+// build-time allocations. This change is contained to type aliases
+// in render.hpp/shared.hpp once RenderedId<N> grows operator<=>.
 // ────────────────────────────────────────────────────────────────────
 
 [[nodiscard]] inline std::set<std::string>

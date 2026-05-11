@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/entities/encoding/render.hpp"
+
 #include <array>
 #include <cstdint>
 #include <span>
@@ -12,12 +14,10 @@ namespace PhantomLedger::exporter::aml::minhash {
 inline constexpr std::uint32_t kMh2M = 0x5BD1E995U;
 inline constexpr std::uint32_t kMh2R = 24U;
 
-// ────────── Universal-hash-family parameters ──────────
-
 inline constexpr std::uint64_t kUhP = 4'294'967'311ULL;
 
 inline constexpr std::size_t kShingleK = 3;
-inline constexpr std::size_t kBandB = 10; // 10 bands × r=1 → 10 sigs
+inline constexpr std::size_t kBandB = 10;
 inline constexpr std::size_t kBandR = 1;
 inline constexpr std::size_t kSignatureLen = kBandB * kBandR;
 
@@ -37,17 +37,19 @@ shingleHashes(std::span<const std::uint8_t> data, std::size_t k);
 [[nodiscard]] std::array<std::uint32_t, kSignatureLen>
 signature(std::string_view text);
 
-[[nodiscard]] std::vector<std::string>
+using BucketId = ::PhantomLedger::encoding::RenderedId<24>;
+
+[[nodiscard]] std::vector<BucketId>
 bucketIds(std::string_view prefix,
           std::array<std::uint32_t, kSignatureLen> signature);
 
-[[nodiscard]] std::vector<std::string>
-nameMinhashIds(std::string_view firstName, std::string_view lastName);
+[[nodiscard]] std::vector<BucketId> nameMinhashIds(std::string_view firstName,
+                                                   std::string_view lastName);
 
-[[nodiscard]] std::vector<std::string>
+[[nodiscard]] std::vector<BucketId>
 addressMinhashIds(std::string_view fullAddress);
 
-[[nodiscard]] std::vector<std::string>
+[[nodiscard]] std::vector<BucketId>
 streetMinhashIds(std::string_view streetLine1);
 
 [[nodiscard]] std::string cityMinhashId(std::string_view city);

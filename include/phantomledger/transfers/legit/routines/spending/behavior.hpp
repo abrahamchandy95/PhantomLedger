@@ -38,7 +38,9 @@ struct DayPattern {
 inline constexpr DayPattern kDefaultDayPattern{};
 
 struct EmissionProfile {
-  double baseExploreP = 0.0;
+
+  double baseExploreP = 0.02;
+
   ::PhantomLedger::spending::actors::ExploreModifiers exploration{};
   ::PhantomLedger::spending::liquidity::Throttle liquidity{};
 };

@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <cassert>
-#include <functional>
 #include <queue>
 #include <span>
 #include <string>
@@ -80,10 +79,6 @@ std::int32_t ReplayFundingBehavior::blindDelayHoursFor(
   return retryCount == 0 ? retry.firstBlindHours : retry.secondBlindHours;
 }
 
-// ---------------------------------------------------------------------------
-// System counterparty keys for liquidity-event Transactions
-// ---------------------------------------------------------------------------
-
 entity::Key bankFeeCollectionKey() noexcept {
   return entity::makeKey(entity::Role::business, entity::Bank::external,
                          /*number=*/0xFFFF'FF01ULL);
@@ -94,27 +89,19 @@ entity::Key bankOdLocKey() noexcept {
                          /*number=*/0xFFFF'FF02ULL);
 }
 
-// ---------------------------------------------------------------------------
-// ReplayDropLedger
-// ---------------------------------------------------------------------------
-
-std::size_t ReplayDropLedger::ChannelReasonHash::operator()(
-    const ChannelReasonKey &k) const noexcept {
-  const std::size_t h1 = std::hash<std::string>{}(k.first);
-  const std::size_t h2 = std::hash<std::string>{}(k.second);
-  return h1 ^ (h2 + 0x9e37'79b9ULL + (h1 << 6) + (h1 >> 2));
-}
-
 void ReplayDropLedger::record(std::string_view reason, channels::Tag channel) {
-  const std::string reasonStr(reason);
-  ++byReason_[reasonStr];
-
-  std::string channelName(channels::name(channel));
-  if (channelName.empty()) {
-    channelName = "none";
+  if (auto it = byReason_.find(reason); it != byReason_.end()) {
+    ++it->second;
+  } else {
+    byReason_.emplace(std::string(reason), 1U);
   }
 
-  ++byChannel_[ChannelReasonKey{std::move(channelName), reasonStr}];
+  const ChannelReasonLookupKey lookup{reason, channel};
+  if (auto it = byChannel_.find(lookup); it != byChannel_.end()) {
+    ++it->second;
+  } else {
+    byChannel_.emplace(ChannelReasonKey{std::string(reason), channel}, 1U);
+  }
 }
 
 // ---------------------------------------------------------------------------

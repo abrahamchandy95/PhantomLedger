@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/csv.hpp"
@@ -17,17 +18,22 @@
 namespace PhantomLedger::exporter::aml::edges {
 
 struct TransactionEdgeBundle {
-  using AcctTxnRow = std::pair<std::string, std::string>;
-  using CpTxnRow = std::tuple<std::string, std::string, std::string>;
+  using AcctTxnRow = std::pair<::PhantomLedger::entity::Key, std::size_t>;
+  using CpTxnRow =
+      std::tuple<::PhantomLedger::entity::Key, std::size_t, std::string>;
 
   std::vector<AcctTxnRow> sendRows;
   std::vector<AcctTxnRow> receiveRows;
   std::vector<CpTxnRow> cpSendRows;
   std::vector<CpTxnRow> cpReceiveRows;
-  std::set<std::pair<std::string, std::string>> sentToCpPairs;
-  std::set<std::pair<std::string, std::string>> receivedFromCpPairs;
-  std::set<std::string> cpSenders;
-  std::set<std::string> cpReceivers;
+  std::set<
+      std::pair<::PhantomLedger::entity::Key, ::PhantomLedger::entity::Key>>
+      sentToCpPairs;
+  std::set<
+      std::pair<::PhantomLedger::entity::Key, ::PhantomLedger::entity::Key>>
+      receivedFromCpPairs;
+  std::set<::PhantomLedger::entity::Key> cpSenders;
+  std::set<::PhantomLedger::entity::Key> cpReceivers;
 };
 
 [[nodiscard]] TransactionEdgeBundle classifyTransactionEdges(
@@ -36,9 +42,9 @@ struct TransactionEdgeBundle {
     const vertices::SharedContext &ctx);
 
 struct MinhashVertexSets {
-  std::set<std::string> name;
-  std::set<std::string> address;
-  std::set<std::string> street;
+  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> name;
+  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> address;
+  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> street;
   std::set<std::string> city;
   std::set<std::string> state;
 };
@@ -63,7 +69,8 @@ void writeCpTxnRows(::PhantomLedger::exporter::csv::Writer &w,
 
 void writeAcctCpPairRows(
     ::PhantomLedger::exporter::csv::Writer &w,
-    const std::set<std::pair<std::string, std::string>> &pairs);
+    const std::set<std::pair<::PhantomLedger::entity::Key,
+                             ::PhantomLedger::entity::Key>> &pairs);
 
 void writeUsesDeviceRows(
     ::PhantomLedger::exporter::csv::Writer &w,
@@ -136,11 +143,13 @@ void writeSarCoversRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
 
-void writeBeneficiaryBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                              const std::set<std::string> &cpReceivers);
+void writeBeneficiaryBankRows(
+    ::PhantomLedger::exporter::csv::Writer &w,
+    const std::set<::PhantomLedger::entity::Key> &cpReceivers);
 
-void writeOriginatorBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                             const std::set<std::string> &cpSenders);
+void writeOriginatorBankRows(
+    ::PhantomLedger::exporter::csv::Writer &w,
+    const std::set<::PhantomLedger::entity::Key> &cpSenders);
 
 void writeBankAssociatedWithCountryRows(
     ::PhantomLedger::exporter::csv::Writer &w,

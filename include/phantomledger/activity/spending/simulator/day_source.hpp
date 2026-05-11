@@ -12,7 +12,8 @@ namespace PhantomLedger::spending::simulator {
 class DaySource {
 public:
   struct Variation {
-    double shockShape = 1.0;
+
+    double shockShape = 1.3;
   };
 
   DaySource();

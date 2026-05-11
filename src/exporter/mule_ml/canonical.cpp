@@ -5,6 +5,7 @@
 #include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
+#include <cassert>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -18,32 +19,22 @@ namespace common = ::PhantomLedger::exporter::common;
 namespace enc = ::PhantomLedger::encoding;
 namespace net = ::PhantomLedger::network;
 namespace ent = ::PhantomLedger::entity;
-
-template <typename ValueT> struct ObservedCount {
-  ValueT value{};
-  std::uint32_t count = 0;
-};
+namespace dev_ns = ::PhantomLedger::devices;
 
 struct AccountHistograms {
-  std::unordered_map<std::string, std::uint32_t> deviceCounts;
-  std::unordered_map<std::string, std::uint32_t> ipCounts;
+  std::unordered_map<dev_ns::Identity, std::uint32_t> deviceCounts;
+  std::unordered_map<net::Ipv4, std::uint32_t> ipCounts;
 };
 
-[[nodiscard]] std::string
-pickMostFrequent(const std::unordered_map<std::string, std::uint32_t> &counts) {
-  if (counts.empty()) {
-    return {};
-  }
-
-  const std::string *best = nullptr;
+template <typename K, typename H>
+[[nodiscard]] K
+pickMostFrequent(const std::unordered_map<K, std::uint32_t, H> &counts) {
+  assert(!counts.empty());
+  const K *best = nullptr;
   std::uint32_t bestCount = 0;
   for (const auto &[key, count] : counts) {
-    if (best == nullptr) {
-      best = &key;
-      bestCount = count;
-      continue;
-    }
-    if (count > bestCount || (count == bestCount && key < *best)) {
+    if (best == nullptr || count > bestCount ||
+        (count == bestCount && key < *best)) {
       best = &key;
       bestCount = count;
     }
@@ -61,46 +52,30 @@ pickMostFrequent(const std::unordered_map<std::string, std::uint32_t> &counts) {
 [[nodiscard]] std::string fallbackIp(const ent::Key &accountKey) {
   constexpr std::uint64_t kSalt = 0x49500A6E1B0CDEFEULL;
   const auto x = stableU64ForKey(accountKey, kSalt);
-  const auto o1 = 11U + static_cast<std::uint32_t>(x % 212U);
-  const auto o2 = static_cast<std::uint32_t>((x >> 8U) % 256U);
-  const auto o3 = static_cast<std::uint32_t>((x >> 16U) % 256U);
-  const auto o4 = 1U + static_cast<std::uint32_t>((x >> 24U) % 254U);
-  return std::to_string(o1) + "." + std::to_string(o2) + "." +
-         std::to_string(o3) + "." + std::to_string(o4);
+  const auto ip =
+      net::Ipv4::pack(static_cast<std::uint8_t>(11U + (x % 212U)),
+                      static_cast<std::uint8_t>((x >> 8U) % 256U),
+                      static_cast<std::uint8_t>((x >> 16U) % 256U),
+                      static_cast<std::uint8_t>(1U + ((x >> 24U) % 254U)));
+  return std::string{net::format(ip).view()};
 }
 
 [[nodiscard]] std::string fallbackDevice(const ent::Key &accountKey) {
-  // "DEV_" + rendered account key. encoding::format returns a stack buffer;
-  // we materialize it explicitly because we want an owned std::string for
-  // the concatenation.
-  return "DEV_" + std::string(enc::format(accountKey).view());
+  const auto rendered = enc::format(accountKey);
+  std::string out = "DEV_";
+  out.append(rendered.view());
+  return out;
 }
 
-// ---------------------------------------------------------------------------
-// Per-account histogram accumulators — one concern each.
-// ---------------------------------------------------------------------------
-
-inline void recordDevice(AccountHistograms &hist,
-                         const ::PhantomLedger::devices::Identity &id) {
-  const auto buf = common::renderDeviceId(id);
-  if (!buf.empty()) {
-    // Map key needs to own the string; explicit allocation at the storage
-    // boundary, not at every render.
-    ++hist.deviceCounts[std::string{buf.view()}];
+inline void recordDevice(AccountHistograms &hist, const dev_ns::Identity &id) {
+  if (id.assigned()) {
+    ++hist.deviceCounts[id];
   }
 }
 
-inline void recordIp(AccountHistograms &hist,
-                     const ::PhantomLedger::network::Ipv4 &ip) {
-  const auto ipStr = net::format(ip);
-  if (!ipStr.empty()) {
-    ++hist.ipCounts[ipStr];
-  }
+inline void recordIp(AccountHistograms &hist, const net::Ipv4 &ip) {
+  ++hist.ipCounts[ip];
 }
-
-// ---------------------------------------------------------------------------
-// Fallback resolution — one concern each.
-// ---------------------------------------------------------------------------
 
 [[nodiscard]] inline std::string
 resolveDeviceFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
@@ -123,12 +98,12 @@ resolveIpFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
   if (ipIt == inputs.ipsByPerson->end() || ipIt->second.empty()) {
     return {};
   }
-  return net::format(ipIt->second.front());
+  return std::string{net::format(ipIt->second.front()).view()};
 }
 
 inline void fillFromPerson(CanonicalPair &pair, const CanonicalInputs &inputs,
                            const ent::Key &accountKey) {
-  if (pair.deviceId.size() > 0 && pair.ipAddress.size() > 0) {
+  if (!pair.deviceId.empty() && !pair.ipAddress.empty()) {
     return;
   }
   if (inputs.accountToOwner == nullptr) {
@@ -157,17 +132,19 @@ inline void fillFallbacks(CanonicalPair &pair, const ent::Key &accountKey) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Per-account assembly.
-// ---------------------------------------------------------------------------
-
 [[nodiscard]] inline CanonicalPair
 resolveCanonicalPair(const ent::Key &accountKey, const AccountHistograms *hist,
                      const CanonicalInputs &inputs) {
   CanonicalPair pair{};
   if (hist != nullptr) {
-    pair.deviceId = pickMostFrequent(hist->deviceCounts);
-    pair.ipAddress = pickMostFrequent(hist->ipCounts);
+    if (!hist->deviceCounts.empty()) {
+      const auto devKey = pickMostFrequent(hist->deviceCounts);
+      pair.deviceId = std::string{common::renderDeviceId(devKey).view()};
+    }
+    if (!hist->ipCounts.empty()) {
+      const auto ipKey = pickMostFrequent(hist->ipCounts);
+      pair.ipAddress = std::string{net::format(ipKey).view()};
+    }
   }
   fillFromPerson(pair, inputs, accountKey);
   fillFallbacks(pair, accountKey);
@@ -185,14 +162,12 @@ buildCanonicalMaps(std::span<const ::PhantomLedger::entity::Key> partyIds,
   std::unordered_map<ent::Key, AccountHistograms> perAccount;
   perAccount.reserve(partyIds.size());
 
-  // Phase 1 — observe per-account device/IP usage from the transaction log.
   for (const auto &tx : inputs.finalTxns) {
     auto &hist = perAccount[tx.source];
     recordDevice(hist, tx.session.deviceId);
     recordIp(hist, tx.session.ipAddress);
   }
 
-  // Phase 2 — pick canonical values per account, with fallbacks.
   for (const auto &accountKey : partyIds) {
     const AccountHistograms *hist = nullptr;
     if (const auto it = perAccount.find(accountKey); it != perAccount.end()) {

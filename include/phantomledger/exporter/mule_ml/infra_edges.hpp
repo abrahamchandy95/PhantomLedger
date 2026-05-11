@@ -186,18 +186,21 @@ inline void writeAccountIpRows(
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    const auto ipStr = ::PhantomLedger::network::format(tx.session.ipAddress);
-    if (ipStr.empty()) {
+    // `network::format` is allocation-free; we materialize the owning
+    // std::string for AccountItemKey::item exactly once per loop, at
+    // the storage boundary.
+    const auto ipBuf = ::PhantomLedger::network::format(tx.session.ipAddress);
+    if (ipBuf.empty()) {
       continue;
     }
-    detail::AccountItemKey key{tx.source, ipStr};
+    detail::AccountItemKey key{tx.source, std::string{ipBuf.view()}};
     detail::touchEdge(edges[std::move(key)], tx.timestamp,
                       /*incrementCount=*/true);
   }
 
   for (const auto &usage : ips.usages) {
-    const auto ipStr = ::PhantomLedger::network::format(usage.ipAddress);
-    if (ipStr.empty()) {
+    const auto ipBuf = ::PhantomLedger::network::format(usage.ipAddress);
+    if (ipBuf.empty()) {
       continue;
     }
     const auto firstSeenEpoch =
@@ -209,6 +212,10 @@ inline void writeAccountIpRows(
     if (it == accountsByPerson.end()) {
       continue;
     }
+    // Materialize once per usage and share across all accounts of this
+    // person — the inner loop copies the std::string into each
+    // AccountItemKey, which is unavoidable storage.
+    const auto ipStr = std::string{ipBuf.view()};
     for (const auto &accountKey : it->second) {
       detail::AccountItemKey key{accountKey, ipStr};
       auto &agg = edges[key];

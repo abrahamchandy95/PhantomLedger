@@ -20,6 +20,9 @@ namespace PhantomLedger::exporter::aml::vertices {
 
 struct SharedContext {
   std::set<std::string> counterpartyIds;
+
+  std::set<std::string> bankIds;
+
   std::vector<::PhantomLedger::personas::Type> personaByPerson;
   std::unordered_map<::PhantomLedger::entity::Key, std::int64_t>
       lastTransactionByAccount;
@@ -78,7 +81,12 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
                         const ::PhantomLedger::pipeline::Entities &entities,
                         ::PhantomLedger::time::TimePoint simStart);
 
+template <typename Set>
 void writeMinhashIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                        const std::set<std::string> &minhashIds);
+                        const Set &minhashIds) {
+  for (const auto &id : minhashIds) {
+    w.writeRow(id);
+  }
+}
 
 } // namespace PhantomLedger::exporter::aml::vertices

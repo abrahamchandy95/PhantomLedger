@@ -65,26 +65,6 @@ inline std::size_t write(char *out, const entity::Key &id) {
   return write(out, spec, id.number);
 }
 
-// ────────────────────────────────────────────────────────────────────
-// RenderedId<N> — fixed-capacity inline string buffer.
-//
-// Returned by `format(Key)` and the various encoders in
-// entities/encoding/*.hpp. Callers can:
-//   • pass it directly to csv::Writer / any string_view consumer (the
-//     implicit conversion below makes it act like a string_view in
-//     argument position),
-//   • call .view() to get a string_view explicitly,
-//   • copy its bytes into a std::string via `std::string{rk.view()}`
-//     at the boundary where ownership is required.
-//
-// LIFETIME: the implicit string_view conversion is non-owning. It
-// borrows from the RenderedId's `bytes` array. Same rule as taking
-// a string_view of any local std::string — don't outlive the source.
-// In practice every call site uses the temporary inside a single
-// statement (writeRow, comparison, copy into a container), where the
-// temporary's lifetime extends to the end of the full expression.
-// ────────────────────────────────────────────────────────────────────
-
 template <std::size_t N> struct RenderedId {
   std::array<char, N> bytes{};
   std::uint8_t length = 0;
@@ -95,14 +75,20 @@ template <std::size_t N> struct RenderedId {
 
   [[nodiscard]] constexpr bool empty() const noexcept { return length == 0; }
 
-  // Implicit conversion: lets `RenderedId` be passed wherever a
-  // `string_view` is expected (csv::Writer::cell, writeRow, ...).
-  // Zero-cost — just exposes the underlying buffer.
   constexpr operator std::string_view() const noexcept { return view(); }
 
   [[nodiscard]] friend constexpr bool
   operator==(const RenderedId &lhs, std::string_view rhs) noexcept {
     return lhs.view() == rhs;
+  }
+
+  [[nodiscard]] friend constexpr bool
+  operator==(const RenderedId &lhs, const RenderedId &rhs) noexcept {
+    return lhs.view() == rhs.view();
+  }
+  [[nodiscard]] friend constexpr auto
+  operator<=>(const RenderedId &lhs, const RenderedId &rhs) noexcept {
+    return lhs.view() <=> rhs.view();
   }
 };
 
