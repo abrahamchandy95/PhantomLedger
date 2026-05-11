@@ -27,6 +27,7 @@ namespace merch = ::PhantomLedger::entity::merchant;
 namespace ll = ::PhantomLedger::entity::landlord;
 namespace ids = ::PhantomLedger::identifiers;
 namespace land = ::PhantomLedger::landlords;
+namespace enc = ::PhantomLedger::encoding;
 
 struct RowLabel {
   std::string_view kind;
@@ -89,7 +90,7 @@ inline constexpr auto kRoleLabels = roleLabels();
 }
 
 inline void writeLandlordRow(::PhantomLedger::exporter::csv::Writer &w,
-                             const std::string &rendered, ll::Type type) {
+                             std::string_view rendered, ll::Type type) {
   const auto category = landlordCategory(type);
   const auto kind = landlordKind(category);
 
@@ -97,7 +98,7 @@ inline void writeLandlordRow(::PhantomLedger::exporter::csv::Writer &w,
 }
 
 inline void writeFallbackLandlordRow(::PhantomLedger::exporter::csv::Writer &w,
-                                     const std::string &rendered) {
+                                     std::string_view rendered) {
   w.writeRow(rendered, kLandlord.kind, kLandlord.category);
 }
 
@@ -154,14 +155,15 @@ inline void writeExternalAccountRows(
     }
 
     const auto &id = record.id;
-    const auto rendered = ::PhantomLedger::encoding::format(id);
+    const auto rendered = detail::enc::format(id);
+    const auto view = rendered.view();
 
     if (id.role == Role::merchant) {
       const auto it = merchantsById.find(id);
 
       if (it != merchantsById.end()) {
         const auto category = ::PhantomLedger::merchants::name(it->second);
-        w.writeRow(rendered, std::string_view{"merchant_external"}, category);
+        w.writeRow(view, std::string_view{"merchant_external"}, category);
         continue;
       }
     }
@@ -170,16 +172,16 @@ inline void writeExternalAccountRows(
       const auto it = landlordsById.find(id);
 
       if (it != landlordsById.end()) {
-        detail::writeLandlordRow(w, rendered, it->second);
+        detail::writeLandlordRow(w, view, it->second);
         continue;
       }
 
-      detail::writeFallbackLandlordRow(w, rendered);
+      detail::writeFallbackLandlordRow(w, view);
       continue;
     }
 
     const auto label = detail::labelFor(id.role, id.bank);
-    w.writeRow(rendered, label.kind, label.category);
+    w.writeRow(view, label.kind, label.category);
   }
 }
 

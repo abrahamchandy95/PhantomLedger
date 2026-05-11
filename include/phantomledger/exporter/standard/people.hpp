@@ -11,15 +11,16 @@ inline void
 writePersonRows(::PhantomLedger::exporter::csv::Writer &w,
                 const ::PhantomLedger::entity::person::Roster &roster) {
   using ::PhantomLedger::entity::person::Flag;
+  namespace enc = ::PhantomLedger::encoding;
+  namespace ent = ::PhantomLedger::entity;
 
-  for (::PhantomLedger::entity::PersonId p = 1; p <= roster.count; ++p) {
-    const auto customerKey = ::PhantomLedger::entity::makeKey(
-        ::PhantomLedger::entity::Role::customer,
-        ::PhantomLedger::entity::Bank::internal, p);
+  for (ent::PersonId p = 1; p <= roster.count; ++p) {
+    const auto customerKey =
+        ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
 
-    w.writeRow(::PhantomLedger::encoding::format(customerKey),
-               roster.has(p, Flag::mule), roster.has(p, Flag::fraud),
-               roster.has(p, Flag::victim), roster.has(p, Flag::soloFraud));
+    w.writeRow(enc::format(customerKey).view(), roster.has(p, Flag::mule),
+               roster.has(p, Flag::fraud), roster.has(p, Flag::victim),
+               roster.has(p, Flag::soloFraud));
   }
 }
 

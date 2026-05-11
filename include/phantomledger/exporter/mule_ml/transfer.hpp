@@ -31,13 +31,14 @@ namespace detail {
 inline void writeTransferRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns) {
+  namespace enc = ::PhantomLedger::encoding;
+  namespace t = ::PhantomLedger::time;
+
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
-    w.writeRow(
-        detail::transferId(idx), ::PhantomLedger::encoding::format(tx.source),
-        ::PhantomLedger::encoding::format(tx.target), detail::round2(tx.amount),
-        ::PhantomLedger::time::formatTimestamp(
-            ::PhantomLedger::time::fromEpochSeconds(tx.timestamp)));
+    w.writeRow(detail::transferId(idx), enc::format(tx.source).view(),
+               enc::format(tx.target).view(), detail::round2(tx.amount),
+               t::formatTimestamp(t::fromEpochSeconds(tx.timestamp)));
     ++idx;
   }
 }

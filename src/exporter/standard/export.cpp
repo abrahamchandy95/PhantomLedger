@@ -1,5 +1,6 @@
 #include "phantomledger/exporter/standard/export.hpp"
 
+#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/accounts.hpp"
@@ -40,68 +41,55 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(outDir, schema::kPerson);
     writePersonRows(w, entities.people.roster);
   }
-
   {
     auto w = openTable(outDir, schema::kAccountNumber);
     writeAccountNumberRows(w, entities.accounts.registry);
   }
-
   {
     auto w = openTable(outDir, schema::kPhone);
     writePhoneRows(w, entities.pii);
   }
-
   {
     auto w = openTable(outDir, schema::kEmail);
     writeEmailRows(w, entities.pii);
   }
-
   {
     auto w = openTable(outDir, schema::kDevice);
     writeDeviceRows(w, infra.devices);
   }
-
   {
     auto w = openTable(outDir, schema::kIpAddress);
     writeIpAddressRows(w, infra.ips);
   }
-
   {
     auto w = openTable(outDir, schema::kMerchant);
     writeMerchantRows(w, entities.merchants);
   }
-
   {
     auto w = openTable(outDir, schema::kExternalAccount);
     writeExternalAccountRows(w, entities.accounts.registry, entities.merchants,
                              entities.landlords.roster);
   }
-
   {
     auto w = openTable(outDir, schema::kHasAccount);
     writeHasAccountRows(w, entities.accounts.registry);
   }
-
   {
     auto w = openTable(outDir, schema::kHasPhone);
     writeHasPhoneRows(w, entities.pii);
   }
-
   {
     auto w = openTable(outDir, schema::kHasEmail);
     writeHasEmailRows(w, entities.pii);
   }
-
   {
     auto w = openTable(outDir, schema::kHasUsed);
     writeHasUsedRows(w, infra.devices);
   }
-
   {
     auto w = openTable(outDir, schema::kHasIp);
     writeHasIpRows(w, infra.ips);
   }
-
   {
     auto w = openTable(outDir, schema::kHasPaid);
     writeHasPaidRows(w, postedTxns);
@@ -109,7 +97,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
-    writeLedgerRows(w, postedTxns);
+    common::writeLedgerRows(w, postedTxns);
   }
 }
 

@@ -45,7 +45,8 @@ formatMissing(const std::unordered_map<entity::Key, std::uint32_t> &missing) {
     if (i != 0) {
       out.append(", ");
     }
-    out.append(encoding::format(items[i].first));
+    // encoding::format returns a RenderedKey buffer; append the view.
+    out.append(encoding::format(items[i].first).view());
     out.push_back(' ');
     out.push_back('(');
     out.append(std::to_string(items[i].second));
@@ -93,7 +94,7 @@ validateTransactionAccounts(const entity::account::Lookup &lookup,
     message.append(detail::formatMissing(missingTargets));
   }
 
-  throw std::runtime_error(std::move(message));
+  throw std::runtime_error(message);
 }
 
 } // namespace PhantomLedger::pipeline

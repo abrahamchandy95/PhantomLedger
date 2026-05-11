@@ -3,7 +3,7 @@
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
-#include "phantomledger/exporter/standard/internal/customer_id.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
@@ -29,7 +29,7 @@ namespace t_ns = ::PhantomLedger::time;
 }
 
 [[nodiscard]] std::string renderKey(const ent::Key &k) {
-  return ::PhantomLedger::encoding::format(k);
+  return std::string(::PhantomLedger::encoding::format(k).view());
 }
 
 [[nodiscard]] std::string_view accountTypeFor(const ent::Key &id,
@@ -97,6 +97,37 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
   return ctx;
 }
 
+namespace {
+
+// Cell-group helpers for the 10-column customer row. Each ≤3 params,
+// one logical concern, composed by writeCustomerRows below.
+inline void writeCustomerIdCells(::PhantomLedger::exporter::csv::Writer &w,
+                                 const ent::Key &customerKey,
+                                 ::PhantomLedger::personas::Type persona) {
+  w.cell(::PhantomLedger::encoding::format(customerKey).view())
+      .cell(identity::customerType(persona))
+      .cell(std::string_view{"active"});
+}
+
+inline void writeDemographicCells(::PhantomLedger::exporter::csv::Writer &w,
+                                  ent::PersonId p,
+                                  ::PhantomLedger::personas::Type persona) {
+  w.cell(identity::maritalStatus(p, persona))
+      .cell(identity::networthCode(persona))
+      .cell(identity::incomeCode(persona))
+      .cell(identity::occupation(p, persona));
+}
+
+inline void writeRiskAndOriginCells(::PhantomLedger::exporter::csv::Writer &w,
+                                    std::string_view riskRating,
+                                    t_ns::TimePoint onboardingDate) {
+  w.cell(riskRating)
+      .cell(std::string_view{"US"})
+      .cell(t_ns::formatTimestamp(onboardingDate));
+}
+
+} // namespace
+
 void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
                        const ::PhantomLedger::pipeline::Entities &entities,
                        const SharedContext &ctx, t_ns::TimePoint simStart) {
@@ -109,13 +140,12 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
 
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
-    w.writeRow(
-        ::PhantomLedger::encoding::format(customerKey),
-        identity::customerType(persona), std::string_view{"active"},
-        identity::maritalStatus(p, persona), identity::networthCode(persona),
-        identity::incomeCode(persona), identity::occupation(p, persona),
-        identity::riskRating(isFraud, isMule, isVictim), std::string_view{"US"},
-        t_ns::formatTimestamp(identity::onboardingDate(p, simStart)));
+
+    writeCustomerIdCells(w, customerKey, persona);
+    writeDemographicCells(w, p, persona);
+    writeRiskAndOriginCells(w, identity::riskRating(isFraud, isMule, isVictim),
+                            identity::onboardingDate(p, simStart));
+    w.endRow();
   }
 }
 
@@ -267,9 +297,8 @@ void writeDeviceRows(
   }
 
   for (const auto &record : devices.records) {
-    const auto idStr =
-        ::PhantomLedger::exporter::standard::detail::renderDeviceId(
-            record.identity);
+    const auto idBuf =
+        ::PhantomLedger::exporter::common::renderDeviceId(record.identity);
     const auto deviceTypeName =
         ::PhantomLedger::infra::synth::name(record.kind);
 
@@ -295,7 +324,7 @@ void writeDeviceRows(
     const t_ns::TimePoint lsTp =
         (lsIt != lastSeen.end()) ? lsIt->second : t_ns::TimePoint{};
 
-    w.writeRow(idStr, deviceTypeName, ipStr, std::string_view{"US"}, os,
+    w.writeRow(idBuf.view(), deviceTypeName, ipStr, std::string_view{"US"}, os,
                t_ns::formatTimestamp(fsTp), t_ns::formatTimestamp(lsTp),
                static_cast<std::uint8_t>(record.flagged));
   }
@@ -452,8 +481,9 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
     }
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
-    const auto cidStr = ::PhantomLedger::encoding::format(customerKey);
-    w.writeRow("WL_" + cidStr, std::string_view{"internal_fraud_list"},
+    const auto cidBuf = ::PhantomLedger::encoding::format(customerKey);
+    w.writeRow("WL_" + std::string{cidBuf.view()},
+               std::string_view{"internal_fraud_list"},
                std::string_view{"fraud_suspect"}, entryDate);
   }
 }

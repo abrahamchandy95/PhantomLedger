@@ -24,6 +24,7 @@ inline void
 writeMerchantRows(::PhantomLedger::exporter::csv::Writer &w,
                   const ::PhantomLedger::entity::merchant::Catalog &catalog) {
   using ::PhantomLedger::entity::Bank;
+  namespace enc = ::PhantomLedger::encoding;
 
   for (const auto &rec : catalog.records) {
 
@@ -33,8 +34,8 @@ writeMerchantRows(::PhantomLedger::exporter::csv::Writer &w,
 
     const bool inBank = (rec.counterpartyId.bank == Bank::internal);
 
-    w.writeRow(::PhantomLedger::encoding::format(merchantKey),
-               ::PhantomLedger::encoding::format(rec.counterpartyId),
+    w.writeRow(enc::format(merchantKey).view(),
+               enc::format(rec.counterpartyId).view(),
                ::PhantomLedger::merchants::name(rec.category),
                detail::round10(rec.weight), inBank);
   }
