@@ -1,6 +1,7 @@
 #include "phantomledger/activity/spending/simulator/driver.hpp"
 
 #include "phantomledger/activity/spending/simulator/state.hpp"
+#include "phantomledger/activity/spending/simulator/warm_start.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -73,6 +74,8 @@ std::vector<transactions::Transaction> Simulator::run() {
 
   RunState state(market_.population().count(), reserveCapacity,
                  run.budget().totalPersonDays, run.budget().targetTotalTxns);
+
+  applyWarmStartDaysSincePayday(state, run.population().spenders);
 
   for (std::uint32_t dayIndex = 0; dayIndex < market_.bounds().days;
        ++dayIndex) {

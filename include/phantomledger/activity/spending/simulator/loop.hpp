@@ -9,6 +9,7 @@
 #include "phantomledger/activity/spending/routing/emission_result.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
+#include "phantomledger/math/counts.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -27,6 +28,7 @@ public:
     double baseExploreP = 0.0;
     const actors::ExploreModifiers &exploration;
     const liquidity::Throttle &liquidity;
+    const math::counts::Rates &rates;
   };
 
   class RateSampler {
@@ -65,7 +67,7 @@ public:
 
   private:
     [[nodiscard]] double
-    availableCashFor(const spenders::PreparedSpender &prepared);
+    availableToSpendFor(const spenders::PreparedSpender &prepared);
 
     const PreparedRun::Budget &budget_;
     RunState &state_;

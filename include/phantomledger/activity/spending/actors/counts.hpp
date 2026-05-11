@@ -2,8 +2,8 @@
 
 #include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/activity/spending/liquidity/factor.hpp"
+#include "phantomledger/math/counts.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -25,18 +25,18 @@ struct RatePieces {
   }
 };
 
-[[nodiscard]] inline std::uint32_t
-sampleTransactionCount(random::Rng &rng, const Spender &spender,
-                       const RatePieces &ratePieces,
-                       std::optional<std::uint32_t> personLimit) noexcept {
+[[nodiscard]] inline std::uint32_t sampleTransactionCount(
+    random::Rng &rng, const Spender &spender, const RatePieces &ratePieces,
+    std::optional<std::uint32_t> personLimit,
+    const math::counts::Rates &rates = math::counts::kDefaultRates) noexcept {
   const double rate = ratePieces.baseRate * ratePieces.suppression(spender);
 
   if (rate <= 0.0) {
     return 0;
   }
 
-  std::uint32_t count =
-      primitives::utils::stochasticRound(rate, rng.nextDouble());
+  const int sampled = math::counts::gammaPoisson(rng, rate, rates);
+  auto count = static_cast<std::uint32_t>(std::max(0, sampled));
 
   if (personLimit.has_value()) {
     count = std::min(count, *personLimit);

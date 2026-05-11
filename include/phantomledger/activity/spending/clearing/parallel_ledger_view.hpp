@@ -28,11 +28,9 @@ public:
     }
 
     if (lockArray_ == nullptr) {
-      // Serial mode — same call the Phase 2 code makes.
       return ledger_->transfer(srcIdx, dstIdx, amount, channel);
     }
 
-    // Parallel mode — lock the relevant slot(s), transfer, unlock.
     constexpr auto kInvalid = ::PhantomLedger::clearing::Ledger::invalid;
     lockArray_->lockPair(static_cast<std::size_t>(srcIdx),
                          static_cast<std::size_t>(dstIdx),
@@ -53,6 +51,15 @@ public:
       return 0.0;
     }
     return ledger_->availableCash(idx);
+  }
+
+  [[nodiscard]] double
+  liquidity(::PhantomLedger::clearing::Ledger::Index idx) const noexcept {
+    if (ledger_ == nullptr ||
+        idx == ::PhantomLedger::clearing::Ledger::invalid) {
+      return 0.0;
+    }
+    return ledger_->liquidity(idx);
   }
 
   [[nodiscard]] ::PhantomLedger::clearing::Ledger *ledger() const noexcept {

@@ -65,11 +65,10 @@ inline constexpr double kCeiling = 1.10;
   double cycleMult = 1.0 - cycleDown + cycleUp;
   cycleMult = std::clamp(cycleMult, throttle.absoluteFloor, kCycleCeiling);
 
-  // ---- Cash-on-hand ratio ------------------------------------------
-  constexpr double kCashRefFloor =
-      150.0; // matches PreparedSpender baselineCash floor
+  constexpr double kCashRefFloor = 150.0;
   const double cashRef = std::max(kCashRefFloor, snap.baselineCash);
-  const double cashRatio = std::clamp(snap.availableCash / cashRef, 0.0, 2.0);
+  const double cashRatio =
+      std::clamp(snap.availableToSpend / cashRef, 0.0, 2.0);
 
   constexpr double kCashOffset = 0.10;
   constexpr double kCashCeiling = 1.10;

@@ -7,7 +7,6 @@
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/router.hpp"
-#include "phantomledger/activity/spending/spenders/targets.hpp"
 #include "phantomledger/math/timing.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 
@@ -36,7 +35,7 @@ SpenderEmissionLoop::RateSampler &SpenderEmissionLoop::RateSampler::ledgerView(
   return *this;
 }
 
-double SpenderEmissionLoop::RateSampler::availableCashFor(
+double SpenderEmissionLoop::RateSampler::availableToSpendFor(
     const spenders::PreparedSpender &prepared) {
   if (ledgerView_.empty()) {
     return prepared.initialCash;
@@ -47,7 +46,7 @@ double SpenderEmissionLoop::RateSampler::availableCashFor(
     return prepared.initialCash;
   }
 
-  return ledgerView_.availableCash(idx);
+  return ledgerView_.liquidity(idx);
 }
 
 double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
@@ -57,7 +56,7 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
   const liquidity::Snapshot snapshot{
       .daysSincePayday = state_.daysSincePayday(personIndex),
       .paycheckSensitivity = prepared.paycheckSensitivity,
-      .availableCash = availableCashFor(prepared),
+      .availableToSpend = availableToSpendFor(prepared),
       .baselineCash = prepared.baselineCash,
       .fixedMonthlyBurden = prepared.fixedBurden,
   };
@@ -71,21 +70,11 @@ double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
 }
 
 double SpenderEmissionLoop::RateSampler::latentBaseRateFor(
-    const actors::Spender &spender, DailyMultipliers mults) const {
-  const std::uint64_t remainingPersonDays =
-      std::max<std::uint64_t>(std::uint64_t{1}, state_.remainingPersonDays());
-
-  const double targetRealizedPerDay =
-      state_.remainingTargetTxns() / static_cast<double>(remainingPersonDays);
-
-  return spenders::baseRateForTarget(spender,
-                                     actors::RatePieces{
-                                         .weekdayMult = frame_.weekdayMult,
-                                         .dynamicsMultiplier = mults.combined,
-                                         .liquidityMultiplier = mults.liquidity,
-                                         .dayShock = frame_.day.shock,
-                                     },
-                                     targetRealizedPerDay);
+    const actors::Spender & /*spender*/, DailyMultipliers /*mults*/) const {
+  if (budget_.totalPersonDays == 0) {
+    return 0.0;
+  }
+  return budget_.targetTotalTxns / static_cast<double>(budget_.totalPersonDays);
 }
 
 std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
@@ -100,7 +89,7 @@ std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
           .liquidityMultiplier = mults.liquidity,
           .dayShock = frame_.day.shock,
       },
-      budget_.personLimit);
+      budget_.personLimit, rules_.rates);
 }
 
 double SpenderEmissionLoop::RateSampler::exploreProbabilityFor(

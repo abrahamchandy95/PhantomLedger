@@ -5,6 +5,7 @@
 #include "phantomledger/entities/synth/accounts/owners.hpp"
 
 #include <cstdint>
+#include <ranges>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -91,6 +92,68 @@ assignOwners(Pack &pack,
   }
 
   rebuild(pack, people);
+}
+
+template <std::ranges::input_range Records, class GetKey, class GetOwner>
+inline void assignOwners(Pack &pack, const Records &records, GetKey getKey,
+                         GetOwner getOwner, std::uint32_t peopleCount,
+                         bool external = false) {
+  if constexpr (std::ranges::sized_range<const Records &>) {
+    const auto incoming = std::ranges::size(records);
+    pack.registry.records.reserve(pack.registry.records.size() + incoming);
+    pack.lookup.byId.reserve(pack.lookup.byId.size() + incoming);
+  }
+
+  const auto extra = external
+                         ? entity::account::bit(entity::account::Flag::external)
+                         : static_cast<std::uint8_t>(0);
+
+  bool changed = false;
+
+  for (const auto &rec : records) {
+    const entity::PersonId owner = getOwner(rec);
+    if (owner == entity::invalidPerson) {
+      continue;
+    }
+    if (owner == 0 || owner > peopleCount) {
+      continue;
+    }
+
+    const entity::Key key = getKey(rec);
+    const auto found = pack.lookup.byId.find(key);
+
+    if (found == pack.lookup.byId.end()) {
+      const auto recIx =
+          static_cast<std::uint32_t>(pack.registry.records.size());
+      pack.registry.records.push_back(entity::account::Record{
+          .id = key,
+          .owner = owner,
+          .flags = extra,
+      });
+      pack.lookup.byId.emplace(key, recIx);
+      changed = true;
+      continue;
+    }
+
+    auto &record = pack.registry.records[found->second];
+    if (record.owner != entity::invalidPerson && record.owner != owner) {
+      throw std::invalid_argument(
+          "assignOwners: account key already belongs to a different owner");
+    }
+
+    if (record.owner == entity::invalidPerson) {
+      record.owner = owner;
+      changed = true;
+    }
+    if (extra != 0 && (record.flags & extra) != extra) {
+      record.flags |= extra;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    rebuild(pack, peopleCount);
+  }
 }
 
 } // namespace PhantomLedger::entities::synth::accounts
