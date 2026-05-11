@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -8,20 +9,27 @@
 
 #include <cstdint>
 #include <span>
-#include <string>
+#include <string_view>
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::sar {
 
+using SarId = ::PhantomLedger::encoding::RenderedId<32>;
+
 struct SarRecord {
-  std::string sarId;
+
+  SarId sarId;
   ::PhantomLedger::time::TimePoint filingDate;
   double amountInvolved = 0.0;
   ::PhantomLedger::time::TimePoint activityStart;
   ::PhantomLedger::time::TimePoint activityEnd;
-  std::string violationType;
+
+  std::string_view violationType;
+
   std::vector<::PhantomLedger::entity::PersonId> subjectPersonIds;
-  std::vector<std::string> subjectRoles;
+
+  std::vector<std::string_view> subjectRoles;
+
   std::vector<::PhantomLedger::entity::Key> coveredAccountIds;
   std::vector<double> coveredAmounts;
 };
@@ -29,7 +37,7 @@ struct SarRecord {
 struct SarSubjectRole {
   ::PhantomLedger::entity::PersonId person =
       ::PhantomLedger::entity::invalidPerson;
-  std::string role;
+  std::string_view role;
 };
 
 struct SarRingSubject {

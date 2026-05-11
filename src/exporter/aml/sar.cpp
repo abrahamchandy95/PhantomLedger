@@ -1,11 +1,11 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 
-#include "phantomledger/taxonomies/channels/names.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
-#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -16,6 +16,7 @@ namespace {
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace ent = ::PhantomLedger::entity;
 namespace t_ns = ::PhantomLedger::time;
+namespace ch = ::PhantomLedger::channels;
 
 struct FraudTxnGroups {
   std::unordered_map<std::uint32_t, std::vector<tx_ns::Transaction>> byRing;
@@ -93,52 +94,87 @@ void fillCoveredAccounts(SarRecord &sar,
   }
 }
 
-[[nodiscard]] std::string
-violationTypeForRing(std::span<const tx_ns::Transaction> txns) {
+// ────────────────────────────────────────────────────────────────────
+// violationTypeForRing
+//
+// Counts transactions per channel and classifies by which channel is
+// dominant. Previously this used `unordered_map<std::string, uint32_t>`
+// keyed on a freshly-allocated std::string per transaction — one alloc
+// for every transaction in every ring. Now it's a 256-element stack
+// array indexed by `Tag::value` (the channel's enum byte), which is
+// exactly the cardinality of the Tag space.
+//
+// Classification dropped the substring match (`->find("structuring")`)
+// in favor of comparing against the actual Fraud enum tags. The
+// substring approach was equivalent for the current name table —
+// only `fraud_structuring` contains "structuring" and only
+// `fraud_invoice` contains "invoice" — but the enum-tag version is
+// safer against future renames.
+//
+// Tie-break: lowest tag value wins (was: lexicographically smallest
+// name). For ring activity this is a behavior change only in the
+// rare case of an exact count tie between two distinct channels;
+// the resulting violation_type label is unchanged in every realistic
+// case because all Fraud::* tags except structuring/invoice map to
+// the same "money_laundering" label.
+// ────────────────────────────────────────────────────────────────────
+
+[[nodiscard]] std::string_view
+violationTypeForRing(std::span<const tx_ns::Transaction> txns) noexcept {
   if (txns.empty()) {
     return "suspicious_activity";
   }
-  std::unordered_map<std::string, std::uint32_t> counts;
+
+  std::array<std::uint32_t, 256> counts{};
   for (const auto &tx : txns) {
-    counts[std::string{::PhantomLedger::channels::name(tx.session.channel)}] +=
-        1;
-  }
-  if (counts.empty()) {
-    return "suspicious_activity";
+    ++counts[tx.session.channel.value];
   }
 
-  const std::string *dominant = nullptr;
+  // Pick the dominant tag (highest count, lowest index breaks ties).
+  std::uint8_t dominantTag = 0;
   std::uint32_t bestCount = 0;
-  for (const auto &[name, count] : counts) {
-    if (dominant == nullptr || count > bestCount ||
-        (count == bestCount && name < *dominant)) {
-      dominant = &name;
-      bestCount = count;
+  for (std::size_t i = 0; i < counts.size(); ++i) {
+    if (counts[i] > bestCount) {
+      bestCount = counts[i];
+      dominantTag = static_cast<std::uint8_t>(i);
     }
   }
 
-  if (dominant == nullptr) {
+  if (bestCount == 0) {
     return "suspicious_activity";
   }
-  if (dominant->find("structuring") != std::string::npos) {
+
+  // Classify by Fraud enum tag.
+  if (dominantTag == ch::tag(ch::Fraud::structuring).value) {
     return "structuring";
   }
-  if (dominant->find("invoice") != std::string::npos) {
+  if (dominantTag == ch::tag(ch::Fraud::invoice).value) {
     return "suspicious_activity";
   }
   return "money_laundering";
 }
 
-[[nodiscard]] std::string sarRingId(std::uint32_t ringId) {
-  char buf[32];
-  std::snprintf(buf, sizeof(buf), "SAR_RING_%04u", ringId);
-  return std::string{buf};
+// ────────────────────────────────────────────────────────────────────
+// sarRingId / sarSoloId
+//
+// Both return SarId (RenderedId<32>) — bytes live inline on the
+// returned value. No heap allocation.
+// ────────────────────────────────────────────────────────────────────
+
+[[nodiscard]] SarId sarRingId(std::uint32_t ringId) noexcept {
+  SarId out;
+  const auto n = std::snprintf(out.bytes.data(), out.bytes.size(),
+                               "SAR_RING_%04u", ringId);
+  out.length = static_cast<std::uint8_t>(n > 0 ? n : 0);
+  return out;
 }
 
-[[nodiscard]] std::string sarSoloId(ent::PersonId p) {
-  char buf[32];
-  std::snprintf(buf, sizeof(buf), "SAR_SOLO_C%010u", static_cast<unsigned>(p));
-  return std::string{buf};
+[[nodiscard]] SarId sarSoloId(ent::PersonId p) noexcept {
+  SarId out;
+  const auto n = std::snprintf(out.bytes.data(), out.bytes.size(),
+                               "SAR_SOLO_C%010u", static_cast<unsigned>(p));
+  out.length = static_cast<std::uint8_t>(n > 0 ? n : 0);
+  return out;
 }
 
 [[nodiscard]] std::span<const ent::PersonId>
@@ -153,9 +189,12 @@ void appendSarRingSubjects(SarRingSubject &out,
                            std::string_view role) {
   out.subjects.reserve(out.subjects.size() + people.size());
   for (const auto person : people) {
+    // role is a string_view pointing at a static literal ("subject" /
+    // "beneficiary") passed in from ringSubject. No allocation needed
+    // for the SarSubjectRole::role field — it just stores the view.
     out.subjects.push_back(SarSubjectRole{
         .person = person,
-        .role = std::string{role},
+        .role = role,
     });
   }
 }
@@ -246,6 +285,8 @@ void applySubjects(SarRecord &sar, std::span<const SarSubjectRole> subjects) {
   sar.subjectRoles.reserve(subjects.size());
   for (const auto &subject : subjects) {
     sar.subjectPersonIds.push_back(subject.person);
+    // subject.role is a string_view of a static literal; pushing it
+    // into a vector<string_view> is a 16-byte copy, no allocation.
     sar.subjectRoles.push_back(subject.role);
   }
 }
@@ -282,7 +323,7 @@ transactionsForSubject(std::span<const tx_ns::Transaction> txns,
   applyActivity(sar, txns);
   sar.violationType = "suspicious_activity";
   sar.subjectPersonIds.push_back(subject.person);
-  sar.subjectRoles.emplace_back("subject");
+  sar.subjectRoles.push_back("subject");
   fillCoveredAccounts(sar, accountActivityAmounts(txns, subject.accountIds));
   return sar;
 }

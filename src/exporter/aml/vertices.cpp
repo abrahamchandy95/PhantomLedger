@@ -34,8 +34,9 @@ namespace pii_ns = ::PhantomLedger::entities::synth::pii;
   return std::round(v * 100.0) / 100.0;
 }
 
-[[nodiscard]] std::string renderKey(const ent::Key &k) {
-  return std::string(::PhantomLedger::encoding::format(k).view());
+[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
+renderKey(const ent::Key &k) noexcept {
+  return ::PhantomLedger::encoding::format(k);
 }
 
 [[nodiscard]] std::string_view accountTypeFor(const ent::Key &id,
@@ -55,11 +56,18 @@ namespace pii_ns = ::PhantomLedger::entities::synth::pii;
   return "checking";
 }
 
-[[nodiscard]] std::string branchCodeFor(const ent::Key &id) {
+/// "BR042" — bucket the account's `number` into one of 50 synthetic
+/// branches. Pure stack buffer; the caller view()s or implicitly
+/// converts when passing to csv::Writer.
+using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
+
+[[nodiscard]] BranchCode branchCodeFor(const ent::Key &id) noexcept {
   const auto bucket = (id.number % 50U) + 1U;
-  char buf[8];
-  std::snprintf(buf, sizeof(buf), "BR%03u", static_cast<unsigned>(bucket));
-  return std::string{buf};
+  BranchCode out;
+  const auto n = std::snprintf(out.bytes.data(), out.bytes.size(), "BR%03u",
+                               static_cast<unsigned>(bucket));
+  out.length = static_cast<std::uint8_t>(n > 0 ? n : 0);
+  return out;
 }
 
 [[nodiscard]] ::PhantomLedger::personas::Type
@@ -97,9 +105,11 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
   ctx.usPool = &usPool;
 
   // Counterparty id set: render every external account key once.
+  // `renderKey` is now allocation-free (returns a stack-buffer); the
+  // single std::string we allocate is the set element itself.
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
-      ctx.counterpartyIds.insert(renderKey(rec.id));
+      ctx.counterpartyIds.emplace(renderKey(rec.id).view());
     }
   }
 
@@ -356,6 +366,8 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
                         t_ns::TimePoint simStart) {
   const auto entryDate = t_ns::formatTimestamp(simStart);
   const auto &roster = entities.people.roster;
+  // Reused across rows to avoid re-allocating the "WL_..." prefix per row.
+  std::string watchlistId;
   for (ent::PersonId p = 1; p <= roster.count; ++p) {
     if (!roster.has(p, ent::person::Flag::fraud) &&
         !roster.has(p, ent::person::Flag::mule)) {
@@ -364,8 +376,13 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
     const auto cidBuf = ::PhantomLedger::encoding::format(customerKey);
-    w.writeRow("WL_" + std::string{cidBuf.view()},
-               std::string_view{"internal_fraud_list"},
+    const auto cidView = cidBuf.view();
+
+    watchlistId.clear();
+    watchlistId.reserve(3 + cidView.size());
+    watchlistId.append("WL_").append(cidView);
+
+    w.writeRow(watchlistId, std::string_view{"internal_fraud_list"},
                std::string_view{"fraud_suspect"}, entryDate);
   }
 }
@@ -566,11 +583,8 @@ channelPurpose(std::string_view channel) noexcept {
   return (tx.fraud.flag != 0) ? 10 : 0;
 }
 
-[[nodiscard]] std::string transactionId(std::size_t idx1) {
-  char buf[20];
-  std::snprintf(buf, sizeof(buf), "TXN_%012zu", idx1);
-  return std::string{buf};
-}
+// transactionId is defined in shared.hpp — returns a TransactionId
+// stack buffer that flows through csv::Writer via implicit conversion.
 
 } // namespace
 

@@ -29,28 +29,20 @@ namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 // Small leaf-level helpers
 // ──────────────────────────────────────────────────────────────────────
 
-[[nodiscard]] std::string renderKey(const ent::Key &k) {
-  return std::string(::PhantomLedger::encoding::format(k).view());
+[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
+renderKey(const ent::Key &k) noexcept {
+  return ::PhantomLedger::encoding::format(k);
 }
 
-[[nodiscard]] std::string customerIdFor(ent::PersonId p) {
-  return std::string(
-      ::PhantomLedger::exporter::common::renderCustomerId(p).view());
-}
-
-[[nodiscard]] std::string transactionId(std::size_t idx1) {
-  char buf[20];
-  std::snprintf(buf, sizeof(buf), "TXN_%012zu", idx1);
-  return std::string{buf};
+[[nodiscard]] ::PhantomLedger::exporter::common::CustomerId
+customerIdFor(ent::PersonId p) noexcept {
+  return ::PhantomLedger::exporter::common::renderCustomerId(p);
 }
 
 [[nodiscard]] bool isExternalKey(const ent::Key &k) noexcept {
   return k.bank == ent::Bank::external;
 }
 
-/// Same accessor pattern as vertices.cpp: every content-using writer
-/// goes through this so a hand-built SharedContext with a null pool
-/// fails loudly in debug builds.
 [[nodiscard]] const pii_ns::LocalePool &
 poolFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.usPool != nullptr &&
@@ -85,9 +77,6 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
   }
 }
 
-/// Concatenate the four address fields into a single buffer used by
-/// the minhash address shingler. Reuses a thread-local buffer so per-
-/// row allocation cost is amortized to ~0.
 [[nodiscard]] std::string_view joinAddress(std::string &scratch,
                                            const identity::AddressRecord &a) {
   scratch.clear();
@@ -116,9 +105,6 @@ classifyTransactionEdges(const pl::Entities &entities,
   TransactionEdgeBundle out;
   const auto &usPool = poolFor(ctx);
 
-  // Memoize counterparty business names — the same external key shows
-  // up across many transactions, and `nameForCounterparty` does a hash
-  // + pool indirection we'd otherwise repeat per row.
   std::unordered_map<ent::Key, std::string> cpNames;
 
   out.sendRows.reserve(finalTxns.size());
@@ -127,9 +113,8 @@ classifyTransactionEdges(const pl::Entities &entities,
   const auto cpNameFor = [&](const ent::Key &k) -> const std::string & {
     auto it = cpNames.find(k);
     if (it == cpNames.end()) {
-      const auto rendered = renderKey(k);
       auto name = std::string{
-          identity::nameForCounterparty(rendered, usPool).firstName};
+          identity::nameForCounterparty(renderKey(k), usPool).firstName};
       it = cpNames.emplace(k, std::move(name)).first;
     }
     return it->second;
@@ -142,27 +127,31 @@ classifyTransactionEdges(const pl::Entities &entities,
 
     const bool srcExt = isExternalKey(tx.source);
     const bool dstExt = isExternalKey(tx.target);
-    const auto srcStr = renderKey(tx.source);
-    const auto dstStr = renderKey(tx.target);
+
+    // Stack-buffer renderings — zero allocation.
+    const auto srcRendered = renderKey(tx.source);
+    const auto dstRendered = renderKey(tx.target);
 
     if (srcExt) {
-      out.cpSendRows.emplace_back(srcStr, txnId, cpNameFor(tx.source));
-      out.cpSenders.insert(srcStr);
+      out.cpSendRows.emplace_back(srcRendered.view(), txnId,
+                                  cpNameFor(tx.source));
+      out.cpSenders.emplace(srcRendered.view());
       if (!dstExt) {
-        out.receivedFromCpPairs.emplace(dstStr, srcStr);
+        out.receivedFromCpPairs.emplace(dstRendered.view(), srcRendered.view());
       }
     } else {
-      out.sendRows.emplace_back(srcStr, txnId);
+      out.sendRows.emplace_back(srcRendered.view(), txnId);
       if (dstExt) {
-        out.sentToCpPairs.emplace(srcStr, dstStr);
+        out.sentToCpPairs.emplace(srcRendered.view(), dstRendered.view());
       }
     }
 
     if (dstExt) {
-      out.cpReceiveRows.emplace_back(dstStr, txnId, cpNameFor(tx.target));
-      out.cpReceivers.insert(dstStr);
+      out.cpReceiveRows.emplace_back(dstRendered.view(), txnId,
+                                     cpNameFor(tx.target));
+      out.cpReceivers.emplace(dstRendered.view());
     } else {
-      out.receiveRows.emplace_back(dstStr, txnId);
+      out.receiveRows.emplace_back(dstRendered.view(), txnId);
     }
   }
 
@@ -460,13 +449,21 @@ void writeCounterpartyAssociatedWithCountryRows(
 void writeCustomerMatchesWatchlistRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities) {
   const auto &roster = entities.people.roster;
+  // Reused across rows to avoid re-allocating the "WL_..." prefix scratch.
+  std::string watchlistId;
   for (ent::PersonId p = 1; p <= roster.count; ++p) {
     if (!roster.has(p, ent::person::Flag::fraud) &&
         !roster.has(p, ent::person::Flag::mule)) {
       continue;
     }
-    const auto cidStr = customerIdFor(p);
-    w.writeRow(cidStr, "WL_" + cidStr);
+    const auto cid = customerIdFor(p);
+    const auto cidView = cid.view();
+
+    watchlistId.clear();
+    watchlistId.reserve(3 + cidView.size());
+    watchlistId.append("WL_").append(cidView);
+
+    w.writeRow(cid, watchlistId);
   }
 }
 
