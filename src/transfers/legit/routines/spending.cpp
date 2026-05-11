@@ -228,6 +228,7 @@ dayDriverFrom(const DayPattern &day, const DynamicsProfile &dynamics,
               .baseExploreP = emission.baseExploreP,
               .exploration = emission.exploration,
               .liquidity = emission.liquidity,
+              .rates = emission.rates,
           }},
   };
 }

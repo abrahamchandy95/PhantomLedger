@@ -38,8 +38,20 @@ public:
     return daysSincePayday_[personIndex];
   }
 
+  // Reset a single person's counter to 0. Called by the day-driver
+  // when this person receives a paycheck on the current day.
   void resetDaysSincePayday(std::uint32_t personIndex) noexcept {
     daysSincePayday_[personIndex] = 0;
+  }
+
+  // Set a single person's counter to an explicit value. Used by the
+  // warm-start helper (see simulator/warm_start.hpp) to seed the
+  // counter from each person's inferred cycle position at sim start.
+  // After warm-start completes, the day-driver's bump/reset sequence
+  // is the only writer.
+  void setDaysSincePayday(std::uint32_t personIndex,
+                          std::uint16_t value) noexcept {
+    daysSincePayday_[personIndex] = value;
   }
 
   /// Bump every person's counter by one (saturating).
@@ -86,7 +98,21 @@ public:
   }
 
 private:
-  static constexpr std::uint16_t kInitialDaysSincePayday = 365;
+  // Pre-warm-start placeholder for every person's days-since-payday
+  // counter. Callers are expected to invoke applyWarmStartDaysSincePayday
+  // (simulator/warm_start.hpp) immediately after RunState construction
+  // to overwrite this with each person's true cycle-position estimate.
+  //
+  // If warm-start is skipped (test paths, smoke runs without payday
+  // data), every person reads 7 -- the stationary mean of Uniform(0,T)
+  // for the default US biweekly cycle (T=14). This puts the population
+  // at "average mid-cycle" rather than at maximum stress (the prior
+  // value of 365) or maximum relief (0). Both extremes were wrong:
+  // 365 implied "no paycheck in a year, max stress for everyone,"
+  // 0 implied "everyone just got paid yesterday, max relief for
+  // everyone." Neither matches the stationary distribution of a
+  // population observed at an arbitrary moment in their pay cycles.
+  static constexpr std::uint16_t kInitialDaysSincePayday = 7;
 
   std::vector<transactions::Transaction> txns_;
   std::vector<std::uint16_t> daysSincePayday_;

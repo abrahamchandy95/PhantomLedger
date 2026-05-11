@@ -6,6 +6,7 @@
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
+#include "phantomledger/math/counts.hpp"
 #include "phantomledger/primitives/concurrent/account_lock_array.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -24,6 +25,7 @@ public:
     double baseExploreP = 0.0;
     actors::ExploreModifiers exploration{};
     liquidity::Throttle liquidity{};
+    math::counts::Rates rates{};
   };
 
   struct Threads {

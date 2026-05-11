@@ -7,6 +7,7 @@
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/simulator/day_source.hpp"
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
+#include "phantomledger/math/counts.hpp"
 #include "phantomledger/math/evolution.hpp"
 #include "phantomledger/math/seasonal.hpp"
 
@@ -38,11 +39,11 @@ struct DayPattern {
 inline constexpr DayPattern kDefaultDayPattern{};
 
 struct EmissionProfile {
-
   double baseExploreP = 0.02;
 
   ::PhantomLedger::spending::actors::ExploreModifiers exploration{};
   ::PhantomLedger::spending::liquidity::Throttle liquidity{};
+  ::PhantomLedger::math::counts::Rates rates{};
 };
 
 inline constexpr EmissionProfile kDefaultEmissionProfile{};

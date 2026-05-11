@@ -31,6 +31,7 @@ rulesFrom(const SpenderEmissionDriver::Behavior &behavior) noexcept {
       .baseExploreP = behavior.baseExploreP,
       .exploration = behavior.exploration,
       .liquidity = behavior.liquidity,
+      .rates = behavior.rates,
   };
 }
 
@@ -152,6 +153,12 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
 
   threadStates_.reserve(threadCfg.count);
 
+  // Reserve a thread-local buffer sized to the *expected* emission
+  // volume per thread, with kTxnReserveSlack headroom. With the
+  // Gamma-Poisson sampler the realized total is the expected mean
+  // times the average multiplier product (typically ~0.85-1.0); the
+  // 5% slack absorbs the random variance comfortably even when the
+  // multipliers run hot.
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market().bounds().days) *
        (static_cast<double>(market().population().count()) / 30.0) *

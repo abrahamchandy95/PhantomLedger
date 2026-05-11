@@ -1,5 +1,6 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
+#include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/synth/accounts/assign.hpp"
 #include "phantomledger/entities/synth/accounts/make.hpp"
 #include "phantomledger/entities/synth/cards/issue.hpp"
@@ -104,10 +105,29 @@ buildCounterparties(pl::random::Rng &rng, std::int32_t population,
   return synth::counterparties::make(rng, population, targets);
 }
 
+namespace {
+
+void registerCreditCards(pl::pipeline::Entities &entities) {
+  if (entities.creditCards.records.empty()) {
+    return;
+  }
+
+  synth::accounts::assignOwners(
+      entities.accounts, entities.creditCards.records,
+      [](const entity::card::Terms &c) noexcept { return c.key; },
+      [](const entity::card::Terms &c) noexcept { return c.owner; },
+      entities.people.roster.count,
+      /*external=*/false);
+}
+
+} // namespace
+
 void finalizeAccountRegistry(pl::pipeline::Entities &entities) {
   using synth::accounts::addAccounts;
   using Key = entity::Key;
   namespace institutional = synth::products::institutional;
+
+  registerCreditCards(entities);
 
   const std::array<Key, 3> systemKeys{
       pl::transfers::legit::ledger::bankFeeCollectionKey(),
@@ -147,7 +167,7 @@ void finalizeAccountRegistry(pl::pipeline::Entities &entities) {
                 /*external=*/true);
   }
 
-  // 5. Counterparty directory: employers, clients, and external parties.
+  // Counterparty directory: employers, clients, and external parties.
   const auto &cps = entities.counterparties;
   addAccounts(entities.accounts,
               std::span<const Key>{cps.employers.accounts.all},

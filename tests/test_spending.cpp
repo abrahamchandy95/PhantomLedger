@@ -122,14 +122,20 @@ void testCountFactorBoundaries() {
 
 // ----------------------- Liquidity multiplier ---------------------
 
+// Builds a Snapshot for the multiplier under test. The `availableToSpend`
+// field represents the spender's full spending capacity (cash +
+// overdraft + LOC + courtesy buffer), mirroring Python's
+// ClearingHouse.available_to_spend. The tests below feed values that
+// happen to coincide with cash-only figures because the suppression
+// curve's shape is what's under test, not the semantic of the input.
 [[nodiscard]] liquidity::Snapshot makeSnap(std::uint32_t daysSincePayday,
                                            double sensitivity,
-                                           double availableCash,
+                                           double availableToSpend,
                                            double baselineCash, double burden) {
   return liquidity::Snapshot{
       .daysSincePayday = daysSincePayday,
       .paycheckSensitivity = sensitivity,
-      .availableCash = availableCash,
+      .availableToSpend = availableToSpend,
       .baselineCash = baselineCash,
       .fixedMonthlyBurden = burden,
   };
@@ -140,7 +146,7 @@ void testMultiplierDisabled() {
   disabled.enabled = false;
 
   const auto snap = makeSnap(/*daysSincePayday=*/365, /*sensitivity=*/0.9,
-                             /*availableCash=*/0.0, /*baselineCash=*/1000.0,
+                             /*availableToSpend=*/0.0, /*baselineCash=*/1000.0,
                              /*burden=*/2000.0);
   PL_CHECK(nearly(liquidity::multiplier(disabled, snap), 1.0));
   std::printf("  PASS: liquidity multiplier — disabled returns 1.0\n");
@@ -150,12 +156,13 @@ void testMultiplierStressRegion() {
   const liquidity::Throttle cfg{};
 
   const auto fresh = makeSnap(/*daysSincePayday=*/0, /*sensitivity=*/0.5,
-                              /*availableCash=*/1000.0, /*baselineCash=*/1000.0,
+                              /*availableToSpend=*/1000.0,
+                              /*baselineCash=*/1000.0,
                               /*burden=*/0.0);
 
   const auto stressed =
       makeSnap(/*daysSincePayday=*/30, /*sensitivity=*/0.5,
-               /*availableCash=*/1000.0, /*baselineCash=*/1000.0,
+               /*availableToSpend=*/1000.0, /*baselineCash=*/1000.0,
                /*burden=*/0.0);
 
   const double freshMult = liquidity::multiplier(cfg, fresh);
@@ -176,12 +183,12 @@ void testMultiplierBurdenPenalty() {
 
   const auto noBurden =
       makeSnap(/*daysSincePayday=*/4, /*sensitivity=*/0.3,
-               /*availableCash=*/500.0, /*baselineCash=*/500.0,
+               /*availableToSpend=*/500.0, /*baselineCash=*/500.0,
                /*burden=*/0.0);
 
   const auto highBurden =
       makeSnap(/*daysSincePayday=*/4, /*sensitivity=*/0.3,
-               /*availableCash=*/500.0, /*baselineCash=*/500.0,
+               /*availableToSpend=*/500.0, /*baselineCash=*/500.0,
                /*burden=*/1000.0);
 
   PL_CHECK(liquidity::multiplier(cfg, highBurden) <
