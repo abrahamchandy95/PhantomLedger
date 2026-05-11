@@ -3,6 +3,7 @@
 #include "phantomledger/taxonomies/locale/us_cities.hpp"
 #include "phantomledger/taxonomies/locale/us_state.hpp"
 
+#include "faker-cxx/company.h"
 #include "faker-cxx/generator.h"
 #include "faker-cxx/location.h"
 #include "faker-cxx/person.h"
@@ -72,6 +73,49 @@ void fillWithReplacement(std::vector<std::string> &out, std::size_t count,
   }
 }
 
+// ────────────────────────────────────────────────────────────────────
+// Shared pool-population helper.
+//
+// Both buildLocalePool overloads need to populate every name/street/
+// business-name slot identically once the zipTable has been resolved.
+// Centralizing here means future additions (e.g. another name pool)
+// only need to be wired into one place.
+// ────────────────────────────────────────────────────────────────────
+
+void populateLocaleStrings(LocalePool &pool, faker::Locale loc,
+                           locale::Country country, const PoolSizes &sizes) {
+  fillWithReplacement(pool.firstNames, sizes.firstNames,
+                      [loc] { return faker::person::firstName(loc); });
+
+  if (hasMiddleNames(country)) {
+    fillWithReplacement(pool.middleNames, sizes.middleNames,
+                        [loc] { return faker::person::firstName(loc); });
+  }
+
+  fillWithReplacement(pool.lastNames, sizes.lastNames,
+                      [loc] { return faker::person::lastName(loc); });
+
+  fillWithReplacement(pool.streets, sizes.streets,
+                      [loc] { return faker::location::streetAddress(loc); });
+
+  // Business / counterparty names. Unlike `person::firstName` and
+  // `location::streetAddress`, faker-cxx's `company::companyName` is NOT
+  // locale-aware — it takes an optional `CompanyNameFormat` enum and
+  // generates English-style names like "Hirthe-Ritchie", "Wagner LLC",
+  // "Sipes, Wehner and Hane" for every locale. This is a known faker-cxx
+  // limitation (mirrors faker.js, which has the same behaviour). For the
+  // AML use case it's fine — AML is US-only. For mule_ml's locale-aware
+  // path, counterparty business names will be English-shaped regardless
+  // of the country, which is realistic enough for synthetic data.
+  //
+  // `loc` is intentionally captured but unused here to keep the lambda
+  // signature uniform with the others — if a future faker-cxx version
+  // adds locale support, the only change is to pass `loc` through.
+  fillWithReplacement(pool.businessNames, sizes.businessNames,
+                      [] { return faker::company::companyName(); });
+  (void)loc; // silence -Wunused — see comment above re: future locale support
+}
+
 } // namespace
 
 LocalePool buildLocalePool(locale::Country country, std::vector<ZipEntry> zips,
@@ -84,20 +128,7 @@ LocalePool buildLocalePool(locale::Country country, std::vector<ZipEntry> zips,
   pool.country = country;
   pool.zipTable = std::move(zips);
 
-  fillWithReplacement(pool.firstNames, sizes.firstNames,
-                      [loc] { return faker::person::firstName(loc); });
-
-  if (hasMiddleNames(country)) {
-
-    fillWithReplacement(pool.middleNames, sizes.middleNames,
-                        [loc] { return faker::person::firstName(loc); });
-  }
-
-  fillWithReplacement(pool.lastNames, sizes.lastNames,
-                      [loc] { return faker::person::lastName(loc); });
-
-  fillWithReplacement(pool.streets, sizes.streets,
-                      [loc] { return faker::location::streetAddress(loc); });
+  populateLocaleStrings(pool, loc, country, sizes);
 
   return pool;
 }
@@ -196,19 +227,7 @@ LocalePool buildLocalePool(locale::Country country, PoolSizes sizes,
     pool.zipTable = synthesizeNonUsZipTable(loc, zipCount);
   }
 
-  fillWithReplacement(pool.firstNames, sizes.firstNames,
-                      [loc] { return faker::person::firstName(loc); });
-
-  if (hasMiddleNames(country)) {
-    fillWithReplacement(pool.middleNames, sizes.middleNames,
-                        [loc] { return faker::person::firstName(loc); });
-  }
-
-  fillWithReplacement(pool.lastNames, sizes.lastNames,
-                      [loc] { return faker::person::lastName(loc); });
-
-  fillWithReplacement(pool.streets, sizes.streets,
-                      [loc] { return faker::location::streetAddress(loc); });
+  populateLocaleStrings(pool, loc, country, sizes);
 
   return pool;
 }

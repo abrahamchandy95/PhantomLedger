@@ -7,10 +7,12 @@
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
+#include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <algorithm>
 #include <filesystem>
 #include <span>
+#include <stdexcept>
 
 namespace PhantomLedger::exporter::aml {
 
@@ -21,6 +23,7 @@ namespace schema = ::PhantomLedger::exporter::schema;
 namespace amlSchema = ::PhantomLedger::exporter::schema::aml;
 namespace ent = ::PhantomLedger::entity;
 namespace tx_ns = ::PhantomLedger::transactions;
+namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 
 [[nodiscard]] csv::Writer openTable(const std::filesystem::path &dir,
                                     const schema::Table &table) {
@@ -45,6 +48,50 @@ deriveSimStart(std::span<const tx_ns::Transaction> finalTxns) {
   return ::PhantomLedger::time::fromEpochSeconds(minTs);
 }
 
+// Resolve the US LocalePool from Options, with a clear error if main()
+// forgot to plumb it through. The exporter is US-only by design — every
+// customer/counterparty/bank address is written with country="US" — so
+// a single locale lookup at the top is all we need.
+[[nodiscard]] const pii_ns::LocalePool &requireUsPool(const Options &options) {
+  if (options.piiPools == nullptr) {
+    throw std::invalid_argument(
+        "exporter::aml::exportAll: Options::piiPools is null. "
+        "Set it to the PoolSet built by app::setup::buildPoolSet "
+        "(see exporter::mule_ml::Options for the same pattern).");
+  }
+  return options.piiPools->forCountry(::PhantomLedger::locale::Country::us);
+}
+
+[[nodiscard]] std::size_t
+countInternalAccounts(const ent::account::Registry &registry) noexcept {
+  std::size_t count = 0;
+  for (const auto &rec : registry.records) {
+    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+[[nodiscard]] std::size_t
+countSoloFraud(const ent::person::Roster &roster) noexcept {
+  std::size_t count = 0;
+  for (ent::PersonId p = 1; p <= roster.count; ++p) {
+    if (roster.has(p, ent::person::Flag::soloFraud)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+[[nodiscard]] std::size_t
+countIllicitTxns(std::span<const tx_ns::Transaction> txns) noexcept {
+  return static_cast<std::size_t>(std::count_if(
+      txns.begin(), txns.end(), [](const tx_ns::Transaction &tx) noexcept {
+        return tx.fraud.flag != 0;
+      }));
+}
+
 } // namespace
 
 Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
@@ -58,8 +105,9 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto *postedBook = transfers.ledger.posted.book.get();
 
   const auto simStart = deriveSimStart(postedTxns);
+  const auto &usPool = requireUsPool(options);
 
-  const auto ctx = vertices::buildSharedContext(entities, postedTxns);
+  const auto ctx = vertices::buildSharedContext(entities, postedTxns, usPool);
 
   const auto sarSubjects =
       ::PhantomLedger::exporter::aml::sar::buildSarSubjectIndex(
@@ -68,9 +116,13 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto sars = ::PhantomLedger::exporter::aml::sar::generateSars(
       sarSubjects, postedTxns);
 
-  const auto txnBundle = edges::classifyTransactionEdges(entities, postedTxns);
-
+  const auto txnBundle =
+      edges::classifyTransactionEdges(entities, postedTxns, ctx);
   const auto minhashSets = edges::collectMinhashVertexSets(entities, ctx);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Vertex tables — one CSV per node type.
+  // ──────────────────────────────────────────────────────────────────
 
   const auto vtxDir = outDir / "aml" / "vertices";
   std::filesystem::create_directories(vtxDir);
@@ -119,6 +171,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(vtxDir, amlSchema::kWatchlist);
     vertices::writeWatchlistRows(w, entities, simStart);
   }
+
+  // Minhash-shingle vertex sets (one table per identity facet).
   {
     auto w = openTable(vtxDir, amlSchema::kNameMinhash);
     vertices::writeMinhashIdRows(w, minhashSets.name);
@@ -140,13 +194,19 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     vertices::writeMinhashIdRows(w, minhashSets.state);
   }
   {
+    // Empty by design — populated downstream by the graph-resolution stage.
     auto w = openTable(vtxDir, amlSchema::kConnectedComponent);
     (void)w;
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // Edge tables — one CSV per relationship.
+  // ──────────────────────────────────────────────────────────────────
+
   const auto edgeDir = outDir / "aml" / "edges";
   std::filesystem::create_directories(edgeDir);
 
+  // ── Ownership ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasAccount);
     edges::writeCustomerHasAccountRows(w, entities);
@@ -155,6 +215,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(edgeDir, amlSchema::kAccountHasPrimaryCustomer);
     edges::writeAccountHasPrimaryCustomerRows(w, entities);
   }
+
+  // ── Transaction flows ──
   {
     auto w = openTable(edgeDir, amlSchema::kSendTransaction);
     edges::writeAcctTxnRows(w, txnBundle.sendRows);
@@ -180,6 +242,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
         openTable(edgeDir, amlSchema::kReceivedTransactionFromCounterparty);
     edges::writeAcctCpPairRows(w, txnBundle.receivedFromCpPairs);
   }
+
+  // ── Device / network ──
   {
     auto w = openTable(edgeDir, amlSchema::kUsesDevice);
     edges::writeUsesDeviceRows(w, infra.devices);
@@ -188,6 +252,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(edgeDir, amlSchema::kLoggedFrom);
     edges::writeLoggedFromRows(w, entities, infra.devices);
   }
+
+  // ── Customer / account identity ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasName);
     edges::writeCustomerHasNameRows(w, entities, simStart);
@@ -216,6 +282,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(edgeDir, amlSchema::kAddressInCountry);
     edges::writeAddressInCountryRows(w, entities, ctx, simStart);
   }
+
+  // ── Counterparty / bank identity ──
   {
     auto w = openTable(edgeDir, amlSchema::kCounterpartyHasName);
     edges::writeCounterpartyHasNameRows(w, ctx, simStart);
@@ -227,18 +295,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   {
     auto w = openTable(edgeDir, amlSchema::kCounterpartyAssociatedWithCountry);
     edges::writeCounterpartyAssociatedWithCountryRows(w, ctx);
-  }
-  {
-    auto w = openTable(edgeDir, amlSchema::kCustomerMatchesWatchlist);
-    edges::writeCustomerMatchesWatchlistRows(w, entities);
-  }
-  {
-    auto w = openTable(edgeDir, amlSchema::kReferences);
-    edges::writeReferencesRows(w, sars);
-  }
-  {
-    auto w = openTable(edgeDir, amlSchema::kSarCovers);
-    edges::writeSarCoversRows(w, sars);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kBeneficiaryBank);
@@ -260,41 +316,60 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w = openTable(edgeDir, amlSchema::kBankHasName);
     edges::writeBankHasNameRows(w, ctx, simStart);
   }
+
+  // ── Watchlist / SAR ──
+  {
+    auto w = openTable(edgeDir, amlSchema::kCustomerMatchesWatchlist);
+    edges::writeCustomerMatchesWatchlistRows(w, entities);
+  }
+  {
+    auto w = openTable(edgeDir, amlSchema::kReferences);
+    edges::writeReferencesRows(w, sars);
+  }
+  {
+    auto w = openTable(edgeDir, amlSchema::kSarCovers);
+    edges::writeSarCoversRows(w, sars);
+  }
+
+  // ── Minhash-shingle edges ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasNameMinhash);
-    edges::writeCustomerHasNameMinhashRows(w, entities);
+    edges::writeCustomerHasNameMinhashRows(w, entities, ctx);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasAddressMinhash);
-    edges::writeCustomerHasAddressMinhashRows(w, entities);
+    edges::writeCustomerHasAddressMinhashRows(w, entities, ctx);
   }
   {
     auto w =
         openTable(edgeDir, amlSchema::kCustomerHasAddressStreetLine1Minhash);
-    edges::writeCustomerHasAddressStreetLine1MinhashRows(w, entities);
+    edges::writeCustomerHasAddressStreetLine1MinhashRows(w, entities, ctx);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasAddressCityMinhash);
-    edges::writeCustomerHasAddressCityMinhashRows(w, entities);
+    edges::writeCustomerHasAddressCityMinhashRows(w, entities, ctx);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasAddressStateMinhash);
-    edges::writeCustomerHasAddressStateMinhashRows(w, entities);
+    edges::writeCustomerHasAddressStateMinhashRows(w, entities, ctx);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kAccountHasNameMinhash);
-    edges::writeAccountHasNameMinhashRows(w, entities);
+    edges::writeAccountHasNameMinhashRows(w, entities, ctx);
   }
   {
     auto w = openTable(edgeDir, amlSchema::kCounterpartyHasNameMinhash);
     edges::writeCounterpartyHasNameMinhashRows(w, ctx);
   }
+
+  // ── Graph resolution ──
   {
     auto w = openTable(edgeDir, amlSchema::kResolvesTo);
     edges::writeResolvesToRows(w, entities, simStart);
   }
   {
-    // SameAs and CustomerInConnectedComponent are empty by design.
+    // SameAs and CustomerInConnectedComponent are empty by design —
+    // populated by a downstream entity-resolution pass.
     auto w = openTable(edgeDir, amlSchema::kSameAs);
     (void)w;
   }
@@ -303,42 +378,29 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     (void)w;
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // Optional debug dump.
+  // ──────────────────────────────────────────────────────────────────
+
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
     ::PhantomLedger::exporter::common::writeLedgerRows(w, postedTxns);
   }
 
+  // ──────────────────────────────────────────────────────────────────
+  // Summary
+  // ──────────────────────────────────────────────────────────────────
+
   Summary summary;
   summary.customerCount = entities.people.roster.count;
-
-  std::size_t internalAccountCount = 0;
-  for (const auto &rec : entities.accounts.registry.records) {
-    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
-      ++internalAccountCount;
-    }
-  }
-
-  summary.internalAccountCount = internalAccountCount;
+  summary.internalAccountCount =
+      countInternalAccounts(entities.accounts.registry);
   summary.counterpartyCount = ctx.counterpartyIds.size();
-
   summary.totalTxnCount = postedTxns.size();
-  summary.illicitTxnCount = static_cast<std::size_t>(
-      std::count_if(postedTxns.begin(), postedTxns.end(),
-                    [](const tx_ns::Transaction &tx) noexcept {
-                      return tx.fraud.flag != 0;
-                    }));
+  summary.illicitTxnCount = countIllicitTxns(postedTxns);
   summary.fraudRingCount = entities.people.topology.rings.size();
-
-  std::size_t soloFraudCount = 0;
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    if (entities.people.roster.has(p, ent::person::Flag::soloFraud)) {
-      ++soloFraudCount;
-    }
-  }
-
-  summary.soloFraudCount = soloFraudCount;
+  summary.soloFraudCount = countSoloFraud(entities.people.roster);
   summary.sarsFiledCount = sars.size();
-
   return summary;
 }
 

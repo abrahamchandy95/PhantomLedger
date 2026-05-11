@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
@@ -18,18 +19,18 @@
 namespace PhantomLedger::exporter::aml::vertices {
 
 struct SharedContext {
-
   std::set<std::string> counterpartyIds;
-
   std::vector<::PhantomLedger::personas::Type> personaByPerson;
-
   std::unordered_map<::PhantomLedger::entity::Key, std::int64_t>
       lastTransactionByAccount;
+
+  const ::PhantomLedger::entities::synth::pii::LocalePool *usPool = nullptr;
 };
 
 [[nodiscard]] SharedContext buildSharedContext(
     const ::PhantomLedger::pipeline::Entities &entities,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);
+    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
+    const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
 
 // ────────── Vertex writers ──────────
 
