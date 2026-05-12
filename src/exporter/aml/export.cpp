@@ -7,7 +7,6 @@
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
-#include "phantomledger/taxonomies/locale/types.hpp"
 
 #include <algorithm>
 #include <filesystem>
@@ -48,18 +47,14 @@ deriveSimStart(std::span<const tx_ns::Transaction> finalTxns) {
   return ::PhantomLedger::time::fromEpochSeconds(minTs);
 }
 
-// Resolve the US LocalePool from Options, with a clear error if main()
-// forgot to plumb it through. The exporter is US-only by design — every
-// customer/counterparty/bank address is written with country="US" — so
-// a single locale lookup at the top is all we need.
-[[nodiscard]] const pii_ns::LocalePool &requireUsPool(const Options &options) {
+[[nodiscard]] const pii_ns::PoolSet &requirePools(const Options &options) {
   if (options.piiPools == nullptr) {
     throw std::invalid_argument(
         "exporter::aml::exportAll: Options::piiPools is null. "
         "Set it to the PoolSet built by app::setup::buildPoolSet "
         "(see exporter::mule_ml::Options for the same pattern).");
   }
-  return options.piiPools->forCountry(::PhantomLedger::locale::Country::us);
+  return *options.piiPools;
 }
 
 [[nodiscard]] std::size_t
@@ -105,9 +100,9 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto *postedBook = transfers.ledger.posted.book.get();
 
   const auto simStart = deriveSimStart(postedTxns);
-  const auto &usPool = requireUsPool(options);
+  const auto &pools = requirePools(options);
 
-  const auto ctx = vertices::buildSharedContext(entities, postedTxns, usPool);
+  const auto ctx = vertices::buildSharedContext(entities, postedTxns, pools);
 
   const auto sarSubjects =
       ::PhantomLedger::exporter::aml::sar::buildSarSubjectIndex(
@@ -149,7 +144,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vtxDir, amlSchema::kCountry);
-    vertices::writeCountryRows(w);
+    vertices::writeCountryRows(w, entities);
   }
   {
     auto w = openTable(vtxDir, amlSchema::kDevice);

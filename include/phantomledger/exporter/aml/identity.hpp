@@ -72,7 +72,7 @@ struct AddressRecord {
 [[nodiscard]] NameRecord
 nameForPerson(::PhantomLedger::entity::PersonId personId,
               const ::PhantomLedger::entity::pii::Roster &pii,
-              const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+              const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
 
 [[nodiscard]] NameRecord nameForCounterparty(
     std::string_view counterpartyId,
@@ -85,10 +85,10 @@ using RoutingNumber = ::PhantomLedger::encoding::RenderedId<16>;
 [[nodiscard]] RoutingNumber
 routingNumberForId(std::string_view bankId) noexcept;
 
-[[nodiscard]] AddressRecord addressForPerson(
-    ::PhantomLedger::entity::PersonId personId,
-    const ::PhantomLedger::entity::pii::Roster &pii,
-    const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+[[nodiscard]] AddressRecord
+addressForPerson(::PhantomLedger::entity::PersonId personId,
+                 const ::PhantomLedger::entity::pii::Roster &pii,
+                 const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
 
 [[nodiscard]] AddressRecord addressForCounterparty(
     std::string_view counterpartyId,
