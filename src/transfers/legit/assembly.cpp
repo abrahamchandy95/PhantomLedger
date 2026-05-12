@@ -117,7 +117,9 @@ makeIncomePass(::PhantomLedger::random::Rng &rng,
 [[nodiscard]] legit_ledger::passes::RoutinePass
 makeRoutinePass(::PhantomLedger::random::Rng &rng,
                 const ::PhantomLedger::pipeline::Entities &entities,
-                const ::PhantomLedger::inflows::rent::Rules &rentRules) {
+                const ::PhantomLedger::inflows::rent::Rules &rentRules,
+                const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+                    *lifecycleRules) {
   return legit_ledger::passes::RoutinePass{
       &rng,
       legit_ledger::passes::AccountAccess{
@@ -129,6 +131,7 @@ makeRoutinePass(::PhantomLedger::random::Rng &rng,
           .merchants = &entities.merchants,
           .portfolios = &entities.portfolios,
           .creditCards = &entities.creditCards,
+          .cardLifecycle = lifecycleRules,
       },
       rentRules,
   };
@@ -302,7 +305,8 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
               .retirement = &income_.retirement,
               .disability = &income_.disability,
           }))
-      .routines(makeRoutinePass(rng, entities, income_.rent))
+      .routines(makeRoutinePass(rng, entities, income_.rent,
+                                cardLifecycle_.lifecycleRules))
       .family(makeFamilyPass(entities))
       .credit(makeCreditPass(rng, entities, cardLifecycle_.lifecycleRules))
       .familyScenario(familyTransfers_)

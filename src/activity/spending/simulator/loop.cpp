@@ -76,6 +76,20 @@ double SpenderEmissionLoop::RateSampler::availableCashFor(
   return ledgerView_.availableCash(idx);
 }
 
+double SpenderEmissionLoop::RateSampler::cardLiquidityFor(
+    const spenders::PreparedSpender &prepared) {
+  if (ledgerView_.empty() || !prepared.spender.hasCard) {
+    return 0.0;
+  }
+
+  const auto idx = prepared.spender.cardIdx;
+  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
+    return 0.0;
+  }
+
+  return ledgerView_.liquidity(idx);
+}
+
 double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
     const spenders::PreparedSpender &prepared) {
   const auto personIndex = prepared.spender.personIndex;
@@ -262,6 +276,7 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
         rates_.exploreProbabilityFor(spender, liquidityMult);
 
     const double availableCash = rates_.availableCashFor(prepared);
+    const double cardAvailable = rates_.cardLiquidityFor(prepared);
     const double amountFactor = liquidity::amountFactor(liquidityMult);
 
     std::uint32_t accepted = 0;
@@ -280,6 +295,7 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       event.ts = rates_.timestampAtOffset(offsetSec);
       event.exploreP = exploreP;
       event.availableCash = availableCash;
+      event.cardAvailable = cardAvailable;
       event.amountFactor = amountFactor;
 
       auto maybeTxn = payments_.tryEmit(rng, event);

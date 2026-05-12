@@ -68,7 +68,9 @@ public:
     [[nodiscard]] double
     availableCashFor(const spenders::PreparedSpender &prepared);
 
-    // Diagnostic stash, populated by liquidityMultiplierFor.
+    [[nodiscard]] double
+    cardLiquidityFor(const spenders::PreparedSpender &prepared);
+
     [[nodiscard]] double lastLiquidityMult() const noexcept;
     [[nodiscard]] double lastAvailableToSpend() const noexcept;
 

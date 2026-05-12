@@ -26,7 +26,7 @@ struct KeyText {
 
   explicit KeyText(std::uint64_t value) noexcept {
     auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-    (void)ec; // 24 chars fits any uint64_t in base 10
+    (void)ec;
     len = static_cast<std::size_t>(ptr - buf.data());
   }
 
@@ -84,10 +84,6 @@ indexPurchasesByCard(std::span<const transactions::Transaction> txns,
 
 } // namespace
 
-// =====================================================================
-// Lifecycle public API
-// =====================================================================
-
 Lifecycle::Lifecycle(const LifecycleRules &rules,
                      const transactions::Factory &factory,
                      const random::RngFactory &rngFactory, LedgerView ledger)
@@ -105,13 +101,11 @@ Lifecycle::generate(const time::Window &window,
   const time::TimePoint windowStart = window.start;
   const time::TimePoint windowEndExcl = window.endExcl();
 
-  // Sparse: only cards that actually transact in the window.
   auto purchasesByCard = indexPurchasesByCard(txns, windowStart, windowEndExcl);
   if (purchasesByCard.empty()) {
     return out;
   }
 
-  // Conservative reservation: a few lifecycle events per purchase.
   out.reserve(txns.size() / 8);
 
   const detail::Environment env{rules_.billing, rules_.payments,
@@ -130,12 +124,12 @@ Lifecycle::generate(const time::Window &window,
 
     const auto *cardTerms = ledger_.cards.forKey(cardKey);
     if (cardTerms == nullptr) {
-      continue; // purchase against a card that isn't in the registry
+      continue;
     }
 
     const auto account = resolveAccount(*cardTerms, ledger_.primaryAccounts);
     if (!account.has_value()) {
-      continue; // owner has no primary deposit account on file
+      continue;
     }
 
     const auto closes =
@@ -144,18 +138,18 @@ Lifecycle::generate(const time::Window &window,
       continue;
     }
 
-    detail::CardPurchases card{
-        .account = *account,
+    const detail::CardPurchases purchases{
         .txns = txns,
-        .indices = indices,
+        .indices = std::span<const std::uint32_t>(indices),
     };
+
     const KeyText keyText(account->card.number);
     auto rng = rngFactory_.rng({"credit_cards", "lifecycle", keyText.view()});
-    detail::Session session(env, card, std::move(rng), out);
+    detail::Session session(env, *account, std::move(rng), out);
 
     time::TimePoint priorClose = windowStart;
     for (const auto close : closes) {
-      session.run({priorClose, close, windowEndExcl});
+      session.run(purchases, {priorClose, close, windowEndExcl});
       priorClose = close;
     }
   }

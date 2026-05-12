@@ -11,9 +11,13 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
+#include "phantomledger/transactions/record.hpp"
+#include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace PhantomLedger::spending::simulator {
 
@@ -42,9 +46,15 @@ public:
   void bindEmission(const PreparedRun::Budget &budget,
                     const PreparedRun::Routing &routing) noexcept;
 
+  void
+  bindCardCycleDriver(::PhantomLedger::transfers::credit_cards::CardCycleDriver
+                          *cards) noexcept;
+
   void runDay(const PreparedRun &run, RunState &state, std::uint32_t dayIndex);
 
   void finish(RunState &state);
+
+  [[nodiscard]] std::vector<transactions::Transaction> drainCardCycles();
 
   [[nodiscard]] std::span<const double> sensitivities() const noexcept;
 
@@ -61,6 +71,10 @@ private:
   updatePaydayState(const PreparedRun::Paydays &paydays, RunState &state,
                     std::uint32_t dayIndex) const;
 
+  void ingestEmittedTo(
+      ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards,
+      const RunState &state);
+
   DaySource days_{};
   CommerceEvolver commerce_{};
   PopulationDynamics dynamics_{};
@@ -70,6 +84,8 @@ private:
   random::Rng *rng_ = nullptr;
   const transactions::Factory *factory_ = nullptr;
   clearing::Ledger *ledger_ = nullptr;
+  ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards_ = nullptr;
+  std::size_t cardIngestCursor_ = 0;
 };
 
 } // namespace PhantomLedger::spending::simulator

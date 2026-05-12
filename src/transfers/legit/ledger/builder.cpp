@@ -165,8 +165,6 @@ LegitTransferResult LegitTransferBuilder::build() const {
       plan, familySourcesFrom(family_),
       family_rt::TransferEmission{familyRngFactory, txf}, familyScenario_));
 
-  passes::addCredit(credit_, plan, txf, streams);
-
   LegitTransferResult result;
   result.txns.candidateTxns = streams.takeCandidates();
   auto counterparties = std::move(plan).takeCounterparties();

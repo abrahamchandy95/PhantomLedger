@@ -2,8 +2,6 @@
 
 #include "phantomledger/transactions/clearing/screening.hpp"
 
-#include <cstdint>
-#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -17,6 +15,7 @@ DayDriver::DayDriver(DaySource days, CommerceEvolver commerce,
 
 void DayDriver::resetFor(const market::Market &market) {
   dynamics_.resetFor(market);
+  cardIngestCursor_ = 0;
 }
 
 void DayDriver::bindMarket(market::Market &value) noexcept {
@@ -37,6 +36,11 @@ void DayDriver::bindLedger(clearing::Ledger *value) noexcept {
 void DayDriver::bindFactory(const transactions::Factory &value) noexcept {
   factory_ = &value;
   rebindEmitter();
+}
+
+void DayDriver::bindCardCycleDriver(
+    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards) noexcept {
+  cards_ = cards;
 }
 
 void DayDriver::rebindEmitter() noexcept {
@@ -101,6 +105,26 @@ void DayDriver::runDay(const PreparedRun &run, RunState &state,
 
   emission_.emitDay(run.population(), state, frame,
                     dynamics_.dailyMultipliers());
+
+  if (cards_ != nullptr && cards_->active()) {
+    ingestEmittedTo(cards_, state);
+    cards_->tickDay(dayIndex, frame.day.start);
+  }
+}
+
+void DayDriver::ingestEmittedTo(
+    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards,
+    const RunState &state) {
+  const auto &txns = state.txns();
+  if (cardIngestCursor_ >= txns.size()) {
+    return;
+  }
+
+  const auto newTxns = std::span<const transactions::Transaction>(
+      txns.data() + cardIngestCursor_, txns.size() - cardIngestCursor_);
+
+  cards->ingestPurchases(newTxns);
+  cardIngestCursor_ = txns.size();
 }
 
 void DayDriver::advanceLedgerToDay(const PreparedRun::LedgerReplay &replay,
@@ -128,5 +152,14 @@ DayDriver::updatePaydayState(const PreparedRun::Paydays &paydays,
 }
 
 void DayDriver::finish(RunState &state) { emission_.finish(state); }
+
+std::vector<transactions::Transaction> DayDriver::drainCardCycles() {
+  if (cards_ == nullptr || !cards_->active()) {
+    return {};
+  }
+
+  cards_->drainResidual();
+  return cards_->takeEmitted();
+}
 
 } // namespace PhantomLedger::spending::simulator

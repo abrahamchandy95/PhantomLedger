@@ -37,18 +37,25 @@ struct PaymentRoute {
 [[nodiscard]] PaymentRoute selectPaymentRoute(random::Rng &rng,
                                               const actors::Spender &spender,
                                               double cashAvailable,
+                                              double cardAvailable,
                                               double txnAmount) {
   if (!spender.hasCard) {
     return {spender.depositAccount, spender.depositAccountIdx,
             kMerchantChannel};
   }
 
+  const bool cardHasRoom = cardAvailable >= txnAmount;
+
   if (rng.coin(spender.cardShare)) {
-    return {spender.card, spender.cardIdx, kCardChannel};
+    if (cardHasRoom) {
+      return {spender.card, spender.cardIdx, kCardChannel};
+    }
+    return {spender.depositAccount, spender.depositAccountIdx,
+            kMerchantChannel};
   }
 
   const double cushion = txnAmount * kCashCushionMultiple;
-  if (cashAvailable < cushion) {
+  if (cashAvailable < cushion && cardHasRoom) {
     return {spender.card, spender.cardIdx, kCardChannel};
   }
 
@@ -218,8 +225,8 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   const double amount =
       primitives::utils::floorAndRound(rawAmount, kAmountFloor);
 
-  const auto route =
-      selectPaymentRoute(rng_, *event.spender, event.availableCash, amount);
+  const auto route = selectPaymentRoute(
+      rng_, *event.spender, event.availableCash, event.cardAvailable, amount);
 
   const auto dstIdx = merchantIdx < resolved_.merchantCounterpartyIdx.size()
                           ? resolved_.merchantCounterpartyIdx[merchantIdx]

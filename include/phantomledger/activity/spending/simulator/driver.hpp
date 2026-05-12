@@ -9,6 +9,7 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
+#include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 
 #include <vector>
 
@@ -29,6 +30,9 @@ public:
   Simulator &planner(RunPlanner planner) noexcept;
   Simulator &dayDriver(DayDriver dayDriver) noexcept;
   Simulator &emissionThreads(SpenderEmissionDriver::Threads threads) noexcept;
+  Simulator &
+  cardCycleDriver(::PhantomLedger::transfers::credit_cards::CardCycleDriver
+                      *cards) noexcept;
 
   [[nodiscard]] std::vector<transactions::Transaction> run();
 
@@ -39,6 +43,8 @@ private:
   const obligations::Snapshot &obligations_;
   clearing::Ledger *ledger_ = nullptr;
   SpenderEmissionDriver::Threads emissionThreads_{};
+  ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cardCycleDriver_ =
+      nullptr;
 
   RunPlanner planner_{};
   DayDriver dayDriver_{};
