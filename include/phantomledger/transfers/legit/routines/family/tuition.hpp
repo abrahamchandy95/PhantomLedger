@@ -10,10 +10,10 @@ namespace PhantomLedger::transfers::legit::routines::family::tuition {
 
 struct TuitionSchedule {
   bool enabled = true;
-  double p = 0.55;
+  double p = 0.65;
   int instMin = 4;
   int instMax = 5;
-  double mu = 8.7;
+  double mu = 8.95;
   double sigma = 0.35;
 
   void validate(primitives::validate::Report &r) const {

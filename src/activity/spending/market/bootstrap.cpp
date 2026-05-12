@@ -5,6 +5,7 @@
 #include "phantomledger/primitives/random/distributions/beta.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/relationships/social/builder.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,7 +21,7 @@ namespace PhantomLedger::spending::market {
 
 namespace {
 
-// ---------- Population view ----------
+namespace social = ::PhantomLedger::relationships::social;
 
 population::View buildPopulationView(const population::Census &census) {
   std::vector<entity::Key> primary(census.primaryAccounts.begin(),
@@ -52,8 +53,6 @@ population::View buildPopulationView(const population::Census &census) {
                           std::move(objects), std::move(paydays));
 }
 
-// ---------- Merchant CDFs ----------
-
 std::vector<double> buildMerchCdf(const entity::merchant::Catalog &catalog) {
   std::vector<double> weights;
   weights.reserve(catalog.records.size());
@@ -84,13 +83,6 @@ std::vector<double> buildBillerCdf(const entity::merchant::Catalog &catalog,
   return probability::distributions::buildCdf(weights);
 }
 
-// ---------- Per-person picks ----------
-
-/// Sampler that draws K unique indices from a discrete CDF, retrying
-/// up to `maxTries_` times on collisions before falling back to a
-/// safe default. `maxTries` is loop-invariant across the per-person
-/// loop, so it's captured at construction; the rng + cdf vary per
-/// call.
 class WeightedPicker {
 public:
   explicit WeightedPicker(std::uint16_t maxTries) noexcept
@@ -149,6 +141,15 @@ private:
   }
 
   return cards;
+}
+
+[[nodiscard]] commerce::Contacts buildSocialContacts(std::uint32_t personCount,
+                                                     std::uint64_t baseSeed) {
+  return social::build(social::kDefaultSocial, social::BuildInputs{
+                                                   .personCount = personCount,
+                                                   .hubFlags = {},
+                                                   .baseSeed = baseSeed,
+                                               });
 }
 
 } // namespace
@@ -233,7 +234,8 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
   commerce::ShopperActivity activity{
       std::move(exploreProp), std::move(burstStart), std::move(burstLen)};
 
-  commerce::Contacts contacts(sources.census.count, /*degree=*/12);
+  commerce::Contacts contacts =
+      buildSocialContacts(sources.census.count, sources.baseSeed);
 
   commerce::View commerceView(std::move(selection), std::move(assignedPayees),
                               std::move(activity), std::move(contacts));
