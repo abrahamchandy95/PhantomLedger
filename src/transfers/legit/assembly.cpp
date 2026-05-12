@@ -1,8 +1,13 @@
 #include "phantomledger/transfers/legit/assembly.hpp"
 
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/relationships/family/links.hpp"
+#include "phantomledger/relationships/family/partition.hpp"
+#include "phantomledger/relationships/family/support.hpp"
+#include "phantomledger/transfers/channels/government/keys.hpp"
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
+#include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 namespace PhantomLedger::transfers::legit {
 
@@ -11,6 +16,18 @@ namespace {
 namespace blueprints = ::PhantomLedger::transfers::legit::blueprints;
 namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
 namespace validate = ::PhantomLedger::primitives::validate;
+
+[[nodiscard]] FamilyTransferScenario makeDefaultFamilyScenario() {
+  namespace family_rel = ::PhantomLedger::relationships::family;
+  namespace relatives = ::PhantomLedger::transfers::legit::routines::relatives;
+
+  FamilyTransferScenario out;
+  out.households(family_rel::kDefaultHouseholds)
+      .dependents(family_rel::kDefaultDependents)
+      .retireeSupport(family_rel::kDefaultRetireeSupport)
+      .transfers(relatives::kDefaultFamilyTransferModel);
+  return out;
+}
 
 void validateHubFraction(double value) {
   validate::Report report;
@@ -140,7 +157,19 @@ makeCreditPass(::PhantomLedger::random::Rng &rng,
   };
 }
 
+[[nodiscard]] legit_ledger::passes::GovernmentCounterparties
+defaultGovernmentCounterparties() noexcept {
+  namespace gov = ::PhantomLedger::transfers::government;
+  return legit_ledger::passes::GovernmentCounterparties{
+      .ssa = gov::ssaCounterpartyKey(),
+      .disability = gov::disabilityCounterpartyKey(),
+  };
+}
+
 } // namespace
+
+LegitAssembly::LegitAssembly()
+    : familyTransfers_(makeDefaultFamilyScenario()) {}
 
 LegitAssembly &LegitAssembly::runScope(RunScope value) noexcept {
   run_ = value;
@@ -266,12 +295,13 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
   out.counterparties(makeCounterpartyPools(entities))
       .personas(makePersonaCatalog(entities))
       .hubSelection(makeHubSelection(entities, hubSelection_.fraction))
-      .income(makeIncomePass(rng, entities, income_.salary,
-                             legit_ledger::passes::GovernmentSetup{
-                                 .counterparties = {},
-                                 .retirement = &income_.retirement,
-                                 .disability = &income_.disability,
-                             }))
+      .income(makeIncomePass(
+          rng, entities, income_.salary,
+          legit_ledger::passes::GovernmentSetup{
+              .counterparties = defaultGovernmentCounterparties(),
+              .retirement = &income_.retirement,
+              .disability = &income_.disability,
+          }))
       .routines(makeRoutinePass(rng, entities, income_.rent))
       .family(makeFamilyPass(entities))
       .credit(makeCreditPass(rng, entities, cardLifecycle_.lifecycleRules))

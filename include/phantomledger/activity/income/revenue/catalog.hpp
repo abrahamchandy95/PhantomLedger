@@ -110,10 +110,36 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
   };
 }
 
+[[nodiscard]] inline constexpr RevenuePersonaProfile retireeProfile() {
+  return RevenuePersonaProfile{
+      .client = {},
+      .platform = {},
+      .settlement = {},
+      .ownerDraw =
+          {
+              .activeP = 0.33,
+              .paymentsMin = 1,
+              .paymentsMax = 1,
+              .median = 1100.0,
+              .sigma = 0.50,
+          },
+      .investment =
+          {
+              .activeP = 0.50,
+              .paymentsMin = 1,
+              .paymentsMax = 2,
+              .median = 400.0,
+              .sigma = 0.65,
+          },
+      .quietMonth = {.probability = 0.05},
+  };
+}
+
 [[nodiscard]] inline constexpr auto buildCatalog() {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
 
+  table[enumTax::toIndex(personas::Type::retiree)] = retireeProfile();
   table[enumTax::toIndex(personas::Type::freelancer)] = freelancerProfile();
   table[enumTax::toIndex(personas::Type::smallBusiness)] =
       smallBusinessProfile();

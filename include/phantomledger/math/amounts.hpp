@@ -67,9 +67,7 @@ struct AmountModel {
   }
 };
 
-// --- Named constants ---------------------------------------------------
-
-inline constexpr auto kSalary = AmountModel::lognormal(3000.0, 0.35, 50.0);
+inline constexpr auto kSalary = AmountModel::lognormal(4500.0, 0.55, 50.0);
 inline constexpr auto kRent = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);
 inline constexpr auto kP2P = AmountModel::lognormal(45.0, 0.8, 1.0);
 inline constexpr auto kBill = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);

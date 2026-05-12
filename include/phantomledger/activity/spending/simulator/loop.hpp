@@ -65,6 +65,13 @@ public:
     void consumeOnePersonDay() noexcept;
     void recordAccepted(std::uint32_t count) noexcept;
 
+    [[nodiscard]] double
+    availableCashFor(const spenders::PreparedSpender &prepared);
+
+    // Diagnostic stash, populated by liquidityMultiplierFor.
+    [[nodiscard]] double lastLiquidityMult() const noexcept;
+    [[nodiscard]] double lastAvailableToSpend() const noexcept;
+
   private:
     [[nodiscard]] double
     availableToSpendFor(const spenders::PreparedSpender &prepared);
@@ -75,6 +82,9 @@ public:
     std::span<const double> dailyMultipliers_{};
     Rules rules_;
     ParallelLedgerView ledgerView_{};
+
+    double lastLiquidityMult_ = 0.0;
+    double lastAvailableToSpend_ = 0.0;
   };
 
   class PaymentEmitter {
@@ -83,6 +93,8 @@ public:
                    const PreparedRun::Routing &routing,
                    const transactions::Factory &factory,
                    ParallelLedgerView ledgerView) noexcept;
+
+    void bindRateSampler(const RateSampler *sampler) noexcept;
 
     [[nodiscard]] std::optional<transactions::Transaction>
     tryEmit(random::Rng &rng, const actors::Event &event);
@@ -95,6 +107,7 @@ public:
     const transactions::Factory &factory_;
     routing::ResolvedAccounts resolved_{};
     ParallelLedgerView ledgerView_{};
+    const RateSampler *rateSampler_ = nullptr;
   };
 
   SpenderEmissionLoop(const PreparedRun::Population &population,

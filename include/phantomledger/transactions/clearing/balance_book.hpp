@@ -44,58 +44,53 @@ static_assert(enumTax::isIndexable(personas::kTypes));
 
 inline constexpr std::array<PersonaBufferProfile, personas::kTypeCount>
     kBufferProfiles{{
-        // personas::Type::student
+
         {
-            .balanceMedian = 200.0,
+            .balanceMedian = 400.0,
             .shares = {.courtesy = 0.12, .linked = 0.08, .loc = 0.02},
-            .courtesyMedian = 65.0,
-            .linkedMedian = 225.0,
-            .locCreditLimitMedian = 800.0,
+            .courtesyMedian = 75.0,
+            .linkedMedian = 300.0,
+            .locCreditLimitMedian = 1500.0,
         },
 
-        // personas::Type::retiree
         {
-            .balanceMedian = 1500.0,
+            .balanceMedian = 3500.0,
             .shares = {.courtesy = 0.16, .linked = 0.22, .loc = 0.04},
-            .courtesyMedian = 100.0,
-            .linkedMedian = 500.0,
-            .locCreditLimitMedian = 2500.0,
-        },
-
-        // personas::Type::freelancer
-        {
-            .balanceMedian = 900.0,
-            .shares = {.courtesy = 0.16, .linked = 0.18, .loc = 0.12},
             .courtesyMedian = 120.0,
-            .linkedMedian = 600.0,
-            .locCreditLimitMedian = 4000.0,
+            .linkedMedian = 1000.0,
+            .locCreditLimitMedian = 3500.0,
         },
 
-        // personas::Type::smallBusiness
         {
-            .balanceMedian = 8000.0,
+            .balanceMedian = 6500.0,
+            .shares = {.courtesy = 0.16, .linked = 0.18, .loc = 0.12},
+            .courtesyMedian = 150.0,
+            .linkedMedian = 1500.0,
+            .locCreditLimitMedian = 8000.0,
+        },
+
+        {
+            .balanceMedian = 15000.0,
             .shares = {.courtesy = 0.20, .linked = 0.24, .loc = 0.20},
-            .courtesyMedian = 180.0,
-            .linkedMedian = 2200.0,
-            .locCreditLimitMedian = 7000.0,
-        },
-
-        // personas::Type::highNetWorth
-        {
-            .balanceMedian = 25000.0,
-            .shares = {.courtesy = 0.22, .linked = 0.30, .loc = 0.28},
             .courtesyMedian = 250.0,
-            .linkedMedian = 10000.0,
+            .linkedMedian = 4000.0,
             .locCreditLimitMedian = 15000.0,
         },
 
-        // personas::Type::salaried
         {
-            .balanceMedian = 1200.0,
+            .balanceMedian = 45000.0,
+            .shares = {.courtesy = 0.22, .linked = 0.30, .loc = 0.28},
+            .courtesyMedian = 350.0,
+            .linkedMedian = 20000.0,
+            .locCreditLimitMedian = 40000.0,
+        },
+
+        {
+            .balanceMedian = 3500.0,
             .shares = {.courtesy = 0.18, .linked = 0.24, .loc = 0.12},
-            .courtesyMedian = 140.0,
-            .linkedMedian = 700.0,
-            .locCreditLimitMedian = 3000.0,
+            .courtesyMedian = 175.0,
+            .linkedMedian = 1200.0,
+            .locCreditLimitMedian = 6000.0,
         },
     }};
 
