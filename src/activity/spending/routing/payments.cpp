@@ -25,6 +25,8 @@ inline constexpr channels::Tag kMerchantChannel =
 inline constexpr channels::Tag kCardChannel =
     channels::tag(channels::Legit::cardPurchase);
 
+inline constexpr double kCashCushionMultiple = 1.5;
+
 struct PaymentRoute {
   entity::Key srcKey{};
   clearing::Ledger::Index srcIdx = clearing::Ledger::invalid;
@@ -32,15 +34,23 @@ struct PaymentRoute {
 };
 
 [[nodiscard]] PaymentRoute selectPaymentRoute(random::Rng &rng,
-                                              const actors::Spender &spender) {
+                                              const actors::Spender &spender,
+                                              double cashAvailable,
+                                              double txnAmount) {
   if (!spender.hasCard) {
     return {spender.depositAccount, spender.depositAccountIdx,
             kMerchantChannel};
   }
-  // Reads cached `cardShare` directly instead of `persona->card.share`.
+
   if (rng.coin(spender.cardShare)) {
     return {spender.card, spender.cardIdx, kCardChannel};
   }
+
+  const double cushion = txnAmount * kCashCushionMultiple;
+  if (cashAvailable < cushion) {
+    return {spender.card, spender.cardIdx, kCardChannel};
+  }
+
   return {spender.depositAccount, spender.depositAccountIdx, kMerchantChannel};
 }
 
@@ -137,12 +147,10 @@ PaymentRouter::emitP2p(const actors::Event &event) {
     return std::nullopt;
   }
 
-  // Reads cached `amountMultiplier` directly.
   const double raw =
       math::amounts::kP2P.sample(rng_) * event.spender->amountMultiplier;
   const double amount = primitives::utils::floorAndRound(raw, /*floor=*/1.0);
 
-  // Pre-resolved destination index for the recipient.
   const auto dstIdx = contactPersonIndex < resolved_.personPrimaryIdx.size()
                           ? resolved_.personPrimaryIdx[contactPersonIndex]
                           : clearing::Ledger::invalid;
@@ -175,7 +183,6 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
     return favRow[slot];
   }
 
-  // Explore branch: draw from global CDF and reject favorites a few times.
   const auto &cdf = commerce.merchCdf();
   std::uint32_t pick = static_cast<std::uint32_t>(
       probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
@@ -217,9 +224,10 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   const double amount =
       primitives::utils::floorAndRound(rawAmount, /*floor=*/1.0);
 
-  const auto route = selectPaymentRoute(rng_, *event.spender);
+  // cc_share + liquidity-aware fallback. See selectPaymentRoute above.
+  const auto route =
+      selectPaymentRoute(rng_, *event.spender, event.availableCash, amount);
 
-  // Pre-resolved destination index for the merchant counterparty.
   const auto dstIdx = merchantIdx < resolved_.merchantCounterpartyIdx.size()
                           ? resolved_.merchantCounterpartyIdx[merchantIdx]
                           : clearing::Ledger::invalid;

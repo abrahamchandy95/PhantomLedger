@@ -73,6 +73,11 @@ set(PL_SPENDING_SOURCES
     src/activity/spending/spenders/targets.cpp
 )
 
+set(PL_DIAGNOSTICS_SOURCES
+    src/diagnostics/logger.cpp
+    src/diagnostics/spending_stats.cpp
+)
+
 set(PL_FRAUD_SOURCES
     src/transfers/fraud/camouflage.cpp
     src/transfers/fraud/engine.cpp
@@ -176,6 +181,7 @@ set(PL_PIPELINE_SOURCES
 
 set(PL_ALL_SOURCES
     ${PL_PRIMITIVES_SOURCES}
+    ${PL_DIAGNOSTICS_SOURCES} 
     ${PL_TRANSACTIONS_SOURCES}
     ${PL_ENTITIES_SOURCES}
     ${PL_TRANSFERS_SOURCES}

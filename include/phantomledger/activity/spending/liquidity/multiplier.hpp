@@ -10,11 +10,16 @@ namespace PhantomLedger::spending::liquidity {
 
 struct Throttle {
   bool enabled = true;
+
   std::uint16_t reliefDays = 2;
-  std::uint16_t stressStartDay = 3;
-  std::uint16_t stressRampDays = 5;
-  double absoluteFloor = 0.08;
-  double explorationFloor = 0.0;
+
+  std::uint16_t stressStartDay = 7;
+
+  std::uint16_t stressRampDays = 7;
+
+  double absoluteFloor = 0.70;
+
+  double explorationFloor = 0.40;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
@@ -50,43 +55,42 @@ inline constexpr double kCeiling = 1.10;
                         static_cast<double>(std::max<std::uint32_t>(
                             1u, throttle.stressRampDays)));
 
-  // Sensitivity-weighted up/down legs.
-  constexpr double kStressDownBase = 0.35;
-  constexpr double kStressDownScale = 0.95;
-  constexpr double kReliefUpBase = 0.06;
-  constexpr double kReliefUpScale = 0.10;
+  //
+  constexpr double kStressDownBase = 0.10;
+  constexpr double kStressDownScale = 0.15;
+  constexpr double kReliefUpBase = 0.04;
+  constexpr double kReliefUpScale = 0.06;
 
   const double cycleDown =
       stress * (kStressDownBase + kStressDownScale * snap.paycheckSensitivity);
   const double cycleUp =
       relief * (kReliefUpBase + kReliefUpScale * snap.paycheckSensitivity);
 
-  constexpr double kCycleCeiling = 1.05;
+  constexpr double kCycleCeiling = 1.10;
   double cycleMult = 1.0 - cycleDown + cycleUp;
   cycleMult = std::clamp(cycleMult, throttle.absoluteFloor, kCycleCeiling);
 
-  constexpr double kCashRefFloor = 150.0;
+  constexpr double kCashRefFloor = 75.0;
   const double cashRef = std::max(kCashRefFloor, snap.baselineCash);
   const double cashRatio =
       std::clamp(snap.availableToSpend / cashRef, 0.0, 2.0);
 
-  constexpr double kCashOffset = 0.10;
+  constexpr double kCashOffset = 0.85;
+  constexpr double kCashSlope = 0.15;
   constexpr double kCashCeiling = 1.10;
   const double cashMult =
-      std::clamp(kCashOffset + cashRatio, 0.0, kCashCeiling);
+      std::clamp(kCashOffset + kCashSlope * cashRatio, 0.0, kCashCeiling);
 
-  // ---- Fixed-burden penalty ----------------------------------------
   const double burdenRatio =
       std::clamp(snap.fixedMonthlyBurden / cashRef, 0.0, 2.0);
 
-  constexpr double kBurdenSlope = 0.35;
-  constexpr double kBurdenFloor = 0.30;
+  constexpr double kBurdenSlope = 0.08;
+  constexpr double kBurdenFloor = 0.88;
   const double burdenMult =
       std::max(kBurdenFloor, 1.0 - kBurdenSlope * burdenRatio);
 
-  // ---- Compose & final clip ----------------------------------------
   const double mult = cycleMult * cashMult * burdenMult;
-  return std::clamp(mult, 0.0, kCeiling);
+  return std::clamp(mult, throttle.absoluteFloor, kCeiling);
 }
 
 } // namespace PhantomLedger::spending::liquidity

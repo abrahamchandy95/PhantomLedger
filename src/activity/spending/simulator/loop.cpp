@@ -7,6 +7,7 @@
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/router.hpp"
+#include "phantomledger/diagnostics/spending_stats.hpp"
 #include "phantomledger/math/timing.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 
@@ -15,6 +16,17 @@
 #include <utility>
 
 namespace PhantomLedger::spending::simulator {
+
+namespace {
+
+namespace diag = ::PhantomLedger::diagnostics;
+
+[[nodiscard]] inline std::uint16_t
+personaBucketOf(const actors::Spender &spender) noexcept {
+  return static_cast<std::uint16_t>(spender.personaType);
+}
+
+} // namespace
 
 SpenderEmissionLoop::RateSampler::RateSampler(const PreparedRun::Budget &budget,
                                               RunState &state,
@@ -49,6 +61,20 @@ double SpenderEmissionLoop::RateSampler::availableToSpendFor(
   return ledgerView_.liquidity(idx);
 }
 
+double SpenderEmissionLoop::RateSampler::availableCashFor(
+    const spenders::PreparedSpender &prepared) {
+  if (ledgerView_.empty()) {
+    return prepared.initialCash;
+  }
+
+  const auto idx = prepared.spender.depositAccountIdx;
+  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
+    return prepared.initialCash;
+  }
+
+  return ledgerView_.availableCash(idx);
+}
+
 double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
     const spenders::PreparedSpender &prepared) {
   const auto personIndex = prepared.spender.personIndex;
@@ -61,7 +87,13 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
       .fixedMonthlyBurden = prepared.fixedBurden,
   };
 
-  return liquidity::multiplier(rules_.liquidity, snapshot);
+  const auto mult = liquidity::multiplier(rules_.liquidity, snapshot);
+  diag::spending::Stats::instance().recordLiquidityMultiplier(mult);
+
+  lastLiquidityMult_ = mult;
+  lastAvailableToSpend_ = snapshot.availableToSpend;
+
+  return mult;
 }
 
 double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
@@ -80,16 +112,19 @@ double SpenderEmissionLoop::RateSampler::latentBaseRateFor(
 std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
     random::Rng &rng, const actors::Spender &spender, double latentBaseRate,
     DailyMultipliers mults) const {
-  return actors::sampleTransactionCount(
-      rng, spender,
-      actors::RatePieces{
-          .baseRate = latentBaseRate,
-          .weekdayMult = frame_.weekdayMult,
-          .dynamicsMultiplier = mults.combined,
-          .liquidityMultiplier = mults.liquidity,
-          .dayShock = frame_.day.shock,
-      },
-      budget_.personLimit, rules_.rates);
+  const auto cnt =
+      actors::sampleTransactionCount(rng, spender,
+                                     actors::RatePieces{
+                                         .baseRate = latentBaseRate,
+                                         .weekdayMult = frame_.weekdayMult,
+                                         .dynamicsMultiplier = mults.combined,
+                                         .liquidityMultiplier = mults.liquidity,
+                                         .dayShock = frame_.day.shock,
+                                     },
+                                     budget_.personLimit, rules_.rates);
+
+  diag::spending::Stats::instance().recordCountSampled(cnt);
+  return cnt;
 }
 
 double SpenderEmissionLoop::RateSampler::exploreProbabilityFor(
@@ -120,12 +155,25 @@ void SpenderEmissionLoop::RateSampler::recordAccepted(
   state_.recordAccepted(count);
 }
 
+double SpenderEmissionLoop::RateSampler::lastLiquidityMult() const noexcept {
+  return lastLiquidityMult_;
+}
+
+double SpenderEmissionLoop::RateSampler::lastAvailableToSpend() const noexcept {
+  return lastAvailableToSpend_;
+}
+
 SpenderEmissionLoop::PaymentEmitter::PaymentEmitter(
     const market::Market &market, const PreparedRun::Routing &routing,
     const transactions::Factory &factory,
     ParallelLedgerView ledgerView) noexcept
     : market_(market), routing_(routing), factory_(factory),
       resolved_(routing.resolvedAccounts()), ledgerView_(ledgerView) {}
+
+void SpenderEmissionLoop::PaymentEmitter::bindRateSampler(
+    const RateSampler *sampler) noexcept {
+  rateSampler_ = sampler;
+}
 
 bool SpenderEmissionLoop::PaymentEmitter::accept(
     const routing::EmissionResult &result) {
@@ -138,29 +186,51 @@ bool SpenderEmissionLoop::PaymentEmitter::accept(
 std::optional<transactions::Transaction>
 SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                                              const actors::Event &event) {
+  auto &stats = diag::spending::Stats::instance();
+
   const routing::Slot slot =
       routing::pickSlot(routing_.channelCdf, rng.nextDouble());
+
+  const auto personaBucket = personaBucketOf(*event.spender);
+  stats.recordAttempt(slot, personaBucket);
+
+  const double liqMult =
+      rateSampler_ != nullptr ? rateSampler_->lastLiquidityMult() : 0.0;
+  const double avail =
+      rateSampler_ != nullptr ? rateSampler_->lastAvailableToSpend() : 0.0;
 
   routing::PaymentRouter router{rng, market_, routing_.paymentRules, resolved_};
   auto maybeResult = router.route(slot, event);
 
   if (!maybeResult.has_value()) {
+    stats.recordRouteNullopt(/*dayIndex=*/0, event.spender->personIndex,
+                             personaBucket, slot, liqMult, avail);
     return std::nullopt;
   }
 
   auto txn = factory_.make(maybeResult->draft);
 
-  if (!accept(*maybeResult)) {
+  auto decision = ledgerView_.transfer(maybeResult->srcIdx, maybeResult->dstIdx,
+                                       maybeResult->draft.amount,
+                                       maybeResult->draft.channel);
+
+  if (decision.rejected()) {
+    stats.recordTransferRejected(/*dayIndex=*/0, event.spender->personIndex,
+                                 personaBucket, slot, decision.reason(),
+                                 liqMult, avail);
     return std::nullopt;
   }
 
+  stats.recordEmitted(slot, personaBucket);
   return txn;
 }
 
 SpenderEmissionLoop::SpenderEmissionLoop(
     const PreparedRun::Population &population, RateSampler &rates,
     PaymentEmitter &payments) noexcept
-    : population_(population), rates_(rates), payments_(payments) {}
+    : population_(population), rates_(rates), payments_(payments) {
+  payments_.bindRateSampler(&rates_);
+}
 
 void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
                               random::Rng &rng,
@@ -191,8 +261,12 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
     const double exploreP =
         rates_.exploreProbabilityFor(spender, liquidityMult);
 
+    const double availableCash = rates_.availableCashFor(prepared);
+
     std::uint32_t accepted = 0;
+    std::uint32_t consecutiveFailures = 0;
     std::uint32_t attemptBudget = txnCount * 4u;
+    constexpr std::uint32_t kMaxConsecutiveFailures = 3u;
 
     while (accepted < txnCount && attemptBudget > 0) {
       --attemptBudget;
@@ -204,12 +278,17 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       event.spender = &spender;
       event.ts = rates_.timestampAtOffset(offsetSec);
       event.exploreP = exploreP;
+      event.availableCash = availableCash;
 
       auto maybeTxn = payments_.tryEmit(rng, event);
       if (!maybeTxn.has_value()) {
+        if (++consecutiveFailures >= kMaxConsecutiveFailures) {
+          break;
+        }
         continue;
       }
 
+      consecutiveFailures = 0;
       outTxns.push_back(std::move(*maybeTxn));
       ++accepted;
     }

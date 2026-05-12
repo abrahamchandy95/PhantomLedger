@@ -9,6 +9,7 @@ struct Event {
   const Spender *spender = nullptr;
   time::TimePoint ts{};
   double exploreP = 0.0;
+  double availableCash = 0.0;
 };
 
 } // namespace PhantomLedger::spending::actors

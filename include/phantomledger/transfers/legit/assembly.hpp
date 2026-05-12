@@ -54,7 +54,7 @@ public:
     double fraction = 0.01;
   };
 
-  LegitAssembly() = default;
+  LegitAssembly();
 
   LegitAssembly &runScope(RunScope value) noexcept;
   LegitAssembly &incomePrograms(const IncomePrograms &value);
