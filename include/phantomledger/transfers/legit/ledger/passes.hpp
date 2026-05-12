@@ -48,18 +48,11 @@ struct AccountAccess {
   const entity::account::Ownership *ownership = nullptr;
 };
 
-/// Salary-side income inputs: the directory of revenue counterparties
-/// (employers, payors, etc.) plus the rules for sizing salary draws.
 struct SalarySetup {
   const entity::counterparty::Directory *revenueCounterparties = nullptr;
   inflows::salary::Rules rules{};
 };
 
-/// Government-benefits configuration: the source counterparties (SSA,
-/// disability office) paired with the term tables that describe the
-/// retirement and disability programs they administer. A
-/// default-constructed instance has `counterparties.valid() == false`,
-/// in which case the gov-benefits branch is skipped.
 struct GovernmentSetup {
   GovernmentCounterparties counterparties{};
   const government::RetirementTerms *retirement = nullptr;
@@ -76,6 +69,8 @@ struct RoutineResources {
   const entity::merchant::Catalog *merchants = nullptr;
   const entity::product::PortfolioRegistry *portfolios = nullptr;
   const entity::card::Registry *creditCards = nullptr;
+  const ::PhantomLedger::transfers::credit_cards::LifecycleRules
+      *cardLifecycle = nullptr;
 };
 
 class IncomePass {

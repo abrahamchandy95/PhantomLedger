@@ -43,6 +43,7 @@ set(PL_ENTITIES_SOURCES
 )
 
 set(PL_TRANSFERS_SOURCES
+    src/transfers/channels/credit_cards/card_cycle_driver.cpp
     src/transfers/channels/credit_cards/cycle.cpp
     src/transfers/channels/credit_cards/dispute/sampler.cpp
     src/transfers/channels/credit_cards/lifecycle.cpp

@@ -3,10 +3,11 @@
 #include "phantomledger/activity/spending/clearing/parallel_ledger_view.hpp"
 #include "phantomledger/activity/spending/simulator/loop.hpp"
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 
 #include <array>
 #include <charconv>
-#include <cstddef>
+#include <cstdint>
 #include <iterator>
 #include <stdexcept>
 #include <string_view>
@@ -153,12 +154,6 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
 
   threadStates_.reserve(threadCfg.count);
 
-  // Reserve a thread-local buffer sized to the *expected* emission
-  // volume per thread, with kTxnReserveSlack headroom. With the
-  // Gamma-Poisson sampler the realized total is the expected mean
-  // times the average multiplier product (typically ~0.85-1.0); the
-  // 5% slack absorbs the random variance comfortably even when the
-  // multipliers run hot.
   const auto perThreadReserve = static_cast<std::size_t>(
       (static_cast<double>(market().bounds().days) *
        (static_cast<double>(market().population().count()) / 30.0) *
@@ -259,6 +254,7 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
   }
 
   emitParallel(population, state, frame, dailyMultipliers);
+  mergeThreadTxns(state);
 }
 
 void SpenderEmissionDriver::finish(RunState &state) { mergeThreadTxns(state); }

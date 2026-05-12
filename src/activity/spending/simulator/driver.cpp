@@ -54,6 +54,12 @@ Simulator::emissionThreads(SpenderEmissionDriver::Threads threads) noexcept {
   return *this;
 }
 
+Simulator &Simulator::cardCycleDriver(
+    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards) noexcept {
+  cardCycleDriver_ = cards;
+  return *this;
+}
+
 std::vector<transactions::Transaction> Simulator::run() {
   if (market_.bounds().days == 0) {
     return {};
@@ -68,6 +74,7 @@ std::vector<transactions::Transaction> Simulator::run() {
   dayDriver_.bindRng(rng_);
   dayDriver_.bindLedger(ledger_);
   dayDriver_.bindFactory(factory_);
+  dayDriver_.bindCardCycleDriver(cardCycleDriver_);
   dayDriver_.emissionThreads(emissionThreads_);
   dayDriver_.prepareEmission(planner_.txnsPerMonth());
 
@@ -114,6 +121,14 @@ std::vector<transactions::Transaction> Simulator::run() {
   }
 
   dayDriver_.finish(state);
+
+  auto cardResidual = dayDriver_.drainCardCycles();
+  if (!cardResidual.empty()) {
+    state.txns().reserve(state.txns().size() + cardResidual.size());
+    for (auto &txn : cardResidual) {
+      state.txns().push_back(std::move(txn));
+    }
+  }
 
   const auto runMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now() - runStartTs)

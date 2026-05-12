@@ -7,13 +7,13 @@
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 #include "phantomledger/transfers/channels/government/benefits_emitter.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
 #include "phantomledger/transfers/channels/government/recipients.hpp"
 #include "phantomledger/transfers/channels/government/retirement.hpp"
 #include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
 #include "phantomledger/transfers/legit/routines/atm.hpp"
-#include "phantomledger/transfers/legit/routines/credit_cards.hpp"
 #include "phantomledger/transfers/legit/routines/internal.hpp"
 #include "phantomledger/transfers/legit/routines/paychecks.hpp"
 #include "phantomledger/transfers/legit/routines/relatives.hpp"
@@ -32,6 +32,7 @@ namespace {
 
 namespace pl_gov = ::PhantomLedger::transfers::government;
 namespace pl_inflows = ::PhantomLedger::inflows;
+namespace pl_credit = ::PhantomLedger::transfers::credit_cards;
 
 [[nodiscard]] time::Window
 windowFromPlan(const blueprints::LegitBlueprint &plan) noexcept {
@@ -288,6 +289,34 @@ void addInternalTransfers(const RoutinePass &pass,
   streams.add(internalTransfers.generate(plan));
 }
 
+[[nodiscard]] routines::spending::SpendingRoutine::CardLifecycleConfig
+buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
+                         const RoutineResources &resources) {
+  routines::spending::SpendingRoutine::CardLifecycleConfig cfg{};
+  if (resources.creditCards == nullptr ||
+      resources.creditCards->records.empty()) {
+    return cfg;
+  }
+
+  cfg.cards = resources.creditCards;
+  cfg.rules = resources.cardLifecycle != nullptr
+                  ? resources.cardLifecycle
+                  : &pl_credit::kDefaultLifecycleRules;
+  cfg.issuerAccount = plan.counterparties().issuerAcct;
+  cfg.window = windowFromPlan(plan);
+  cfg.seed = plan.seed();
+
+  if (plan.allAccounts() != nullptr) {
+    cfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());
+    for (const auto &kv : plan.primaryAcctRecordIx()) {
+      const auto &record = plan.allAccounts()->records[kv.second];
+      cfg.primaryAccounts.emplace(kv.first, record.id);
+    }
+  }
+
+  return cfg;
+}
+
 void addSpending(const RoutinePass &pass,
                  const blueprints::LegitBlueprint &plan, TxnStreams &streams,
                  ScreenBook &screen) {
@@ -301,7 +330,8 @@ void addSpending(const RoutinePass &pass,
 
   namespace routineSpending = routines::spending;
 
-  const routineSpending::SpendingRoutine routine;
+  routineSpending::SpendingRoutine routine;
+  routine.cardLifecycle(buildCardLifecycleConfig(plan, resources));
 
   const routineSpending::SpendingRoutine::CensusSource census{
       .blueprint = plan,
@@ -407,17 +437,9 @@ void addFamily(
   streams.add(routines::relatives::generateFamilyTxns(run, transferModel));
 }
 
-void addCredit(const CreditLifecyclePass &pass,
-               const blueprints::LegitBlueprint &plan,
-               const transactions::Factory &txf, TxnStreams &streams) {
-  streams.add(routines::credit_cards::generateLifecycle(
-      routines::credit_cards::LifecycleRunRequest{
-          .rng = pass.rng(),
-          .cards = pass.cards(),
-          .lifecycle = pass.lifecycle(),
-      },
-      plan, txf,
-      std::span<const transactions::Transaction>(streams.candidates())));
-}
+void addCredit(const CreditLifecyclePass & /*pass*/,
+               const blueprints::LegitBlueprint & /*plan*/,
+               const transactions::Factory & /*txf*/,
+               TxnStreams & /*streams*/) {}
 
 } // namespace PhantomLedger::transfers::legit::ledger::passes

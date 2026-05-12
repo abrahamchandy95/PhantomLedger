@@ -14,11 +14,13 @@
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <utility>
@@ -31,6 +33,7 @@ namespace plMarket = plSpending::market;
 namespace plPop = plMarket::population;
 namespace plObligations = plSpending::obligations;
 namespace plSimulator = plSpending::simulator;
+namespace plCredit = ::PhantomLedger::transfers::credit_cards;
 
 SpendingRoutine &SpendingRoutine::habits(SpendingHabits value) noexcept {
   habits_ = value;
@@ -57,11 +60,12 @@ SpendingRoutine &SpendingRoutine::emission(EmissionProfile value) noexcept {
   return *this;
 }
 
-namespace {
+SpendingRoutine &SpendingRoutine::cardLifecycle(CardLifecycleConfig value) {
+  cards_ = std::move(value);
+  return *this;
+}
 
-// ---------------------------------------------------------------------------
-// Census materialization
-// ---------------------------------------------------------------------------
+namespace {
 
 [[nodiscard]] std::uint32_t
 personCount(const blueprints::LegitBlueprint &plan) {
@@ -123,10 +127,6 @@ buildCensusScratch(const blueprints::LegitBlueprint &plan,
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// Cards lookup
-// ---------------------------------------------------------------------------
-
 [[nodiscard]] plMarket::Cards
 buildSpendingCards(const entity::card::Registry *creditCards,
                    std::uint32_t personCount) {
@@ -150,10 +150,6 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 
   return cards;
 }
-
-// ---------------------------------------------------------------------------
-// Market bootstrap assembly
-// ---------------------------------------------------------------------------
 
 [[nodiscard]] plMarket::MarketSources
 assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
@@ -281,13 +277,28 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
       .count = plSimulator::resolveThreadCount(),
   };
 
+  std::optional<plCredit::CardCycleDriver> cardDriver;
+  if (cards_.active()) {
+    plCredit::DriverInputs inputs{
+        .cards = cards_.cards,
+        .primaryAccounts = &cards_.primaryAccounts,
+        .issuerAccount = cards_.issuerAccount,
+        .window = cards_.window,
+    };
+    cardDriver.emplace(
+        *cards_.rules, execution.txf,
+        random::RngFactory{cards_.seed != 0 ? cards_.seed : execution.seed},
+        inputs, screenBook);
+  }
+
   plSimulator::Simulator simulator(market, execution.rng, execution.txf,
                                    obligations);
 
   simulator.ledger(screenBook)
       .planner(plannerFrom(planning_))
       .dayDriver(dayDriverFrom(day_, dynamics_, emission_))
-      .emissionThreads(emissionThreads);
+      .emissionThreads(emissionThreads)
+      .cardCycleDriver(cardDriver ? &*cardDriver : nullptr);
 
   return simulator.run();
 }

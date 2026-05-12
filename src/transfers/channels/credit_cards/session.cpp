@@ -16,33 +16,34 @@ namespace PhantomLedger::transfers::credit_cards::detail {
 namespace {
 
 inline constexpr double kAmountSlack = 1e-6;
-
 inline constexpr double kStatementClosedThreshold = 0.01;
-
 inline constexpr time::Minutes kInterestPostOffset{15};
-
 inline constexpr time::Hours kLateFeeMorningHour{10};
-
 inline constexpr time::Hours kDueDateHour{17};
-
 inline constexpr int kDaysPerYear = 365;
 
 } // namespace
 
-Session::Session(const Environment &env, CardPurchases card, random::Rng rng,
+Session::Session(const Environment &env, Account account, random::Rng rng,
                  std::vector<transactions::Transaction> &out)
-    : env_(env), card_(card), rng_(std::move(rng)), out_(out) {}
+    : env_(env), account_(account), rng_(std::move(rng)), out_(out) {}
 
-void Session::run(Cycle cycle) {
+Session::Session(const Environment &env, Account account, random::Rng rng,
+                 std::vector<transactions::Transaction> &out,
+                 LedgerBinding ledger)
+    : env_(env), account_(account), rng_(std::move(rng)), out_(out),
+      ledger_(ledger) {}
+
+void Session::run(CardPurchases purchases, Cycle cycle) {
   events_.clear();
   events_.reserve(64);
 
-  collectPurchases(cycle);
+  collectPurchases(purchases, cycle);
   drainDueCredits(cycle);
   sortEventsByTime();
 
   const auto snapshot = integrateBalance(
-      card_.account.card, state_.balance, events_,
+      account_.card, state_.balance, events_,
       time::HalfOpenInterval{.start = cycle.start, .endExcl = cycle.endExcl});
   state_.balance = snapshot.ending;
 
@@ -75,15 +76,13 @@ void Session::run(Cycle cycle) {
   state_.inGrace = paidFullOnTime;
 }
 
-// ----- Phase 1: pull cycle's purchases and dispute draws ---------------
-
-void Session::collectPurchases(Cycle cycle) {
+void Session::collectPurchases(CardPurchases purchases, Cycle cycle) {
   const std::int64_t cycleEndEpoch = time::toEpochSeconds(cycle.endExcl);
   const DisputeSampler sampler{env_.disputes, env_.factory};
 
-  while (state_.purchaseCursor < card_.indices.size()) {
-    const auto txnIx = card_.indices[state_.purchaseCursor];
-    const auto &purchase = card_.txns[txnIx];
+  while (state_.purchaseCursor < purchases.indices.size()) {
+    const auto txnIx = purchases.indices[state_.purchaseCursor];
+    const auto &purchase = purchases.txns[txnIx];
     if (purchase.timestamp >= cycleEndEpoch) {
       break;
     }
@@ -98,8 +97,6 @@ void Session::collectPurchases(Cycle cycle) {
     ++state_.purchaseCursor;
   }
 }
-
-// ----- Phase 2: drain merchant credits whose timestamps land here ------
 
 void Session::drainDueCredits(Cycle cycle) {
   const std::int64_t startEpoch = time::toEpochSeconds(cycle.start);
@@ -126,16 +123,13 @@ void Session::sortEventsByTime() {
             });
 }
 
-// ----- Phase 3: interest accrual ---------------------------------------
-
 void Session::accrueInterest(double averageBalance, Cycle cycle) {
   if (state_.inGrace) {
     return;
   }
   const double interval = intervalDays(cycle.start, cycle.endExcl);
   const double debtAvg = std::max(0.0, -averageBalance);
-  const double rawInterest =
-      debtAvg * (card_.account.apr / kDaysPerYear) * interval;
+  const double rawInterest = debtAvg * (account_.apr / kDaysPerYear) * interval;
   const auto interest = billableInterest(rawInterest);
   if (!interest.has_value()) {
     return;
@@ -143,7 +137,7 @@ void Session::accrueInterest(double averageBalance, Cycle cycle) {
 
   book(
       transactions::Draft{
-          .source = card_.account.card,
+          .source = account_.card,
           .destination = env_.issuerAccount,
           .amount = *interest,
           .timestamp =
@@ -153,13 +147,11 @@ void Session::accrueInterest(double averageBalance, Cycle cycle) {
       -*interest);
 }
 
-// ----- Phase 4: draft a payment based on autopay mode ------------------
-
 Session::PaymentIntent Session::draftPayment(double statementAbs,
                                              double minimumDueAmt,
                                              time::TimePoint due) {
   PaymentIntent intent{};
-  switch (card_.account.autopay) {
+  switch (account_.autopay) {
   case entity::card::Autopay::full:
     intent.amount = statementAbs;
     intent.when = samplePaymentTime(env_.payments.timing, rng_, due, true);
@@ -178,8 +170,6 @@ Session::PaymentIntent Session::draftPayment(double statementAbs,
   return intent;
 }
 
-// ----- Phase 5: post the payment if it falls inside the window ---------
-
 void Session::postPayment(const PaymentIntent &intent,
                           time::TimePoint windowEndExcl) {
   if (intent.amount <= 0.0 || intent.when >= windowEndExcl) {
@@ -187,16 +177,14 @@ void Session::postPayment(const PaymentIntent &intent,
   }
   book(
       transactions::Draft{
-          .source = card_.account.funding,
-          .destination = card_.account.card,
+          .source = account_.funding,
+          .destination = account_.card,
           .amount = intent.amount,
           .timestamp = time::toEpochSeconds(intent.when),
           .channel = channels::tag(channels::Credit::payment),
       },
       +intent.amount);
 }
-
-// ----- Phase 6: late fee on missed minimum -----------------------------
 
 void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
   const time::TimePoint fallback =
@@ -207,7 +195,7 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
 
   book(
       transactions::Draft{
-          .source = card_.account.card,
+          .source = account_.card,
           .destination = env_.issuerAccount,
           .amount = fee,
           .timestamp = time::toEpochSeconds(feeTs),
@@ -216,11 +204,40 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
       -fee);
 }
 
-// ----- Primitive: materialize a transaction and book the balance ------
-
 void Session::book(const transactions::Draft &draft, double balanceDelta) {
   out_.push_back(env_.factory.make(draft));
   state_.balance += balanceDelta;
+  postToLedger(draft);
+}
+
+void Session::postToLedger(const transactions::Draft &draft) {
+  if (ledger_.ledger == nullptr) {
+    return;
+  }
+
+  const auto channel = draft.channel;
+  ::PhantomLedger::clearing::Ledger::Index srcIdx =
+      ::PhantomLedger::clearing::Ledger::invalid;
+  ::PhantomLedger::clearing::Ledger::Index dstIdx =
+      ::PhantomLedger::clearing::Ledger::invalid;
+
+  if (channel == channels::tag(channels::Credit::payment)) {
+    srcIdx = ledger_.fundingIdx;
+    dstIdx = ledger_.cardIdx;
+  } else if (channel == channels::tag(channels::Credit::interest) ||
+             channel == channels::tag(channels::Credit::lateFee)) {
+    srcIdx = ledger_.cardIdx;
+    dstIdx = ledger_.issuerIdx;
+  } else {
+    return;
+  }
+
+  if (srcIdx == ::PhantomLedger::clearing::Ledger::invalid ||
+      dstIdx == ::PhantomLedger::clearing::Ledger::invalid) {
+    return;
+  }
+
+  (void)ledger_.ledger->transfer(srcIdx, dstIdx, draft.amount, channel);
 }
 
 } // namespace PhantomLedger::transfers::credit_cards::detail
