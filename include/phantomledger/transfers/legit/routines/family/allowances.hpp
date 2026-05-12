@@ -10,8 +10,8 @@ namespace PhantomLedger::transfers::legit::routines::family::allowances {
 
 struct AllowanceSchedule {
   bool enabled = true;
-  double weeklyP = 0.60;
-  double paretoXm = 15.0;
+  double weeklyP = 0.70;
+  double paretoXm = 35.0;
   double paretoAlpha = 2.2;
 
   void validate(primitives::validate::Report &r) const {

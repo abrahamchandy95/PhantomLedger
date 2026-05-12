@@ -97,14 +97,21 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
       .client = {},
       .platform = {},
       .settlement = {},
-      .ownerDraw = {},
+      .ownerDraw =
+          {
+              .activeP = 0.55,
+              .paymentsMin = 1,
+              .paymentsMax = 2,
+              .median = 6000.0,
+              .sigma = 0.65,
+          },
       .investment =
           {
               .activeP = 0.72,
-              .paymentsMin = 0,
-              .paymentsMax = 2,
-              .median = 6500.0,
-              .sigma = 1.05,
+              .paymentsMin = 1,
+              .paymentsMax = 3,
+              .median = 12000.0,
+              .sigma = 1.00,
           },
       .quietMonth = {.probability = 0.02},
   };

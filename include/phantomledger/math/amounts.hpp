@@ -24,9 +24,6 @@ struct AmountModel {
   };
 
   Kind kind = Kind::invalid;
-
-  // LogNormal: p0 = median, p1 = sigma
-  // Gamma:     p0 = shape,  p1 = scale, p2 = add
   double p0 = 0.0;
   double p1 = 0.0;
   double p2 = 0.0;
@@ -70,7 +67,7 @@ struct AmountModel {
 inline constexpr auto kSalary = AmountModel::lognormal(4500.0, 0.55, 50.0);
 inline constexpr auto kRent = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);
 inline constexpr auto kP2P = AmountModel::lognormal(45.0, 0.8, 1.0);
-inline constexpr auto kBill = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);
+inline constexpr auto kBill = AmountModel::gamma(2.0, 55.0, 15.0, 1.0);
 inline constexpr auto kExternalUnknown =
     AmountModel::lognormal(120.0, 0.95, 5.0);
 inline constexpr auto kAtm = AmountModel::lognormal(80.0, 0.30, 20.0);
@@ -134,8 +131,6 @@ setMerchant(std::array<AmountModel, merchants::kCategoryCount> &table,
   setChannel(table, channels::tag(L::ownerDraw), kOwnerDraw);
   setChannel(table, channels::tag(L::investmentInflow), kInvestmentInflow);
 
-  // All rent variants share the rent distribution. The channel tag
-  // still carries the behavioral signal.
   setChannel(table, channels::tag(R::generic), kRent);
   setChannel(table, channels::tag(R::ach), kRent);
   setChannel(table, channels::tag(R::portal), kRent);
@@ -176,14 +171,10 @@ inline constexpr AmountModel kDefaultMerchant =
 
 } // namespace detail
 
-/// O(1) lookup by channel tag. Returned reference is valid for program
-/// lifetime.
 [[nodiscard]] inline const AmountModel &forChannel(channels::Tag tag) noexcept {
   return detail::kChannelTable[detail::channelIndex(tag)];
 }
 
-/// Sample an amount for the given channel. Throws if the channel has
-/// no registered model.
 [[nodiscard]] inline double sample(random::Rng &rng, channels::Tag tag) {
   const auto &model = forChannel(tag);
 
@@ -195,8 +186,6 @@ inline constexpr AmountModel kDefaultMerchant =
   return model.sample(rng);
 }
 
-/// Sample a merchant-category amount. Unknown categories fall back
-/// to a default lognormal model.
 [[nodiscard]] inline double merchantAmount(random::Rng &rng,
                                            merchants::Category category) {
   const auto &model = detail::kMerchantTable[detail::merchantIndex(category)];

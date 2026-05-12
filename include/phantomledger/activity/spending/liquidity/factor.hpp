@@ -10,4 +10,21 @@ namespace PhantomLedger::spending::liquidity {
   return softened * softened;
 }
 
+[[nodiscard]] constexpr double amountFactor(double liquidityMult) noexcept {
+  constexpr double kHighWater = 0.95;
+  constexpr double kLowWater = 0.70;
+  constexpr double kFloor = 0.85;
+
+  if (liquidityMult >= kHighWater) {
+    return 1.0;
+  }
+
+  if (liquidityMult <= kLowWater) {
+    return kFloor;
+  }
+
+  const double t = (liquidityMult - kLowWater) / (kHighWater - kLowWater);
+  return kFloor + (1.0 - kFloor) * t;
+}
+
 } // namespace PhantomLedger::spending::liquidity

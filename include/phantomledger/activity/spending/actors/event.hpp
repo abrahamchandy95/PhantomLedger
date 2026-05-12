@@ -10,6 +10,7 @@ struct Event {
   time::TimePoint ts{};
   double exploreP = 0.0;
   double availableCash = 0.0;
+  double amountFactor = 1.0;
 };
 
 } // namespace PhantomLedger::spending::actors

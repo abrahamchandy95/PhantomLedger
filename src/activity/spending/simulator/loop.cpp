@@ -3,6 +3,7 @@
 #include "phantomledger/activity/spending/actors/counts.hpp"
 #include "phantomledger/activity/spending/actors/event.hpp"
 #include "phantomledger/activity/spending/actors/explore.hpp"
+#include "phantomledger/activity/spending/liquidity/factor.hpp"
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
@@ -203,8 +204,8 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
   auto maybeResult = router.route(slot, event);
 
   if (!maybeResult.has_value()) {
-    stats.recordRouteNullopt(/*dayIndex=*/0, event.spender->personIndex,
-                             personaBucket, slot, liqMult, avail);
+    stats.recordRouteNullopt(0u, event.spender->personIndex, personaBucket,
+                             slot, liqMult, avail);
     return std::nullopt;
   }
 
@@ -215,9 +216,8 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                                        maybeResult->draft.channel);
 
   if (decision.rejected()) {
-    stats.recordTransferRejected(/*dayIndex=*/0, event.spender->personIndex,
-                                 personaBucket, slot, decision.reason(),
-                                 liqMult, avail);
+    stats.recordTransferRejected(0u, event.spender->personIndex, personaBucket,
+                                 slot, decision.reason(), liqMult, avail);
     return std::nullopt;
   }
 
@@ -262,6 +262,7 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
         rates_.exploreProbabilityFor(spender, liquidityMult);
 
     const double availableCash = rates_.availableCashFor(prepared);
+    const double amountFactor = liquidity::amountFactor(liquidityMult);
 
     std::uint32_t accepted = 0;
     std::uint32_t consecutiveFailures = 0;
@@ -279,6 +280,7 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       event.ts = rates_.timestampAtOffset(offsetSec);
       event.exploreP = exploreP;
       event.availableCash = availableCash;
+      event.amountFactor = amountFactor;
 
       auto maybeTxn = payments_.tryEmit(rng, event);
       if (!maybeTxn.has_value()) {

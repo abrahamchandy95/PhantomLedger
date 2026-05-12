@@ -26,6 +26,7 @@ inline constexpr channels::Tag kCardChannel =
     channels::tag(channels::Legit::cardPurchase);
 
 inline constexpr double kCashCushionMultiple = 1.5;
+inline constexpr double kAmountFloor = 1.0;
 
 struct PaymentRoute {
   entity::Key srcKey{};
@@ -56,8 +57,6 @@ struct PaymentRoute {
 
 } // namespace
 
-// ----------------------------- Bill --------------------------------
-
 EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
   const auto &commerce = market_.commerce();
   const auto billerRow = commerce.billers().rowOf(event.spender->personIndex);
@@ -79,7 +78,8 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
                           ? resolved_.merchantCounterpartyIdx[billerIdx]
                           : clearing::Ledger::invalid;
 
-  const double amount = math::amounts::kBill.sample(rng_);
+  const double raw = math::amounts::kBill.sample(rng_) * event.amountFactor;
+  const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
   result.draft = transactions::Draft{
@@ -96,15 +96,13 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
   return result;
 }
 
-// --------------------------- External ------------------------------
-
 EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
   const entity::Key dst =
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
-  const double amount = primitives::utils::floorAndRound(
-      math::amounts::kExternalUnknown.sample(rng_),
-      /*floor=*/1.0);
+  const double raw =
+      math::amounts::kExternalUnknown.sample(rng_) * event.amountFactor;
+  const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
   result.draft = transactions::Draft{
@@ -121,22 +119,20 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
   return result;
 }
 
-// ----------------------------- P2P ---------------------------------
-
 std::optional<EmissionResult>
 PaymentRouter::emitP2p(const actors::Event &event) {
   const auto &commerce = market_.commerce();
   const auto contactRow = commerce.contacts().rowOf(event.spender->personIndex);
 
   if (contactRow.empty()) {
-    return std::nullopt;
+    return emitExternal(event);
   }
 
   const auto slot = rng_.choiceIndex(contactRow.size());
   const auto contactPersonIndex = contactRow[slot];
 
   if (contactPersonIndex >= market_.population().count()) {
-    return std::nullopt;
+    return emitExternal(event);
   }
 
   const auto contactPerson =
@@ -144,12 +140,12 @@ PaymentRouter::emitP2p(const actors::Event &event) {
   const auto dst = market_.population().primary(contactPerson);
 
   if (!entity::valid(dst) || dst == event.spender->depositAccount) {
-    return std::nullopt;
+    return emitExternal(event);
   }
 
-  const double raw =
-      math::amounts::kP2P.sample(rng_) * event.spender->amountMultiplier;
-  const double amount = primitives::utils::floorAndRound(raw, /*floor=*/1.0);
+  const double raw = math::amounts::kP2P.sample(rng_) *
+                     event.spender->amountMultiplier * event.amountFactor;
+  const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   const auto dstIdx = contactPersonIndex < resolved_.personPrimaryIdx.size()
                           ? resolved_.personPrimaryIdx[contactPersonIndex]
@@ -169,8 +165,6 @@ PaymentRouter::emitP2p(const actors::Event &event) {
   result.dstIdx = dstIdx;
   return result;
 }
-
-// --------------------------- Merchant ------------------------------
 
 std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
                                                double exploreP) {
@@ -220,11 +214,10 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   const auto category = record.category;
 
   const double rawAmount = math::amounts::merchantAmount(rng_, category) *
-                           event.spender->amountMultiplier;
+                           event.spender->amountMultiplier * event.amountFactor;
   const double amount =
-      primitives::utils::floorAndRound(rawAmount, /*floor=*/1.0);
+      primitives::utils::floorAndRound(rawAmount, kAmountFloor);
 
-  // cc_share + liquidity-aware fallback. See selectPaymentRoute above.
   const auto route =
       selectPaymentRoute(rng_, *event.spender, event.availableCash, amount);
 
@@ -246,8 +239,6 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   result.dstIdx = dstIdx;
   return result;
 }
-
-// --------------------------- Dispatch ------------------------------
 
 std::optional<EmissionResult> PaymentRouter::route(Slot slot,
                                                    const actors::Event &event) {
