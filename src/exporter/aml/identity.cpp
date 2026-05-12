@@ -315,21 +315,22 @@ onboardingDate(::PhantomLedger::entity::PersonId personId,
 
 NameRecord nameForPerson(::PhantomLedger::entity::PersonId personId,
                          const ::PhantomLedger::entity::pii::Roster &pii,
-                         const pii_ns::LocalePool &usPool) {
+                         const pii_ns::PoolSet &pools) {
   NameRecord out;
   out.id = renderPersonId<24>(std::string_view{"NM_"}, personId);
 
   const auto &rec = pii.at(personId);
+  const auto &pool = pools.forCountry(rec.country);
 
-  if (rec.name.firstIdx < usPool.firstNames.size()) {
-    out.firstName = usPool.firstNames[rec.name.firstIdx];
+  if (rec.name.firstIdx < pool.firstNames.size()) {
+    out.firstName = pool.firstNames[rec.name.firstIdx];
   }
   if (rec.name.middleIdx != ::PhantomLedger::entity::pii::kNoMiddleIdx &&
-      rec.name.middleIdx < usPool.middleNames.size()) {
-    out.middleName = usPool.middleNames[rec.name.middleIdx];
+      rec.name.middleIdx < pool.middleNames.size()) {
+    out.middleName = pool.middleNames[rec.name.middleIdx];
   }
-  if (rec.name.lastIdx < usPool.lastNames.size()) {
-    out.lastName = usPool.lastNames[rec.name.lastIdx];
+  if (rec.name.lastIdx < pool.lastNames.size()) {
+    out.lastName = pool.lastNames[rec.name.lastIdx];
   }
   return out;
 }
@@ -370,17 +371,18 @@ RoutingNumber routingNumberForId(std::string_view bankId) noexcept {
 
 AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
                                const ::PhantomLedger::entity::pii::Roster &pii,
-                               const pii_ns::LocalePool &usPool) {
+                               const pii_ns::PoolSet &pools) {
   AddressRecord out;
   out.id = renderPersonId<32>(std::string_view{"ADDR_"}, personId);
 
   const auto &rec = pii.at(personId);
+  const auto &pool = pools.forCountry(rec.country);
 
-  if (rec.address.streetIdx < usPool.streets.size()) {
-    out.streetLine1 = usPool.streets[rec.address.streetIdx];
+  if (rec.address.streetIdx < pool.streets.size()) {
+    out.streetLine1 = pool.streets[rec.address.streetIdx];
   }
-  if (rec.address.zipTableIdx < usPool.zipTable.size()) {
-    const auto &zip = usPool.zipTable[rec.address.zipTableIdx];
+  if (rec.address.zipTableIdx < pool.zipTable.size()) {
+    const auto &zip = pool.zipTable[rec.address.zipTableIdx];
     out.city = zip.city;
     out.state = zip.adminCode;
     out.postalCode = zip.postalCode;
@@ -390,8 +392,7 @@ AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
   const auto hash = stableU64({seed.view(), "address_apt"});
   fillStreetLine2(out.streetLine2, hash);
 
-  out.country =
-      ::PhantomLedger::locale::code(::PhantomLedger::locale::Country::us);
+  out.country = ::PhantomLedger::locale::code(rec.country);
   out.addressType = "residential";
   out.isHighRiskGeo = false;
   return out;

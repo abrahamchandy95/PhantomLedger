@@ -51,15 +51,21 @@ customerIdFor(ent::PersonId p) noexcept {
   return k.bank == ent::Bank::external;
 }
 
-/// Same accessor pattern as vertices.cpp: every content-using writer
-/// goes through this so a hand-built SharedContext with a null pool
-/// fails loudly in debug builds.
+/// Same accessor pattern as vertices.cpp: per-customer reads go through
+/// the full PoolSet (so each person's locale comes from their
+/// pii::Record::country), while counterparty/bank synthesis selects the
+/// US slot internally.
+[[nodiscard]] const pii_ns::PoolSet &
+poolsFor(const vertices::SharedContext &ctx) noexcept {
+  assert(ctx.pools != nullptr &&
+         "SharedContext::pools is null — was the context built with "
+         "buildSharedContext(entities, txns, pools)?");
+  return *ctx.pools;
+}
+
 [[nodiscard]] const pii_ns::LocalePool &
-poolFor(const vertices::SharedContext &ctx) noexcept {
-  assert(ctx.usPool != nullptr &&
-         "SharedContext::usPool is null — was the context built with "
-         "buildSharedContext(entities, txns, usPool)?");
-  return *ctx.usPool;
+usPoolFor(const vertices::SharedContext &ctx) noexcept {
+  return poolsFor(ctx).forCountry(loc::Country::us);
 }
 
 /// Walk every (personId, internal-account-key) pair.
@@ -117,7 +123,7 @@ classifyTransactionEdges(const pl::Entities &entities,
                          std::span<const tx_ns::Transaction> finalTxns,
                          const vertices::SharedContext &ctx) {
   TransactionEdgeBundle out;
-  const auto &usPool = poolFor(ctx);
+  const auto &usPool = usPoolFor(ctx);
 
   // Memoize counterparty business names — the same external key shows
   // up across many transactions, and `nameForCounterparty` does a hash
@@ -180,14 +186,15 @@ classifyTransactionEdges(const pl::Entities &entities,
 MinhashVertexSets collectMinhashVertexSets(const pl::Entities &entities,
                                            const vertices::SharedContext &ctx) {
   MinhashVertexSets out;
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
+  const auto &usPool = pools.forCountry(loc::Country::us);
   const auto &pii = entities.pii;
 
   std::string addrScratch;
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto nm = identity::nameForPerson(p, pii, usPool);
-    const auto addr = identity::addressForPerson(p, pii, usPool);
+    const auto nm = identity::nameForPerson(p, pii, pools);
+    const auto addr = identity::addressForPerson(p, pii, pools);
 
     for (auto &id : minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       out.name.insert(std::move(id));
@@ -371,7 +378,7 @@ void writeCustomerAssociatedWithCountryRows(
     t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    w.writeRow(customerIdFor(p), kUsCountry, ts);
+    w.writeRow(customerIdFor(p), loc::code(entities.pii.at(p).country), ts);
   }
 }
 
@@ -403,7 +410,13 @@ void writeAccountAssociatedWithCountryRows(
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
     }
-    w.writeRow(renderKey(rec.id), kUsCountry, ts);
+    // Institutional / system accounts have no human owner; fall back to
+    // the bank's home country.
+    const auto countryCode =
+        (rec.owner == ent::invalidPerson)
+            ? kUsCountry
+            : loc::code(entities.pii.at(rec.owner).country);
+    w.writeRow(renderKey(rec.id), countryCode, ts);
   }
 }
 
@@ -411,28 +424,30 @@ void writeAddressInCountryRows(::PhantomLedger::exporter::csv::Writer &w,
                                const pl::Entities &entities,
                                const vertices::SharedContext &ctx,
                                t_ns::TimePoint simStart) {
-  // Country is always "US" for the AML exporter, so we can emit the
-  // edge straight from the address id without producing the full
-  // AddressRecord. Dedup set is sized by unique entities, not rows.
+  // Customer addresses inherit each person's country from the PII
+  // roster; counterparty and bank addresses are US-synthetic.
+  // Dedup set is sized by unique entities, not rows.
   const auto ts = t_ns::formatTimestamp(simStart);
   std::unordered_set<std::string> emitted;
   emitted.reserve(entities.people.roster.count + ctx.counterpartyIds.size() +
                   21U);
 
-  const auto emit = [&](identity::StackString<32> id) {
+  const auto emit = [&](identity::StackString<32> id,
+                        std::string_view countryCode) {
     if (emitted.emplace(id.view()).second) {
-      w.writeRow(id, kUsCountry, ts);
+      w.writeRow(id, countryCode, ts);
     }
   };
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    emit(identity::addressIdForPerson(p));
+    emit(identity::addressIdForPerson(p),
+         loc::code(entities.pii.at(p).country));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
-    emit(identity::addressIdForCounterparty(cpId));
+    emit(identity::addressIdForCounterparty(cpId), kUsCountry);
   }
   for (const auto &bankId : ctx.bankIds) {
-    emit(identity::addressIdForBank(bankId));
+    emit(identity::addressIdForBank(bankId), kUsCountry);
   }
 }
 
@@ -557,11 +572,11 @@ void writeBankHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeCustomerHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
                                      const pl::Entities &entities,
                                      const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto nm = identity::nameForPerson(p, pii, usPool);
+    const auto nm = identity::nameForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     for (const auto &mhId :
          minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
@@ -573,12 +588,12 @@ void writeCustomerHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeCustomerHasAddressMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities,
     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   std::string addrScratch;
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto addr = identity::addressForPerson(p, pii, usPool);
+    const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     const auto fullAddr = joinAddress(addrScratch, addr);
     for (const auto &mhId : minhash::addressMinhashIds(fullAddr)) {
@@ -590,11 +605,11 @@ void writeCustomerHasAddressMinhashRows(
 void writeCustomerHasAddressStreetLine1MinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities,
     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto addr = identity::addressForPerson(p, pii, usPool);
+    const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     for (const auto &mhId : minhash::streetMinhashIds(addr.streetLine1)) {
       w.writeRow(cid, mhId);
@@ -605,11 +620,11 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
 void writeCustomerHasAddressCityMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities,
     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto addr = identity::addressForPerson(p, pii, usPool);
+    const auto addr = identity::addressForPerson(p, pii, pools);
     w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city));
   }
 }
@@ -617,11 +632,11 @@ void writeCustomerHasAddressCityMinhashRows(
 void writeCustomerHasAddressStateMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities,
     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto addr = identity::addressForPerson(p, pii, usPool);
+    const auto addr = identity::addressForPerson(p, pii, pools);
     w.writeRow(customerIdFor(p), minhash::stateMinhashId(addr.state));
   }
 }
@@ -629,7 +644,7 @@ void writeCustomerHasAddressStateMinhashRows(
 void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
                                     const pl::Entities &entities,
                                     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
   // Precompute the minhash id list per person — many accounts share an
@@ -637,7 +652,7 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
   std::unordered_map<ent::PersonId, std::vector<minhash::BucketId>> mhByPerson;
   mhByPerson.reserve(entities.people.roster.count);
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto nm = identity::nameForPerson(p, pii, usPool);
+    const auto nm = identity::nameForPerson(p, pii, pools);
     mhByPerson[p] = minhash::nameMinhashIds(nm.firstName, nm.lastName);
   }
 
@@ -656,7 +671,7 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeCounterpartyHasNameMinhashRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const vertices::SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &usPool = usPoolFor(ctx);
 
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto nm = identity::nameForCounterparty(cpId, usPool);

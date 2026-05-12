@@ -6,6 +6,7 @@
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
+#include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/taxonomies/lookup.hpp"
 #include "phantomledger/transactions/network/format.hpp"
@@ -84,17 +85,21 @@ resolvedPersona(const SharedContext &ctx, ent::PersonId p) noexcept {
   return ctx.personaByPerson[p - 1];
 }
 
-/// Centralized accessor: every writer that reaches the pool goes through
-/// this helper, which asserts the SharedContext was built correctly.
-/// `buildSharedContext` always sets `usPool`, so this is a debug-only
-/// guard against future refactors that might construct a SharedContext
-/// by hand.
+/// Per-customer lookups route through the full PoolSet so each
+/// person's locale is picked from their pii::Record::country.
+/// Counterparty/bank synthesis still goes through the US slot
+/// internally — see comments in exporter/aml/export.cpp.
+[[nodiscard]] const pii_ns::PoolSet &
+poolsFor(const SharedContext &ctx) noexcept {
+  assert(ctx.pools != nullptr &&
+         "SharedContext::pools is null — was the context built with "
+         "buildSharedContext(entities, txns, pools)?");
+  return *ctx.pools;
+}
+
 [[nodiscard]] const pii_ns::LocalePool &
-poolFor(const SharedContext &ctx) noexcept {
-  assert(ctx.usPool != nullptr &&
-         "SharedContext::usPool is null — was the context built with "
-         "buildSharedContext(entities, txns, usPool)?");
-  return *ctx.usPool;
+usPoolFor(const SharedContext &ctx) noexcept {
+  return poolsFor(ctx).forCountry(loc::Country::us);
 }
 
 } // namespace
@@ -106,9 +111,9 @@ poolFor(const SharedContext &ctx) noexcept {
 SharedContext
 buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
                    std::span<const tx_ns::Transaction> finalTxns,
-                   const pii_ns::LocalePool &usPool) {
+                   const pii_ns::PoolSet &pools) {
   SharedContext ctx;
-  ctx.usPool = &usPool;
+  ctx.pools = &pools;
 
   // Counterparty id set: render every external account key once.
   // `renderKey` is now allocation-free (returns a stack-buffer); the
@@ -168,9 +173,10 @@ inline void writeDemographicCells(::PhantomLedger::exporter::csv::Writer &w,
 
 inline void writeRiskAndOriginCells(::PhantomLedger::exporter::csv::Writer &w,
                                     std::string_view riskRating,
+                                    std::string_view originCountry,
                                     t_ns::TimePoint onboardingDate) {
   w.cell(riskRating)
-      .cell(kUsCountry)
+      .cell(originCountry)
       .cell(t_ns::formatTimestamp(onboardingDate));
 }
 
@@ -189,9 +195,14 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
 
+    // Per-customer country comes from the pii::Record set up by the
+    // LocaleMix at synthesis time (see entities/synth/pii/samplers.hpp).
+    const auto originCountry = loc::code(entities.pii.at(p).country);
+
     writeCustomerIdCells(w, customerKey, persona);
     writeDemographicCells(w, p, persona);
     writeRiskAndOriginCells(w, identity::riskRating(isFraud, isMule, isVictim),
+                            originCountry,
                             identity::onboardingDate(p, simStart));
     w.endRow();
   }
@@ -265,7 +276,7 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
 
 void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
                            const SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &usPool = usPoolFor(ctx);
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto bankId = counterpartyBankId(cpId);
     const auto cpName = identity::nameForCounterparty(cpId, usPool);
@@ -306,7 +317,8 @@ void writeAddressRow(::PhantomLedger::exporter::csv::Writer &w,
 void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
                    const ::PhantomLedger::pipeline::Entities &entities,
                    const SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
+  const auto &usPool = pools.forCountry(loc::Country::us);
 
   std::unordered_set<std::string> emitted;
   emitted.reserve(estimateIdentityRowCount(entities, ctx));
@@ -321,7 +333,7 @@ void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
   };
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    emitName(identity::nameForPerson(p, entities.pii, usPool));
+    emitName(identity::nameForPerson(p, entities.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
     emitName(identity::nameForCounterparty(cpId, usPool));
@@ -334,7 +346,8 @@ void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
                       const ::PhantomLedger::pipeline::Entities &entities,
                       const SharedContext &ctx) {
-  const auto &usPool = poolFor(ctx);
+  const auto &pools = poolsFor(ctx);
+  const auto &usPool = pools.forCountry(loc::Country::us);
 
   std::unordered_set<std::string> emitted;
   emitted.reserve(estimateIdentityRowCount(entities, ctx));
@@ -346,7 +359,7 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
   };
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    emitAddr(identity::addressForPerson(p, entities.pii, usPool));
+    emitAddr(identity::addressForPerson(p, entities.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
     emitAddr(identity::addressForCounterparty(cpId, usPool));
@@ -360,8 +373,63 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
 // Country / Bank / Watchlist / Minhash rows
 // ──────────────────────────────────────────────────────────────────────
 
-void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w) {
-  w.writeRow(kUsCountry, std::string_view{"United States"}, 0.1);
+namespace {
+
+// Display names + a coarse base risk score, one per Country enum slot,
+// laid out in the same order as locale::kCountries. Kept local to this
+// writer because no other AML writer needs human-readable country
+// names — if more callers ever want this, lift it into taxonomies/locale.
+struct CountryRow {
+  std::string_view displayName;
+  double baseRiskScore;
+};
+
+inline constexpr auto kCountryRows = std::to_array<CountryRow>({
+    {"United States", 0.10},  // us
+    {"United Kingdom", 0.10}, // gb
+    {"Canada", 0.10},         // ca
+    {"Australia", 0.10},      // au
+    {"Germany", 0.10},        // de
+    {"France", 0.10},         // fr
+    {"Spain", 0.15},          // es
+    {"Italy", 0.15},          // it
+    {"Netherlands", 0.10},    // nl
+    {"Brazil", 0.30},         // br
+    {"Mexico", 0.30},         // mx
+    {"India", 0.20},          // in
+    {"Japan", 0.10},          // jp
+    {"China", 0.35},          // cn
+    {"South Korea", 0.15},    // kr
+    {"Russia", 0.60},         // ru
+});
+
+static_assert(kCountryRows.size() == loc::kCountryCount,
+              "kCountryRows must match locale::kCountries 1:1");
+
+} // namespace
+
+void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w,
+                      const ::PhantomLedger::pipeline::Entities &entities) {
+  namespace enumTax = ::PhantomLedger::taxonomies::enums;
+
+  // Mark which countries actually appear in the customer base so the
+  // Country vertex table stays in sync with the edges that point to it.
+  // (Bank/counterparty/device rows always reference US, so US is forced
+  // on even if it weren't already present.)
+  std::array<bool, loc::kCountryCount> seen{};
+  seen[enumTax::toIndex(loc::Country::us)] = true;
+  for (const auto &rec : entities.pii.records) {
+    seen[enumTax::toIndex(rec.country)] = true;
+  }
+
+  for (std::size_t i = 0; i < loc::kCountryCount; ++i) {
+    if (!seen[i]) {
+      continue;
+    }
+    const auto country = loc::kCountries[i];
+    const auto &row = kCountryRows[i];
+    w.writeRow(loc::code(country), row.displayName, row.baseRiskScore);
+  }
 }
 
 void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,

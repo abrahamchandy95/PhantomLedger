@@ -27,13 +27,13 @@ struct SharedContext {
   std::unordered_map<::PhantomLedger::entity::Key, std::int64_t>
       lastTransactionByAccount;
 
-  const ::PhantomLedger::entities::synth::pii::LocalePool *usPool = nullptr;
+  const ::PhantomLedger::entities::synth::pii::PoolSet *pools = nullptr;
 };
 
 [[nodiscard]] SharedContext buildSharedContext(
     const ::PhantomLedger::pipeline::Entities &entities,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
-    const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+    const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
 
 // ────────── Vertex writers ──────────
 
@@ -59,7 +59,8 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
                       const ::PhantomLedger::pipeline::Entities &entities,
                       const SharedContext &ctx);
 
-void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w);
+void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w,
+                      const ::PhantomLedger::pipeline::Entities &entities);
 
 void writeDeviceRows(
     ::PhantomLedger::exporter::csv::Writer &w,
