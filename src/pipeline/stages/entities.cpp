@@ -1,6 +1,7 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
 #include "phantomledger/entities/synth/accounts/assign.hpp"
+#include "phantomledger/entities/synth/accounts/business_owners.hpp"
 #include "phantomledger/entities/synth/accounts/make.hpp"
 #include "phantomledger/entities/synth/cards/issue.hpp"
 #include "phantomledger/entities/synth/cards/seeds.hpp"
@@ -198,6 +199,13 @@ void finalizeAccountRegistry(pl::pipeline::Entities &entities) {
     addAccounts(entities.accounts, std::span<const Key>{keys},
                 /*external=*/true);
   }
+}
+
+void synthesizeBusinessOwners(pl::pipeline::Entities &entities,
+                              pl::random::Rng &rng,
+                              const synth::accounts::BusinessOwnerPlan &plan) {
+  synth::accounts::assignBusinessOwners(entities.accounts,
+                                        entities.people.roster, rng, plan);
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities
