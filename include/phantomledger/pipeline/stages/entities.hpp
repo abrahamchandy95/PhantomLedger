@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/synth/accounts/business_owners.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
 #include "phantomledger/entities/synth/accounts/sizing.hpp"
 #include "phantomledger/entities/synth/cards/issue.hpp"
@@ -40,6 +41,14 @@ struct EntitySynthesis {
   synth::landlords::GenerationPlan landlords{};
   synth::counterparties::CounterpartyTargets counterpartyTargets{};
   synth::cards::IssuanceRules cards{};
+
+  // Small-business-owner synthesis. Controls how many internal
+  // (Role::business, Bank::internal) accounts get added to the registry
+  // with Person owners — populates the AML exporter's Business / SIGNER_OF
+  // / BENEFICIAL_OWNER_OF / CONTROLS / BUSINESS_OWNS_ACCOUNT outputs.
+  // Default (probability 0.08) matches US small-business demographics;
+  // set to 0.0 in the plan to disable.
+  synth::accounts::BusinessOwnerPlan businessOwners{};
 
   void validate(pl::primitives::validate::Report &r) const {
     r.check([&] {
@@ -91,5 +100,20 @@ issueCreditCards(const synth::personas::Pack &personas,
     const synth::counterparties::CounterpartyTargets &targets = {});
 
 void finalizeAccountRegistry(pl::pipeline::Entities &entities);
+
+// Adds internal small-business accounts to the registry, owned by a
+// fraction of the existing Person population. Must run AFTER
+// finalizeAccountRegistry so the per-person ownership index can be
+// rebuilt in one pass over the final registry shape.
+//
+// Producing these accounts here (rather than at exporter time) means
+// downstream consumers see a realistic, consistent account population:
+// the same business accounts that show up in AML's Business vertices
+// also receive transactions, payroll, and ledger postings via the
+// standard transfer routines, since those routines walk the account
+// registry without caring about the role flag.
+void synthesizeBusinessOwners(
+    pl::pipeline::Entities &entities, pl::random::Rng &rng,
+    const synth::accounts::BusinessOwnerPlan &plan = {});
 
 } // namespace PhantomLedger::pipeline::stages::entities

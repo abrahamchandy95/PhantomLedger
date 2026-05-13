@@ -69,6 +69,7 @@ buildEntities(random::Rng &rng, time::Window window,
       rng, cfg.population, cfg.counterpartyTargets);
 
   entityStage::finalizeAccountRegistry(out);
+  entityStage::synthesizeBusinessOwners(out, rng, cfg.businessOwners);
   return out;
 }
 
