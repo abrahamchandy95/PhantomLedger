@@ -1,8 +1,10 @@
 #pragma once
 
+#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
+#include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/infra/synth/ips_output.hpp"
@@ -13,15 +15,15 @@
 
 #include <set>
 #include <span>
-#include <string>
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::vertices {
 
 struct SharedContext {
-  std::set<std::string> counterpartyIds;
 
-  std::set<std::string> bankIds;
+  std::set<::PhantomLedger::encoding::RenderedKey> counterpartyIds;
+
+  std::set<BankId> bankIds;
 
   std::vector<::PhantomLedger::personas::Type> personaByPerson;
   std::unordered_map<::PhantomLedger::entity::Key, std::int64_t>

@@ -4,88 +4,21 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/schema.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
+#include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/ledger.hpp"
-#include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/schema.hpp"
 
-#include <algorithm>
 #include <filesystem>
 #include <span>
-#include <stdexcept>
 
 namespace PhantomLedger::exporter::aml {
 
 namespace {
 
-namespace csv = ::PhantomLedger::exporter::csv;
 namespace schema = ::PhantomLedger::exporter::schema;
 namespace amlSchema = ::PhantomLedger::exporter::schema::aml;
-namespace ent = ::PhantomLedger::entity;
-namespace tx_ns = ::PhantomLedger::transactions;
-namespace pii_ns = ::PhantomLedger::entities::synth::pii;
+namespace cmn = ::PhantomLedger::exporter::common;
 
-[[nodiscard]] csv::Writer openTable(const std::filesystem::path &dir,
-                                    const schema::Table &table) {
-  csv::Writer w{dir / std::filesystem::path(table.filename)};
-  w.writeHeader(table.header);
-  return w;
-}
-
-[[nodiscard]] ::PhantomLedger::time::TimePoint
-deriveSimStart(std::span<const tx_ns::Transaction> finalTxns) {
-  if (finalTxns.empty()) {
-    return ::PhantomLedger::time::fromEpochSeconds(1735689600);
-  }
-
-  std::int64_t minTs = finalTxns.front().timestamp;
-  for (const auto &tx : finalTxns) {
-    if (tx.timestamp < minTs) {
-      minTs = tx.timestamp;
-    }
-  }
-
-  return ::PhantomLedger::time::fromEpochSeconds(minTs);
-}
-
-[[nodiscard]] const pii_ns::PoolSet &requirePools(const Options &options) {
-  if (options.piiPools == nullptr) {
-    throw std::invalid_argument(
-        "exporter::aml::exportAll: Options::piiPools is null. "
-        "Set it to the PoolSet built by app::setup::buildPoolSet "
-        "(see exporter::mule_ml::Options for the same pattern).");
-  }
-  return *options.piiPools;
-}
-
-[[nodiscard]] std::size_t
-countInternalAccounts(const ent::account::Registry &registry) noexcept {
-  std::size_t count = 0;
-  for (const auto &rec : registry.records) {
-    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
-      ++count;
-    }
-  }
-  return count;
-}
-
-[[nodiscard]] std::size_t
-countSoloFraud(const ent::person::Roster &roster) noexcept {
-  std::size_t count = 0;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    if (roster.has(p, ent::person::Flag::soloFraud)) {
-      ++count;
-    }
-  }
-  return count;
-}
-
-[[nodiscard]] std::size_t
-countIllicitTxns(std::span<const tx_ns::Transaction> txns) noexcept {
-  return static_cast<std::size_t>(std::count_if(
-      txns.begin(), txns.end(), [](const tx_ns::Transaction &tx) noexcept {
-        return tx.fraud.flag != 0;
-      }));
-}
+using cmn::openTable;
 
 } // namespace
 
@@ -99,8 +32,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto &postedTxns = transfers.ledger.posted.txns;
   const auto *postedBook = transfers.ledger.posted.book.get();
 
-  const auto simStart = deriveSimStart(postedTxns);
-  const auto &pools = requirePools(options);
+  const auto simStart = cmn::deriveSimStart(postedTxns);
+  const auto &pools = cmn::requirePools(options, "aml");
 
   const auto ctx = vertices::buildSharedContext(entities, postedTxns, pools);
 
@@ -115,10 +48,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       edges::classifyTransactionEdges(entities, postedTxns, ctx);
   const auto minhashSets = edges::collectMinhashVertexSets(entities, ctx);
 
-  // ──────────────────────────────────────────────────────────────────
   // Vertex tables — one CSV per node type.
-  // ──────────────────────────────────────────────────────────────────
-
   const auto vtxDir = outDir / "aml" / "vertices";
   std::filesystem::create_directories(vtxDir);
 
@@ -189,14 +119,11 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     vertices::writeMinhashIdRows(w, minhashSets.state);
   }
   {
-    // Empty by design — populated downstream by the graph-resolution stage.
     auto w = openTable(vtxDir, amlSchema::kConnectedComponent);
     (void)w;
   }
 
-  // ──────────────────────────────────────────────────────────────────
   // Edge tables — one CSV per relationship.
-  // ──────────────────────────────────────────────────────────────────
 
   const auto edgeDir = outDir / "aml" / "edges";
   std::filesystem::create_directories(edgeDir);
@@ -363,8 +290,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeResolvesToRows(w, entities, simStart);
   }
   {
-    // SameAs and CustomerInConnectedComponent are empty by design —
-    // populated by a downstream entity-resolution pass.
     auto w = openTable(edgeDir, amlSchema::kSameAs);
     (void)w;
   }
@@ -373,29 +298,14 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     (void)w;
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Optional debug dump.
-  // ──────────────────────────────────────────────────────────────────
-
   if (options.showTransactions) {
     auto w = openTable(outDir, schema::kLedger);
     ::PhantomLedger::exporter::common::writeLedgerRows(w, postedTxns);
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // Summary
-  // ──────────────────────────────────────────────────────────────────
-
   Summary summary;
-  summary.customerCount = entities.people.roster.count;
-  summary.internalAccountCount =
-      countInternalAccounts(entities.accounts.registry);
-  summary.counterpartyCount = ctx.counterpartyIds.size();
-  summary.totalTxnCount = postedTxns.size();
-  summary.illicitTxnCount = countIllicitTxns(postedTxns);
-  summary.fraudRingCount = entities.people.topology.rings.size();
-  summary.soloFraudCount = countSoloFraud(entities.people.roster);
-  summary.sarsFiledCount = sars.size();
+  cmn::fillBaseCounts(summary, entities, postedTxns, ctx.counterpartyIds.size(),
+                      sars.size());
   return summary;
 }
 

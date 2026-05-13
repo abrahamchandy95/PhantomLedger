@@ -25,7 +25,7 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "Usage: %s [options]\n"
       "\n"
       "Options:\n"
-      "  --usecase {standard,mule-ml,aml}  Exporter to run "
+      "  --usecase {standard,mule-ml,aml,aml-txn-edges}  Exporter to run "
       "(default: standard)\n"
       "  --days N                          Simulation length in days "
       "(default: 365)\n"
@@ -44,6 +44,7 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "  standard  -> <out>/*.csv\n"
       "  mule-ml   -> <out>/ml_ready/*.csv\n"
       "  aml       -> <out>/aml/{vertices,edges}/*.csv\n"
+      "  aml-txn-edges -> <out>/aml_txn_edges/{vertices,edges}/*.csv\n"
       "\n"
       "To produce both standard and mule-ml CSVs over the same dataset,\n"
       "run twice with the same --seed; the directories don't collide.\n",

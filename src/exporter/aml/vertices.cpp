@@ -115,12 +115,13 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
   SharedContext ctx;
   ctx.pools = &pools;
 
-  // Counterparty id set: render every external account key once.
-  // `renderKey` is now allocation-free (returns a stack-buffer); the
-  // single std::string we allocate is the set element itself.
+  // Counterparty id set: render every external account key once and
+  // emplace the stack-buffer RenderedKey directly into the set. The
+  // set still allocates one node per entry, but the per-element
+  // std::string allocation that the old code incurred is gone.
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
-      ctx.counterpartyIds.emplace(renderKey(rec.id).view());
+      ctx.counterpartyIds.emplace(renderKey(rec.id));
     }
   }
 
