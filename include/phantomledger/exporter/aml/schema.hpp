@@ -273,44 +273,47 @@ inline constexpr std::array<std::string_view, 2>
 inline constexpr Table kCustomerInConnectedComponent = make(
     "customer_in_connected_component.csv", kCustomerInConnectedComponentHeader);
 
-// ── MinHash edges — all share a 2-column (entity, minhash) header ──
+// ── MinHash edges — entity, minhash, plus discriminator column(s).
+//    Discriminator names match the AML graph schema's DISCRIMINATOR(...)
+//    declarations one-for-one so that the loading job is a straight
+//    positional read.
 
-inline constexpr std::array<std::string_view, 2> kCustomerHasNameMinhashHeader{
-    "Customer", "Name_MinHash"};
+inline constexpr std::array<std::string_view, 3> kCustomerHasNameMinhashHeader{
+    "Customer", "Name_MinHash", "name"};
 inline constexpr Table kCustomerHasNameMinhash =
     make("customer_has_name_minhash.csv", kCustomerHasNameMinhashHeader);
 
-inline constexpr std::array<std::string_view, 2>
-    kCustomerHasAddressMinhashHeader{"Customer", "Address_MinHash"};
+inline constexpr std::array<std::string_view, 3>
+    kCustomerHasAddressMinhashHeader{"Customer", "Address_MinHash", "address"};
 inline constexpr Table kCustomerHasAddressMinhash =
     make("customer_has_address_minhash.csv", kCustomerHasAddressMinhashHeader);
 
-inline constexpr std::array<std::string_view, 2>
-    kCustomerHasAddressStreetLine1MinhashHeader{"Customer",
-                                                "Street_Line1_MinHash"};
+inline constexpr std::array<std::string_view, 3>
+    kCustomerHasAddressStreetLine1MinhashHeader{
+        "Customer", "Street_Line1_MinHash", "street_line1"};
 inline constexpr Table kCustomerHasAddressStreetLine1Minhash =
     make("customer_has_address_street_line1_minhash.csv",
          kCustomerHasAddressStreetLine1MinhashHeader);
 
-inline constexpr std::array<std::string_view, 2>
-    kCustomerHasAddressCityMinhashHeader{"Customer", "City_MinHash"};
+inline constexpr std::array<std::string_view, 3>
+    kCustomerHasAddressCityMinhashHeader{"Customer", "City_MinHash", "city"};
 inline constexpr Table kCustomerHasAddressCityMinhash =
     make("customer_has_address_city_minhash.csv",
          kCustomerHasAddressCityMinhashHeader);
 
-inline constexpr std::array<std::string_view, 2>
-    kCustomerHasAddressStateMinhashHeader{"Customer", "State_MinHash"};
+inline constexpr std::array<std::string_view, 3>
+    kCustomerHasAddressStateMinhashHeader{"Customer", "State_MinHash", "state"};
 inline constexpr Table kCustomerHasAddressStateMinhash =
     make("customer_has_address_state_minhash.csv",
          kCustomerHasAddressStateMinhashHeader);
 
-inline constexpr std::array<std::string_view, 2> kAccountHasNameMinhashHeader{
-    "Account", "Name_MinHash"};
+inline constexpr std::array<std::string_view, 4> kAccountHasNameMinhashHeader{
+    "Account", "Name_MinHash", "type_of", "name"};
 inline constexpr Table kAccountHasNameMinhash =
     make("account_has_name_minhash.csv", kAccountHasNameMinhashHeader);
 
-inline constexpr std::array<std::string_view, 2>
-    kCounterpartyHasNameMinhashHeader{"Counterparty", "Name_MinHash"};
+inline constexpr std::array<std::string_view, 3>
+    kCounterpartyHasNameMinhashHeader{"Counterparty", "Name_MinHash", "name"};
 inline constexpr Table kCounterpartyHasNameMinhash = make(
     "counterparty_has_name_minhash.csv", kCounterpartyHasNameMinhashHeader);
 

@@ -4,6 +4,7 @@
 #include "phantomledger/app/setup.hpp"
 #include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
+#include "phantomledger/exporter/aml_txn_edges/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
 #include "phantomledger/pipeline/result.hpp"
@@ -62,6 +63,33 @@ void printAmlSummary(const pl::exporter::aml::Summary &summary,
   std::printf("  SARs filed:      %zu\n", summary.sarsFiledCount);
 }
 
+void printAmlTxnEdgesSummary(
+    const pl::exporter::aml_txn_edges::Summary &summary,
+    const pl::app::RunOptions &opts) {
+
+  const double ratio = (summary.totalTxnCount == 0)
+                           ? 0.0
+                           : static_cast<double>(summary.illicitTxnCount) /
+                                 summary.totalTxnCount;
+
+  std::printf("AML (txn-edges) Export complete -> %s/aml_txn_edges/\n",
+              opts.outDir.string().c_str());
+  std::printf("  Customers:       %zu\n", summary.customerCount);
+  std::printf("  Accounts:        %zu\n", summary.internalAccountCount);
+  std::printf("  Counterparties:  %zu\n", summary.counterpartyCount);
+  std::printf("  Transactions:    %zu  (illicit: %zu, %.4f%%)\n",
+              summary.totalTxnCount, summary.illicitTxnCount, ratio * 100.0);
+  std::printf("  Fraud rings:     %zu\n", summary.fraudRingCount);
+  std::printf("  Solo fraudsters: %zu\n", summary.soloFraudCount);
+  std::printf("  SARs filed:      %zu\n", summary.sarsFiledCount);
+  std::printf("  Alerts:          %zu  (CTRs: %zu)\n", summary.alertCount,
+              summary.ctrCount);
+  std::printf("  Cases:           %zu  (businesses: %zu)\n", summary.caseCount,
+              summary.businessCount);
+  std::printf("  Flow-agg edges:  %zu  (link-comm: %zu)\n",
+              summary.flowAggEdgeCount, summary.linkCommEdgeCount);
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
@@ -114,6 +142,16 @@ int main(int argc, char **argv) {
       const auto summary =
           exporter::aml::exportAll(result, opts.outDir, exportOpts);
       printAmlSummary(summary, opts);
+      break;
+    }
+
+    case app::UseCase::amlTxnEdges: {
+      exporter::aml_txn_edges::Options exportOpts;
+      exportOpts.showTransactions = opts.showTransactions;
+      exportOpts.piiPools = &pools;
+      const auto summary =
+          exporter::aml_txn_edges::exportAll(result, opts.outDir, exportOpts);
+      printAmlTxnEdgesSummary(summary, opts);
       break;
     }
     }

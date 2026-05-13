@@ -161,6 +161,10 @@ set(PL_EXPORTER_SOURCES
     src/exporter/aml/vertices.cpp
     src/exporter/aml/edges.cpp
     src/exporter/aml/export.cpp
+    src/exporter/aml_txn_edges/derived.cpp
+    src/exporter/aml_txn_edges/vertices.cpp
+    src/exporter/aml_txn_edges/edges.cpp
+    src/exporter/aml_txn_edges/export.cpp
 )
 
 set(PL_INFRA_SYNTH_SOURCES

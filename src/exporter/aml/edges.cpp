@@ -112,6 +112,24 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
   return scratch;
 }
 
+/// Concatenate "firstName lastName" using the exact same layout that
+/// `minhash::nameMinhashIds` consumes internally. This is what we emit
+/// in the DISCRIMINATOR(name STRING) column of every *_has_name_minhash
+/// edge, so the invariant `nameMinhashIds(source) ⊇ {TO}` holds for
+/// every row.
+[[nodiscard]] std::string_view joinName(std::string &scratch,
+                                        std::string_view firstName,
+                                        std::string_view lastName) {
+  scratch.clear();
+  scratch.reserve(firstName.size() + lastName.size() + 1);
+  scratch.append(firstName);
+  if (!firstName.empty() && !lastName.empty()) {
+    scratch.push_back(' ');
+  }
+  scratch.append(lastName);
+  return scratch;
+}
+
 } // namespace
 
 // ──────────────────────────────────────────────────────────────────────
@@ -575,12 +593,17 @@ void writeCustomerHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
+  std::string nameScratch;
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto nm = identity::nameForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
+    // Source string fed into the minhash shingler — emitted as the
+    // DISCRIMINATOR(name STRING) column so each (Customer, MinHash, name)
+    // triple is a distinct edge in TigerGraph.
+    const auto nameStr = joinName(nameScratch, nm.firstName, nm.lastName);
     for (const auto &mhId :
          minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
-      w.writeRow(cid, mhId);
+      w.writeRow(cid, mhId, nameStr);
     }
   }
 }
@@ -595,9 +618,12 @@ void writeCustomerHasAddressMinhashRows(
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
+    // joinAddress(...) is also what addressMinhashIds shingles, so
+    // emitting it verbatim as DISCRIMINATOR(address STRING) keeps the
+    // (source string → minhash) relationship self-verifying.
     const auto fullAddr = joinAddress(addrScratch, addr);
     for (const auto &mhId : minhash::addressMinhashIds(fullAddr)) {
-      w.writeRow(cid, mhId);
+      w.writeRow(cid, mhId, fullAddr);
     }
   }
 }
@@ -611,8 +637,9 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
+    // DISCRIMINATOR(street_line1 STRING) — source for streetMinhashIds.
     for (const auto &mhId : minhash::streetMinhashIds(addr.streetLine1)) {
-      w.writeRow(cid, mhId);
+      w.writeRow(cid, mhId, addr.streetLine1);
     }
   }
 }
@@ -625,7 +652,9 @@ void writeCustomerHasAddressCityMinhashRows(
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city));
+    // DISCRIMINATOR(city STRING) — raw city; the TO vertex id encodes
+    // the normalized form already (CMH_<lower>_<spaces_as_underscores>).
+    w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city), addr.city);
   }
 }
 
@@ -637,7 +666,9 @@ void writeCustomerHasAddressStateMinhashRows(
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    w.writeRow(customerIdFor(p), minhash::stateMinhashId(addr.state));
+    // DISCRIMINATOR(state STRING) — raw state; TO id encodes STMH_<UPPER>.
+    w.writeRow(customerIdFor(p), minhash::stateMinhashId(addr.state),
+               addr.state);
   }
 }
 
@@ -647,14 +678,28 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
-  // Precompute the minhash id list per person — many accounts share an
-  // owner, so this avoids re-shingling for each one.
-  std::unordered_map<ent::PersonId, std::vector<minhash::BucketId>> mhByPerson;
+  // Precompute (minhash list, source-name string) per person — many
+  // accounts share an owner, so this avoids re-shingling AND re-joining
+  // the name for every account.
+  struct PerPersonNameMh {
+    std::vector<minhash::BucketId> ids;
+    std::string name; // exactly "firstName lastName" — feeds into the
+                      // DISCRIMINATOR(name STRING) column.
+  };
+  std::unordered_map<ent::PersonId, PerPersonNameMh> mhByPerson;
   mhByPerson.reserve(entities.people.roster.count);
+  std::string nameScratch;
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto nm = identity::nameForPerson(p, pii, pools);
-    mhByPerson[p] = minhash::nameMinhashIds(nm.firstName, nm.lastName);
+    auto &slot = mhByPerson[p];
+    slot.ids = minhash::nameMinhashIds(nm.firstName, nm.lastName);
+    slot.name.assign(joinName(nameScratch, nm.firstName, nm.lastName));
   }
+
+  // DISCRIMINATOR(type_of STRING, name STRING) — type_of mirrors the
+  // "primary" relationship used by writeAccountHasNameRows so the
+  // identity-by-id and identity-by-shingle edges line up exactly.
+  constexpr std::string_view kAccountNameTypeOf{"primary"};
 
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
     const auto it = mhByPerson.find(pid);
@@ -662,8 +707,8 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
       return;
     }
     const auto acctStr = renderKey(k);
-    for (const auto &mhId : it->second) {
-      w.writeRow(acctStr, mhId);
+    for (const auto &mhId : it->second.ids) {
+      w.writeRow(acctStr, mhId, kAccountNameTypeOf, it->second.name);
     }
   });
 }
@@ -673,11 +718,15 @@ void writeCounterpartyHasNameMinhashRows(
     const vertices::SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
 
+  std::string nameScratch;
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto nm = identity::nameForCounterparty(cpId, usPool);
+    // DISCRIMINATOR(name STRING) — same "firstName lastName" layout
+    // that nameMinhashIds shingles internally.
+    const auto nameStr = joinName(nameScratch, nm.firstName, nm.lastName);
     for (const auto &mhId :
          minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
-      w.writeRow(cpId, mhId);
+      w.writeRow(cpId, mhId, nameStr);
     }
   }
 }
