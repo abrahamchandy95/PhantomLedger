@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/channels/credit_cards/statement.hpp"
 
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>
@@ -7,8 +8,6 @@
 
 namespace PhantomLedger::transfers::credit_cards {
 namespace {
-
-inline constexpr double kSecondsPerDay = 86400.0;
 
 [[nodiscard]] double
 balanceDelta(const entity::Key &cardAccount,
@@ -29,7 +28,7 @@ double intervalDays(time::TimePoint a, time::TimePoint b) noexcept {
     return 0.0;
   }
   const auto secs = time::toEpochSeconds(b) - time::toEpochSeconds(a);
-  return static_cast<double>(secs) / kSecondsPerDay;
+  return static_cast<double>(secs) / time::kSecondsPerDay;
 }
 
 BalanceSnapshot

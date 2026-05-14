@@ -6,13 +6,13 @@
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
-#include <cstdio>
 #include <set>
 #include <string>
 #include <string_view>
@@ -65,20 +65,6 @@ resolvedPersona(const shared::SharedContext &ctx, ent::PersonId p) noexcept {
   return 0.1;
 }
 
-[[nodiscard]] std::string_view accountType(const ent::Key &id,
-                                           bool isCard) noexcept {
-  if (isCard || id.role == ent::Role::card) {
-    return "credit";
-  }
-  if (id.role == ent::Role::business && id.bank == ent::Bank::internal) {
-    return "business_checking";
-  }
-  if (id.role == ent::Role::brokerage && id.bank == ent::Bank::internal) {
-    return "brokerage";
-  }
-  return "checking";
-}
-
 void writeGdsZeroCells(::PhantomLedger::exporter::csv::Writer &w) {
   w.cell(0.0)                             // pagerank_score
       .cell(static_cast<std::int32_t>(0)) // louvain_community_id
@@ -94,46 +80,6 @@ void writeGdsZeroCells(::PhantomLedger::exporter::csv::Writer &w) {
       .cell(static_cast<std::int32_t>(0)) // in_degree
       .cell(static_cast<std::int32_t>(0)) // out_degree
       .cell(0.0);                         // clustering_coeff
-}
-
-[[nodiscard]] std::unordered_set<ent::Key>
-buildCardIdSet(const ent::card::Registry &cards) {
-  std::unordered_set<ent::Key> out;
-  out.reserve(cards.records.size());
-  for (const auto &rec : cards.records) {
-    out.insert(rec.key);
-  }
-  return out;
-}
-
-[[nodiscard]] t_ns::TimePoint openDateFor(const ent::account::Record &rec,
-                                          t_ns::TimePoint simStart) {
-  if (rec.owner == ent::invalidPerson) {
-    return simStart - t_ns::Days{365};
-  }
-  return identity::onboardingDate(rec.owner, simStart);
-}
-
-[[nodiscard]] std::string_view osForDeviceType(std::string_view name) noexcept {
-  if (name == "android") {
-    return "Android";
-  }
-  if (name == "ios") {
-    return "iOS";
-  }
-  if (name == "web" || name == "browser") {
-    return "Browser";
-  }
-  if (name == "desktop") {
-    return "Windows";
-  }
-  return "Unknown";
-}
-
-[[nodiscard]] std::size_t
-estimateIdentityRowCount(const ::PhantomLedger::pipeline::Entities &entities,
-                         const shared::SharedContext &ctx) noexcept {
-  return entities.people.roster.count + ctx.counterpartyIds.size() + 21U;
 }
 
 } // namespace
@@ -174,7 +120,7 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
                       const ::PhantomLedger::clearing::Ledger *finalBook,
                       const shared::SharedContext &ctx,
                       t_ns::TimePoint simStart) {
-  const auto cardIds = buildCardIdSet(entities.creditCards);
+  const auto cardIds = common::collectCardIds(entities.creditCards);
 
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
@@ -184,6 +130,9 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto branchBucket =
         static_cast<std::uint32_t>((rec.id.number % 50U) + 1U);
     const auto branch = derived::branchCodeForBucket(branchBucket);
+    const auto openDate = (rec.owner == ent::invalidPerson)
+                              ? simStart - t_ns::Days{365}
+                              : identity::onboardingDate(rec.owner, simStart);
     const double balance =
         (finalBook != nullptr)
             ? primitives::utils::roundMoney(finalBook->liquidity(rec.id))
@@ -191,9 +140,9 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
 
     w.cell(idStr)
         .cell(idStr)
-        .cell(accountType(rec.id, cardIds.count(rec.id) != 0))
+        .cell(common::accountType(rec.id, cardIds.count(rec.id) != 0))
         .cell(std::string_view{"active"})
-        .cell(t_ns::formatTimestamp(openDateFor(rec, simStart)))
+        .cell(t_ns::formatTimestamp(openDate))
         .cell(branch)
         .cell(balance);
     writeGdsZeroCells(w);
@@ -263,37 +212,22 @@ void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeDeviceRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const ::PhantomLedger::infra::synth::devices::Output &devices) {
-  struct Window {
-    t_ns::TimePoint firstSeen{};
-    t_ns::TimePoint lastSeen{};
-    bool initialized = false;
-  };
-  std::unordered_map<::PhantomLedger::devices::Identity, Window> windows;
+  std::unordered_map<::PhantomLedger::devices::Identity, common::SeenWindow>
+      windows;
   windows.reserve(devices.records.size());
 
   for (const auto &usage : devices.usages) {
-    auto &slot = windows[usage.deviceId];
-    if (!slot.initialized) {
-      slot.firstSeen = usage.firstSeen;
-      slot.lastSeen = usage.lastSeen;
-      slot.initialized = true;
-    } else {
-      if (usage.firstSeen < slot.firstSeen) {
-        slot.firstSeen = usage.firstSeen;
-      }
-      if (usage.lastSeen > slot.lastSeen) {
-        slot.lastSeen = usage.lastSeen;
-      }
-    }
+    common::recordSeen(windows[usage.deviceId], usage.firstSeen,
+                       usage.lastSeen);
   }
 
   for (const auto &record : devices.records) {
     const auto idBuf = common::renderDeviceId(record.identity);
     const auto typeName = ::PhantomLedger::infra::synth::name(record.kind);
-    const auto os = osForDeviceType(typeName);
+    const auto os = common::osForDeviceType(typeName);
 
     const auto it = windows.find(record.identity);
-    const auto win = (it != windows.end()) ? it->second : Window{};
+    const auto win = (it != windows.end()) ? it->second : common::SeenWindow{};
 
     w.cell(idBuf)
         .cell(idBuf)
@@ -333,7 +267,7 @@ void writeFullNameRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &usPool = usPoolFor(ctx);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
 
   std::string nameScratch;
 
@@ -341,14 +275,8 @@ void writeFullNameRows(::PhantomLedger::exporter::csv::Writer &w,
     if (!emitted.emplace(n.id.view()).second) {
       return;
     }
-    nameScratch.clear();
-    nameScratch.reserve(n.firstName.size() + n.lastName.size() + 1);
-    nameScratch.append(n.firstName);
-    if (!n.firstName.empty() && !n.lastName.empty()) {
-      nameScratch.push_back(' ');
-    }
-    nameScratch.append(n.lastName);
-    w.cell(n.id).cell(nameScratch);
+    const auto nameStr = common::joinName(nameScratch, n.firstName, n.lastName);
+    w.cell(n.id).cell(nameStr);
     w.endRow();
   };
 
@@ -424,7 +352,7 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &usPool = usPoolFor(ctx);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
 
   const auto emit = [&](const identity::AddressRecord &a) {
     if (!emitted.emplace(a.id.view()).second) {
@@ -467,15 +395,13 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
     }
     const auto cid = common::renderCustomerId(p);
     const auto cidView = cid.view();
-    watchlistId.clear();
-    watchlistId.reserve(3 + cidView.size());
-    watchlistId.append("WL_").append(cidView);
+    const auto wlView = common::makeWatchlistId(watchlistId, cidView);
 
     const double matchScore =
         0.5 +
         static_cast<double>(common::stableU64({"WL", cidView}) % 50ULL) / 100.0;
 
-    w.cell(watchlistId)
+    w.cell(wlView)
         .cell(std::string_view{"internal_fraud_list"})
         .cell(std::string_view{"fraud_suspect"})
         .cell(matchScore)
@@ -554,8 +480,6 @@ void writeMinHashBucketRows(::PhantomLedger::exporter::csv::Writer &w,
 
   std::set<minhash::BucketId> nameSet, addrSet, streetSet;
   std::unordered_set<std::string> citySet, stateSet;
-
-  // std::set has no reserve(); only the unordered city/state sets benefit.
   citySet.reserve(entities.people.roster.count);
   stateSet.reserve(64);
 
@@ -569,17 +493,8 @@ void writeMinHashBucketRows(::PhantomLedger::exporter::csv::Writer &w,
       nameSet.insert(std::move(id));
     }
 
-    addrScratch.clear();
-    addrScratch.reserve(addr.streetLine1.size() + addr.city.size() +
-                        addr.state.size() + addr.postalCode.size() + 4);
-    addrScratch.append(addr.streetLine1);
-    addrScratch.push_back(' ');
-    addrScratch.append(addr.city);
-    addrScratch.push_back(' ');
-    addrScratch.append(addr.state);
-    addrScratch.push_back(' ');
-    addrScratch.append(addr.postalCode);
-    for (auto &id : minhash::addressMinhashIds(addrScratch)) {
+    const auto fullAddr = common::joinAddress(addrScratch, addr);
+    for (auto &id : minhash::addressMinhashIds(fullAddr)) {
       addrSet.insert(std::move(id));
     }
 

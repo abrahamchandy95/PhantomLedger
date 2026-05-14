@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/legit/routines/family/allowances.hpp"
 
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -31,8 +32,6 @@ inline constexpr std::int64_t kJitterMaxExcl = 2;
 
 inline constexpr double kAmountFloor = 1.0;
 
-inline constexpr std::int64_t kSecondsPerDay = 86400;
-
 struct Schedule {
   std::int64_t firstTs = 0;
   int intervalDays = 0;
@@ -49,7 +48,8 @@ pickSchedule(random::Rng &rng, ::PhantomLedger::time::TimePoint windowStart,
 
   const auto base = ::PhantomLedger::time::toEpochSeconds(
       ::PhantomLedger::time::addDays(windowStart, static_cast<int>(seedDay)));
-  const auto firstTs = base + seedHour * 3600 + seedMin * 60;
+  const auto firstTs =
+      base + ::PhantomLedger::time::secondsInDay(seedHour, seedMin);
 
   return Schedule{
       .firstTs = firstTs,
@@ -78,21 +78,6 @@ collectValidParents(std::array<entity::PersonId, 2> parentSlots,
   return (studentCount * perStudent * 4U) / 5U;
 }
 
-/// Stateful, narrow-purpose emitter for allowance transactions over one
-/// posting window. Owns the dependency views and the output sink so that
-/// internal helpers do not have to thread eight unrelated arguments
-/// through every call.
-///
-/// This is *not* a generic "Context" or "Bundle" object:
-///   - it is named for the verb it performs (emit allowance txns);
-///   - it has a single reason to change (allowance emission semantics);
-///   - its public surface is one method (`walkSchedule`);
-///   - its fields are the dependencies of *that one job*, not a
-///     heterogeneous collection.
-///
-/// It mirrors the standard pattern used by LLVM's IRBuilder, Boost.Beast
-/// stream emitters, and gRPC writers: a small, locally-scoped class that
-/// holds the cursor + sinks for one coherent emission task.
 class AllowanceEmitter {
 public:
   AllowanceEmitter(const TransferRun &run, const AllowanceSchedule &cfg,
@@ -104,8 +89,6 @@ public:
   AllowanceEmitter(const AllowanceEmitter &) = delete;
   AllowanceEmitter &operator=(const AllowanceEmitter &) = delete;
 
-  /// Walk the schedule for a single student, emitting zero or more
-  /// payments until the posting window ends.
   void walkSchedule(entity::Key childAcct,
                     std::span<const entity::PersonId> parents,
                     Schedule schedule) {
@@ -117,13 +100,11 @@ public:
       const auto jitter = rng_.uniformInt(kJitterMin, kJitterMaxExcl);
       const auto stepDays =
           static_cast<std::int64_t>(schedule.intervalDays) + jitter;
-      ts += stepDays * kSecondsPerDay;
+      ts += stepDays * ::PhantomLedger::time::kSecondsPerDay;
     }
   }
 
 private:
-  /// Emit a single allowance payment from a randomly-picked parent to
-  /// the child's account. Returns true on success.
   [[nodiscard]] bool tryEmit(entity::Key childAcct,
                              std::span<const entity::PersonId> parents,
                              std::int64_t timestamp) {

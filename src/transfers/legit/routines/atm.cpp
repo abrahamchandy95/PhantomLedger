@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/encoding/external.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -85,10 +86,11 @@ selectActiveUsers(random::Rng &rng, const blueprints::LegitBlueprint &plan,
   const auto hour = static_cast<std::int32_t>(rng.uniformInt(7, 24));
   const auto minute = static_cast<std::int32_t>(rng.uniformInt(0, 61));
 
-  const std::int64_t timestamp = monthAnchorEpoch +
-                                 static_cast<std::int64_t>(dayOffset) * 86400 +
-                                 static_cast<std::int64_t>(hour) * 3600 +
-                                 static_cast<std::int64_t>(minute) * 60;
+  const std::int64_t timestamp =
+      monthAnchorEpoch +
+      static_cast<std::int64_t>(dayOffset) *
+          ::PhantomLedger::time::kSecondsPerDay +
+      ::PhantomLedger::time::secondsInDay(hour, minute);
 
   return Candidate{timestamp, depositAcct, amount};
 }

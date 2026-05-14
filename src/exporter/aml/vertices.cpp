@@ -4,6 +4,7 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
@@ -30,23 +31,6 @@ namespace t_ns = ::PhantomLedger::time;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 namespace loc = ::PhantomLedger::locale;
 namespace common = ::PhantomLedger::exporter::common;
-
-[[nodiscard]] std::string_view accountTypeFor(const ent::Key &id,
-                                              bool isCard) noexcept {
-  if (isCard) {
-    return "credit";
-  }
-  if (id.role == ent::Role::business && id.bank == ent::Bank::internal) {
-    return "business_checking";
-  }
-  if (id.role == ent::Role::brokerage && id.bank == ent::Bank::internal) {
-    return "brokerage";
-  }
-  if (id.role == ent::Role::card) {
-    return "credit";
-  }
-  return "checking";
-}
 
 using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
 
@@ -100,7 +84,6 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
 
   ctx.personaByPerson = entities.personas.assignment.byPerson;
 
-  // Last-transaction-per-account index, used by writeAccountRows.
   ctx.lastTransactionByAccount.reserve(finalTxns.size() / 2);
   const auto bump = [&](const ent::Key &account, std::int64_t ts) {
     auto &slot = ctx.lastTransactionByAccount[account];
@@ -174,24 +157,6 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
 // Account rows
 namespace {
 
-[[nodiscard]] std::unordered_set<ent::Key>
-buildCardIdSet(const ent::card::Registry &cards) {
-  std::unordered_set<ent::Key> out;
-  out.reserve(cards.records.size());
-  for (const auto &rec : cards.records) {
-    out.insert(rec.key);
-  }
-  return out;
-}
-
-[[nodiscard]] t_ns::TimePoint openDateFor(const ent::account::Record &rec,
-                                          t_ns::TimePoint simStart) {
-  if (rec.owner == ent::invalidPerson) {
-    return simStart - t_ns::Days{365};
-  }
-  return identity::onboardingDate(rec.owner, simStart);
-}
-
 [[nodiscard]] std::string lastTxnString(const ent::Key &acct,
                                         const SharedContext &ctx) {
   const auto it = ctx.lastTransactionByAccount.find(acct);
@@ -207,7 +172,7 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
                       const ::PhantomLedger::pipeline::Entities &entities,
                       const ::PhantomLedger::clearing::Ledger *finalBook,
                       const SharedContext &ctx, t_ns::TimePoint simStart) {
-  const auto cardIds = buildCardIdSet(entities.creditCards);
+  const auto cardIds = common::collectCardIds(entities.creditCards);
 
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
@@ -215,9 +180,12 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
     }
 
     const auto idStr = common::renderKey(rec.id);
-    const auto openDate = openDateFor(rec, simStart);
+    const auto openDate = (rec.owner == ent::invalidPerson)
+                              ? simStart - t_ns::Days{365}
+                              : identity::onboardingDate(rec.owner, simStart);
     const auto lastTxnStr = lastTxnString(rec.id, ctx);
-    const auto acctType = accountTypeFor(rec.id, cardIds.count(rec.id) != 0);
+    const auto acctType =
+        common::accountType(rec.id, cardIds.count(rec.id) != 0);
     const auto branch = branchCodeFor(rec.id);
 
     const double balance =
@@ -248,13 +216,6 @@ void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
 // Name / Address rows
 namespace {
 
-[[nodiscard]] std::size_t
-estimateIdentityRowCount(const ::PhantomLedger::pipeline::Entities &entities,
-                         const SharedContext &ctx) noexcept {
-  // 21 ≈ number of bank rows synthesized from counterparty ids.
-  return entities.people.roster.count + ctx.counterpartyIds.size() + 21U;
-}
-
 void writeAddressRow(::PhantomLedger::exporter::csv::Writer &w,
                      const identity::AddressRecord &a) {
   w.writeRow(a.id, a.streetLine1, a.streetLine2, a.city, a.state, a.postalCode,
@@ -271,12 +232,9 @@ void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &usPool = pools.forCountry(loc::Country::us);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
 
   const auto emitName = [&](const identity::NameRecord &n) {
-    // n.id is a small inline buffer (StackString). The set still owns
-    // its own std::string copy — one alloc per unique entity, not per
-    // row — which is fine for AML dedup.
     if (emitted.emplace(n.id.view()).second) {
       w.writeRow(n.id, n.firstName, n.middleName, n.lastName);
     }
@@ -300,7 +258,7 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &usPool = pools.forCountry(loc::Country::us);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
 
   const auto emitAddr = [&](const identity::AddressRecord &a) {
     if (emitted.emplace(a.id.view()).second) {
@@ -386,7 +344,6 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
                         t_ns::TimePoint simStart) {
   const auto entryDate = t_ns::formatTimestamp(simStart);
   const auto &roster = entities.people.roster;
-  // Reused across rows to avoid re-allocating the "WL_..." prefix per row.
   std::string watchlistId;
   for (ent::PersonId p = 1; p <= roster.count; ++p) {
     if (!roster.has(p, ent::person::Flag::fraud) &&
@@ -396,40 +353,19 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
     const auto cidBuf = ::PhantomLedger::encoding::format(customerKey);
-    const auto cidView = cidBuf.view();
+    const auto wlView = common::makeWatchlistId(watchlistId, cidBuf.view());
 
-    watchlistId.clear();
-    watchlistId.reserve(3 + cidView.size());
-    watchlistId.append("WL_").append(cidView);
-
-    w.writeRow(watchlistId, std::string_view{"internal_fraud_list"},
+    w.writeRow(wlView, std::string_view{"internal_fraud_list"},
                std::string_view{"fraud_suspect"}, entryDate);
   }
 }
 
 namespace {
 
-struct DeviceSeenWindow {
-  t_ns::TimePoint firstSeen{};
-  t_ns::TimePoint lastSeen{};
-};
-
 using DeviceWindowMap =
-    std::unordered_map<::PhantomLedger::devices::Identity, DeviceSeenWindow>;
+    std::unordered_map<::PhantomLedger::devices::Identity, common::SeenWindow>;
 using DeviceIpMap =
     std::unordered_map<::PhantomLedger::devices::Identity, std::string>;
-
-void recordSeenWindow(DeviceWindowMap &out,
-                      const ::PhantomLedger::devices::Identity &dev,
-                      t_ns::TimePoint firstSeen, t_ns::TimePoint lastSeen) {
-  auto &w = out[dev];
-  if (w.firstSeen == t_ns::TimePoint{} || firstSeen < w.firstSeen) {
-    w.firstSeen = firstSeen;
-  }
-  if (lastSeen > w.lastSeen) {
-    w.lastSeen = lastSeen;
-  }
-}
 
 void recordOwnerIp(DeviceIpMap &out,
                    const ::PhantomLedger::devices::Identity &dev,
@@ -448,22 +384,6 @@ void recordOwnerIp(DeviceIpMap &out,
   out[dev] = std::string{ipBuf.view()};
 }
 
-[[nodiscard]] std::string_view osFor(std::string_view deviceTypeName) noexcept {
-  if (deviceTypeName == "android") {
-    return "Android";
-  }
-  if (deviceTypeName == "ios") {
-    return "iOS";
-  }
-  if (deviceTypeName == "web" || deviceTypeName == "browser") {
-    return "Browser";
-  }
-  if (deviceTypeName == "desktop") {
-    return "Windows";
-  }
-  return "Unknown";
-}
-
 } // namespace
 
 void writeDeviceRows(
@@ -474,16 +394,15 @@ void writeDeviceRows(
   DeviceIpMap deviceIpStr;
 
   for (const auto &usage : devices.usages) {
-    recordSeenWindow(seen, usage.deviceId, usage.firstSeen, usage.lastSeen);
+    common::recordSeen(seen[usage.deviceId], usage.firstSeen, usage.lastSeen);
     recordOwnerIp(deviceIpStr, usage.deviceId, usage.personId, ips);
   }
 
   for (const auto &record : devices.records) {
-    const auto idBuf =
-        ::PhantomLedger::exporter::common::renderDeviceId(record.identity);
+    const auto idBuf = common::renderDeviceId(record.identity);
     const auto deviceTypeName =
         ::PhantomLedger::infra::synth::name(record.kind);
-    const auto os = osFor(deviceTypeName);
+    const auto os = common::osForDeviceType(deviceTypeName);
 
     const auto ipIt = deviceIpStr.find(record.identity);
     const std::string ipStr =
@@ -491,7 +410,7 @@ void writeDeviceRows(
 
     const auto windowIt = seen.find(record.identity);
     const auto window =
-        (windowIt != seen.end()) ? windowIt->second : DeviceSeenWindow{};
+        (windowIt != seen.end()) ? windowIt->second : common::SeenWindow{};
 
     w.writeRow(idBuf.view(), deviceTypeName, ipStr, common::kUsCountry, os,
                t_ns::formatTimestamp(window.firstSeen),

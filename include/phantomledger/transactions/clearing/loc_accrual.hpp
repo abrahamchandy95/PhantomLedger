@@ -1,14 +1,13 @@
 #pragma once
-/*
- * LocAccrualTracker — line-of-credit interest accrual.
- */
+
+#include "phantomledger/primitives/time/constants.hpp"
 
 #include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::clearing {
 
-/// One matured LOC billing period, ready to be billed.
+/// One matured Line Of Credit billing period, ready to be billed.
 struct InterestAccrual {
   std::uint32_t accountIndex = 0;
   double interest = 0.0;
@@ -19,9 +18,11 @@ class LocAccrualTracker {
 public:
   using Index = std::uint32_t;
 
-  static constexpr std::int64_t kBillingPeriodSeconds = 30 * 86400;
+  static constexpr std::int64_t kBillingPeriodSeconds =
+      30 * ::PhantomLedger::time::kSecondsPerDay;
 
-  static constexpr double kYearSeconds = 365.25 * 86400.0;
+  static constexpr double kYearSeconds =
+      365.25 * ::PhantomLedger::time::kSecondsPerDay;
 
   void initialize(Index count);
   [[nodiscard]] Index size() const noexcept { return size_; }

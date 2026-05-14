@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
@@ -34,8 +35,6 @@ makeCdf(const std::array<double, 24> &p) {
     sum += p[i];
     cdf[i] = sum;
   }
-  // Clamp the last bin to 1.0 so a uniform draw of exactly the sum
-  // never walks off the end.
   cdf[23] = 1.0;
   return cdf;
 }
@@ -91,11 +90,9 @@ cdfFor(personas::Timing t) noexcept {
   const auto hour = detail::pickHour(cdf, rng.nextDouble());
   const auto minute = rng.uniformInt(0, 60);
   const auto second = rng.uniformInt(0, 60);
-  return static_cast<std::int32_t>(hour * 3600 + minute * 60 + second);
+  return static_cast<std::int32_t>(time::secondsInDay(hour, minute, second));
 }
 
-/// Fill a caller-owned span with n offsets. No heap allocation, no
-/// virtual dispatch. Single CDF lookup, hot loop over rng draws.
 inline void sampleOffsetsBatch(random::Rng &rng, personas::Timing t,
                                std::span<std::int32_t> out) {
   const auto &cdf = detail::cdfFor(t);
@@ -103,7 +100,7 @@ inline void sampleOffsetsBatch(random::Rng &rng, personas::Timing t,
     const auto hour = detail::pickHour(cdf, rng.nextDouble());
     const auto minute = rng.uniformInt(0, 60);
     const auto second = rng.uniformInt(0, 60);
-    slot = static_cast<std::int32_t>(hour * 3600 + minute * 60 + second);
+    slot = static_cast<std::int32_t>(time::secondsInDay(hour, minute, second));
   }
 }
 

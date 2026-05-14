@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/legit/routines/family/inheritance.hpp"
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -46,8 +47,6 @@ public:
   InheritanceEmitter(const InheritanceEmitter &) = delete;
   InheritanceEmitter &operator=(const InheritanceEmitter &) = delete;
 
-  /// Process one retiree. Drops out early on the eventP gate, on
-  /// missing heirs, or on a missing retiree account.
   void processRetiree(entity::PersonId retiree) {
     if (!rng_.coin(cfg_.eventP)) {
       return;
@@ -92,7 +91,7 @@ private:
     const auto base =
         ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
             run_.posting().start(), static_cast<int>(day)));
-    return base + hour * 3600 + minute * 60;
+    return base + ::PhantomLedger::time::secondsInDay(hour, minute);
   }
 
   void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,

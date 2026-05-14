@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 
@@ -391,13 +392,6 @@ void accumulate(AggregateRow &row, double amount, std::int64_t ts,
   }
 }
 
-// ============================================================================
-// buildBundle — single sweep over postedTxns that materializes every derived
-// record set the exporter needs. Stage comments mark the boundaries between
-// alert/CTR detection, aggregate accumulation, case linkage, and the final
-// flatten-to-vector step.
-// ============================================================================
-
 namespace {
 
 [[nodiscard]] bool isInternal(const ent::Key &k) noexcept {
@@ -435,9 +429,6 @@ buildOwnerIndex(const ::PhantomLedger::pipeline::Entities &entities) {
   return out;
 }
 
-// Common shape for the four alert rules — render the on-account key once and
-// push a populated AlertRecord. Caller passes `idx` chosen to keep the id
-// distinct across same-account/same-rule firings.
 void emitAlert(Bundle &b, const ent::Key &onAcct, Rule rule,
                t_ns::TimePoint createdDate, std::size_t idx) {
   const auto acctRendered = ::PhantomLedger::encoding::format(onAcct);
@@ -500,20 +491,15 @@ Bundle buildBundle(
   burstCounts.reserve(postedTxns.size() / 4);
   burstInfo.reserve(postedTxns.size() / 4);
 
-  // Pair-keyed aggregators: std::pair<Key, Key> has no std::hash specialization
-  // (libc++ disables the default-constructible std::hash<std::pair>), so we
-  // use std::map and rely on Key's defaulted operator<=> for ordering. Same
-  // pattern as src/exporter/aml/edges.cpp.
   std::map<AcctPair, AggregateRow> flowAccum;
   std::map<AcctPair, AggregateRow> linkAccum;
 
-  const std::int64_t cut30 = maxTs - 30LL * 86400LL;
-  const std::int64_t cut90 = maxTs - 90LL * 86400LL;
+  const std::int64_t cut30 = maxTs - 30 * t_ns::kSecondsPerDay;
+  const std::int64_t cut90 = maxTs - 90 * t_ns::kSecondsPerDay;
 
   std::size_t idx = 1;
   for (const auto &tx : postedTxns) {
     const double amount = tx.amount;
-    const auto tag = tx.session.channel;
     const auto onAcct = alertAccount(tx);
     const bool onValid = (onAcct.number != 0);
     const auto createdDate = t_ns::fromEpochSeconds(tx.timestamp);
@@ -525,20 +511,7 @@ Bundle buildBundle(
     if (onValid && amount >= 9000.0 && amount < 10000.0) {
       emitAlert(b, onAcct, Rule::highAmountBelowCtr, createdDate, idx);
     }
-    // ── CASH_CTR_THRESHOLD (+ CTR filing) ──
-    //
-    // In real-world AML, a Currency Transaction Report fires only on
-    // *cash* transactions ≥ $10K (teller deposits/withdrawals). This
-    // simulator has no explicit "teller cash" channel; the closest
-    // model is `Legit::atm`, but the ATM generator caps amounts at
-    // $300 (src/transfers/legit/routines/atm.cpp), so an ATM-restricted
-    // rule would never fire and CTR.csv would always be empty.
-    //
-    // For the synthetic dataset we therefore drop the channel filter
-    // and treat any single transaction ≥ $10K on an internal account
-    // as a "would-be-cash" filing. Downstream consumers can recognize
-    // these as analytics-grade rather than regulatory-grade CTRs via
-    // the FILED_CTR edge's source_system tag (= "core_banking").
+
     if (onValid && amount >= 10000.0) {
       emitAlert(b, onAcct, Rule::cashCtrThreshold, createdDate, idx);
 
@@ -548,8 +521,8 @@ Bundle buildBundle(
       c.filingDate = createdDate;
       c.amount = primitives::utils::roundMoney(amount);
       c.branchBucket = static_cast<std::uint32_t>((onAcct.number % 50U) + 1U);
-      const auto dayBytes =
-          u64Decimal(static_cast<std::uint64_t>(tx.timestamp / 86400LL));
+      const auto dayBytes = u64Decimal(
+          static_cast<std::uint64_t>(tx.timestamp / t_ns::kSecondsPerDay));
       c.tellerNum = static_cast<std::uint32_t>(
           (common::stableU64({"TLR", acctRendered.view(), dayBytes.view()}) %
            200ULL) +
@@ -560,7 +533,7 @@ Bundle buildBundle(
 
     // ── Velocity-burst accumulator (resolved after the loop) ──
     if (onValid) {
-      const std::int64_t day = tx.timestamp / 86400LL;
+      const std::int64_t day = tx.timestamp / t_ns::kSecondsPerDay;
       const auto packed =
           (static_cast<std::uint64_t>(day) << 24) ^
           (static_cast<std::uint64_t>(onAcct.number) << 8) ^
@@ -590,7 +563,7 @@ Bundle buildBundle(
     const auto &info = burstInfo[key];
     // Day-as-idx so distinct days for the same account get distinct ids.
     emitAlert(b, info.account, Rule::velocityBurst,
-              t_ns::fromEpochSeconds(info.day * 86400LL),
+              t_ns::fromEpochSeconds(info.day * t_ns::kSecondsPerDay),
               static_cast<std::size_t>(info.day));
   }
 
