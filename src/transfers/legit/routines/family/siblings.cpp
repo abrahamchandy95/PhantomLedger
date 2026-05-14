@@ -19,9 +19,11 @@ namespace dist = ::PhantomLedger::probability::distributions;
 
 namespace {
 
-inline constexpr std::int64_t kPostingDayMaxExcl = 28;
-inline constexpr std::int64_t kPostingHourMin = 8;
-inline constexpr std::int64_t kPostingHourMaxExcl = 22;
+inline constexpr fhelp::PostingShape kShape{
+    .dayMaxExcl = 28,
+    .hourMin = 8,
+    .hourMaxExcl = 22,
+};
 inline constexpr double kAmountFloor = 5.0;
 
 struct ResolvedPair {
@@ -42,11 +44,6 @@ void collectAdults(std::span<const entity::PersonId> members,
   }
 }
 
-/// Stateful, narrow-purpose emitter for sibling-to-sibling transfers.
-///
-/// Like `SpouseEmitter`, this exposes two public methods because the
-/// resolution step runs once per pair while the emit step runs once
-/// per (pair, month). Both share the same dependency views.
 class SiblingEmitter {
 public:
   SiblingEmitter(const TransferRun &run, const SiblingFlow &cfg,
@@ -58,9 +55,6 @@ public:
   SiblingEmitter(const SiblingEmitter &) = delete;
   SiblingEmitter &operator=(const SiblingEmitter &) = delete;
 
-  /// Process one candidate sibling pair across all month-starts.
-  /// Drops out early on the activeP gate, the spouse-of check, or
-  /// account-resolution failures.
   void processPair(entity::PersonId a, entity::PersonId b) {
     if (!rng_.coin(cfg_.activeP)) {
       return;
@@ -97,8 +91,6 @@ private:
         .personA = a, .personB = b, .acctA = *acctA, .acctB = *acctB};
   }
 
-  /// Try to emit one monthly transfer for this pair. Returns true on
-  /// success.
   [[nodiscard]] bool
   tryEmitMonthly(const ResolvedPair &pair,
                  ::PhantomLedger::time::TimePoint monthStart) {
@@ -110,7 +102,7 @@ private:
     const auto src = aToB ? pair.acctA : pair.acctB;
     const auto dst = aToB ? pair.acctB : pair.acctA;
 
-    const auto ts = pickPostingTimestamp(monthStart);
+    const auto ts = fhelp::sampleMonthlyPostingTs(rng_, monthStart, kShape);
     if (ts >= windowEndEpochSec_) {
       return false;
     }
@@ -130,17 +122,6 @@ private:
         .channel = channels::tag(channels::Family::siblingTransfer),
     }));
     return true;
-  }
-
-  [[nodiscard]] std::int64_t
-  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
-    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
-    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-    const auto minute = rng_.uniformInt(0, 60);
-
-    const auto base = ::PhantomLedger::time::toEpochSeconds(
-        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-    return base + hour * 3600 + minute * 60;
   }
 
   [[nodiscard]] double sampleAmount() {

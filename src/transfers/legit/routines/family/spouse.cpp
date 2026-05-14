@@ -17,9 +17,11 @@ namespace dist = ::PhantomLedger::probability::distributions;
 
 namespace {
 
-inline constexpr std::int64_t kPostingDayMaxExcl = 28;
-inline constexpr std::int64_t kPostingHourMin = 7;
-inline constexpr std::int64_t kPostingHourMaxExcl = 22;
+inline constexpr fhelp::PostingShape kShape{
+    .dayMaxExcl = 28,
+    .hourMin = 7,
+    .hourMaxExcl = 22,
+};
 inline constexpr double kAmountFloor = 5.0;
 
 struct CoupleState {
@@ -61,9 +63,6 @@ public:
     return CoupleState{.higherAcct = *acctB, .lowerAcct = *acctA};
   }
 
-  /// Emit zero or more transfers for a single (couple, monthStart)
-  /// pair. The number of transfers is sampled from the configured
-  /// per-month range.
   void processCoupleMonth(const CoupleState &couple,
                           ::PhantomLedger::time::TimePoint monthStart) {
     const auto count = static_cast<int>(
@@ -83,7 +82,7 @@ private:
     const auto src = fromBreadwinner ? couple.higherAcct : couple.lowerAcct;
     const auto dst = fromBreadwinner ? couple.lowerAcct : couple.higherAcct;
 
-    const auto ts = pickPostingTimestamp(monthStart);
+    const auto ts = fhelp::sampleMonthlyPostingTs(rng_, monthStart, kShape);
     if (ts >= windowEndEpochSec_) {
       return false;
     }
@@ -103,17 +102,6 @@ private:
         .channel = channels::tag(channels::Family::spouseTransfer),
     }));
     return true;
-  }
-
-  [[nodiscard]] std::int64_t
-  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
-    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
-    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-    const auto minute = rng_.uniformInt(0, 60);
-
-    const auto base = ::PhantomLedger::time::toEpochSeconds(
-        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-    return base + hour * 3600 + minute * 60;
   }
 
   [[nodiscard]] double sampleAmount() {
