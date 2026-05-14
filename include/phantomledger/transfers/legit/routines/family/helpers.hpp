@@ -3,6 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -11,13 +12,9 @@
 
 namespace PhantomLedger::transfers::legit::routines::family::helpers {
 
-[[nodiscard]] inline double roundCents(double amount) noexcept {
-  return std::round(amount * 100.0) / 100.0;
-}
-
 [[nodiscard]] inline double sanitizeAmount(double amount,
                                            double floor) noexcept {
-  const double rounded = roundCents(amount);
+  const double rounded = primitives::utils::roundMoney(amount);
   return rounded >= floor ? rounded : 0.0;
 }
 

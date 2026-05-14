@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/legit/routines/family/inheritance.hpp"
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -78,7 +79,8 @@ private:
     const auto rawTotal =
         dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
     const auto total = std::max(kTotalFloor, rawTotal);
-    return fhelp::roundCents(total / static_cast<double>(heirCount));
+    return primitives::utils::roundMoney(total /
+                                         static_cast<double>(heirCount));
   }
 
   [[nodiscard]] std::int64_t pickEventTimestamp() {

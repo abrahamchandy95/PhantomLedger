@@ -1,10 +1,10 @@
 #include "phantomledger/exporter/aml/sar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 
 #include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdio>
 #include <unordered_map>
 #include <utility>
@@ -28,10 +28,6 @@ struct ActivityPeriod {
   std::int64_t firstTs = 0;
   std::int64_t lastTs = 0;
 };
-
-[[nodiscard]] double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
 
 [[nodiscard]] bool hasAccount(std::span<const ent::Key> sortedAccounts,
                               const ent::Key &key) noexcept {
@@ -90,7 +86,8 @@ void fillCoveredAccounts(SarRecord &sar,
   sar.coveredAccountIds = sortedKeys(activity);
   sar.coveredAmounts.reserve(sar.coveredAccountIds.size());
   for (const auto &key : sar.coveredAccountIds) {
-    sar.coveredAmounts.push_back(round2(activity.at(key)));
+    sar.coveredAmounts.push_back(
+        primitives::utils::roundMoney(activity.at(key)));
   }
 }
 
@@ -275,7 +272,7 @@ void applyActivity(SarRecord &sar, std::span<const tx_ns::Transaction> txns) {
   const auto activityEnd = t_ns::fromEpochSeconds(activity.lastTs);
 
   sar.filingDate = activityEnd + t_ns::Days{30};
-  sar.amountInvolved = round2(activity.total);
+  sar.amountInvolved = primitives::utils::roundMoney(activity.total);
   sar.activityStart = activityStart;
   sar.activityEnd = activityEnd;
 }

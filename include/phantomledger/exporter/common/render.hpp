@@ -4,6 +4,7 @@
 #include "phantomledger/entities/encoding/layout.hpp"
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/transactions/devices/identity.hpp"
 
 #include <cstddef>
@@ -15,9 +16,17 @@ namespace PhantomLedger::exporter::common {
 namespace entity = ::PhantomLedger::entity;
 namespace encoding = ::PhantomLedger::encoding;
 namespace devices = ::PhantomLedger::devices;
+namespace locale = ::PhantomLedger::locale;
 
 using CustomerId = encoding::RenderedId<24>;
 using DeviceId = encoding::RenderedId<48>;
+
+inline constexpr auto kUsCountry = locale::code(locale::Country::us);
+
+[[nodiscard]] inline encoding::RenderedKey
+renderKey(const entity::Key &k) noexcept {
+  return encoding::format(k);
+}
 
 [[nodiscard]] inline CustomerId renderCustomerId(entity::PersonId person) {
   const auto key =

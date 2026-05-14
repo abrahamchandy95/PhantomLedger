@@ -4,6 +4,7 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
@@ -12,7 +13,6 @@
 #include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
-#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -29,22 +29,7 @@ namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 namespace loc = ::PhantomLedger::locale;
-
-inline constexpr auto kUsCountry = loc::code(loc::Country::us);
-
-// ──────────────────────────────────────────────────────────────────────
-// Small leaf-level helpers
-// ──────────────────────────────────────────────────────────────────────
-
-/// Round to 2dp.
-[[nodiscard]] double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
-[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
-renderKey(const ent::Key &k) noexcept {
-  return ::PhantomLedger::encoding::format(k);
-}
+namespace common = ::PhantomLedger::exporter::common;
 
 [[nodiscard]] std::string_view accountTypeFor(const ent::Key &id,
                                               bool isCard) noexcept {
@@ -63,9 +48,6 @@ renderKey(const ent::Key &k) noexcept {
   return "checking";
 }
 
-/// "BR042" — bucket the account's `number` into one of 50 synthetic
-/// branches. Pure stack buffer; the caller view()s or implicitly
-/// converts when passing to csv::Writer.
 using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
 
 [[nodiscard]] BranchCode branchCodeFor(const ent::Key &id) noexcept {
@@ -85,10 +67,6 @@ resolvedPersona(const SharedContext &ctx, ent::PersonId p) noexcept {
   return ctx.personaByPerson[p - 1];
 }
 
-/// Per-customer lookups route through the full PoolSet so each
-/// person's locale is picked from their pii::Record::country.
-/// Counterparty/bank synthesis still goes through the US slot
-/// internally — see comments in exporter/aml/export.cpp.
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
@@ -104,10 +82,7 @@ usPoolFor(const SharedContext &ctx) noexcept {
 
 } // namespace
 
-// ──────────────────────────────────────────────────────────────────────
 // SharedContext build
-// ──────────────────────────────────────────────────────────────────────
-
 SharedContext
 buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
                    std::span<const tx_ns::Transaction> finalTxns,
@@ -115,18 +90,12 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
   SharedContext ctx;
   ctx.pools = &pools;
 
-  // Counterparty id set: render every external account key once and
-  // emplace the stack-buffer RenderedKey directly into the set. The
-  // set still allocates one node per entry, but the per-element
-  // std::string allocation that the old code incurred is gone.
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
-      ctx.counterpartyIds.emplace(renderKey(rec.id));
+      ctx.counterpartyIds.emplace(common::renderKey(rec.id));
     }
   }
 
-  // Bank id set: derive from counterpartyIds once, here, instead of
-  // rebuilding it per call inside each bank-edge writer.
   ctx.bankIds = allBankIds(ctx.counterpartyIds);
 
   ctx.personaByPerson = entities.personas.assignment.byPerson;
@@ -147,14 +116,9 @@ buildSharedContext(const ::PhantomLedger::pipeline::Entities &entities,
   return ctx;
 }
 
-// ──────────────────────────────────────────────────────────────────────
 // Customer rows
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
-// Cell-group helpers for the 10-column customer row. Each ≤3 params,
-// one logical concern, composed by writeCustomerRows below.
 inline void writeCustomerIdCells(::PhantomLedger::exporter::csv::Writer &w,
                                  const ent::Key &customerKey,
                                  ::PhantomLedger::personas::Type persona) {
@@ -196,8 +160,6 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
 
-    // Per-customer country comes from the pii::Record set up by the
-    // LocaleMix at synthesis time (see entities/synth/pii/samplers.hpp).
     const auto originCountry = loc::code(entities.pii.at(p).country);
 
     writeCustomerIdCells(w, customerKey, persona);
@@ -209,10 +171,7 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
 // Account rows
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
 [[nodiscard]] std::unordered_set<ent::Key>
@@ -255,14 +214,16 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
       continue;
     }
 
-    const auto idStr = renderKey(rec.id);
+    const auto idStr = common::renderKey(rec.id);
     const auto openDate = openDateFor(rec, simStart);
     const auto lastTxnStr = lastTxnString(rec.id, ctx);
     const auto acctType = accountTypeFor(rec.id, cardIds.count(rec.id) != 0);
     const auto branch = branchCodeFor(rec.id);
 
     const double balance =
-        (finalBook != nullptr) ? round2(finalBook->liquidity(rec.id)) : 0.0;
+        (finalBook != nullptr)
+            ? primitives::utils::roundMoney(finalBook->liquidity(rec.id))
+            : 0.0;
 
     w.writeRow(idStr, idStr, balance, t_ns::formatTimestamp(openDate),
                std::string_view{"active"}, lastTxnStr,
@@ -271,10 +232,7 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
 // Counterparty rows
-// ──────────────────────────────────────────────────────────────────────
-
 void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
                            const SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
@@ -283,20 +241,11 @@ void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto cpName = identity::nameForCounterparty(cpId, usPool);
     const auto bankName = identity::nameForBank(bankId);
     w.writeRow(cpId, cpName.firstName, identity::routingNumberForId(bankId),
-               bankName.firstName, kUsCountry);
+               bankName.firstName, common::kUsCountry);
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
 // Name / Address rows
-//
-// Both writers dedup by `id` because the same name/address can be
-// referenced multiple times (e.g. shared landlords). The dedup set is
-// sized by *unique entities* (persons + counterparties + banks), not
-// by row count, so the cost of allocating a std::string per unique
-// entry is bounded and not on the hot path.
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
 [[nodiscard]] std::size_t
@@ -376,10 +325,6 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
 
 namespace {
 
-// Display names + a coarse base risk score, one per Country enum slot,
-// laid out in the same order as locale::kCountries. Kept local to this
-// writer because no other AML writer needs human-readable country
-// names — if more callers ever want this, lift it into taxonomies/locale.
 struct CountryRow {
   std::string_view displayName;
   double baseRiskScore;
@@ -413,10 +358,6 @@ void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w,
                       const ::PhantomLedger::pipeline::Entities &entities) {
   namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
-  // Mark which countries actually appear in the customer base so the
-  // Country vertex table stays in sync with the edges that point to it.
-  // (Bank/counterparty/device rows always reference US, so US is forced
-  // on even if it weren't already present.)
   std::array<bool, loc::kCountryCount> seen{};
   seen[enumTax::toIndex(loc::Country::us)] = true;
   for (const auto &rec : entities.pii.records) {
@@ -465,14 +406,6 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
                std::string_view{"fraud_suspect"}, entryDate);
   }
 }
-
-// writeMinhashIdRows is defined inline as a template in vertices.hpp
-// so it can accept both set<string> (city/state) and set<BucketId>
-// (name/address/street).
-
-// ──────────────────────────────────────────────────────────────────────
-// Device rows
-// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -560,7 +493,7 @@ void writeDeviceRows(
     const auto window =
         (windowIt != seen.end()) ? windowIt->second : DeviceSeenWindow{};
 
-    w.writeRow(idBuf.view(), deviceTypeName, ipStr, kUsCountry, os,
+    w.writeRow(idBuf.view(), deviceTypeName, ipStr, common::kUsCountry, os,
                t_ns::formatTimestamp(window.firstSeen),
                t_ns::formatTimestamp(window.lastSeen),
                static_cast<std::uint8_t>(record.flagged));
@@ -643,7 +576,7 @@ void writeTransactionRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto channelName = ch::name(channelTag);
     const auto purpose = channelPurpose(channelTag);
     const auto credDeb = isCreditChannel(channelTag) ? "C" : "D";
-    const double amount = round2(tx.amount);
+    const double amount = primitives::utils::roundMoney(tx.amount);
 
     w.writeRow(transactionId(idx), std::string_view{credDeb},
                t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)),

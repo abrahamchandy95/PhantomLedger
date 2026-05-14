@@ -2,16 +2,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 
 namespace PhantomLedger::primitives::utils {
 
 /// Round a monetary amount to 2 decimal places (cents).
-[[nodiscard]] inline double roundMoney(double amount) {
+[[nodiscard]] inline double roundMoney(double amount) noexcept {
   return std::round(amount * 100.0) / 100.0;
 }
 
 /// Clamp a value to the closed interval [lo, hi].
-[[nodiscard]] inline double clamp(double value, double lo, double hi) {
+[[nodiscard]] inline double clamp(double value, double lo, double hi) noexcept {
   if (value < lo) {
     return lo;
   }
@@ -22,7 +23,7 @@ namespace PhantomLedger::primitives::utils {
 }
 
 /// Take max(floor, value) and then round to cents.
-[[nodiscard]] inline double floorAndRound(double value, double floor) {
+[[nodiscard]] inline double floorAndRound(double value, double floor) noexcept {
   return roundMoney(std::max(floor, value));
 }
 

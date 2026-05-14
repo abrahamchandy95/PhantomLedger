@@ -1,6 +1,6 @@
 #include "phantomledger/exporter/mule_ml/export.hpp"
 
-#include "phantomledger/exporter/csv.hpp"
+#include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/mule_ml/canonical.hpp"
 #include "phantomledger/exporter/mule_ml/infra_edges.hpp"
 #include "phantomledger/exporter/mule_ml/party.hpp"
@@ -15,15 +15,8 @@ namespace PhantomLedger::exporter::mule_ml {
 
 namespace {
 
-namespace csv = ::PhantomLedger::exporter::csv;
 namespace schema = ::PhantomLedger::exporter::schema;
-
-[[nodiscard]] csv::Writer openTable(const std::filesystem::path &outDir,
-                                    const schema::Table &table) {
-  csv::Writer w{outDir / std::filesystem::path(table.filename)};
-  w.writeHeader(table.header);
-  return w;
-}
+namespace common = ::PhantomLedger::exporter::common;
 
 [[nodiscard]] std::unordered_map<::PhantomLedger::entity::PersonId,
                                  std::vector<::PhantomLedger::entity::Key>>
@@ -98,7 +91,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto canonical = buildCanonicalMaps(partyIds, canonInputs);
 
   {
-    auto w = openTable(mlDir, schema::kMlParty);
+    auto w = common::openTable(mlDir, schema::kMlParty);
     PartyInputs partyInputs{};
     partyInputs.piiPools = options.piiPools;
     partyInputs.canonical = &canonical;
@@ -106,15 +99,15 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                    entities.pii, partyInputs);
   }
   {
-    auto w = openTable(mlDir, schema::kMlTransfer);
+    auto w = common::openTable(mlDir, schema::kMlTransfer);
     writeTransferRows(w, postedTxns);
   }
   {
-    auto w = openTable(mlDir, schema::kMlAccountDevice);
+    auto w = common::openTable(mlDir, schema::kMlAccountDevice);
     writeAccountDeviceRows(w, postedTxns, infra.devices, accountsByPerson);
   }
   {
-    auto w = openTable(mlDir, schema::kMlAccountIp);
+    auto w = common::openTable(mlDir, schema::kMlAccountIp);
     writeAccountIpRows(w, postedTxns, infra.ips, accountsByPerson);
   }
 }

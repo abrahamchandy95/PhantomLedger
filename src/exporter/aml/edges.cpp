@@ -26,35 +26,17 @@ namespace t_ns = ::PhantomLedger::time;
 namespace pl = ::PhantomLedger::pipeline;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 namespace loc = ::PhantomLedger::locale;
-
-inline constexpr auto kUsCountry = loc::code(loc::Country::us);
-
-// ──────────────────────────────────────────────────────────────────────
-// Small leaf-level helpers
-// ──────────────────────────────────────────────────────────────────────
-
-[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
-renderKey(const ent::Key &k) noexcept {
-  return ::PhantomLedger::encoding::format(k);
-}
+namespace common = ::PhantomLedger::exporter::common;
 
 [[nodiscard]] ::PhantomLedger::exporter::common::CustomerId
 customerIdFor(ent::PersonId p) noexcept {
   return ::PhantomLedger::exporter::common::renderCustomerId(p);
 }
 
-// transactionId is defined in shared.hpp — returns a TransactionId
-// stack buffer that flows through csv::Writer via implicit conversion,
-// or has .view() called explicitly at storage-into-std::string sites.
-
 [[nodiscard]] bool isExternalKey(const ent::Key &k) noexcept {
   return k.bank == ent::Bank::external;
 }
 
-/// Same accessor pattern as vertices.cpp: per-customer reads go through
-/// the full PoolSet (so each person's locale comes from their
-/// pii::Record::country), while counterparty/bank synthesis selects the
-/// US slot internally.
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
@@ -94,9 +76,6 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
   }
 }
 
-/// Concatenate the four address fields into a single buffer used by
-/// the minhash address shingler. Reuses a thread-local buffer so per-
-/// row allocation cost is amortized to ~0.
 [[nodiscard]] std::string_view joinAddress(std::string &scratch,
                                            const identity::AddressRecord &a) {
   scratch.clear();
@@ -112,11 +91,6 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
   return scratch;
 }
 
-/// Concatenate "firstName lastName" using the exact same layout that
-/// `minhash::nameMinhashIds` consumes internally. This is what we emit
-/// in the DISCRIMINATOR(name STRING) column of every *_has_name_minhash
-/// edge, so the invariant `nameMinhashIds(source) ⊇ {TO}` holds for
-/// every row.
 [[nodiscard]] std::string_view joinName(std::string &scratch,
                                         std::string_view firstName,
                                         std::string_view lastName) {
@@ -132,10 +106,6 @@ void forEachInternalOwnership(const pl::Entities &entities, Fn &&fn) {
 
 } // namespace
 
-// ──────────────────────────────────────────────────────────────────────
-// classifyTransactionEdges — needs the pool for counterparty names
-// ──────────────────────────────────────────────────────────────────────
-
 TransactionEdgeBundle
 classifyTransactionEdges(const pl::Entities &entities,
                          std::span<const tx_ns::Transaction> finalTxns,
@@ -143,10 +113,6 @@ classifyTransactionEdges(const pl::Entities &entities,
   TransactionEdgeBundle out;
   const auto &usPool = usPoolFor(ctx);
 
-  // Memoize counterparty business names — the same external key shows
-  // up across many transactions, and `nameForCounterparty` does a hash
-  // + pool indirection we'd otherwise repeat per row. The cache key is
-  // the entity::Key itself (POD); we render once on insertion.
   std::unordered_map<ent::Key, std::string> cpNames;
 
   out.sendRows.reserve(finalTxns.size());
@@ -156,15 +122,13 @@ classifyTransactionEdges(const pl::Entities &entities,
     auto it = cpNames.find(k);
     if (it == cpNames.end()) {
       auto name = std::string{
-          identity::nameForCounterparty(renderKey(k), usPool).firstName};
+          identity::nameForCounterparty(common::renderKey(k), usPool)
+              .firstName};
       it = cpNames.emplace(k, std::move(name)).first;
     }
     return it->second;
   };
 
-  // No per-row renderKey / transactionId calls. All storage is the
-  // raw entity::Key (POD) plus the 1-based transaction index. The
-  // edge writers below render each at write time.
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
     const bool srcExt = isExternalKey(tx.source);
@@ -247,14 +211,14 @@ MinhashVertexSets collectMinhashVertexSets(const pl::Entities &entities,
 void writeCustomerHasAccountRows(::PhantomLedger::exporter::csv::Writer &w,
                                  const pl::Entities &entities) {
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
-    w.writeRow(customerIdFor(pid), renderKey(k));
+    w.writeRow(customerIdFor(pid), common::renderKey(k));
   });
 }
 
 void writeAccountHasPrimaryCustomerRows(
     ::PhantomLedger::exporter::csv::Writer &w, const pl::Entities &entities) {
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
-    w.writeRow(renderKey(k), customerIdFor(pid));
+    w.writeRow(common::renderKey(k), customerIdFor(pid));
   });
 }
 
@@ -267,7 +231,7 @@ void writeAcctTxnRows(::PhantomLedger::exporter::csv::Writer &w,
   // Rows store (entity::Key, txn-index). Render both at write time —
   // each call is a stack-buffer fill, zero allocation.
   for (const auto &[acct, idx] : rows) {
-    w.writeRow(renderKey(acct), transactionId(idx));
+    w.writeRow(common::renderKey(acct), transactionId(idx));
   }
 }
 
@@ -275,14 +239,14 @@ void writeCpTxnRows(::PhantomLedger::exporter::csv::Writer &w,
                     std::span<const TransactionEdgeBundle::CpTxnRow> rows) {
   // (entity::Key, txn-index, owned cp-business-name).
   for (const auto &[cp, idx, name] : rows) {
-    w.writeRow(renderKey(cp), transactionId(idx), name);
+    w.writeRow(common::renderKey(cp), transactionId(idx), name);
   }
 }
 
 void writeAcctCpPairRows(::PhantomLedger::exporter::csv::Writer &w,
                          const std::set<std::pair<ent::Key, ent::Key>> &pairs) {
   for (const auto &[acct, cp] : pairs) {
-    w.writeRow(renderKey(acct), renderKey(cp));
+    w.writeRow(common::renderKey(acct), common::renderKey(cp));
   }
 }
 
@@ -359,19 +323,11 @@ void writeLoggedFromRows(
   }
 
   for (const auto &[key, slot] : agg) {
-    w.writeRow(renderKey(key.first), key.second,
+    w.writeRow(common::renderKey(key.first), key.second,
                t_ns::formatTimestamp(slot.firstSeen),
                t_ns::formatTimestamp(slot.lastSeen), slot.count);
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// Identity-by-id edges (Camp 1) — pool-free
-//
-// These all use identity::{name,address}IdFor*  rather than the full
-// producers, because we only need the deterministic id string for the
-// edge row, not the underlying name/address content.
-// ──────────────────────────────────────────────────────────────────────
 
 void writeCustomerHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
                               const pl::Entities &entities,
@@ -405,7 +361,7 @@ void writeAccountHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
                              t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
-    w.writeRow(renderKey(k), identity::nameIdForPerson(pid),
+    w.writeRow(common::renderKey(k), identity::nameIdForPerson(pid),
                std::string_view{"primary"}, ts);
   });
 }
@@ -415,7 +371,7 @@ void writeAccountHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
                                 t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
-    w.writeRow(renderKey(k), identity::addressIdForPerson(pid),
+    w.writeRow(common::renderKey(k), identity::addressIdForPerson(pid),
                std::string_view{"mailing"}, ts);
   });
 }
@@ -432,9 +388,9 @@ void writeAccountAssociatedWithCountryRows(
     // the bank's home country.
     const auto countryCode =
         (rec.owner == ent::invalidPerson)
-            ? kUsCountry
+            ? common::kUsCountry
             : loc::code(entities.pii.at(rec.owner).country);
-    w.writeRow(renderKey(rec.id), countryCode, ts);
+    w.writeRow(common::renderKey(rec.id), countryCode, ts);
   }
 }
 
@@ -442,9 +398,7 @@ void writeAddressInCountryRows(::PhantomLedger::exporter::csv::Writer &w,
                                const pl::Entities &entities,
                                const vertices::SharedContext &ctx,
                                t_ns::TimePoint simStart) {
-  // Customer addresses inherit each person's country from the PII
-  // roster; counterparty and bank addresses are US-synthetic.
-  // Dedup set is sized by unique entities, not rows.
+
   const auto ts = t_ns::formatTimestamp(simStart);
   std::unordered_set<std::string> emitted;
   emitted.reserve(entities.people.roster.count + ctx.counterpartyIds.size() +
@@ -462,10 +416,10 @@ void writeAddressInCountryRows(::PhantomLedger::exporter::csv::Writer &w,
          loc::code(entities.pii.at(p).country));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
-    emit(identity::addressIdForCounterparty(cpId), kUsCountry);
+    emit(identity::addressIdForCounterparty(cpId), common::kUsCountry);
   }
   for (const auto &bankId : ctx.bankIds) {
-    emit(identity::addressIdForBank(bankId), kUsCountry);
+    emit(identity::addressIdForBank(bankId), common::kUsCountry);
   }
 }
 
@@ -491,7 +445,7 @@ void writeCounterpartyAssociatedWithCountryRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const vertices::SharedContext &ctx) {
   for (const auto &cpId : ctx.counterpartyIds) {
-    w.writeRow(cpId, kUsCountry);
+    w.writeRow(cpId, common::kUsCountry);
   }
 }
 
@@ -534,7 +488,7 @@ void writeSarCoversRows(
   for (const auto &sar : sars) {
     const auto n = sar.coveredAccountIds.size();
     for (std::size_t i = 0; i < n; ++i) {
-      w.writeRow(sar.sarId, renderKey(sar.coveredAccountIds[i]),
+      w.writeRow(sar.sarId, common::renderKey(sar.coveredAccountIds[i]),
                  sar.coveredAmounts[i]);
     }
   }
@@ -544,7 +498,7 @@ void writeBeneficiaryBankRows(::PhantomLedger::exporter::csv::Writer &w,
                               const std::set<ent::Key> &cpReceivers) {
   // Render once per cp, reuse for both columns.
   for (const auto &cpKey : cpReceivers) {
-    const auto rendered = renderKey(cpKey);
+    const auto rendered = common::renderKey(cpKey);
     w.writeRow(counterpartyBankId(rendered), rendered);
   }
 }
@@ -552,7 +506,7 @@ void writeBeneficiaryBankRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeOriginatorBankRows(::PhantomLedger::exporter::csv::Writer &w,
                              const std::set<ent::Key> &cpSenders) {
   for (const auto &cpKey : cpSenders) {
-    const auto rendered = renderKey(cpKey);
+    const auto rendered = common::renderKey(cpKey);
     w.writeRow(counterpartyBankId(rendered), rendered);
   }
 }
@@ -561,7 +515,7 @@ void writeBankAssociatedWithCountryRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const vertices::SharedContext &ctx) {
   for (const auto &bankId : ctx.bankIds) {
-    w.writeRow(bankId, kUsCountry);
+    w.writeRow(bankId, common::kUsCountry);
   }
 }
 
@@ -597,9 +551,6 @@ void writeCustomerHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto nm = identity::nameForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
-    // Source string fed into the minhash shingler — emitted as the
-    // DISCRIMINATOR(name STRING) column so each (Customer, MinHash, name)
-    // triple is a distinct edge in TigerGraph.
     const auto nameStr = joinName(nameScratch, nm.firstName, nm.lastName);
     for (const auto &mhId :
          minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
@@ -618,9 +569,6 @@ void writeCustomerHasAddressMinhashRows(
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
-    // joinAddress(...) is also what addressMinhashIds shingles, so
-    // emitting it verbatim as DISCRIMINATOR(address STRING) keeps the
-    // (source string → minhash) relationship self-verifying.
     const auto fullAddr = joinAddress(addrScratch, addr);
     for (const auto &mhId : minhash::addressMinhashIds(fullAddr)) {
       w.writeRow(cid, mhId, fullAddr);
@@ -637,7 +585,6 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
-    // DISCRIMINATOR(street_line1 STRING) — source for streetMinhashIds.
     for (const auto &mhId : minhash::streetMinhashIds(addr.streetLine1)) {
       w.writeRow(cid, mhId, addr.streetLine1);
     }
@@ -652,8 +599,6 @@ void writeCustomerHasAddressCityMinhashRows(
 
   for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    // DISCRIMINATOR(city STRING) — raw city; the TO vertex id encodes
-    // the normalized form already (CMH_<lower>_<spaces_as_underscores>).
     w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city), addr.city);
   }
 }
@@ -678,13 +623,10 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
 
-  // Precompute (minhash list, source-name string) per person — many
-  // accounts share an owner, so this avoids re-shingling AND re-joining
   // the name for every account.
   struct PerPersonNameMh {
     std::vector<minhash::BucketId> ids;
-    std::string name; // exactly "firstName lastName" — feeds into the
-                      // DISCRIMINATOR(name STRING) column.
+    std::string name;
   };
   std::unordered_map<ent::PersonId, PerPersonNameMh> mhByPerson;
   mhByPerson.reserve(entities.people.roster.count);
@@ -696,9 +638,6 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
     slot.name.assign(joinName(nameScratch, nm.firstName, nm.lastName));
   }
 
-  // DISCRIMINATOR(type_of STRING, name STRING) — type_of mirrors the
-  // "primary" relationship used by writeAccountHasNameRows so the
-  // identity-by-id and identity-by-shingle edges line up exactly.
   constexpr std::string_view kAccountNameTypeOf{"primary"};
 
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
@@ -706,7 +645,7 @@ void writeAccountHasNameMinhashRows(::PhantomLedger::exporter::csv::Writer &w,
     if (it == mhByPerson.end()) {
       return;
     }
-    const auto acctStr = renderKey(k);
+    const auto acctStr = common::renderKey(k);
     for (const auto &mhId : it->second.ids) {
       w.writeRow(acctStr, mhId, kAccountNameTypeOf, it->second.name);
     }
@@ -721,8 +660,6 @@ void writeCounterpartyHasNameMinhashRows(
   std::string nameScratch;
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto nm = identity::nameForCounterparty(cpId, usPool);
-    // DISCRIMINATOR(name STRING) — same "firstName lastName" layout
-    // that nameMinhashIds shingles internally.
     const auto nameStr = joinName(nameScratch, nm.firstName, nm.lastName);
     for (const auto &mhId :
          minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
@@ -730,10 +667,6 @@ void writeCounterpartyHasNameMinhashRows(
     }
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// Graph resolution
-// ──────────────────────────────────────────────────────────────────────
 
 void writeResolvesToRows(::PhantomLedger::exporter::csv::Writer &w,
                          const pl::Entities &entities,
@@ -746,7 +679,7 @@ void writeResolvesToRows(::PhantomLedger::exporter::csv::Writer &w,
     if (rec.owner == ent::invalidPerson) {
       continue;
     }
-    w.writeRow(renderKey(rec.id), customerIdFor(rec.owner), 0.95,
+    w.writeRow(common::renderKey(rec.id), customerIdFor(rec.owner), 0.95,
                std::string_view{"account_link"}, ts);
   }
 }

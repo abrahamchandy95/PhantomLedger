@@ -3,9 +3,9 @@
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/record.hpp"
 
-#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <span>
@@ -22,10 +22,6 @@ namespace detail {
   return std::string{buf};
 }
 
-[[nodiscard]] inline double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
 } // namespace detail
 
 inline void writeTransferRows(
@@ -37,7 +33,8 @@ inline void writeTransferRows(
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
     w.writeRow(detail::transferId(idx), enc::format(tx.source).view(),
-               enc::format(tx.target).view(), detail::round2(tx.amount),
+               enc::format(tx.target).view(),
+               primitives::utils::roundMoney(tx.amount),
                t::formatTimestamp(t::fromEpochSeconds(tx.timestamp)));
     ++idx;
   }

@@ -1,25 +1,13 @@
 #include "phantomledger/transfers/fraud/typologies/mule.hpp"
 
 #include "phantomledger/math/amounts.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/fraud/schedule.hpp"
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
 
-#include <algorithm>
-#include <cmath>
-
 namespace PhantomLedger::transfers::fraud::typologies::mule {
-
-namespace {
-
-/// Round a positive amount to two decimals, with a minimum floor.
-[[nodiscard]] inline double roundCents(double amount, double floor_) {
-  const double clamped = std::max(floor_, amount);
-  return std::round(clamped * 100.0) / 100.0;
-}
-
-} // namespace
 
 std::vector<transactions::Transaction>
 generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
@@ -104,7 +92,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       if (rng.coin(0.40)) {
         inboundAmt = math::amounts::kP2P.sample(rng) * 3.0;
       }
-      inboundAmt = roundCents(inboundAmt, /*floor_=*/50.0);
+      inboundAmt = primitives::utils::floorAndRound(inboundAmt, 50.0);
 
       const auto inboundTs =
           sampleTimestamp(rng, burst.baseDate, burst.durationDays,
@@ -130,7 +118,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
       const double haircut = 0.05 + 0.05 * rng.nextDouble();
       const double forwardAmt =
-          std::round(inboundAmt * (1.0 - haircut) * 100.0) / 100.0;
+          primitives::utils::roundMoney(inboundAmt * (1.0 - haircut));
       if (forwardAmt < 10.0) {
         continue;
       }

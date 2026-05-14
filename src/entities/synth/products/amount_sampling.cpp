@@ -1,9 +1,7 @@
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
-
-#include <algorithm>
-#include <cmath>
+#include "phantomledger/primitives/utils/rounding.hpp"
 
 namespace PhantomLedger::entities::synth::products {
 
@@ -13,9 +11,7 @@ namespace PhantomLedger::entities::synth::products {
   const double raw =
       ::PhantomLedger::probability::distributions::lognormalByMedian(
           rng, median, sigma);
-  const double clamped = std::max(floor, raw);
-
-  return std::round(clamped * 100.0) / 100.0;
+  return primitives::utils::floorAndRound(raw, floor);
 }
 
 } // namespace PhantomLedger::entities::synth::products

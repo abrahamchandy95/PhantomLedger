@@ -2,6 +2,7 @@
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -115,8 +116,8 @@ private:
     const auto rawTotal = dist::lognormal(rng_, cfg_.mu, cfg_.sigma);
     const auto total = std::max(kTotalTuitionFloor, rawTotal);
 
-    const auto base =
-        fhelp::roundCents(total / static_cast<double>(std::max(1, count)));
+    const auto base = primitives::utils::roundMoney(
+        total / static_cast<double>(std::max(1, count)));
 
     const auto offsetDays = rng_.uniformInt(0, kSemesterStartJitterDaysExcl);
     const auto anchorEpoch =

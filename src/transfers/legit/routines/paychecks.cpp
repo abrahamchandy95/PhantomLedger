@@ -1,9 +1,8 @@
 #include "phantomledger/transfers/legit/routines/paychecks.hpp"
 
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
-
-#include <cmath>
 
 namespace PhantomLedger::transfers::legit::routines::paychecks {
 
@@ -90,7 +89,7 @@ emitSplitTransfers(random::Rng &rng, const transactions::Factory &txf,
     }
 
     const double splitAmt =
-        std::round(txn.amount * it->second.fraction * 100.0) / 100.0;
+        primitives::utils::roundMoney(txn.amount * it->second.fraction);
     if (splitAmt < 10.0) {
       continue;
     }
