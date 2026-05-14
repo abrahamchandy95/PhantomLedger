@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
-#include "phantomledger/transactions/network/ipv4.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <span>
