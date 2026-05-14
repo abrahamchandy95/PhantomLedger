@@ -2,11 +2,11 @@
 
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <map>
@@ -22,15 +22,6 @@ namespace ch = ::PhantomLedger::channels;
 namespace common = ::PhantomLedger::exporter::common;
 
 namespace {
-
-// ============================================================================
-// Low-level rendering primitives.
-//
-// All stack-buffer ids share one render path: emit a literal prefix, then the
-// 16-char hex representation of a 64-bit FNV. Keeping this as a single static
-// function lets us collapse 8+ id-maker bodies into one-liners that pass the
-// prefix and the hash-input list.
-// ============================================================================
 
 inline constexpr char kHexDigits[] = "0123456789abcdef";
 
@@ -49,9 +40,6 @@ template <std::size_t N>
   return out;
 }
 
-// A small inline buffer for the per-call decimal serializations we feed into
-// stableU64 (txn index, ring id, person id, day-bucket, ...). Returned by
-// value so callers don't allocate.
 struct DecimalBuffer {
   std::array<char, 20> bytes{};
   std::uint8_t length = 0;
@@ -83,10 +71,6 @@ struct DecimalBuffer {
   out.bytes[0] = static_cast<char>(b);
   out.length = 1;
   return out;
-}
-
-[[nodiscard]] double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
 }
 
 } // namespace
@@ -562,7 +546,7 @@ Bundle buildBundle(
       CtrRecord c;
       c.onAccount = onAcct;
       c.filingDate = createdDate;
-      c.amount = round2(amount);
+      c.amount = primitives::utils::roundMoney(amount);
       c.branchBucket = static_cast<std::uint32_t>((onAcct.number % 50U) + 1U);
       const auto dayBytes =
           u64Decimal(static_cast<std::uint64_t>(tx.timestamp / 86400LL));

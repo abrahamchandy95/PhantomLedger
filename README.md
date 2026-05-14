@@ -4,36 +4,33 @@ A synthetic bank transaction generator. PhantomLedger produces realistic, resear
 
 The defining property of the data is that **legitimate activity is structurally rich enough that the fraud signal isn't trivially separable**. Every behavioral dimension the ML models need to learn — temporal bursts, high fan-in, device sharing, rapid forwarding — exists in milder form in legitimate accounts. Mules differ in *degree*, not in *kind*.
 
----
-
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Repository Layout](#repository-layout)
-3. [Pipeline](#pipeline)
-4. [Entity Generation](#entity-generation)
-5. [Personas](#personas)
-6. [Financial Products](#financial-products)
-7. [Banking Mechanics](#banking-mechanics)
-8. [Mathematical Models](#mathematical-models)
-9. [Legitimate Transaction Flows](#legitimate-transaction-flows)
-10. [Family and Social Flows](#family-and-social-flows)
-11. [Fraud Typologies](#fraud-typologies)
-12. [Infrastructure and Device Attribution](#infrastructure-and-device-attribution)
-13. [Chronological Replay and Screening](#chronological-replay-and-screening)
-14. [Export Formats](#export-formats)
-15. [Configuration Reference](#configuration-reference)
-16. [Research Citations](#research-citations)
-
----
+2. [Building](#building)
+3. [Usage](#usage)
+4. [Pipeline](#pipeline)
+5. [Entity Generation](#entity-generation)
+6. [Personas](#personas)
+7. [Financial Products](#financial-products)
+8. [Banking Mechanics](#banking-mechanics)
+9. [Mathematical Models](#mathematical-models)
+10. [Legitimate Transaction Flows](#legitimate-transaction-flows)
+11. [Family and Social Flows](#family-and-social-flows)
+12. [Fraud Typologies](#fraud-typologies)
+13. [Infrastructure and Device Attribution](#infrastructure-and-device-attribution)
+14. [Chronological Replay and Screening](#chronological-replay-and-screening)
+15. [Export Formats](#export-formats)
+16. [Configuration](#configuration)
+17. [References](#references)
 
 ## Overview
 
-PhantomLedger generates a complete bank-internal view of a synthetic population over a configurable time window (default 365 days, 80,000 people). Each person is assigned:
+PhantomLedger generates a complete bank-internal view of a synthetic population over a configurable time window (default 365 days, 70,000 people). Each person is assigned:
 
 - a persona archetype (student, retired, salaried, freelancer, small business, HNW)
 - one or more accounts, possibly including a credit card and a business operating or brokerage account
-- PII (phone, email, deterministic address via pgeocode)
+- PII (phone, email, deterministic address)
 - a family graph (household, spouse, parents, children, supported relatives)
 - a social graph (weighted contact list for P2P flows)
 - device(s) and IP(s) with session history
@@ -41,85 +38,134 @@ PhantomLedger generates a complete bank-internal view of a synthetic population 
 
 On top of that static universe, the pipeline emits transactions across ~40 canonical channels — salary, rent (five variants by landlord type), merchant purchases, bills, subscriptions, ATM, self-transfers, credit card lifecycle events, government benefits, insurance premiums and claims, loan payments, tax payments, family transfers (allowance, tuition, support, spouse, parent gifts, sibling transfers, grandparent gifts, inheritance), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
 
-Output formats include a standard transaction graph (vertices + edges CSVs), an ML-ready schema for mule detection, and a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution.
+Output formats include a standard transaction graph (vertices + edges CSVs), an ML-ready schema for mule detection, a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, and a transaction-edges variant of the AML schema with derived graph features.
 
 ### Design Principles
 
-- **Deterministic**: every stochastic decision derives from a seed via `blake2b` hashing, so a given `(seed, config)` yields bit-identical output.
-- **Research-grounded**: every probability, median, and sigma has a published citation or an explicitly documented modeling choice.
-- **Structurally realistic**: balance ledgers enforce affordability; overdraft protection is a per-account product with tier-specific fees; LOC interest accrues on a dollar-seconds integral; merchants receive business-checking seeds; credit cards operate as liability accounts.
-- **Strict typing**: dataclasses with metadata-driven validation; pyright-strict throughout.
+- **Deterministic.** Every stochastic decision derives from a seed via `blake2b` hashing, so a given `(seed, config)` yields bit-identical output.
+- **Research-grounded.** Every probability, median, and sigma has a published citation or an explicitly documented modeling choice.
+- **Structurally realistic.** Balance ledgers enforce affordability; overdraft protection is a per-account product with tier-specific fees; LOC interest accrues on a dollar-seconds integral; merchants receive business-checking seeds; credit cards operate as liability accounts.
+- **Strict validation.** Configuration structs participate in a `validate::Report` framework; misconfigured rules surface as `validate::Error` at construction time rather than as silent zeros mid-simulation.
 
----
+## Building
 
-## Repository Layout
+PhantomLedger is a C++23 project built with CMake. A `Makefile` wraps the common workflows.
 
+### Prerequisites
+
+- CMake ≥ 3.23
+- A C++23-capable compiler (GCC 13+, Clang 17+, or MSVC 19.38+)
+- Git (for the `faker-cxx` fetch)
+
+The only external dependency, [`faker-cxx`](https://github.com/cieslarmichal/faker-cxx) v4.3.2, is fetched automatically through CMake's `FetchContent`.
+
+### Make targets
+
+```sh
+make build       # configure + build (Release by default)
+make test        # build + run the CTest suite
+make run         # build + run the binary
+make run-help    # build + print --help
+make run-fast    # incremental build, then run (skips reconfigure)
+make rebuild     # clean + build
+make clean       # remove the build directory
 ```
-common/          Shared utilities: config, channels, IDs, calendar, random, schema, math
-entities/        Static population: people, accounts, merchants, landlords, counterparties,
-                 credit cards, personas, financial products (portfolio)
-infra/           Devices, IPs, routing, shared fraud-ring infrastructure
-math_models/    Amount / count / timing / seasonal / momentum / dormancy / paycheck /
-                 counterparty-evolution distributions
-relationships/   Family graph, recurring employment & lease lifecycle, social network
-transfers/       Transaction generation: balances, credit cards, day-to-day spending,
-                 family, fraud, government, insurance, legitimate routines, obligations
-pipeline/        Orchestration stages and state containers
-export/          Standard, mule-ml, and AML exporters
-main.py          CLI entry point
+
+### Variables
+
+All targets accept the following overrides:
+
+| Variable | Default | Description |
+|---|---|---|
+| `CONFIG` | `Release` | CMake build type (`Debug`, `Release`, `RelWithDebInfo`). |
+| `BUILD_DIR` | `build` | Out-of-tree build directory. |
+| `TESTS` | `ON` | `PL_BUILD_TESTS` — build the C++ test suite. |
+| `PYTHON` | `OFF` | `PL_BUILD_PYTHON` — build the pybind11 module. |
+| `BIN` | `phantomledger` | Binary name (used by the `run` targets). |
+| `ARGS` | *(empty)* | Arguments forwarded to the binary by `make run` / `make run-fast`. |
+
+Examples:
+
+```sh
+make build CONFIG=Debug
+make test BUILD_DIR=build-debug CONFIG=Debug
+make run ARGS="--usecase aml --days 90 --population 5000"
 ```
 
----
+The CMake configure step audits the source list against `src/*.cpp` on every run; adding a translation unit without registering it in `CMakeLists.txt` is a hard configure-time error rather than a silent missing-symbol surprise at link.
+
+## Usage
+
+```sh
+phantomledger [options]
+```
+
+| Option | Default | Description |
+|---|---|---|
+| `--usecase {standard,mule-ml,aml,aml-txn-edges}` | `standard` | Exporter to run. |
+| `--days N` | `365` | Simulation length in days. |
+| `--population N` | `70000` | Total population. |
+| `--seed N` | `0xDEADBEEF` | Top-level RNG seed. |
+| `--start YYYY-MM-DD` | `2025-01-01` | Simulation start date. |
+| `--out PATH` | `out_bank_data` | Output directory. |
+| `--show-transactions` | off | Also emit the raw `transactions.csv` next to the aggregated edges. |
+| `--help`, `-h` | — | Print the usage message. |
+
+Each `--usecase` writes into its own subdirectory layout, so two runs with the same `--seed` and `--out` produce a coherent multi-format dataset without colliding:
+
+- `standard` → `<out>/*.csv`
+- `mule-ml` → `<out>/ml_ready/*.csv`
+- `aml` → `<out>/aml/{vertices,edges}/*.csv`
+- `aml-txn-edges` → `<out>/aml_txn_edges/{vertices,edges}/*.csv`
 
 ## Pipeline
 
-The top-level orchestrator `pipeline.generate_ledger.simulate` runs three stages in order:
+The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs three stages in order.
 
-### Stage 1: `build_entities`
+### Stage 1: entities
 
-1. `generate_people` — creates person IDs; assigns fraud-ring membership, mule roles, victim roles, solo fraudsters via `FraudSampler` (Section: Fraud Typologies).
-2. `build_accounts` — one to N accounts per person (binomial, `max_per_person` default 3); first account is always the "primary" deposit account.
-3. `generate_pii` — deterministic phone and email derived from person ID.
-4. `build_merchants` — core merchant pool (density per 10k people) plus a sparse long tail of external-only merchants; core merchants split into internal (on-us) vs external based on `in_bank_p`.
-5. `build_landlords` — typed pool (individual / small LLC / corporate) drawn from the RHFS 2021 unit-weighted distribution; each landlord independently assigned in-bank or external by type.
-6. `build_pools` (counterparties) — employers, client payers, platforms, processors, owner businesses, brokerages. Employers and clients are split internal/external.
-7. Registration of institutional externals (SSA, disability, insurance carriers, lenders, IRS, bank fee books) from `common.externals.ALL`.
-8. `planned_external_family_accounts` — deterministic `XF…` accounts for family members who bank elsewhere.
-9. `assign_personas` + `build_persona_objects` — each person gets an archetype and a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity).
-10. `planned_owned_income_accounts` — freelancers/smallbiz get a `BOP…` business operating account; HNW gets a `BRK…` brokerage/custody account. These are **internal**, same-customer accounts, not externals.
-11. `build` (credit cards) — each eligible person draws card approval (persona-dependent); issued cards get APR, credit limit, cycle day, autopay mode.
-12. `build_portfolios` — assigns mortgage / auto loan / student loan / tax profile / insurance holdings based on persona priors; insurance rates for non-financed collateral owners are back-calculated so the overall persona-level rate stays close to target.
+1. **People.** Person IDs are created; fraud-ring membership, mule roles, victim roles, and solo fraudsters are sampled (see [Fraud Typologies](#fraud-typologies)).
+2. **Accounts.** One to N accounts per person (binomial, `maxPerPerson` default 3); the first account is always the primary deposit account.
+3. **PII.** Deterministic phone and email derived from person ID.
+4. **Merchants.** A core merchant pool (density per 10k people) plus a sparse long tail of external-only merchants; core merchants are split into internal (on-us) vs external based on `inBankP`.
+5. **Landlords.** Typed pool (individual / small LLC / corporate) drawn from the RHFS 2021 unit-weighted distribution; each landlord independently assigned in-bank or external by type.
+6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages. Employers and clients are split internal/external.
+7. **Institutional externals.** SSA, disability, insurance carriers, lenders, IRS, and bank fee books are registered from a fixed catalog.
+8. **Planned external family accounts.** Deterministic `XF…` accounts for family members who bank elsewhere.
+9. **Personas.** Each person gets an archetype and a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity).
+10. **Planned owned income accounts.** Freelancers/smallbiz get a `BOP…` business operating account; HNW gets a `BRK…` brokerage/custody account. These are **internal**, same-customer accounts, not externals.
+11. **Credit cards.** Each eligible person draws card approval (persona-dependent); issued cards get APR, credit limit, cycle day, autopay mode.
+12. **Portfolios.** Mortgage / auto loan / student loan / tax profile / insurance holdings are assigned by persona priors; insurance rates for non-financed collateral owners are back-calculated so the overall persona-level rate stays close to target.
 
-### Stage 2: `build_infra`
+### Stage 2: infra
 
-1. `build_ring_plans` — burst window and participating members for shared device/IP per fraud ring.
-2. `build_devices` — 1–2 personal devices per person; sparse legit shared-device groups (household/family ambient noise); ring-shared flagged devices.
-3. `build_ips` — 1–3 IPs per person; legit noise; ring-shared flagged IPs.
-4. `Router.build` — sticky current device/IP per person, occasional switching.
-5. `SharedInfra` — map from ring ID to shared device/IP with high-probability usage during fraud transactions.
+1. **Ring plans.** Burst window and participating members for shared device/IP per fraud ring.
+2. **Devices.** 1–2 personal devices per person; sparse legit shared-device groups (household/family ambient noise); ring-shared flagged devices.
+3. **IPs.** 1–3 IPs per person; legit noise; ring-shared flagged IPs.
+4. **Router.** Sticky current device/IP per person, occasional switching.
+5. **Shared infra.** Map from ring ID to shared device/IP with high-probability usage during fraud transactions.
 
-### Stage 3: `build_transfers`
+### Stage 3: transfers
 
-1. `LegitTransferBuilder.build` — produces the candidate ledger in semantic order:
-   - **Income pass**: salary (payroll cadences, job tenure, compound raises), government benefits (SSA Wednesday cohorting, disability), non-payroll revenue (client ACH, platform payouts, card settlements, owner draws, investment inflows).
-   - **Routines pass**: direct-deposit splits, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution).
-   - **Family pass**: allowances, tuition, retiree support, spouse transfers, parent gifts, sibling transfers, grandparent gifts, inheritance.
-   - **Credit pass**: credit-card lifecycle (purchase → refund/chargeback, interest, late fees, payments).
-   The builder also returns a starting `ClearingHouse` with per-account balances, overdraft products, and credit limits applied.
-2. Insurance premium and claim events are merged in (reads from portfolio).
-3. Financial-product obligations (mortgage/auto/student/tax) are emitted through `transfers.obligations.emit`, which models late/missed/partial/cure cycles with delinquency clustering.
-4. **Authoritative pre-fraud chronological replay** (`ChronoReplayAccumulator`): the combined stream is sorted by `(timestamp, source, target, amount)` and replayed against the starting ledger. This pass is the only place where balance-gated drops are recorded, and the only place that **emits liquidity events** — overdraft fees (one per courtesy-tap, capped at 3/day) and monthly LOC interest (dollar-seconds integral × APR / seconds-per-year).
-5. `inject` (fraud) — camouflage and illicit transactions are added to the draft ledger based on the target illicit ratio (`target_illicit_p`, default 0.5%).
-6. **Post-fraud replay**: same ledger replayed with fraud included, but `emit_liquidity_events=False` so the fees/interest from the first pass aren't double-emitted.
-7. `validate_transaction_accounts` — every referenced account ID must be in the registry.
+1. The legit-transfer builder produces the candidate ledger in semantic order:
+   - **Income pass.** Salary (payroll cadences, job tenure, compound raises), government benefits (SSA Wednesday cohorting, disability), non-payroll revenue (client ACH, platform payouts, card settlements, owner draws, investment inflows).
+   - **Routines pass.** Direct-deposit splits, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution).
+   - **Family pass.** Allowances, tuition, retiree support, spouse transfers, parent gifts, sibling transfers, grandparent gifts, inheritance.
+   - **Credit pass.** Credit-card lifecycle (purchase → refund/chargeback, interest, late fees, payments).
 
----
+   The builder also returns a starting clearing house with per-account balances, overdraft products, and credit limits applied.
+2. Insurance premium and claim events are merged in.
+3. Financial-product obligations (mortgage/auto/student/tax) are emitted through a unified obligation emitter that models late/missed/partial/cure cycles with delinquency clustering.
+4. **Authoritative pre-fraud chronological replay.** The combined stream is sorted by `(timestamp, source, target, amount)` and replayed against the starting ledger. This pass is the only place where balance-gated drops are recorded, and the only place that **emits liquidity events** — overdraft fees (one per courtesy-tap, capped at 3/day) and monthly LOC interest (dollar-seconds integral × APR / seconds-per-year).
+5. **Fraud injection.** Camouflage and illicit transactions are added to the draft ledger based on the target illicit ratio (`targetIllicitP`, default 0.5%).
+6. **Post-fraud replay.** Same ledger replayed with fraud included, but liquidity-event emission disabled so the fees/interest from the first pass aren't double-emitted.
+7. **Account-registry validation.** Every referenced account ID must be in the registry.
 
 ## Entity Generation
 
 ### IDs
 
-All IDs are fixed-width prefixed strings from `common.ids`:
+All IDs are fixed-width prefixed strings:
 
 | Prefix | Entity | Width |
 |--------|--------|-------|
@@ -138,15 +184,15 @@ All IDs are fixed-width prefixed strings from `common.ids`:
 | `BOP…` / `BRK…` | Same-customer business operating / brokerage (internal) | hash-derived |
 | `XGOV…` / `XINS…` / `XLND…` / `XIRS…` / `XBNK…` | Government / insurance / lender / IRS / bank servicing | fixed |
 
-**Leading `X` signals external**. `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
+**Leading `X` signals external.** `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
 
 ### Merchants
 
-Density is configured per 10k people (`per_10k_people` = 120 core, `long_tail_external_per_10k_people` = 400). Core merchants are weighted by a lognormal size distribution (`size_sigma` = 1.2); the long tail carries 18% of the total weight with a heavier sigma (1.8) and is always external.
+Density is configured per 10k people (`per10kPeople` = 120 core, `longTailExternalPer10kPeople` = 400). Core merchants are weighted by a lognormal size distribution (`sizeSigma` = 1.2); the long tail carries 18% of the total weight with a heavier sigma (1.8) and is always external.
 
 Categories: grocery, fuel, utilities, telecom, ecommerce, restaurant, pharmacy, retail_other, insurance, education.
 
-**In-bank probability** (`in_bank_p` = 0.06): a large retail bank holds ~10-12% of US deposits (FDIC SOD 2024), but NFIB 2023 shows 56% of small business owners keep personal and business at the same bank. Blended, ~6% of a customer's merchant counterparties bank at the same institution.
+**In-bank probability** (`inBankP` = 0.06): a large retail bank holds ~10–12% of US deposits (FDIC SOD 2024), but NFIB 2023 shows 56% of small business owners keep personal and business at the same bank. Blended, ~6% of a customer's merchant counterparties bank at the same institution.
 
 ### Landlords
 
@@ -181,8 +227,6 @@ Densities per 10k people:
 | Platforms | 2 | — |
 | Processors | 1 | — |
 
----
-
 ## Personas
 
 | Persona | Share | Rate mult. | Amount mult. | Initial balance | Card p | CC share | Credit limit | Paycheck sensitivity β(α,β) |
@@ -194,11 +238,11 @@ Densities per 10k people:
 | highNetWorth | 2% | 1.3 | 2.8 | $25,000 | 0.92 | 0.80 | $15,000 | Beta(1, 8) — very low |
 | salaried | 60% (residual) | 1.0 | 1.0 | $1,200 | 0.70 | 0.70 | $3,000 | Beta(2, 3) — moderate |
 
-Shares are computed at compile time: the five non-salaried personas have fixed shares (12/10/10/6/2 = 40%) and salaried takes the remainder (60%). This is enforced by a `consteval` check — any future edit that makes the non-salaried shares exceed 1.0 is a compile error.---
+Shares are computed at compile time: the five non-salaried personas have fixed shares (12/10/10/6/2 = 40%) and salaried takes the remainder (60%). This is enforced by a `consteval` check — any future edit that makes the non-salaried shares exceed 1.0 is a compile error.
 
 ## Financial Products
 
-Every person gets a `Portfolio` of optional products. Ownership is conditioned on persona.
+Every person gets a portfolio of optional products. Ownership is conditioned on persona.
 
 ### Mortgage
 
@@ -278,8 +322,7 @@ Late rate 9%, late window 1–15 days, miss 3%, partial 5%, cure 45%, cluster mu
 | smallbiz | 85% |
 | hnw | 45% |
 
-Separate from ownership, annual filing produces one of three outcomes: refund (55%, median $900, IRS Feb–May), balance due (18%, median $1,200, April), or no visible settlement. Quarterly median $1,800. Anchors: JPMorgan Chase Institute (large income swings in Feb–Apr and Dec),
-IRS 2024–25 refund stats (~72% of filers receive refunds averaging $3,500+).
+Separate from ownership, annual filing produces one of three outcomes: refund (55%, median $900, IRS Feb–May), balance due (18%, median $1,200, April), or no visible settlement. Quarterly median $1,800. Anchors: JPMorgan Chase Institute (large income swings in Feb–Apr and Dec), IRS 2024–25 refund stats (~72% of filers receive refunds averaging $3,500+).
 
 **Quarterly filing calendar (IRS Form 1040-ES)**: estimated tax payments fire on fixed dates — January 15 (prior-year Q4), April 15 (Q1), June 15 (Q2), and September 15 (Q3) — at 10:00 local time per filing convention. Weekends and federal holidays are not currently rolled.
 
@@ -316,26 +359,25 @@ Annual rates are converted to a window probability via `1 - (1 - p)^(n_months/12
 
 At issuance the policy draws:
 - APR: lognormal, median 22%, σ = 0.25, clamped to [8%, 36%] (Fed G.19 Q4 2024 average 21.5%).
-- Limit: lognormal around persona `credit_limit`, σ = 0.65 (Experian 2024 avg $29,855).
+- Limit: lognormal around persona credit limit, σ = 0.65 (Experian 2024 avg $29,855).
 - Cycle day: uniform [1, 28].
 - Autopay mode: 40% full, 10% minimum, 50% manual.
 
 Stats anchors: 84% of US adults have ≥1 card (Fed 2023); average balance carried $6,580 (TransUnion Q3 2024).
 
-**Lifecycle generator** (`transfers/credit_cards/generator.py`) processes each billing cycle:
+**Lifecycle generator** processes each billing cycle:
 1. Purchases accumulate on the card.
 2. Each purchase probabilistically produces a refund (0.6%, 1–14 day delay) or chargeback (0.1%, 7–45 day delay) **from the same merchant that received the charge** — no synthetic refund counterparty.
 3. Cycle-end: compute average balance via piecewise-constant integration; if out of grace and there is a debt integral, charge interest at `APR × interval_days / 365`.
 4. Minimum due = max(2% of statement, $25). Autopay mode drives payment amount (full / min / manual). Manual splits into pay-full (35%), partial Beta(2, 5) (30%), minimum (25%), miss (10%). Late by cycle has 8% probability with 1–20 day delay.
 5. Late fee $32 fires if not paid by due date (+grace_days default 25).
 
----
-
 ## Banking Mechanics
 
-### Balances (`transfers/balances.py`)
+### Balances
 
 Every internal account carries:
+
 1. **Balance** (seeded at simulation start).
 2. **Overdraft protection product** — exactly one of NONE / COURTESY / LINKED / LOC, drawn from a per-persona multinomial.
 3. **Bank tier** — ZERO_FEE (15%) / REDUCED_FEE (10%) / STANDARD_FEE (75%) (Bankrate 2025, Consumer Reports 2024 account-share composition).
@@ -388,23 +430,22 @@ After any accepted debit that leaves a COURTESY-protected account negative, the 
 | ZERO_FEE | $0 | — | Capital One, Citibank, Ally |
 | REDUCED_FEE | $15 | 0.25 | Bank of America (2022 policy) |
 | STANDARD_FEE | $35 | 0.20 | Chase $34, Wells $35, US Bank $36, PNC $36 |
+
 Cap: 3 fees per account per calendar day (Wells Fargo / industry standard). Liquidity-event channels bypass the insufficient-funds check so the fee always posts.
 
 #### Merchant Balance Seeding
 
-Internal merchants (M…) default to the SALARIED persona's $1,200 initial balance because no person maps to them. That's too low for a business that must honor refunds. The init pass overrides merchant balances with a business-checking lognormal: median $8,000, σ = 0.90 (Bluevine 2025: 39% of SMBs have < 1 month of operating expenses; healthy ones hold 2–3 months). Merchants carry no personal protection products and are ZERO_FEE tier.
+Internal merchants (`M…`) default to the SALARIED persona's $1,200 initial balance because no person maps to them. That's too low for a business that must honor refunds. The init pass overrides merchant balances with a business-checking lognormal: median $8,000, σ = 0.90 (Bluevine 2025: 39% of SMBs have < 1 month of operating expenses; healthy ones hold 2–3 months). Merchants carry no personal protection products and are ZERO_FEE tier.
 
 #### Credit Card Liability Accounts
 
-`set_credit_limit(card, limit)` repurposes the `overdrafts` slot to hold the credit line, sets protection to NONE, tier to ZERO_FEE, and clears any LOC registration. This makes `available_to_spend(card) = credit_limit` at init while ensuring the card never accrues LOC interest or courtesy fees on top of its own CC_INTEREST / CC_LATE_FEE lifecycle events.
-
----
+`setCreditLimit(card, limit)` repurposes the `overdrafts` slot to hold the credit line, sets protection to NONE, tier to ZERO_FEE, and clears any LOC registration. This makes `availableToSpend(card) = creditLimit` at init while ensuring the card never accrues LOC interest or courtesy fees on top of its own CC_INTEREST / CC_LATE_FEE lifecycle events.
 
 ## Mathematical Models
 
 ### Amount Distributions
 
-All channel → amount mappings live in `math_models/amount_model.py`. Each channel has a single declared model; lookup failure is a loud `KeyError`.
+All channel → amount mappings live in a single amount-model table. Each channel has a single declared model; lookup failure is a hard runtime error.
 
 Channel-level lognormals (median, σ, floor):
 
@@ -460,7 +501,7 @@ Three hour-of-day profiles:
 - **consumer_day**: peaks at 10:00, drops after 14:00 (retired / stay-at-home).
 - **business**: peaks 9:00–12:00, vanishes after business hours.
 
-Each profile's 24-element PMF is normalized; a CDF is precomputed so `searchsorted` samples hour in O(log 24). Minute and second are uniform.
+Each profile's 24-element PMF is normalized; a CDF is precomputed at compile time (`consteval`) so the hour sample is an O(log 24) walk over a constexpr array. Minute and second are uniform.
 
 ### Momentum — AR(1)
 
@@ -489,10 +530,10 @@ On payday, trigger a `max_residual_boost × paycheck_sensitivity` multiplier tha
 ### Counterparty Evolution — Monthly
 
 At month boundaries:
-- `merchant_add_p` = 0.35 — add one new favorite, weighted by global merchant CDF.
-- `merchant_drop_p` = 0.10 — drop a random existing favorite.
-- `contact_add_p` = 0.08 — add a new P2P peer.
-- `contact_drop_p` = 0.03 — replace a contact slot with a duplicate (reduces effective diversity).
+- `merchantAddP` = 0.35 — add one new favorite, weighted by global merchant CDF.
+- `merchantDropP` = 0.10 — drop a random existing favorite.
+- `contactAddP` = 0.08 — add a new P2P peer.
+- `contactDropP` = 0.03 — replace a contact slot with a duplicate (reduces effective diversity).
 
 Vilella et al. (2021) found monthly category turnover of 0.15–0.30 is a stable individual trait correlated with Openness to Experience. This matters for mule detection: mules show SUDDEN counterparty explosion (10–25 new counterparties in days, per FATF 2022); legitimate accounts show 1–2 new merchants/month.
 
@@ -520,19 +561,17 @@ Sources: NRF ($976B 2024 holiday, $1.01T projected 2025); Bank of America Consum
 ### Liquidity Multiplier
 
 During day-to-day simulation each person gets a liquidity multiplier combining:
-- Days-since-payday **relief** (boost for first `relief_days`) and **stress** (ramp over `stress_ramp_days` after `stress_start_day`).
+- Days-since-payday **relief** (boost for first `reliefDays`) and **stress** (ramp over `stressRampDays` after `stressStartDay`).
 - Cash-on-hand ratio (clipped).
 - Fixed-burden ratio (larger fixed monthly obligations → greater stress).
 
 Product is clipped to [0, 1.10] with an absolute floor. Count-stage liquidity shaping is **soft** (never zeros out an entire person-day) — the authoritative ledger is what truly enforces affordability.
 
----
-
 ## Legitimate Transaction Flows
 
 ### Salary (Payroll)
 
-Persona-conditioned salary probability, then scaled by policy `salary_fraction = 0.65`:
+Persona-conditioned salary probability, then scaled by policy `paidFraction = 0.65`:
 
 | Persona | p(salary) |
 |---------|-----------|
@@ -543,11 +582,11 @@ Persona-conditioned salary probability, then scaled by policy `salary_fraction =
 | student | 12% |
 | retired | 2% |
 
-Each recipient gets an employer, a payroll cadence (27% weekly, 43% biweekly, 20% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. Raises compound: `inflation + Normal(0.02, 0.01)` annually. Job switches trigger a `Normal(0.08, 0.05)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `pay_periods_in_year` gives the per-paycheck amount at any cadence.
+Each recipient gets an employer, a payroll cadence (27% weekly, 43% biweekly, 20% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. Raises compound: `inflation + Normal(0.02, 0.01)` annually. Job switches trigger a `Normal(0.08, 0.05)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `payPeriodsInYear` gives the per-paycheck amount at any cadence.
 
 ### Rent
 
-Persona-conditioned renter probability (given not a homeowner), scaled by `rent_fraction = 0.55`:
+Persona-conditioned renter probability (given not a homeowner), scaled by `rentFraction = 0.55`:
 
 | Persona | p(rent) |
 |---------|---------|
@@ -558,17 +597,17 @@ Persona-conditioned renter probability (given not a homeowner), scaled by `rent_
 | smallbiz | 35% |
 | hnw | 10% |
 
-Leases have tenure uniform [2, 10] years. Base rent compounds at `inflation + Normal(0.03, 0.02)` annually. On lease turnover the base is re-sampled. Monthly payment timestamps are jittered in days 0–5 with hours 7–22. Channel is selected by the `RentRouter` using the landlord-type-specific CDF described above — so the same tenant paying the same landlord produces a consistent Zelle/check/ACH/portal signature.
+Leases have tenure uniform [2, 10] years. Base rent compounds at `inflation + Normal(0.03, 0.02)` annually. On lease turnover the base is re-sampled. Monthly payment timestamps are jittered in days 0–5 with hours 7–22. Channel is selected by the rent router using the landlord-type-specific CDF described above — so the same tenant paying the same landlord produces a consistent Zelle/check/ACH/portal signature.
 
-### Day-to-Day Spending (`transfers/day_to_day/`)
+### Day-to-Day Spending
 
-The `simulate` function runs a day-by-day market simulator:
+A day-by-day market simulator drives discretionary spending:
 
-1. **Market build**: each person gets `fav_k` ∈ [8, 30] favorite merchants (weighted by global merchant CDF) and `bill_k` ∈ [2, 6] billers. Exploration propensity ~ Beta(1.6, 9.5). Burst windows (optional) ~ 8% of people get a 3–9 day high-spending burst at a random point in the window.
-2. **Per-day**: build seasonal × momentum × dormancy × paycheck × weekday × day-shock × liquidity multiplier. Target count per person-day is back-calculated from monthly target, inverting the suppressors.
-3. **Per-transaction**: sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknown_outflow_p = 0.05` carved out).
-4. **Merchant routing**: 82% of the time pick from favorites; else explore (with rejection if the explored merchant is already a favorite). Payment method is card (if the person holds one and `cc_share` rolls) or deposit account.
-5. **Monthly boundary**: `evolve_all` adds/drops a merchant favorite and shuffles P2P contacts per the evolution config.
+1. **Market build.** Each person gets `favK` ∈ [8, 30] favorite merchants (weighted by global merchant CDF) and `billK` ∈ [2, 6] billers. Exploration propensity ~ Beta(1.6, 9.5). Burst windows (optional) ~ 8% of people get a 3–9 day high-spending burst at a random point in the window.
+2. **Per-day.** Build seasonal × momentum × dormancy × paycheck × weekday × day-shock × liquidity multiplier. Target count per person-day is back-calculated from monthly target, inverting the suppressors.
+3. **Per-transaction.** Sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknownOutflowP = 0.05` carved out).
+4. **Merchant routing.** 82% of the time pick from favorites; else explore (with rejection if the explored merchant is already a favorite). Payment method is card (if the person holds one and `ccShare` rolls) or deposit account.
+5. **Monthly boundary.** The commerce evolver adds/drops a merchant favorite and shuffles P2P contacts per the evolution config.
 
 ### Subscriptions
 
@@ -594,9 +633,9 @@ Post-1997 SSA/RSDI cycle payment rule:
 - Birth day 21–31 → 4th Wednesday
 - If Wednesday is a federal holiday, pay the preceding business day.
 
-Since the transfer generator doesn't carry DOB, the synthetic day-of-month is derived from the same blake2b hash used by `export/mule_ml/party.py`, so the Wednesday cohort stays aligned with the exported fake DOB.
+Since the transfer generator doesn't carry DOB, the synthetic day-of-month is derived from the same `blake2b` hash used by the ML-export party renderer, so the Wednesday cohort stays aligned with the exported fake DOB.
 
-**Social Security** (cfg defaults, SSA 2026 COLA):
+**Social Security** (defaults, SSA 2026 COLA):
 - Eligibility: 87% of retirees (SSA Dec. 31, 2025 fact sheet).
 - Monthly benefit: lognormal median $2,071 (estimated Jan 2026 avg retired-worker benefit), σ = 0.30, floor $900.
 
@@ -608,7 +647,7 @@ The repo does NOT model the "paid on the 3rd" exceptions (pre-May-1997 entitleme
 
 ### Non-Payroll Revenue
 
-Freelancers, smallbiz, and HNW get a revenue engine (`transfers/legit/inflows/revenue/`):
+Freelancers, smallbiz, and HNW get a revenue engine:
 
 - **Freelancer**: 1–4 client ACH credits/month (median $1,400, σ = 0.70); 1–4 platform payouts (median $425); 1–2 owner draws (median $1,800). 12% quiet-month probability.
 - **Smallbiz**: 0–3 client ACH (median $2,600); 0–3 platform (median $950); 4–12 card settlements (median $680); 1–2 owner draws (median $3,400). 6% quiet months.
@@ -616,11 +655,9 @@ Freelancers, smallbiz, and HNW get a revenue engine (`transfers/legit/inflows/re
 
 Routing: clients/platforms/processors land on the **business operating account (BOP…)** if the person has one; otherwise on personal. Investment inflows route to the **brokerage (BRK…)** if present. Business timestamps fall on business days (weekend rejection with retry).
 
----
-
 ## Family and Social Flows
 
-Family graph is built by `relationships.family` from three configs: household partitioning (single_p = 29%, Zipf α = 2.2, spouse_p = 62%), dependent structure (65% student-dependent, 35% co-resident, 70% two-parent), and retiree support ties (35% has-adult-child, 35% supports).
+The family graph is built from three configs: household partitioning (`singleP` = 29%, Zipf α = 2.2, `spouseP` = 62%), dependent structure (65% student-dependent, 35% co-resident, 70% two-parent), and retiree support ties (35% has-adult-child, 35% supports).
 
 ### Allowances (parent → student child)
 
@@ -632,17 +669,17 @@ Family graph is built by `relationships.family` from three configs: household pa
 
 ### Retiree Support (adult child → retired parent)
 
-Configured supporters with `has_child_p = 0.35` and `support_p = 0.35`. Amount = base Pareto × persona support-capacity weight (i.e. HNW child sends more than salaried child even to the same parent).
+Configured supporters with `hasChildP = 0.35` and `supportP = 0.35`. Amount = base Pareto × persona support-capacity weight (i.e. HNW child sends more than salaried child even to the same parent).
 
 Supporter count sampling: 65% → 1 child, 27% → 2, 8% → 3. Spousal sync: if one retired parent is supported, there's an 85% chance the spouse shares the same supporters.
 
 ### Spouse Transfers
 
-60% of couples keep at least partially separate accounts (Census 2023, Bankrate 2024). Those couples get 2–6 monthly transfers, lognormal($85, σ = 0.9). Breadwinner asymmetry 65% — higher earner (by persona amount_multiplier) sends more often than vice versa. Pew 2023: 55% of marriages have husband as primary breadwinner, 29% egalitarian, 16% wife breadwinner — the repo uses amount_multiplier as a gender-agnostic proxy.
+60% of couples keep at least partially separate accounts (Census 2023, Bankrate 2024). Those couples get 2–6 monthly transfers, lognormal($85, σ = 0.9). Breadwinner asymmetry 65% — higher earner (by persona amount multiplier) sends more often than vice versa. Pew 2023: 55% of marriages have husband as primary breadwinner, 29% egalitarian, 16% wife breadwinner — the repo uses amount multiplier as a gender-agnostic proxy.
 
 ### Parent Gifts (working parent → adult child)
 
-HRS longitudinal data: 35% of parents 51+ transfer to adult children over a two-year window. Savings.com 2025: 50% support adult children, avg > $1,300/month among givers. We model as 12% monthly probability per eligible parent-child pair, Pareto(xm = $75, α = 1.6) scaled by parent's persona weight.
+HRS longitudinal data: 35% of parents 51+ transfer to adult children over a two-year window. Savings.com 2025: 50% support adult children, avg > $1,300/month among givers. Modeled as 12% monthly probability per eligible parent-child pair, Pareto(xm = $75, α = 1.6) scaled by parent's persona weight.
 
 ### Sibling Transfers
 
@@ -654,22 +691,20 @@ HRS longitudinal data: 35% of parents 51+ transfer to adult children over a two-
 
 ### Inheritance
 
-26% of Americans plan to leave one (NW Mutual 2024). Modeled as a rare one-shot event: per 180-day window, 0.15% of retirees trigger an inheritance. Amount lognormal median $25,000, σ = 1.0, floor $1,000. Split equally among heirs (direct children, or supporting_children as fallback).
+26% of Americans plan to leave one (NW Mutual 2024). Modeled as a rare one-shot event: per 180-day window, 0.15% of retirees trigger an inheritance. Amount lognormal median $25,000, σ = 1.0, floor $1,000. Split equally among heirs (direct children, or supporting children as fallback).
 
 ### Family External Accounts
 
-`external_p = 0.18` — probability that a family counterparty banks at a different institution. Co-residing families overwhelmingly share a bank; non-co-residing adult children / siblings are more likely to bank elsewhere (FDIC 2023 + market fragmentation). Deterministic: a given person_id + coin-flip threshold always resolves the same way across runs, so every generator sees the same family member as internal or external without sharing state.
+`externalP = 0.18` — probability that a family counterparty banks at a different institution. Co-residing families overwhelmingly share a bank; non-co-residing adult children / siblings are more likely to bank elsewhere (FDIC 2023 + market fragmentation). Deterministic: a given person ID + coin-flip threshold always resolves the same way across runs, so every generator sees the same family member as internal or external without sharing state.
 
 ### Social Graph (P2P)
 
-`relationships.social.build` constructs a contact matrix: each person has `effective_degree` (default 12) contacts drawn from a community-aware weighted graph.
+The social builder constructs a contact matrix: each person has `effectiveDegree` (default 12) contacts drawn from a community-aware weighted graph.
 
-- Communities: contiguous blocks of `[6k, 24k]` people, where k is effective_degree.
+- Communities: contiguous blocks of `[6k, 24k]` people, where k is effective degree.
 - Social capital: per-person lognormal(σ = 1.1), with configured hub people getting a 25× multiplier.
 - Local probability: 70% within-block; remainder split between explicit cross-block (29%) and full global (1%).
 - Tie strengths: Gamma(shape = 1.0) drawn per unique contact, turned into a CDF, sampled by the fixed-width contacts row so stronger ties appear more often.
-
----
 
 ## Fraud Typologies
 
@@ -704,7 +739,7 @@ Each participating ring account receives additional **legitimate-looking** trans
 - Daily small P2P: 3% per account per day.
 - Recurring salary: 12% of ring accounts receive a plausible payroll stream.
 
-Camouflage events fire with `is_fraud = 0` and `ring_id = -1` so they blend into the legitimate population for anyone looking only at flags.
+Camouflage events fire with `isFraud = 0` and `ringId = -1` so they blend into the legitimate population for anyone looking only at flags.
 
 ### Burst Window
 
@@ -715,15 +750,13 @@ Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to th
 - Shared device probability (ring): 80%.
 - Shared IP probability (ring): 75%.
 - Legit shared-device noise: 1% (household ambient activity).
-- During a fraud transaction, `TransactionFactory` uses the shared ring device with probability 0.85 and shared IP with probability 0.80.
-
----
+- During a fraud transaction, the transaction factory uses the shared ring device with probability 0.85 and shared IP with probability 0.80.
 
 ## Infrastructure and Device Attribution
 
 ### Devices
 
-Each person has 1 device (80%) or 2 devices (20%). Device types uniformly from `{android, ios, web, desktop}`. Ring-shared flagged devices get ID `FD0000`, `FD0001`, … Sparse legit shared groups (1% noise) model a family ambient device or a household tablet.
+Each person has 1 device (80%) or 2 devices (20%). Device types are drawn uniformly from `{android, ios, web, desktop}`. Ring-shared flagged devices get IDs `FD0000`, `FD0001`, … Sparse legit shared groups (1% noise) model a family ambient device or a household tablet.
 
 ### IPs
 
@@ -731,114 +764,71 @@ Each person has 1–3 IPs (1 + Bernoulli(0.35) + Bernoulli(0.10)). Deterministic
 
 ### Router
 
-Sticky "current" device/IP per person. Default switch probability 5% per transaction. During fraud transactions the `TransactionFactory` consults `SharedInfra` first and falls back to personal infra only if the ring device/IP roll misses.
-
----
+Sticky "current" device/IP per person. Default switch probability 5% per transaction. During fraud transactions the transaction factory consults the shared-infra map first and falls back to personal infra only if the ring device/IP roll misses.
 
 ## Chronological Replay and Screening
 
-The authoritative pre-fraud replay (`ChronoReplayAccumulator`) is the single source of truth for balance-gated drops and liquidity-event emission. It sorts by `(timestamp, source, target, amount)` and processes each transaction:
+The authoritative pre-fraud replay is the single source of truth for balance-gated drops and liquidity-event emission. It sorts by `(timestamp, source, target, amount)` and processes each transaction:
 
 1. Attempt transfer. On acceptance, check whether the debit tapped a COURTESY-protected account into negative — if so, emit an overdraft-fee transaction (capped at 3/day).
 2. On insufficient-funds rejection, try to find a future inbound credit that would "cure" the shortfall:
    - Card-like channels (ATM, merchant, card_purchase, P2P): within 10 hours.
    - Retryable ACH-like channels (bill, rent, subscription, external_unknown, insurance, loans, tax): within 36 hours.
+
    Cure candidates are from the set of channels that legitimately top up an account: salary, government, insurance claims, refunds, self-transfers, incoming family support, etc.
 3. If no cure exists, blind-retry with 55% probability after 18 hours (first retry) or 72 hours (second). Max retries: 1 for card-like, 2 for ACH-like.
-4. For LOC accounts, billing events are pre-generated (23:55 on each account's cycle day)
-and interleaved into the heap so same-timestamp ties process balance changes before interest
-computation.4. For LOC accounts, the replay invokes `accrueLocInterestThrough(timestamp)` periodically.
-The `LocAccrualTracker` sweeps every enabled account, rolls its dollar-seconds integral forward to
-`timestamp` using the current cash value, and for any account whose last billing was ≥ 30 days ago
-emits an `InterestAccrual`. The ledger debits interest from cash (bypassing the funding check) and
-forwards a `LiquidityEvent` to the sink. Accounts whose `lastBillingTs = 0` are silently anchored on
-first sweep so billing does not fire retroactively over the simulation's pre-history.
+4. For LOC accounts, billing events are pre-generated (23:55 on each account's cycle day) and interleaved into the heap so same-timestamp ties process balance changes before interest computation. Periodically the replay invokes the LOC accrual tracker, which sweeps every enabled account, rolls its dollar-seconds integral forward to the current timestamp using the current cash value, and for any account whose last billing was ≥ 30 days ago emits an interest accrual. The ledger debits interest from cash (bypassing the funding check) and forwards a liquidity event to the sink. Accounts whose `lastBillingTs = 0` are silently anchored on first sweep so billing does not fire retroactively over the simulation's pre-history.
 
-The post-fraud replay uses the same logic but with `emit_liquidity_events=False` so overdraft fees and LOC interest already in the stream aren't double-posted.
+The post-fraud replay uses the same logic but with liquidity-event emission disabled so overdraft fees and LOC interest already in the stream aren't double-posted.
 
 Upstream **soft screens** in individual generators (ATM, subscriptions, self-transfers, day-to-day) use a scratch copy of the initial ledger to avoid glaringly unaffordable proposals. These don't replace the final replay — they just reduce the drop rate.
 
----
-
 ## Export Formats
 
-### Standard (`export/standard/`)
+### Standard
 
 Vertex CSVs: `person.csv`, `accountnumber.csv`, `phone.csv`, `email.csv`, `device.csv`, `ipaddress.csv`, `merchants.csv`, `external_accounts.csv`.
 
-Edge CSVs: `HAS_ACCOUNT`, `HAS_PHONE`, `HAS_EMAIL`, `HAS_USED`, `HAS_IP`, `HAS_PAID` (aggregated), optional raw `transactions.csv`.
+Edge CSVs: `HAS_ACCOUNT`, `HAS_PHONE`, `HAS_EMAIL`, `HAS_USED`, `HAS_IP`, `HAS_PAID` (aggregated), optional raw `transactions.csv` (via `--show-transactions`).
 
-### Mule-ML (`export/mule_ml/`)
+### Mule-ML
 
 Optimized schema for GraphSAGE / node-level mule detection:
 
-- `Party.csv` — one row per account with fraud label, phone, email, full deterministic identity (name, SSN, DOB, address, geo via pgeocode, country, canonical IP, canonical device).
+- `Party.csv` — one row per account with fraud label, phone, email, full deterministic identity (name, SSN, DOB, address, geo, country, canonical IP, canonical device).
 - `Transfer_Transaction.csv` — raw ledger.
 - `Account_Device.csv`, `Account_IP.csv` — aggregated account-infra edges with counts and first/last seen.
 
-Ages are drawn from persona-specific band distributions (e.g. retired: Beta-weighted across 65–99; student: 16–34). Addresses use `Faker` + `pgeocode` so zip codes resolve to real US cities, with a fallback list.
+Ages are drawn from persona-specific band distributions (e.g. retired: Beta-weighted across 65–99; student: 16–34). Addresses use `faker-cxx` together with deterministic zip-code lookups so addresses resolve to real US cities, with a fallback list.
 
-### AML — TigerGraph AML_Schema_V1 (`export/aml/`)
+### AML — TigerGraph AML_Schema_V1
 
 Full graph export with:
 
 - **Vertices**: Customer, Account, Counterparty, Name, Address, Country, Watchlist, Device, Transaction, SAR, Bank, MinHash buckets (Name / Address / Street_Line1 / City / State), Connected_Component.
 - **Edges**: customer_has_account / account_has_primary_customer, send/receive_transaction (customer side) + counterparty_send/receive_transaction (counterparty side) + sent/received_transaction_to/from_counterparty (aggregated), uses_device, logged_from, customer/account/counterparty/bank/address has_name / has_address / associated_with_country, customer_matches_watchlist, references (SAR → Customer with role), sar_covers (SAR → Account with activity amount), beneficiary_bank / originator_bank, resolves_to (counterparty → customer soft link), MinHash bucket edges.
 
-**SAR generation** (`export/aml/sar.py`): one SAR per fraud ring (filed 30 days after the last illicit transaction, per BSA); one SAR per solo fraudster. Violation type inferred from dominant fraud channel: structuring → `structuring`, invoice → `suspicious_activity`, everything else → `money_laundering`. `activity_amount` per account is both-sides (in + out) throughput, not a share.
+**SAR generation**: one SAR per fraud ring (filed 30 days after the last illicit transaction, per BSA); one SAR per solo fraudster. Violation type inferred from dominant fraud channel: structuring → `structuring`, invoice → `suspicious_activity`, everything else → `money_laundering`. `activity_amount` per account is both-sides (in + out) throughput, not a share.
 
-**MinHash** (`export/aml/minhash.py`): byte-for-byte compatible with TigerGraph's reference `TokenBank.cpp`. Uses Austin Appleby's MurmurHash2 on byte shingles (k=3), plus the exact 101-element c1/c2 universal-hash coefficient tables from the reference. Bucket IDs include the band index (`{PREFIX}_{band}_{hash}`) to keep LSH bands independent. Reference C source embedded at the bottom of the module for migration / validation.
+**MinHash**: byte-for-byte compatible with TigerGraph's reference `TokenBank.cpp`. Uses Austin Appleby's MurmurHash2 on byte shingles (k=3), plus the exact 101-element c1/c2 universal-hash coefficient tables from the reference. Bucket IDs include the band index (`{PREFIX}_{band}_{hash}`) to keep LSH bands independent. Reference C source is embedded as a comment in the implementation for migration / validation.
 
----
+### AML — Transaction-Edges with Derived Features
 
-## Configuration Reference
+A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for a transaction-edge view and adds graph-derived account features (PageRank score, Louvain community ID, weakly-connected-component ID and component size, shortest path to mule, IP/device collision counts, in/out mule-ratio, multi-hop mule count, betweenness, in/out degree, clustering coefficient). Intended as input to graph-feature-aware AML models that consume both the ledger and the precomputed topology signals.
 
-All configuration lives in `common/config/` and composes into a single `World` dataclass:
+## Configuration
 
-```python
-from common.config import World, Window
+The CLI exposes a small set of top-level knobs (`--days`, `--population`, `--seed`, `--start`, `--usecase`, `--out`, `--show-transactions`). Everything beneath that — persona shares, channel medians, fraud weights, family probabilities — is declared in code as constants or as `Rules` / `Flow` / `Profile` structs that travel with the subsystem that consumes them.
 
-world = World(
-    window=Window(start="2025-01-01", days=365),
-    # population, accounts, hubs, personas, merchants, landlords, counterparties,
-    # households, dependents, allowances, tuition, retiree_support, spouses,
-    # parent_gifts, sibling_transfers, grandparent_gifts, inheritance,
-    # family_routing, government, insurance, events, infra, fraud, patterns
-)
-```
+All configuration structs participate in a uniform validation pass: each carries a `void validate(validate::Report&) const` method that posts named, source-located checks. The orchestrator collects a single `Report` and throws a `validate::Error` if any check fails, so misconfigured rules surface at construction time rather than as silent zeros mid-simulation.
 
-Every numeric field uses dataclass `metadata={"ge": 0}` or similar; `validate_metadata(self)` runs in `__post_init__` so invalid configs fail at construction.
+Three guarantees are enforced at compile time rather than at validation time:
 
-### Window
+- Persona shares: a `consteval` check ensures non-salaried shares never exceed 1.0.
+- Indexable enums: `static_assert(enums::isIndexable(...))` on any enum used as an array index.
+- Timing PMFs: hour-of-day distributions are normalized and CDF'd via `consteval` so the hot path is a constexpr table lookup.
 
-- `start`: ISO YYYY-MM-DD.
-- `days`: positive integer.
-
-### Population
-
-- `seed`: 7 (default). Derives every downstream RNG via blake2b.
-- `size`: 80,000 (default).
-
-### CLI
-
-```
-python main.py \
-    --usecase {standard, mule-ml, aml} \
-    --days 365 \
-    --out out_bank_data \
-    [--show-transactions] \
-    [--progress] \
-    [--ml-only]
-```
-
-- `--ml-only` skips the standard export tables when combined with `--usecase mule-ml`.
-- `--show-transactions` emits the raw ledger alongside aggregated edges.
-
----
-
-## Research Citations
-
-Consolidated reference list.
+## References
 
 **Banking & Payments**
 - Bankrate 2025 — overdraft fee averages; linked savings sweep adoption.
@@ -930,10 +920,4 @@ Consolidated reference list.
 
 **Hash Reference**
 - Austin Appleby — MurmurHash2 32-bit.
-- TigerGraph DevLabs — `TokenBank.cpp` MinHash reference implementation (embedded in `export/aml/minhash.py` as `_TG_REFERENCE_C_SOURCE`).
-
----
-
-## License
-
-MIT. See `LICENSE`.
+- TigerGraph DevLabs — `TokenBank.cpp` MinHash reference implementation (embedded as a comment in the AML MinHash module).

@@ -3,10 +3,10 @@
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
-#include <cmath>
 #include <cstdint>
 #include <span>
 #include <unordered_map>
@@ -21,10 +21,6 @@ namespace enc = ::PhantomLedger::encoding;
 namespace t = ::PhantomLedger::time;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace ent = ::PhantomLedger::entity;
-
-// ---------------------------------------------------------------------------
-// HAS_PAID aggregation
-// ---------------------------------------------------------------------------
 
 struct PairKey {
   ent::Key source;
@@ -79,10 +75,6 @@ aggregateHasPaid(std::span<const tx_ns::Transaction> txns) {
   return agg;
 }
 
-[[nodiscard]] inline double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
 inline void writePairCells(::PhantomLedger::exporter::csv::Writer &w,
                            const PairKey &key) {
   w.cell(enc::format(key.source).view()).cell(enc::format(key.target).view());
@@ -90,7 +82,8 @@ inline void writePairCells(::PhantomLedger::exporter::csv::Writer &w,
 
 inline void writeAggregateCells(::PhantomLedger::exporter::csv::Writer &w,
                                 const Aggregate &rec) {
-  w.cell(round2(rec.totalAmount)).cell(rec.txnCount);
+  w.cell(::PhantomLedger::primitives::utils::roundMoney(rec.totalAmount))
+      .cell(rec.txnCount);
 }
 
 inline void writeTimeRangeCells(::PhantomLedger::exporter::csv::Writer &w,

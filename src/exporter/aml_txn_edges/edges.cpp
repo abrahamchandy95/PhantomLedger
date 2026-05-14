@@ -6,8 +6,8 @@
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
 #include <algorithm>
@@ -26,7 +26,6 @@ namespace ent = ::PhantomLedger::entity;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace pii_ns = ::PhantomLedger::entities::synth::pii;
-namespace loc = ::PhantomLedger::locale;
 namespace aml = ::PhantomLedger::exporter::aml;
 namespace identity = ::PhantomLedger::exporter::aml::identity;
 namespace minhash = ::PhantomLedger::exporter::aml::minhash;
@@ -34,21 +33,10 @@ namespace common = ::PhantomLedger::exporter::common;
 
 namespace {
 
-inline constexpr auto kUsCountry = loc::code(loc::Country::us);
-
 inline constexpr std::string_view kSourceCore = "core_banking";
 inline constexpr std::string_view kSourceKyc = "kyc_system";
 inline constexpr std::string_view kSourceAml = "aml_system";
 inline constexpr std::string_view kSourceCases = "case_mgmt";
-
-[[nodiscard]] double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
-[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
-renderKey(const ent::Key &k) noexcept {
-  return ::PhantomLedger::encoding::format(k);
-}
 
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const shared::SharedContext &ctx) noexcept {
@@ -60,8 +48,6 @@ poolsFor(const shared::SharedContext &ctx) noexcept {
   return k.bank == ent::Bank::external;
 }
 
-// Walk every (personId, internal-account-key) pair using the existing
-// byPersonOffset arrays directly — no intermediate vector.
 template <class Fn>
 void forEachInternalOwnership(
     const ::PhantomLedger::pipeline::Entities &entities, Fn &&fn) {
@@ -112,7 +98,7 @@ void writeOwnsRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto ts = t_ns::formatTimestamp(simStart);
   forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
     w.cell(common::renderCustomerId(pid))
-        .cell(renderKey(k))
+        .cell(common::renderKey(k))
         .cell(ts)
         .cell(kSourceCore)
         .cell(ts)
@@ -129,14 +115,14 @@ void writeTransactedRows(::PhantomLedger::exporter::csv::Writer &w,
                          std::span<const tx_ns::Transaction> postedTxns) {
   std::size_t idx = 1;
   for (const auto &tx : postedTxns) {
-    w.cell(renderKey(tx.source))
-        .cell(renderKey(tx.target))
+    w.cell(common::renderKey(tx.source))
+        .cell(common::renderKey(tx.target))
         .cell(static_cast<std::uint32_t>(idx))
         .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)))
-        .cell(round2(tx.amount))
+        .cell(primitives::utils::roundMoney(tx.amount))
         .cell(std::string_view{"USD"})
         .cell(static_cast<std::int64_t>(tx.session.channel.value))
-        .cell(kUsCountry)
+        .cell(common::kUsCountry)
         .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
         .cell(kSourceCore);
     w.endRow();
@@ -144,19 +130,9 @@ void writeTransactedRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// INVOLVES_COUNTERPARTY — Account → Counterparty
-//
-// One edge per (internal-account, counterparty) pair touched by any
-// txn. Dedup with a set of POD pairs.
-// ──────────────────────────────────────────────────────────────────
-
 void writeInvolvesCounterpartyRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     std::span<const tx_ns::Transaction> postedTxns, t_ns::TimePoint simStart) {
-  // std::pair<Key, Key> has no std::hash, but inherits a lex operator< from
-  // Key's defaulted operator<=>, so std::set works without a custom comparator.
-  // Same pattern as src/exporter/aml/edges.cpp's sentToCpPairs.
   std::set<std::pair<ent::Key, ent::Key>> pairs;
 
   for (const auto &tx : postedTxns) {
@@ -171,8 +147,8 @@ void writeInvolvesCounterpartyRows(
 
   const auto ts = t_ns::formatTimestamp(simStart);
   for (const auto &[acct, cp] : pairs) {
-    const auto cpRendered = renderKey(cp);
-    w.cell(renderKey(acct))
+    const auto cpRendered = common::renderKey(cp);
+    w.cell(common::renderKey(acct))
         .cell(derived::makeCpId(cpRendered.view()))
         .cell(ts)
         .cell(kSourceCore)
@@ -245,7 +221,7 @@ void writeSubjectOfSarRows(
   for (const auto &sar : sars) {
     const auto filing = t_ns::formatTimestamp(sar.filingDate);
     for (const auto &acct : sar.coveredAccountIds) {
-      w.cell(renderKey(acct))
+      w.cell(common::renderKey(acct))
           .cell(sar.sarId)
           .cell(filing)
           .cell(kSourceAml)
@@ -262,7 +238,7 @@ void writeSubjectOfSarRows(
 void writeFiledCtrRows(::PhantomLedger::exporter::csv::Writer &w,
                        const derived::Bundle &bundle) {
   for (const auto &c : bundle.ctrs) {
-    w.cell(renderKey(c.onAccount))
+    w.cell(common::renderKey(c.onAccount))
         .cell(c.id)
         .cell(t_ns::formatTimestamp(c.filingDate))
         .cell(kSourceCore);
@@ -278,7 +254,7 @@ void writeAlertOnRows(::PhantomLedger::exporter::csv::Writer &w,
                       const derived::Bundle &bundle) {
   for (const auto &a : bundle.alerts) {
     w.cell(a.id)
-        .cell(renderKey(a.onAccount))
+        .cell(common::renderKey(a.onAccount))
         .cell(t_ns::formatTimestamp(a.createdDate))
         .cell(derived::ruleName(a.rule))
         .cell(derived::ruleSourceSystem(a.rule));
@@ -432,14 +408,14 @@ void writePromotedTxnAccountRows(
     const auto promotedAt = t_ns::formatTimestamp(r.promotedAt);
 
     w.cell(r.id)
-        .cell(renderKey(tx.source))
+        .cell(common::renderKey(tx.source))
         .cell(std::string_view{"originator"})
         .cell(promotedAt)
         .cell(kSourceCases);
     w.endRow();
 
     w.cell(r.id)
-        .cell(renderKey(tx.target))
+        .cell(common::renderKey(tx.target))
         .cell(std::string_view{"beneficiary"})
         .cell(promotedAt)
         .cell(kSourceCases);
@@ -501,7 +477,7 @@ void writeBusinessOwnsAccountRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto validFrom = t_ns::formatTimestamp(simStart);
   for (const auto &b : bundle.businesses) {
     w.cell(b.id)
-        .cell(renderKey(b.accountKey))
+        .cell(common::renderKey(b.accountKey))
         .cell(t_ns::formatTimestamp(b.effectiveDate))
         .cell(validFrom)
         .cellEmpty();
@@ -743,12 +719,12 @@ void writeAggSuffixCells(::PhantomLedger::exporter::csv::Writer &w,
                          const derived::Bundle &bundle,
                          const derived::AggregateRow &r) {
   const auto windowStart = bundle.simEnd - t_ns::Days{90};
-  w.cell(round2(r.totalAmount))
+  w.cell(primitives::utils::roundMoney(r.totalAmount))
       .cell(static_cast<std::int32_t>(r.txnCount))
       .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(r.firstTs)))
       .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(r.lastTs)))
-      .cell(round2(r.amount30d))
-      .cell(round2(r.amount90d))
+      .cell(primitives::utils::roundMoney(r.amount30d))
+      .cell(primitives::utils::roundMoney(r.amount90d))
       .cell(static_cast<std::int32_t>(r.count30d))
       .cell(static_cast<std::int32_t>(r.count90d))
       .cell(t_ns::formatTimestamp(windowStart))
@@ -762,7 +738,8 @@ void writeAggSuffixCells(::PhantomLedger::exporter::csv::Writer &w,
 void writeAccountFlowAggRows(::PhantomLedger::exporter::csv::Writer &w,
                              const derived::Bundle &bundle) {
   for (const auto &bucket : bundle.flowAgg) {
-    w.cell(renderKey(bucket.pair.first)).cell(renderKey(bucket.pair.second));
+    w.cell(common::renderKey(bucket.pair.first))
+        .cell(common::renderKey(bucket.pair.second));
     writeAggSuffixCells(w, bundle, bucket.row);
     w.endRow();
   }
@@ -775,9 +752,9 @@ void writeAccountLinkCommRows(::PhantomLedger::exporter::csv::Writer &w,
     // weight = log1p(count) * log1p(amount / 1000).
     const double weight = std::log1p(static_cast<double>(r.txnCount)) *
                           std::log1p(r.totalAmount / 1000.0);
-    w.cell(renderKey(bucket.pair.first))
-        .cell(renderKey(bucket.pair.second))
-        .cell(round2(weight));
+    w.cell(common::renderKey(bucket.pair.first))
+        .cell(common::renderKey(bucket.pair.second))
+        .cell(primitives::utils::roundMoney(weight));
     writeAggSuffixCells(w, bundle, r);
     w.endRow();
   }

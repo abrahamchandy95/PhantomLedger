@@ -5,12 +5,11 @@
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
-#include <algorithm>
 #include <array>
-#include <cmath>
 #include <cstdint>
 #include <vector>
 
@@ -214,8 +213,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
             recurring::payPeriodsInYear(profile, payDateCal.year);
 
         const double rawAmount = annualSalary / static_cast<double>(periods);
-        const double amount =
-            std::round(std::max(50.0, rawAmount) * 100.0) / 100.0;
+        const double amount = primitives::utils::floorAndRound(rawAmount, 50.0);
 
         out.push_back(ctx.execution.txf.make(transactions::Draft{
             .source = src,

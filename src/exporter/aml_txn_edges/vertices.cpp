@@ -6,12 +6,12 @@
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
-#include <cmath>
 #include <cstdio>
 #include <set>
 #include <string>
@@ -31,17 +31,6 @@ namespace minhash = ::PhantomLedger::exporter::aml::minhash;
 namespace common = ::PhantomLedger::exporter::common;
 
 namespace {
-
-inline constexpr auto kUsCountry = loc::code(loc::Country::us);
-
-[[nodiscard]] double round2(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
-[[nodiscard]] ::PhantomLedger::encoding::RenderedKey
-renderKey(const ent::Key &k) noexcept {
-  return ::PhantomLedger::encoding::format(k);
-}
 
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const shared::SharedContext &ctx) noexcept {
@@ -187,17 +176,18 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
                       t_ns::TimePoint simStart) {
   const auto cardIds = buildCardIdSet(entities.creditCards);
 
-  // 1. Internal accounts — real balances, branch derived from id.number.
   for (const auto &rec : entities.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
     }
-    const auto idStr = renderKey(rec.id);
+    const auto idStr = common::renderKey(rec.id);
     const auto branchBucket =
         static_cast<std::uint32_t>((rec.id.number % 50U) + 1U);
     const auto branch = derived::branchCodeForBucket(branchBucket);
     const double balance =
-        (finalBook != nullptr) ? round2(finalBook->liquidity(rec.id)) : 0.0;
+        (finalBook != nullptr)
+            ? primitives::utils::roundMoney(finalBook->liquidity(rec.id))
+            : 0.0;
 
     w.cell(idStr)
         .cell(idStr)
@@ -210,8 +200,6 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
     w.endRow();
   }
 
-  // 2. Synthetic Account rows for each external counterparty — every
-  //    TRANSACTED edge needs both endpoints to be Account vertices.
   const auto externalOpen = simStart - t_ns::Days{365};
   const auto externalOpenStr = t_ns::formatTimestamp(externalOpen);
   const auto externalBranch = derived::branchCodeForBucket(0);
@@ -244,7 +232,7 @@ void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
     w.cell(vertexId)
         .cell(vertexId)
         .cell(cpName.firstName)
-        .cell(kUsCountry)
+        .cell(common::kUsCountry)
         .cell(bankName.firstName);
     w.endRow();
   }
@@ -263,7 +251,7 @@ void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(bankId)
         .cell(name.firstName)
         .cell(routing)
-        .cell(kUsCountry);
+        .cell(common::kUsCountry);
     w.endRow();
   }
 }
@@ -327,7 +315,7 @@ void writeIpRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto addrBuf = ::PhantomLedger::network::format(rec.address);
     w.cell(addrBuf)
         .cell(addrBuf)
-        .cell(kUsCountry)
+        .cell(common::kUsCountry)
         .cell(std::string_view{"Unknown"})
         .cell(false);
     w.endRow();
@@ -564,9 +552,6 @@ void writeMinHashBucketRows(::PhantomLedger::exporter::csv::Writer &w,
   const auto &usPool = usPoolFor(ctx);
   const auto &pii = entities.pii;
 
-  // BucketId is RenderedId<24>, which has operator<=> but no std::hash
-  // specialization. std::set works via the defaulted spaceship; this matches
-  // the dedup approach in src/exporter/aml/edges.cpp's MinhashVertexSets.
   std::set<minhash::BucketId> nameSet, addrSet, streetSet;
   std::unordered_set<std::string> citySet, stateSet;
 
@@ -699,7 +684,7 @@ void writeBusinessRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(b.id)
         .cell(legalName)
         .cell(b.entityType)
-        .cell(kUsCountry)
+        .cell(common::kUsCountry)
         .cell(derived::einFor(b.id.view()));
     w.endRow();
   }
@@ -713,8 +698,8 @@ void writeInvestigationCaseTxnRows(
       continue;
     }
     const auto &tx = postedTxns[r.txnIndex - 1];
-    const auto srcId = renderKey(tx.source);
-    const auto dstId = renderKey(tx.target);
+    const auto srcId = common::renderKey(tx.source);
+    const auto dstId = common::renderKey(tx.target);
     const auto &caseRec = bundle.cases[r.caseIndex];
 
     w.cell(r.id)
@@ -723,10 +708,10 @@ void writeInvestigationCaseTxnRows(
         .cell(srcId)
         .cell(dstId)
         .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)))
-        .cell(round2(tx.amount))
+        .cell(primitives::utils::roundMoney(tx.amount))
         .cell(std::string_view{"USD"})
         .cell(static_cast<std::int64_t>(tx.session.channel.value))
-        .cell(kUsCountry)
+        .cell(common::kUsCountry)
         .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
         .cell(t_ns::formatTimestamp(r.promotedAt))
         .cell(t_ns::formatTimestamp(r.ttlDate));
