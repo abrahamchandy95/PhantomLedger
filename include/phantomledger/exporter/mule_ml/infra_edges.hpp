@@ -6,6 +6,7 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/infra/synth/ips_output.hpp"
+#include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/transactions/network/format.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -35,9 +36,7 @@ struct AccountItemKey {
 
 struct AccountItemKeyHash {
   std::size_t operator()(const AccountItemKey &k) const noexcept {
-    const auto h1 = std::hash<::PhantomLedger::entity::Key>{}(k.account);
-    const auto h2 = std::hash<std::string>{}(k.item);
-    return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    return ::PhantomLedger::hashing::make(k.account, k.item);
   }
 };
 
@@ -186,9 +185,6 @@ inline void writeAccountIpRows(
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    // `network::format` is allocation-free; we materialize the owning
-    // std::string for AccountItemKey::item exactly once per loop, at
-    // the storage boundary.
     const auto ipBuf = ::PhantomLedger::network::format(tx.session.ipAddress);
     if (ipBuf.empty()) {
       continue;
@@ -212,9 +208,6 @@ inline void writeAccountIpRows(
     if (it == accountsByPerson.end()) {
       continue;
     }
-    // Materialize once per usage and share across all accounts of this
-    // person — the inner loop copies the std::string into each
-    // AccountItemKey, which is unavoidable storage.
     const auto ipStr = std::string{ipBuf.view()};
     for (const auto &accountKey : it->second) {
       detail::AccountItemKey key{accountKey, ipStr};
