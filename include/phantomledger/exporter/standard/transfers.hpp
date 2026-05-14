@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
+#include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -31,9 +32,7 @@ struct PairKey {
 
 struct PairKeyHash {
   std::size_t operator()(const PairKey &k) const noexcept {
-    const auto h1 = std::hash<ent::Key>{}(k.source);
-    const auto h2 = std::hash<ent::Key>{}(k.target);
-    return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    return ::PhantomLedger::hashing::make(k.source, k.target);
   }
 };
 
