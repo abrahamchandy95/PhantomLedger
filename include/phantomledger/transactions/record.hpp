@@ -2,8 +2,8 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <compare>
 #include <cstdint>

@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <cstdint>
 #include <unordered_map>

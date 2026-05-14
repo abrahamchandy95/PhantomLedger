@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/infra/devices.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/transactions/network/ipv4.hpp"
 
 #include <cstdint>
 #include <optional>
