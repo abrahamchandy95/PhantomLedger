@@ -1,9 +1,9 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/infra/synth/types.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/transactions/devices/identity.hpp"
 
 #include <cstdint>
 #include <unordered_map>
