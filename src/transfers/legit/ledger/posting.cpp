@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/encoding/external.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
@@ -405,7 +406,8 @@ bool ChronoReplayAccumulator::feeBudgetAllows(
     return true;
   }
 
-  const auto day = static_cast<std::int32_t>(event.timestamp / 86400);
+  const auto day = static_cast<std::int32_t>(
+      event.timestamp / ::PhantomLedger::time::kSecondsPerDay);
   const FeeKey key{srcIdx, day};
   auto &count = feeTapsToday_[key];
 

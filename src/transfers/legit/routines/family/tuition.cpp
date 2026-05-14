@@ -2,6 +2,7 @@
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -49,10 +50,6 @@ struct InstallmentPlan {
                                   avgInstallments * cfg.p);
 }
 
-/// Stateful, narrow-purpose emitter for tuition installment
-/// transactions. Each call to `processStudent` resolves a payer,
-/// builds an installment plan, and emits installments until either
-/// the plan is exhausted or the posting window ends.
 class TuitionEmitter {
 public:
   TuitionEmitter(const TransferRun &run, const TuitionSchedule &cfg,
@@ -64,8 +61,6 @@ public:
   TuitionEmitter(const TuitionEmitter &) = delete;
   TuitionEmitter &operator=(const TuitionEmitter &) = delete;
 
-  /// Process one student, given their parent pool and the schoolside
-  /// payee account.
   void processStudent(std::span<const entity::PersonId> parents,
                       entity::Key payeeAcct) {
     if (!rng_.coin(cfg_.p)) {
@@ -131,16 +126,14 @@ private:
     };
   }
 
-  /// Emit one installment. Returns false if the window cap is hit so
-  /// the caller stops; returns true on either successful emission or
-  /// per-installment skip.
   [[nodiscard]] bool tryEmitInstallment(int stepIndex,
                                         const InstallmentPlan &plan,
                                         entity::Key payerAcct,
                                         entity::Key payeeAcct) {
     const auto baseTs =
-        plan.semesterStartEpoch +
-        static_cast<std::int64_t>(stepIndex) * kInstallmentSpacingDays * 86400;
+        plan.semesterStartEpoch + static_cast<std::int64_t>(stepIndex) *
+                                      kInstallmentSpacingDays *
+                                      ::PhantomLedger::time::kSecondsPerDay;
     if (baseTs >= windowEndEpochSec_) {
       return false;
     }
@@ -150,8 +143,8 @@ private:
         rng_.uniformInt(kInstallmentHourMin, kInstallmentHourMaxExcl);
     const auto jitterMin = rng_.uniformInt(0, 60);
 
-    const auto ts =
-        baseTs + jitterDay * 86400 + jitterHour * 3600 + jitterMin * 60;
+    const auto ts = baseTs + jitterDay * ::PhantomLedger::time::kSecondsPerDay +
+                    ::PhantomLedger::time::secondsInDay(jitterHour, jitterMin);
     if (ts >= windowEndEpochSec_) {
       return false;
     }

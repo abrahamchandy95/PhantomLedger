@@ -1,8 +1,8 @@
 #pragma once
 
 #include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -23,19 +23,6 @@ namespace t = ::PhantomLedger::time;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace ent = ::PhantomLedger::entity;
 
-struct PairKey {
-  ent::Key source;
-  ent::Key target;
-
-  constexpr bool operator==(const PairKey &) const noexcept = default;
-};
-
-struct PairKeyHash {
-  std::size_t operator()(const PairKey &k) const noexcept {
-    return ::PhantomLedger::hashing::make(k.source, k.target);
-  }
-};
-
 struct Aggregate {
   double totalAmount = 0.0;
   std::uint64_t txnCount = 0;
@@ -43,7 +30,8 @@ struct Aggregate {
   std::int64_t lastTs = 0;
 };
 
-using AggregateMap = std::unordered_map<PairKey, Aggregate, PairKeyHash>;
+using AggregateMap =
+    std::unordered_map<ent::KeyPair, Aggregate, ent::KeyPairHash>;
 
 [[nodiscard]] inline AggregateMap
 aggregateHasPaid(std::span<const tx_ns::Transaction> txns) {
@@ -51,7 +39,7 @@ aggregateHasPaid(std::span<const tx_ns::Transaction> txns) {
   agg.reserve(txns.size() / 2 + 1);
 
   for (const auto &tx : txns) {
-    const PairKey key{tx.source, tx.target};
+    const ent::KeyPair key{tx.source, tx.target};
     auto it = agg.find(key);
     if (it == agg.end()) {
       Aggregate fresh{};
@@ -75,7 +63,7 @@ aggregateHasPaid(std::span<const tx_ns::Transaction> txns) {
 }
 
 inline void writePairCells(::PhantomLedger::exporter::csv::Writer &w,
-                           const PairKey &key) {
+                           const ent::KeyPair &key) {
   w.cell(enc::format(key.source).view()).cell(enc::format(key.target).view());
 }
 
@@ -92,7 +80,7 @@ inline void writeTimeRangeCells(::PhantomLedger::exporter::csv::Writer &w,
 }
 
 inline void writeHasPaidRow(::PhantomLedger::exporter::csv::Writer &w,
-                            const PairKey &key, const Aggregate &rec) {
+                            const ent::KeyPair &key, const Aggregate &rec) {
   writePairCells(w, key);
   writeAggregateCells(w, rec);
   writeTimeRangeCells(w, rec);
@@ -100,9 +88,9 @@ inline void writeHasPaidRow(::PhantomLedger::exporter::csv::Writer &w,
 }
 
 // Sort aggregate entries by (source, target).
-[[nodiscard]] inline std::vector<std::pair<PairKey, const Aggregate *>>
+[[nodiscard]] inline std::vector<std::pair<ent::KeyPair, const Aggregate *>>
 sortedEntries(const AggregateMap &agg) {
-  std::vector<std::pair<PairKey, const Aggregate *>> entries;
+  std::vector<std::pair<ent::KeyPair, const Aggregate *>> entries;
   entries.reserve(agg.size());
   for (const auto &kv : agg) {
     entries.emplace_back(kv.first, &kv.second);

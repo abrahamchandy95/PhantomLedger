@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -48,32 +49,34 @@ openTable(const std::filesystem::path &dir,
   return w;
 }
 
-[[nodiscard]] inline ::PhantomLedger::time::TimePoint deriveSimStart(
-    std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
+namespace detail {
+
+template <class Cmp>
+[[nodiscard]] inline ::PhantomLedger::time::TimePoint
+deriveSimBound(std::span<const ::PhantomLedger::transactions::Transaction> txns,
+               Cmp cmp) noexcept {
   if (txns.empty()) {
     return ::PhantomLedger::time::fromEpochSeconds(kFallbackEpoch);
   }
-  std::int64_t minTs = txns.front().timestamp;
+  std::int64_t best = txns.front().timestamp;
   for (const auto &tx : txns) {
-    if (tx.timestamp < minTs) {
-      minTs = tx.timestamp;
+    if (cmp(tx.timestamp, best)) {
+      best = tx.timestamp;
     }
   }
-  return ::PhantomLedger::time::fromEpochSeconds(minTs);
+  return ::PhantomLedger::time::fromEpochSeconds(best);
+}
+
+} // namespace detail
+
+[[nodiscard]] inline ::PhantomLedger::time::TimePoint deriveSimStart(
+    std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
+  return detail::deriveSimBound(txns, std::less<std::int64_t>{});
 }
 
 [[nodiscard]] inline ::PhantomLedger::time::TimePoint deriveSimEnd(
     std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
-  if (txns.empty()) {
-    return ::PhantomLedger::time::fromEpochSeconds(kFallbackEpoch);
-  }
-  std::int64_t maxTs = txns.front().timestamp;
-  for (const auto &tx : txns) {
-    if (tx.timestamp > maxTs) {
-      maxTs = tx.timestamp;
-    }
-  }
-  return ::PhantomLedger::time::fromEpochSeconds(maxTs);
+  return detail::deriveSimBound(txns, std::greater<std::int64_t>{});
 }
 
 [[nodiscard]] inline const ::PhantomLedger::entities::synth::pii::PoolSet &

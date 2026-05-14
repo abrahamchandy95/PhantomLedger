@@ -6,6 +6,7 @@
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/exporter/common/render.hpp"
+#include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/network/format.hpp"
@@ -44,48 +45,6 @@ poolsFor(const shared::SharedContext &ctx) noexcept {
   return *ctx.pools;
 }
 
-[[nodiscard]] bool isExternalKey(const ent::Key &k) noexcept {
-  return k.bank == ent::Bank::external;
-}
-
-template <class Fn>
-void forEachInternalOwnership(
-    const ::PhantomLedger::pipeline::Entities &entities, Fn &&fn) {
-  const auto &ownership = entities.accounts.ownership;
-  const auto &records = entities.accounts.registry.records;
-  const auto numPersons = ownership.byPersonOffset.empty()
-                              ? std::size_t{0}
-                              : ownership.byPersonOffset.size() - 1;
-  for (std::size_t i = 0; i < numPersons; ++i) {
-    const auto offset = ownership.byPersonOffset[i];
-    const auto end = ownership.byPersonOffset[i + 1];
-    const auto pid = static_cast<ent::PersonId>(i + 1);
-    for (auto j = offset; j < end; ++j) {
-      const auto regIdx = ownership.byPersonIndex[j];
-      const auto &rec = records[regIdx];
-      if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
-        continue;
-      }
-      fn(pid, rec.id);
-    }
-  }
-}
-
-[[nodiscard]] std::string_view joinAddress(std::string &scratch,
-                                           const identity::AddressRecord &a) {
-  scratch.clear();
-  scratch.reserve(a.streetLine1.size() + a.city.size() + a.state.size() +
-                  a.postalCode.size() + 4);
-  scratch.append(a.streetLine1);
-  scratch.push_back(' ');
-  scratch.append(a.city);
-  scratch.push_back(' ');
-  scratch.append(a.state);
-  scratch.push_back(' ');
-  scratch.append(a.postalCode);
-  return scratch;
-}
-
 } // namespace
 
 // ──────────────────────────────────────────────────────────────────
@@ -96,15 +55,16 @@ void writeOwnsRows(::PhantomLedger::exporter::csv::Writer &w,
                    const ::PhantomLedger::pipeline::Entities &entities,
                    t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
-  forEachInternalOwnership(entities, [&](ent::PersonId pid, const ent::Key &k) {
-    w.cell(common::renderCustomerId(pid))
-        .cell(common::renderKey(k))
-        .cell(ts)
-        .cell(kSourceCore)
-        .cell(ts)
-        .cellEmpty(); // valid_to — ongoing
-    w.endRow();
-  });
+  common::forEachInternalOwnership(entities,
+                                   [&](ent::PersonId pid, const ent::Key &k) {
+                                     w.cell(common::renderCustomerId(pid))
+                                         .cell(common::renderKey(k))
+                                         .cell(ts)
+                                         .cell(kSourceCore)
+                                         .cell(ts)
+                                         .cellEmpty(); // valid_to — ongoing
+                                     w.endRow();
+                                   });
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -136,8 +96,8 @@ void writeInvolvesCounterpartyRows(
   std::set<std::pair<ent::Key, ent::Key>> pairs;
 
   for (const auto &tx : postedTxns) {
-    const bool srcExt = isExternalKey(tx.source);
-    const bool dstExt = isExternalKey(tx.target);
+    const bool srcExt = common::isExternalKey(tx.source);
+    const bool dstExt = common::isExternalKey(tx.target);
     if (srcExt && !dstExt) {
       pairs.emplace(tx.target, tx.source); // (account, counterparty)
     } else if (!srcExt && dstExt) {
@@ -191,16 +151,14 @@ void writeOnWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
     }
     const auto cid = common::renderCustomerId(p);
     const auto cidView = cid.view();
-    watchlistId.clear();
-    watchlistId.reserve(3 + cidView.size());
-    watchlistId.append("WL_").append(cidView);
+    const auto wlView = common::makeWatchlistId(watchlistId, cidView);
 
     const double matchScore =
         0.5 +
         static_cast<double>(common::stableU64({"WL", cidView}) % 50ULL) / 100.0;
 
     w.cell(cid)
-        .cell(watchlistId)
+        .cell(wlView)
         .cell(ts)
         .cell(kSourceAml)
         .cell(matchScore)
@@ -289,7 +247,6 @@ void writeDispositionedAsRows(::PhantomLedger::exporter::csv::Writer &w,
 void writeEscalatedToRows(
     ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
     std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
-  // Pre-compute alert → SAR mapping via case linkage once.
   std::vector<std::vector<std::size_t>> sarsByAlert(bundle.alerts.size());
   for (const auto &c : bundle.cases) {
     for (const auto ai : c.alertIndices) {
@@ -568,31 +525,6 @@ void writeHasIdRows(::PhantomLedger::exporter::csv::Writer &w,
 // USES_DEVICE / USES_IP — per-(person, device|ip) aggregation
 // ──────────────────────────────────────────────────────────────────
 
-namespace {
-
-struct WindowAgg {
-  t_ns::TimePoint firstSeen{};
-  t_ns::TimePoint lastSeen{};
-  std::uint32_t count = 0;
-};
-
-void touchWindow(WindowAgg &slot, t_ns::TimePoint fs, t_ns::TimePoint ls) {
-  if (slot.count == 0) {
-    slot.firstSeen = fs;
-    slot.lastSeen = ls;
-  } else {
-    if (fs < slot.firstSeen) {
-      slot.firstSeen = fs;
-    }
-    if (ls > slot.lastSeen) {
-      slot.lastSeen = ls;
-    }
-  }
-  ++slot.count;
-}
-
-} // namespace
-
 void writeUsesDeviceRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     const ::PhantomLedger::infra::synth::devices::Output &devices) {
@@ -611,11 +543,12 @@ void writeUsesDeviceRows(
       return a ^ (b << 1) ^ (c << 3) ^ (d << 5);
     }
   };
-  std::unordered_map<Key, WindowAgg, KeyHash> agg;
+  std::unordered_map<Key, common::SeenWindow, KeyHash> agg;
   agg.reserve(devices.usages.size());
 
   for (const auto &u : devices.usages) {
-    touchWindow(agg[Key{u.personId, u.deviceId}], u.firstSeen, u.lastSeen);
+    common::recordSeen(agg[Key{u.personId, u.deviceId}], u.firstSeen,
+                       u.lastSeen);
   }
 
   for (const auto &[key, slot] : agg) {
@@ -643,11 +576,12 @@ void writeUsesIpRows(::PhantomLedger::exporter::csv::Writer &w,
       return static_cast<std::size_t>(k.person) ^ static_cast<std::size_t>(raw);
     }
   };
-  std::unordered_map<Key, WindowAgg, KeyHash> agg;
+  std::unordered_map<Key, common::SeenWindow, KeyHash> agg;
   agg.reserve(ips.usages.size());
 
   for (const auto &u : ips.usages) {
-    touchWindow(agg[Key{u.personId, u.ipAddress}], u.firstSeen, u.lastSeen);
+    common::recordSeen(agg[Key{u.personId, u.ipAddress}], u.firstSeen,
+                       u.lastSeen);
   }
 
   for (const auto &[key, slot] : agg) {
@@ -678,7 +612,7 @@ void writeInBucketRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto cid = common::renderCustomerId(p);
     const auto nm = identity::nameForPerson(p, pii, pools);
     const auto addr = identity::addressForPerson(p, pii, pools);
-    const auto fullAddr = joinAddress(addrScratch, addr);
+    const auto fullAddr = common::joinAddress(addrScratch, addr);
 
     for (const auto &id : minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       w.cell(cid).cell(id).cell(ts).cell(0.9);
@@ -749,7 +683,6 @@ void writeAccountLinkCommRows(::PhantomLedger::exporter::csv::Writer &w,
                               const derived::Bundle &bundle) {
   for (const auto &bucket : bundle.linkComm) {
     const auto &r = bucket.row;
-    // weight = log1p(count) * log1p(amount / 1000).
     const double weight = std::log1p(static_cast<double>(r.txnCount)) *
                           std::log1p(r.totalAmount / 1000.0);
     w.cell(common::renderKey(bucket.pair.first))

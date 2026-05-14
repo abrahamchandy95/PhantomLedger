@@ -3,6 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>
@@ -27,7 +28,8 @@ randomTimestampInMonth(::PhantomLedger::time::TimePoint monthStart,
 
   const auto dayOffset =
       static_cast<int>(rng.uniformInt(0, static_cast<std::int64_t>(monthDays)));
-  const auto secOffset = rng.uniformInt(0, 86400);
+  const auto secOffset =
+      rng.uniformInt(0, ::PhantomLedger::time::kSecondsPerDay);
 
   const auto base = ::PhantomLedger::time::toEpochSeconds(
       ::PhantomLedger::time::addDays(monthStart, dayOffset));
@@ -50,7 +52,7 @@ sampleMonthlyPostingTs(random::Rng &rng,
 
   const auto base = ::PhantomLedger::time::toEpochSeconds(
       ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  return base + hour * 3600 + minute * 60;
+  return base + ::PhantomLedger::time::secondsInDay(hour, minute);
 }
 
 [[nodiscard]] inline double pareto(random::Rng &rng, double xm,

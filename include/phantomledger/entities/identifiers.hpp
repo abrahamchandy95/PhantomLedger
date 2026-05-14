@@ -37,6 +37,23 @@ Key makeKey(Role role, std::uint64_t number) = delete;
                        static_cast<std::uint8_t>(k.bank), k.number);
 }
 
+struct KeyPair {
+  Key source;
+  Key target;
+
+  constexpr bool operator==(const KeyPair &) const noexcept = default;
+};
+
+[[nodiscard]] inline std::size_t hashValue(const KeyPair &p) noexcept {
+  return hashing::make(p.source, p.target);
+}
+
+struct KeyPairHash {
+  std::size_t operator()(const KeyPair &p) const noexcept {
+    return hashValue(p);
+  }
+};
+
 // --- PersonId ----------------------------------------------------
 
 using PersonId = std::uint32_t;
@@ -54,6 +71,13 @@ namespace std {
 template <> struct hash<PhantomLedger::entity::Key> {
   std::size_t operator()(const PhantomLedger::entity::Key &k) const noexcept {
     return PhantomLedger::entity::hashValue(k);
+  }
+};
+
+template <> struct hash<PhantomLedger::entity::KeyPair> {
+  std::size_t
+  operator()(const PhantomLedger::entity::KeyPair &p) const noexcept {
+    return PhantomLedger::entity::hashValue(p);
   }
 };
 
