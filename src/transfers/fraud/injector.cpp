@@ -3,12 +3,7 @@
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
 #include "phantomledger/transfers/fraud/schedule.hpp"
-#include "phantomledger/transfers/fraud/typologies/classic.hpp"
-#include "phantomledger/transfers/fraud/typologies/funnel.hpp"
-#include "phantomledger/transfers/fraud/typologies/invoice.hpp"
-#include "phantomledger/transfers/fraud/typologies/layering.hpp"
-#include "phantomledger/transfers/fraud/typologies/mule.hpp"
-#include "phantomledger/transfers/fraud/typologies/structuring.hpp"
+#include "phantomledger/transfers/fraud/typologies/dispatch.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -33,29 +28,6 @@ Injector::Injector(InjectorServices services, InjectorRingView rings,
                    const Behavior &behavior) noexcept
     : services_(services), rings_(rings), accounts_(accounts),
       behavior_(behavior) {}
-
-std::vector<transactions::Transaction>
-Injector::generateForTypology(IllicitContext &ctx, const Plan &plan,
-                              Typology typology, std::int32_t budget) const {
-  switch (typology) {
-  case Typology::classic:
-    return typologies::classic::generate(ctx, plan, budget);
-  case Typology::layering:
-    return typologies::layering::generate(ctx, plan, budget,
-                                          behavior_.layering);
-  case Typology::funnel:
-    return typologies::funnel::generate(ctx, plan, budget);
-  case Typology::structuring:
-    return typologies::structuring::generate(ctx, plan, budget,
-                                             behavior_.structuring);
-  case Typology::invoice:
-    return typologies::invoice::generate(ctx, plan, budget);
-  case Typology::mule:
-    return typologies::mule::generate(ctx, plan, budget);
-  }
-  // Unreachable in practice; preserves the original silent fallback.
-  return typologies::classic::generate(ctx, plan, budget);
-}
 
 InjectionOutput
 Injector::inject(time::Window window,
@@ -157,6 +129,8 @@ Injector::inject(time::Window window,
   std::int64_t remainingBudget = targetIllicit;
   const auto totalRings = static_cast<std::int64_t>(ringPlans.size());
 
+  const typologies::Dispatcher dispatcher{illicitCtx, behavior_};
+
   for (std::int64_t ringIdx = 0; ringIdx < totalRings; ++ringIdx) {
     if (remainingBudget <= 0) {
       break;
@@ -165,8 +139,7 @@ Injector::inject(time::Window window,
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
     const auto typology = behavior_.typologies.choose(services_.rng);
 
-    auto produced =
-        generateForTypology(illicitCtx, ringPlans[ringIdx], typology, perRing);
+    auto produced = dispatcher.run(ringPlans[ringIdx], typology, perRing);
 
     remainingBudget -= static_cast<std::int64_t>(produced.size());
     illicitTxns.insert(illicitTxns.end(),

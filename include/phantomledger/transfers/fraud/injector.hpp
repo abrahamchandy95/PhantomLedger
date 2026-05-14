@@ -5,11 +5,8 @@
 #include "phantomledger/transfers/fraud/behavior.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
 #include "phantomledger/transfers/fraud/injector_inputs.hpp"
-#include "phantomledger/transfers/fraud/rings.hpp"
 
-#include <cstdint>
 #include <span>
-#include <vector>
 
 namespace PhantomLedger::transfers::fraud {
 
@@ -28,10 +25,6 @@ public:
          InjectorLegitCounterparties counterparties) const;
 
 private:
-  [[nodiscard]] std::vector<transactions::Transaction>
-  generateForTypology(IllicitContext &ctx, const Plan &plan, Typology typology,
-                      std::int32_t budget) const;
-
   InjectorServices services_;
   InjectorRingView rings_{};
   InjectorAccountView accounts_{};

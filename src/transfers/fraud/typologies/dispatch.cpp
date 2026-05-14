@@ -9,28 +9,28 @@
 
 namespace PhantomLedger::transfers::fraud::typologies {
 
-std::vector<transactions::Transaction> generate(IllicitContext &ctx,
-                                                const Plan &plan,
-                                                Typology typology,
-                                                std::int32_t budget) {
+Dispatcher::Dispatcher(IllicitContext &ctx, const Behavior &behavior) noexcept
+    : ctx_(ctx), behavior_(behavior) {}
+
+std::vector<transactions::Transaction>
+Dispatcher::run(const Plan &plan, Typology typology,
+                std::int32_t budget) const {
   switch (typology) {
   case Typology::classic:
-    return classic::generate(ctx, plan, budget);
+    return classic::generate(ctx_, plan, budget);
   case Typology::layering:
-    return layering::generate(ctx, plan, budget);
+    return layering::generate(ctx_, plan, budget, behavior_.layering);
   case Typology::funnel:
-    return funnel::generate(ctx, plan, budget);
+    return funnel::generate(ctx_, plan, budget);
   case Typology::structuring:
-    return structuring::generate(ctx, plan, budget);
+    return structuring::generate(ctx_, plan, budget, behavior_.structuring);
   case Typology::invoice:
-    return invoice::generate(ctx, plan, budget);
+    return invoice::generate(ctx_, plan, budget);
   case Typology::mule:
-    return mule::generate(ctx, plan, budget);
+    return mule::generate(ctx_, plan, budget);
   }
-  // Unreachable in practice — every Typology value is handled above —
-  // but the silent fallback keeps the function total in the face of
-  // future enum extensions during development.
-  return classic::generate(ctx, plan, budget);
+
+  return classic::generate(ctx_, plan, budget);
 }
 
 } // namespace PhantomLedger::transfers::fraud::typologies
