@@ -34,6 +34,25 @@ randomTimestampInMonth(::PhantomLedger::time::TimePoint monthStart,
   return base + secOffset;
 }
 
+struct PostingShape {
+  std::int64_t dayMaxExcl = 0;
+  std::int64_t hourMin = 0;
+  std::int64_t hourMaxExcl = 24;
+};
+
+[[nodiscard]] inline std::int64_t
+sampleMonthlyPostingTs(random::Rng &rng,
+                       ::PhantomLedger::time::TimePoint monthStart,
+                       const PostingShape &shape) {
+  const auto day = rng.uniformInt(0, shape.dayMaxExcl);
+  const auto hour = rng.uniformInt(shape.hourMin, shape.hourMaxExcl);
+  const auto minute = rng.uniformInt(0, 60);
+
+  const auto base = ::PhantomLedger::time::toEpochSeconds(
+      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
+  return base + hour * 3600 + minute * 60;
+}
+
 [[nodiscard]] inline double pareto(random::Rng &rng, double xm,
                                    double alpha) noexcept {
   const double u = 1.0 - rng.nextDouble();

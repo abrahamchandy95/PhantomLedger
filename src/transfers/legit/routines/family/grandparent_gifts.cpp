@@ -16,15 +16,13 @@ namespace dist = ::PhantomLedger::probability::distributions;
 
 namespace {
 
-inline constexpr std::int64_t kPostingDayMaxExcl = 20;
-inline constexpr std::int64_t kPostingHourMin = 8;
-inline constexpr std::int64_t kPostingHourMaxExcl = 20;
+inline constexpr fhelp::PostingShape kShape{
+    .dayMaxExcl = 20,
+    .hourMin = 8,
+    .hourMaxExcl = 20,
+};
 inline constexpr double kAmountFloor = 10.0;
 
-/// Stateful, narrow-purpose emitter for grandparent-to-grandchild
-/// gift transactions. Same pattern as `AllowanceEmitter`: dependency
-/// views and sinks are members; only routine-shape arguments cross
-/// method boundaries.
 class GrandparentGiftEmitter {
 public:
   GrandparentGiftEmitter(const TransferRun &run, const GrandparentGiftFlow &cfg,
@@ -36,8 +34,6 @@ public:
   GrandparentGiftEmitter(const GrandparentGiftEmitter &) = delete;
   GrandparentGiftEmitter &operator=(const GrandparentGiftEmitter &) = delete;
 
-  /// Walk all month-starts for one (grandparent, grandchild) pair,
-  /// emitting zero or more gifts.
   void processPair(entity::PersonId grandparent, entity::PersonId grandchild) {
     const auto gpAcct = run_.accounts().localMemberAccount(grandparent);
     const auto gcAcct = run_.accounts().localMemberAccount(grandchild);
@@ -58,7 +54,7 @@ private:
       return false;
     }
 
-    const auto ts = pickPostingTimestamp(monthStart);
+    const auto ts = fhelp::sampleMonthlyPostingTs(rng_, monthStart, kShape);
     if (ts >= windowEndEpochSec_) {
       return false;
     }
@@ -78,17 +74,6 @@ private:
         .channel = channels::tag(channels::Family::grandparentGift),
     }));
     return true;
-  }
-
-  [[nodiscard]] std::int64_t
-  pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart) {
-    const auto day = rng_.uniformInt(0, kPostingDayMaxExcl);
-    const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-    const auto minute = rng_.uniformInt(0, 60);
-
-    const auto base = ::PhantomLedger::time::toEpochSeconds(
-        ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-    return base + hour * 3600 + minute * 60;
   }
 
   [[nodiscard]] double sampleAmount() {

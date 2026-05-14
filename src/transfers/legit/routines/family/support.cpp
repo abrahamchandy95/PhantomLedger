@@ -16,22 +16,12 @@ namespace fhelp = ::PhantomLedger::transfers::legit::routines::family::helpers;
 
 namespace {
 
-inline constexpr std::int64_t kPostingDayMaxExcl = 6;
-inline constexpr std::int64_t kPostingHourMin = 7;
-inline constexpr std::int64_t kPostingHourMaxExcl = 21;
+inline constexpr fhelp::PostingShape kShape{
+    .dayMaxExcl = 6,
+    .hourMin = 7,
+    .hourMaxExcl = 21,
+};
 inline constexpr double kAmountFloor = 5.0;
-
-[[nodiscard]] std::int64_t
-pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart,
-                     random::Rng &rng) {
-  const auto day = rng.uniformInt(0, kPostingDayMaxExcl);
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
-
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  return base + hour * 3600 + minute * 60;
-}
 
 [[nodiscard]] std::size_t estimateCapacity(std::size_t retireeCount,
                                            std::size_t monthCount,
@@ -44,10 +34,6 @@ pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart,
   return static_cast<std::size_t>(expected) + (retireeCount / 4U);
 }
 
-/// Stateful, narrow-purpose emitter for child-to-retiree support
-/// transactions. Same pattern as `AllowanceEmitter`: dependency views
-/// and sinks are members; only routine-shape arguments cross method
-/// boundaries.
 class SupportEmitter {
 public:
   SupportEmitter(const TransferRun &run, const SupportFlow &cfg,
@@ -59,9 +45,6 @@ public:
   SupportEmitter(const SupportEmitter &) = delete;
   SupportEmitter &operator=(const SupportEmitter &) = delete;
 
-  /// Try to emit a single monthly support transfer from a weighted-
-  /// pick supporter into the retiree's account. Returns true on
-  /// success.
   [[nodiscard]] bool tryEmit(entity::Key retireeAcct,
                              std::span<const entity::PersonId> supporters,
                              ::PhantomLedger::time::TimePoint monthStart) {
@@ -74,7 +57,7 @@ public:
       return false;
     }
 
-    const auto ts = pickPostingTimestamp(monthStart, rng_);
+    const auto ts = fhelp::sampleMonthlyPostingTs(rng_, monthStart, kShape);
     if (ts >= windowEndEpochSec_) {
       return false;
     }

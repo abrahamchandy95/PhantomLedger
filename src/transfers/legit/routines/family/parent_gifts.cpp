@@ -17,22 +17,12 @@ namespace fhelp = ::PhantomLedger::transfers::legit::routines::family::helpers;
 
 namespace {
 
-inline constexpr std::int64_t kPostingDayMaxExcl = 20;
-inline constexpr std::int64_t kPostingHourMin = 8;
-inline constexpr std::int64_t kPostingHourMaxExcl = 21;
+inline constexpr fhelp::PostingShape kShape{
+    .dayMaxExcl = 20,
+    .hourMin = 8,
+    .hourMaxExcl = 21,
+};
 inline constexpr double kAmountFloor = 10.0;
-
-[[nodiscard]] std::int64_t
-pickPostingTimestamp(::PhantomLedger::time::TimePoint monthStart,
-                     random::Rng &rng) {
-  const auto day = rng.uniformInt(0, kPostingDayMaxExcl);
-  const auto hour = rng.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
-  const auto minute = rng.uniformInt(0, 60);
-
-  const auto base = ::PhantomLedger::time::toEpochSeconds(
-      ::PhantomLedger::time::addDays(monthStart, static_cast<int>(day)));
-  return base + hour * 3600 + minute * 60;
-}
 
 [[nodiscard]] std::size_t
 collectGivingParents(std::span<const entity::PersonId> parents,
@@ -50,9 +40,6 @@ collectGivingParents(std::span<const entity::PersonId> parents,
   return count;
 }
 
-/// Stateful, narrow-purpose emitter for parent-gift transactions.
-/// Same pattern as `AllowanceEmitter`: holds the dependency views and
-/// the output sink so internal helpers stop carrying eight parameters.
 class ParentGiftEmitter {
 public:
   ParentGiftEmitter(const TransferRun &run, const ParentGiftFlow &cfg,
@@ -64,8 +51,6 @@ public:
   ParentGiftEmitter(const ParentGiftEmitter &) = delete;
   ParentGiftEmitter &operator=(const ParentGiftEmitter &) = delete;
 
-  /// Try to emit one monthly gift from a randomly-picked giver to the
-  /// child's account. Returns true on success.
   [[nodiscard]] bool tryEmit(entity::Key childAcct,
                              std::span<const entity::PersonId> givingParents,
                              ::PhantomLedger::time::TimePoint monthStart) {
@@ -78,7 +63,7 @@ public:
       return false;
     }
 
-    const auto ts = pickPostingTimestamp(monthStart, rng_);
+    const auto ts = fhelp::sampleMonthlyPostingTs(rng_, monthStart, kShape);
     if (ts >= windowEndEpochSec_) {
       return false;
     }
