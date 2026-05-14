@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/transactions/devices/identity.hpp"
+#include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/transactions/network/ipv4.hpp"
 #include "phantomledger/transactions/record.hpp"
 
