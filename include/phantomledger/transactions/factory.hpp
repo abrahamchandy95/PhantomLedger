@@ -1,10 +1,10 @@
 #pragma once
 
+#include "phantomledger/entities/infra/router.hpp"
+#include "phantomledger/entities/infra/shared.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 #include "phantomledger/transactions/draft.hpp"
-#include "phantomledger/transactions/infra/router.hpp"
-#include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 namespace PhantomLedger::transactions {

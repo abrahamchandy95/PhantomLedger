@@ -2,6 +2,8 @@
 
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/infra/router.hpp"
+#include "phantomledger/entities/infra/shared.hpp"
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
@@ -13,8 +15,6 @@
 #include "phantomledger/synth/infra/ips_output.hpp"
 #include "phantomledger/synth/infra/types.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
-#include "phantomledger/transactions/infra/router.hpp"
-#include "phantomledger/transactions/infra/shared.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"

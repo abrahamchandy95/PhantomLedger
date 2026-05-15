@@ -1,8 +1,8 @@
 #include "phantomledger/encoding/external.hpp"
 #include "phantomledger/encoding/landlord.hpp"
 #include "phantomledger/encoding/named.hpp"
+#include "phantomledger/entities/infra/random_ips.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/synth/infra/random_ips.hpp"
 
 #include "test_support.hpp"
 

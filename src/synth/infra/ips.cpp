@@ -1,7 +1,7 @@
 #include "phantomledger/synth/infra/ips.hpp"
 
+#include "phantomledger/entities/infra/random_ips.hpp"
 #include "phantomledger/synth/infra/pool.hpp"
-#include "phantomledger/synth/infra/random_ips.hpp"
 #include "phantomledger/synth/infra/timeline.hpp"
 
 #include <algorithm>
