@@ -3,7 +3,7 @@
 #include "phantomledger/entities/products/insurance.hpp"
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/dates.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <optional>
@@ -14,6 +14,7 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
+namespace counterparties = ::PhantomLedger::counterparties;
 
 [[nodiscard]] constexpr double clamp01(double v) noexcept {
   return std::max(0.0, std::min(1.0, v));
@@ -64,9 +65,9 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.autoPolicy.median,
         terms_.premiums.autoPolicy.sigma, terms_.premiums.autoPolicy.floor);
-    autoPol =
-        product::autoPolicy(institutional::autoCarrier(), premium,
-                            samplePaymentDay(*rng_), terms_.claims.autoAnnualP);
+    autoPol = product::autoPolicy(
+        counterparties::key(counterparties::Insurance::autoCarrier), premium,
+        samplePaymentDay(*rng_), terms_.claims.autoAnnualP);
   }
 
   const double homeAnchorPolicyP =
@@ -82,9 +83,9 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.homePolicy.median,
         terms_.premiums.homePolicy.sigma, terms_.premiums.homePolicy.floor);
-    homePol =
-        product::homePolicy(institutional::homeCarrier(), premium,
-                            samplePaymentDay(*rng_), terms_.claims.homeAnnualP);
+    homePol = product::homePolicy(
+        counterparties::key(counterparties::Insurance::homeCarrier), premium,
+        samplePaymentDay(*rng_), terms_.claims.homeAnnualP);
   }
 
   std::optional<product::InsurancePolicy> lifePol;
@@ -92,8 +93,9 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.lifePolicy.median,
         terms_.premiums.lifePolicy.sigma, terms_.premiums.lifePolicy.floor);
-    lifePol = product::lifePolicy(institutional::lifeCarrier(), premium,
-                                  samplePaymentDay(*rng_));
+    lifePol = product::lifePolicy(
+        counterparties::key(counterparties::Insurance::lifeCarrier), premium,
+        samplePaymentDay(*rng_));
   }
 
   if (!autoPol.has_value() && !homePol.has_value() && !lifePol.has_value()) {

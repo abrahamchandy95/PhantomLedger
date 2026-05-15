@@ -4,7 +4,7 @@
 #include "phantomledger/relationships/family/links.hpp"
 #include "phantomledger/relationships/family/partition.hpp"
 #include "phantomledger/relationships/family/support.hpp"
-#include "phantomledger/transfers/channels/government/keys.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
 #include "phantomledger/transfers/legit/routines/relatives.hpp"
@@ -162,10 +162,10 @@ makeCreditPass(::PhantomLedger::random::Rng &rng,
 
 [[nodiscard]] legit_ledger::passes::GovernmentCounterparties
 defaultGovernmentCounterparties() noexcept {
-  namespace gov = ::PhantomLedger::transfers::government;
+  namespace counterparties = ::PhantomLedger::counterparties;
   return legit_ledger::passes::GovernmentCounterparties{
-      .ssa = gov::ssaCounterpartyKey(),
-      .disability = gov::disabilityCounterpartyKey(),
+      .ssa = counterparties::key(counterparties::Government::ssa),
+      .disability = counterparties::key(counterparties::Government::disability),
   };
 }
 

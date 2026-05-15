@@ -3,7 +3,7 @@
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/dates.hpp"
 #include "phantomledger/entities/synth/products/installment_emission.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -13,6 +13,8 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
+namespace counterparties = ::PhantomLedger::counterparties;
+using enum counterparties::Lending;
 
 [[nodiscard]] std::int32_t
 sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
@@ -84,17 +86,18 @@ StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
   const auto repaymentStart =
       ::PhantomLedger::time::addMonths(window_.start, -repaymentAgeMonths);
 
-  addInstallmentProduct(loans, obligations, window_,
-                        InstallmentIssue{
-                            .person = person,
-                            .productType = product::ProductType::studentLoan,
-                            .counterparty = institutional::studentServicer(),
-                            .start = repaymentStart,
-                            .termMonths = termMonths,
-                            .paymentDay = samplePaymentDay(*rng_),
-                            .monthlyPayment = payment,
-                            .terms = installmentTerms(terms_.delinquency),
-                        });
+  addInstallmentProduct(
+      loans, obligations, window_,
+      InstallmentIssue{
+          .person = person,
+          .productType = product::ProductType::studentLoan,
+          .counterparty = counterparties::key(studentServicer),
+          .start = repaymentStart,
+          .termMonths = termMonths,
+          .paymentDay = samplePaymentDay(*rng_),
+          .monthlyPayment = payment,
+          .terms = installmentTerms(terms_.delinquency),
+      });
 
   return true;
 }

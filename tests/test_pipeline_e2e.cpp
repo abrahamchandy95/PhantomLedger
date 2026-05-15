@@ -122,8 +122,15 @@ smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
 /// this test is to exercise the same public simulation pipeline production
 /// callers use and assert that the three exporters produce the file shapes
 /// downstream pipelines depend on.
-[[nodiscard]] pl::pipeline::SimulationResult runSmallSim(std::uint64_t seed) {
-  const auto poolSet = buildPoolSet(seed);
+///
+/// The PoolSet is passed in by reference because it must outlive the
+/// SimulationResult: PII samplers used during synthesis embed indices
+/// into this pool, and the AML / mule_ml exporters resolve those indices
+/// back to names and addresses against the same instance. Owning the
+/// PoolSet in main() keeps that lifetime explicit.
+[[nodiscard]] pl::pipeline::SimulationResult
+runSmallSim(const pl::entities::synth::pii::PoolSet &poolSet,
+            std::uint64_t seed) {
   const auto window = smallWindow();
 
   const pl::entities::synth::people::Fraud fraudProfile{};
@@ -178,8 +185,10 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
 }
 
 void testMuleMlExport(const pl::pipeline::SimulationResult &result,
+                      const pl::entities::synth::pii::PoolSet &poolSet,
                       const fs::path &outDir) {
   pl::exporter::mule_ml::Options opts{};
+  opts.piiPools = &poolSet;
 
   pl::exporter::mule_ml::exportAll(result, outDir, opts);
 
@@ -197,8 +206,10 @@ void testMuleMlExport(const pl::pipeline::SimulationResult &result,
 }
 
 void testAmlExport(const pl::pipeline::SimulationResult &result,
+                   const pl::entities::synth::pii::PoolSet &poolSet,
                    const fs::path &outDir) {
   pl::exporter::aml::Options opts{};
+  opts.piiPools = &poolSet;
   const auto summary = pl::exporter::aml::exportAll(result, outDir, opts);
 
   for (const auto *name : {
@@ -244,12 +255,20 @@ int main() {
   const auto base = uniqueTempDir("phantomledger_e2e_");
   fs::create_directories(base);
 
+  constexpr std::uint64_t seed = 42;
+
   try {
-    const auto result = runSmallSim(/*seed=*/42);
+    // PoolSet is owned here so it outlives every exporter: PII samplers
+    // burned indices into this pool during synthesis, and the AML and
+    // mule_ml exporters dereference those indices back to names / addresses
+    // against the same instance. This mirrors production main.cpp's
+    // ownership pattern.
+    const auto poolSet = buildPoolSet(seed);
+    const auto result = runSmallSim(poolSet, seed);
 
     testStandardExport(result, base / "standard");
-    testMuleMlExport(result, base / "mule_ml");
-    testAmlExport(result, base / "aml");
+    testMuleMlExport(result, poolSet, base / "mule_ml");
+    testAmlExport(result, poolSet, base / "aml");
   } catch (const std::exception &e) {
     std::fprintf(stderr, "FAIL: exception: %s\n", e.what());
     std::fprintf(stderr, "Output preserved at: %s\n", base.string().c_str());

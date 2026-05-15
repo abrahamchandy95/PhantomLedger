@@ -3,8 +3,8 @@
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/dates.hpp"
 #include "phantomledger/entities/synth/products/installment_emission.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -15,6 +15,7 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
+namespace counterparties = ::PhantomLedger::counterparties;
 
 [[nodiscard]] std::int32_t
 sampleAutoTermMonths(::PhantomLedger::random::Rng &rng,
@@ -66,7 +67,8 @@ AutoLoanEmitter::AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
                         InstallmentIssue{
                             .person = person,
                             .productType = product::ProductType::autoLoan,
-                            .counterparty = institutional::autoLender(),
+                            .counterparty = counterparties::key(
+                                counterparties::Lending::autoLoan),
                             .start = loanStart,
                             .termMonths = termMonths,
                             .paymentDay = samplePaymentDay(*rng_),
