@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 
-#include "phantomledger/entities/encoding/external.hpp"
+#include "phantomledger/encoding/external.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"

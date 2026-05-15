@@ -1,6 +1,6 @@
 #include "phantomledger/exporter/aml/edges.hpp"
 
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"

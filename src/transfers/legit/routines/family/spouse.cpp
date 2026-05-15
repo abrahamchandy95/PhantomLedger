@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/routines/family/spouse.hpp"
 
-#include "phantomledger/entities/encoding/external.hpp"
+#include "phantomledger/encoding/external.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"

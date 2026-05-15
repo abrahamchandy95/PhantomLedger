@@ -1,4 +1,4 @@
-#include "phantomledger/entities/encoding/external.hpp"
+#include "phantomledger/encoding/external.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 

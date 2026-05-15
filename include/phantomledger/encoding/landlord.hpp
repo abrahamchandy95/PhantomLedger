@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/layout.hpp"
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/layout.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/landlords.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"

@@ -1,6 +1,6 @@
-#include "phantomledger/entities/encoding/external.hpp"
-#include "phantomledger/entities/encoding/landlord.hpp"
-#include "phantomledger/entities/encoding/named.hpp"
+#include "phantomledger/encoding/external.hpp"
+#include "phantomledger/encoding/landlord.hpp"
+#include "phantomledger/encoding/named.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/entities/infra/random_ips.hpp"
 

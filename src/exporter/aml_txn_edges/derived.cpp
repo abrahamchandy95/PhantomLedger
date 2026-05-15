@@ -1,6 +1,6 @@
 #include "phantomledger/exporter/aml_txn_edges/derived.hpp"
 
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
