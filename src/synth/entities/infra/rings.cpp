@@ -1,4 +1,4 @@
-#include "phantomledger/infra/synth/rings.hpp"
+#include "phantomledger/synth/entities/infra/rings.hpp"
 
 #include <algorithm>
 #include <utility>

@@ -2,8 +2,8 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
-#include "phantomledger/infra/synth/types.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/entities/infra/types.hpp"
 
 #include <cstdint>
 #include <unordered_map>

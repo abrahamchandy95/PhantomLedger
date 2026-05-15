@@ -168,9 +168,9 @@ set(PL_EXPORTER_SOURCES
 )
 
 set(PL_INFRA_SYNTH_SOURCES
-    src/infra/synth/devices.cpp
-    src/infra/synth/ips.cpp
-    src/infra/synth/rings.cpp
+    src/synth/entities/infra/devices.cpp
+    src/synth/entities/infra/ips.cpp
+    src/synth/entities/infra/rings.cpp
 )
 
 set(PL_PIPELINE_SOURCES
