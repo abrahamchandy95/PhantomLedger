@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/routines/atm.hpp"
 
-#include "phantomledger/entities/encoding/external.hpp"
+#include "phantomledger/encoding/external.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"

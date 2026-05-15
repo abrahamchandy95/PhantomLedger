@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/numeric.hpp"
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/numeric.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <cstdint>

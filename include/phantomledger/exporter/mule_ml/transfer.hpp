@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"

@@ -1,7 +1,7 @@
 #pragma once
 
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

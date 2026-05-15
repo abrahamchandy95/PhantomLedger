@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/layout.hpp"
-#include "phantomledger/entities/encoding/lookup.hpp"
-#include "phantomledger/entities/encoding/numeric.hpp"
+#include "phantomledger/encoding/layout.hpp"
+#include "phantomledger/encoding/lookup.hpp"
+#include "phantomledger/encoding/numeric.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <array>

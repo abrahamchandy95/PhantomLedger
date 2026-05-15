@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/device.hpp"
-#include "phantomledger/entities/encoding/layout.hpp"
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/device.hpp"
+#include "phantomledger/encoding/layout.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"

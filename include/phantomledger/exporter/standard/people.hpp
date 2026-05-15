@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/exporter/csv.hpp"

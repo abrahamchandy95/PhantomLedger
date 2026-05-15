@@ -1,6 +1,6 @@
 #include "phantomledger/exporter/aml_txn_edges/vertices.hpp"
 
-#include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/minhash.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/encoding/layout.hpp"
+#include "phantomledger/encoding/layout.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
