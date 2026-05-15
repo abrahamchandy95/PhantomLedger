@@ -3,13 +3,13 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/synth/entities/infra/types.hpp"
+#include "phantomledger/synth/infra/types.hpp"
 
 #include <cstdint>
 #include <unordered_map>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::devices {
+namespace PhantomLedger::synth::infra::devices {
 
 struct Record {
   ::PhantomLedger::devices::Identity identity{};
@@ -35,4 +35,4 @@ struct Output {
   std::unordered_map<std::uint32_t, ::PhantomLedger::devices::Identity> ringMap;
 };
 
-} // namespace PhantomLedger::infra::synth::devices
+} // namespace PhantomLedger::synth::infra::devices

@@ -1,7 +1,7 @@
-#include "phantomledger/synth/entities/infra/devices.hpp"
+#include "phantomledger/synth/infra/devices.hpp"
 
-#include "phantomledger/synth/entities/infra/pool.hpp"
-#include "phantomledger/synth/entities/infra/timeline.hpp"
+#include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/timeline.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::devices {
+namespace PhantomLedger::synth::infra::devices {
 
 using DeviceIdentity = ::PhantomLedger::devices::Identity;
 
@@ -181,4 +181,4 @@ Output AssignmentRules::build(
   return out;
 }
 
-} // namespace PhantomLedger::infra::synth::devices
+} // namespace PhantomLedger::synth::infra::devices

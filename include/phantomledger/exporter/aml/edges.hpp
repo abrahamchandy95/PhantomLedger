@@ -6,7 +6,7 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <set>
@@ -17,190 +17,165 @@
 
 namespace PhantomLedger::exporter::aml::edges {
 
+namespace ent = ::PhantomLedger::entity;
+namespace pipe = ::PhantomLedger::pipeline;
+namespace txn = ::PhantomLedger::transactions;
+namespace exporter = ::PhantomLedger::exporter;
+namespace time_ns = ::PhantomLedger::time;
+namespace synth = ::PhantomLedger::synth;
+
 struct TransactionEdgeBundle {
-  using AcctTxnRow = std::pair<::PhantomLedger::entity::Key, std::size_t>;
-  using CpTxnRow =
-      std::tuple<::PhantomLedger::entity::Key, std::size_t, std::string>;
+  using AcctTxnRow = std::pair<ent::Key, std::size_t>;
+  using CpTxnRow = std::tuple<ent::Key, std::size_t, std::string>;
 
   std::vector<AcctTxnRow> sendRows;
   std::vector<AcctTxnRow> receiveRows;
   std::vector<CpTxnRow> cpSendRows;
   std::vector<CpTxnRow> cpReceiveRows;
-  std::set<
-      std::pair<::PhantomLedger::entity::Key, ::PhantomLedger::entity::Key>>
-      sentToCpPairs;
-  std::set<
-      std::pair<::PhantomLedger::entity::Key, ::PhantomLedger::entity::Key>>
-      receivedFromCpPairs;
-  std::set<::PhantomLedger::entity::Key> cpSenders;
-  std::set<::PhantomLedger::entity::Key> cpReceivers;
+  std::set<std::pair<ent::Key, ent::Key>> sentToCpPairs;
+  std::set<std::pair<ent::Key, ent::Key>> receivedFromCpPairs;
+  std::set<ent::Key> cpSenders;
+  std::set<ent::Key> cpReceivers;
 };
 
-[[nodiscard]] TransactionEdgeBundle classifyTransactionEdges(
-    const ::PhantomLedger::pipeline::Entities &entities,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
-    const vertices::SharedContext &ctx);
+[[nodiscard]] TransactionEdgeBundle
+classifyTransactionEdges(const pipe::Entities &entities,
+                         std::span<const txn::Transaction> finalTxns,
+                         const vertices::SharedContext &ctx);
 
 struct MinhashVertexSets {
-  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> name;
-  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> address;
-  std::set<::PhantomLedger::exporter::aml::minhash::BucketId> street;
+  std::set<exporter::aml::minhash::BucketId> name;
+  std::set<exporter::aml::minhash::BucketId> address;
+  std::set<exporter::aml::minhash::BucketId> street;
   std::set<std::string> city;
   std::set<std::string> state;
 };
 
 [[nodiscard]] MinhashVertexSets
-collectMinhashVertexSets(const ::PhantomLedger::pipeline::Entities &entities,
+collectMinhashVertexSets(const pipe::Entities &entities,
                          const vertices::SharedContext &ctx);
 
-void writeCustomerHasAccountRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+void writeCustomerHasAccountRows(exporter::csv::Writer &w,
+                                 const pipe::Entities &entities);
 
-void writeAccountHasPrimaryCustomerRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
+                                        const pipe::Entities &entities);
 
-void writeAcctTxnRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeAcctTxnRows(exporter::csv::Writer &w,
                       std::span<const TransactionEdgeBundle::AcctTxnRow> rows);
 
-void writeCpTxnRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeCpTxnRows(exporter::csv::Writer &w,
                     std::span<const TransactionEdgeBundle::CpTxnRow> rows);
 
-void writeAcctCpPairRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const std::set<std::pair<::PhantomLedger::entity::Key,
-                             ::PhantomLedger::entity::Key>> &pairs);
+void writeAcctCpPairRows(exporter::csv::Writer &w,
+                         const std::set<std::pair<ent::Key, ent::Key>> &pairs);
 
-void writeUsesDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::infra::synth::devices::Output &devices);
+void writeUsesDeviceRows(exporter::csv::Writer &w,
+                         const synth::infra::devices::Output &devices);
 
-void writeLoggedFromRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const ::PhantomLedger::infra::synth::devices::Output &devices);
+void writeLoggedFromRows(exporter::csv::Writer &w,
+                         const pipe::Entities &entities,
+                         const synth::infra::devices::Output &devices);
 
 // ── Identity-by-id edges — pool-free ──
 
-void writeCustomerHasNameRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeCustomerHasNameRows(exporter::csv::Writer &w,
+                              const pipe::Entities &entities,
+                              time_ns::TimePoint simStart);
 
-void writeCustomerHasAddressRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeCustomerHasAddressRows(exporter::csv::Writer &w,
+                                 const pipe::Entities &entities,
+                                 time_ns::TimePoint simStart);
 
-void writeCustomerAssociatedWithCountryRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
+                                            const pipe::Entities &entities,
+                                            time_ns::TimePoint simStart);
 
-void writeAccountHasNameRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeAccountHasNameRows(exporter::csv::Writer &w,
+                             const pipe::Entities &entities,
+                             time_ns::TimePoint simStart);
 
-void writeAccountHasAddressRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeAccountHasAddressRows(exporter::csv::Writer &w,
+                                const pipe::Entities &entities,
+                                time_ns::TimePoint simStart);
 
-void writeAccountAssociatedWithCountryRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeAccountAssociatedWithCountryRows(exporter::csv::Writer &w,
+                                           const pipe::Entities &entities,
+                                           time_ns::TimePoint simStart);
 
-void writeAddressInCountryRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const vertices::SharedContext &ctx,
-    ::PhantomLedger::time::TimePoint simStart);
+void writeAddressInCountryRows(exporter::csv::Writer &w,
+                               const pipe::Entities &entities,
+                               const vertices::SharedContext &ctx,
+                               time_ns::TimePoint simStart);
 
-void writeCounterpartyHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeCounterpartyHasNameRows(exporter::csv::Writer &w,
                                   const vertices::SharedContext &ctx,
-                                  ::PhantomLedger::time::TimePoint simStart);
+                                  time_ns::TimePoint simStart);
 
-void writeCounterpartyHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeCounterpartyHasAddressRows(exporter::csv::Writer &w,
                                      const vertices::SharedContext &ctx,
-                                     ::PhantomLedger::time::TimePoint simStart);
+                                     time_ns::TimePoint simStart);
 
 void writeCounterpartyAssociatedWithCountryRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const vertices::SharedContext &ctx);
+    exporter::csv::Writer &w, const vertices::SharedContext &ctx);
 
-void writeCustomerMatchesWatchlistRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities);
+void writeCustomerMatchesWatchlistRows(exporter::csv::Writer &w,
+                                       const pipe::Entities &entities);
 
-void writeReferencesRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeReferencesRows(exporter::csv::Writer &w,
+                         std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeSarCoversRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeSarCoversRows(exporter::csv::Writer &w,
+                        std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeBeneficiaryBankRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const std::set<::PhantomLedger::entity::Key> &cpReceivers);
+void writeBeneficiaryBankRows(exporter::csv::Writer &w,
+                              const std::set<ent::Key> &cpReceivers);
 
-void writeOriginatorBankRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const std::set<::PhantomLedger::entity::Key> &cpSenders);
+void writeOriginatorBankRows(exporter::csv::Writer &w,
+                             const std::set<ent::Key> &cpSenders);
 
-void writeBankAssociatedWithCountryRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const vertices::SharedContext &ctx);
+void writeBankAssociatedWithCountryRows(exporter::csv::Writer &w,
+                                        const vertices::SharedContext &ctx);
 
-void writeBankHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBankHasAddressRows(exporter::csv::Writer &w,
                              const vertices::SharedContext &ctx,
-                             ::PhantomLedger::time::TimePoint simStart);
+                             time_ns::TimePoint simStart);
 
-void writeBankHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBankHasNameRows(exporter::csv::Writer &w,
                           const vertices::SharedContext &ctx,
-                          ::PhantomLedger::time::TimePoint simStart);
+                          time_ns::TimePoint simStart);
 
 // ── Minhash-shingle edges — need name/address content from the pool ──
 
-void writeCustomerHasNameMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const vertices::SharedContext &ctx);
+void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
+                                     const pipe::Entities &entities,
+                                     const vertices::SharedContext &ctx);
 
-void writeCustomerHasAddressMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const vertices::SharedContext &ctx);
+void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
+                                        const pipe::Entities &entities,
+                                        const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStreetLine1MinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
+    exporter::csv::Writer &w, const pipe::Entities &entities,
     const vertices::SharedContext &ctx);
 
-void writeCustomerHasAddressCityMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const vertices::SharedContext &ctx);
+void writeCustomerHasAddressCityMinhashRows(exporter::csv::Writer &w,
+                                            const pipe::Entities &entities,
+                                            const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStateMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
+    exporter::csv::Writer &w, const pipe::Entities &entities,
     const vertices::SharedContext &ctx);
 
-void writeAccountHasNameMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::pipeline::Entities &entities,
-    const vertices::SharedContext &ctx);
+void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
+                                    const pipe::Entities &entities,
+                                    const vertices::SharedContext &ctx);
 
-void writeCounterpartyHasNameMinhashRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const vertices::SharedContext &ctx);
+void writeCounterpartyHasNameMinhashRows(exporter::csv::Writer &w,
+                                         const vertices::SharedContext &ctx);
 
-void writeResolvesToRows(::PhantomLedger::exporter::csv::Writer &w,
-                         const ::PhantomLedger::pipeline::Entities &entities,
-                         ::PhantomLedger::time::TimePoint simStart);
+void writeResolvesToRows(exporter::csv::Writer &w,
+                         const pipe::Entities &entities,
+                         time_ns::TimePoint simStart);
 
 } // namespace PhantomLedger::exporter::aml::edges

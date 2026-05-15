@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::pool {
+namespace PhantomLedger::synth::infra::pool {
 
 template <class T, class Hash = std::hash<T>, class Eq = std::equal_to<T>>
 inline void
@@ -31,4 +31,4 @@ contains(const std::unordered_map<T, std::size_t, Hash, Eq> &indexByItem,
   return indexByItem.find(item) != indexByItem.end();
 }
 
-} // namespace PhantomLedger::infra::synth::pool
+} // namespace PhantomLedger::synth::infra::pool

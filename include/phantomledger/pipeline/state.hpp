@@ -9,9 +9,9 @@
 #include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
-#include "phantomledger/synth/entities/infra/ips_output.hpp"
-#include "phantomledger/synth/entities/infra/types.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/ips_output.hpp"
+#include "phantomledger/synth/infra/types.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
@@ -27,6 +27,13 @@
 
 namespace PhantomLedger::pipeline {
 
+namespace clearing = ::PhantomLedger::clearing;
+namespace entity = ::PhantomLedger::entity;
+namespace entities = ::PhantomLedger::entities;
+namespace synth = ::PhantomLedger::synth;
+namespace txns = ::PhantomLedger::transactions;
+namespace transfers = ::PhantomLedger::transfers;
+
 struct Entities {
   entities::synth::people::Pack people;
   entities::synth::accounts::Pack accounts;
@@ -40,9 +47,9 @@ struct Entities {
 };
 
 struct Infra {
-  std::unordered_map<std::uint32_t, infra::synth::RingPlan> ringPlans;
-  infra::synth::devices::Output devices;
-  infra::synth::ips::Output ips;
+  std::unordered_map<std::uint32_t, synth::infra::RingPlan> ringPlans;
+  synth::infra::devices::Output devices;
+  synth::infra::ips::Output ips;
 
   ::PhantomLedger::infra::Router router;
   ::PhantomLedger::infra::SharedInfra ringInfra;
@@ -50,19 +57,18 @@ struct Infra {
 
 /// Drop accounting emitted by the chronological replay pass.
 struct ReplayDrops {
-  ::PhantomLedger::transfers::legit::ledger::ReplayDropLedger::Counts byReason;
-  ::PhantomLedger::transfers::legit::ledger::ReplayDropLedger::CountsByChannel
-      byChannel;
+  transfers::legit::ledger::ReplayDropLedger::Counts byReason;
+  transfers::legit::ledger::ReplayDropLedger::CountsByChannel byChannel;
 };
 
 struct CandidateLedgerReplay {
-  std::vector<transactions::Transaction> txns;
+  std::vector<txns::Transaction> txns;
   ReplayDrops drops;
 };
 
 /// Ledger state after fraud injection and the final replay pass.
 struct PostedLedgerReplay {
-  std::vector<transactions::Transaction> txns;
+  std::vector<txns::Transaction> txns;
   std::unique_ptr<clearing::Ledger> book;
 };
 

@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace PhantomLedger::infra::synth {
+namespace PhantomLedger::synth::infra {
 
 enum class DeviceKind : std::uint8_t {
   android = 0,
@@ -48,4 +48,4 @@ struct RingPlan {
   std::vector<entity::PersonId> sharedIpMembers;
 };
 
-} // namespace PhantomLedger::infra::synth
+} // namespace PhantomLedger::synth::infra

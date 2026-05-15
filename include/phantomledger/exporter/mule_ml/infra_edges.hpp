@@ -7,8 +7,8 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
-#include "phantomledger/synth/entities/infra/ips_output.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/ips_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -21,14 +21,19 @@
 
 namespace PhantomLedger::exporter::mule_ml {
 
+namespace encoding = ::PhantomLedger::encoding;
+namespace entity = ::PhantomLedger::entity;
+namespace exporter = ::PhantomLedger::exporter;
+namespace hashing = ::PhantomLedger::hashing;
+namespace network = ::PhantomLedger::network;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+namespace txns = ::PhantomLedger::transactions;
+
 namespace detail {
 
-namespace common = ::PhantomLedger::exporter::common;
-namespace enc = ::PhantomLedger::encoding;
-namespace t = ::PhantomLedger::time;
-
 struct AccountItemKey {
-  ::PhantomLedger::entity::Key account;
+  entity::Key account;
   std::string item;
 
   bool operator==(const AccountItemKey &) const noexcept = default;
@@ -36,7 +41,7 @@ struct AccountItemKey {
 
 struct AccountItemKeyHash {
   std::size_t operator()(const AccountItemKey &k) const noexcept {
-    return ::PhantomLedger::hashing::make(k.account, k.item);
+    return hashing::make(k.account, k.item);
   }
 };
 
@@ -81,46 +86,42 @@ inline void touchEdge(EdgeAggregate &agg, std::int64_t ts,
 
 [[nodiscard]] inline std::vector<std::pair<AccountItemKey, EdgeAggregate>>
 sortedEdges(const EdgeMap &edges) {
-  std::vector<std::pair<AccountItemKey, EdgeAggregate>> out;
-  out.reserve(edges.size());
-  for (const auto &kv : edges) {
-    out.emplace_back(kv.first, kv.second);
-  }
-  std::sort(out.begin(), out.end(), [](const auto &a, const auto &b) noexcept {
+  std::vector<std::pair<AccountItemKey, EdgeAggregate>> out(edges.begin(),
+                                                            edges.end());
+
+  std::ranges::sort(out, [](const auto &a, const auto &b) noexcept {
     if (a.first.account != b.first.account) {
       return a.first.account < b.first.account;
     }
     return a.first.item < b.first.item;
   });
+
   return out;
 }
 
-inline void writeKeyCells(::PhantomLedger::exporter::csv::Writer &w,
-                          const AccountItemKey &key) {
-  w.cell(enc::format(key.account).view()).cell(key.item);
+inline void writeKeyCells(exporter::csv::Writer &w, const AccountItemKey &key) {
+  w.cell(encoding::format(key.account).view()).cell(key.item);
 }
 
-inline void writeCountCell(::PhantomLedger::exporter::csv::Writer &w,
-                           const EdgeAggregate &agg) {
+inline void writeCountCell(exporter::csv::Writer &w, const EdgeAggregate &agg) {
   w.cell(agg.count);
 }
 
-inline void writeTimeRangeCells(::PhantomLedger::exporter::csv::Writer &w,
+inline void writeTimeRangeCells(exporter::csv::Writer &w,
                                 const EdgeAggregate &agg) {
-  w.cell(t::formatTimestamp(t::fromEpochSeconds(agg.firstTs)))
-      .cell(t::formatTimestamp(t::fromEpochSeconds(agg.lastTs)));
+  w.cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(agg.firstTs)))
+      .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(agg.lastTs)));
 }
 
-inline void writeEdgeRow(::PhantomLedger::exporter::csv::Writer &w,
-                         const AccountItemKey &key, const EdgeAggregate &agg) {
+inline void writeEdgeRow(exporter::csv::Writer &w, const AccountItemKey &key,
+                         const EdgeAggregate &agg) {
   writeKeyCells(w, key);
   writeCountCell(w, agg);
   writeTimeRangeCells(w, agg);
   w.endRow();
 }
 
-inline void emitSortedRows(::PhantomLedger::exporter::csv::Writer &w,
-                           const EdgeMap &edges) {
+inline void emitSortedRows(exporter::csv::Writer &w, const EdgeMap &edges) {
   for (const auto &[key, agg] : sortedEdges(edges)) {
     writeEdgeRow(w, key, agg);
   }
@@ -129,17 +130,17 @@ inline void emitSortedRows(::PhantomLedger::exporter::csv::Writer &w,
 } // namespace detail
 
 inline void writeAccountDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
-    const ::PhantomLedger::infra::synth::devices::Output &devices,
-    const std::unordered_map<::PhantomLedger::entity::PersonId,
-                             std::vector<::PhantomLedger::entity::Key>>
+    exporter::csv::Writer &w, std::span<const txns::Transaction> finalTxns,
+    const synth::infra::devices::Output &devices,
+    const std::unordered_map<entity::PersonId, std::vector<entity::Key>>
         &accountsByPerson) {
+
   detail::EdgeMap edges;
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    const auto deviceBuf = detail::common::renderDeviceId(tx.session.deviceId);
+    const auto deviceBuf =
+        exporter::common::renderDeviceId(tx.session.deviceId);
     if (deviceBuf.empty()) {
       continue;
     }
@@ -149,15 +150,13 @@ inline void writeAccountDeviceRows(
   }
 
   for (const auto &usage : devices.usages) {
-    const auto deviceBuf = detail::common::renderDeviceId(usage.deviceId);
+    const auto deviceBuf = exporter::common::renderDeviceId(usage.deviceId);
     if (deviceBuf.empty()) {
       continue;
     }
     const std::string deviceStr{deviceBuf.view()};
-    const auto firstSeenEpoch =
-        ::PhantomLedger::time::toEpochSeconds(usage.firstSeen);
-    const auto lastSeenEpoch =
-        ::PhantomLedger::time::toEpochSeconds(usage.lastSeen);
+    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
+    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
 
     const auto it = accountsByPerson.find(usage.personId);
     if (it == accountsByPerson.end()) {
@@ -175,17 +174,16 @@ inline void writeAccountDeviceRows(
 }
 
 inline void writeAccountIpRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
-    const ::PhantomLedger::infra::synth::ips::Output &ips,
-    const std::unordered_map<::PhantomLedger::entity::PersonId,
-                             std::vector<::PhantomLedger::entity::Key>>
+    exporter::csv::Writer &w, std::span<const txns::Transaction> finalTxns,
+    const synth::infra::ips::Output &ips,
+    const std::unordered_map<entity::PersonId, std::vector<entity::Key>>
         &accountsByPerson) {
+
   detail::EdgeMap edges;
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    const auto ipBuf = ::PhantomLedger::network::format(tx.session.ipAddress);
+    const auto ipBuf = network::format(tx.session.ipAddress);
     if (ipBuf.empty()) {
       continue;
     }
@@ -195,14 +193,12 @@ inline void writeAccountIpRows(
   }
 
   for (const auto &usage : ips.usages) {
-    const auto ipBuf = ::PhantomLedger::network::format(usage.ipAddress);
+    const auto ipBuf = network::format(usage.ipAddress);
     if (ipBuf.empty()) {
       continue;
     }
-    const auto firstSeenEpoch =
-        ::PhantomLedger::time::toEpochSeconds(usage.firstSeen);
-    const auto lastSeenEpoch =
-        ::PhantomLedger::time::toEpochSeconds(usage.lastSeen);
+    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
+    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
 
     const auto it = accountsByPerson.find(usage.personId);
     if (it == accountsByPerson.end()) {

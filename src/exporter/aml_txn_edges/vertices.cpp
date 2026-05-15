@@ -13,6 +13,7 @@
 #include "phantomledger/taxonomies/locale/names.hpp"
 
 #include <cassert>
+#include <ranges>
 #include <set>
 #include <string>
 #include <string_view>
@@ -21,32 +22,35 @@
 
 namespace PhantomLedger::exporter::aml_txn_edges::vertices {
 
-namespace ent = ::PhantomLedger::entity;
-namespace t_ns = ::PhantomLedger::time;
-namespace pii_ns = ::PhantomLedger::entities::synth::pii;
-namespace loc = ::PhantomLedger::locale;
-namespace aml = ::PhantomLedger::exporter::aml;
-namespace identity = ::PhantomLedger::exporter::aml::identity;
-namespace minhash = ::PhantomLedger::exporter::aml::minhash;
-namespace common = ::PhantomLedger::exporter::common;
+namespace clearing = ::PhantomLedger::clearing;
+namespace entity = ::PhantomLedger::entity;
+namespace exporter = ::PhantomLedger::exporter;
+namespace locale = ::PhantomLedger::locale;
+namespace network = ::PhantomLedger::network;
+namespace personas = ::PhantomLedger::personas;
+namespace pipe = ::PhantomLedger::pipeline;
+namespace primitives = ::PhantomLedger::primitives;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+namespace txns = ::PhantomLedger::transactions;
 
 namespace {
 
-[[nodiscard]] const pii_ns::PoolSet &
+[[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
 poolsFor(const shared::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr);
   return *ctx.pools;
 }
 
-[[nodiscard]] const pii_ns::LocalePool &
+[[nodiscard]] const ::PhantomLedger::entities::synth::pii::LocalePool &
 usPoolFor(const shared::SharedContext &ctx) noexcept {
-  return poolsFor(ctx).forCountry(loc::Country::us);
+  return poolsFor(ctx).forCountry(locale::Country::us);
 }
 
-[[nodiscard]] ::PhantomLedger::personas::Type
-resolvedPersona(const shared::SharedContext &ctx, ent::PersonId p) noexcept {
+[[nodiscard]] personas::Type resolvedPersona(const shared::SharedContext &ctx,
+                                             entity::PersonId p) noexcept {
   if (p == 0 || p > ctx.personaByPerson.size()) {
-    return ::PhantomLedger::personas::Type::salaried;
+    return personas::Type::salaried;
   }
   return ctx.personaByPerson[p - 1];
 }
@@ -65,7 +69,11 @@ resolvedPersona(const shared::SharedContext &ctx, ent::PersonId p) noexcept {
   return 0.1;
 }
 
-void writeGdsZeroCells(::PhantomLedger::exporter::csv::Writer &w) {
+auto allPersonIds(const pipeline::Entities &entities) {
+  return std::views::iota(1u, entities.people.roster.count + 1);
+}
+
+void writeGdsZeroCells(exporter::csv::Writer &w) {
   w.cell(0.0)                             // pagerank_score
       .cell(static_cast<std::int32_t>(0)) // louvain_community_id
       .cell(static_cast<std::int32_t>(0)) // wcc_component_id
@@ -88,25 +96,25 @@ void writeGdsZeroCells(::PhantomLedger::exporter::csv::Writer &w) {
 // Customer
 // ──────────────────────────────────────────────────────────────────
 
-void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
+void writeCustomerRows(exporter::csv::Writer &w, const pipe::Entities &entities,
                        const shared::SharedContext &ctx,
-                       t_ns::TimePoint simStart) {
+                       time_ns::TimePoint simStart) {
   const auto &roster = entities.people.roster;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
+  for (entity::PersonId p : allPersonIds(entities)) {
     const auto persona = resolvedPersona(ctx, p);
-    const bool isFraud = roster.has(p, ent::person::Flag::fraud);
-    const bool isMule = roster.has(p, ent::person::Flag::mule);
-    const bool isVictim = roster.has(p, ent::person::Flag::victim);
+    const bool isFraud = roster.has(p, entity::person::Flag::fraud);
+    const bool isMule = roster.has(p, entity::person::Flag::mule);
+    const bool isVictim = roster.has(p, entity::person::Flag::victim);
 
-    const auto cid = common::renderCustomerId(p);
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(cid)
-        .cell(identity::customerType(persona))
+        .cell(exporter::aml::identity::customerType(persona))
         .cell(riskScoreFor(isFraud, isMule, isVictim))
         .cell(std::string_view{"active"})
-        .cell(t_ns::formatTimestamp(identity::onboardingDate(p, simStart)))
-        .cell(loc::code(entities.pii.at(p).country));
+        .cell(time_ns::formatTimestamp(
+            exporter::aml::identity::onboardingDate(p, simStart)))
+        .cell(locale::code(entities.pii.at(p).country));
     w.endRow();
   }
 }
@@ -115,24 +123,28 @@ void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
 // Account — internal accounts + synthetic external-counterparty rows
 // ──────────────────────────────────────────────────────────────────
 
-void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      const ::PhantomLedger::clearing::Ledger *finalBook,
+void writeAccountRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+                      const clearing::Ledger *finalBook,
                       const shared::SharedContext &ctx,
-                      t_ns::TimePoint simStart) {
-  const auto cardIds = common::collectCardIds(entities.creditCards);
+                      time_ns::TimePoint simStart) {
 
-  for (const auto &rec : entities.accounts.registry.records) {
-    if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
-      continue;
-    }
-    const auto idStr = common::renderKey(rec.id);
+  const auto cardIds = exporter::common::collectCardIds(entities.creditCards);
+
+  auto is_internal = [](const auto &rec) {
+    return (rec.flags &
+            entity::account::bit(entity::account::Flag::external)) == 0;
+  };
+
+  for (const auto &rec :
+       entities.accounts.registry.records | std::views::filter(is_internal)) {
+    const auto idStr = exporter::common::renderKey(rec.id);
     const auto branchBucket =
         static_cast<std::uint32_t>((rec.id.number % 50U) + 1U);
     const auto branch = derived::branchCodeForBucket(branchBucket);
-    const auto openDate = (rec.owner == ent::invalidPerson)
-                              ? simStart - t_ns::Days{365}
-                              : identity::onboardingDate(rec.owner, simStart);
+    const auto openDate =
+        (rec.owner == entity::invalidPerson)
+            ? simStart - time_ns::Days{365}
+            : exporter::aml::identity::onboardingDate(rec.owner, simStart);
     const double balance =
         (finalBook != nullptr)
             ? primitives::utils::roundMoney(finalBook->liquidity(rec.id))
@@ -140,17 +152,17 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
 
     w.cell(idStr)
         .cell(idStr)
-        .cell(common::accountType(rec.id, cardIds.count(rec.id) != 0))
+        .cell(exporter::common::accountType(rec.id, cardIds.count(rec.id) != 0))
         .cell(std::string_view{"active"})
-        .cell(t_ns::formatTimestamp(openDate))
+        .cell(time_ns::formatTimestamp(openDate))
         .cell(branch)
         .cell(balance);
     writeGdsZeroCells(w);
     w.endRow();
   }
 
-  const auto externalOpen = simStart - t_ns::Days{365};
-  const auto externalOpenStr = t_ns::formatTimestamp(externalOpen);
+  const auto externalOpen = simStart - time_ns::Days{365};
+  const auto externalOpenStr = time_ns::formatTimestamp(externalOpen);
   const auto externalBranch = derived::branchCodeForBucket(0);
 
   for (const auto &cpId : ctx.counterpartyIds) {
@@ -170,18 +182,19 @@ void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
 // Counterparty
 // ──────────────────────────────────────────────────────────────────
 
-void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeCounterpartyRows(exporter::csv::Writer &w,
                            const shared::SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
   for (const auto &cpId : ctx.counterpartyIds) {
-    const auto bankId = aml::counterpartyBankId(cpId);
-    const auto cpName = identity::nameForCounterparty(cpId, usPool);
-    const auto bankName = identity::nameForBank(bankId);
+    const auto bankId = exporter::aml::counterpartyBankId(cpId);
+    const auto cpName =
+        exporter::aml::identity::nameForCounterparty(cpId, usPool);
+    const auto bankName = exporter::aml::identity::nameForBank(bankId);
     const auto vertexId = derived::makeCpId(cpId);
     w.cell(vertexId)
         .cell(vertexId)
         .cell(cpName.firstName)
-        .cell(common::kUsCountry)
+        .cell(exporter::common::kUsCountry)
         .cell(bankName.firstName);
     w.endRow();
   }
@@ -191,16 +204,15 @@ void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
 // Bank
 // ──────────────────────────────────────────────────────────────────
 
-void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                   const shared::SharedContext &ctx) {
+void writeBankRows(exporter::csv::Writer &w, const shared::SharedContext &ctx) {
   for (const auto &bankId : ctx.bankIds) {
-    const auto name = identity::nameForBank(bankId);
-    const auto routing = identity::routingNumberForId(bankId);
+    const auto name = exporter::aml::identity::nameForBank(bankId);
+    const auto routing = exporter::aml::identity::routingNumberForId(bankId);
     w.cell(bankId)
         .cell(bankId)
         .cell(name.firstName)
         .cell(routing)
-        .cell(common::kUsCountry);
+        .cell(exporter::common::kUsCountry);
     w.endRow();
   }
 }
@@ -209,32 +221,33 @@ void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
 // Device — first/last seen aggregated from usages
 // ──────────────────────────────────────────────────────────────────
 
-void writeDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::infra::synth::devices::Output &devices) {
-  std::unordered_map<::PhantomLedger::devices::Identity, common::SeenWindow>
+void writeDeviceRows(exporter::csv::Writer &w,
+                     const synth::infra::devices::Output &devices) {
+  std::unordered_map<::PhantomLedger::devices::Identity,
+                     exporter::common::SeenWindow>
       windows;
   windows.reserve(devices.records.size());
 
   for (const auto &usage : devices.usages) {
-    common::recordSeen(windows[usage.deviceId], usage.firstSeen,
-                       usage.lastSeen);
+    exporter::common::recordSeen(windows[usage.deviceId], usage.firstSeen,
+                                 usage.lastSeen);
   }
 
   for (const auto &record : devices.records) {
-    const auto idBuf = common::renderDeviceId(record.identity);
-    const auto typeName = ::PhantomLedger::infra::synth::name(record.kind);
-    const auto os = common::osForDeviceType(typeName);
+    const auto idBuf = exporter::common::renderDeviceId(record.identity);
+    const auto typeName = synth::infra::name(record.kind);
+    const auto os = exporter::common::osForDeviceType(typeName);
 
     const auto it = windows.find(record.identity);
-    const auto win = (it != windows.end()) ? it->second : common::SeenWindow{};
+    const auto win =
+        (it != windows.end()) ? it->second : exporter::common::SeenWindow{};
 
     w.cell(idBuf)
         .cell(idBuf)
         .cell(typeName)
         .cell(os)
-        .cell(t_ns::formatTimestamp(win.firstSeen))
-        .cell(t_ns::formatTimestamp(win.lastSeen));
+        .cell(time_ns::formatTimestamp(win.firstSeen))
+        .cell(time_ns::formatTimestamp(win.lastSeen));
     w.endRow();
   }
 }
@@ -243,13 +256,13 @@ void writeDeviceRows(
 // IP
 // ──────────────────────────────────────────────────────────────────
 
-void writeIpRows(::PhantomLedger::exporter::csv::Writer &w,
-                 const ::PhantomLedger::infra::synth::ips::Output &ips) {
+void writeIpRows(exporter::csv::Writer &w,
+                 const synth::infra::ips::Output &ips) {
   for (const auto &rec : ips.records) {
-    const auto addrBuf = ::PhantomLedger::network::format(rec.address);
+    const auto addrBuf = network::format(rec.address);
     w.cell(addrBuf)
         .cell(addrBuf)
-        .cell(common::kUsCountry)
+        .cell(exporter::common::kUsCountry)
         .cell(std::string_view{"Unknown"})
         .cell(false);
     w.endRow();
@@ -260,34 +273,34 @@ void writeIpRows(::PhantomLedger::exporter::csv::Writer &w,
 // FullName — dedup across persons, counterparties, banks
 // ──────────────────────────────────────────────────────────────────
 
-void writeFullNameRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
+void writeFullNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
                        const shared::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(exporter::common::estimateIdentityRowCount(entities, ctx));
 
   std::string nameScratch;
 
-  const auto emitName = [&](const identity::NameRecord &n) {
+  const auto emitName = [&](const exporter::aml::identity::NameRecord &n) {
     if (!emitted.emplace(n.id.view()).second) {
       return;
     }
-    const auto nameStr = common::joinName(nameScratch, n.firstName, n.lastName);
+    const auto nameStr =
+        exporter::common::joinName(nameScratch, n.firstName, n.lastName);
     w.cell(n.id).cell(nameStr);
     w.endRow();
   };
 
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    emitName(identity::nameForPerson(p, entities.pii, pools));
+  for (entity::PersonId p : allPersonIds(entities)) {
+    emitName(exporter::aml::identity::nameForPerson(p, entities.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
-    emitName(identity::nameForCounterparty(cpId, usPool));
+    emitName(exporter::aml::identity::nameForCounterparty(cpId, usPool));
   }
   for (const auto &bankId : ctx.bankIds) {
-    emitName(identity::nameForBank(bankId));
+    emitName(exporter::aml::identity::nameForBank(bankId));
   }
 }
 
@@ -295,32 +308,26 @@ void writeFullNameRows(::PhantomLedger::exporter::csv::Writer &w,
 // Email / Phone / DOB / GovtID — one per PersonId
 // ──────────────────────────────────────────────────────────────────
 
-void writeEmailRows(::PhantomLedger::exporter::csv::Writer &w,
-                    const ::PhantomLedger::pipeline::Entities &entities) {
-  const auto &roster = entities.people.roster;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeEmailRows(exporter::csv::Writer &w, const pipe::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(derived::prefixedCustomerId("EML", cid))
         .cell(entities.pii.at(p).email.view());
     w.endRow();
   }
 }
 
-void writePhoneRows(::PhantomLedger::exporter::csv::Writer &w,
-                    const ::PhantomLedger::pipeline::Entities &entities) {
-  const auto &roster = entities.people.roster;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writePhoneRows(exporter::csv::Writer &w, const pipe::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(derived::prefixedCustomerId("PH", cid)).cell(derived::phoneFor(p));
     w.endRow();
   }
 }
 
-void writeDobRows(::PhantomLedger::exporter::csv::Writer &w,
-                  const ::PhantomLedger::pipeline::Entities &entities) {
-  const auto &roster = entities.people.roster;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeDobRows(exporter::csv::Writer &w, const pipe::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto &rec = entities.pii.at(p);
     w.cell(derived::prefixedCustomerId("DOB", cid))
         .cell(derived::formatDob(rec.dob.year, rec.dob.month, rec.dob.day));
@@ -328,11 +335,9 @@ void writeDobRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-void writeGovtIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                     const ::PhantomLedger::pipeline::Entities &entities) {
-  const auto &roster = entities.people.roster;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeGovtIdRows(exporter::csv::Writer &w, const pipe::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto hash = derived::makeHashHex({"GID", cid.view()});
     w.cell(derived::prefixedCustomerId("GID", cid))
         .cell(std::string_view{"SSN"})
@@ -345,16 +350,15 @@ void writeGovtIdRows(::PhantomLedger::exporter::csv::Writer &w,
 // Address — dedup across persons/counterparties/banks
 // ──────────────────────────────────────────────────────────────────
 
-void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
+void writeAddressRows(exporter::csv::Writer &w, const pipe::Entities &entities,
                       const shared::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(common::estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(exporter::common::estimateIdentityRowCount(entities, ctx));
 
-  const auto emit = [&](const identity::AddressRecord &a) {
+  const auto emit = [&](const exporter::aml::identity::AddressRecord &a) {
     if (!emitted.emplace(a.id.view()).second) {
       return;
     }
@@ -367,14 +371,14 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
     w.endRow();
   };
 
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    emit(identity::addressForPerson(p, entities.pii, pools));
+  for (entity::PersonId p : allPersonIds(entities)) {
+    emit(exporter::aml::identity::addressForPerson(p, entities.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
-    emit(identity::addressForCounterparty(cpId, usPool));
+    emit(exporter::aml::identity::addressForCounterparty(cpId, usPool));
   }
   for (const auto &bankId : ctx.bankIds) {
-    emit(identity::addressForBank(bankId, usPool));
+    emit(exporter::aml::identity::addressForBank(bankId, usPool));
   }
 }
 
@@ -382,24 +386,28 @@ void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
 // Watchlist — one entry per fraud/mule person
 // ──────────────────────────────────────────────────────────────────
 
-void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
-                        const ::PhantomLedger::pipeline::Entities &entities,
-                        t_ns::TimePoint simStart) {
-  const auto effective = t_ns::formatTimestamp(simStart);
+void writeWatchlistRows(exporter::csv::Writer &w,
+                        const pipe::Entities &entities,
+                        time_ns::TimePoint simStart) {
+  const auto effective = time_ns::formatTimestamp(simStart);
   const auto &roster = entities.people.roster;
   std::string watchlistId;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    if (!roster.has(p, ent::person::Flag::fraud) &&
-        !roster.has(p, ent::person::Flag::mule)) {
-      continue;
-    }
-    const auto cid = common::renderCustomerId(p);
+
+  auto is_on_watchlist = [&](entity::PersonId p) {
+    return roster.has(p, entity::person::Flag::fraud) ||
+           roster.has(p, entity::person::Flag::mule);
+  };
+
+  for (entity::PersonId p :
+       allPersonIds(entities) | std::views::filter(is_on_watchlist)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto cidView = cid.view();
-    const auto wlView = common::makeWatchlistId(watchlistId, cidView);
+    const auto wlView = exporter::common::makeWatchlistId(watchlistId, cidView);
 
     const double matchScore =
-        0.5 +
-        static_cast<double>(common::stableU64({"WL", cidView}) % 50ULL) / 100.0;
+        0.5 + static_cast<double>(exporter::common::stableU64({"WL", cidView}) %
+                                  50ULL) /
+                  100.0;
 
     w.cell(wlView)
         .cell(std::string_view{"internal_fraud_list"})
@@ -414,20 +422,19 @@ void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
 // Alert / Disposition / SAR / CTR — bundle-driven
 // ──────────────────────────────────────────────────────────────────
 
-void writeAlertRows(::PhantomLedger::exporter::csv::Writer &w,
-                    const derived::Bundle &bundle) {
+void writeAlertRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   for (const auto &a : bundle.alerts) {
     w.cell(a.id)
         .cell(a.id)
         .cell(derived::ruleName(a.rule))
-        .cell(t_ns::formatTimestamp(a.createdDate))
+        .cell(time_ns::formatTimestamp(a.createdDate))
         .cell(a.status)
         .cell(derived::rulePriority(a.rule));
     w.endRow();
   }
 }
 
-void writeDispositionRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeDispositionRows(exporter::csv::Writer &w,
                           const derived::Bundle &bundle) {
   for (const auto &d : bundle.dispositions) {
     w.cell(d.id)
@@ -435,31 +442,29 @@ void writeDispositionRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(derived::dispositionAction(d.outcome))
         .cell(derived::dispositionCloseCode(d.outcome))
         .cell(derived::investigatorIdFor(d.investigatorNum))
-        .cell(t_ns::formatTimestamp(d.date))
+        .cell(time_ns::formatTimestamp(d.date))
         .cell(d.notesHash);
     w.endRow();
   }
 }
 
-void writeSarRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+void writeSarRows(exporter::csv::Writer &w,
+                  std::span<const exporter::aml::sar::SarRecord> sars) {
   for (const auto &s : sars) {
     w.cell(s.sarId)
         .cell(s.sarId)
-        .cell(t_ns::formatTimestamp(s.filingDate))
+        .cell(time_ns::formatTimestamp(s.filingDate))
         .cell(s.violationType)
         .cell(std::string_view{"filed"});
     w.endRow();
   }
 }
 
-void writeCtrRows(::PhantomLedger::exporter::csv::Writer &w,
-                  const derived::Bundle &bundle) {
+void writeCtrRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   for (const auto &c : bundle.ctrs) {
     w.cell(c.id)
         .cell(c.id)
-        .cell(t_ns::formatTimestamp(c.filingDate))
+        .cell(time_ns::formatTimestamp(c.filingDate))
         .cell(c.amount)
         .cell(derived::branchCodeForBucket(c.branchBucket))
         .cell(derived::tellerIdFor(c.tellerNum));
@@ -471,43 +476,46 @@ void writeCtrRows(::PhantomLedger::exporter::csv::Writer &w,
 // MinHashBucket — collapsed across all 5 facets
 // ──────────────────────────────────────────────────────────────────
 
-void writeMinHashBucketRows(::PhantomLedger::exporter::csv::Writer &w,
-                            const ::PhantomLedger::pipeline::Entities &entities,
+void writeMinHashBucketRows(exporter::csv::Writer &w,
+                            const pipe::Entities &entities,
                             const shared::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
   const auto &pii = entities.pii;
 
-  std::set<minhash::BucketId> nameSet, addrSet, streetSet;
+  std::set<exporter::aml::minhash::BucketId> nameSet, addrSet, streetSet;
   std::unordered_set<std::string> citySet, stateSet;
   citySet.reserve(entities.people.roster.count);
   stateSet.reserve(64);
 
   std::string addrScratch;
 
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto nm = identity::nameForPerson(p, pii, pools);
-    const auto addr = identity::addressForPerson(p, pii, pools);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto nm = exporter::aml::identity::nameForPerson(p, pii, pools);
+    const auto addr = exporter::aml::identity::addressForPerson(p, pii, pools);
 
-    for (auto &id : minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+    for (auto &id :
+         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       nameSet.insert(std::move(id));
     }
 
-    const auto fullAddr = common::joinAddress(addrScratch, addr);
-    for (auto &id : minhash::addressMinhashIds(fullAddr)) {
+    const auto fullAddr = exporter::common::joinAddress(addrScratch, addr);
+    for (auto &id : exporter::aml::minhash::addressMinhashIds(fullAddr)) {
       addrSet.insert(std::move(id));
     }
 
-    for (auto &id : minhash::streetMinhashIds(addr.streetLine1)) {
+    for (auto &id :
+         exporter::aml::minhash::streetMinhashIds(addr.streetLine1)) {
       streetSet.insert(std::move(id));
     }
-    citySet.insert(minhash::cityMinhashId(addr.city));
-    stateSet.insert(minhash::stateMinhashId(addr.state));
+    citySet.insert(exporter::aml::minhash::cityMinhashId(addr.city));
+    stateSet.insert(exporter::aml::minhash::stateMinhashId(addr.state));
   }
 
   for (const auto &cpId : ctx.counterpartyIds) {
-    const auto nm = identity::nameForCounterparty(cpId, usPool);
-    for (auto &id : minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+    const auto nm = exporter::aml::identity::nameForCounterparty(cpId, usPool);
+    for (auto &id :
+         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       nameSet.insert(std::move(id));
     }
   }
@@ -543,7 +551,7 @@ void writeMinHashBucketRows(::PhantomLedger::exporter::csv::Writer &w,
 // InvestigationCase / EvidenceArtifact / Business / PromotedTxn
 // ──────────────────────────────────────────────────────────────────
 
-void writeInvestigationCaseRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeInvestigationCaseRows(exporter::csv::Writer &w,
                                 const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
     const auto caseType = (c.kind == derived::CaseKind::ring)
@@ -553,14 +561,14 @@ void writeInvestigationCaseRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(c.id)
         .cell(caseType)
         .cell(std::string_view{"open"})
-        .cell(t_ns::formatTimestamp(c.openedDate))
+        .cell(time_ns::formatTimestamp(c.openedDate))
         .cellEmpty()
         .cell(c.caseSystem);
     w.endRow();
   }
 }
 
-void writeEvidenceArtifactRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeEvidenceArtifactRows(exporter::csv::Writer &w,
                                const derived::Bundle &bundle) {
   std::string storeUri;
   for (const auto &e : bundle.evidence) {
@@ -573,13 +581,13 @@ void writeEvidenceArtifactRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(e.artifactType)
         .cell(e.contentHash)
         .cell(storeUri)
-        .cell(t_ns::formatTimestamp(e.createdAt))
+        .cell(time_ns::formatTimestamp(e.createdAt))
         .cell(e.sourceSystem);
     w.endRow();
   }
 }
 
-void writeBusinessRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBusinessRows(exporter::csv::Writer &w,
                        const derived::Bundle &bundle) {
   std::string legalName;
   for (const auto &b : bundle.businesses) {
@@ -599,22 +607,24 @@ void writeBusinessRows(::PhantomLedger::exporter::csv::Writer &w,
         .cell(b.id)
         .cell(legalName)
         .cell(b.entityType)
-        .cell(common::kUsCountry)
+        .cell(exporter::common::kUsCountry)
         .cell(derived::einFor(b.id.view()));
     w.endRow();
   }
 }
 
 void writeInvestigationCaseTxnRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::transactions::Transaction> postedTxns) {
-  for (const auto &r : bundle.promotedTxns) {
-    if (r.txnIndex == 0 || r.txnIndex > postedTxns.size()) {
-      continue;
-    }
+    exporter::csv::Writer &w, const derived::Bundle &bundle,
+    std::span<const txns::Transaction> postedTxns) {
+
+  auto is_valid_txn = [&](const auto &r) {
+    return r.txnIndex > 0 && r.txnIndex <= postedTxns.size();
+  };
+
+  for (const auto &r : bundle.promotedTxns | std::views::filter(is_valid_txn)) {
     const auto &tx = postedTxns[r.txnIndex - 1];
-    const auto srcId = common::renderKey(tx.source);
-    const auto dstId = common::renderKey(tx.target);
+    const auto srcId = exporter::common::renderKey(tx.source);
+    const auto dstId = exporter::common::renderKey(tx.target);
     const auto &caseRec = bundle.cases[r.caseIndex];
 
     w.cell(r.id)
@@ -622,14 +632,14 @@ void writeInvestigationCaseTxnRows(
         .cell(caseRec.id)
         .cell(srcId)
         .cell(dstId)
-        .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)))
+        .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)))
         .cell(primitives::utils::roundMoney(tx.amount))
         .cell(std::string_view{"USD"})
         .cell(static_cast<std::int64_t>(tx.session.channel.value))
-        .cell(common::kUsCountry)
+        .cell(exporter::common::kUsCountry)
         .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
-        .cell(t_ns::formatTimestamp(r.promotedAt))
-        .cell(t_ns::formatTimestamp(r.ttlDate));
+        .cell(time_ns::formatTimestamp(r.promotedAt))
+        .cell(time_ns::formatTimestamp(r.ttlDate));
     w.endRow();
   }
 }
