@@ -1,9 +1,9 @@
 #include "phantomledger/exporter/mule_ml/canonical.hpp"
 
 #include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/primitives/hashing/combine.hpp"
-#include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
 #include <cstdint>

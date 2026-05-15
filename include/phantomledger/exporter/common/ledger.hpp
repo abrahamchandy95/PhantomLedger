@@ -1,11 +1,11 @@
 #pragma once
 
 #include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
-#include "phantomledger/transactions/network/format.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstdint>

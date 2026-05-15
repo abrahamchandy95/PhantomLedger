@@ -1,7 +1,7 @@
 #pragma once
 
-#include "format.hpp"
-#include "ipv4.hpp"
+#include "phantomledger/entities/infra/format.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 
 #include <cstdint>
