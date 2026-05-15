@@ -2,22 +2,31 @@
 
 #include "phantomledger/primitives/validate/checks.hpp"
 
+#include <ranges>
 #include <unordered_map>
 
 namespace PhantomLedger::pipeline::stages::infra {
 
 namespace {
 
+namespace entities = ::PhantomLedger::entities;
+namespace entity = ::PhantomLedger::entity;
+namespace primitives = ::PhantomLedger::primitives;
+namespace random = ::PhantomLedger::random;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+
 [[nodiscard]] std::unordered_map<entity::Key, entity::PersonId>
 buildOwnerMap(const entity::account::Registry &registry) {
   std::unordered_map<entity::Key, entity::PersonId> out;
   out.reserve(registry.records.size());
 
-  for (const auto &record : registry.records) {
-    if (record.owner == entity::invalidPerson) {
-      continue;
-    }
+  auto is_valid_owner = [](const auto &record) {
+    return record.owner != entity::invalidPerson;
+  };
 
+  for (const auto &record :
+       registry.records | std::views::filter(is_valid_owner)) {
     out.emplace(record.id, record.owner);
   }
 
@@ -26,26 +35,25 @@ buildOwnerMap(const entity::account::Registry &registry) {
 
 } // namespace
 
-AccessInfraStage &
-AccessInfraStage::window(::PhantomLedger::time::Window value) noexcept {
+AccessInfraStage &AccessInfraStage::window(time_ns::Window value) noexcept {
   window_ = value;
   return *this;
 }
 
-AccessInfraStage &AccessInfraStage::ringAccess(
-    ::PhantomLedger::infra::synth::rings::AccessRules value) noexcept {
+AccessInfraStage &
+AccessInfraStage::ringAccess(synth::infra::rings::AccessRules value) noexcept {
   ringAccess_ = value;
   return *this;
 }
 
 AccessInfraStage &AccessInfraStage::deviceAssignment(
-    ::PhantomLedger::infra::synth::devices::AssignmentRules value) noexcept {
+    synth::infra::devices::AssignmentRules value) noexcept {
   deviceAssignment_ = value;
   return *this;
 }
 
 AccessInfraStage &AccessInfraStage::ipAssignment(
-    ::PhantomLedger::infra::synth::ips::AssignmentRules value) noexcept {
+    synth::infra::ips::AssignmentRules value) noexcept {
   ipAssignment_ = value;
   return *this;
 }
@@ -62,44 +70,42 @@ AccessInfraStage &AccessInfraStage::sharedInfra(
   return *this;
 }
 
-::PhantomLedger::time::Window AccessInfraStage::activeWindow(
-    ::PhantomLedger::time::Window fallback) const noexcept {
+time_ns::Window
+AccessInfraStage::activeWindow(time_ns::Window fallback) const noexcept {
   return window_.value_or(fallback);
 }
 
 AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
-    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
-    const ::PhantomLedger::entities::synth::people::Pack &people) const {
+    random::Rng &rng, time_ns::Window window,
+    const entities::synth::people::Pack &people) const {
   return ringAccess_.build(rng, window, people.topology.rings, people.topology);
 }
 
-::PhantomLedger::infra::synth::devices::Output AccessInfraStage::buildDevices(
-    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
-    const ::PhantomLedger::entity::person::Roster &people,
-    const RingPlans &ringPlans) const {
+synth::infra::devices::Output
+AccessInfraStage::buildDevices(random::Rng &rng, time_ns::Window window,
+                               const entity::person::Roster &people,
+                               const RingPlans &ringPlans) const {
   return deviceAssignment_.build(rng, window, people, ringPlans);
 }
 
-::PhantomLedger::infra::synth::ips::Output AccessInfraStage::buildIps(
-    ::PhantomLedger::random::Rng &rng, ::PhantomLedger::time::Window window,
-    const ::PhantomLedger::entity::person::Roster &people,
-    const RingPlans &ringPlans) const {
+synth::infra::ips::Output
+AccessInfraStage::buildIps(random::Rng &rng, time_ns::Window window,
+                           const entity::person::Roster &people,
+                           const RingPlans &ringPlans) const {
   return ipAssignment_.build(rng, window, people, ringPlans);
 }
 
-::PhantomLedger::infra::Router AccessInfraStage::buildRouter(
-    const ::PhantomLedger::entity::account::Registry &accounts,
-    const ::PhantomLedger::infra::synth::devices::Output &devices,
-    const ::PhantomLedger::infra::synth::ips::Output &ips) const {
+::PhantomLedger::infra::Router
+AccessInfraStage::buildRouter(const entity::account::Registry &accounts,
+                              const synth::infra::devices::Output &devices,
+                              const synth::infra::ips::Output &ips) const {
   return ::PhantomLedger::infra::Router::build(
-      routerRules_, buildOwnerMap(accounts),
-      devices.byPerson, // copy — Router owns its pools
-      ips.byPerson);
+      routerRules_, buildOwnerMap(accounts), devices.byPerson, ips.byPerson);
 }
 
-::PhantomLedger::infra::SharedInfra AccessInfraStage::buildSharedInfra(
-    const ::PhantomLedger::infra::synth::devices::Output &devices,
-    const ::PhantomLedger::infra::synth::ips::Output &ips) const {
+::PhantomLedger::infra::SharedInfra
+AccessInfraStage::buildSharedInfra(const synth::infra::devices::Output &devices,
+                                   const synth::infra::ips::Output &ips) const {
   ::PhantomLedger::infra::SharedInfra out;
   out.ringDevice = devices.ringMap;
   out.ringIp = ips.ringMap;
@@ -107,12 +113,11 @@ AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
   return out;
 }
 
-::PhantomLedger::pipeline::Infra
-AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
-                        const ::PhantomLedger::pipeline::Entities &entities,
-                        ::PhantomLedger::time::Window fallbackWindow) const {
+pipe::Infra AccessInfraStage::build(random::Rng &rng,
+                                    const pipe::Entities &entities,
+                                    time_ns::Window fallbackWindow) const {
 
-  ::PhantomLedger::primitives::validate::Report report;
+  primitives::validate::Report report;
   ringAccess_.validate(report);
   deviceAssignment_.validate(report);
   ipAssignment_.validate(report);
@@ -122,7 +127,7 @@ AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
 
   const auto window = activeWindow(fallbackWindow);
 
-  ::PhantomLedger::pipeline::Infra out;
+  pipe::Infra out;
   out.ringPlans = buildRingPlans(rng, window, entities.people);
   out.devices =
       buildDevices(rng, window, entities.people.roster, out.ringPlans);
@@ -133,10 +138,8 @@ AccessInfraStage::build(::PhantomLedger::random::Rng &rng,
   return out;
 }
 
-::PhantomLedger::pipeline::Infra
-build(::PhantomLedger::random::Rng &rng,
-      const ::PhantomLedger::pipeline::Entities &entities,
-      ::PhantomLedger::time::Window window) {
+pipe::Infra build(random::Rng &rng, const pipe::Entities &entities,
+                  time_ns::Window window) {
   return AccessInfraStage{}.build(rng, entities, window);
 }
 

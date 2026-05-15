@@ -1,8 +1,8 @@
-#include "phantomledger/synth/entities/infra/ips.hpp"
+#include "phantomledger/synth/infra/ips.hpp"
 
-#include "phantomledger/synth/entities/infra/pool.hpp"
-#include "phantomledger/synth/entities/infra/random_ips.hpp"
-#include "phantomledger/synth/entities/infra/timeline.hpp"
+#include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/random_ips.hpp"
+#include "phantomledger/synth/infra/timeline.hpp"
 
 #include <algorithm>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::ips {
+namespace PhantomLedger::synth::infra::ips {
 
 namespace {
 
@@ -193,4 +193,4 @@ Output AssignmentRules::build(
   return out;
 }
 
-} // namespace PhantomLedger::infra::synth::ips
+} // namespace PhantomLedger::synth::infra::ips

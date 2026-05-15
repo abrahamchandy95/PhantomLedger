@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ranges>
 #include <set>
 #include <string>
 #include <string_view>
@@ -23,14 +24,15 @@
 
 namespace PhantomLedger::exporter::aml_txn_edges::edges {
 
-namespace ent = ::PhantomLedger::entity;
-namespace tx_ns = ::PhantomLedger::transactions;
-namespace t_ns = ::PhantomLedger::time;
-namespace pii_ns = ::PhantomLedger::entities::synth::pii;
-namespace aml = ::PhantomLedger::exporter::aml;
-namespace identity = ::PhantomLedger::exporter::aml::identity;
-namespace minhash = ::PhantomLedger::exporter::aml::minhash;
-namespace common = ::PhantomLedger::exporter::common;
+namespace devices = ::PhantomLedger::devices;
+namespace entity = ::PhantomLedger::entity;
+namespace exporter = ::PhantomLedger::exporter;
+namespace network = ::PhantomLedger::network;
+namespace pipeline = ::PhantomLedger::pipeline;
+namespace primitives = ::PhantomLedger::primitives;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+namespace txns = ::PhantomLedger::transactions;
 
 namespace {
 
@@ -39,50 +41,52 @@ inline constexpr std::string_view kSourceKyc = "kyc_system";
 inline constexpr std::string_view kSourceAml = "aml_system";
 inline constexpr std::string_view kSourceCases = "case_mgmt";
 
-[[nodiscard]] const pii_ns::PoolSet &
+[[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
 poolsFor(const shared::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr);
   return *ctx.pools;
 }
-
+auto allPersonIds(const pipeline::Entities &entities) {
+  return std::views::iota(1u, entities.people.roster.count + 1);
+}
 } // namespace
 
 // ──────────────────────────────────────────────────────────────────
 // OWNS — Customer → Account
 // ──────────────────────────────────────────────────────────────────
 
-void writeOwnsRows(::PhantomLedger::exporter::csv::Writer &w,
-                   const ::PhantomLedger::pipeline::Entities &entities,
-                   t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
-  common::forEachInternalOwnership(entities,
-                                   [&](ent::PersonId pid, const ent::Key &k) {
-                                     w.cell(common::renderCustomerId(pid))
-                                         .cell(common::renderKey(k))
-                                         .cell(ts)
-                                         .cell(kSourceCore)
-                                         .cell(ts)
-                                         .cellEmpty(); // valid_to — ongoing
-                                     w.endRow();
-                                   });
+void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Entities &entities,
+                   time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
+  exporter::common::forEachInternalOwnership(
+      entities, [&](entity::PersonId pid, const entity::Key &k) {
+        w.cell(exporter::common::renderCustomerId(pid))
+            .cell(exporter::common::renderKey(k))
+            .cell(ts)
+            .cell(kSourceCore)
+            .cell(ts)
+            .cellEmpty();
+        w.endRow();
+      });
 }
 
 // ──────────────────────────────────────────────────────────────────
 // TRANSACTED — Account → Account, with txn_id discriminator
 // ──────────────────────────────────────────────────────────────────
 
-void writeTransactedRows(::PhantomLedger::exporter::csv::Writer &w,
-                         std::span<const tx_ns::Transaction> postedTxns) {
+void writeTransactedRows(
+    exporter::csv::Writer &w,
+    std::span<const transactions::Transaction> postedTxns) {
   std::size_t idx = 1;
   for (const auto &tx : postedTxns) {
-    w.cell(common::renderKey(tx.source))
-        .cell(common::renderKey(tx.target))
+    w.cell(exporter::common::renderKey(tx.source))
+        .cell(exporter::common::renderKey(tx.target))
         .cell(static_cast<std::uint32_t>(idx))
-        .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(tx.timestamp)))
+        .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)))
         .cell(primitives::utils::roundMoney(tx.amount))
         .cell(std::string_view{"USD"})
         .cell(static_cast<std::int64_t>(tx.session.channel.value))
-        .cell(common::kUsCountry)
+        .cell(exporter::common::kUsCountry)
         .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
         .cell(kSourceCore);
     w.endRow();
@@ -91,24 +95,24 @@ void writeTransactedRows(::PhantomLedger::exporter::csv::Writer &w,
 }
 
 void writeInvolvesCounterpartyRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const tx_ns::Transaction> postedTxns, t_ns::TimePoint simStart) {
-  std::set<std::pair<ent::Key, ent::Key>> pairs;
+    exporter::csv::Writer &w, std::span<const txns::Transaction> postedTxns,
+    time_ns::TimePoint simStart) {
+  std::set<std::pair<entity::Key, entity::Key>> pairs;
 
   for (const auto &tx : postedTxns) {
-    const bool srcExt = common::isExternalKey(tx.source);
-    const bool dstExt = common::isExternalKey(tx.target);
+    const bool srcExt = exporter::common::isExternalKey(tx.source);
+    const bool dstExt = exporter::common::isExternalKey(tx.target);
     if (srcExt && !dstExt) {
-      pairs.emplace(tx.target, tx.source); // (account, counterparty)
+      pairs.emplace(tx.target, tx.source);
     } else if (!srcExt && dstExt) {
       pairs.emplace(tx.source, tx.target);
     }
   }
 
-  const auto ts = t_ns::formatTimestamp(simStart);
+  const auto ts = time_ns::formatTimestamp(simStart);
   for (const auto &[acct, cp] : pairs) {
-    const auto cpRendered = common::renderKey(cp);
-    w.cell(common::renderKey(acct))
+    const auto cpRendered = exporter::common::renderKey(cp);
+    w.cell(exporter::common::renderKey(acct))
         .cell(derived::makeCpId(cpRendered.view()))
         .cell(ts)
         .cell(kSourceCore)
@@ -122,13 +126,13 @@ void writeInvolvesCounterpartyRows(
 // BANKS_AT — Counterparty → Bank
 // ──────────────────────────────────────────────────────────────────
 
-void writeBanksAtRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBanksAtRows(exporter::csv::Writer &w,
                       const shared::SharedContext &ctx,
-                      t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
+                      time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto cpVertexId = derived::makeCpId(cpId);
-    const auto bankId = aml::counterpartyBankId(cpId);
+    const auto bankId = exporter::aml::counterpartyBankId(cpId);
     w.cell(cpVertexId).cell(bankId).cell(kSourceCore).cell(ts).cellEmpty();
     w.endRow();
   }
@@ -138,33 +142,37 @@ void writeBanksAtRows(::PhantomLedger::exporter::csv::Writer &w,
 // ON_WATCHLIST — Customer → Watchlist
 // ──────────────────────────────────────────────────────────────────
 
-void writeOnWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
-                          const ::PhantomLedger::pipeline::Entities &entities,
-                          t_ns::TimePoint simStart) {
+void writeOnWatchlistRows(exporter::csv::Writer &w,
+                          const pipeline::Entities &entities,
+                          time_ns::TimePoint simStart) {
   const auto &roster = entities.people.roster;
-  const auto ts = t_ns::formatTimestamp(simStart);
+  const auto ts = time_ns::formatTimestamp(simStart);
   std::string watchlistId;
-  for (ent::PersonId p = 1; p <= roster.count; ++p) {
-    if (!roster.has(p, ent::person::Flag::fraud) &&
-        !roster.has(p, ent::person::Flag::mule)) {
-      continue;
-    }
-    const auto cid = common::renderCustomerId(p);
+
+  auto is_on_watchlist = [&](entity::PersonId p) {
+    return roster.has(p, entity::person::Flag::fraud) ||
+           roster.has(p, entity::person::Flag::mule);
+  };
+
+  for (entity::PersonId p :
+       allPersonIds(entities) | std::views::filter(is_on_watchlist)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto cidView = cid.view();
-    const auto wlView = common::makeWatchlistId(watchlistId, cidView);
+    const auto wlView = exporter::common::makeWatchlistId(watchlistId, cidView);
 
     const double matchScore =
-        0.5 +
-        static_cast<double>(common::stableU64({"WL", cidView}) % 50ULL) / 100.0;
+        0.5 + static_cast<double>(exporter::common::stableU64({"WL", cidView}) %
+                                  50ULL) /
+                  100.0;
 
     w.cell(cid)
         .cell(wlView)
         .cell(ts)
         .cell(kSourceAml)
         .cell(matchScore)
-        .cellEmpty() // evidence_ref
+        .cellEmpty()
         .cell(ts)
-        .cellEmpty(); // valid_to
+        .cellEmpty();
     w.endRow();
   }
 }
@@ -174,12 +182,12 @@ void writeOnWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
 // ──────────────────────────────────────────────────────────────────
 
 void writeSubjectOfSarRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+    exporter::csv::Writer &w,
+    std::span<const exporter::aml::sar::SarRecord> sars) {
   for (const auto &sar : sars) {
-    const auto filing = t_ns::formatTimestamp(sar.filingDate);
+    const auto filing = time_ns::formatTimestamp(sar.filingDate);
     for (const auto &acct : sar.coveredAccountIds) {
-      w.cell(common::renderKey(acct))
+      w.cell(exporter::common::renderKey(acct))
           .cell(sar.sarId)
           .cell(filing)
           .cell(kSourceAml)
@@ -193,12 +201,12 @@ void writeSubjectOfSarRows(
 // FILED_CTR — Account → CTR
 // ──────────────────────────────────────────────────────────────────
 
-void writeFiledCtrRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeFiledCtrRows(exporter::csv::Writer &w,
                        const derived::Bundle &bundle) {
   for (const auto &c : bundle.ctrs) {
-    w.cell(common::renderKey(c.onAccount))
+    w.cell(exporter::common::renderKey(c.onAccount))
         .cell(c.id)
-        .cell(t_ns::formatTimestamp(c.filingDate))
+        .cell(time_ns::formatTimestamp(c.filingDate))
         .cell(kSourceCore);
     w.endRow();
   }
@@ -208,12 +216,11 @@ void writeFiledCtrRows(::PhantomLedger::exporter::csv::Writer &w,
 // ALERT_ON — Alert → Account
 // ──────────────────────────────────────────────────────────────────
 
-void writeAlertOnRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const derived::Bundle &bundle) {
+void writeAlertOnRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   for (const auto &a : bundle.alerts) {
     w.cell(a.id)
-        .cell(common::renderKey(a.onAccount))
-        .cell(t_ns::formatTimestamp(a.createdDate))
+        .cell(exporter::common::renderKey(a.onAccount))
+        .cell(time_ns::formatTimestamp(a.createdDate))
         .cell(derived::ruleName(a.rule))
         .cell(derived::ruleSourceSystem(a.rule));
     w.endRow();
@@ -224,13 +231,13 @@ void writeAlertOnRows(::PhantomLedger::exporter::csv::Writer &w,
 // DISPOSITIONED_AS — Alert → Disposition
 // ──────────────────────────────────────────────────────────────────
 
-void writeDispositionedAsRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeDispositionedAsRows(exporter::csv::Writer &w,
                               const derived::Bundle &bundle) {
   for (const auto &d : bundle.dispositions) {
     const auto &alert = bundle.alerts[d.alertIndex];
     w.cell(alert.id)
         .cell(d.id)
-        .cell(t_ns::formatTimestamp(d.date))
+        .cell(time_ns::formatTimestamp(d.date))
         .cell(derived::investigatorIdFor(d.investigatorNum))
         .cell(d.notesHash) // rationale_hash
         .cellEmpty()       // evidence_refs
@@ -244,9 +251,9 @@ void writeDispositionedAsRows(::PhantomLedger::exporter::csv::Writer &w,
 // ESCALATED_TO — Disposition → SAR
 // ──────────────────────────────────────────────────────────────────
 
-void writeEscalatedToRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+void writeEscalatedToRows(exporter::csv::Writer &w,
+                          const derived::Bundle &bundle,
+                          std::span<const exporter::aml::sar::SarRecord> sars) {
   std::vector<std::vector<std::size_t>> sarsByAlert(bundle.alerts.size());
   for (const auto &c : bundle.cases) {
     for (const auto ai : c.alertIndices) {
@@ -260,15 +267,16 @@ void writeEscalatedToRows(
     v.erase(std::unique(v.begin(), v.end()), v.end());
   }
 
-  for (const auto &d : bundle.dispositions) {
-    if (d.outcome != derived::DispositionOutcome::escalated) {
-      continue;
-    }
+  auto is_escalated = [](const auto &d) {
+    return d.outcome == derived::DispositionOutcome::escalated;
+  };
+
+  for (const auto &d : bundle.dispositions | std::views::filter(is_escalated)) {
     const auto &linked = sarsByAlert[d.alertIndex];
     if (linked.empty()) {
       continue;
     }
-    const auto escalationDate = t_ns::formatTimestamp(d.date);
+    const auto escalationDate = time_ns::formatTimestamp(d.date);
     for (const auto si : linked) {
       w.cell(d.id)
           .cell(sars[si].sarId)
@@ -284,10 +292,10 @@ void writeEscalatedToRows(
 // CONTAINS_ALERT — InvestigationCase → Alert
 // ──────────────────────────────────────────────────────────────────
 
-void writeContainsAlertRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeContainsAlertRows(exporter::csv::Writer &w,
                             const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
-    const auto createdAt = t_ns::formatTimestamp(c.openedDate);
+    const auto createdAt = time_ns::formatTimestamp(c.openedDate);
     for (const auto ai : c.alertIndices) {
       w.cell(c.id)
           .cell(bundle.alerts[ai].id)
@@ -302,11 +310,11 @@ void writeContainsAlertRows(::PhantomLedger::exporter::csv::Writer &w,
 // RESULTED_IN — InvestigationCase → SAR
 // ──────────────────────────────────────────────────────────────────
 
-void writeResultedInRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+void writeResultedInRows(exporter::csv::Writer &w,
+                         const derived::Bundle &bundle,
+                         std::span<const exporter::aml::sar::SarRecord> sars) {
   for (const auto &c : bundle.cases) {
-    const auto createdAt = t_ns::formatTimestamp(c.openedDate);
+    const auto createdAt = time_ns::formatTimestamp(c.openedDate);
     for (const auto si : c.sarIndices) {
       w.cell(c.id).cell(sars[si].sarId).cell(createdAt).cell(kSourceCases);
       w.endRow();
@@ -318,10 +326,10 @@ void writeResultedInRows(
 // HAS_EVIDENCE — InvestigationCase → EvidenceArtifact
 // ──────────────────────────────────────────────────────────────────
 
-void writeHasEvidenceRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeHasEvidenceRows(exporter::csv::Writer &w,
                           const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
-    const auto createdAt = t_ns::formatTimestamp(c.openedDate);
+    const auto createdAt = time_ns::formatTimestamp(c.openedDate);
     for (const auto ei : c.evidenceIndices) {
       w.cell(c.id)
           .cell(bundle.evidence[ei].id)
@@ -336,10 +344,10 @@ void writeHasEvidenceRows(::PhantomLedger::exporter::csv::Writer &w,
 // CONTAINS_PROMOTED_TXN — InvestigationCase → InvestigationCaseTxn
 // ──────────────────────────────────────────────────────────────────
 
-void writeContainsPromotedTxnRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeContainsPromotedTxnRows(exporter::csv::Writer &w,
                                   const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
-    const auto createdAt = t_ns::formatTimestamp(c.openedDate);
+    const auto createdAt = time_ns::formatTimestamp(c.openedDate);
     for (const auto pi : c.promotedTxnIndices) {
       w.cell(c.id)
           .cell(bundle.promotedTxns[pi].id)
@@ -355,24 +363,25 @@ void writeContainsPromotedTxnRows(::PhantomLedger::exporter::csv::Writer &w,
 // ──────────────────────────────────────────────────────────────────
 
 void writePromotedTxnAccountRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const tx_ns::Transaction> postedTxns) {
-  for (const auto &r : bundle.promotedTxns) {
-    if (r.txnIndex == 0 || r.txnIndex > postedTxns.size()) {
-      continue;
-    }
+    exporter::csv::Writer &w, const derived::Bundle &bundle,
+    std::span<const txns::Transaction> postedTxns) {
+  auto is_valid_txn = [&](const auto &r) {
+    return r.txnIndex > 0 && r.txnIndex <= postedTxns.size();
+  };
+
+  for (const auto &r : bundle.promotedTxns | std::views::filter(is_valid_txn)) {
     const auto &tx = postedTxns[r.txnIndex - 1];
-    const auto promotedAt = t_ns::formatTimestamp(r.promotedAt);
+    const auto promotedAt = time_ns::formatTimestamp(r.promotedAt);
 
     w.cell(r.id)
-        .cell(common::renderKey(tx.source))
+        .cell(exporter::common::renderKey(tx.source))
         .cell(std::string_view{"originator"})
         .cell(promotedAt)
         .cell(kSourceCases);
     w.endRow();
 
     w.cell(r.id)
-        .cell(common::renderKey(tx.target))
+        .cell(exporter::common::renderKey(tx.target))
         .cell(std::string_view{"beneficiary"})
         .cell(promotedAt)
         .cell(kSourceCases);
@@ -384,58 +393,56 @@ void writePromotedTxnAccountRows(
 // SIGNER_OF / BENEFICIAL_OWNER_OF / CONTROLS / BUSINESS_OWNS_ACCOUNT
 // ──────────────────────────────────────────────────────────────────
 
-void writeSignerOfRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const derived::Bundle &bundle,
-                       t_ns::TimePoint simStart) {
-  const auto validFrom = t_ns::formatTimestamp(simStart);
+void writeSignerOfRows(exporter::csv::Writer &w, const derived::Bundle &bundle,
+                       time_ns::TimePoint simStart) {
+  const auto validFrom = time_ns::formatTimestamp(simStart);
   for (const auto &b : bundle.businesses) {
-    w.cell(common::renderCustomerId(b.owner))
+    w.cell(exporter::common::renderCustomerId(b.owner))
         .cell(b.id)
-        .cell(t_ns::formatTimestamp(b.effectiveDate))
+        .cell(time_ns::formatTimestamp(b.effectiveDate))
         .cell(validFrom)
         .cellEmpty();
     w.endRow();
   }
 }
 
-void writeBeneficialOwnerOfRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBeneficialOwnerOfRows(exporter::csv::Writer &w,
                                 const derived::Bundle &bundle,
-                                t_ns::TimePoint simStart) {
-  const auto validFrom = t_ns::formatTimestamp(simStart);
+                                time_ns::TimePoint simStart) {
+  const auto validFrom = time_ns::formatTimestamp(simStart);
   for (const auto &b : bundle.businesses) {
-    w.cell(common::renderCustomerId(b.owner))
+    w.cell(exporter::common::renderCustomerId(b.owner))
         .cell(b.id)
         .cell(1.0)
-        .cell(t_ns::formatTimestamp(b.effectiveDate))
+        .cell(time_ns::formatTimestamp(b.effectiveDate))
         .cell(validFrom)
         .cellEmpty();
     w.endRow();
   }
 }
 
-void writeControlsRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const derived::Bundle &bundle,
-                       t_ns::TimePoint simStart) {
-  const auto validFrom = t_ns::formatTimestamp(simStart);
+void writeControlsRows(exporter::csv::Writer &w, const derived::Bundle &bundle,
+                       time_ns::TimePoint simStart) {
+  const auto validFrom = time_ns::formatTimestamp(simStart);
   for (const auto &b : bundle.businesses) {
-    w.cell(common::renderCustomerId(b.owner))
+    w.cell(exporter::common::renderCustomerId(b.owner))
         .cell(b.id)
         .cell(std::string_view{"signing_officer"})
-        .cell(t_ns::formatTimestamp(b.effectiveDate))
+        .cell(time_ns::formatTimestamp(b.effectiveDate))
         .cell(validFrom)
         .cellEmpty();
     w.endRow();
   }
 }
 
-void writeBusinessOwnsAccountRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBusinessOwnsAccountRows(exporter::csv::Writer &w,
                                   const derived::Bundle &bundle,
-                                  t_ns::TimePoint simStart) {
-  const auto validFrom = t_ns::formatTimestamp(simStart);
+                                  time_ns::TimePoint simStart) {
+  const auto validFrom = time_ns::formatTimestamp(simStart);
   for (const auto &b : bundle.businesses) {
     w.cell(b.id)
-        .cell(common::renderKey(b.accountKey))
-        .cell(t_ns::formatTimestamp(b.effectiveDate))
+        .cell(exporter::common::renderKey(b.accountKey))
+        .cell(time_ns::formatTimestamp(b.effectiveDate))
         .cell(validFrom)
         .cellEmpty();
     w.endRow();
@@ -446,38 +453,38 @@ void writeBusinessOwnsAccountRows(::PhantomLedger::exporter::csv::Writer &w,
 // HAS_NAME / HAS_ADDRESS / HAS_EMAIL / HAS_PHONE / HAS_DOB / HAS_ID
 // ──────────────────────────────────────────────────────────────────
 
-void writeHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    w.cell(common::renderCustomerId(p))
-        .cell(identity::nameIdForPerson(p))
+void writeHasNameRows(exporter::csv::Writer &w,
+                      const pipeline::Entities &entities,
+                      time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    w.cell(exporter::common::renderCustomerId(p))
+        .cell(exporter::aml::identity::nameIdForPerson(p))
         .cell(ts)
         .cell(kSourceKyc);
     w.endRow();
   }
 }
 
-void writeHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
-                         const ::PhantomLedger::pipeline::Entities &entities,
-                         t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    w.cell(common::renderCustomerId(p))
-        .cell(identity::addressIdForPerson(p))
+void writeHasAddressRows(exporter::csv::Writer &w,
+                         const pipeline::Entities &entities,
+                         time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    w.cell(exporter::common::renderCustomerId(p))
+        .cell(exporter::aml::identity::addressIdForPerson(p))
         .cell(ts)
         .cell(kSourceKyc);
     w.endRow();
   }
 }
 
-void writeHasEmailRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeHasEmailRows(exporter::csv::Writer &w,
+                       const pipeline::Entities &entities,
+                       time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("EML", cid))
         .cell(ts)
@@ -486,12 +493,12 @@ void writeHasEmailRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-void writeHasPhoneRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       t_ns::TimePoint simStart) {
-  const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeHasPhoneRows(exporter::csv::Writer &w,
+                       const pipeline::Entities &entities,
+                       time_ns::TimePoint simStart) {
+  const auto ts = time_ns::formatTimestamp(simStart);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("PH", cid))
         .cell(ts)
@@ -500,19 +507,19 @@ void writeHasPhoneRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-void writeHasDobRows(::PhantomLedger::exporter::csv::Writer &w,
-                     const ::PhantomLedger::pipeline::Entities &entities) {
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeHasDobRows(exporter::csv::Writer &w,
+                     const pipeline::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid).cell(derived::prefixedCustomerId("DOB", cid)).cell(kSourceKyc);
     w.endRow();
   }
 }
 
-void writeHasIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                    const ::PhantomLedger::pipeline::Entities &entities) {
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
+void writeHasIdRows(exporter::csv::Writer &w,
+                    const pipeline::Entities &entities) {
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("GID", cid))
         .cell(kSourceKyc)
@@ -525,12 +532,11 @@ void writeHasIdRows(::PhantomLedger::exporter::csv::Writer &w,
 // USES_DEVICE / USES_IP — per-(person, device|ip) aggregation
 // ──────────────────────────────────────────────────────────────────
 
-void writeUsesDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::infra::synth::devices::Output &devices) {
+void writeUsesDeviceRows(exporter::csv::Writer &w,
+                         const synth::infra::devices::Output &devices) {
   struct Key {
-    ent::PersonId person = 0;
-    ::PhantomLedger::devices::Identity device{};
+    entity::PersonId person = 0;
+    devices::Identity device{};
     constexpr bool operator==(const Key &) const noexcept = default;
   };
   struct KeyHash {
@@ -543,30 +549,30 @@ void writeUsesDeviceRows(
       return a ^ (b << 1) ^ (c << 3) ^ (d << 5);
     }
   };
-  std::unordered_map<Key, common::SeenWindow, KeyHash> agg;
+  std::unordered_map<Key, exporter::common::SeenWindow, KeyHash> agg;
   agg.reserve(devices.usages.size());
 
   for (const auto &u : devices.usages) {
-    common::recordSeen(agg[Key{u.personId, u.deviceId}], u.firstSeen,
-                       u.lastSeen);
+    exporter::common::recordSeen(agg[Key{u.personId, u.deviceId}], u.firstSeen,
+                                 u.lastSeen);
   }
 
   for (const auto &[key, slot] : agg) {
-    w.cell(common::renderCustomerId(key.person))
-        .cell(common::renderDeviceId(key.device))
-        .cell(t_ns::formatTimestamp(slot.firstSeen))
-        .cell(t_ns::formatTimestamp(slot.lastSeen))
+    w.cell(exporter::common::renderCustomerId(key.person))
+        .cell(exporter::common::renderDeviceId(key.device))
+        .cell(time_ns::formatTimestamp(slot.firstSeen))
+        .cell(time_ns::formatTimestamp(slot.lastSeen))
         .cell(kSourceCore)
         .cell(0.9);
     w.endRow();
   }
 }
 
-void writeUsesIpRows(::PhantomLedger::exporter::csv::Writer &w,
-                     const ::PhantomLedger::infra::synth::ips::Output &ips) {
+void writeUsesIpRows(exporter::csv::Writer &w,
+                     const synth::infra::ips::Output &ips) {
   struct Key {
-    ent::PersonId person = 0;
-    ::PhantomLedger::network::Ipv4 ip{};
+    entity::PersonId person = 0;
+    network::Ipv4 ip{};
     constexpr bool operator==(const Key &) const noexcept = default;
   };
   struct KeyHash {
@@ -576,19 +582,19 @@ void writeUsesIpRows(::PhantomLedger::exporter::csv::Writer &w,
       return static_cast<std::size_t>(k.person) ^ static_cast<std::size_t>(raw);
     }
   };
-  std::unordered_map<Key, common::SeenWindow, KeyHash> agg;
+  std::unordered_map<Key, exporter::common::SeenWindow, KeyHash> agg;
   agg.reserve(ips.usages.size());
 
   for (const auto &u : ips.usages) {
-    common::recordSeen(agg[Key{u.personId, u.ipAddress}], u.firstSeen,
-                       u.lastSeen);
+    exporter::common::recordSeen(agg[Key{u.personId, u.ipAddress}], u.firstSeen,
+                                 u.lastSeen);
   }
 
   for (const auto &[key, slot] : agg) {
-    w.cell(common::renderCustomerId(key.person))
-        .cell(::PhantomLedger::network::format(key.ip))
-        .cell(t_ns::formatTimestamp(slot.firstSeen))
-        .cell(t_ns::formatTimestamp(slot.lastSeen))
+    w.cell(exporter::common::renderCustomerId(key.person))
+        .cell(network::format(key.ip))
+        .cell(time_ns::formatTimestamp(slot.firstSeen))
+        .cell(time_ns::formatTimestamp(slot.lastSeen))
         .cell(kSourceCore)
         .cell(0.9);
     w.endRow();
@@ -599,40 +605,42 @@ void writeUsesIpRows(::PhantomLedger::exporter::csv::Writer &w,
 // IN_BUCKET — Customer → MinHashBucket (5 facets in one file)
 // ──────────────────────────────────────────────────────────────────
 
-void writeInBucketRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
+void writeInBucketRows(exporter::csv::Writer &w,
+                       const pipeline::Entities &entities,
                        const shared::SharedContext &ctx,
-                       t_ns::TimePoint simStart) {
+                       time_ns::TimePoint simStart) {
   const auto &pools = poolsFor(ctx);
   const auto &pii = entities.pii;
-  const auto ts = t_ns::formatTimestamp(simStart);
+  const auto ts = time_ns::formatTimestamp(simStart);
 
   std::string addrScratch;
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
-    const auto cid = common::renderCustomerId(p);
-    const auto nm = identity::nameForPerson(p, pii, pools);
-    const auto addr = identity::addressForPerson(p, pii, pools);
-    const auto fullAddr = common::joinAddress(addrScratch, addr);
+  for (entity::PersonId p : allPersonIds(entities)) {
+    const auto cid = exporter::common::renderCustomerId(p);
+    const auto nm = exporter::aml::identity::nameForPerson(p, pii, pools);
+    const auto addr = exporter::aml::identity::addressForPerson(p, pii, pools);
+    const auto fullAddr = exporter::common::joinAddress(addrScratch, addr);
 
-    for (const auto &id : minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+    for (const auto &id :
+         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       w.cell(cid).cell(id).cell(ts).cell(0.9);
       w.endRow();
     }
-    for (const auto &id : minhash::addressMinhashIds(fullAddr)) {
+    for (const auto &id : exporter::aml::minhash::addressMinhashIds(fullAddr)) {
       w.cell(cid).cell(id).cell(ts).cell(0.85);
       w.endRow();
     }
-    for (const auto &id : minhash::streetMinhashIds(addr.streetLine1)) {
+    for (const auto &id :
+         exporter::aml::minhash::streetMinhashIds(addr.streetLine1)) {
       w.cell(cid).cell(id).cell(ts).cell(0.8);
       w.endRow();
     }
     {
-      const auto cityId = minhash::cityMinhashId(addr.city);
+      const auto cityId = exporter::aml::minhash::cityMinhashId(addr.city);
       w.cell(cid).cell(std::string_view{cityId}).cell(ts).cell(0.7);
       w.endRow();
     }
     {
-      const auto stateId = minhash::stateMinhashId(addr.state);
+      const auto stateId = exporter::aml::minhash::stateMinhashId(addr.state);
       w.cell(cid).cell(std::string_view{stateId}).cell(ts).cell(0.6);
       w.endRow();
     }
@@ -645,48 +653,44 @@ void writeInBucketRows(::PhantomLedger::exporter::csv::Writer &w,
 
 namespace {
 
-// Trailing 12 columns shared by both aggregate edges. Caller has already
-// emitted from_id and to_id. LINK_COMM still emits its own `weight` column
-// up front; this helper only handles the suffix that's identical between
-// the two writers.
-void writeAggSuffixCells(::PhantomLedger::exporter::csv::Writer &w,
+void writeAggSuffixCells(exporter::csv::Writer &w,
                          const derived::Bundle &bundle,
                          const derived::AggregateRow &r) {
-  const auto windowStart = bundle.simEnd - t_ns::Days{90};
+  const auto windowStart = bundle.simEnd - time_ns::Days{90};
   w.cell(primitives::utils::roundMoney(r.totalAmount))
       .cell(static_cast<std::int32_t>(r.txnCount))
-      .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(r.firstTs)))
-      .cell(t_ns::formatTimestamp(t_ns::fromEpochSeconds(r.lastTs)))
+      .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(r.firstTs)))
+      .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(r.lastTs)))
       .cell(primitives::utils::roundMoney(r.amount30d))
       .cell(primitives::utils::roundMoney(r.amount90d))
       .cell(static_cast<std::int32_t>(r.count30d))
       .cell(static_cast<std::int32_t>(r.count90d))
-      .cell(t_ns::formatTimestamp(windowStart))
-      .cell(t_ns::formatTimestamp(bundle.simEnd))
-      .cell(t_ns::formatTimestamp(bundle.simEnd))
+      .cell(time_ns::formatTimestamp(windowStart))
+      .cell(time_ns::formatTimestamp(bundle.simEnd))
+      .cell(time_ns::formatTimestamp(bundle.simEnd))
       .cell(bundle.derivationRunId);
 }
 
 } // namespace
 
-void writeAccountFlowAggRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeAccountFlowAggRows(exporter::csv::Writer &w,
                              const derived::Bundle &bundle) {
   for (const auto &bucket : bundle.flowAgg) {
-    w.cell(common::renderKey(bucket.pair.first))
-        .cell(common::renderKey(bucket.pair.second));
+    w.cell(exporter::common::renderKey(bucket.pair.first))
+        .cell(exporter::common::renderKey(bucket.pair.second));
     writeAggSuffixCells(w, bundle, bucket.row);
     w.endRow();
   }
 }
 
-void writeAccountLinkCommRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeAccountLinkCommRows(exporter::csv::Writer &w,
                               const derived::Bundle &bundle) {
   for (const auto &bucket : bundle.linkComm) {
     const auto &r = bucket.row;
     const double weight = std::log1p(static_cast<double>(r.txnCount)) *
                           std::log1p(r.totalAmount / 1000.0);
-    w.cell(common::renderKey(bucket.pair.first))
-        .cell(common::renderKey(bucket.pair.second))
+    w.cell(exporter::common::renderKey(bucket.pair.first))
+        .cell(exporter::common::renderKey(bucket.pair.second))
         .cell(primitives::utils::roundMoney(weight));
     writeAggSuffixCells(w, bundle, r);
     w.endRow();

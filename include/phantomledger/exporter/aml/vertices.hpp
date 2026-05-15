@@ -8,85 +8,86 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
-#include "phantomledger/synth/entities/infra/ips_output.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/ips_output.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <set>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::vertices {
 
+namespace clearing = ::PhantomLedger::clearing;
+namespace encoding = ::PhantomLedger::encoding;
+namespace entity = ::PhantomLedger::entity;
+namespace exporter = ::PhantomLedger::exporter;
+namespace personas = ::PhantomLedger::personas;
+namespace pipeline = ::PhantomLedger::pipeline;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+namespace txns = ::PhantomLedger::transactions;
+
 struct SharedContext {
 
-  std::set<::PhantomLedger::encoding::RenderedKey> counterpartyIds;
+  std::set<encoding::RenderedKey> counterpartyIds;
 
   std::set<BankId> bankIds;
 
-  std::vector<::PhantomLedger::personas::Type> personaByPerson;
-  std::unordered_map<::PhantomLedger::entity::Key, std::int64_t>
-      lastTransactionByAccount;
+  std::vector<personas::Type> personaByPerson;
+  std::unordered_map<entity::Key, std::int64_t> lastTransactionByAccount;
 
   const ::PhantomLedger::entities::synth::pii::PoolSet *pools = nullptr;
 };
 
-[[nodiscard]] SharedContext buildSharedContext(
-    const ::PhantomLedger::pipeline::Entities &entities,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
-    const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
+[[nodiscard]] SharedContext
+buildSharedContext(const pipeline::Entities &entities,
+                   std::span<const txns::Transaction> finalTxns,
+                   const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
 
 // ────────── Vertex writers ──────────
 
-void writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       const SharedContext &ctx,
-                       ::PhantomLedger::time::TimePoint simStart);
+void writeCustomerRows(exporter::csv::Writer &w,
+                       const pipeline::Entities &entities,
+                       const SharedContext &ctx, time_ns::TimePoint simStart);
 
-void writeAccountRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      const ::PhantomLedger::clearing::Ledger *finalBook,
-                      const SharedContext &ctx,
-                      ::PhantomLedger::time::TimePoint simStart);
+void writeAccountRows(exporter::csv::Writer &w,
+                      const pipeline::Entities &entities,
+                      const clearing::Ledger *finalBook,
+                      const SharedContext &ctx, time_ns::TimePoint simStart);
 
-void writeCounterpartyRows(::PhantomLedger::exporter::csv::Writer &w,
-                           const SharedContext &ctx);
+void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx);
 
-void writeNameRows(::PhantomLedger::exporter::csv::Writer &w,
-                   const ::PhantomLedger::pipeline::Entities &entities,
+void writeNameRows(exporter::csv::Writer &w, const pipeline::Entities &entities,
                    const SharedContext &ctx);
 
-void writeAddressRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
+void writeAddressRows(exporter::csv::Writer &w,
+                      const pipeline::Entities &entities,
                       const SharedContext &ctx);
 
-void writeCountryRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities);
+void writeCountryRows(exporter::csv::Writer &w,
+                      const pipeline::Entities &entities);
 
-void writeDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::infra::synth::devices::Output &devices,
-    const ::PhantomLedger::infra::synth::ips::Output &ips);
+void writeDeviceRows(exporter::csv::Writer &w,
+                     const synth::infra::devices::Output &devices,
+                     const synth::infra::ips::Output &ips);
 
-void writeTransactionRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);
+void writeTransactionRows(exporter::csv::Writer &w,
+                          std::span<const txns::Transaction> finalTxns);
 
-void writeSarRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeSarRows(exporter::csv::Writer &w,
+                  std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeBankRows(::PhantomLedger::exporter::csv::Writer &w,
-                   const SharedContext &ctx);
+void writeBankRows(exporter::csv::Writer &w, const SharedContext &ctx);
 
-void writeWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
-                        const ::PhantomLedger::pipeline::Entities &entities,
-                        ::PhantomLedger::time::TimePoint simStart);
+void writeWatchlistRows(exporter::csv::Writer &w,
+                        const pipeline::Entities &entities,
+                        time_ns::TimePoint simStart);
 
 template <typename Set>
-void writeMinhashIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                        const Set &minhashIds) {
+void writeMinhashIdRows(exporter::csv::Writer &w, const Set &minhashIds) {
   for (const auto &id : minhashIds) {
     w.writeRow(id);
   }

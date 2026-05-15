@@ -4,13 +4,13 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/synth/entities/infra/types.hpp"
+#include "phantomledger/synth/infra/types.hpp"
 
 #include <cstdint>
 #include <span>
 #include <unordered_map>
 
-namespace PhantomLedger::infra::synth::rings {
+namespace PhantomLedger::synth::infra::rings {
 
 struct AccessRules {
   std::int32_t burstDaysMin = 7;
@@ -33,4 +33,4 @@ struct AccessRules {
         const entity::person::Topology &topology) const;
 };
 
-} // namespace PhantomLedger::infra::synth::rings
+} // namespace PhantomLedger::synth::infra::rings

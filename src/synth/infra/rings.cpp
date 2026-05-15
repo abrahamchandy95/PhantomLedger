@@ -1,10 +1,10 @@
-#include "phantomledger/synth/entities/infra/rings.hpp"
+#include "phantomledger/synth/infra/rings.hpp"
 
 #include <algorithm>
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::rings {
+namespace PhantomLedger::synth::infra::rings {
 
 namespace {
 
@@ -100,4 +100,4 @@ AccessRules::build(random::Rng &rng, time::Window window,
   return plans;
 }
 
-} // namespace PhantomLedger::infra::synth::rings
+} // namespace PhantomLedger::synth::infra::rings

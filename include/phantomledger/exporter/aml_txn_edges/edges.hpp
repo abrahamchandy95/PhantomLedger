@@ -6,125 +6,115 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
-#include "phantomledger/synth/entities/infra/ips_output.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/ips_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <span>
 
 namespace PhantomLedger::exporter::aml_txn_edges::edges {
 
+namespace exporter = ::PhantomLedger::exporter;
+namespace pipe = ::PhantomLedger::pipeline;
 namespace shared = ::PhantomLedger::exporter::aml::vertices;
+namespace synth = ::PhantomLedger::synth;
+namespace time_ns = ::PhantomLedger::time;
+namespace txns = ::PhantomLedger::transactions;
 
-void writeOwnsRows(::PhantomLedger::exporter::csv::Writer &w,
-                   const ::PhantomLedger::pipeline::Entities &entities,
-                   ::PhantomLedger::time::TimePoint simStart);
+void writeOwnsRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+                   time_ns::TimePoint simStart);
 
-void writeTransactedRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> postedTxns);
+void writeTransactedRows(exporter::csv::Writer &w,
+                         std::span<const txns::Transaction> postedTxns);
 
 void writeInvolvesCounterpartyRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> postedTxns,
-    ::PhantomLedger::time::TimePoint simStart);
+    exporter::csv::Writer &w, std::span<const txns::Transaction> postedTxns,
+    time_ns::TimePoint simStart);
 
-void writeBanksAtRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBanksAtRows(exporter::csv::Writer &w,
                       const shared::SharedContext &ctx,
-                      ::PhantomLedger::time::TimePoint simStart);
+                      time_ns::TimePoint simStart);
 
-void writeOnWatchlistRows(::PhantomLedger::exporter::csv::Writer &w,
-                          const ::PhantomLedger::pipeline::Entities &entities,
-                          ::PhantomLedger::time::TimePoint simStart);
+void writeOnWatchlistRows(exporter::csv::Writer &w,
+                          const pipe::Entities &entities,
+                          time_ns::TimePoint simStart);
 
-void writeSubjectOfSarRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeSubjectOfSarRows(exporter::csv::Writer &w,
+                           std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeFiledCtrRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const derived::Bundle &bundle);
+void writeFiledCtrRows(exporter::csv::Writer &w, const derived::Bundle &bundle);
 
-void writeAlertOnRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const derived::Bundle &bundle);
+void writeAlertOnRows(exporter::csv::Writer &w, const derived::Bundle &bundle);
 
-void writeDispositionedAsRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeDispositionedAsRows(exporter::csv::Writer &w,
                               const derived::Bundle &bundle);
 
-void writeEscalatedToRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeEscalatedToRows(exporter::csv::Writer &w,
+                          const derived::Bundle &bundle,
+                          std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeContainsAlertRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeContainsAlertRows(exporter::csv::Writer &w,
                             const derived::Bundle &bundle);
 
-void writeResultedInRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+void writeResultedInRows(exporter::csv::Writer &w,
+                         const derived::Bundle &bundle,
+                         std::span<const exporter::aml::sar::SarRecord> sars);
 
-void writeHasEvidenceRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeHasEvidenceRows(exporter::csv::Writer &w,
                           const derived::Bundle &bundle);
 
-void writeContainsPromotedTxnRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeContainsPromotedTxnRows(exporter::csv::Writer &w,
                                   const derived::Bundle &bundle);
 
 void writePromotedTxnAccountRows(
-    ::PhantomLedger::exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const ::PhantomLedger::transactions::Transaction> postedTxns);
+    exporter::csv::Writer &w, const derived::Bundle &bundle,
+    std::span<const transactions::Transaction> postedTxns);
 
-void writeSignerOfRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const derived::Bundle &bundle,
-                       ::PhantomLedger::time::TimePoint simStart);
+void writeSignerOfRows(exporter::csv::Writer &w, const derived::Bundle &bundle,
+                       time_ns::TimePoint simStart);
 
-void writeBeneficialOwnerOfRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBeneficialOwnerOfRows(exporter::csv::Writer &w,
                                 const derived::Bundle &bundle,
-                                ::PhantomLedger::time::TimePoint simStart);
+                                time_ns::TimePoint simStart);
 
-void writeControlsRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const derived::Bundle &bundle,
-                       ::PhantomLedger::time::TimePoint simStart);
+void writeControlsRows(exporter::csv::Writer &w, const derived::Bundle &bundle,
+                       time_ns::TimePoint simStart);
 
-void writeBusinessOwnsAccountRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeBusinessOwnsAccountRows(exporter::csv::Writer &w,
                                   const derived::Bundle &bundle,
-                                  ::PhantomLedger::time::TimePoint simStart);
+                                  time_ns::TimePoint simStart);
 
-void writeHasNameRows(::PhantomLedger::exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
-                      ::PhantomLedger::time::TimePoint simStart);
+void writeHasNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+                      time_ns::TimePoint simStart);
 
-void writeHasAddressRows(::PhantomLedger::exporter::csv::Writer &w,
-                         const ::PhantomLedger::pipeline::Entities &entities,
-                         ::PhantomLedger::time::TimePoint simStart);
+void writeHasAddressRows(exporter::csv::Writer &w,
+                         const pipe::Entities &entities,
+                         time_ns::TimePoint simStart);
 
-void writeHasEmailRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       ::PhantomLedger::time::TimePoint simStart);
+void writeHasEmailRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+                       time_ns::TimePoint simStart);
 
-void writeHasPhoneRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       ::PhantomLedger::time::TimePoint simStart);
+void writeHasPhoneRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+                       time_ns::TimePoint simStart);
 
-void writeHasDobRows(::PhantomLedger::exporter::csv::Writer &w,
-                     const ::PhantomLedger::pipeline::Entities &entities);
+void writeHasDobRows(exporter::csv::Writer &w, const pipe::Entities &entities);
 
-void writeHasIdRows(::PhantomLedger::exporter::csv::Writer &w,
-                    const ::PhantomLedger::pipeline::Entities &entities);
+void writeHasIdRows(exporter::csv::Writer &w, const pipe::Entities &entities);
 
-void writeUsesDeviceRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    const ::PhantomLedger::infra::synth::devices::Output &devices);
+void writeUsesDeviceRows(exporter::csv::Writer &w,
+                         const synth::infra::devices::Output &devices);
 
-void writeUsesIpRows(::PhantomLedger::exporter::csv::Writer &w,
-                     const ::PhantomLedger::infra::synth::ips::Output &ips);
+void writeUsesIpRows(exporter::csv::Writer &w,
+                     const synth::infra::ips::Output &ips);
 
-void writeInBucketRows(::PhantomLedger::exporter::csv::Writer &w,
-                       const ::PhantomLedger::pipeline::Entities &entities,
+void writeInBucketRows(exporter::csv::Writer &w, const pipe::Entities &entities,
                        const shared::SharedContext &ctx,
-                       ::PhantomLedger::time::TimePoint simStart);
+                       time_ns::TimePoint simStart);
 
-void writeAccountFlowAggRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeAccountFlowAggRows(exporter::csv::Writer &w,
                              const derived::Bundle &bundle);
 
-void writeAccountLinkCommRows(::PhantomLedger::exporter::csv::Writer &w,
+void writeAccountLinkCommRows(exporter::csv::Writer &w,
                               const derived::Bundle &bundle);
 
 } // namespace PhantomLedger::exporter::aml_txn_edges::edges

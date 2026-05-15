@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace PhantomLedger::infra::synth::timeline {
+namespace PhantomLedger::synth::infra::timeline {
 
 [[nodiscard]] inline std::pair<time::TimePoint, time::TimePoint>
 sampleSpan(random::Rng &rng, time::TimePoint start, std::int32_t days) {
@@ -52,4 +52,4 @@ sampleShortSpan(random::Rng &rng, time::TimePoint start, std::int32_t days) {
   return {firstSeen, lastSeen};
 }
 
-} // namespace PhantomLedger::infra::synth::timeline
+} // namespace PhantomLedger::synth::infra::timeline

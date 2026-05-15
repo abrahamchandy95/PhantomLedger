@@ -8,7 +8,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace PhantomLedger::infra::synth::ips {
+namespace PhantomLedger::synth::infra::ips {
 
 struct Record {
   network::Ipv4 address{};
@@ -31,4 +31,4 @@ struct Output {
   std::unordered_map<std::uint32_t, network::Ipv4> ringMap;
 };
 
-} // namespace PhantomLedger::infra::synth::ips
+} // namespace PhantomLedger::synth::infra::ips

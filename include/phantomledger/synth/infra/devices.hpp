@@ -4,13 +4,13 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/synth/entities/infra/devices_output.hpp"
-#include "phantomledger/synth/entities/infra/types.hpp"
+#include "phantomledger/synth/infra/devices_output.hpp"
+#include "phantomledger/synth/infra/types.hpp"
 
 #include <cstdint>
 #include <unordered_map>
 
-namespace PhantomLedger::infra::synth::devices {
+namespace PhantomLedger::synth::infra::devices {
 
 struct AssignmentRules {
   double legitDeviceNoiseP = 0.05;
@@ -30,4 +30,4 @@ struct AssignmentRules {
         const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const;
 };
 
-} // namespace PhantomLedger::infra::synth::devices
+} // namespace PhantomLedger::synth::infra::devices
