@@ -1,11 +1,11 @@
 #pragma once
 
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/infra/synth/ips_output.hpp"
-#include "phantomledger/infra/synth/types.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/entities/infra/ips_output.hpp"
+#include "phantomledger/synth/entities/infra/types.hpp"
 
 #include <cstdint>
 #include <unordered_map>

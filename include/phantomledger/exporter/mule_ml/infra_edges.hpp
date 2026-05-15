@@ -5,10 +5,10 @@
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/infra/synth/devices_output.hpp"
-#include "phantomledger/infra/synth/ips_output.hpp"
 #include "phantomledger/primitives/hashing/combine.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/entities/infra/devices_output.hpp"
+#include "phantomledger/synth/entities/infra/ips_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>

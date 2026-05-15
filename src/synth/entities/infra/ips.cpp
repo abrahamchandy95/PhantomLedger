@@ -1,8 +1,8 @@
-#include "phantomledger/infra/synth/ips.hpp"
+#include "phantomledger/synth/entities/infra/ips.hpp"
 
-#include "phantomledger/infra/synth/pool.hpp"
-#include "phantomledger/infra/synth/timeline.hpp"
+#include "phantomledger/synth/entities/infra/pool.hpp"
 #include "phantomledger/synth/entities/infra/random_ips.hpp"
+#include "phantomledger/synth/entities/infra/timeline.hpp"
 
 #include <algorithm>
 #include <cstddef>

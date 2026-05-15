@@ -1,11 +1,11 @@
 #pragma once
 
-#include "phantomledger/infra/synth/devices.hpp"
-#include "phantomledger/infra/synth/ips.hpp"
-#include "phantomledger/infra/synth/rings.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/entities/infra/devices.hpp"
+#include "phantomledger/synth/entities/infra/ips.hpp"
+#include "phantomledger/synth/entities/infra/rings.hpp"
 #include "phantomledger/transactions/infra/router.hpp"
 #include "phantomledger/transactions/infra/shared.hpp"
 

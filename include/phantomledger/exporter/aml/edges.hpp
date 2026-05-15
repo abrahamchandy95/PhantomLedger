@@ -4,9 +4,9 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/infra/synth/devices_output.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/entities/infra/devices_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <set>
