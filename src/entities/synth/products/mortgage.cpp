@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/installment_emission.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,6 +13,7 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
+namespace counterparties = ::PhantomLedger::counterparties;
 
 [[nodiscard]] double triangular(::PhantomLedger::random::Rng &rng, double left,
                                 double mode, double right) {
@@ -71,7 +72,8 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
                         InstallmentIssue{
                             .person = person,
                             .productType = product::ProductType::mortgage,
-                            .counterparty = institutional::mortgageLender(),
+                            .counterparty = counterparties::key(
+                                counterparties::Lending::studentServicer),
                             .start = loanStart,
                             .termMonths = kMortgageTermMonths,
                             .paymentDay = paymentDay,

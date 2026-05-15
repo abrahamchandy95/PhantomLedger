@@ -12,10 +12,9 @@
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
 #include "phantomledger/pipeline/state.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
-#include "phantomledger/transfers/channels/government/keys.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <array>
@@ -111,29 +110,19 @@ buildCounterparties(pl::random::Rng &rng, std::int32_t population,
 void finalizeAccountRegistry(pl::pipeline::Entities &entities) {
   using synth::accounts::addAccounts;
   using Key = entity::Key;
-  namespace institutional = synth::products::institutional;
-  namespace gov = pl::transfers::government;
+  namespace counterparties = ::PhantomLedger::counterparties;
   namespace family_synth = pl::entities::synth::family;
   namespace family_rt = pl::transfers::legit::routines::family;
 
-  const std::array<Key, 5> systemKeys{
+  const auto systemKeys = std::to_array<Key>({
       pl::transfers::legit::ledger::bankFeeCollectionKey(),
       pl::transfers::legit::ledger::bankOdLocKey(),
-      entity::makeKey(entity::Role::merchant, entity::Bank::external,
-                      /*number=*/1ULL),
-      gov::ssaCounterpartyKey(),
-      gov::disabilityCounterpartyKey(),
-  };
+      entity::makeKey(entity::Role::merchant, entity::Bank::external, 1ULL),
+  });
   addAccounts(entities.accounts, std::span<const Key>{systemKeys},
               /*external=*/true);
 
-  const std::array<Key, 7> institutionalKeys{
-      institutional::mortgageLender(),  institutional::autoLender(),
-      institutional::studentServicer(), institutional::irsTreasury(),
-      institutional::autoCarrier(),     institutional::homeCarrier(),
-      institutional::lifeCarrier(),
-  };
-  addAccounts(entities.accounts, std::span<const Key>{institutionalKeys},
+  addAccounts(entities.accounts, std::span<const Key>{counterparties::kAll},
               /*external=*/true);
 
   {

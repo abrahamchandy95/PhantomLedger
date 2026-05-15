@@ -3,9 +3,9 @@
 
 #include "phantomledger/entities/synth/products/amount_sampling.hpp"
 #include "phantomledger/entities/synth/products/dates.hpp"
-#include "phantomledger/entities/synth/products/institutional.hpp"
 #include "phantomledger/entities/synth/products/obligation_emission.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <array>
 #include <cstddef>
@@ -17,6 +17,7 @@ namespace PhantomLedger::entities::synth::products {
 namespace {
 
 namespace product = ::PhantomLedger::entity::product;
+namespace counterparties = ::PhantomLedger::counterparties;
 namespace channels = ::PhantomLedger::channels;
 
 void emitTaxQuarterlies(product::ObligationStream &stream,
@@ -51,7 +52,8 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
           stream, product::ObligationEvent{
                       .personId = person,
                       .direction = product::Direction::outflow,
-                      .counterpartyAcct = institutional::irsTreasury(),
+                      .counterpartyAcct =
+                          counterparties::key(counterparties::Tax::irsTreasury),
                       .amount = quarterlyAmount,
                       .timestamp = due,
                       .channel = channels::tag(channels::Product::taxEstimated),
@@ -61,9 +63,6 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
   }
 }
 
-/// Outcome of a person's annual tax filing: either nothing happens, a
-/// refund is issued, or a balance is due. Sampled once per person per
-/// year and consumed by `emitTaxFiling`.
 struct TaxFiling {
   enum class Kind : std::uint8_t { none, refund, balanceDue };
   Kind kind = Kind::none;
@@ -123,17 +122,17 @@ void emitTaxFiling(product::ObligationStream &stream,
       continue;
     }
 
-    appendObligation(stream,
-                     product::ObligationEvent{
-                         .personId = person,
-                         .direction = direction,
-                         .counterpartyAcct = institutional::irsTreasury(),
-                         .amount = filing.amount,
-                         .timestamp = due,
-                         .channel = channel,
-                         .productType = product::ProductType::tax,
-                         .productId = productId,
-                     });
+    appendObligation(stream, product::ObligationEvent{
+                                 .personId = person,
+                                 .direction = direction,
+                                 .counterpartyAcct = counterparties::key(
+                                     counterparties::Tax::irsTreasury),
+                                 .amount = filing.amount,
+                                 .timestamp = due,
+                                 .channel = channel,
+                                 .productType = product::ProductType::tax,
+                                 .productId = productId,
+                             });
   }
 }
 
