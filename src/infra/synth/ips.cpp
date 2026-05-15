@@ -2,7 +2,7 @@
 
 #include "phantomledger/infra/synth/pool.hpp"
 #include "phantomledger/infra/synth/timeline.hpp"
-#include "phantomledger/transactions/network/random.hpp"
+#include "phantomledger/synth/entities/infra/random_ips.hpp"
 
 #include <algorithm>
 #include <cstddef>

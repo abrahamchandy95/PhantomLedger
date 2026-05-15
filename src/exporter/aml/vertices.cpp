@@ -1,6 +1,7 @@
 #include "phantomledger/exporter/aml/vertices.hpp"
 
 #include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
@@ -11,7 +12,6 @@
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/taxonomies/lookup.hpp"
-#include "phantomledger/transactions/network/format.hpp"
 
 #include <cassert>
 #include <cstdint>

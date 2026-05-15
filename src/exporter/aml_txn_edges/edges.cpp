@@ -1,6 +1,7 @@
 #include "phantomledger/exporter/aml_txn_edges/edges.hpp"
 
 #include "phantomledger/entities/encoding/render.hpp"
+#include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
@@ -9,7 +10,6 @@
 #include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/transactions/network/format.hpp"
 
 #include <algorithm>
 #include <cassert>
