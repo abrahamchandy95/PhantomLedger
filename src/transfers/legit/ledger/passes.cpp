@@ -31,7 +31,7 @@ namespace PhantomLedger::transfers::legit::ledger::passes {
 namespace {
 
 namespace pl_gov = ::PhantomLedger::transfers::government;
-namespace pl_inflows = ::PhantomLedger::inflows;
+namespace income = ::PhantomLedger::activity::income;
 namespace pl_credit = ::PhantomLedger::transfers::credit_cards;
 
 [[nodiscard]] time::Window
@@ -52,37 +52,37 @@ populationCount(const blueprints::LegitBlueprint &plan) {
       plan.personas().pack->table.byPerson.size());
 }
 
-[[nodiscard]] pl_inflows::HubAccounts
+[[nodiscard]] income::HubAccounts
 buildHubAccounts(const blueprints::LegitBlueprint &plan) {
-  pl_inflows::HubAccounts hubs;
+  income::HubAccounts hubs;
   hubs.reserve(plan.counterparties().hubSet.size());
   hubs.insert(plan.counterparties().hubSet.begin(),
               plan.counterparties().hubSet.end());
   return hubs;
 }
 
-[[nodiscard]] pl_inflows::Timeframe
+[[nodiscard]] income::Timeframe
 buildTimeframe(const blueprints::LegitBlueprint &plan) {
-  return pl_inflows::Timeframe{
+  return income::Timeframe{
       .startDate = plan.startDate(),
       .days = plan.days(),
       .monthStarts = plan.monthStarts(),
   };
 }
 
-[[nodiscard]] pl_inflows::Entropy
+[[nodiscard]] income::Entropy
 buildEntropy(const blueprints::LegitBlueprint &plan) {
-  return pl_inflows::Entropy{
+  return income::Entropy{
       .factory = random::RngFactory{plan.seed()},
   };
 }
 
-[[nodiscard]] pl_inflows::Population
+[[nodiscard]] income::Population
 buildPopulation(const blueprints::LegitBlueprint &plan,
                 const entity::account::Ownership &ownership,
                 const entity::account::Registry &registry,
-                pl_inflows::HubAccounts hubs) {
-  return pl_inflows::Population{
+                income::HubAccounts hubs) {
+  return income::Population{
       registry,
       ownership,
       plan.personas().pack->assignment,
@@ -90,18 +90,18 @@ buildPopulation(const blueprints::LegitBlueprint &plan,
   };
 }
 
-[[nodiscard]] pl_inflows::PayrollCounterparties
+[[nodiscard]] income::PayrollCounterparties
 buildPayrollCounterparties(const blueprints::LegitBlueprint &plan) {
-  return pl_inflows::PayrollCounterparties{
+  return income::PayrollCounterparties{
       .employers =
           std::span<const entity::Key>(plan.counterparties().employers.data(),
                                        plan.counterparties().employers.size()),
   };
 }
 
-[[nodiscard]] pl_inflows::RentCounterparties
+[[nodiscard]] income::RentCounterparties
 buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
-  return pl_inflows::RentCounterparties{
+  return income::RentCounterparties{
       .landlords =
           std::span<const entity::Key>(plan.counterparties().landlords.data(),
                                        plan.counterparties().landlords.size()),
@@ -109,19 +109,19 @@ buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
   };
 }
 
-[[nodiscard]] pl_inflows::RevenueCounterparties
+[[nodiscard]] income::RevenueCounterparties
 buildRevenueCounterparties(const entity::counterparty::Directory *directory) {
-  return pl_inflows::RevenueCounterparties{
+  return income::RevenueCounterparties{
       .directory = directory,
   };
 }
 
-[[nodiscard]] pl_inflows::salary::Payroll
+[[nodiscard]] income::salary::Payroll
 buildPayroll(const blueprints::LegitBlueprint &plan,
              const entity::account::Ownership &ownership,
              const entity::account::Registry &registry,
-             const pl_inflows::salary::Rules &rules) {
-  auto payroll = pl_inflows::salary::Payroll{
+             const income::salary::Rules &rules) {
+  auto payroll = income::salary::Payroll{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
       .population =
@@ -134,12 +134,12 @@ buildPayroll(const blueprints::LegitBlueprint &plan,
   return payroll;
 }
 
-[[nodiscard]] pl_inflows::rent::RentRoll
+[[nodiscard]] income::rent::RentRoll
 buildRentRoll(const blueprints::LegitBlueprint &plan,
               const entity::account::Ownership &ownership,
               const entity::account::Registry &registry,
-              const pl_inflows::rent::Rules &rules) {
-  auto rentRoll = pl_inflows::rent::RentRoll{
+              const income::rent::Rules &rules) {
+  auto rentRoll = income::rent::RentRoll{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
       .population =
@@ -152,12 +152,12 @@ buildRentRoll(const blueprints::LegitBlueprint &plan,
   return rentRoll;
 }
 
-[[nodiscard]] pl_inflows::revenue::Book
+[[nodiscard]] income::revenue::Book
 buildRevenueBook(const blueprints::LegitBlueprint &plan,
                  const entity::account::Ownership &ownership,
                  const entity::account::Registry &registry,
                  const entity::counterparty::Directory *directory) {
-  auto book = pl_inflows::revenue::Book{
+  auto book = income::revenue::Book{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
       .population =
@@ -244,7 +244,7 @@ void addRent(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
   };
 
   streams.add(
-      pl_inflows::generateRentTxns(rentRoll, rng, routineTxf(pass), rentModel));
+      income::generateRentTxns(rentRoll, rng, routineTxf(pass), rentModel));
 }
 
 void addSubscriptions(const RoutinePass &pass,
@@ -390,8 +390,7 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
     return ::PhantomLedger::math::amounts::kSalary.sample(mainRng);
   };
 
-  streams.add(
-      pl_inflows::generateSalaryTxns(payroll, mainRng, txf, salaryModel));
+  streams.add(income::generateSalaryTxns(payroll, mainRng, txf, salaryModel));
 
   const auto &government = pass.government();
   if (government.active()) {
@@ -412,7 +411,7 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
   const auto book =
       buildRevenueBook(plan, *accounts.ownership, *accounts.registry,
                        salary.revenueCounterparties);
-  streams.add(pl_inflows::revenue::generate(book, txf));
+  streams.add(income::revenue::generate(book, txf));
 }
 
 void addRoutines(const RoutinePass &pass,

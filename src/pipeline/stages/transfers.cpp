@@ -46,11 +46,13 @@ const FraudEmission &TransferStage::fraud() const noexcept { return fraud_; }
 
 ::PhantomLedger::pipeline::Transfers
 TransferStage::build(::PhantomLedger::random::Rng &rng,
-                     const ::PhantomLedger::pipeline::Entities &entities,
+                     const ::PhantomLedger::pipeline::People &people,
+                     const ::PhantomLedger::pipeline::Holdings &holdings,
+                     const ::PhantomLedger::pipeline::Counterparties &cps,
                      const ::PhantomLedger::pipeline::Infra &infra) const {
   legit_.validate();
 
-  auto builder = legit_.builder(rng, entities, infra);
+  auto builder = legit_.builder(rng, people, holdings, cps, infra);
   auto legitPayload = builder.build();
 
   if (!legitPayload.openingBook.hasInitialBook()) {
@@ -60,17 +62,18 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
   }
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, legitPayload.txns.candidateTxns);
+      holdings.accounts.lookup, legitPayload.txns.candidateTxns);
 
   const auto scope = legit_.runScope();
-  const auto primaryAccountsByPerson = primaryAccounts(entities);
+  const auto primaryAccountsByPerson = primaryAccounts(holdings);
 
   ::PhantomLedger::transactions::Factory productTxf{rng, &infra.router,
                                                     &infra.ringInfra};
   ProductTxnEmitter productEmitter{scope.window, scope.seed, rng, productTxf};
 
+  // products_.merge only needs `holdings` (portfolios live there).
   auto replaySortedStream = products_.merge(
-      productEmitter, entities, primaryAccountsByPerson, legitPayload.txns);
+      productEmitter, holdings, primaryAccountsByPerson, legitPayload.txns);
 
   auto candidateReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook,
                                           rng, std::move(replaySortedStream));
@@ -84,9 +87,9 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
           .router = &infra.router,
           .ringInfra = &infra.ringInfra,
       },
-      fraud_.ringView(entities.people.topology),
-      FraudEmission::accountView(entities.accounts.registry,
-                                 entities.accounts.ownership),
+      fraud_.ringView(people.roster.topology),
+      FraudEmission::accountView(holdings.accounts.registry,
+                                 holdings.accounts.ownership),
       fraud_.resolvedBehavior(),
   };
 
@@ -101,7 +104,7 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
       rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      entities.accounts.lookup, postedReplay.txns);
+      holdings.accounts.lookup, postedReplay.txns);
 
   ::PhantomLedger::pipeline::Transfers out{};
   out.legit = std::move(legitPayload);

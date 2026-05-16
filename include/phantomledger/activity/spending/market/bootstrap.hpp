@@ -11,7 +11,7 @@
 #include <array>
 #include <cstdint>
 
-namespace PhantomLedger::spending::market {
+namespace PhantomLedger::activity::spending::market {
 
 inline constexpr std::array<merchants::Category, 4> kBillerCategories{
     merchants::Category::utilities,
@@ -93,4 +93,4 @@ struct ShopperBehaviorRules {
                                  PayeeSelectionRules payees = {},
                                  ShopperBehaviorRules behavior = {});
 
-} // namespace PhantomLedger::spending::market
+} // namespace PhantomLedger::activity::spending::market

@@ -42,24 +42,36 @@ inline constexpr std::string_view kSourceAml = "aml_system";
 inline constexpr std::string_view kSourceCases = "case_mgmt";
 
 [[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
-poolsFor(const shared::SharedContext &ctx) noexcept {
+poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr);
   return *ctx.pools;
 }
-auto allPersonIds(const pipeline::Entities &entities) {
-  return std::views::iota(1u, entities.people.roster.count + 1);
+
+// Person-id range over the population. `People::roster` is the
+// synth::people::Pack; its inner `.roster` is the entity::person::Roster
+// that carries `count`.
+[[nodiscard]] auto allPersonIds(const pipeline::People &people) {
+  return std::views::iota(1u, people.roster.roster.count + 1);
 }
+
 } // namespace
 
 // ──────────────────────────────────────────────────────────────────
 // OWNS — Customer → Account
 // ──────────────────────────────────────────────────────────────────
 
-void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Entities &entities,
+void writeOwnsRows(exporter::csv::Writer &w, const pipeline::People &people,
+                   const pipeline::Holdings &holdings,
+                   const pipeline::Counterparties &cps,
                    time_ns::TimePoint simStart) {
+  (void)people;
+  (void)cps;
   const auto ts = time_ns::formatTimestamp(simStart);
+  // `forEachInternalOwnership` is a template that does
+  // `arg.accounts.{registry,ownership}` — Holdings exposes exactly that
+  // shape, so passing `holdings` works without changing the helper.
   exporter::common::forEachInternalOwnership(
-      entities, [&](entity::PersonId pid, const entity::Key &k) {
+      holdings, [&](entity::PersonId pid, const entity::Key &k) {
         w.cell(exporter::common::renderCustomerId(pid))
             .cell(exporter::common::renderKey(k))
             .cell(ts)
@@ -127,7 +139,7 @@ void writeInvolvesCounterpartyRows(
 // ──────────────────────────────────────────────────────────────────
 
 void writeBanksAtRows(exporter::csv::Writer &w,
-                      const shared::SharedContext &ctx,
+                      const aml::vertices::SharedContext &ctx,
                       time_ns::TimePoint simStart) {
   const auto ts = time_ns::formatTimestamp(simStart);
   for (const auto &cpId : ctx.counterpartyIds) {
@@ -143,9 +155,13 @@ void writeBanksAtRows(exporter::csv::Writer &w,
 // ──────────────────────────────────────────────────────────────────
 
 void writeOnWatchlistRows(exporter::csv::Writer &w,
-                          const pipeline::Entities &entities,
+                          const pipeline::People &people,
+                          const pipeline::Holdings &holdings,
+                          const pipeline::Counterparties &cps,
                           time_ns::TimePoint simStart) {
-  const auto &roster = entities.people.roster;
+  (void)holdings;
+  (void)cps;
+  const auto &roster = people.roster.roster;
   const auto ts = time_ns::formatTimestamp(simStart);
   std::string watchlistId;
 
@@ -155,7 +171,7 @@ void writeOnWatchlistRows(exporter::csv::Writer &w,
   };
 
   for (entity::PersonId p :
-       allPersonIds(entities) | std::views::filter(is_on_watchlist)) {
+       allPersonIds(people) | std::views::filter(is_on_watchlist)) {
     const auto cid = exporter::common::renderCustomerId(p);
     const auto cidView = cid.view();
     const auto wlView = exporter::common::makeWatchlistId(watchlistId, cidView);
@@ -453,11 +469,14 @@ void writeBusinessOwnsAccountRows(exporter::csv::Writer &w,
 // HAS_NAME / HAS_ADDRESS / HAS_EMAIL / HAS_PHONE / HAS_DOB / HAS_ID
 // ──────────────────────────────────────────────────────────────────
 
-void writeHasNameRows(exporter::csv::Writer &w,
-                      const pipeline::Entities &entities,
+void writeHasNameRows(exporter::csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps,
                       time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = time_ns::formatTimestamp(simStart);
-  for (entity::PersonId p : allPersonIds(entities)) {
+  for (entity::PersonId p : allPersonIds(people)) {
     w.cell(exporter::common::renderCustomerId(p))
         .cell(exporter::aml::identity::nameIdForPerson(p))
         .cell(ts)
@@ -467,10 +486,14 @@ void writeHasNameRows(exporter::csv::Writer &w,
 }
 
 void writeHasAddressRows(exporter::csv::Writer &w,
-                         const pipeline::Entities &entities,
+                         const pipeline::People &people,
+                         const pipeline::Holdings &holdings,
+                         const pipeline::Counterparties &cps,
                          time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = time_ns::formatTimestamp(simStart);
-  for (entity::PersonId p : allPersonIds(entities)) {
+  for (entity::PersonId p : allPersonIds(people)) {
     w.cell(exporter::common::renderCustomerId(p))
         .cell(exporter::aml::identity::addressIdForPerson(p))
         .cell(ts)
@@ -479,11 +502,14 @@ void writeHasAddressRows(exporter::csv::Writer &w,
   }
 }
 
-void writeHasEmailRows(exporter::csv::Writer &w,
-                       const pipeline::Entities &entities,
+void writeHasEmailRows(exporter::csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
                        time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = time_ns::formatTimestamp(simStart);
-  for (entity::PersonId p : allPersonIds(entities)) {
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("EML", cid))
@@ -493,11 +519,14 @@ void writeHasEmailRows(exporter::csv::Writer &w,
   }
 }
 
-void writeHasPhoneRows(exporter::csv::Writer &w,
-                       const pipeline::Entities &entities,
+void writeHasPhoneRows(exporter::csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
                        time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = time_ns::formatTimestamp(simStart);
-  for (entity::PersonId p : allPersonIds(entities)) {
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("PH", cid))
@@ -507,18 +536,24 @@ void writeHasPhoneRows(exporter::csv::Writer &w,
   }
 }
 
-void writeHasDobRows(exporter::csv::Writer &w,
-                     const pipeline::Entities &entities) {
-  for (entity::PersonId p : allPersonIds(entities)) {
+void writeHasDobRows(exporter::csv::Writer &w, const pipeline::People &people,
+                     const pipeline::Holdings &holdings,
+                     const pipeline::Counterparties &cps) {
+  (void)holdings;
+  (void)cps;
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid).cell(derived::prefixedCustomerId("DOB", cid)).cell(kSourceKyc);
     w.endRow();
   }
 }
 
-void writeHasIdRows(exporter::csv::Writer &w,
-                    const pipeline::Entities &entities) {
-  for (entity::PersonId p : allPersonIds(entities)) {
+void writeHasIdRows(exporter::csv::Writer &w, const pipeline::People &people,
+                    const pipeline::Holdings &holdings,
+                    const pipeline::Counterparties &cps) {
+  (void)holdings;
+  (void)cps;
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(cid)
         .cell(derived::prefixedCustomerId("GID", cid))
@@ -605,16 +640,19 @@ void writeUsesIpRows(exporter::csv::Writer &w,
 // IN_BUCKET — Customer → MinHashBucket (5 facets in one file)
 // ──────────────────────────────────────────────────────────────────
 
-void writeInBucketRows(exporter::csv::Writer &w,
-                       const pipeline::Entities &entities,
-                       const shared::SharedContext &ctx,
+void writeInBucketRows(exporter::csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
+                       const aml::vertices::SharedContext &ctx,
                        time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
   const auto ts = time_ns::formatTimestamp(simStart);
 
   std::string addrScratch;
-  for (entity::PersonId p : allPersonIds(entities)) {
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     const auto nm = exporter::aml::identity::nameForPerson(p, pii, pools);
     const auto addr = exporter::aml::identity::addressForPerson(p, pii, pools);

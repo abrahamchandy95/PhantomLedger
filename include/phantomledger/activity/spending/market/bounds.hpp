@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::market {
+namespace PhantomLedger::activity::spending::market {
 
 struct Bounds {
   time::TimePoint startDate{};
@@ -19,4 +19,4 @@ struct Bounds {
   }
 };
 
-} // namespace PhantomLedger::spending::market
+} // namespace PhantomLedger::activity::spending::market

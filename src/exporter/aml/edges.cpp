@@ -40,7 +40,7 @@ customerIdFor(ent::PersonId p) noexcept {
 poolsFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built with "
-         "buildSharedContext(entities, txns, pools)?");
+         "buildSharedContext(people, holdings, cps, txns, pools)?");
   return *ctx.pools;
 }
 
@@ -49,16 +49,28 @@ usPoolFor(const vertices::SharedContext &ctx) noexcept {
   return poolsFor(ctx).forCountry(loc::Country::us);
 }
 
-auto allPersonIds(const pipe::Entities &entities) {
-  return std::views::iota(1u, entities.people.roster.count + 1);
+[[nodiscard]] auto allPersonIds(const pipe::People &people) {
+  return std::views::iota(1u, people.roster.roster.count + 1);
+}
+
+[[nodiscard]] std::size_t
+estimateRowCapacity(const pipe::People &people,
+                    const vertices::SharedContext &ctx) noexcept {
+  return static_cast<std::size_t>(people.roster.roster.count) +
+         ctx.counterpartyIds.size() + 21U;
 }
 
 } // namespace
 
 TransactionEdgeBundle
-classifyTransactionEdges(const pipe::Entities &entities,
+classifyTransactionEdges(const pipe::People &people,
+                         const pipe::Holdings &holdings,
+                         const pipe::Counterparties &cps,
                          std::span<const tx_ns::Transaction> finalTxns,
                          const vertices::SharedContext &ctx) {
+  (void)people;
+  (void)holdings;
+  (void)cps;
   TransactionEdgeBundle out;
   const auto &usPool = usPoolFor(ctx);
 
@@ -108,20 +120,23 @@ classifyTransactionEdges(const pipe::Entities &entities,
     ++idx;
   }
 
-  (void)entities;
   return out;
 }
 
-MinhashVertexSets collectMinhashVertexSets(const pipe::Entities &entities,
+MinhashVertexSets collectMinhashVertexSets(const pipe::People &people,
+                                           const pipe::Holdings &holdings,
+                                           const pipe::Counterparties &cps,
                                            const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   MinhashVertexSets out;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(loc::Country::us);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
   std::string addrScratch;
 
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto nm = identity::nameForPerson(p, pii, pools);
     const auto addr = identity::addressForPerson(p, pii, pools);
 
@@ -151,17 +166,25 @@ MinhashVertexSets collectMinhashVertexSets(const pipe::Entities &entities,
 }
 
 void writeCustomerHasAccountRows(exporter::csv::Writer &w,
-                                 const pipe::Entities &entities) {
+                                 const pipe::People &people,
+                                 const pipe::Holdings &holdings,
+                                 const pipe::Counterparties &cps) {
+  (void)people;
+  (void)cps;
   exporter::common::forEachInternalOwnership(
-      entities, [&](ent::PersonId pid, const ent::Key &k) {
+      holdings, [&](ent::PersonId pid, const ent::Key &k) {
         w.writeRow(customerIdFor(pid), exporter::common::renderKey(k));
       });
 }
 
 void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
-                                        const pipe::Entities &entities) {
+                                        const pipe::People &people,
+                                        const pipe::Holdings &holdings,
+                                        const pipe::Counterparties &cps) {
+  (void)people;
+  (void)cps;
   exporter::common::forEachInternalOwnership(
-      entities, [&](ent::PersonId pid, const ent::Key &k) {
+      holdings, [&](ent::PersonId pid, const ent::Key &k) {
         w.writeRow(exporter::common::renderKey(k), customerIdFor(pid));
       });
 }
@@ -207,14 +230,17 @@ void writeUsesDeviceRows(exporter::csv::Writer &w,
   }
 }
 
-void writeLoggedFromRows(exporter::csv::Writer &w,
-                         const pipe::Entities &entities,
+void writeLoggedFromRows(exporter::csv::Writer &w, const pipe::People &people,
+                         const pipe::Holdings &holdings,
+                         const pipe::Counterparties &cps,
                          const synth::infra::devices::Output &devices) {
+  (void)people;
+  (void)cps;
   std::map<std::pair<ent::Key, std::string>, exporter::common::SeenWindow> agg;
 
   std::unordered_map<ent::PersonId, std::vector<ent::Key>> accountsByPerson;
   exporter::common::forEachInternalOwnership(
-      entities, [&](ent::PersonId pid, const ent::Key &k) {
+      holdings, [&](ent::PersonId pid, const ent::Key &k) {
         accountsByPerson[pid].push_back(k);
       });
 
@@ -239,37 +265,53 @@ void writeLoggedFromRows(exporter::csv::Writer &w,
 }
 
 void writeCustomerHasNameRows(exporter::csv::Writer &w,
-                              const pipe::Entities &entities,
+                              const pipe::People &people,
+                              const pipe::Holdings &holdings,
+                              const pipe::Counterparties &cps,
                               t_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     w.writeRow(customerIdFor(p), identity::nameIdForPerson(p), ts);
   }
 }
 
 void writeCustomerHasAddressRows(exporter::csv::Writer &w,
-                                 const pipe::Entities &entities,
+                                 const pipe::People &people,
+                                 const pipe::Holdings &holdings,
+                                 const pipe::Counterparties &cps,
                                  t_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     w.writeRow(customerIdFor(p), identity::addressIdForPerson(p), ts);
   }
 }
 
 void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
-                                            const pipe::Entities &entities,
+                                            const pipe::People &people,
+                                            const pipe::Holdings &holdings,
+                                            const pipe::Counterparties &cps,
                                             t_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (ent::PersonId p : allPersonIds(entities)) {
-    w.writeRow(customerIdFor(p), loc::code(entities.pii.at(p).country), ts);
+  for (ent::PersonId p : allPersonIds(people)) {
+    w.writeRow(customerIdFor(p), loc::code(people.pii.at(p).country), ts);
   }
 }
 
 void writeAccountHasNameRows(exporter::csv::Writer &w,
-                             const pipe::Entities &entities,
+                             const pipe::People &people,
+                             const pipe::Holdings &holdings,
+                             const pipe::Counterparties &cps,
                              t_ns::TimePoint simStart) {
+  (void)people;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  exporter::common::forEachInternalOwnership(entities, [&](ent::PersonId pid,
+  exporter::common::forEachInternalOwnership(holdings, [&](ent::PersonId pid,
                                                            const ent::Key &k) {
     w.writeRow(exporter::common::renderKey(k), identity::nameIdForPerson(pid),
                std::string_view{"primary"}, ts);
@@ -277,11 +319,15 @@ void writeAccountHasNameRows(exporter::csv::Writer &w,
 }
 
 void writeAccountHasAddressRows(exporter::csv::Writer &w,
-                                const pipe::Entities &entities,
+                                const pipe::People &people,
+                                const pipe::Holdings &holdings,
+                                const pipe::Counterparties &cps,
                                 t_ns::TimePoint simStart) {
+  (void)people;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   exporter::common::forEachInternalOwnership(
-      entities, [&](ent::PersonId pid, const ent::Key &k) {
+      holdings, [&](ent::PersonId pid, const ent::Key &k) {
         w.writeRow(exporter::common::renderKey(k),
                    identity::addressIdForPerson(pid),
                    std::string_view{"mailing"}, ts);
@@ -289,29 +335,34 @@ void writeAccountHasAddressRows(exporter::csv::Writer &w,
 }
 
 void writeAccountAssociatedWithCountryRows(exporter::csv::Writer &w,
-                                           const pipe::Entities &entities,
+                                           const pipe::People &people,
+                                           const pipe::Holdings &holdings,
+                                           const pipe::Counterparties &cps,
                                            t_ns::TimePoint simStart) {
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (const auto &rec : entities.accounts.registry.records) {
+  for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
     }
-    const auto countryCode =
-        (rec.owner == ent::invalidPerson)
-            ? exporter::common::kUsCountry
-            : loc::code(entities.pii.at(rec.owner).country);
+    const auto countryCode = (rec.owner == ent::invalidPerson)
+                                 ? exporter::common::kUsCountry
+                                 : loc::code(people.pii.at(rec.owner).country);
     w.writeRow(exporter::common::renderKey(rec.id), countryCode, ts);
   }
 }
 
 void writeAddressInCountryRows(exporter::csv::Writer &w,
-                               const pipe::Entities &entities,
+                               const pipe::People &people,
+                               const pipe::Holdings &holdings,
+                               const pipe::Counterparties &cps,
                                const vertices::SharedContext &ctx,
                                t_ns::TimePoint simStart) {
-
+  (void)holdings;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   std::unordered_set<std::string> emitted;
-  emitted.reserve(exporter::common::estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(estimateRowCapacity(people, ctx));
 
   const auto emit = [&](identity::StackString<32> id,
                         std::string_view countryCode) {
@@ -320,9 +371,8 @@ void writeAddressInCountryRows(exporter::csv::Writer &w,
     }
   };
 
-  for (ent::PersonId p : allPersonIds(entities)) {
-    emit(identity::addressIdForPerson(p),
-         loc::code(entities.pii.at(p).country));
+  for (ent::PersonId p : allPersonIds(people)) {
+    emit(identity::addressIdForPerson(p), loc::code(people.pii.at(p).country));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
     emit(identity::addressIdForCounterparty(cpId),
@@ -359,10 +409,14 @@ void writeCounterpartyAssociatedWithCountryRows(
 }
 
 void writeCustomerMatchesWatchlistRows(exporter::csv::Writer &w,
-                                       const pipe::Entities &entities) {
-  const auto &roster = entities.people.roster;
+                                       const pipe::People &people,
+                                       const pipe::Holdings &holdings,
+                                       const pipe::Counterparties &cps) {
+  (void)holdings;
+  (void)cps;
+  const auto &roster = people.roster.roster;
   std::string watchlistId;
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     if (!roster.has(p, ent::person::Flag::fraud) &&
         !roster.has(p, ent::person::Flag::mule)) {
       continue;
@@ -444,13 +498,17 @@ void writeBankHasNameRows(exporter::csv::Writer &w,
 // ──────────────────────────────────────────────────────────────────────
 
 void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
-                                     const pipe::Entities &entities,
+                                     const pipe::People &people,
+                                     const pipe::Holdings &holdings,
+                                     const pipe::Counterparties &cps,
                                      const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
   std::string nameScratch;
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto nm = identity::nameForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     const auto nameStr =
@@ -463,13 +521,17 @@ void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
 }
 
 void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
-                                        const pipe::Entities &entities,
+                                        const pipe::People &people,
+                                        const pipe::Holdings &holdings,
+                                        const pipe::Counterparties &cps,
                                         const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
   std::string addrScratch;
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     const auto fullAddr = common::joinAddress(addrScratch, addr);
@@ -480,12 +542,15 @@ void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
 }
 
 void writeCustomerHasAddressStreetLine1MinhashRows(
-    exporter::csv::Writer &w, const pipe::Entities &entities,
+    exporter::csv::Writer &w, const pipe::People &people,
+    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     const auto cid = customerIdFor(p);
     for (const auto &mhId : minhash::streetMinhashIds(addr.streetLine1)) {
@@ -495,24 +560,30 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
 }
 
 void writeCustomerHasAddressCityMinhashRows(
-    exporter::csv::Writer &w, const pipe::Entities &entities,
+    exporter::csv::Writer &w, const pipe::People &people,
+    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city), addr.city);
   }
 }
 
 void writeCustomerHasAddressStateMinhashRows(
-    exporter::csv::Writer &w, const pipe::Entities &entities,
+    exporter::csv::Writer &w, const pipe::People &people,
+    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
-  for (ent::PersonId p : allPersonIds(entities)) {
+  for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
     w.writeRow(customerIdFor(p), minhash::stateMinhashId(addr.state),
                addr.state);
@@ -520,19 +591,22 @@ void writeCustomerHasAddressStateMinhashRows(
 }
 
 void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
-                                    const pipe::Entities &entities,
+                                    const pipe::People &people,
+                                    const pipe::Holdings &holdings,
+                                    const pipe::Counterparties &cps,
                                     const vertices::SharedContext &ctx) {
+  (void)cps;
   const auto &pools = poolsFor(ctx);
-  const auto &pii = entities.pii;
+  const auto &pii = people.pii;
 
   struct PerPersonNameMh {
     std::vector<minhash::BucketId> ids;
     std::string name;
   };
   std::unordered_map<ent::PersonId, PerPersonNameMh> mhByPerson;
-  mhByPerson.reserve(entities.people.roster.count);
+  mhByPerson.reserve(people.roster.roster.count);
   std::string nameScratch;
-  for (ent::PersonId p = 1; p <= entities.people.roster.count; ++p) {
+  for (ent::PersonId p = 1; p <= people.roster.roster.count; ++p) {
     const auto nm = identity::nameForPerson(p, pii, pools);
     auto &slot = mhByPerson[p];
     slot.ids = minhash::nameMinhashIds(nm.firstName, nm.lastName);
@@ -543,7 +617,7 @@ void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
   constexpr std::string_view kAccountNameTypeOf{"primary"};
 
   exporter::common::forEachInternalOwnership(
-      entities, [&](ent::PersonId pid, const ent::Key &k) {
+      holdings, [&](ent::PersonId pid, const ent::Key &k) {
         const auto it = mhByPerson.find(pid);
         if (it == mhByPerson.end()) {
           return;
@@ -571,11 +645,14 @@ void writeCounterpartyHasNameMinhashRows(exporter::csv::Writer &w,
   }
 }
 
-void writeResolvesToRows(exporter::csv::Writer &w,
-                         const pipe::Entities &entities,
+void writeResolvesToRows(exporter::csv::Writer &w, const pipe::People &people,
+                         const pipe::Holdings &holdings,
+                         const pipe::Counterparties &cps,
                          t_ns::TimePoint simStart) {
+  (void)people;
+  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
-  for (const auto &rec : entities.accounts.registry.records) {
+  for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
       continue;
     }

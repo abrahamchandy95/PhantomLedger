@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::spending::market::commerce {
+namespace PhantomLedger::activity::spending::market::commerce {
 
 inline constexpr std::uint32_t kNoBurstDay =
     std::numeric_limits<std::uint32_t>::max();
@@ -158,4 +158,4 @@ private:
   Contacts contacts_;
 };
 
-} // namespace PhantomLedger::spending::market::commerce
+} // namespace PhantomLedger::activity::spending::market::commerce

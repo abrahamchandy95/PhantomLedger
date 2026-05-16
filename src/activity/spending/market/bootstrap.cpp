@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::spending::market {
+namespace PhantomLedger::activity::spending::market {
 
 namespace {
 
@@ -246,4 +246,4 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
                 std::move(cards));
 }
 
-} // namespace PhantomLedger::spending::market
+} // namespace PhantomLedger::activity::spending::market

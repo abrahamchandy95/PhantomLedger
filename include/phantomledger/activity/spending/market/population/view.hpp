@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::spending::market::population {
+namespace PhantomLedger::activity::spending::market::population {
 
 class View {
 public:
@@ -55,4 +55,4 @@ private:
   Paydays paydays_;
 };
 
-} // namespace PhantomLedger::spending::market::population
+} // namespace PhantomLedger::activity::spending::market::population

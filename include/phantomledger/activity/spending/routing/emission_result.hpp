@@ -5,7 +5,7 @@
 
 #include <span>
 
-namespace PhantomLedger::spending::routing {
+namespace PhantomLedger::activity::spending::routing {
 
 struct EmissionResult {
   transactions::Draft draft;
@@ -21,4 +21,4 @@ struct ResolvedAccounts {
   clearing::Ledger::Index externalUnknownIdx = clearing::Ledger::invalid;
 };
 
-} // namespace PhantomLedger::spending::routing
+} // namespace PhantomLedger::activity::spending::routing

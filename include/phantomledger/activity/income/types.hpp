@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows {
+namespace PhantomLedger::activity::income {
 
 using Key = entity::Key;
 using PersonId = entity::PersonId;
@@ -244,4 +244,4 @@ inline void sortTransfers(std::vector<transactions::Transaction> &txns) {
       transactions::Comparator{transactions::Comparator::Scope::fundsTransfer});
 }
 
-} // namespace PhantomLedger::inflows
+} // namespace PhantomLedger::activity::income

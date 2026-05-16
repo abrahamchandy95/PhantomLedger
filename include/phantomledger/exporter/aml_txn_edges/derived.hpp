@@ -4,7 +4,7 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/common/render.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -65,11 +65,11 @@ makeHashHex(std::initializer_list<std::string_view> parts) noexcept;
 
 [[nodiscard]] CpId makeCpId(std::string_view rawKey) noexcept;
 
-[[nodiscard]] PrefixedCustomerId prefixedCustomerId(
-    std::string_view prefix,
-    const ::PhantomLedger::exporter::common::CustomerId &cid) noexcept;
+[[nodiscard]] PrefixedCustomerId
+prefixedCustomerId(std::string_view prefix,
+                   const common::CustomerId &cid) noexcept;
 
-[[nodiscard]] bool isCreditChannel(::PhantomLedger::channels::Tag tag) noexcept;
+[[nodiscard]] bool isCreditChannel(channels::Tag tag) noexcept;
 
 // ============================================================================
 // Rule / disposition taxonomy.
@@ -106,15 +106,13 @@ makeDispositionId(std::string_view alertId) noexcept;
 [[nodiscard]] CtrId makeCtrId(std::string_view accountId,
                               std::size_t txnIdx) noexcept;
 [[nodiscard]] CaseId makeRingCaseId(std::uint32_t ringId) noexcept;
-[[nodiscard]] CaseId
-makeSoloCaseId(::PhantomLedger::entity::PersonId p) noexcept;
+[[nodiscard]] CaseId makeSoloCaseId(entity::PersonId p) noexcept;
 [[nodiscard]] EvidenceId makeEvidenceId(std::string_view caseId,
                                         std::string_view kind) noexcept;
 [[nodiscard]] PromotedTxnId makePromotedTxnId(std::string_view caseId,
                                               std::size_t txnIdx) noexcept;
-[[nodiscard]] BusinessId
-makeBusinessId(std::string_view accountKey,
-               ::PhantomLedger::entity::PersonId owner) noexcept;
+[[nodiscard]] BusinessId makeBusinessId(std::string_view accountKey,
+                                        entity::PersonId owner) noexcept;
 
 // ============================================================================
 // Records.
@@ -122,17 +120,17 @@ makeBusinessId(std::string_view accountKey,
 
 struct AlertRecord {
   AlertId id{};
-  ::PhantomLedger::entity::Key onAccount{};
+  entity::Key onAccount{};
   Rule rule = Rule::fraudMlFlag;
-  ::PhantomLedger::time::TimePoint createdDate{};
-  std::string_view status = "open"; // filled after disposition decided
+  time::TimePoint createdDate{};
+  std::string_view status = "open";
 };
 
 struct DispositionRecord {
   DispositionId id{};
   std::size_t alertIndex = 0;
   DispositionOutcome outcome = DispositionOutcome::closedFp;
-  ::PhantomLedger::time::TimePoint date{};
+  time::TimePoint date{};
   std::uint32_t investigatorNum = 1; // 1..12  → "INV_NNN"
   HashHex notesHash{};
   double confidence = 0.7;
@@ -140,8 +138,8 @@ struct DispositionRecord {
 
 struct CtrRecord {
   CtrId id{};
-  ::PhantomLedger::entity::Key onAccount{};
-  ::PhantomLedger::time::TimePoint filingDate{};
+  entity::Key onAccount{};
+  time::TimePoint filingDate{};
   double amount = 0.0;
   std::uint32_t branchBucket = 0; // (account.number % 50) + 1
   std::uint32_t tellerNum = 0;    // 1..200
@@ -153,9 +151,9 @@ struct CaseRecord {
   CaseId id{};
   CaseKind kind = CaseKind::ring;
   std::uint32_t ringOrPerson = 0;
-  ::PhantomLedger::time::TimePoint openedDate{};
+  time::TimePoint openedDate{};
   std::string_view caseSystem{};
-  std::vector<::PhantomLedger::entity::PersonId> subjectPersons;
+  std::vector<entity::PersonId> subjectPersons;
   std::vector<std::size_t> alertIndices;
   std::vector<std::size_t> sarIndices;
   std::vector<std::size_t> evidenceIndices;
@@ -168,30 +166,28 @@ struct EvidenceRecord {
   std::string_view artifactType{};
   std::string_view sourceSystem{};
   HashHex contentHash{};
-  ::PhantomLedger::time::TimePoint createdAt{};
+  time::TimePoint createdAt{};
 };
 
 struct PromotedTxnRecord {
   PromotedTxnId id{};
   std::size_t caseIndex = 0;
   std::size_t txnIndex = 0; // 1-based postedTxns index
-  ::PhantomLedger::time::TimePoint promotedAt{};
-  ::PhantomLedger::time::TimePoint ttlDate{};
+  time::TimePoint promotedAt{};
+  time::TimePoint ttlDate{};
 };
 
 struct BusinessRecord {
   BusinessId id{};
-  ::PhantomLedger::entity::Key accountKey{};
-  ::PhantomLedger::entity::PersonId owner =
-      ::PhantomLedger::entity::invalidPerson;
+  entity::Key accountKey{};
+  entity::PersonId owner = entity::invalidPerson;
   std::uint32_t stemIdx = 0;
   std::uint32_t numberSuffix = 0;
   std::string_view entityType{};
-  ::PhantomLedger::time::TimePoint effectiveDate{};
+  time::TimePoint effectiveDate{};
 };
 
-using AcctPair =
-    std::pair<::PhantomLedger::entity::Key, ::PhantomLedger::entity::Key>;
+using AcctPair = std::pair<entity::Key, entity::Key>;
 
 struct AggregateRow {
   double totalAmount = 0.0;
@@ -217,8 +213,8 @@ void accumulate(AggregateRow &row, double amount, std::int64_t ts,
 // ============================================================================
 
 struct Bundle {
-  ::PhantomLedger::time::TimePoint simStart{};
-  ::PhantomLedger::time::TimePoint simEnd{};
+  time::TimePoint simStart{};
+  time::TimePoint simEnd{};
   std::int64_t simStartEpoch = 0;
   std::int64_t simEndEpoch = 0;
 
@@ -232,22 +228,19 @@ struct Bundle {
   std::vector<PromotedTxnRecord> promotedTxns;
   std::vector<BusinessRecord> businesses;
 
-  std::vector<AggregateBucket> flowAgg;  // directed
-  std::vector<AggregateBucket> linkComm; // undirected, lex-canonical
+  std::vector<AggregateBucket> flowAgg;
+  std::vector<AggregateBucket> linkComm;
 };
 
-[[nodiscard]] Bundle buildBundle(
-    const ::PhantomLedger::pipeline::Entities &entities,
-    std::span<const ::PhantomLedger::transactions::Transaction> postedTxns,
-    const ::PhantomLedger::exporter::aml::vertices::SharedContext &ctx,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars);
+// Replaced monolithic Entities with decomposed domains
+[[nodiscard]] Bundle
+buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
+            const pipeline::Counterparties &cps,
+            std::span<const transactions::Transaction> postedTxns,
+            const aml::vertices::SharedContext &ctx,
+            std::span<const aml::sar::SarRecord> sars);
 
-// ============================================================================
-// Fixed-shape rendering helpers used by row writers.
-// ============================================================================
-
-[[nodiscard]] PhoneText
-phoneFor(::PhantomLedger::entity::PersonId personId) noexcept;
+[[nodiscard]] PhoneText phoneFor(entity::PersonId personId) noexcept;
 
 [[nodiscard]] DateText formatDob(std::int16_t year, std::uint8_t month,
                                  std::uint8_t day) noexcept;

@@ -1,11 +1,16 @@
 #pragma once
 
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
+#include "phantomledger/pipeline/infra.hpp"
+#include "phantomledger/pipeline/transfers.hpp"
 
 namespace PhantomLedger::pipeline {
 
 struct SimulationResult {
-  Entities entities;
+  People people;
+  Holdings holdings;
+  Counterparties counterparties;
+
   Infra infra;
   Transfers transfers;
 };

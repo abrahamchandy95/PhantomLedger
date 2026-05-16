@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 namespace {
 
 void resolvePersonPrimaryIdx(const market::Market &market,
@@ -125,4 +125,4 @@ PreparedRun RunPlanner::build(const market::Market &market,
   return run;
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

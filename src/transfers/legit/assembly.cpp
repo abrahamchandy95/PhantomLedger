@@ -16,6 +16,8 @@ namespace {
 namespace blueprints = ::PhantomLedger::transfers::legit::blueprints;
 namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
 namespace validate = ::PhantomLedger::primitives::validate;
+namespace income = ::PhantomLedger::activity::income;
+namespace pipe = ::PhantomLedger::pipeline;
 
 [[nodiscard]] FamilyTransferScenario makeDefaultFamilyScenario() {
   namespace family_rel = ::PhantomLedger::relationships::family;
@@ -44,93 +46,101 @@ makeLegitTimeframe(::PhantomLedger::time::Window window,
   };
 }
 
-[[nodiscard]] blueprints::AccountCensus makeAccountCensus(
-    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+// ─── make* helpers ─────────────────────────────────────────────────────────
+// Each helper takes only the sub-domain(s) it actually consumes.
+
+[[nodiscard]] blueprints::AccountCensus
+makeAccountCensus(const pipe::Holdings &holdings) noexcept {
   return blueprints::AccountCensus{
-      .accounts = &entities.accounts.registry,
-      .ownership = &entities.accounts.ownership,
+      .accounts = &holdings.accounts.registry,
+      .ownership = &holdings.accounts.ownership,
   };
 }
 
-[[nodiscard]] blueprints::CounterpartyPools makeCounterpartyPools(
-    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+[[nodiscard]] blueprints::CounterpartyPools
+makeCounterpartyPools(const pipe::Counterparties &cps) noexcept {
   return blueprints::CounterpartyPools{
-      .directory = &entities.counterparties,
-      .landlords = &entities.landlords.roster,
+      .directory = &cps.counterparties,
+      .landlords = &cps.landlords.roster,
   };
 }
 
-[[nodiscard]] blueprints::PersonaCatalog makePersonaCatalog(
-    const ::PhantomLedger::pipeline::Entities &entities) noexcept {
+[[nodiscard]] blueprints::PersonaCatalog
+makePersonaCatalog(const pipe::People &people) noexcept {
   return blueprints::PersonaCatalog{
-      .pack = &entities.personas,
+      .pack = &people.personas,
   };
 }
 
 [[nodiscard]] blueprints::HubSelectionRules
-makeHubSelection(const ::PhantomLedger::pipeline::Entities &entities,
-                 double hubFraction) noexcept {
+makeHubSelection(const pipe::People &people, double hubFraction) noexcept {
   return blueprints::HubSelectionRules{
-      .populationCount = entities.people.roster.count,
+      .populationCount = people.roster.roster.count,
       .fraction = hubFraction,
   };
 }
 
 [[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::pipeline::Entities &entities,
+    ::PhantomLedger::random::Rng &rng, const pipe::Holdings &holdings,
     const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
   return legit_ledger::OpeningBook{
       rng,
       legit_ledger::OpeningBook::Accounts{
-          .registry = &entities.accounts.registry,
-          .lookup = &entities.accounts.lookup,
-          .ownership = &entities.accounts.ownership,
+          .registry = &holdings.accounts.registry,
+          .lookup = &holdings.accounts.lookup,
+          .ownership = &holdings.accounts.ownership,
       },
       legit_ledger::OpeningBook::Protections{
           .balanceRules = balanceRules,
-          .portfolios = &entities.portfolios,
-          .creditCards = &entities.creditCards,
+          .portfolios = &holdings.portfolios,
+          .creditCards = &holdings.creditCards,
       },
   };
 }
 
+// Reads Holdings (accounts) + Counterparties (revenue counterparties). Does
+// not need People. Five params is fine for an internal pass-constructor:
+// it's the integration point of two sub-domains plus rules + government
+// setup, and the IncomePass itself is built from already-named role
+// bundles (AccountAccess, SalarySetup, GovernmentSetup) at the consumer.
 [[nodiscard]] legit_ledger::passes::IncomePass
 makeIncomePass(::PhantomLedger::random::Rng &rng,
-               const ::PhantomLedger::pipeline::Entities &entities,
-               const ::PhantomLedger::inflows::salary::Rules &salaryRules,
+               const pipe::Holdings &holdings, const pipe::Counterparties &cps,
+               const income::salary::Rules &salaryRules,
                legit_ledger::passes::GovernmentSetup government) {
   return legit_ledger::passes::IncomePass{
       &rng,
       legit_ledger::passes::AccountAccess{
-          .registry = &entities.accounts.registry,
-          .ownership = &entities.accounts.ownership,
+          .registry = &holdings.accounts.registry,
+          .ownership = &holdings.accounts.ownership,
       },
       legit_ledger::passes::SalarySetup{
-          .revenueCounterparties = &entities.counterparties,
+          .revenueCounterparties = &cps.counterparties,
           .rules = salaryRules,
       },
       government,
   };
 }
 
+// Reads Holdings (accounts, lookup, portfolios, credit cards) +
+// Counterparties (merchants). Does not need People.
 [[nodiscard]] legit_ledger::passes::RoutinePass
 makeRoutinePass(::PhantomLedger::random::Rng &rng,
-                const ::PhantomLedger::pipeline::Entities &entities,
-                const ::PhantomLedger::inflows::rent::Rules &rentRules,
+                const pipe::Holdings &holdings, const pipe::Counterparties &cps,
+                const income::rent::Rules &rentRules,
                 const ::PhantomLedger::transfers::credit_cards::LifecycleRules
                     *lifecycleRules) {
   return legit_ledger::passes::RoutinePass{
       &rng,
       legit_ledger::passes::AccountAccess{
-          .registry = &entities.accounts.registry,
-          .ownership = &entities.accounts.ownership,
+          .registry = &holdings.accounts.registry,
+          .ownership = &holdings.accounts.ownership,
       },
       legit_ledger::passes::RoutineResources{
-          .accountsLookup = &entities.accounts.lookup,
-          .merchants = &entities.merchants,
-          .portfolios = &entities.portfolios,
-          .creditCards = &entities.creditCards,
+          .accountsLookup = &holdings.accounts.lookup,
+          .merchants = &cps.merchants,
+          .portfolios = &holdings.portfolios,
+          .creditCards = &holdings.creditCards,
           .cardLifecycle = lifecycleRules,
       },
       rentRules,
@@ -138,24 +148,25 @@ makeRoutinePass(::PhantomLedger::random::Rng &rng,
 }
 
 [[nodiscard]] legit_ledger::passes::FamilyPass
-makeFamilyPass(const ::PhantomLedger::pipeline::Entities &entities) {
+makeFamilyPass(const pipe::Holdings &holdings,
+               const pipe::Counterparties &cps) {
   return legit_ledger::passes::FamilyPass{
       legit_ledger::passes::AccountAccess{
-          .registry = &entities.accounts.registry,
-          .ownership = &entities.accounts.ownership,
+          .registry = &holdings.accounts.registry,
+          .ownership = &holdings.accounts.ownership,
       },
-      &entities.merchants,
+      &cps.merchants,
   };
 }
 
 [[nodiscard]] legit_ledger::passes::CreditLifecyclePass
 makeCreditPass(::PhantomLedger::random::Rng &rng,
-               const ::PhantomLedger::pipeline::Entities &entities,
+               const pipe::Holdings &holdings,
                const ::PhantomLedger::transfers::credit_cards::LifecycleRules
                    *lifecycleRules) {
   return legit_ledger::passes::CreditLifecyclePass{
       &rng,
-      &entities.creditCards,
+      &holdings.creditCards,
       lifecycleRules,
   };
 }
@@ -216,26 +227,24 @@ LegitAssembly &LegitAssembly::seed(std::uint64_t value) noexcept {
   return *this;
 }
 
-LegitAssembly &LegitAssembly::salaryRules(
-    const ::PhantomLedger::inflows::salary::Rules &value) {
+LegitAssembly &LegitAssembly::salaryRules(const income::salary::Rules &value) {
   income_.salary = value;
   return *this;
 }
 
-LegitAssembly &
-LegitAssembly::rentRules(const ::PhantomLedger::inflows::rent::Rules &value) {
+LegitAssembly &LegitAssembly::rentRules(const income::rent::Rules &value) {
   income_.rent = value;
   return *this;
 }
 
 LegitAssembly &LegitAssembly::employmentRules(
-    const ::PhantomLedger::recurring::EmploymentRules &value) {
+    const ::PhantomLedger::activity::recurring::EmploymentRules &value) {
   income_.salary.employment = value;
   return *this;
 }
 
-LegitAssembly &
-LegitAssembly::leaseRules(const ::PhantomLedger::recurring::LeaseRules &value) {
+LegitAssembly &LegitAssembly::leaseRules(
+    const ::PhantomLedger::activity::recurring::LeaseRules &value) {
   income_.rent.lease = value;
   return *this;
 }
@@ -284,31 +293,31 @@ void LegitAssembly::validate() const {
   validateHubFraction(hubSelection_.fraction);
 }
 
-legit_ledger::LegitTransferBuilder
-LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
-                       const ::PhantomLedger::pipeline::Entities &entities,
-                       const ::PhantomLedger::pipeline::Infra &infra) const {
+legit_ledger::LegitTransferBuilder LegitAssembly::builder(
+    ::PhantomLedger::random::Rng &rng, const pipe::People &people,
+    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
+    const ::PhantomLedger::pipeline::Infra &infra) const {
   legit_ledger::LegitTransferBuilder out{
       rng,
       makeLegitTimeframe(run_.window, run_.seed),
-      makeAccountCensus(entities),
-      makeOpeningBook(rng, entities, openingBalances_.balanceRules),
+      makeAccountCensus(holdings),
+      makeOpeningBook(rng, holdings, openingBalances_.balanceRules),
   };
 
-  out.counterparties(makeCounterpartyPools(entities))
-      .personas(makePersonaCatalog(entities))
-      .hubSelection(makeHubSelection(entities, hubSelection_.fraction))
+  out.counterparties(makeCounterpartyPools(cps))
+      .personas(makePersonaCatalog(people))
+      .hubSelection(makeHubSelection(people, hubSelection_.fraction))
       .income(makeIncomePass(
-          rng, entities, income_.salary,
+          rng, holdings, cps, income_.salary,
           legit_ledger::passes::GovernmentSetup{
               .counterparties = defaultGovernmentCounterparties(),
               .retirement = &income_.retirement,
               .disability = &income_.disability,
           }))
-      .routines(makeRoutinePass(rng, entities, income_.rent,
+      .routines(makeRoutinePass(rng, holdings, cps, income_.rent,
                                 cardLifecycle_.lifecycleRules))
-      .family(makeFamilyPass(entities))
-      .credit(makeCreditPass(rng, entities, cardLifecycle_.lifecycleRules))
+      .family(makeFamilyPass(holdings, cps))
+      .credit(makeCreditPass(rng, holdings, cardLifecycle_.lifecycleRules))
       .familyScenario(familyTransfers_)
       .router(infra.router);
 

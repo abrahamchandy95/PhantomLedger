@@ -13,7 +13,7 @@
 
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class Simulator {
 public:
@@ -50,4 +50,4 @@ private:
   DayDriver dayDriver_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

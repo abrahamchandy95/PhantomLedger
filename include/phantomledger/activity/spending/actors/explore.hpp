@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 struct ExploreModifiers {
   double weekendMultiplier = 1.25;
@@ -47,4 +47,4 @@ struct ExploreModifiers {
   return std::clamp(exploreP, 0.0, kExploreCeiling);
 }
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

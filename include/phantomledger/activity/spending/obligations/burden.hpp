@@ -4,7 +4,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::obligations {
+namespace PhantomLedger::activity::spending::obligations {
 
 class Burden {
 public:
@@ -26,4 +26,4 @@ private:
   std::vector<double> monthly_;
 };
 
-} // namespace PhantomLedger::spending::obligations
+} // namespace PhantomLedger::activity::spending::obligations

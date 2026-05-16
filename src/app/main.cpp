@@ -37,8 +37,8 @@ void printGenericSummary(const pl::pipeline::SimulationResult &result,
       (totalTxns == 0) ? 0.0 : static_cast<double>(illicit) / totalTxns;
 
   std::printf("People: %u  Accounts: %zu\n",
-              static_cast<unsigned>(result.entities.people.roster.count),
-              result.entities.accounts.registry.records.size());
+              static_cast<unsigned>(result.people.roster.roster.count),
+              result.holdings.accounts.registry.records.size());
   std::printf("Transactions: %zu  Illicit: %zu (%.4f%%)\n", totalTxns, illicit,
               ratio * 100.0);
   std::printf("Output: %s/\n", opts.outDir.string().c_str());

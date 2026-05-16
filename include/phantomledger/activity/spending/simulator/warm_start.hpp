@@ -8,7 +8,7 @@
 #include <limits>
 #include <span>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 namespace detail {
 
@@ -108,4 +108,4 @@ inline void applyWarmStartDaysSincePayday(
   }
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

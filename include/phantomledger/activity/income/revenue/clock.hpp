@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 struct BusinessDayWindow {
   int earliestHour = 9;
@@ -95,4 +95,4 @@ rolledBusinessDay(time::TimePoint monthStart, random::Rng &rng,
   return detail::rolledBusinessDay(monthStart, rng, window);
 }
 
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

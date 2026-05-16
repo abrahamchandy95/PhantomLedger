@@ -6,22 +6,22 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace PhantomLedger::recurring {
+namespace PhantomLedger::activity::recurring {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
-enum class PayCadence : std::uint8_t {
+enum class Cadence : std::uint8_t {
   weekly = 0,
   biweekly = 1,
   semimonthly = 2,
   monthly = 3,
 };
 
-inline constexpr auto kPayCadences = std::to_array<PayCadence>({
-    PayCadence::weekly,
-    PayCadence::biweekly,
-    PayCadence::semimonthly,
-    PayCadence::monthly,
+inline constexpr auto kPayCadences = std::to_array<Cadence>({
+    Cadence::weekly,
+    Cadence::biweekly,
+    Cadence::semimonthly,
+    Cadence::monthly,
 });
 
 inline constexpr std::size_t kPayCadenceCount = kPayCadences.size();
@@ -43,4 +43,4 @@ inline constexpr std::size_t kWeekendRollCount = kWeekendRolls.size();
 static_assert(enumTax::isIndexable(kPayCadences));
 static_assert(enumTax::isIndexable(kWeekendRolls));
 
-} // namespace PhantomLedger::recurring
+} // namespace PhantomLedger::activity::recurring

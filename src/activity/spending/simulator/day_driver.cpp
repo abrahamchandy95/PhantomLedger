@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 DayDriver::DayDriver(DaySource days, CommerceEvolver commerce,
                      PopulationDynamics dynamics,
@@ -162,4 +162,4 @@ std::vector<transactions::Transaction> DayDriver::drainCardCycles() {
   return cards_->takeEmitted();
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

@@ -5,7 +5,7 @@
 #include "phantomledger/activity/spending/market/commerce/view.hpp"
 #include "phantomledger/activity/spending/market/population/view.hpp"
 
-namespace PhantomLedger::spending::market {
+namespace PhantomLedger::activity::spending::market {
 
 class Market {
 public:
@@ -38,4 +38,4 @@ private:
   Cards cards_{};
 };
 
-} // namespace PhantomLedger::spending::market
+} // namespace PhantomLedger::activity::spending::market

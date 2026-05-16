@@ -20,7 +20,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class SpenderEmissionLoop {
 public:
@@ -124,4 +124,4 @@ private:
   PaymentEmitter &payments_;
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

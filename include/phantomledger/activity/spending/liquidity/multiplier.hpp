@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace PhantomLedger::spending::liquidity {
+namespace PhantomLedger::activity::spending::liquidity {
 
 struct Throttle {
   bool enabled = true;
@@ -93,4 +93,4 @@ inline constexpr double kCeiling = 1.10;
   return std::clamp(mult, throttle.absoluteFloor, kCeiling);
 }
 
-} // namespace PhantomLedger::spending::liquidity
+} // namespace PhantomLedger::activity::spending::liquidity

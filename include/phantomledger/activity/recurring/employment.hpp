@@ -20,12 +20,12 @@
 #include <string_view>
 #include <vector>
 
-namespace PhantomLedger::recurring {
+namespace PhantomLedger::activity::recurring {
 
 /// Mutable employment state for one person.
 struct Employment {
   entity::Key employerAcct;
-  PayrollProfile payroll;
+  PayrollSchedule payroll;
   time::TimePoint start;
   time::TimePoint end;
   double annualSalary = 0.0;
@@ -112,7 +112,7 @@ sampleInitialAnnualSalary(random::Rng &rng, const SalarySource &source) {
 } // namespace detail
 
 /// Sample a payroll profile for an employer account.
-[[nodiscard]] inline PayrollProfile
+[[nodiscard]] inline PayrollSchedule
 samplePayrollProfile(const PayrollRules &rules,
                      const random::RngFactory &factory,
                      const entity::Key &employerAcct) {
@@ -121,7 +121,7 @@ samplePayrollProfile(const PayrollRules &rules,
   const auto key = std::to_string(employerAcct.number);
   auto rng = factory.rng({"employer_payroll_profile", key});
 
-  const auto &weights = rules.weights;
+  const auto &weights = rules.cadences;
   const std::array<double, kPayCadenceCount> cadenceWeights = {
       weights.weekly,
       weights.biweekly,
@@ -133,8 +133,8 @@ samplePayrollProfile(const PayrollRules &rules,
   const auto cadence = kPayCadences[probability::distributions::sampleIndex(
       cdf, rng.nextDouble())];
 
-  int weekday = rules.defaultWeekday;
-  if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&
+  int weekday = rules.weekday.defaultWeekday;
+  if ((cadence == Cadence::weekly || cadence == Cadence::biweekly) &&
       rng.coin(0.25)) {
     weekday = (weekday == 4) ? 3 : 4;
   }
@@ -146,26 +146,26 @@ samplePayrollProfile(const PayrollRules &rules,
                                      }),
                                      weekday);
 
-  if (cadence == PayCadence::biweekly && rng.coin(0.5)) {
+  if (cadence == Cadence::biweekly && rng.coin(0.5)) {
     anchor = time::addDays(anchor, 7);
   }
 
-  const int lagMax = rules.postingLagDaysMax;
+  const int lagMax = rules.postingLag.maxDays;
   const int lag =
       (lagMax == 0) ? 0 : static_cast<int>(rng.uniformInt(0, lagMax + 1));
 
-  PayrollProfile profile;
+  PayrollSchedule profile;
   profile.cadence = cadence;
   profile.anchorDate = anchor;
   profile.weekday = weekday;
   profile.postingLagDays = lag;
 
-  if (cadence == PayCadence::semimonthly) {
+  if (cadence == Cadence::semimonthly) {
     profile.semimonthlyDays =
         rng.coin(0.35) ? std::array<int, 2>{1, 15} : std::array<int, 2>{15, 31};
   }
 
-  if (cadence == PayCadence::monthly) {
+  if (cadence == Cadence::monthly) {
     const std::array<int, 3> choices = {28, 30, 31};
     profile.monthlyDay = choices[rng.choiceIndex(choices.size())];
   }
@@ -345,4 +345,4 @@ paydatesForWindow(const Employment &state, time::TimePoint windowStart,
   return paydatesForProfile(state.payroll, activeStart, activeEnd);
 }
 
-} // namespace PhantomLedger::recurring
+} // namespace PhantomLedger::activity::recurring

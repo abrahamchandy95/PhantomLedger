@@ -8,9 +8,9 @@
 #include <array>
 #include <vector>
 
-namespace PhantomLedger::recurring {
+namespace PhantomLedger::activity::recurring {
 
-struct PayrollWeights {
+struct CadenceWeights {
   double weekly = 0.20;
   double biweekly = 0.55;
   double semimonthly = 0.15;
@@ -22,38 +22,50 @@ struct PayrollWeights {
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
-
     r.check([&] { v::finite("weekly", weekly); });
     r.check([&] { v::finite("biweekly", biweekly); });
     r.check([&] { v::finite("semimonthly", semimonthly); });
     r.check([&] { v::finite("monthly", monthly); });
-
     r.check([&] { v::nonNegative("weekly", weekly); });
     r.check([&] { v::nonNegative("biweekly", biweekly); });
     r.check([&] { v::nonNegative("semimonthly", semimonthly); });
     r.check([&] { v::nonNegative("monthly", monthly); });
-
     r.check([&] { v::gt("total", total(), 0.0); });
   }
 };
 
-struct PayrollRules {
-  PayrollWeights weights{};
-  int defaultWeekday = 4;
-  int postingLagDaysMax = 1;
+struct PayWeekday {
+  int defaultWeekday = 4; // Friday
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
-
-    weights.validate(r);
-
     r.check([&] { v::between("defaultWeekday", defaultWeekday, 0, 6); });
-    r.check([&] { v::nonNegative("postingLagDaysMax", postingLagDaysMax); });
   }
 };
 
-struct PayrollProfile {
-  PayCadence cadence = PayCadence::biweekly;
+struct PostingLag {
+  int maxDays = 1;
+
+  void validate(primitives::validate::Report &r) const {
+    namespace v = primitives::validate;
+    r.check([&] { v::nonNegative("maxDays", maxDays); });
+  }
+};
+
+struct PayrollRules {
+  CadenceWeights cadences{};
+  PayWeekday weekday{};
+  PostingLag postingLag{};
+
+  void validate(primitives::validate::Report &r) const {
+    cadences.validate(r);
+    weekday.validate(r);
+    postingLag.validate(r);
+  }
+};
+
+struct PayrollSchedule {
+  Cadence cadence = Cadence::biweekly;
   time::TimePoint anchorDate{};
   int weekday = 4;
 
@@ -110,7 +122,7 @@ struct PayrollProfile {
 }
 
 [[nodiscard]] inline time::TimePoint
-finalizePayDate(time::TimePoint ts, const PayrollProfile &profile) {
+finalizePayDate(time::TimePoint ts, const PayrollSchedule &profile) {
   ts = rollWeekend(ts, profile.weekendRoll);
   ts = applyPostingLag(ts, profile.postingLagDays);
   return rollWeekend(ts, profile.weekendRoll);
@@ -134,7 +146,7 @@ finalizePayDate(time::TimePoint ts, const PayrollProfile &profile) {
 }
 
 [[nodiscard]] inline std::array<int, 2>
-sortedSemimonthlyDays(const PayrollProfile &profile) {
+sortedSemimonthlyDays(const PayrollSchedule &profile) {
   auto days = profile.semimonthlyDays;
 
   if (days[0] > days[1]) {
@@ -180,7 +192,7 @@ inline void appendIfInWindow(std::vector<time::TimePoint> &out,
 
 /// Iterate all scheduled pay dates within [start, endExcl).
 [[nodiscard]] inline std::vector<time::TimePoint>
-paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
+paydatesForProfile(const PayrollSchedule &profile, time::TimePoint start,
                    time::TimePoint endExcl) {
   std::vector<time::TimePoint> out;
 
@@ -193,7 +205,7 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
   const auto startCal = time::toCalendarDate(start);
 
   switch (profile.cadence) {
-  case PayCadence::weekly: {
+  case Cadence::weekly: {
     auto current = nextWeekdayOnOrAfter(std::max(start, profile.anchorDate),
                                         profile.weekday);
 
@@ -206,7 +218,7 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
     break;
   }
 
-  case PayCadence::biweekly: {
+  case Cadence::biweekly: {
     auto current = nextWeekdayOnOrAfter(profile.anchorDate, profile.weekday);
 
     while (current < start) {
@@ -222,7 +234,7 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
     break;
   }
 
-  case PayCadence::semimonthly: {
+  case Cadence::semimonthly: {
     int year = startCal.year;
     unsigned month = startCal.month;
     const auto days = sortedSemimonthlyDays(profile);
@@ -252,7 +264,7 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
     break;
   }
 
-  case PayCadence::monthly: {
+  case Cadence::monthly: {
     int year = startCal.year;
     unsigned month = startCal.month;
 
@@ -276,15 +288,15 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
 }
 
 /// Count pay periods in a calendar year.
-[[nodiscard]] inline int payPeriodsInYear(const PayrollProfile &profile,
+[[nodiscard]] inline int payPeriodsInYear(const PayrollSchedule &profile,
                                           int year) {
   primitives::validate::require(profile);
 
-  if (profile.cadence == PayCadence::semimonthly) {
+  if (profile.cadence == Cadence::semimonthly) {
     return 24;
   }
 
-  if (profile.cadence == PayCadence::monthly) {
+  if (profile.cadence == Cadence::monthly) {
     return 12;
   }
 
@@ -304,4 +316,4 @@ paydatesForProfile(const PayrollProfile &profile, time::TimePoint start,
   return std::max(1, static_cast<int>(dates.size()));
 }
 
-} // namespace PhantomLedger::recurring
+} // namespace PhantomLedger::activity::recurring

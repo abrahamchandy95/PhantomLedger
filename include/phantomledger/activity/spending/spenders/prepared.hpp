@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-namespace PhantomLedger::spending::spenders {
+namespace PhantomLedger::activity::spending::spenders {
 
 struct PreparedSpender {
   actors::Spender spender{};
@@ -18,4 +18,4 @@ struct PreparedSpender {
   double paycheckSensitivity = 0.0;
 };
 
-} // namespace PhantomLedger::spending::spenders
+} // namespace PhantomLedger::activity::spending::spenders

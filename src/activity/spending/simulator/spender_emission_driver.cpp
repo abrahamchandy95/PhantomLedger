@@ -13,7 +13,7 @@
 #include <string_view>
 #include <utility>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 namespace {
 
 constexpr double kTxnReserveSlack = 1.05;
@@ -259,4 +259,4 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
 
 void SpenderEmissionDriver::finish(RunState &state) { mergeThreadTxns(state); }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

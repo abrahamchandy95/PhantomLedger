@@ -1,12 +1,6 @@
 #pragma once
-/*
- * Each persona archetype (freelancer, smallbiz, HNW) has a
- * RevenuePersonaProfile that controls how many counterparties,
- * payments per month, median amounts, and quiet-month behavior
- * each revenue flow exhibits.
- */
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 namespace detail {
 
@@ -28,9 +22,6 @@ namespace detail {
 
 } // namespace detail
 
-/// Profile for a counterparty-based revenue flow (clients, platforms).
-/// Controls how many counterparties to draw from the pool and how
-/// many payments each produces per month.
 struct CounterpartyRevenueProfile {
   double activeP = 0.0;
   int counterpartiesMin = 1;
@@ -92,4 +83,4 @@ struct RevenuePersonaProfile {
   }
 };
 
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

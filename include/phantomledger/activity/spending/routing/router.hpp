@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace PhantomLedger::spending::routing {
+namespace PhantomLedger::activity::spending::routing {
 
 class PaymentRouter {
 public:
@@ -39,4 +39,4 @@ private:
   const ResolvedAccounts &resolved_;
 };
 
-} // namespace PhantomLedger::spending::routing
+} // namespace PhantomLedger::activity::spending::routing

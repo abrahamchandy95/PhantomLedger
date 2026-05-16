@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace PhantomLedger::spending::routing {
+namespace PhantomLedger::activity::spending::routing {
 
 enum class Slot : std::uint8_t {
   merchant = 0,
@@ -85,4 +85,4 @@ struct PaymentRoutingRules {
 
 inline constexpr PaymentRoutingRules kDefaultPaymentRoutingRules{};
 
-} // namespace PhantomLedger::spending::routing
+} // namespace PhantomLedger::activity::spending::routing

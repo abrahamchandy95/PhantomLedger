@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::spending::market::population {
+namespace PhantomLedger::activity::spending::market::population {
 
 // Per-person payday CSR.
 class Paydays {
@@ -55,4 +55,4 @@ private:
   primitives::utils::Csr<std::uint32_t, std::uint32_t> csr_;
 };
 
-} // namespace PhantomLedger::spending::market::population
+} // namespace PhantomLedger::activity::spending::market::population

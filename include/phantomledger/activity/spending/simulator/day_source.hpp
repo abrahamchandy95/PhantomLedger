@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class DaySource {
 public:
@@ -29,4 +29,4 @@ private:
   math::seasonal::Config seasonal_;
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

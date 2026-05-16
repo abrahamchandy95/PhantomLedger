@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::market::commerce {
+namespace PhantomLedger::activity::spending::market::commerce {
 
 class SocialGraph;
 
@@ -17,4 +17,4 @@ struct Network {
   }
 };
 
-} // namespace PhantomLedger::spending::market::commerce
+} // namespace PhantomLedger::activity::spending::market::commerce

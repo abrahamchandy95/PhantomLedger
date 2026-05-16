@@ -1,9 +1,11 @@
 #pragma once
 
+#include "phantomledger/pipeline/data.hpp"
+#include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 #include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/transfers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transfers/legit/assembly.hpp"
 
@@ -27,10 +29,11 @@ public:
   [[nodiscard]] FraudEmission &fraud() noexcept;
   [[nodiscard]] const FraudEmission &fraud() const noexcept;
 
-  [[nodiscard]] ::PhantomLedger::pipeline::Transfers
-  build(::PhantomLedger::random::Rng &rng,
-        const ::PhantomLedger::pipeline::Entities &entities,
-        const ::PhantomLedger::pipeline::Infra &infra) const;
+  [[nodiscard]] pipeline::Transfers build(random::Rng &rng,
+                                          const pipeline::People &people,
+                                          const pipeline::Holdings &holdings,
+                                          const pipeline::Counterparties &cps,
+                                          const pipeline::Infra &infra) const;
 
 private:
   legit::LegitAssembly legit_{};

@@ -6,7 +6,7 @@
 #include "phantomledger/entities/synth/products/random.hpp"
 #include "phantomledger/entities/synth/products/student_loan.hpp"
 #include "phantomledger/entities/synth/products/tax.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 
 #include <cstdint>
@@ -15,15 +15,11 @@ namespace PhantomLedger::pipeline::stages::products {
 
 class ObligationSynthesis {
 public:
-  using MortgageTerms =
-      ::PhantomLedger::entities::synth::products::MortgageTerms;
-  using AutoLoanTerms =
-      ::PhantomLedger::entities::synth::products::AutoLoanTerms;
-  using StudentLoanTerms =
-      ::PhantomLedger::entities::synth::products::StudentLoanTerms;
-  using TaxTerms = ::PhantomLedger::entities::synth::products::TaxTerms;
-  using InsuranceTerms =
-      ::PhantomLedger::entities::synth::products::InsuranceTerms;
+  using MortgageTerms = entities::synth::products::MortgageTerms;
+  using AutoLoanTerms = entities::synth::products::AutoLoanTerms;
+  using StudentLoanTerms = entities::synth::products::StudentLoanTerms;
+  using TaxTerms = entities::synth::products::TaxTerms;
+  using InsuranceTerms = entities::synth::products::InsuranceTerms;
 
   ObligationSynthesis() = default;
 
@@ -49,12 +45,11 @@ public:
     return insurance_;
   }
 
-  void synthesize(::PhantomLedger::pipeline::Entities &entities,
-                  ::PhantomLedger::time::Window window) const;
+  void synthesize(const People &people, Holdings &holdings,
+                  time::Window window) const;
 
 private:
-  std::uint64_t seed_ =
-      ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
+  std::uint64_t seed_ = entities::synth::products::kDefaultProductsSeed;
 
   MortgageTerms mortgage_{};
   AutoLoanTerms autoLoan_{};

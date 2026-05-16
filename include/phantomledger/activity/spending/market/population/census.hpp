@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::market::population {
+namespace PhantomLedger::activity::spending::market::population {
 
 /// Sparse set of payday day-indices for one person within the run window.
 struct PaydaySet {
@@ -29,4 +29,4 @@ struct Census {
   std::span<const PaydaySet> paydays;
 };
 
-} // namespace PhantomLedger::spending::market::population
+} // namespace PhantomLedger::activity::spending::market::population

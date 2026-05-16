@@ -20,7 +20,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::inflows::revenue::flow {
+namespace PhantomLedger::activity::income::revenue::flow {
 
 using Key = entity::Key;
 
@@ -210,4 +210,4 @@ private:
   std::vector<transactions::Transaction> txns_;
 };
 
-} // namespace PhantomLedger::inflows::revenue::flow
+} // namespace PhantomLedger::activity::income::revenue::flow

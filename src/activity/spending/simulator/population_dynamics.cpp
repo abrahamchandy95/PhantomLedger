@@ -1,6 +1,6 @@
 #include "phantomledger/activity/spending/simulator/population_dynamics.hpp"
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 PopulationDynamics::PopulationDynamics(dynamics::population::Drivers drivers)
     : drivers_(drivers) {}
@@ -37,4 +37,4 @@ void PopulationDynamics::advance(random::Rng &rng,
                      dailyMultBuffer_);
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

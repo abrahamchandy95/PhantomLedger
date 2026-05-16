@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 namespace {
 
@@ -315,4 +315,4 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
   }
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

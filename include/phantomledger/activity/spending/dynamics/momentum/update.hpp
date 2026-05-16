@@ -5,7 +5,7 @@
 
 #include <span>
 
-namespace PhantomLedger::spending::dynamics::momentum {
+namespace PhantomLedger::activity::spending::dynamics::momentum {
 
 inline void accumulate(random::Rng &rng, const Config &cfg,
                        std::span<State> states,
@@ -16,4 +16,4 @@ inline void accumulate(random::Rng &rng, const Config &cfg,
   }
 }
 
-} // namespace PhantomLedger::spending::dynamics::momentum
+} // namespace PhantomLedger::activity::spending::dynamics::momentum

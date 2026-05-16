@@ -17,7 +17,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::dynamics::population {
+namespace PhantomLedger::activity::spending::dynamics::population {
 
 struct Drivers {
   math::momentum::Config momentum{};
@@ -76,4 +76,4 @@ private:
   std::vector<paycheck::State> paycheck_;
 };
 
-} // namespace PhantomLedger::spending::dynamics::population
+} // namespace PhantomLedger::activity::spending::dynamics::population

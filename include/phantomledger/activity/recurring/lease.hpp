@@ -15,7 +15,7 @@
 #include <string>
 #include <string_view>
 
-namespace PhantomLedger::recurring {
+namespace PhantomLedger::activity::recurring {
 
 /// Mutable lease state for one person.
 struct Lease {
@@ -207,4 +207,4 @@ inline void requireRentAmount(double amount, std::string_view field) {
   return primitives::utils::roundMoney(std::max(1.0, amount));
 }
 
-} // namespace PhantomLedger::recurring
+} // namespace PhantomLedger::activity::recurring

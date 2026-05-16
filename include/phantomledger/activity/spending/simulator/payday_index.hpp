@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class PaydayIndex {
 public:
@@ -87,4 +87,4 @@ PaydayIndex::build(const market::population::Paydays &paydays,
   return idx;
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

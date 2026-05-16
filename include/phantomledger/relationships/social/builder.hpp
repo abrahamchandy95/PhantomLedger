@@ -54,7 +54,7 @@ struct BuildInputs {
   std::uint64_t baseSeed = 0;
 };
 
-[[nodiscard]] spending::market::commerce::Contacts
+[[nodiscard]] activity::spending::market::commerce::Contacts
 build(const Social &social, const BuildInputs &inputs);
 
 } // namespace PhantomLedger::relationships::social

@@ -5,7 +5,7 @@
 #include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -13,10 +13,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <functional>
+#include <format>
+#include <ranges>
 #include <span>
 #include <stdexcept>
-#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -26,7 +26,7 @@ inline constexpr std::int64_t kFallbackEpoch = 1735689600;
 
 struct ExportOptions {
   bool showTransactions = false;
-  const ::PhantomLedger::entities::synth::pii::PoolSet *piiPools = nullptr;
+  const entities::synth::pii::PoolSet *piiPools = nullptr;
 };
 
 struct BaseSummary {
@@ -40,107 +40,86 @@ struct BaseSummary {
   std::size_t sarsFiledCount = 0;
 };
 
-[[nodiscard]] inline ::PhantomLedger::exporter::csv::Writer
-openTable(const std::filesystem::path &dir,
-          const ::PhantomLedger::exporter::schema::Table &table) {
-  ::PhantomLedger::exporter::csv::Writer w{
-      dir / std::filesystem::path(table.filename)};
+[[nodiscard]] inline csv::Writer openTable(const std::filesystem::path &dir,
+                                           const schema::Table &table) {
+  csv::Writer w{dir / std::filesystem::path(table.filename)};
   w.writeHeader(table.header);
   return w;
 }
 
-namespace detail {
-
-template <class Cmp>
-[[nodiscard]] inline ::PhantomLedger::time::TimePoint
-deriveSimBound(std::span<const ::PhantomLedger::transactions::Transaction> txns,
-               Cmp cmp) noexcept {
+[[nodiscard]] inline time::TimePoint
+deriveSimStart(std::span<const transactions::Transaction> txns) noexcept {
   if (txns.empty()) {
-    return ::PhantomLedger::time::fromEpochSeconds(kFallbackEpoch);
+    return time::fromEpochSeconds(kFallbackEpoch);
   }
-  std::int64_t best = txns.front().timestamp;
-  for (const auto &tx : txns) {
-    if (cmp(tx.timestamp, best)) {
-      best = tx.timestamp;
-    }
+  const auto min_tx =
+      std::ranges::min(txns, {}, &transactions::Transaction::timestamp);
+  return time::fromEpochSeconds(min_tx.timestamp);
+}
+
+[[nodiscard]] inline time::TimePoint
+deriveSimEnd(std::span<const transactions::Transaction> txns) noexcept {
+  if (txns.empty()) {
+    return time::fromEpochSeconds(kFallbackEpoch);
   }
-  return ::PhantomLedger::time::fromEpochSeconds(best);
+  const auto max_tx =
+      std::ranges::max(txns, {}, &transactions::Transaction::timestamp);
+  return time::fromEpochSeconds(max_tx.timestamp);
 }
 
-} // namespace detail
-
-[[nodiscard]] inline ::PhantomLedger::time::TimePoint deriveSimStart(
-    std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
-  return detail::deriveSimBound(txns, std::less<std::int64_t>{});
-}
-
-[[nodiscard]] inline ::PhantomLedger::time::TimePoint deriveSimEnd(
-    std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
-  return detail::deriveSimBound(txns, std::greater<std::int64_t>{});
-}
-
-[[nodiscard]] inline const ::PhantomLedger::entities::synth::pii::PoolSet &
+[[nodiscard]] inline const entities::synth::pii::PoolSet &
 requirePools(const ExportOptions &opts, std::string_view exporterName) {
   if (opts.piiPools == nullptr) {
-    std::string msg;
-    msg.reserve(64 + exporterName.size());
-    msg.append("exporter::")
-        .append(exporterName)
-        .append("::exportAll: Options::piiPools is null. ")
-        .append("Set it to the PoolSet built by app::setup::buildPoolSet.");
-    throw std::invalid_argument(msg);
+    throw std::invalid_argument(
+        std::format("exporter::{}::exportAll: Options::piiPools is null. "
+                    "Set it to the PoolSet built by app::setup::buildPoolSet.",
+                    exporterName));
   }
   return *opts.piiPools;
 }
 
-[[nodiscard]] inline std::size_t countInternalAccounts(
-    const ::PhantomLedger::entity::account::Registry &registry) noexcept {
-  std::size_t count = 0;
-  for (const auto &rec : registry.records) {
-    if ((rec.flags & ::PhantomLedger::entity::account::bit(
-                         ::PhantomLedger::entity::account::Flag::external)) ==
-        0) {
-      ++count;
-    }
-  }
-  return count;
+[[nodiscard]] inline std::size_t
+countInternalAccounts(const entity::account::Registry &registry) noexcept {
+  auto isInternal = [](const auto &rec) {
+    return (rec.flags &
+            entity::account::bit(entity::account::Flag::external)) == 0;
+  };
+  return static_cast<std::size_t>(
+      std::ranges::count_if(registry.records, isInternal));
 }
 
 [[nodiscard]] inline std::size_t
-countSoloFraud(const ::PhantomLedger::entity::person::Roster &roster) noexcept {
-  std::size_t count = 0;
-  for (::PhantomLedger::entity::PersonId p = 1; p <= roster.count; ++p) {
-    if (roster.has(p, ::PhantomLedger::entity::person::Flag::soloFraud)) {
-      ++count;
-    }
-  }
-  return count;
+countSoloFraud(const entity::person::Roster &roster) noexcept {
+  auto isSoloFraud = [&](entity::PersonId p) {
+    return roster.has(p, entity::person::Flag::soloFraud);
+  };
+  return static_cast<std::size_t>(std::ranges::count_if(
+      std::views::iota(1u, roster.count + 1u), isSoloFraud));
 }
 
-[[nodiscard]] inline std::size_t countIllicitTxns(
-    std::span<const ::PhantomLedger::transactions::Transaction> txns) noexcept {
-  return static_cast<std::size_t>(std::count_if(
-      txns.begin(), txns.end(),
-      [](const ::PhantomLedger::transactions::Transaction &tx) noexcept {
-        return tx.fraud.flag != 0;
-      }));
+[[nodiscard]] inline std::size_t
+countIllicitTxns(std::span<const transactions::Transaction> txns) noexcept {
+  return static_cast<std::size_t>(std::ranges::count_if(
+      txns, [](const auto &tx) { return tx.fraud.flag != 0; }));
 }
 
 template <class SummaryLike>
-inline void
-fillBaseCounts(SummaryLike &out,
-               const ::PhantomLedger::pipeline::Entities &entities,
-               std::span<const ::PhantomLedger::transactions::Transaction> txns,
-               std::size_t counterpartyCount, std::size_t sarsCount) noexcept {
+inline void fillBaseCounts(SummaryLike &out, const pipeline::People &peopleData,
+                           const pipeline::Holdings &holdingsData,
+                           std::span<const transactions::Transaction> txns,
+                           std::size_t counterpartyCount,
+                           std::size_t sarsCount) noexcept {
   static_assert(std::is_base_of_v<BaseSummary, SummaryLike>,
                 "fillBaseCounts: SummaryLike must inherit from BaseSummary");
-  out.customerCount = entities.people.roster.count;
-  out.internalAccountCount = countInternalAccounts(entities.accounts.registry);
+
+  out.customerCount = peopleData.roster.roster.count;
+  out.internalAccountCount =
+      countInternalAccounts(holdingsData.accounts.registry);
   out.counterpartyCount = counterpartyCount;
   out.totalTxnCount = txns.size();
   out.illicitTxnCount = countIllicitTxns(txns);
-  out.fraudRingCount = entities.people.topology.rings.size();
-  out.soloFraudCount = countSoloFraud(entities.people.roster);
+  out.fraudRingCount = peopleData.roster.topology.rings.size();
+  out.soloFraudCount = countSoloFraud(peopleData.roster.roster);
   out.sarsFiledCount = sarsCount;
 }
 

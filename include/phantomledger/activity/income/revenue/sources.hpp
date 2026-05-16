@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 struct Book {
   Timeframe timeframe;
@@ -235,4 +235,4 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
 }
 
 } // namespace source
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

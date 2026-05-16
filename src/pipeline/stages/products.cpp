@@ -39,9 +39,11 @@ ObligationSynthesis::insurance(InsuranceTerms value) noexcept {
 }
 
 void ObligationSynthesis::synthesize(
-    ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::pipeline::People &people,
+    ::PhantomLedger::pipeline::Holdings &holdings,
     ::PhantomLedger::time::Window window) const {
-  const auto &assignment = entities.personas.assignment;
+
+  const auto &assignment = people.personas.assignment;
   const auto population = static_cast<::PhantomLedger::entity::PersonId>(
       assignment.byPerson.size());
 
@@ -50,8 +52,8 @@ void ObligationSynthesis::synthesize(
     auto local = productSynth::personRng(seed_, person);
     const auto persona = assignment.byPerson[person - 1];
 
-    auto &loans = entities.portfolios.loans();
-    auto &obligations = entities.portfolios.obligations();
+    auto &loans = holdings.portfolios.loans();
+    auto &obligations = holdings.portfolios.obligations();
 
     productSynth::MortgageEmitter mortgageEmitter{local, window, mortgage_};
     productSynth::AutoLoanEmitter autoLoanEmitter{local, window, autoLoan_};
@@ -59,7 +61,7 @@ void ObligationSynthesis::synthesize(
                                                         studentLoan_};
     productSynth::TaxEmitter taxEmitter{local, obligations, window, tax_};
     productSynth::InsuranceEmitter insuranceEmitter{
-        local, entities.portfolios.insurance(), insurance_};
+        local, holdings.portfolios.insurance(), insurance_};
 
     const bool hasMortgage =
         mortgageEmitter.emit(person, persona, loans, obligations);
@@ -79,7 +81,7 @@ void ObligationSynthesis::synthesize(
         });
   }
 
-  entities.portfolios.obligations().sort();
+  holdings.portfolios.obligations().sort();
 }
 
 } // namespace PhantomLedger::pipeline::stages::products

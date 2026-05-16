@@ -5,7 +5,7 @@
 #include <thread>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 struct PartitionRange {
   std::size_t begin = 0;
@@ -49,4 +49,4 @@ inline void runParallel(std::uint32_t threadCount, Body &&body) {
   }
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

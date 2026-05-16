@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class CommerceEvolver {
 public:
@@ -20,4 +20,4 @@ private:
   math::evolution::Config config_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

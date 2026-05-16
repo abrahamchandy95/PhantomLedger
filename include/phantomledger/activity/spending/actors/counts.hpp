@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 struct RatePieces {
   double baseRate = 0.0;
@@ -45,4 +45,4 @@ struct RatePieces {
   return count;
 }
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

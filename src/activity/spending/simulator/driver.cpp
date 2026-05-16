@@ -12,7 +12,7 @@
 #include <cstdio>
 #include <utility>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 namespace {
 
 namespace diag = ::PhantomLedger::diagnostics;
@@ -143,4 +143,4 @@ std::vector<transactions::Transaction> Simulator::run() {
   return txns;
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

@@ -45,32 +45,44 @@ void configureTransferStage(SimulationPipeline::TransferStage &stage,
   stage.fraud().behavior(&fraud::kDefaultBehavior);
 }
 
-// Entity construction
-
-[[nodiscard]] Entities
-buildEntities(random::Rng &rng, time::Window window,
-              const SimulationPipeline::EntitySynthesis &cfg,
-              std::uint64_t seed) {
+/// Entity construction now writes into the three SRP-split sub-domains of
+/// `SimulationResult` directly. We pass `result` by reference rather than
+/// returning a god-struct: the caller already owns the destination, and
+/// it keeps the param list short. The sub-domains are still independent
+/// types — there is no monolithic Entities here.
+void buildEntities(SimulationResult &result, random::Rng &rng,
+                   time::Window window,
+                   const SimulationPipeline::EntitySynthesis &cfg,
+                   std::uint64_t seed) {
   const auto identity = entityStage::defaultStart(cfg.identity, window.start);
 
-  Entities out;
-  out.people = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
-  out.accounts = entityStage::buildAccounts(rng, out.people, cfg.population,
-                                            cfg.accountsSizing);
-  out.personas = entityStage::buildPersonas(rng, out.people, cfg.personaMix);
-  out.pii = entityStage::buildPii(rng, out.personas, identity);
-  out.merchants =
+  auto &people = result.people;
+  auto &holdings = result.holdings;
+  auto &cps = result.counterparties;
+
+  people.roster = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
+  holdings.accounts = entityStage::buildAccounts(
+      rng, people.roster, cfg.population, cfg.accountsSizing);
+  people.personas =
+      entityStage::buildPersonas(rng, people.roster, cfg.personaMix);
+  people.pii = entityStage::buildPii(rng, people.personas, identity);
+
+  cps.merchants =
       entityStage::buildMerchants(rng, cfg.population, cfg.merchants);
-  out.landlords =
+  cps.landlords =
       entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
-  out.creditCards =
-      entityStage::issueCreditCards(out.personas, out.people, seed, cfg.cards);
-  out.counterparties = entityStage::buildCounterparties(
+  cps.counterparties = entityStage::buildCounterparties(
       rng, cfg.population, cfg.counterpartyTargets);
 
-  entityStage::finalizeAccountRegistry(out);
-  entityStage::synthesizeBusinessOwners(out, rng, cfg.businessOwners);
-  return out;
+  holdings.creditCards = entityStage::issueCreditCards(
+      people.personas, people.roster, seed, cfg.cards);
+
+  // finalizeAccountRegistry / synthesizeBusinessOwners take only the
+  // narrow sub-domains they actually use (holdings mutated, people+cps
+  // read).
+  entityStage::finalizeAccountRegistry(holdings, cps, people);
+  entityStage::synthesizeBusinessOwners(holdings, people, rng,
+                                        cfg.businessOwners);
 }
 
 } // namespace
@@ -112,13 +124,25 @@ SimulationPipeline::transferStage() const noexcept {
 SimulationResult SimulationPipeline::run() const {
   SimulationResult out;
 
-  out.entities = buildEntities(*rng_, window_, entities_, seed_);
-  products_.synthesize(out.entities, window_);
-  out.infra = infra_.build(*rng_, out.entities, window_);
+  // 1. Entity layer — populates out.people / out.holdings / out.counterparties.
+  buildEntities(out, *rng_, window_, entities_, seed_);
 
+  // 2. Product synthesis — adds loans/obligations/insurance into
+  //    out.holdings.portfolios, driven by personas in out.people.
+  products_.synthesize(out.people, out.holdings, window_);
+
+  // 3. Infrastructure — needs People (rings/devices/ips) + Holdings
+  //    (account-to-owner map for the router).
+  out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
+
+  // 4. Transfer stage — genuinely cross-domain. Takes the three SRP
+  //    sub-domains as separate `const T&` parameters; this is the
+  //    integration point of the entity layer, so 5 total params (rng +
+  //    3 sub-domains + infra) is appropriate.
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
-  out.transfers = stage.build(*rng_, out.entities, out.infra);
+  out.transfers = stage.build(*rng_, out.people, out.holdings,
+                              out.counterparties, out.infra);
 
   return out;
 }

@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows {
+namespace PhantomLedger::activity::income {
 
 namespace rent {
 
@@ -201,7 +201,7 @@ struct PayerState {
 generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
                  const transactions::Factory &txf,
                  const std::function<double()> &rentModel) {
-  namespace recur = ::PhantomLedger::recurring;
+  namespace recur = ::PhantomLedger::activity::recurring;
 
   if (rentRoll.counterparties.landlords.empty()) {
     return {};
@@ -303,4 +303,4 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
   return txns;
 }
 
-} // namespace PhantomLedger::inflows
+} // namespace PhantomLedger::activity::income

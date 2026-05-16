@@ -39,12 +39,22 @@ namespace synth = ::PhantomLedger::synth;
 namespace taxonomies = ::PhantomLedger::taxonomies;
 namespace time_ns = ::PhantomLedger::time;
 namespace txns = ::PhantomLedger::transactions;
-;
 
 using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
 
-auto allPersonIds(const pipeline::Entities &entities) {
-  return std::views::iota(1u, entities.people.roster.count + 1);
+// `People::roster` is the synth::people::Pack; its inner `.roster` is the
+// entity::person::Roster (which holds `count`).
+[[nodiscard]] auto allPersonIds(const pipe::People &people) {
+  return std::views::iota(1u, people.roster.roster.count + 1);
+}
+
+// Inlined replacement for exporter::common::estimateIdentityRowCount,
+// which is a template still keyed off the old monolithic Entities shape.
+[[nodiscard]] std::size_t
+estimateRowCapacity(const pipe::People &people,
+                    const SharedContext &ctx) noexcept {
+  return static_cast<std::size_t>(people.roster.roster.count) +
+         ctx.counterpartyIds.size() + 21U;
 }
 
 [[nodiscard]] BranchCode branchCodeFor(const entity::Key &id) noexcept {
@@ -68,7 +78,7 @@ resolvedPersona(const SharedContext &ctx, entity::PersonId p) noexcept {
 poolsFor(const SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built with "
-         "buildSharedContext(entities, txns, pools)?");
+         "buildSharedContext(people, holdings, cps, txns, pools)?");
   return *ctx.pools;
 }
 
@@ -79,11 +89,16 @@ usPoolFor(const SharedContext &ctx) noexcept {
 
 } // namespace
 
+// ──────────────────────────────────────────────────────────────────────
 // SharedContext build
+// ──────────────────────────────────────────────────────────────────────
+
 SharedContext buildSharedContext(
-    const pipe::Entities &entities,
+    const pipe::People &people, const pipe::Holdings &holdings,
+    const pipe::Counterparties &cps,
     std::span<const txns::Transaction> finalTxns,
     const ::PhantomLedger::entities::synth::pii::PoolSet &pools) {
+  (void)cps;
   SharedContext ctx;
   ctx.pools = &pools;
 
@@ -93,13 +108,13 @@ SharedContext buildSharedContext(
   };
 
   for (const auto &rec :
-       entities.accounts.registry.records | std::views::filter(is_external)) {
+       holdings.accounts.registry.records | std::views::filter(is_external)) {
     ctx.counterpartyIds.emplace(exporter::common::renderKey(rec.id));
   }
 
   ctx.bankIds = allBankIds(ctx.counterpartyIds);
 
-  ctx.personaByPerson = entities.personas.assignment.byPerson;
+  ctx.personaByPerson = people.personas.assignment.byPerson;
 
   ctx.lastTransactionByAccount.reserve(finalTxns.size() / 2);
   const auto bump = [&](const entity::Key &account, std::int64_t ts) {
@@ -116,7 +131,10 @@ SharedContext buildSharedContext(
   return ctx;
 }
 
+// ──────────────────────────────────────────────────────────────────────
 // Customer rows
+// ──────────────────────────────────────────────────────────────────────
+
 namespace {
 
 inline void writeCustomerIdCells(exporter::csv::Writer &w,
@@ -146,10 +164,14 @@ inline void writeRiskAndOriginCells(exporter::csv::Writer &w,
 
 } // namespace
 
-void writeCustomerRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
+                       const pipe::Holdings &holdings,
+                       const pipe::Counterparties &cps,
                        const SharedContext &ctx, time_ns::TimePoint simStart) {
-  const auto &peopleRoster = entities.people.roster;
-  for (entity::PersonId p : allPersonIds(entities)) {
+  (void)holdings;
+  (void)cps;
+  const auto &peopleRoster = people.roster.roster;
+  for (entity::PersonId p : allPersonIds(people)) {
     const auto persona = resolvedPersona(ctx, p);
     const bool isFraud = peopleRoster.has(p, entity::person::Flag::fraud);
     const bool isMule = peopleRoster.has(p, entity::person::Flag::mule);
@@ -158,7 +180,7 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::Entities &entities,
     const auto customerKey =
         entity::makeKey(entity::Role::customer, entity::Bank::internal, p);
 
-    const auto originCountry = locale::code(entities.pii.at(p).country);
+    const auto originCountry = locale::code(people.pii.at(p).country);
 
     writeCustomerIdCells(w, customerKey, persona);
     writeDemographicCells(w, p, persona);
@@ -169,7 +191,10 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::Entities &entities,
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
 // Account rows
+// ──────────────────────────────────────────────────────────────────────
+
 namespace {
 
 [[nodiscard]] std::string lastTxnString(const entity::Key &acct,
@@ -183,11 +208,14 @@ namespace {
 
 } // namespace
 
-void writeAccountRows(exporter::csv::Writer &w,
-                      const pipeline::Entities &entities,
-                      const clearing::Ledger *finalBook,
+void writeAccountRows(exporter::csv::Writer &w, const pipe::People &people,
+                      const pipe::Holdings &holdings,
+                      const pipe::Counterparties &cps,
+                      const ::PhantomLedger::clearing::Ledger *finalBook,
                       const SharedContext &ctx, time_ns::TimePoint simStart) {
-  const auto cardIds = exporter::common::collectCardIds(entities.creditCards);
+  (void)people;
+  (void)cps;
+  const auto cardIds = exporter::common::collectCardIds(holdings.creditCards);
 
   auto is_internal = [](const auto &rec) {
     return (rec.flags &
@@ -195,7 +223,7 @@ void writeAccountRows(exporter::csv::Writer &w,
   };
 
   for (const auto &rec :
-       entities.accounts.registry.records | std::views::filter(is_internal)) {
+       holdings.accounts.registry.records | std::views::filter(is_internal)) {
     const auto idStr = exporter::common::renderKey(rec.id);
     const auto openDate = (rec.owner == entity::invalidPerson)
                               ? simStart - time_ns::Days{365}
@@ -216,7 +244,10 @@ void writeAccountRows(exporter::csv::Writer &w,
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
 // Counterparty rows
+// ──────────────────────────────────────────────────────────────────────
+
 void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
   for (const auto &cpId : ctx.counterpartyIds) {
@@ -228,7 +259,10 @@ void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx) {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────
 // Name / Address rows
+// ──────────────────────────────────────────────────────────────────────
+
 namespace {
 
 void writeAddressRow(exporter::csv::Writer &w,
@@ -240,13 +274,16 @@ void writeAddressRow(exporter::csv::Writer &w,
 
 } // namespace
 
-void writeNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
-                   const SharedContext &ctx) {
+void writeNameRows(exporter::csv::Writer &w, const pipe::People &people,
+                   const pipe::Holdings &holdings,
+                   const pipe::Counterparties &cps, const SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(locale::Country::us);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(exporter::common::estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(estimateRowCapacity(people, ctx));
 
   const auto emitName = [&](const identity::NameRecord &n) {
     if (emitted.emplace(n.id.view()).second) {
@@ -254,8 +291,8 @@ void writeNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
     }
   };
 
-  for (entity::PersonId p : allPersonIds(entities)) {
-    emitName(identity::nameForPerson(p, entities.pii, pools));
+  for (entity::PersonId p : allPersonIds(people)) {
+    emitName(identity::nameForPerson(p, people.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
     emitName(identity::nameForCounterparty(cpId, usPool));
@@ -265,14 +302,17 @@ void writeNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
   }
 }
 
-void writeAddressRows(exporter::csv::Writer &w,
-                      const ::PhantomLedger::pipeline::Entities &entities,
+void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
+                      const pipe::Holdings &holdings,
+                      const pipe::Counterparties &cps,
                       const SharedContext &ctx) {
+  (void)holdings;
+  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(locale::Country::us);
 
   std::unordered_set<std::string> emitted;
-  emitted.reserve(exporter::common::estimateIdentityRowCount(entities, ctx));
+  emitted.reserve(estimateRowCapacity(people, ctx));
 
   const auto emitAddr = [&](const identity::AddressRecord &a) {
     if (emitted.emplace(a.id.view()).second) {
@@ -280,8 +320,8 @@ void writeAddressRows(exporter::csv::Writer &w,
     }
   };
 
-  for (entity::PersonId p : allPersonIds(entities)) {
-    emitAddr(identity::addressForPerson(p, entities.pii, pools));
+  for (entity::PersonId p : allPersonIds(people)) {
+    emitAddr(identity::addressForPerson(p, people.pii, pools));
   }
   for (const auto &cpId : ctx.counterpartyIds) {
     emitAddr(identity::addressForCounterparty(cpId, usPool));
@@ -290,6 +330,10 @@ void writeAddressRows(exporter::csv::Writer &w,
     emitAddr(identity::addressForBank(bankId, usPool));
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Country rows
+// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -322,13 +366,16 @@ static_assert(kCountryRows.size() == locale::kCountryCount,
 
 } // namespace
 
-void writeCountryRows(exporter::csv::Writer &w,
-                      const pipe::Entities &entities) {
+void writeCountryRows(exporter::csv::Writer &w, const pipe::People &people,
+                      const pipe::Holdings &holdings,
+                      const pipe::Counterparties &cps) {
+  (void)holdings;
+  (void)cps;
   namespace enumTax = taxonomies::enums;
 
   std::array<bool, locale::kCountryCount> seen{};
   seen[enumTax::toIndex(locale::Country::us)] = true;
-  for (const auto &rec : entities.pii.records) {
+  for (const auto &rec : people.pii.records) {
     seen[enumTax::toIndex(rec.country)] = true;
   }
 
@@ -348,11 +395,14 @@ void writeBankRows(exporter::csv::Writer &w, const SharedContext &ctx) {
   }
 }
 
-void writeWatchlistRows(exporter::csv::Writer &w,
-                        const pipe::Entities &entities,
+void writeWatchlistRows(exporter::csv::Writer &w, const pipe::People &people,
+                        const pipe::Holdings &holdings,
+                        const pipe::Counterparties &cps,
                         time_ns::TimePoint simStart) {
+  (void)holdings;
+  (void)cps;
   const auto entryDate = time_ns::formatTimestamp(simStart);
-  const auto &roster = entities.people.roster;
+  const auto &roster = people.roster.roster;
   std::string watchlistId;
   auto is_on_watchlist = [&](entity::PersonId p) {
     return roster.has(p, entity::person::Flag::fraud) ||
@@ -360,7 +410,7 @@ void writeWatchlistRows(exporter::csv::Writer &w,
   };
 
   for (entity::PersonId p :
-       allPersonIds(entities) | std::views::filter(is_on_watchlist)) {
+       allPersonIds(people) | std::views::filter(is_on_watchlist)) {
     const auto customerKey =
         entity::makeKey(entity::Role::customer, entity::Bank::internal, p);
     const auto cidBuf = encoding::format(customerKey);
@@ -371,6 +421,10 @@ void writeWatchlistRows(exporter::csv::Writer &w,
                std::string_view{"fraud_suspect"}, entryDate);
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// Device rows
+// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 

@@ -2,7 +2,7 @@
 
 #include "phantomledger/math/counts.hpp"
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 DaySource::DaySource()
     : DaySource(Variation{}, math::seasonal::kDefaultConfig) {}
@@ -26,4 +26,4 @@ actors::DayFrame DaySource::build(const market::Bounds &bounds,
   };
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

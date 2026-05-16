@@ -14,23 +14,23 @@
 namespace PhantomLedger::transfers::legit::routines::spending {
 
 struct SpendingHabits {
-  ::PhantomLedger::spending::market::MerchantPickBudget picking{};
-  ::PhantomLedger::spending::market::ExplorationDistribution exploration{};
-  ::PhantomLedger::spending::market::BurstSchedule burst{};
+  ::PhantomLedger::activity::spending::market::MerchantPickBudget picking{};
+  ::PhantomLedger::activity::spending::market::ExplorationDistribution exploration{};
+  ::PhantomLedger::activity::spending::market::BurstSchedule burst{};
 };
 
 inline constexpr SpendingHabits kDefaultSpendingHabits{};
 
 struct RunPlanning {
-  ::PhantomLedger::spending::simulator::RunPlanner::TransactionLoad load{};
-  ::PhantomLedger::spending::routing::ChannelWeights channels{};
-  ::PhantomLedger::spending::routing::PaymentRoutingRules paymentRules{};
+  ::PhantomLedger::activity::spending::simulator::RunPlanner::TransactionLoad load{};
+  ::PhantomLedger::activity::spending::routing::ChannelWeights channels{};
+  ::PhantomLedger::activity::spending::routing::PaymentRoutingRules paymentRules{};
 };
 
 inline constexpr RunPlanning kDefaultRunPlanning{};
 
 struct DayPattern {
-  ::PhantomLedger::spending::simulator::DaySource::Variation variation{};
+  ::PhantomLedger::activity::spending::simulator::DaySource::Variation variation{};
 
   ::PhantomLedger::math::seasonal::Config seasonal =
       ::PhantomLedger::math::seasonal::kDefaultConfig;
@@ -41,15 +41,15 @@ inline constexpr DayPattern kDefaultDayPattern{};
 struct EmissionProfile {
   double baseExploreP = 0.02;
 
-  ::PhantomLedger::spending::actors::ExploreModifiers exploration{};
-  ::PhantomLedger::spending::liquidity::Throttle liquidity{};
+  ::PhantomLedger::activity::spending::actors::ExploreModifiers exploration{};
+  ::PhantomLedger::activity::spending::liquidity::Throttle liquidity{};
   ::PhantomLedger::math::counts::Rates rates{};
 };
 
 inline constexpr EmissionProfile kDefaultEmissionProfile{};
 
 struct DynamicsProfile {
-  ::PhantomLedger::spending::dynamics::population::Drivers population{};
+  ::PhantomLedger::activity::spending::dynamics::population::Drivers population{};
   ::PhantomLedger::math::evolution::Config commerce{};
 };
 
