@@ -88,7 +88,6 @@ hashedId(std::string_view prefix,
   return renderHashedId<N>(prefix, common::stableU64(hashInputs));
 }
 
-// Explicit instantiation for the only width we ship.
 template InlineId<24>
     hashedId<24>(std::string_view,
                  std::initializer_list<std::string_view>) noexcept;
@@ -141,10 +140,6 @@ BusinessId makeBusinessId(std::string_view accountKey,
   return hashedId<24>("BUS_", {"BUS", accountKey, pidBytes.view()});
 }
 
-// ============================================================================
-// CpId / PrefixedCustomerId — previously duplicated in vertices.cpp/edges.cpp.
-// ============================================================================
-
 CpId makeCpId(std::string_view rawKey) noexcept {
   CpId out;
   out.bytes[0] = 'C';
@@ -173,19 +168,11 @@ PrefixedCustomerId prefixedCustomerId(
   return out;
 }
 
-// ============================================================================
-// Channel classification.
-// ============================================================================
-
 bool isCreditChannel(ch::Tag tag) noexcept {
   return ch::isPaydayInbound(tag) || ch::is(tag, ch::Insurance::claim) ||
          ch::is(tag, ch::Product::taxRefund) ||
          ch::is(tag, ch::Credit::refund) || ch::is(tag, ch::Credit::chargeback);
 }
-
-// ============================================================================
-// Rule / disposition taxonomy.
-// ============================================================================
 
 std::string_view ruleName(Rule r) noexcept {
   switch (r) {
@@ -240,10 +227,6 @@ std::string_view dispositionCloseCode(DispositionOutcome o) noexcept {
 std::string_view alertStatusAfter(DispositionOutcome o) noexcept {
   return (o == DispositionOutcome::escalated) ? "escalated" : "closed";
 }
-
-// ============================================================================
-// Fixed-shape display strings.
-// ============================================================================
 
 PhoneText phoneFor(ent::PersonId p) noexcept {
   const auto idBytes = u64Decimal(static_cast<std::uint64_t>(p));
@@ -361,13 +344,6 @@ EinText einFor(std::string_view businessId) noexcept {
   return out;
 }
 
-// ============================================================================
-// Aggregate accumulator — shared between FLOW_AGG (directed) and LINK_COMM
-// (undirected). The buildBundle sweep calls this once per txn per key shape;
-// each row update was previously a 14-line block written twice with identical
-// logic, now collapsed.
-// ============================================================================
-
 void accumulate(AggregateRow &row, double amount, std::int64_t ts,
                 std::int64_t cut30Epoch, std::int64_t cut90Epoch) noexcept {
   row.totalAmount += amount;
@@ -418,7 +394,6 @@ struct OwnerIndex {
   }
 };
 
-// Reads only the account registry, which lives in Holdings post-split.
 [[nodiscard]] OwnerIndex buildOwnerIndex(const pipe::Holdings &holdings) {
   OwnerIndex out;
   out.ownerOf.reserve(holdings.accounts.registry.records.size());
@@ -443,21 +418,16 @@ void emitAlert(Bundle &b, const ent::Key &onAcct, Rule rule,
 
 } // namespace
 
-// `cps` is currently unused inside buildBundle (cases/CTRs/aggregates only
-// touch People + Holdings + the txn stream). Kept in the signature for
-// header-level consistency with the SRP split; marked unused below.
 Bundle buildBundle(
     const pipe::People &people, const pipe::Holdings &holdings,
-    const pipe::Counterparties &cps,
     std::span<const tx_ns::Transaction> postedTxns,
     const ::PhantomLedger::exporter::aml::vertices::SharedContext &ctx,
     std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
   (void)ctx;
-  (void)cps;
   Bundle b;
 
   // ── 1. simStart / simEnd ──
-  constexpr std::int64_t kFallbackEpoch = 1735689600; // 2025-01-01 UTC
+  constexpr std::int64_t kFallbackEpoch = 1735689600;
   std::int64_t minTs = kFallbackEpoch;
   std::int64_t maxTs = kFallbackEpoch;
   if (!postedTxns.empty()) {
@@ -510,7 +480,6 @@ Bundle buildBundle(
     const bool onValid = (onAcct.number != 0);
     const auto createdDate = t_ns::fromEpochSeconds(tx.timestamp);
 
-    // ── Alert rules ──
     if (onValid && tx.fraud.flag != 0) {
       emitAlert(b, onAcct, Rule::fraudMlFlag, createdDate, idx);
     }
@@ -537,7 +506,6 @@ Bundle buildBundle(
       b.ctrs.push_back(std::move(c));
     }
 
-    // ── Velocity-burst accumulator (resolved after the loop) ──
     if (onValid) {
       const std::int64_t day = tx.timestamp / t_ns::kSecondsPerDay;
       const auto packed =
@@ -550,7 +518,6 @@ Bundle buildBundle(
       burstInfo[packed] = BurstKeyInfo{onAcct, day};
     }
 
-    // ── FLOW_AGG (directed) and LINK_COMM (undirected) ──
     accumulate(flowAccum[AcctPair{tx.source, tx.target}], amount, tx.timestamp,
                cut30, cut90);
     const AcctPair linkKey = (tx.source < tx.target)
@@ -561,19 +528,16 @@ Bundle buildBundle(
     ++idx;
   }
 
-  // ── 3. VELOCITY_BURST resolution ──
   for (const auto &[key, count] : burstCounts) {
     if (count < 5) {
       continue;
     }
     const auto &info = burstInfo[key];
-    // Day-as-idx so distinct days for the same account get distinct ids.
     emitAlert(b, info.account, Rule::velocityBurst,
               t_ns::fromEpochSeconds(info.day * t_ns::kSecondsPerDay),
               static_cast<std::size_t>(info.day));
   }
 
-  // ── 4. Dispositions (one per alert) ──
   b.dispositions.reserve(b.alerts.size());
   for (std::size_t i = 0; i < b.alerts.size(); ++i) {
     auto &alert = b.alerts[i];
@@ -613,9 +577,6 @@ Bundle buildBundle(
     b.dispositions.push_back(std::move(d));
   }
 
-  // ── 5. Cases (one per ring + one per solo fraudster) ──
-  // People::roster is the synth::people::Pack; .topology lives directly on
-  // the Pack, and the inner entity::person::Roster is People::roster.roster.
   const auto &topology = people.roster.topology;
   const auto &memberStore = topology.memberStore;
   b.cases.reserve(topology.rings.size() + 64);
@@ -652,7 +613,6 @@ Bundle buildBundle(
     b.cases.push_back(std::move(c));
   }
 
-  // ── 6. Case → alertIndices via subject-person→case reverse index ──
   std::unordered_map<ent::PersonId, std::vector<std::size_t>> caseByPerson;
   caseByPerson.reserve(b.cases.size() * 4);
   for (std::size_t ci = 0; ci < b.cases.size(); ++ci) {
@@ -681,7 +641,6 @@ Bundle buildBundle(
         c.alertIndices.end());
   }
 
-  // ── 7. Case → sarIndices via subject-person overlap ──
   for (std::size_t si = 0; si < sars.size(); ++si) {
     std::unordered_set<ent::PersonId> sarSubjects(
         sars[si].subjectPersonIds.begin(), sars[si].subjectPersonIds.end());
@@ -695,7 +654,6 @@ Bundle buildBundle(
     }
   }
 
-  // ── 8. EvidenceArtifacts (3 per case) ──
   b.evidence.reserve(b.cases.size() * 3);
   for (std::size_t ci = 0; ci < b.cases.size(); ++ci) {
     auto &c = b.cases[ci];
@@ -713,7 +671,6 @@ Bundle buildBundle(
     }
   }
 
-  // ── 9. Promoted txns ──
   std::vector<std::size_t> fraudTxnIdx;
   fraudTxnIdx.reserve(postedTxns.size() / 200);
   for (std::size_t i = 0; i < postedTxns.size(); ++i) {
@@ -755,7 +712,6 @@ Bundle buildBundle(
     }
   }
 
-  // ── 10. Businesses (one per internal business account with owner) ──
   for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
@@ -784,7 +740,6 @@ Bundle buildBundle(
     b.businesses.push_back(std::move(biz));
   }
 
-  // ── 11. Flatten aggregate maps into sorted vectors ──
   b.flowAgg.reserve(flowAccum.size());
   for (auto &kv : flowAccum) {
     b.flowAgg.push_back({kv.first, kv.second});

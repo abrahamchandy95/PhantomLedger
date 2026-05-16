@@ -14,9 +14,7 @@
 
 namespace PhantomLedger::exporter::aml_txn_edges::edges {
 
-void writeOwnsRows(csv::Writer &w, const pipeline::People &people,
-                   const pipeline::Holdings &holdings,
-                   const pipeline::Counterparties &cps,
+void writeOwnsRows(csv::Writer &w, const pipeline::Holdings &holdings,
                    time::TimePoint simStart);
 
 void writeTransactedRows(csv::Writer &w,
@@ -30,8 +28,6 @@ void writeBanksAtRows(csv::Writer &w, const aml::vertices::SharedContext &ctx,
                       time::TimePoint simStart);
 
 void writeOnWatchlistRows(csv::Writer &w, const pipeline::People &people,
-                          const pipeline::Holdings &holdings,
-                          const pipeline::Counterparties &cps,
                           time::TimePoint simStart);
 
 void writeSubjectOfSarRows(csv::Writer &w,
@@ -73,32 +69,20 @@ void writeBusinessOwnsAccountRows(csv::Writer &w, const derived::Bundle &bundle,
                                   time::TimePoint simStart);
 
 void writeHasNameRows(csv::Writer &w, const pipeline::People &people,
-                      const pipeline::Holdings &holdings,
-                      const pipeline::Counterparties &cps,
                       time::TimePoint simStart);
 
 void writeHasAddressRows(csv::Writer &w, const pipeline::People &people,
-                         const pipeline::Holdings &holdings,
-                         const pipeline::Counterparties &cps,
                          time::TimePoint simStart);
 
 void writeHasEmailRows(csv::Writer &w, const pipeline::People &people,
-                       const pipeline::Holdings &holdings,
-                       const pipeline::Counterparties &cps,
                        time::TimePoint simStart);
 
 void writeHasPhoneRows(csv::Writer &w, const pipeline::People &people,
-                       const pipeline::Holdings &holdings,
-                       const pipeline::Counterparties &cps,
                        time::TimePoint simStart);
 
-void writeHasDobRows(csv::Writer &w, const pipeline::People &people,
-                     const pipeline::Holdings &holdings,
-                     const pipeline::Counterparties &cps);
+void writeHasDobRows(csv::Writer &w, const pipeline::People &people);
 
-void writeHasIdRows(csv::Writer &w, const pipeline::People &people,
-                    const pipeline::Holdings &holdings,
-                    const pipeline::Counterparties &cps);
+void writeHasIdRows(csv::Writer &w, const pipeline::People &people);
 
 void writeUsesDeviceRows(csv::Writer &w,
                          const synth::infra::devices::Output &devices);
@@ -106,8 +90,6 @@ void writeUsesDeviceRows(csv::Writer &w,
 void writeUsesIpRows(csv::Writer &w, const synth::infra::ips::Output &ips);
 
 void writeInBucketRows(csv::Writer &w, const pipeline::People &people,
-                       const pipeline::Holdings &holdings,
-                       const pipeline::Counterparties &cps,
                        const aml::vertices::SharedContext &ctx,
                        time::TimePoint simStart);
 

@@ -70,15 +70,10 @@ resolvedPersona(const aml::vertices::SharedContext &ctx,
   return 0.1;
 }
 
-// `People::roster` is the synth::people::Pack; its inner `.roster` is the
-// entity::person::Roster (which carries `count`).
 [[nodiscard]] auto allPersonIds(const pipe::People &people) {
   return std::views::iota(1u, people.roster.roster.count + 1);
 }
 
-// Inlined replacement for exporter::common::estimateIdentityRowCount,
-// which is a template still keyed off the old monolithic Entities. The
-// estimate is "population + counterparties + bank headroom".
 [[nodiscard]] std::size_t
 estimateRowCapacity(const pipe::People &people,
                     const aml::vertices::SharedContext &ctx) noexcept {
@@ -87,35 +82,27 @@ estimateRowCapacity(const pipe::People &people,
 }
 
 void writeGdsZeroCells(exporter::csv::Writer &w) {
-  w.cell(0.0)                             // pagerank_score
-      .cell(static_cast<std::int32_t>(0)) // louvain_community_id
-      .cell(static_cast<std::int32_t>(0)) // wcc_component_id
-      .cell(static_cast<std::int32_t>(0)) // component_size
-      .cell(static_cast<std::int32_t>(0)) // shortest_path_to_mule
-      .cell(static_cast<std::int32_t>(0)) // ip_collision_count
-      .cell(static_cast<std::int32_t>(0)) // device_collision_count
-      .cell(0.0)                          // trans_in_mule_ratio
-      .cell(0.0)                          // trans_out_mule_ratio
-      .cell(static_cast<std::int32_t>(0)) // multi_hop_mule_count
-      .cell(0.0)                          // betweenness
-      .cell(static_cast<std::int32_t>(0)) // in_degree
-      .cell(static_cast<std::int32_t>(0)) // out_degree
-      .cell(0.0);                         // clustering_coeff
+  w.cell(0.0)
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(0.0)
+      .cell(0.0)
+      .cell(static_cast<std::int32_t>(0))
+      .cell(0.0)
+      .cell(static_cast<std::int32_t>(0))
+      .cell(static_cast<std::int32_t>(0))
+      .cell(0.0);
 }
 
 } // namespace
 
-// ──────────────────────────────────────────────────────────────────
-// Customer
-// ──────────────────────────────────────────────────────────────────
-
 void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
-                       const pipe::Holdings &holdings,
-                       const pipe::Counterparties &cps,
                        const aml::vertices::SharedContext &ctx,
                        time_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto &roster = people.roster.roster;
   for (entity::PersonId p : allPersonIds(people)) {
     const auto persona = resolvedPersona(ctx, p);
@@ -136,18 +123,10 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Account — internal accounts + synthetic external-counterparty rows
-// ──────────────────────────────────────────────────────────────────
-
-void writeAccountRows(exporter::csv::Writer &w, const pipe::People &people,
-                      const pipe::Holdings &holdings,
-                      const pipe::Counterparties &cps,
+void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
                       const clearing::Ledger *finalBook,
                       const aml::vertices::SharedContext &ctx,
                       time_ns::TimePoint simStart) {
-  (void)people;
-  (void)cps;
   const auto cardIds = exporter::common::collectCardIds(holdings.creditCards);
 
   auto is_internal = [](const auto &rec) {
@@ -198,10 +177,6 @@ void writeAccountRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Counterparty
-// ──────────────────────────────────────────────────────────────────
-
 void writeCounterpartyRows(exporter::csv::Writer &w,
                            const aml::vertices::SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
@@ -220,10 +195,6 @@ void writeCounterpartyRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Bank
-// ──────────────────────────────────────────────────────────────────
-
 void writeBankRows(exporter::csv::Writer &w,
                    const aml::vertices::SharedContext &ctx) {
   for (const auto &bankId : ctx.bankIds) {
@@ -237,10 +208,6 @@ void writeBankRows(exporter::csv::Writer &w,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// Device — first/last seen aggregated from usages
-// ──────────────────────────────────────────────────────────────────
 
 void writeDeviceRows(exporter::csv::Writer &w,
                      const synth::infra::devices::Output &devices) {
@@ -273,10 +240,6 @@ void writeDeviceRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// IP
-// ──────────────────────────────────────────────────────────────────
-
 void writeIpRows(exporter::csv::Writer &w,
                  const synth::infra::ips::Output &ips) {
   for (const auto &rec : ips.records) {
@@ -290,16 +253,8 @@ void writeIpRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// FullName — dedup across persons, counterparties, banks
-// ──────────────────────────────────────────────────────────────────
-
 void writeFullNameRows(exporter::csv::Writer &w, const pipe::People &people,
-                       const pipe::Holdings &holdings,
-                       const pipe::Counterparties &cps,
                        const aml::vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
 
@@ -329,15 +284,7 @@ void writeFullNameRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Email / Phone / DOB / GovtID — one per PersonId
-// ──────────────────────────────────────────────────────────────────
-
-void writeEmailRows(exporter::csv::Writer &w, const pipe::People &people,
-                    const pipe::Holdings &holdings,
-                    const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+void writeEmailRows(exporter::csv::Writer &w, const pipe::People &people) {
   for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(derived::prefixedCustomerId("EML", cid))
@@ -346,11 +293,7 @@ void writeEmailRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-void writePhoneRows(exporter::csv::Writer &w, const pipe::People &people,
-                    const pipe::Holdings &holdings,
-                    const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+void writePhoneRows(exporter::csv::Writer &w, const pipe::People &people) {
   for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     w.cell(derived::prefixedCustomerId("PH", cid)).cell(derived::phoneFor(p));
@@ -358,11 +301,7 @@ void writePhoneRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-void writeDobRows(exporter::csv::Writer &w, const pipe::People &people,
-                  const pipe::Holdings &holdings,
-                  const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+void writeDobRows(exporter::csv::Writer &w, const pipe::People &people) {
   for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     const auto &rec = people.pii.at(p);
@@ -372,11 +311,7 @@ void writeDobRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-void writeGovtIdRows(exporter::csv::Writer &w, const pipe::People &people,
-                     const pipe::Holdings &holdings,
-                     const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+void writeGovtIdRows(exporter::csv::Writer &w, const pipe::People &people) {
   for (entity::PersonId p : allPersonIds(people)) {
     const auto cid = exporter::common::renderCustomerId(p);
     const auto hash = derived::makeHashHex({"GID", cid.view()});
@@ -387,16 +322,8 @@ void writeGovtIdRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Address — dedup across persons/counterparties/banks
-// ──────────────────────────────────────────────────────────────────
-
 void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
-                      const pipe::Holdings &holdings,
-                      const pipe::Counterparties &cps,
                       const aml::vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
 
@@ -427,16 +354,8 @@ void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// Watchlist — one entry per fraud/mule person
-// ──────────────────────────────────────────────────────────────────
-
 void writeWatchlistRows(exporter::csv::Writer &w, const pipe::People &people,
-                        const pipe::Holdings &holdings,
-                        const pipe::Counterparties &cps,
                         time_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto effective = time_ns::formatTimestamp(simStart);
   const auto &roster = people.roster.roster;
   std::string watchlistId;
@@ -465,10 +384,6 @@ void writeWatchlistRows(exporter::csv::Writer &w, const pipe::People &people,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// Alert / Disposition / SAR / CTR — bundle-driven
-// ──────────────────────────────────────────────────────────────────
 
 void writeAlertRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   for (const auto &a : bundle.alerts) {
@@ -520,17 +435,9 @@ void writeCtrRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// MinHashBucket — collapsed across all 5 facets
-// ──────────────────────────────────────────────────────────────────
-
 void writeMinHashBucketRows(exporter::csv::Writer &w,
                             const pipe::People &people,
-                            const pipe::Holdings &holdings,
-                            const pipe::Counterparties &cps,
                             const aml::vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = usPoolFor(ctx);
   const auto &pii = people.pii;
@@ -572,7 +479,6 @@ void writeMinHashBucketRows(exporter::csv::Writer &w,
     }
   }
 
-  // hash_band: 0=name, 1=address, 2=street, 3=city, 4=state.
   for (const auto &id : nameSet) {
     w.cell(id).cell(id).cell(static_cast<std::int32_t>(0));
     w.endRow();
@@ -598,10 +504,6 @@ void writeMinHashBucketRows(exporter::csv::Writer &w,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// InvestigationCase / EvidenceArtifact / Business / PromotedTxn
-// ──────────────────────────────────────────────────────────────────
 
 void writeInvestigationCaseRows(exporter::csv::Writer &w,
                                 const derived::Bundle &bundle) {

@@ -32,10 +32,7 @@ struct TransactionEdgeBundle {
 };
 
 [[nodiscard]] TransactionEdgeBundle
-classifyTransactionEdges(const pipeline::People &people,
-                         const pipeline::Holdings &holdings,
-                         const pipeline::Counterparties &cps,
-                         std::span<const transactions::Transaction> finalTxns,
+classifyTransactionEdges(std::span<const transactions::Transaction> finalTxns,
                          const vertices::SharedContext &ctx);
 
 struct MinhashVertexSets {
@@ -46,20 +43,15 @@ struct MinhashVertexSets {
   std::set<std::string> state;
 };
 
-// Replaced Entities with decomposed domains
-[[nodiscard]] MinhashVertexSets collectMinhashVertexSets(
-    const pipeline::People &people, const pipeline::Holdings &holdings,
-    const pipeline::Counterparties &cps, const vertices::SharedContext &ctx);
+[[nodiscard]] MinhashVertexSets
+collectMinhashVertexSets(const pipeline::People &people,
+                         const vertices::SharedContext &ctx);
 
 void writeCustomerHasAccountRows(exporter::csv::Writer &w,
-                                 const pipeline::People &people,
-                                 const pipeline::Holdings &holdings,
-                                 const pipeline::Counterparties &cps);
+                                 const pipeline::Holdings &holdings);
 
 void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
-                                        const pipeline::People &people,
-                                        const pipeline::Holdings &holdings,
-                                        const pipeline::Counterparties &cps);
+                                        const pipeline::Holdings &holdings);
 
 void writeAcctTxnRows(exporter::csv::Writer &w,
                       std::span<const TransactionEdgeBundle::AcctTxnRow> rows);
@@ -75,53 +67,38 @@ void writeUsesDeviceRows(exporter::csv::Writer &w,
                          const synth::infra::devices::Output &devices);
 
 void writeLoggedFromRows(exporter::csv::Writer &w,
-                         const pipeline::People &people,
                          const pipeline::Holdings &holdings,
-                         const pipeline::Counterparties &cps,
                          const synth::infra::devices::Output &devices);
 
 // ── Identity-by-id edges — pool-free ──
 
 void writeCustomerHasNameRows(exporter::csv::Writer &w,
                               const pipeline::People &people,
-                              const pipeline::Holdings &holdings,
-                              const pipeline::Counterparties &cps,
                               time::TimePoint simStart);
 
 void writeCustomerHasAddressRows(exporter::csv::Writer &w,
                                  const pipeline::People &people,
-                                 const pipeline::Holdings &holdings,
-                                 const pipeline::Counterparties &cps,
                                  time::TimePoint simStart);
 
 void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
                                             const pipeline::People &people,
-                                            const pipeline::Holdings &holdings,
-                                            const pipeline::Counterparties &cps,
                                             time::TimePoint simStart);
 
 void writeAccountHasNameRows(exporter::csv::Writer &w,
-                             const pipeline::People &people,
                              const pipeline::Holdings &holdings,
-                             const pipeline::Counterparties &cps,
                              time::TimePoint simStart);
 
 void writeAccountHasAddressRows(exporter::csv::Writer &w,
-                                const pipeline::People &people,
                                 const pipeline::Holdings &holdings,
-                                const pipeline::Counterparties &cps,
                                 time::TimePoint simStart);
 
 void writeAccountAssociatedWithCountryRows(exporter::csv::Writer &w,
                                            const pipeline::People &people,
                                            const pipeline::Holdings &holdings,
-                                           const pipeline::Counterparties &cps,
                                            time::TimePoint simStart);
 
 void writeAddressInCountryRows(exporter::csv::Writer &w,
                                const pipeline::People &people,
-                               const pipeline::Holdings &holdings,
-                               const pipeline::Counterparties &cps,
                                const vertices::SharedContext &ctx,
                                time::TimePoint simStart);
 
@@ -137,9 +114,7 @@ void writeCounterpartyAssociatedWithCountryRows(
     exporter::csv::Writer &w, const vertices::SharedContext &ctx);
 
 void writeCustomerMatchesWatchlistRows(exporter::csv::Writer &w,
-                                       const pipeline::People &people,
-                                       const pipeline::Holdings &holdings,
-                                       const pipeline::Counterparties &cps);
+                                       const pipeline::People &people);
 
 void writeReferencesRows(exporter::csv::Writer &w,
                          std::span<const sar::SarRecord> sars);
@@ -168,45 +143,34 @@ void writeBankHasNameRows(exporter::csv::Writer &w,
 
 void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
                                      const pipeline::People &people,
-                                     const pipeline::Holdings &holdings,
-                                     const pipeline::Counterparties &cps,
                                      const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
                                         const pipeline::People &people,
-                                        const pipeline::Holdings &holdings,
-                                        const pipeline::Counterparties &cps,
                                         const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStreetLine1MinhashRows(
     exporter::csv::Writer &w, const pipeline::People &people,
-    const pipeline::Holdings &holdings, const pipeline::Counterparties &cps,
     const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressCityMinhashRows(exporter::csv::Writer &w,
                                             const pipeline::People &people,
-                                            const pipeline::Holdings &holdings,
-                                            const pipeline::Counterparties &cps,
                                             const vertices::SharedContext &ctx);
 
 void writeCustomerHasAddressStateMinhashRows(
     exporter::csv::Writer &w, const pipeline::People &people,
-    const pipeline::Holdings &holdings, const pipeline::Counterparties &cps,
     const vertices::SharedContext &ctx);
 
 void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
                                     const pipeline::People &people,
                                     const pipeline::Holdings &holdings,
-                                    const pipeline::Counterparties &cps,
                                     const vertices::SharedContext &ctx);
 
 void writeCounterpartyHasNameMinhashRows(exporter::csv::Writer &w,
                                          const vertices::SharedContext &ctx);
 
 void writeResolvesToRows(exporter::csv::Writer &w,
-                         const pipeline::People &people,
                          const pipeline::Holdings &holdings,
-                         const pipeline::Counterparties &cps,
                          time::TimePoint simStart);
 
 } // namespace PhantomLedger::exporter::aml::edges

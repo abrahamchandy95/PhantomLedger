@@ -35,38 +35,27 @@ struct SharedContext {
 [[nodiscard]] SharedContext
 buildSharedContext(const pipeline::People &people,
                    const pipeline::Holdings &holdings,
-                   const pipeline::Counterparties &cps,
                    std::span<const transactions::Transaction> finalTxns,
                    const entities::synth::pii::PoolSet &pools);
 
 // ────────── Vertex writers ──────────
 
 void writeCustomerRows(csv::Writer &w, const pipeline::People &people,
-                       const pipeline::Holdings &holdings,
-                       const pipeline::Counterparties &cps,
                        const SharedContext &ctx, time::TimePoint simStart);
 
-void writeAccountRows(csv::Writer &w, const pipeline::People &people,
-                      const pipeline::Holdings &holdings,
-                      const pipeline::Counterparties &cps,
+void writeAccountRows(csv::Writer &w, const pipeline::Holdings &holdings,
                       const clearing::Ledger *finalBook,
                       const SharedContext &ctx, time::TimePoint simStart);
 
 void writeCounterpartyRows(csv::Writer &w, const SharedContext &ctx);
 
 void writeNameRows(csv::Writer &w, const pipeline::People &people,
-                   const pipeline::Holdings &holdings,
-                   const pipeline::Counterparties &cps,
                    const SharedContext &ctx);
 
 void writeAddressRows(csv::Writer &w, const pipeline::People &people,
-                      const pipeline::Holdings &holdings,
-                      const pipeline::Counterparties &cps,
                       const SharedContext &ctx);
 
-void writeCountryRows(csv::Writer &w, const pipeline::People &people,
-                      const pipeline::Holdings &holdings,
-                      const pipeline::Counterparties &cps);
+void writeCountryRows(csv::Writer &w, const pipeline::People &people);
 
 void writeDeviceRows(csv::Writer &w,
                      const synth::infra::devices::Output &devices,
@@ -80,8 +69,6 @@ void writeSarRows(csv::Writer &w, std::span<const sar::SarRecord> sars);
 void writeBankRows(csv::Writer &w, const SharedContext &ctx);
 
 void writeWatchlistRows(csv::Writer &w, const pipeline::People &people,
-                        const pipeline::Holdings &holdings,
-                        const pipeline::Counterparties &cps,
                         time::TimePoint simStart);
 
 template <typename Set>

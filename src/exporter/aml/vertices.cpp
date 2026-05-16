@@ -78,7 +78,7 @@ resolvedPersona(const SharedContext &ctx, entity::PersonId p) noexcept {
 poolsFor(const SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built with "
-         "buildSharedContext(people, holdings, cps, txns, pools)?");
+         "buildSharedContext(people, holdings, txns, pools)?");
   return *ctx.pools;
 }
 
@@ -95,10 +95,8 @@ usPoolFor(const SharedContext &ctx) noexcept {
 
 SharedContext buildSharedContext(
     const pipe::People &people, const pipe::Holdings &holdings,
-    const pipe::Counterparties &cps,
     std::span<const txns::Transaction> finalTxns,
     const ::PhantomLedger::entities::synth::pii::PoolSet &pools) {
-  (void)cps;
   SharedContext ctx;
   ctx.pools = &pools;
 
@@ -165,11 +163,7 @@ inline void writeRiskAndOriginCells(exporter::csv::Writer &w,
 } // namespace
 
 void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
-                       const pipe::Holdings &holdings,
-                       const pipe::Counterparties &cps,
                        const SharedContext &ctx, time_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto &peopleRoster = people.roster.roster;
   for (entity::PersonId p : allPersonIds(people)) {
     const auto persona = resolvedPersona(ctx, p);
@@ -208,13 +202,14 @@ namespace {
 
 } // namespace
 
-void writeAccountRows(exporter::csv::Writer &w, const pipe::People &people,
-                      const pipe::Holdings &holdings,
-                      const pipe::Counterparties &cps,
+// Still 5 params after dropping the unused (People, Counterparties): the body
+// genuinely reads Holdings + finalBook + ctx + simStart. Tier 2 candidate:
+// split the internal-account loop from any external-cp emission (the
+// internal loop reads only Holdings + finalBook + branch helpers, the
+// caller can fold in the rest).
+void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
                       const ::PhantomLedger::clearing::Ledger *finalBook,
                       const SharedContext &ctx, time_ns::TimePoint simStart) {
-  (void)people;
-  (void)cps;
   const auto cardIds = exporter::common::collectCardIds(holdings.creditCards);
 
   auto is_internal = [](const auto &rec) {
@@ -275,10 +270,7 @@ void writeAddressRow(exporter::csv::Writer &w,
 } // namespace
 
 void writeNameRows(exporter::csv::Writer &w, const pipe::People &people,
-                   const pipe::Holdings &holdings,
-                   const pipe::Counterparties &cps, const SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
+                   const SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(locale::Country::us);
 
@@ -303,11 +295,7 @@ void writeNameRows(exporter::csv::Writer &w, const pipe::People &people,
 }
 
 void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
-                      const pipe::Holdings &holdings,
-                      const pipe::Counterparties &cps,
                       const SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(locale::Country::us);
 
@@ -366,11 +354,7 @@ static_assert(kCountryRows.size() == locale::kCountryCount,
 
 } // namespace
 
-void writeCountryRows(exporter::csv::Writer &w, const pipe::People &people,
-                      const pipe::Holdings &holdings,
-                      const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+void writeCountryRows(exporter::csv::Writer &w, const pipe::People &people) {
   namespace enumTax = taxonomies::enums;
 
   std::array<bool, locale::kCountryCount> seen{};
@@ -396,11 +380,7 @@ void writeBankRows(exporter::csv::Writer &w, const SharedContext &ctx) {
 }
 
 void writeWatchlistRows(exporter::csv::Writer &w, const pipe::People &people,
-                        const pipe::Holdings &holdings,
-                        const pipe::Counterparties &cps,
                         time_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto entryDate = time_ns::formatTimestamp(simStart);
   const auto &roster = people.roster.roster;
   std::string watchlistId;
