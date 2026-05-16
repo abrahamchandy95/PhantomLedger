@@ -32,6 +32,10 @@ public:
       txn.fraud.ringId = static_cast<std::uint32_t>(draft.ringId);
     }
 
+    if (draft.chainId >= 0) {
+      txn.fraud.chainId = static_cast<std::uint32_t>(draft.chainId);
+    }
+
     bool deviceResolved = false;
     bool ipResolved = false;
 

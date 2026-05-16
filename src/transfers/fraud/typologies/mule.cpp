@@ -7,7 +7,20 @@
 #include "phantomledger/transfers/fraud/schedule.hpp"
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
 
+#include <optional>
+
 namespace PhantomLedger::transfers::fraud::typologies::mule {
+
+namespace {
+
+// Probability of pinning a *secondary* funnel destination for a given mule.
+// When set, roughly kSecondaryUseP of forwards go to the secondary; the rest
+// still funnel to the primary destination. This adds realistic variance
+// without breaking the fan-in-to-funnel graph signal.
+constexpr double kSecondaryDstP = 0.12;
+constexpr double kSecondaryUseP = 0.20;
+
+} // namespace
 
 std::vector<transactions::Transaction>
 generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
@@ -60,7 +73,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       continue;
     }
 
-    // Forward targets: organizers if any, else other mules.
+    // ─── Forward target selection ─────────────────────────────────────
     std::vector<entity::Key> forwardTargets;
     if (!plan.fraudAccounts.empty()) {
       forwardTargets = plan.fraudAccounts;
@@ -75,6 +88,29 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
         continue;
       }
     }
+
+    // Pin a PRIMARY funnel destination for this mule for the whole burst.
+    const entity::Key primaryDst =
+        forwardTargets[rng.choiceIndex(forwardTargets.size())];
+
+    // Occasionally also pin a SECONDARY destination so a small fraction of
+    // forwards diverge — keeps out-degree from being trivially 1.
+    std::optional<entity::Key> secondaryDst;
+    if (forwardTargets.size() >= 2 && rng.coin(kSecondaryDstP)) {
+      entity::Key candidate =
+          forwardTargets[rng.choiceIndex(forwardTargets.size())];
+      for (int attempt = 0; attempt < 4 && candidate == primaryDst; ++attempt) {
+        candidate = forwardTargets[rng.choiceIndex(forwardTargets.size())];
+      }
+      if (candidate != primaryDst) {
+        secondaryDst = candidate;
+      }
+    }
+
+    // One chain id per mule's funnel burst. All inbounds and their paired
+    // forwards share this chainId, so the fan-in → funnel structure is one
+    // analytic unit downstream.
+    const auto chainId = ctx.allocateChainId();
 
     for (std::int32_t inboundIdx = 0; inboundIdx < inboundCount; ++inboundIdx) {
       if (static_cast<std::int32_t>(out.size()) >= budget) {
@@ -108,6 +144,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                   .isFraud = 1,
                   .ringId = static_cast<std::int32_t>(plan.ringId),
                   .channel = inChannel,
+                  .chainId = chainId,
               })) {
         break;
       }
@@ -129,8 +166,9 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       const auto forwardTs =
           inboundTs + time::Hours{delayHours} + time::Minutes{delayMinutes};
 
-      const auto &forwardDst =
-          forwardTargets[rng.choiceIndex(forwardTargets.size())];
+      const entity::Key &forwardDst =
+          (secondaryDst.has_value() && rng.coin(kSecondaryUseP)) ? *secondaryDst
+                                                                 : primaryDst;
 
       if (!typologies::appendBoundedTxn(
               ctx, out, budget,
@@ -142,6 +180,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                   .isFraud = 1,
                   .ringId = static_cast<std::int32_t>(plan.ringId),
                   .channel = forwardChannel,
+                  .chainId = chainId,
               })) {
         break;
       }

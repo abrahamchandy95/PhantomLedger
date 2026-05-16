@@ -36,6 +36,10 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
   const auto channel = channels::tag(channels::Fraud::invoice);
 
+  // One chain id for the whole fake-invoice scheme run by this ring. All
+  // invoice payments are part of the same "fake B2B activity" operation.
+  const auto chainId = ctx.allocateChainId();
+
   for (std::int32_t i = 0; i < events; ++i) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -67,6 +71,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
                 .isFraud = 1,
                 .ringId = static_cast<std::int32_t>(plan.ringId),
                 .channel = channel,
+                .chainId = chainId,
             })) {
       break;
     }
