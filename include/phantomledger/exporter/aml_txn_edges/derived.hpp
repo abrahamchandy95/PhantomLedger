@@ -31,7 +31,6 @@ template <std::size_t N> struct InlineId {
   constexpr operator std::string_view() const noexcept { return view(); }
 };
 
-// ── Hash-derived 16-hex IDs (24 = 4-char prefix + 16-char hex + slack) ──
 using AlertId = InlineId<24>;
 using DispositionId = InlineId<24>;
 using CtrId = InlineId<24>;
@@ -42,24 +41,21 @@ using BusinessId = InlineId<24>;
 using HashHex = InlineId<24>;
 using RunId = InlineId<24>;
 
-// ── Fixed-shape display strings ──
-using PhoneText = InlineId<16>;     // "+1-NNN-NNN-NNNN"
-using DateText = InlineId<11>;      // "yyyy-mm-dd"
-using InvestigatorId = InlineId<8>; // "INV_NNN"
-using BranchCode = InlineId<6>;     // "BRNNN"
-using TellerId = InlineId<12>;      // "TLR_NNNN"
-using EinText = InlineId<11>;       // "XX-XXXXXXX"
+using PhoneText = InlineId<16>;
+using DateText = InlineId<11>;
+using InvestigatorId = InlineId<8>;
+using BranchCode = InlineId<6>;
+using TellerId = InlineId<12>;
+using EinText = InlineId<11>;
 
-// ── Composite identifiers used across vertex/edge writers ──
-using CpId = InlineId<48>;               // "CP_" + rendered external key
-using PrefixedCustomerId = InlineId<32>; // "<PREFIX>_<customer id>"
+using CpId = InlineId<48>;
+using PrefixedCustomerId = InlineId<32>;
 
 template <std::size_t N>
 [[nodiscard]] InlineId<N>
 hashedId(std::string_view prefix,
          std::initializer_list<std::string_view> hashInputs) noexcept;
 
-// Hex-only id (no prefix), e.g. content_hash columns.
 [[nodiscard]] HashHex
 makeHashHex(std::initializer_list<std::string_view> parts) noexcept;
 
@@ -80,7 +76,7 @@ enum class Rule : std::uint8_t {
   highAmountBelowCtr = 2,
   cashCtrThreshold = 3,
   velocityBurst = 4,
-  highRiskCounterparty = 5, // reserved, never fires
+  highRiskCounterparty = 5,
 };
 
 [[nodiscard]] std::string_view ruleName(Rule r) noexcept;
@@ -232,10 +228,8 @@ struct Bundle {
   std::vector<AggregateBucket> linkComm;
 };
 
-// Replaced monolithic Entities with decomposed domains
 [[nodiscard]] Bundle
 buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
-            const pipeline::Counterparties &cps,
             std::span<const transactions::Transaction> postedTxns,
             const aml::vertices::SharedContext &ctx,
             std::span<const aml::sar::SarRecord> sars);
@@ -249,10 +243,6 @@ buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
 [[nodiscard]] BranchCode branchCodeForBucket(std::uint32_t bucket) noexcept;
 [[nodiscard]] TellerId tellerIdFor(std::uint32_t n) noexcept;
 [[nodiscard]] EinText einFor(std::string_view businessId) noexcept;
-
-// ============================================================================
-// Static catalogs (referenced by name from buildBundle and vertex writers).
-// ============================================================================
 
 inline constexpr std::array<std::string_view, 12> kLegalStems{
     "Arbor", "Beacon", "Cypress",  "Dune",    "Echo",     "Foundry",

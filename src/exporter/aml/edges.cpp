@@ -39,8 +39,8 @@ customerIdFor(ent::PersonId p) noexcept {
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
-         "SharedContext::pools is null — was the context built with "
-         "buildSharedContext(people, holdings, cps, txns, pools)?");
+         "SharedContext::pools is null — was the context built via "
+         "buildSharedContext(people, holdings, txns, pools)?");
   return *ctx.pools;
 }
 
@@ -63,14 +63,8 @@ estimateRowCapacity(const pipe::People &people,
 } // namespace
 
 TransactionEdgeBundle
-classifyTransactionEdges(const pipe::People &people,
-                         const pipe::Holdings &holdings,
-                         const pipe::Counterparties &cps,
-                         std::span<const tx_ns::Transaction> finalTxns,
+classifyTransactionEdges(std::span<const tx_ns::Transaction> finalTxns,
                          const vertices::SharedContext &ctx) {
-  (void)people;
-  (void)holdings;
-  (void)cps;
   TransactionEdgeBundle out;
   const auto &usPool = usPoolFor(ctx);
 
@@ -90,8 +84,6 @@ classifyTransactionEdges(const pipe::People &people,
     return it->second;
   };
 
-  // Reverted to manual index tracking due to missing std::views::enumerate
-  // support
   std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
     const bool srcExt = exporter::common::isExternalKey(tx.source);
@@ -124,11 +116,7 @@ classifyTransactionEdges(const pipe::People &people,
 }
 
 MinhashVertexSets collectMinhashVertexSets(const pipe::People &people,
-                                           const pipe::Holdings &holdings,
-                                           const pipe::Counterparties &cps,
                                            const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   MinhashVertexSets out;
   const auto &pools = poolsFor(ctx);
   const auto &usPool = pools.forCountry(loc::Country::us);
@@ -166,11 +154,7 @@ MinhashVertexSets collectMinhashVertexSets(const pipe::People &people,
 }
 
 void writeCustomerHasAccountRows(exporter::csv::Writer &w,
-                                 const pipe::People &people,
-                                 const pipe::Holdings &holdings,
-                                 const pipe::Counterparties &cps) {
-  (void)people;
-  (void)cps;
+                                 const pipe::Holdings &holdings) {
   exporter::common::forEachInternalOwnership(
       holdings, [&](ent::PersonId pid, const ent::Key &k) {
         w.writeRow(customerIdFor(pid), exporter::common::renderKey(k));
@@ -178,11 +162,7 @@ void writeCustomerHasAccountRows(exporter::csv::Writer &w,
 }
 
 void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
-                                        const pipe::People &people,
-                                        const pipe::Holdings &holdings,
-                                        const pipe::Counterparties &cps) {
-  (void)people;
-  (void)cps;
+                                        const pipe::Holdings &holdings) {
   exporter::common::forEachInternalOwnership(
       holdings, [&](ent::PersonId pid, const ent::Key &k) {
         w.writeRow(exporter::common::renderKey(k), customerIdFor(pid));
@@ -230,12 +210,9 @@ void writeUsesDeviceRows(exporter::csv::Writer &w,
   }
 }
 
-void writeLoggedFromRows(exporter::csv::Writer &w, const pipe::People &people,
+void writeLoggedFromRows(exporter::csv::Writer &w,
                          const pipe::Holdings &holdings,
-                         const pipe::Counterparties &cps,
                          const synth::infra::devices::Output &devices) {
-  (void)people;
-  (void)cps;
   std::map<std::pair<ent::Key, std::string>, exporter::common::SeenWindow> agg;
 
   std::unordered_map<ent::PersonId, std::vector<ent::Key>> accountsByPerson;
@@ -266,11 +243,7 @@ void writeLoggedFromRows(exporter::csv::Writer &w, const pipe::People &people,
 
 void writeCustomerHasNameRows(exporter::csv::Writer &w,
                               const pipe::People &people,
-                              const pipe::Holdings &holdings,
-                              const pipe::Counterparties &cps,
                               t_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
     w.writeRow(customerIdFor(p), identity::nameIdForPerson(p), ts);
@@ -279,11 +252,7 @@ void writeCustomerHasNameRows(exporter::csv::Writer &w,
 
 void writeCustomerHasAddressRows(exporter::csv::Writer &w,
                                  const pipe::People &people,
-                                 const pipe::Holdings &holdings,
-                                 const pipe::Counterparties &cps,
                                  t_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
     w.writeRow(customerIdFor(p), identity::addressIdForPerson(p), ts);
@@ -292,11 +261,7 @@ void writeCustomerHasAddressRows(exporter::csv::Writer &w,
 
 void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
                                             const pipe::People &people,
-                                            const pipe::Holdings &holdings,
-                                            const pipe::Counterparties &cps,
                                             t_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
     w.writeRow(customerIdFor(p), loc::code(people.pii.at(p).country), ts);
@@ -304,12 +269,8 @@ void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
 }
 
 void writeAccountHasNameRows(exporter::csv::Writer &w,
-                             const pipe::People &people,
                              const pipe::Holdings &holdings,
-                             const pipe::Counterparties &cps,
                              t_ns::TimePoint simStart) {
-  (void)people;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   exporter::common::forEachInternalOwnership(holdings, [&](ent::PersonId pid,
                                                            const ent::Key &k) {
@@ -319,12 +280,8 @@ void writeAccountHasNameRows(exporter::csv::Writer &w,
 }
 
 void writeAccountHasAddressRows(exporter::csv::Writer &w,
-                                const pipe::People &people,
                                 const pipe::Holdings &holdings,
-                                const pipe::Counterparties &cps,
                                 t_ns::TimePoint simStart) {
-  (void)people;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   exporter::common::forEachInternalOwnership(
       holdings, [&](ent::PersonId pid, const ent::Key &k) {
@@ -337,9 +294,7 @@ void writeAccountHasAddressRows(exporter::csv::Writer &w,
 void writeAccountAssociatedWithCountryRows(exporter::csv::Writer &w,
                                            const pipe::People &people,
                                            const pipe::Holdings &holdings,
-                                           const pipe::Counterparties &cps,
                                            t_ns::TimePoint simStart) {
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
@@ -354,12 +309,8 @@ void writeAccountAssociatedWithCountryRows(exporter::csv::Writer &w,
 
 void writeAddressInCountryRows(exporter::csv::Writer &w,
                                const pipe::People &people,
-                               const pipe::Holdings &holdings,
-                               const pipe::Counterparties &cps,
                                const vertices::SharedContext &ctx,
                                t_ns::TimePoint simStart) {
-  (void)holdings;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   std::unordered_set<std::string> emitted;
   emitted.reserve(estimateRowCapacity(people, ctx));
@@ -409,11 +360,7 @@ void writeCounterpartyAssociatedWithCountryRows(
 }
 
 void writeCustomerMatchesWatchlistRows(exporter::csv::Writer &w,
-                                       const pipe::People &people,
-                                       const pipe::Holdings &holdings,
-                                       const pipe::Counterparties &cps) {
-  (void)holdings;
-  (void)cps;
+                                       const pipe::People &people) {
   const auto &roster = people.roster.roster;
   std::string watchlistId;
   for (ent::PersonId p : allPersonIds(people)) {
@@ -493,17 +440,9 @@ void writeBankHasNameRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Minhash-shingle edges (Camp 2) — need name/address content
-// ──────────────────────────────────────────────────────────────────────
-
 void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
                                      const pipe::People &people,
-                                     const pipe::Holdings &holdings,
-                                     const pipe::Counterparties &cps,
                                      const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -522,11 +461,7 @@ void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
 
 void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
                                         const pipe::People &people,
-                                        const pipe::Holdings &holdings,
-                                        const pipe::Counterparties &cps,
                                         const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -543,10 +478,7 @@ void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
 
 void writeCustomerHasAddressStreetLine1MinhashRows(
     exporter::csv::Writer &w, const pipe::People &people,
-    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -561,10 +493,7 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
 
 void writeCustomerHasAddressCityMinhashRows(
     exporter::csv::Writer &w, const pipe::People &people,
-    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -576,10 +505,7 @@ void writeCustomerHasAddressCityMinhashRows(
 
 void writeCustomerHasAddressStateMinhashRows(
     exporter::csv::Writer &w, const pipe::People &people,
-    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
     const vertices::SharedContext &ctx) {
-  (void)holdings;
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -593,9 +519,7 @@ void writeCustomerHasAddressStateMinhashRows(
 void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
                                     const pipe::People &people,
                                     const pipe::Holdings &holdings,
-                                    const pipe::Counterparties &cps,
                                     const vertices::SharedContext &ctx) {
-  (void)cps;
   const auto &pools = poolsFor(ctx);
   const auto &pii = people.pii;
 
@@ -645,12 +569,9 @@ void writeCounterpartyHasNameMinhashRows(exporter::csv::Writer &w,
   }
 }
 
-void writeResolvesToRows(exporter::csv::Writer &w, const pipe::People &people,
+void writeResolvesToRows(exporter::csv::Writer &w,
                          const pipe::Holdings &holdings,
-                         const pipe::Counterparties &cps,
                          t_ns::TimePoint simStart) {
-  (void)people;
-  (void)cps;
   const auto ts = t_ns::formatTimestamp(simStart);
   for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) == 0) {
