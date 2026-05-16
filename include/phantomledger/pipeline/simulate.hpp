@@ -4,7 +4,7 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
 #include "phantomledger/pipeline/stages/products.hpp"
-#include "phantomledger/pipeline/stages/transfers.hpp"
+#include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 

@@ -62,8 +62,8 @@ void runTransferStage(SimulationResult &result,
   auto legitPayload = stage.buildLegit(rng, people, holdings, cps);
   auto productStream =
       stage.mergeProducts(rng, holdings, std::move(legitPayload.txns));
-  auto candidate = stage.preFraudReplay(
-      rng, *legitPayload.openingBook.initialBook, std::move(productStream));
+  auto candidate = stage.ledger().preFraud(
+      *legitPayload.openingBook.initialBook, rng, std::move(productStream));
 
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
@@ -75,7 +75,7 @@ void runTransferStage(SimulationResult &result,
 
   auto mergedTxns = std::move(fraudOut.txns);
   mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
-  auto posted = stage.postFraudReplay(
+  auto posted = stage.ledger().postFraud(
       rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 
   validateTransactionAccounts(holdings.accounts.lookup, posted.txns);
