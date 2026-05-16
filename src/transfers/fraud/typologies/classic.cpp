@@ -14,8 +14,9 @@ namespace {
 
 class DraftMaker {
 public:
-  DraftMaker(std::uint32_t ringId, channels::Tag channel) noexcept
-      : ringId_(ringId), channel_(channel) {}
+  DraftMaker(std::uint32_t ringId, channels::Tag channel,
+             std::int32_t chainId) noexcept
+      : ringId_(ringId), channel_(channel), chainId_(chainId) {}
 
   [[nodiscard]] transactions::Draft make(const entity::Key &source,
                                          const entity::Key &destination,
@@ -29,12 +30,14 @@ public:
         .isFraud = 1,
         .ringId = static_cast<std::int32_t>(ringId_),
         .channel = channel_,
+        .chainId = chainId_,
     };
   }
 
 private:
   std::uint32_t ringId_;
   channels::Tag channel_;
+  std::int32_t chainId_;
 };
 
 } // namespace
@@ -58,8 +61,14 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
   const auto fraudChannel = channels::tag(channels::Fraud::classic);
   const auto cycleChannel = channels::tag(channels::Fraud::cycle);
 
-  const DraftMaker fraudDraft{plan.ringId, fraudChannel};
-  const DraftMaker cycleDraft{plan.ringId, cycleChannel};
+  // Two chain ids for classic: one groups the splash (phase 1+2 = victim →
+  // mule → fraud); one groups the cycle (phase 3 = ring nodes passing money
+  // among themselves). These are structurally distinct operations.
+  const auto splashChainId = ctx.allocateChainId();
+  const auto cycleChainId = ctx.allocateChainId();
+
+  const DraftMaker fraudDraft{plan.ringId, fraudChannel, splashChainId};
+  const DraftMaker cycleDraft{plan.ringId, cycleChannel, cycleChainId};
 
   // ---- Phase 1: victim → mule -----------------------------------------
   for (const auto &victim : plan.victimAccounts) {

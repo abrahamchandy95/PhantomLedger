@@ -11,6 +11,7 @@
 
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -84,6 +85,19 @@ struct IllicitContext {
   Execution execution;
   time::Window window;
   std::span<const entity::Key> billerAccounts{};
+
+  // Monotonic counter for chain id allocation. Each call to allocateChainId()
+  // returns a fresh id and bumps the counter. Shared across all rings within
+  // one Inject() call, so chain ids are globally unique within a run.
+  std::uint32_t nextChainId = 1;
+
+  /// Allocate a fresh chain id and bump the internal counter.
+  /// Returns the id as a signed int so it can be stored on Draft::chainId
+  /// (which uses -1 as the "no chain" sentinel).
+  [[nodiscard]] std::int32_t allocateChainId() noexcept {
+    const auto id = nextChainId++;
+    return static_cast<std::int32_t>(id);
+  }
 };
 
 } // namespace PhantomLedger::transfers::fraud

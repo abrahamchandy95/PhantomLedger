@@ -15,6 +15,12 @@ namespace PhantomLedger::transactions {
 struct Fraud {
   std::uint8_t flag = 0;
   std::optional<std::uint32_t> ringId;
+
+  // Discrete "chain" identifier — one chain corresponds to one typology
+  // operation (e.g., one layering event, one mule's funnel burst, one
+  // structuring batch). A ring's transactions may span multiple chains.
+  std::optional<std::uint32_t> chainId;
+
   constexpr std::strong_ordering operator<=>(const Fraud &) const = default;
 };
 
@@ -43,8 +49,8 @@ namespace detail {
 
 [[nodiscard]] inline auto auditKey(const Transaction &tx) noexcept {
   return std::tie(tx.timestamp, tx.source, tx.target, tx.amount, tx.fraud.flag,
-                  tx.fraud.ringId, tx.session.channel, tx.session.deviceId,
-                  tx.session.ipAddress);
+                  tx.fraud.ringId, tx.fraud.chainId, tx.session.channel,
+                  tx.session.deviceId, tx.session.ipAddress);
 }
 
 } // namespace detail
