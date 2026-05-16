@@ -643,6 +643,29 @@ void writeInBucketRows(exporter::csv::Writer &w, const pipeline::People &people,
   }
 }
 
+void writeTransactionChainLabelRows(
+    exporter::csv::Writer &w,
+    std::span<const transactions::Transaction> postedTxns) {
+  std::size_t idx = 1;
+  for (const auto &tx : postedTxns) {
+    if (!tx.fraud.chainId.has_value()) {
+      ++idx;
+      continue;
+    }
+
+    w.cell(static_cast<std::uint32_t>(idx)).cell(*tx.fraud.chainId);
+
+    if (tx.fraud.ringId.has_value()) {
+      w.cell(*tx.fraud.ringId);
+    } else {
+      w.cellEmpty();
+    }
+
+    w.endRow();
+    ++idx;
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────
 // ACCOUNT_FLOW_AGG / ACCOUNT_LINK_COMM — derived edge tables
 // ──────────────────────────────────────────────────────────────────
