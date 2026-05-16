@@ -12,10 +12,15 @@ enum class Flag : std::uint8_t {
   mule = 1U << 1U,
   victim = 1U << 2U,
   external = 1U << 3U,
+  shell = 1U << 4U,
 };
 
 [[nodiscard]] constexpr std::uint8_t bit(Flag f) noexcept {
   return static_cast<std::uint8_t>(f);
+}
+
+[[nodiscard]] constexpr bool hasFlag(std::uint8_t flags, Flag f) noexcept {
+  return (flags & bit(f)) != 0;
 }
 
 struct Record {
@@ -32,12 +37,9 @@ struct Registry {
   }
 };
 
-/// Inverted index from account Key to record offset.
 struct Lookup {
   std::unordered_map<Key, std::uint32_t> byId;
 };
-
-/// Per-person view over the Registry.
 
 struct Ownership {
   std::vector<std::uint32_t> byPersonOffset;

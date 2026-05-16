@@ -10,7 +10,6 @@
 #include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
-#include "phantomledger/taxonomies/fraud/names.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 
 #include <cassert>
@@ -34,7 +33,6 @@ namespace primitives = ::PhantomLedger::primitives;
 namespace synth = ::PhantomLedger::synth;
 namespace time_ns = ::PhantomLedger::time;
 namespace txns = ::PhantomLedger::transactions;
-namespace fr = ::PhantomLedger::fraud;
 
 namespace {
 
@@ -394,29 +392,6 @@ void writeAlertRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
         .cell(time_ns::formatTimestamp(a.createdDate))
         .cell(a.status)
         .cell(derived::rulePriority(a.rule));
-    w.endRow();
-  }
-}
-
-void writeChainRows(exporter::csv::Writer &w,
-                    std::span<const chains::ChainRow> chainRows) {
-  for (const auto &row : chainRows) {
-    w.cell(row.id).cell(row.chainId);
-
-    if (row.ringId.has_value()) {
-      w.cell(*row.ringId);
-    } else {
-      w.cellEmpty();
-    }
-
-    w.cell(fr::name(row.typology))
-        .cell(row.numHops)
-        .cell(primitives::utils::roundMoney(row.principal))
-        .cell(primitives::utils::roundMoney(row.finalAmount))
-        .cell(primitives::utils::roundMoney(row.totalHaircut))
-        .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(row.startTs)))
-        .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(row.endTs)))
-        .cell(row.durationSeconds);
     w.endRow();
   }
 }

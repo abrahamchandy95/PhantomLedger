@@ -17,6 +17,8 @@ struct Summary : ::PhantomLedger::exporter::common::BaseSummary {
   std::size_t businessCount = 0;
   std::size_t flowAggEdgeCount = 0;
   std::size_t linkCommEdgeCount = 0;
+  std::size_t chainCount = 0;
+  std::size_t shellCount = 0;
 };
 
 [[nodiscard]] Summary

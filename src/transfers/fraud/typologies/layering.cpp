@@ -15,32 +15,27 @@ namespace PhantomLedger::transfers::fraud::typologies::layering {
 
 namespace {
 
-// Per-hop haircut bounds (fraction of principal lost).
 constexpr double kHopHaircutMin = 0.02;
-constexpr double kHopHaircutRange = 0.06; // → [0.02, 0.08)
+constexpr double kHopHaircutRange = 0.06;
 
-// Final integration haircut bounds.
 constexpr double kFinalHaircutMin = 0.02;
-constexpr double kFinalHaircutRange = 0.04; // → [0.02, 0.06)
+constexpr double kFinalHaircutRange = 0.04;
 
-// Delay between successive hops, in minutes.
 constexpr std::int64_t kHopDelayMinutesLo = 15;
-constexpr std::int64_t kHopDelayMinutesHi = 360; // up to 6h between hops
+constexpr std::int64_t kHopDelayMinutesHi = 360;
 
-// Delay between chain exit and integration, in minutes.
 constexpr std::int64_t kFinalDelayMinutesLo = 30;
-constexpr std::int64_t kFinalDelayMinutesHi = 720; // up to 12h
+constexpr std::int64_t kFinalDelayMinutesHi = 720;
 
-// Minimum surviving principal before we abandon the chain.
 constexpr double kPrincipalFloor = 10.0;
+
+constexpr double kShellBiasProbability = 0.65;
 
 [[nodiscard]] bool containsKey(const std::vector<entity::Key> &haystack,
                                const entity::Key &needle) noexcept {
   return std::find(haystack.begin(), haystack.end(), needle) != haystack.end();
 }
 
-// Try to surface a mule to the front of the chain and a fraud account to the
-// back, so the chain reads as: mule (entry) → … → fraud (ultimate beneficiary).
 void biasChainRoles(std::vector<entity::Key> &chain,
                     const std::vector<entity::Key> &mules,
                     const std::vector<entity::Key> &frauds) {
@@ -65,6 +60,24 @@ void biasChainRoles(std::vector<entity::Key> &chain,
   }
 }
 
+void swapMiddleForShells(std::vector<entity::Key> &chain,
+                         const std::vector<entity::Key> &shells,
+                         random::Rng &rng) {
+  if (chain.size() < 3 || shells.empty()) {
+    return;
+  }
+  for (std::size_t i = 1; i + 1 < chain.size(); ++i) {
+    if (!rng.coin(kShellBiasProbability)) {
+      continue;
+    }
+    const auto &candidate = shells[rng.choiceIndex(shells.size())];
+    if (containsKey(chain, candidate)) {
+      continue;
+    }
+    chain[i] = candidate;
+  }
+}
+
 } // namespace
 
 std::vector<transactions::Transaction> generate(IllicitContext &ctx,
@@ -85,7 +98,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
                                            .maxDays = 7,
                                        });
 
-  // Pool of accounts that can serve as chain nodes (mules + frauds).
   std::vector<entity::Key> intermediaries;
   intermediaries.reserve(plan.muleAccounts.size() + plan.fraudAccounts.size());
   intermediaries.insert(intermediaries.end(), plan.muleAccounts.begin(),
@@ -101,9 +113,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
   const auto hopChannel = channels::tag(channels::Fraud::layeringHop);
   const auto outChannel = channels::tag(channels::Fraud::layeringOut);
 
-  // Each victim funds its own layering event with its own chain, principal,
-  // and causal timeline. Each event gets a fresh chainId so a downstream
-  // detector can group its transactions as one origin→beneficiary flow.
   for (const auto &victim : plan.victimAccounts) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
@@ -112,7 +121,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
       continue;
     }
 
-    // Sample chain length for this event.
     const auto requestedHops = static_cast<std::size_t>(rng.uniformInt(
         rules.minHops, static_cast<std::int64_t>(rules.maxHops) + 1));
     const auto chainLen = std::min(requestedHops, intermediaries.size());
@@ -122,11 +130,11 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
 
     auto chain = typologies::pickK(rng, intermediaries, chainLen);
     biasChainRoles(chain, plan.muleAccounts, plan.fraudAccounts);
+    swapMiddleForShells(chain, plan.shellFraudAccounts, rng);
 
     const auto &entry = chain.front();
     const auto &exitAcct = chain.back();
 
-    // Sample a principal and a starting timestamp inside the burst window.
     double principal = math::amounts::kFraud.sample(rng);
     if (principal < 50.0) {
       principal = 50.0;
@@ -135,11 +143,8 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
     auto currentTs = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
                                      HourRange{.min = 8, .max = 22});
 
-    // One chain id per layering event. All transactions emitted below share
-    // it, so a downstream consumer can reassemble the chain by chainId.
     const auto chainId = ctx.allocateChainId();
 
-    // ─── Origination: victim → entry, full principal ────────────────
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
             transactions::Draft{
@@ -155,7 +160,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
       break;
     }
 
-    // ─── Hops: principal decays, timestamps strictly increase ───────
     bool chainBroken = false;
     bool budgetBlown = false;
     double current = principal;
@@ -173,7 +177,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
         break;
       }
 
-      // Causal delay between hops: minutes to a few hours.
       const auto delayMin =
           rng.uniformInt(kHopDelayMinutesLo, kHopDelayMinutesHi + 1);
       currentTs = currentTs + time::Minutes{delayMin};
@@ -202,7 +205,6 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
       continue;
     }
 
-    // ─── Integration: exit → cashout (ideally a fraud account ≠ exit) ──
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
     }

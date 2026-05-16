@@ -15,6 +15,7 @@ namespace PhantomLedger::transfers::fraud {
 struct Plan {
   std::uint32_t ringId = 0;
   std::vector<entity::Key> fraudAccounts;
+  std::vector<entity::Key> shellFraudAccounts;
   std::vector<entity::Key> muleAccounts;
   std::vector<entity::Key> victimAccounts;
 
@@ -29,34 +30,49 @@ struct Plan {
 
 namespace detail {
 
-[[nodiscard]] inline entity::Key
-primaryKey(const entity::account::Registry &registry,
-           const entity::account::Ownership &ownership,
-           entity::PersonId person) {
+struct AccountView {
+  const entity::account::Registry &registry;
+  const entity::account::Ownership &ownership;
+};
+
+[[nodiscard]] inline entity::Key primaryKey(AccountView view,
+                                            entity::PersonId person) {
   if (person == entity::invalidPerson ||
-      static_cast<std::size_t>(person) >= ownership.byPersonOffset.size()) {
+      static_cast<std::size_t>(person) >=
+          view.ownership.byPersonOffset.size()) {
     throw std::runtime_error("Person has no active accounts: " +
                              std::to_string(person));
   }
 
-  const auto start = ownership.byPersonOffset[person - 1];
-  const auto end = ownership.byPersonOffset[person];
+  const auto start = view.ownership.byPersonOffset[person - 1];
+  const auto end = view.ownership.byPersonOffset[person];
   if (start == end) {
     throw std::runtime_error("Person has no active accounts: " +
                              std::to_string(person));
   }
 
-  return registry.records[ownership.primaryIndex(person)].id;
+  return view.registry.records[view.ownership.primaryIndex(person)].id;
 }
 
 [[nodiscard]] inline std::vector<entity::Key>
-collectKeys(const entity::account::Registry &registry,
-            const entity::account::Ownership &ownership,
-            std::span<const entity::PersonId> persons) {
+collectKeys(AccountView view, std::span<const entity::PersonId> persons) {
   std::vector<entity::Key> out;
   out.reserve(persons.size());
   for (const auto p : persons) {
-    out.push_back(primaryKey(registry, ownership, p));
+    out.push_back(primaryKey(view, p));
+  }
+  return out;
+}
+
+[[nodiscard]] inline std::vector<entity::Key>
+collectKeysWithFlag(AccountView view, std::span<const entity::PersonId> persons,
+                    entity::account::Flag flag) {
+  std::vector<entity::Key> out;
+  for (const auto p : persons) {
+    const auto &rec = view.registry.records[view.ownership.primaryIndex(p)];
+    if (entity::account::hasFlag(rec.flags, flag)) {
+      out.push_back(rec.id);
+    }
   }
   return out;
 }
@@ -75,17 +91,17 @@ buildPlan(const entity::person::Ring &ring,
           const entity::person::Topology &topology,
           const entity::account::Registry &registry,
           const entity::account::Ownership &ownership) {
+  const detail::AccountView view{registry, ownership};
+  const auto fraudPersons = detail::sliceView(topology.fraudStore, ring.frauds);
   return Plan{
       .ringId = ring.id,
-      .fraudAccounts = detail::collectKeys(
-          registry, ownership,
-          detail::sliceView(topology.fraudStore, ring.frauds)),
+      .fraudAccounts = detail::collectKeys(view, fraudPersons),
+      .shellFraudAccounts = detail::collectKeysWithFlag(
+          view, fraudPersons, entity::account::Flag::shell),
       .muleAccounts = detail::collectKeys(
-          registry, ownership,
-          detail::sliceView(topology.muleStore, ring.mules)),
+          view, detail::sliceView(topology.muleStore, ring.mules)),
       .victimAccounts = detail::collectKeys(
-          registry, ownership,
-          detail::sliceView(topology.victimStore, ring.victims)),
+          view, detail::sliceView(topology.victimStore, ring.victims)),
   };
 }
 

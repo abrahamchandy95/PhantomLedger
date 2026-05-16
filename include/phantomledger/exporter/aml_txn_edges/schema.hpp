@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/exporter/labels.hpp"
 #include "phantomledger/exporter/schema.hpp"
 
 #include <array>
@@ -153,12 +154,12 @@ inline constexpr std::array<std::string_view, 6> kBusinessHeader{
 };
 inline constexpr Table kBusiness = make("Business.csv", kBusinessHeader);
 
-inline constexpr std::array<std::string_view, 11> kChainHeader{
-    "id",       "chain_id",  "ring_id",          "typology",
-    "num_hops", "principal", "final_amount",     "total_haircut",
-    "start_ts", "end_ts",    "duration_seconds",
-};
-inline constexpr Table kChain = make("Chain.csv", kChainHeader);
+inline constexpr Table kChain =
+    make("Chain.csv", ::PhantomLedger::exporter::labels::headers::kChain);
+
+inline constexpr Table kShellAccount =
+    make("ShellAccount.csv",
+         ::PhantomLedger::exporter::labels::headers::kShellAccount);
 
 inline constexpr std::array<std::string_view, 13> kInvestigationCaseTxnHeader{
     "id",
@@ -202,13 +203,9 @@ inline constexpr std::array<std::string_view, 10> kTransactedHeader{
 };
 inline constexpr Table kTransacted = make("TRANSACTED.csv", kTransactedHeader);
 
-inline constexpr std::array<std::string_view, 3> kTransactionChainLabelHeader{
-    "transaction_id",
-    "chain_id",
-    "ring_id",
-};
 inline constexpr Table kTransactionChainLabel =
-    make("TRANSACTION_CHAIN_LABEL.csv", kTransactionChainLabelHeader);
+    make("TRANSACTION_CHAIN_LABEL.csv",
+         ::PhantomLedger::exporter::labels::headers::kTransactionChainLabel);
 
 inline constexpr std::array<std::string_view, 6> kInvolvesCounterpartyHeader{
     "from_id",       "to_id",      "observed_at",

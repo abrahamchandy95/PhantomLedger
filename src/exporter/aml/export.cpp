@@ -6,6 +6,7 @@
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/ledger.hpp"
+#include "phantomledger/exporter/labels.hpp"
 
 #include <filesystem>
 #include <span>
@@ -17,6 +18,7 @@ namespace {
 namespace schema = ::PhantomLedger::exporter::schema;
 namespace amlSchema = ::PhantomLedger::exporter::schema::aml;
 namespace cmn = ::PhantomLedger::exporter::common;
+namespace lbl = ::PhantomLedger::exporter::labels;
 
 using cmn::openTable;
 
@@ -48,6 +50,16 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto txnBundle = edges::classifyTransactionEdges(postedTxns, ctx);
   const auto minhashSets = edges::collectMinhashVertexSets(people, ctx);
+
+  const auto txns =
+      std::span<const ::PhantomLedger::transactions::Transaction>{postedTxns};
+  const auto chainRows = lbl::buildChains(txns);
+  const lbl::ShellInputs shellInputs{
+      .registry = holdings.accounts.registry,
+      .ownership = holdings.accounts.ownership,
+      .topology = people.roster.topology,
+  };
+  const auto shellRows = lbl::buildShells(shellInputs);
 
   const auto vtxDir = outDir / "aml" / "vertices";
   std::filesystem::create_directories(vtxDir);
@@ -97,6 +109,15 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   {
     auto w = openTable(vtxDir, amlSchema::kWatchlist);
     vertices::writeWatchlistRows(w, people, simStart);
+  }
+  {
+    auto w = openTable(vtxDir, amlSchema::kChain);
+    lbl::writeChainRows(w, std::span<const lbl::ChainRow>(chainRows));
+  }
+  {
+    auto w = openTable(vtxDir, amlSchema::kShellAccount);
+    lbl::writeShellAccountRows(
+        w, std::span<const lbl::ShellAccountRow>(shellRows));
   }
 
   {
@@ -160,6 +181,10 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     auto w =
         openTable(edgeDir, amlSchema::kReceivedTransactionFromCounterparty);
     edges::writeAcctCpPairRows(w, txnBundle.receivedFromCpPairs);
+  }
+  {
+    auto w = openTable(edgeDir, amlSchema::kTransactionChainLabel);
+    lbl::writeTransactionChainLabelRows(w, txns);
   }
 
   {
@@ -304,6 +329,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   summary.fraudRingCount = people.roster.topology.rings.size();
   summary.soloFraudCount = cmn::countSoloFraud(people.roster.roster);
   summary.sarsFiledCount = sars.size();
+  summary.chainCount = chainRows.size();
+  summary.shellCount = shellRows.size();
   return summary;
 }
 } // namespace PhantomLedger::exporter::aml

@@ -14,6 +14,31 @@ namespace PhantomLedger::entities::synth::accounts {
 using identifiers::Bank;
 using identifiers::Role;
 
+namespace detail {
+
+inline constexpr double kShellRate = 0.35;
+
+inline void applyPersonFlags(entity::account::Record &primary,
+                             const entity::person::Roster &people,
+                             entity::PersonId person, random::Rng &rng) {
+  using entity::account::Flag;
+
+  if (people.has(person, entity::person::Flag::fraud)) {
+    primary.flags |= entity::account::bit(Flag::fraud);
+    if (rng.coin(kShellRate)) {
+      primary.flags |= entity::account::bit(Flag::shell);
+    }
+  }
+  if (people.has(person, entity::person::Flag::mule)) {
+    primary.flags |= entity::account::bit(Flag::mule);
+  }
+  if (people.has(person, entity::person::Flag::victim)) {
+    primary.flags |= entity::account::bit(Flag::victim);
+  }
+}
+
+} // namespace detail
+
 [[nodiscard]] inline Pack makePack(random::Rng &rng,
                                    const entity::person::Roster &people,
                                    int maxPerPerson = 3) {
@@ -56,16 +81,7 @@ using identifiers::Role;
 
   for (entity::PersonId person = 1; person <= people.count; ++person) {
     auto &primary = out.registry.records[out.ownership.primaryIndex(person)];
-
-    if (people.has(person, entity::person::Flag::fraud)) {
-      primary.flags |= entity::account::bit(entity::account::Flag::fraud);
-    }
-    if (people.has(person, entity::person::Flag::mule)) {
-      primary.flags |= entity::account::bit(entity::account::Flag::mule);
-    }
-    if (people.has(person, entity::person::Flag::victim)) {
-      primary.flags |= entity::account::bit(entity::account::Flag::victim);
-    }
+    detail::applyPersonFlags(primary, people, person, rng);
   }
 
   return out;
