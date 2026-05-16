@@ -123,10 +123,10 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
-                      const clearing::Ledger *finalBook,
-                      const aml::vertices::SharedContext &ctx,
-                      time_ns::TimePoint simStart) {
+void writeInternalAccountRows(exporter::csv::Writer &w,
+                              const pipe::Holdings &holdings,
+                              const clearing::Ledger *finalBook,
+                              time_ns::TimePoint simStart) {
   const auto cardIds = exporter::common::collectCardIds(holdings.creditCards);
 
   auto is_internal = [](const auto &rec) {
@@ -159,7 +159,11 @@ void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
     writeGdsZeroCells(w);
     w.endRow();
   }
+}
 
+void writeExternalCounterpartyAccountRows(
+    exporter::csv::Writer &w, const aml::vertices::SharedContext &ctx,
+    time_ns::TimePoint simStart) {
   const auto externalOpen = simStart - time_ns::Days{365};
   const auto externalOpenStr = time_ns::formatTimestamp(externalOpen);
   const auto externalBranch = derived::branchCodeForBucket(0);

@@ -15,6 +15,7 @@
 
 #include <set>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -43,9 +44,21 @@ buildSharedContext(const pipeline::People &people,
 void writeCustomerRows(csv::Writer &w, const pipeline::People &people,
                        const SharedContext &ctx, time::TimePoint simStart);
 
-void writeAccountRows(csv::Writer &w, const pipeline::Holdings &holdings,
-                      const clearing::Ledger *finalBook,
-                      const SharedContext &ctx, time::TimePoint simStart);
+struct InternalAccountRow {
+  ::PhantomLedger::encoding::RenderedKey idStr;
+  double balance = 0.0;
+  time::TimePoint openDate{};
+  std::string lastTxnStr;
+  std::string_view acctType;
+  ::PhantomLedger::encoding::RenderedId<8> branch;
+};
+
+[[nodiscard]] std::vector<InternalAccountRow>
+buildInternalAccountRows(const pipeline::Holdings &holdings,
+                         const clearing::Ledger *finalBook,
+                         const SharedContext &ctx, time::TimePoint simStart);
+
+void writeAccountRows(csv::Writer &w, std::span<const InternalAccountRow> rows);
 
 void writeCounterpartyRows(csv::Writer &w, const SharedContext &ctx);
 

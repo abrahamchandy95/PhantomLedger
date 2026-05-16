@@ -19,10 +19,14 @@ void writeCustomerRows(csv::Writer &w, const pipeline::People &people,
                        const aml::vertices::SharedContext &ctx,
                        time::TimePoint simStart);
 
-void writeAccountRows(csv::Writer &w, const pipeline::Holdings &holdings,
-                      const clearing::Ledger *finalBook,
-                      const aml::vertices::SharedContext &ctx,
-                      time::TimePoint simStart);
+void writeInternalAccountRows(csv::Writer &w,
+                              const pipeline::Holdings &holdings,
+                              const clearing::Ledger *finalBook,
+                              time::TimePoint simStart);
+
+void writeExternalCounterpartyAccountRows(
+    csv::Writer &w, const aml::vertices::SharedContext &ctx,
+    time::TimePoint simStart);
 
 void writeCounterpartyRows(csv::Writer &w,
                            const aml::vertices::SharedContext &ctx);
