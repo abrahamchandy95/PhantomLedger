@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class PreparedRun {
 public:
@@ -85,4 +85,4 @@ private:
   Routing routing_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 Day buildDay(time::TimePoint windowStart, double dayShockShape,
              random::Rng &rng, std::uint32_t dayIndex) {
@@ -27,4 +27,4 @@ Day buildDay(time::TimePoint windowStart, double dayShockShape,
   return day;
 }
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

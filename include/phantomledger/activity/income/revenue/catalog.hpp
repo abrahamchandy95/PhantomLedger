@@ -7,7 +7,7 @@
 #include <array>
 #include <optional>
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 namespace detail {
 
@@ -164,4 +164,4 @@ archetypeFor(personas::Type type) noexcept {
   return detail::kCatalog[detail::enumTax::toIndex(type)];
 }
 
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

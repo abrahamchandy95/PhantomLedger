@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class RunState {
 public:
@@ -135,4 +135,4 @@ struct ThreadLocalState {
   ThreadLocalState &operator=(ThreadLocalState &&) noexcept = default;
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::liquidity {
+namespace PhantomLedger::activity::spending::liquidity {
 
 struct Snapshot {
   std::uint32_t daysSincePayday = 0;
@@ -12,4 +12,4 @@ struct Snapshot {
   double fixedMonthlyBurden = 0.0;
 };
 
-} // namespace PhantomLedger::spending::liquidity
+} // namespace PhantomLedger::activity::spending::liquidity

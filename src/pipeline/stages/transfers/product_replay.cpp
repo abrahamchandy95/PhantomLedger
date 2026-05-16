@@ -25,32 +25,32 @@ ProductTxnEmitter::ProductTxnEmitter(
     : window_(window), seed_(seed), rng_(rng), txf_(txf) {}
 
 std::vector<ProductTxnEmitter::Transaction>
-ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Entities &entities,
+ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Holdings &holdings,
                             const PrimaryAccounts &primaryAccounts) {
   insurance::Population population{.primaryAccounts = &primaryAccounts};
   insurance::PremiumGenerator generator{rng_, txf_};
-  return generator.generate(window_, entities.portfolios.insurance(),
-                            entities.portfolios.loans(), population);
+  return generator.generate(window_, holdings.portfolios.insurance(),
+                            holdings.portfolios.loans(), population);
 }
 
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
     ::PhantomLedger::transfers::insurance::ClaimRates rates,
-    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
   insurance::Population population{.primaryAccounts = &primaryAccounts};
   ::PhantomLedger::random::RngFactory claimsFactory{seed_};
   insurance::ClaimScheduler scheduler{rates, rng_, txf_, claimsFactory};
-  return scheduler.generate(window_, entities.portfolios.insurance(),
+  return scheduler.generate(window_, holdings.portfolios.insurance(),
                             population);
 }
 
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
-    const ::PhantomLedger::pipeline::Entities &entities,
+    const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
   obligations::Population population{.primaryAccounts = &primaryAccounts};
   obligations::Scheduler scheduler{rng_, txf_};
-  return scheduler.generate(entities.portfolios.loans(),
-                            entities.portfolios.obligations(),
+  return scheduler.generate(holdings.portfolios.loans(),
+                            holdings.portfolios.obligations(),
                             ::PhantomLedger::time::HalfOpenInterval{
                                 .start = window_.start,
                                 .endExcl = window_.endExcl(),
@@ -72,31 +72,31 @@ ProductReplay &ProductReplay::insuranceClaims(
 
 std::vector<ProductReplay::Transaction>
 ProductReplay::merge(ProductTxnEmitter &emitter,
-                     const ::PhantomLedger::pipeline::Entities &entities,
+                     const ::PhantomLedger::pipeline::Holdings &holdings,
                      const PrimaryAccounts &primaryAccounts,
                      ::PhantomLedger::transfers::legit::ledger::LegitTxnStreams
                          &legitTxns) const {
   std::vector<Transaction> stream = std::move(legitTxns.replaySortedTxns);
 
   stream = legit_ledger::mergeReplaySorted(
-      std::move(stream), emitter.premiums(entities, primaryAccounts));
+      std::move(stream), emitter.premiums(holdings, primaryAccounts));
 
   stream = legit_ledger::mergeReplaySorted(
       std::move(stream),
-      emitter.claims(insurance_.claimRates, entities, primaryAccounts));
+      emitter.claims(insurance_.claimRates, holdings, primaryAccounts));
 
   stream = legit_ledger::mergeReplaySorted(
-      std::move(stream), emitter.obligations(entities, primaryAccounts));
+      std::move(stream), emitter.obligations(holdings, primaryAccounts));
 
   return stream;
 }
 
 PrimaryAccounts
-primaryAccounts(const ::PhantomLedger::pipeline::Entities &entities) {
+primaryAccounts(const ::PhantomLedger::pipeline::Holdings &holdings) {
   PrimaryAccounts out;
-  out.reserve(entities.accounts.registry.records.size());
+  out.reserve(holdings.accounts.registry.records.size());
 
-  for (const auto &record : entities.accounts.registry.records) {
+  for (const auto &record : holdings.accounts.registry.records) {
     if (record.owner == ::PhantomLedger::entity::invalidPerson) {
       continue;
     }

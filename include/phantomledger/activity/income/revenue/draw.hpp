@@ -9,7 +9,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 using Key = entity::Key;
 
@@ -65,4 +65,4 @@ choiceK(random::Rng &rng, std::span<const Key> items, int low, int high) {
   return randInt(rng, low, high + 1);
 }
 
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

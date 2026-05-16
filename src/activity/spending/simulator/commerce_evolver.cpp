@@ -3,7 +3,7 @@
 #include "phantomledger/activity/spending/dynamics/monthly/evolution.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 namespace {
 
 [[nodiscard]] bool isMonthBoundary(std::uint32_t dayIndex,
@@ -38,4 +38,4 @@ void CommerceEvolver::evolveIfNeeded(market::Market &market, random::Rng &rng,
                                market.population().count());
 }
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

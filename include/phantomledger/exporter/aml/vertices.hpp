@@ -6,7 +6,7 @@
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/synth/infra/ips_output.hpp"
@@ -20,16 +20,6 @@
 
 namespace PhantomLedger::exporter::aml::vertices {
 
-namespace clearing = ::PhantomLedger::clearing;
-namespace encoding = ::PhantomLedger::encoding;
-namespace entity = ::PhantomLedger::entity;
-namespace exporter = ::PhantomLedger::exporter;
-namespace personas = ::PhantomLedger::personas;
-namespace pipeline = ::PhantomLedger::pipeline;
-namespace synth = ::PhantomLedger::synth;
-namespace time_ns = ::PhantomLedger::time;
-namespace txns = ::PhantomLedger::transactions;
-
 struct SharedContext {
 
   std::set<encoding::RenderedKey> counterpartyIds;
@@ -39,55 +29,63 @@ struct SharedContext {
   std::vector<personas::Type> personaByPerson;
   std::unordered_map<entity::Key, std::int64_t> lastTransactionByAccount;
 
-  const ::PhantomLedger::entities::synth::pii::PoolSet *pools = nullptr;
+  const entities::synth::pii::PoolSet *pools = nullptr;
 };
 
 [[nodiscard]] SharedContext
-buildSharedContext(const pipeline::Entities &entities,
-                   std::span<const txns::Transaction> finalTxns,
-                   const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
+buildSharedContext(const pipeline::People &people,
+                   const pipeline::Holdings &holdings,
+                   const pipeline::Counterparties &cps,
+                   std::span<const transactions::Transaction> finalTxns,
+                   const entities::synth::pii::PoolSet &pools);
 
 // ────────── Vertex writers ──────────
 
-void writeCustomerRows(exporter::csv::Writer &w,
-                       const pipeline::Entities &entities,
-                       const SharedContext &ctx, time_ns::TimePoint simStart);
+void writeCustomerRows(csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
+                       const SharedContext &ctx, time::TimePoint simStart);
 
-void writeAccountRows(exporter::csv::Writer &w,
-                      const pipeline::Entities &entities,
+void writeAccountRows(csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps,
                       const clearing::Ledger *finalBook,
-                      const SharedContext &ctx, time_ns::TimePoint simStart);
+                      const SharedContext &ctx, time::TimePoint simStart);
 
-void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx);
+void writeCounterpartyRows(csv::Writer &w, const SharedContext &ctx);
 
-void writeNameRows(exporter::csv::Writer &w, const pipeline::Entities &entities,
+void writeNameRows(csv::Writer &w, const pipeline::People &people,
+                   const pipeline::Holdings &holdings,
+                   const pipeline::Counterparties &cps,
                    const SharedContext &ctx);
 
-void writeAddressRows(exporter::csv::Writer &w,
-                      const pipeline::Entities &entities,
+void writeAddressRows(csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps,
                       const SharedContext &ctx);
 
-void writeCountryRows(exporter::csv::Writer &w,
-                      const pipeline::Entities &entities);
+void writeCountryRows(csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps);
 
-void writeDeviceRows(exporter::csv::Writer &w,
+void writeDeviceRows(csv::Writer &w,
                      const synth::infra::devices::Output &devices,
                      const synth::infra::ips::Output &ips);
 
-void writeTransactionRows(exporter::csv::Writer &w,
-                          std::span<const txns::Transaction> finalTxns);
+void writeTransactionRows(csv::Writer &w,
+                          std::span<const transactions::Transaction> finalTxns);
 
-void writeSarRows(exporter::csv::Writer &w,
-                  std::span<const exporter::aml::sar::SarRecord> sars);
+void writeSarRows(csv::Writer &w, std::span<const sar::SarRecord> sars);
 
-void writeBankRows(exporter::csv::Writer &w, const SharedContext &ctx);
+void writeBankRows(csv::Writer &w, const SharedContext &ctx);
 
-void writeWatchlistRows(exporter::csv::Writer &w,
-                        const pipeline::Entities &entities,
-                        time_ns::TimePoint simStart);
+void writeWatchlistRows(csv::Writer &w, const pipeline::People &people,
+                        const pipeline::Holdings &holdings,
+                        const pipeline::Counterparties &cps,
+                        time::TimePoint simStart);
 
 template <typename Set>
-void writeMinhashIdRows(exporter::csv::Writer &w, const Set &minhashIds) {
+void writeMinhashIdRows(csv::Writer &w, const Set &minhashIds) {
   for (const auto &id : minhashIds) {
     w.writeRow(id);
   }

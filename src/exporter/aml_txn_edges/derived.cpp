@@ -21,6 +21,7 @@ namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace ch = ::PhantomLedger::channels;
 namespace common = ::PhantomLedger::exporter::common;
+namespace pipe = ::PhantomLedger::pipeline;
 
 namespace {
 
@@ -417,11 +418,11 @@ struct OwnerIndex {
   }
 };
 
-[[nodiscard]] OwnerIndex
-buildOwnerIndex(const ::PhantomLedger::pipeline::Entities &entities) {
+// Reads only the account registry, which lives in Holdings post-split.
+[[nodiscard]] OwnerIndex buildOwnerIndex(const pipe::Holdings &holdings) {
   OwnerIndex out;
-  out.ownerOf.reserve(entities.accounts.registry.records.size());
-  for (const auto &rec : entities.accounts.registry.records) {
+  out.ownerOf.reserve(holdings.accounts.registry.records.size());
+  for (const auto &rec : holdings.accounts.registry.records) {
     if (rec.owner != ent::invalidPerson) {
       out.ownerOf.emplace(rec.id, rec.owner);
     }
@@ -442,12 +443,17 @@ void emitAlert(Bundle &b, const ent::Key &onAcct, Rule rule,
 
 } // namespace
 
+// `cps` is currently unused inside buildBundle (cases/CTRs/aggregates only
+// touch People + Holdings + the txn stream). Kept in the signature for
+// header-level consistency with the SRP split; marked unused below.
 Bundle buildBundle(
-    const ::PhantomLedger::pipeline::Entities &entities,
+    const pipe::People &people, const pipe::Holdings &holdings,
+    const pipe::Counterparties &cps,
     std::span<const tx_ns::Transaction> postedTxns,
     const ::PhantomLedger::exporter::aml::vertices::SharedContext &ctx,
     std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
   (void)ctx;
+  (void)cps;
   Bundle b;
 
   // ── 1. simStart / simEnd ──
@@ -476,7 +482,7 @@ Bundle buildBundle(
     b.derivationRunId = hashedId<24>("RUN_", {"RUN", epochBytes.view()});
   }
 
-  const auto ownerIdx = buildOwnerIndex(entities);
+  const auto ownerIdx = buildOwnerIndex(holdings);
 
   // ── 2. Single sweep: alerts + CTRs + per-day velocity + aggregates ──
   b.alerts.reserve(postedTxns.size() / 8);
@@ -608,7 +614,9 @@ Bundle buildBundle(
   }
 
   // ── 5. Cases (one per ring + one per solo fraudster) ──
-  const auto &topology = entities.people.topology;
+  // People::roster is the synth::people::Pack; .topology lives directly on
+  // the Pack, and the inner entity::person::Roster is People::roster.roster.
+  const auto &topology = people.roster.topology;
   const auto &memberStore = topology.memberStore;
   b.cases.reserve(topology.rings.size() + 64);
 
@@ -629,7 +637,7 @@ Bundle buildBundle(
     b.cases.push_back(std::move(c));
   }
 
-  const auto &roster = entities.people.roster;
+  const auto &roster = people.roster.roster;
   for (ent::PersonId p = 1; p <= roster.count; ++p) {
     if (!roster.has(p, ent::person::Flag::soloFraud)) {
       continue;
@@ -748,7 +756,7 @@ Bundle buildBundle(
   }
 
   // ── 10. Businesses (one per internal business account with owner) ──
-  for (const auto &rec : entities.accounts.registry.records) {
+  for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
     }

@@ -3,7 +3,7 @@
 #include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 struct Event {
   const Spender *spender = nullptr;
@@ -14,4 +14,4 @@ struct Event {
   double amountFactor = 1.0;
 };
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

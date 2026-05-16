@@ -74,15 +74,18 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto mlDir = outDir / "ml_ready";
   std::filesystem::create_directories(mlDir);
 
-  const auto &entities = result.entities;
+  // SimulationResult no longer carries a god-struct `entities`; reach
+  // into the SRP-split sub-domains directly.
+  const auto &people = result.people;
+  const auto &holdings = result.holdings;
   const auto &infra = result.infra;
   const auto &postedTxns = result.transfers.ledger.posted.txns;
 
   const auto accountsByPerson =
-      buildAccountsByPerson(entities.accounts.registry);
-  const auto accountToOwner = buildAccountToOwner(entities.accounts.registry);
+      buildAccountsByPerson(holdings.accounts.registry);
+  const auto accountToOwner = buildAccountToOwner(holdings.accounts.registry);
 
-  const auto partyIds = collectPartyIds(entities.accounts.registry);
+  const auto partyIds = collectPartyIds(holdings.accounts.registry);
   CanonicalInputs canonInputs{};
   canonInputs.finalTxns = postedTxns;
   canonInputs.devicesByPerson = &infra.devices.byPerson;
@@ -95,8 +98,10 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     PartyInputs partyInputs{};
     partyInputs.piiPools = options.piiPools;
     partyInputs.canonical = &canonical;
-    writePartyRows(w, entities.accounts.registry, entities.people.roster,
-                   entities.pii, partyInputs);
+    // `people.roster` is the synth::people::Pack; its inner `.roster` is
+    // the entity::person::Roster that writePartyRows expects.
+    writePartyRows(w, holdings.accounts.registry, people.roster.roster,
+                   people.pii, partyInputs);
   }
   {
     auto w = common::openTable(mlDir, schema::kMlTransfer);

@@ -17,7 +17,7 @@
 #include <string>
 #include <string_view>
 
-namespace PhantomLedger::recurring::growth {
+namespace PhantomLedger::activity::recurring::growth {
 
 namespace detail {
 
@@ -308,4 +308,4 @@ inline void requireGrowthFactor(double factor, std::string_view field) {
   return growthFactor;
 }
 
-} // namespace PhantomLedger::recurring::growth
+} // namespace PhantomLedger::activity::recurring::growth

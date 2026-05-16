@@ -8,7 +8,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows::selection {
+namespace PhantomLedger::activity::income::selection {
 
 using PersonId = entity::PersonId;
 
@@ -123,4 +123,4 @@ template <class CandidateFn, class BaseFn>
                                        std::move(baseProbability)};
 }
 
-} // namespace PhantomLedger::inflows::selection
+} // namespace PhantomLedger::activity::income::selection

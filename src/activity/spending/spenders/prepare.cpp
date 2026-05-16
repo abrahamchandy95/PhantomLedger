@@ -5,7 +5,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::spending::spenders {
+namespace PhantomLedger::activity::spending::spenders {
 
 namespace {
 
@@ -93,4 +93,4 @@ prepareSpenders(const market::Market &market,
   return out;
 }
 
-} // namespace PhantomLedger::spending::spenders
+} // namespace PhantomLedger::activity::spending::spenders

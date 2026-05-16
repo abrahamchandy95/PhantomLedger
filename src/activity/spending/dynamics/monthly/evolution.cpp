@@ -1,6 +1,6 @@
 #include "phantomledger/activity/spending/dynamics/monthly/evolution.hpp"
 
-namespace PhantomLedger::spending::dynamics::monthly {
+namespace PhantomLedger::activity::spending::dynamics::monthly {
 
 void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
                market::commerce::View &commerce, std::uint32_t totalPersons) {
@@ -22,4 +22,4 @@ void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
   // pass it to evolveFavorites().
 }
 
-} // namespace PhantomLedger::spending::dynamics::monthly
+} // namespace PhantomLedger::activity::spending::dynamics::monthly

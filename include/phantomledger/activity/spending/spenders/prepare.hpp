@@ -7,11 +7,11 @@
 
 #include <vector>
 
-namespace PhantomLedger::spending::spenders {
+namespace PhantomLedger::activity::spending::spenders {
 
 [[nodiscard]] std::vector<PreparedSpender>
 prepareSpenders(const market::Market &market,
                 const obligations::Snapshot &obligations,
                 const clearing::Ledger *ledger);
 
-} // namespace PhantomLedger::spending::spenders
+} // namespace PhantomLedger::activity::spending::spenders

@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <span>
 
-namespace PhantomLedger::spending::dynamics::paycheck {
+namespace PhantomLedger::activity::spending::dynamics::paycheck {
 
 using State = math::paycheck::State;
 using Config = math::paycheck::Config;
@@ -35,4 +35,4 @@ inline void accumulate(std::span<State> states,
   }
 }
 
-} // namespace PhantomLedger::spending::dynamics::paycheck
+} // namespace PhantomLedger::activity::spending::dynamics::paycheck

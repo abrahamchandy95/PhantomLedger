@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace PhantomLedger::spending::market {
+namespace PhantomLedger::activity::spending::market {
 
 class Cards {
 public:
@@ -35,4 +35,4 @@ private:
   std::vector<entity::Key> byPerson_;
 };
 
-} // namespace PhantomLedger::spending::market
+} // namespace PhantomLedger::activity::spending::market

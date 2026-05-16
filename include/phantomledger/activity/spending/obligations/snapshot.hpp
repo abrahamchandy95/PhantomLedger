@@ -5,7 +5,7 @@
 
 #include <span>
 
-namespace PhantomLedger::spending::obligations {
+namespace PhantomLedger::activity::spending::obligations {
 
 struct Snapshot {
   std::span<const transactions::Transaction> baseTxns;
@@ -13,4 +13,4 @@ struct Snapshot {
   Burden burden;
 };
 
-} // namespace PhantomLedger::spending::obligations
+} // namespace PhantomLedger::activity::spending::obligations

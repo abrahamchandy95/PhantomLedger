@@ -11,6 +11,7 @@ namespace {
 
 namespace entities = ::PhantomLedger::entities;
 namespace entity = ::PhantomLedger::entity;
+namespace pipe = ::PhantomLedger::pipeline;
 namespace primitives = ::PhantomLedger::primitives;
 namespace random = ::PhantomLedger::random;
 namespace synth = ::PhantomLedger::synth;
@@ -114,7 +115,8 @@ AccessInfraStage::buildSharedInfra(const synth::infra::devices::Output &devices,
 }
 
 pipe::Infra AccessInfraStage::build(random::Rng &rng,
-                                    const pipe::Entities &entities,
+                                    const pipe::People &people,
+                                    const pipe::Holdings &holdings,
                                     time_ns::Window fallbackWindow) const {
 
   primitives::validate::Report report;
@@ -127,20 +129,23 @@ pipe::Infra AccessInfraStage::build(random::Rng &rng,
 
   const auto window = activeWindow(fallbackWindow);
 
+  // `People::roster` is the synth::people::Pack; ring plans build off the
+  // Pack as a whole, while device/IP builders need only the inner Roster.
+  const auto &peoplePack = people.roster;
+
   pipe::Infra out;
-  out.ringPlans = buildRingPlans(rng, window, entities.people);
-  out.devices =
-      buildDevices(rng, window, entities.people.roster, out.ringPlans);
-  out.ips = buildIps(rng, window, entities.people.roster, out.ringPlans);
-  out.router = buildRouter(entities.accounts.registry, out.devices, out.ips);
+  out.ringPlans = buildRingPlans(rng, window, peoplePack);
+  out.devices = buildDevices(rng, window, peoplePack.roster, out.ringPlans);
+  out.ips = buildIps(rng, window, peoplePack.roster, out.ringPlans);
+  out.router = buildRouter(holdings.accounts.registry, out.devices, out.ips);
   out.ringInfra = buildSharedInfra(out.devices, out.ips);
 
   return out;
 }
 
-pipe::Infra build(random::Rng &rng, const pipe::Entities &entities,
-                  time_ns::Window window) {
-  return AccessInfraStage{}.build(rng, entities, window);
+pipe::Infra build(random::Rng &rng, const pipe::People &people,
+                  const pipe::Holdings &holdings, time_ns::Window window) {
+  return AccessInfraStage{}.build(rng, people, holdings, window);
 }
 
 } // namespace PhantomLedger::pipeline::stages::infra

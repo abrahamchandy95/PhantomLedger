@@ -8,11 +8,11 @@
 
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 [[nodiscard]] std::vector<transactions::Transaction>
 simulate(market::Market &market, random::Rng &rng,
          const transactions::Factory &factory,
          const obligations::Snapshot &obligations);
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

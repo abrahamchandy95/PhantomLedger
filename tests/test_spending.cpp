@@ -10,9 +10,9 @@
 #include <cstdio>
 
 using namespace PhantomLedger;
-namespace routing = PhantomLedger::spending::routing;
-namespace liquidity = PhantomLedger::spending::liquidity;
-namespace spenders = PhantomLedger::spending::spenders;
+namespace routing = PhantomLedger::activity::spending::routing;
+namespace liquidity = PhantomLedger::activity::spending::liquidity;
+namespace spenders = PhantomLedger::activity::spending::spenders;
 
 namespace {
 

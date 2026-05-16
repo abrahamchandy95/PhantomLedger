@@ -9,7 +9,7 @@
 #include <optional>
 #include <span>
 
-namespace PhantomLedger::recurring {
+namespace PhantomLedger::activity::recurring {
 
 namespace detail {
 
@@ -84,4 +84,4 @@ public:
   }
 };
 
-} // namespace PhantomLedger::recurring
+} // namespace PhantomLedger::activity::recurring

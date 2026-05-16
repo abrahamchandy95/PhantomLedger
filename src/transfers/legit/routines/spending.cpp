@@ -28,7 +28,7 @@
 
 namespace PhantomLedger::transfers::legit::routines::spending {
 
-namespace plSpending = ::PhantomLedger::spending;
+namespace plSpending = ::PhantomLedger::activity::spending;
 namespace plMarket = plSpending::market;
 namespace plPop = plMarket::population;
 namespace plObligations = plSpending::obligations;

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 
-namespace PhantomLedger::spending::routing {
+namespace PhantomLedger::activity::spending::routing {
 
 namespace {
 
@@ -264,4 +264,4 @@ std::optional<EmissionResult> PaymentRouter::route(Slot slot,
   return std::nullopt;
 }
 
-} // namespace PhantomLedger::spending::routing
+} // namespace PhantomLedger::activity::spending::routing

@@ -83,18 +83,18 @@ public:
   SpendingRoutine &emission(EmissionProfile value) noexcept;
   SpendingRoutine &cardLifecycle(CardLifecycleConfig value);
 
-  [[nodiscard]] ::PhantomLedger::spending::market::Market
+  [[nodiscard]] ::PhantomLedger::activity::spending::market::Market
   prepareMarket(const CensusSource &census, PayeeDirectory payees,
                 std::span<const transactions::Transaction> baseTxns) const;
 
-  [[nodiscard]] static ::PhantomLedger::spending::obligations::Snapshot
+  [[nodiscard]] static ::PhantomLedger::activity::spending::obligations::Snapshot
   prepareObligations(const CensusSource &census, ObligationSource obligations,
                      std::span<const transactions::Transaction> baseTxns,
                      bool baseTxnsSorted);
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  run(Execution execution, ::PhantomLedger::spending::market::Market &market,
-      const ::PhantomLedger::spending::obligations::Snapshot &obligations,
+  run(Execution execution, ::PhantomLedger::activity::spending::market::Market &market,
+      const ::PhantomLedger::activity::spending::obligations::Snapshot &obligations,
       clearing::Ledger *screenBook = nullptr) const;
 
 private:

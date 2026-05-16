@@ -50,7 +50,7 @@ struct AccountAccess {
 
 struct SalarySetup {
   const entity::counterparty::Directory *revenueCounterparties = nullptr;
-  inflows::salary::Rules rules{};
+  activity::income::salary::Rules rules{};
 };
 
 struct GovernmentSetup {
@@ -105,12 +105,12 @@ public:
 
   RoutinePass(random::Rng *rng, AccountAccess accounts,
               RoutineResources resources,
-              inflows::rent::Rules rentRules = {}) noexcept
+              activity::income::rent::Rules rentRules = {}) noexcept
       : rng_(rng), accounts_(accounts), resources_(resources),
         rentRules_(std::move(rentRules)) {}
 
   RoutinePass(random::Rng *rng, RoutineResources resources,
-              inflows::rent::Rules rentRules = {}) noexcept
+              activity::income::rent::Rules rentRules = {}) noexcept
       : RoutinePass(rng, AccountAccess{}, resources, std::move(rentRules)) {}
 
   RoutinePass &accounts(AccountAccess value) noexcept {
@@ -135,7 +135,8 @@ public:
     return resources_;
   }
 
-  [[nodiscard]] const inflows::rent::Rules &rentRules() const noexcept {
+  [[nodiscard]] const activity::income::rent::Rules &
+  rentRules() const noexcept {
     return rentRules_;
   }
 
@@ -144,7 +145,7 @@ private:
   AccountAccess accounts_{};
   const transactions::Factory *txf_ = nullptr;
   RoutineResources resources_{};
-  inflows::rent::Rules rentRules_{};
+  activity::income::rent::Rules rentRules_{};
 };
 
 class FamilyPass {

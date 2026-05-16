@@ -6,7 +6,7 @@
 
 #include <cstddef>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class ParallelLedgerView {
 public:
@@ -71,4 +71,4 @@ private:
   primitives::concurrent::AccountLockArray *lockArray_ = nullptr;
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

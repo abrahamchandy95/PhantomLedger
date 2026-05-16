@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <span>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class RunPlanner {
 public:
@@ -41,4 +41,4 @@ private:
   routing::PaymentRoutingRules paymentRules_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

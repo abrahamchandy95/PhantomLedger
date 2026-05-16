@@ -15,15 +15,12 @@
 #include "phantomledger/entities/synth/personas/kinds.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/pii/identity.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 
 #include <cstdint>
-
-namespace PhantomLedger::pipeline {
-struct Entities;
-} // namespace PhantomLedger::pipeline
 
 namespace PhantomLedger::pipeline::stages::entities {
 
@@ -42,12 +39,6 @@ struct EntitySynthesis {
   synth::counterparties::CounterpartyTargets counterpartyTargets{};
   synth::cards::IssuanceRules cards{};
 
-  // Small-business-owner synthesis. Controls how many internal
-  // (Role::business, Bank::internal) accounts get added to the registry
-  // with Person owners — populates the AML exporter's Business / SIGNER_OF
-  // / BENEFICIAL_OWNER_OF / CONTROLS / BUSINESS_OWNS_ACCOUNT outputs.
-  // Default (probability 0.08) matches US small-business demographics;
-  // set to 0.0 in the plan to disable.
   synth::accounts::BusinessOwnerPlan businessOwners{};
 
   void validate(pl::primitives::validate::Report &r) const {
@@ -99,21 +90,19 @@ issueCreditCards(const synth::personas::Pack &personas,
     pl::random::Rng &rng, std::int32_t population,
     const synth::counterparties::CounterpartyTargets &targets = {});
 
-void finalizeAccountRegistry(pl::pipeline::Entities &entities);
+/// Register system / taxonomy / merchant / landlord / counterparty /
+/// credit-card / per-person-payee accounts into `holdings.accounts`.
+/// Reads sources from `cps` (merchants, landlords, directory) and `people`
+/// (roster) — but only writes into `holdings`, so `holdings` is the sole
+/// mutable parameter.
+void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
+                             const pl::pipeline::Counterparties &cps,
+                             const pl::pipeline::People &people);
 
-// Adds internal small-business accounts to the registry, owned by a
-// fraction of the existing Person population. Must run AFTER
-// finalizeAccountRegistry so the per-person ownership index can be
-// rebuilt in one pass over the final registry shape.
-//
-// Producing these accounts here (rather than at exporter time) means
-// downstream consumers see a realistic, consistent account population:
-// the same business accounts that show up in AML's Business vertices
-// also receive transactions, payroll, and ledger postings via the
-// standard transfer routines, since those routines walk the account
-// registry without caring about the role flag.
+/// Synthesize business-owner records into `holdings.accounts`, driven by
+/// the person roster in `people`.
 void synthesizeBusinessOwners(
-    pl::pipeline::Entities &entities, pl::random::Rng &rng,
-    const synth::accounts::BusinessOwnerPlan &plan = {});
+    pl::pipeline::Holdings &holdings, const pl::pipeline::People &people,
+    pl::random::Rng &rng, const synth::accounts::BusinessOwnerPlan &plan = {});
 
 } // namespace PhantomLedger::pipeline::stages::entities

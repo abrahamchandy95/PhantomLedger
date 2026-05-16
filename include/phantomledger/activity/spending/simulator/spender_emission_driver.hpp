@@ -17,7 +17,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class SpenderEmissionDriver {
 public:
@@ -92,4 +92,4 @@ private:
   primitives::concurrent::AccountLockArray lockArray_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

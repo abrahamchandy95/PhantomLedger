@@ -17,61 +17,60 @@ namespace PhantomLedger::transfers::fraud::camouflage {
 
 namespace {
 
-using recurring::PayCadence;
-using recurring::PayrollProfile;
-using recurring::PayrollRules;
+namespace recur = activity::recurring;
 
-[[nodiscard]] PayrollProfile sampleCamouflagePayrollProfile(random::Rng &rng) {
-  static constexpr PayrollRules kRules{};
+[[nodiscard]] recur::PayrollSchedule
+sampleCamouflagePayrollProfile(random::Rng &rng) {
+  static constexpr recur::PayrollRules kRules{};
 
-  const std::array<double, recurring::kPayCadenceCount> cadenceWeights{
-      kRules.weights.weekly,
-      kRules.weights.biweekly,
-      kRules.weights.semimonthly,
-      kRules.weights.monthly,
+  const std::array<double, recur::kPayCadenceCount> cadenceWeights{
+      kRules.cadences.weekly,
+      kRules.cadences.biweekly,
+      kRules.cadences.semimonthly,
+      kRules.cadences.monthly,
   };
 
   const auto cdf = probability::distributions::buildCdf(cadenceWeights);
   const auto cadence =
-      recurring::kPayCadences[probability::distributions::sampleIndex(
+      recur::kPayCadences[probability::distributions::sampleIndex(
           cdf, rng.nextDouble())];
 
-  int weekday = kRules.defaultWeekday;
-  if ((cadence == PayCadence::weekly || cadence == PayCadence::biweekly) &&
+  int weekday = kRules.weekday.defaultWeekday;
+  if ((cadence == recur::Cadence::weekly ||
+       cadence == recur::Cadence::biweekly) &&
       rng.coin(0.25)) {
     weekday = (weekday == 4) ? 3 : 4;
   }
 
-  auto anchor =
-      recurring::nextWeekdayOnOrAfter(time::makeTime(time::CalendarDate{
-                                          .year = 2025,
-                                          .month = 1,
-                                          .day = 1,
-                                      }),
-                                      weekday);
+  auto anchor = recur::nextWeekdayOnOrAfter(time::makeTime(time::CalendarDate{
+                                                .year = 2025,
+                                                .month = 1,
+                                                .day = 1,
+                                            }),
+                                            weekday);
 
-  if (cadence == PayCadence::biweekly && rng.coin(0.5)) {
+  if (cadence == recur::Cadence::biweekly && rng.coin(0.5)) {
     anchor = time::addDays(anchor, 7);
   }
 
-  const int lagMax = kRules.postingLagDaysMax;
+  const int lagMax = kRules.postingLag.maxDays;
   const int postingLagDays =
       (lagMax == 0) ? 0
                     : static_cast<int>(rng.uniformInt(
                           0, static_cast<std::int64_t>(lagMax) + 1));
 
-  PayrollProfile profile;
+  recur::PayrollSchedule profile;
   profile.cadence = cadence;
   profile.anchorDate = anchor;
   profile.weekday = weekday;
   profile.postingLagDays = postingLagDays;
 
-  if (cadence == PayCadence::semimonthly) {
+  if (cadence == recur::Cadence::semimonthly) {
     profile.semimonthlyDays =
         rng.coin(0.35) ? std::array<int, 2>{1, 15} : std::array<int, 2>{15, 31};
   }
 
-  if (cadence == PayCadence::monthly) {
+  if (cadence == recur::Cadence::monthly) {
     static constexpr std::array<int, 3> kMonthlyDayChoices{28, 30, 31};
     profile.monthlyDay =
         kMonthlyDayChoices[rng.choiceIndex(kMonthlyDayChoices.size())];
@@ -193,7 +192,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
       const double annualSalary = math::amounts::kSalary.sample(rng) * 12.0;
 
       const auto payDates =
-          recurring::paydatesForProfile(profile, startDate, windowEndExcl);
+          recur::paydatesForProfile(profile, startDate, windowEndExcl);
 
       for (const auto &payDate : payDates) {
         const auto offsetHours =
@@ -209,8 +208,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
         }
 
         const auto payDateCal = time::toCalendarDate(payDate);
-        const int periods =
-            recurring::payPeriodsInYear(profile, payDateCal.year);
+        const int periods = recur::payPeriodsInYear(profile, payDateCal.year);
 
         const double rawAmount = annualSalary / static_cast<double>(periods);
         const double amount = primitives::utils::floorAndRound(rawAmount, 50.0);

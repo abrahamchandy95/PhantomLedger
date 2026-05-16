@@ -5,7 +5,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::market::commerce {
+namespace PhantomLedger::activity::spending::market::commerce {
 
 class Contacts {
 public:
@@ -38,4 +38,4 @@ private:
   std::vector<std::uint32_t> flat_;
 };
 
-} // namespace PhantomLedger::spending::market::commerce
+} // namespace PhantomLedger::activity::spending::market::commerce

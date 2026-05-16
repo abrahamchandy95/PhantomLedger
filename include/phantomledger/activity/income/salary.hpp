@@ -19,7 +19,7 @@
 #include <string_view>
 #include <vector>
 
-namespace PhantomLedger::inflows {
+namespace PhantomLedger::activity::income {
 
 namespace salary {
 
@@ -298,4 +298,4 @@ generateSalaryTxns(const salary::Payroll &payroll, random::Rng &rng,
   return txns;
 }
 
-} // namespace PhantomLedger::inflows
+} // namespace PhantomLedger::activity::income

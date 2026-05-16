@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-namespace PhantomLedger::spending::dynamics::daily {
+namespace PhantomLedger::activity::spending::dynamics::daily {
 
 struct Ctx {
   std::uint32_t dayIndex = 0;
@@ -15,4 +15,4 @@ struct Ctx {
   const market::population::View *population = nullptr;
 };
 
-} // namespace PhantomLedger::spending::dynamics::daily
+} // namespace PhantomLedger::activity::spending::dynamics::daily

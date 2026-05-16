@@ -20,7 +20,7 @@ namespace {
 
 namespace cdf = ::PhantomLedger::probability::distributions;
 namespace probdist = ::PhantomLedger::probability::distributions;
-namespace commerce = ::PhantomLedger::spending::market::commerce;
+namespace commerce = ::PhantomLedger::activity::spending::market::commerce;
 
 [[nodiscard]] std::vector<double>
 buildAttractiveness(random::Rng &rng, std::uint32_t personCount,

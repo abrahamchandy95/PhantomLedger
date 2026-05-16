@@ -19,7 +19,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class DayDriver {
 public:
@@ -88,4 +88,4 @@ private:
   std::size_t cardIngestCursor_ = 0;
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

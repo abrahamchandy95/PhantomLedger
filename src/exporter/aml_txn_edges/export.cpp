@@ -28,7 +28,10 @@ using cmn::openTable;
 Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                   const std::filesystem::path &outDir, const Options &options) {
   const auto &pools = cmn::requirePools(options, "aml_txn_edges");
-  const auto &entities = result.entities;
+
+  const auto &people = result.people;
+  const auto &holdings = result.holdings;
+  const auto &cps = result.counterparties;
   const auto &infra = result.infra;
 
   const auto &postedTxns = result.transfers.ledger.posted.txns;
@@ -44,24 +47,26 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto simStart = cmn::deriveSimStart(txns);
   const auto simEnd = cmn::deriveSimEnd(txns);
 
-  const auto sharedCtx = amlShared::buildSharedContext(entities, txns, pools);
+  const auto sharedCtx =
+      amlShared::buildSharedContext(people, holdings, cps, txns, pools);
 
   const auto sarSubjects = amlSar::buildSarSubjectIndex(
-      entities.people.roster, entities.people.topology,
-      entities.accounts.registry, entities.accounts.ownership);
+      people.roster.roster, people.roster.topology, holdings.accounts.registry,
+      holdings.accounts.ownership);
   const auto sars = amlSar::generateSars(sarSubjects, txns);
 
-  const auto bundle =
-      derived::buildBundle(entities, txns, sharedCtx, std::span(sars));
+  const auto bundle = derived::buildBundle(people, holdings, cps, txns,
+                                           sharedCtx, std::span(sars));
 
   // ── Vertices ──
   {
     auto w = openTable(vDir, amlTxnSchema::kCustomer);
-    vertices::writeCustomerRows(w, entities, sharedCtx, simStart);
+    vertices::writeCustomerRows(w, people, holdings, cps, sharedCtx, simStart);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kAccount);
-    vertices::writeAccountRows(w, entities, postedBook, sharedCtx, simStart);
+    vertices::writeAccountRows(w, people, holdings, cps, postedBook, sharedCtx,
+                               simStart);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kCounterparty);
@@ -81,31 +86,31 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kFullName);
-    vertices::writeFullNameRows(w, entities, sharedCtx);
+    vertices::writeFullNameRows(w, people, holdings, cps, sharedCtx);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kEmail);
-    vertices::writeEmailRows(w, entities);
+    vertices::writeEmailRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kPhone);
-    vertices::writePhoneRows(w, entities);
+    vertices::writePhoneRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kDob);
-    vertices::writeDobRows(w, entities);
+    vertices::writeDobRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kGovtId);
-    vertices::writeGovtIdRows(w, entities);
+    vertices::writeGovtIdRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kAddress);
-    vertices::writeAddressRows(w, entities, sharedCtx);
+    vertices::writeAddressRows(w, people, holdings, cps, sharedCtx);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kWatchlist);
-    vertices::writeWatchlistRows(w, entities, simStart);
+    vertices::writeWatchlistRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kAlert);
@@ -125,7 +130,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kMinHashBucket);
-    vertices::writeMinHashBucketRows(w, entities, sharedCtx);
+    vertices::writeMinHashBucketRows(w, people, holdings, cps, sharedCtx);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kInvestigationCase);
@@ -150,7 +155,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   // ── Edges ──
   {
     auto w = openTable(eDir, amlTxnSchema::kOwns);
-    edges::writeOwnsRows(w, entities, simStart);
+    edges::writeOwnsRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kTransacted);
@@ -166,7 +171,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kOnWatchlist);
-    edges::writeOnWatchlistRows(w, entities, simStart);
+    edges::writeOnWatchlistRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kSubjectOfSar);
@@ -226,27 +231,27 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasName);
-    edges::writeHasNameRows(w, entities, simStart);
+    edges::writeHasNameRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasAddress);
-    edges::writeHasAddressRows(w, entities, simStart);
+    edges::writeHasAddressRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasEmail);
-    edges::writeHasEmailRows(w, entities, simStart);
+    edges::writeHasEmailRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasPhone);
-    edges::writeHasPhoneRows(w, entities, simStart);
+    edges::writeHasPhoneRows(w, people, holdings, cps, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasDob);
-    edges::writeHasDobRows(w, entities);
+    edges::writeHasDobRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kHasId);
-    edges::writeHasIdRows(w, entities);
+    edges::writeHasIdRows(w, people, holdings, cps);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kUsesDevice);
@@ -258,7 +263,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kInBucket);
-    edges::writeInBucketRows(w, entities, sharedCtx, simStart);
+    edges::writeInBucketRows(w, people, holdings, cps, sharedCtx, simStart);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kAccountFlowAgg);
@@ -278,11 +283,9 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   (void)options.showTransactions;
   (void)simEnd;
 
-  // ── Summary ──
-
   Summary s;
-  cmn::fillBaseCounts(s, entities, txns, sharedCtx.counterpartyIds.size(),
-                      sars.size());
+  cmn::fillBaseCounts(s, people, holdings, txns,
+                      sharedCtx.counterpartyIds.size(), sars.size());
   s.alertCount = bundle.alerts.size();
   s.ctrCount = bundle.ctrs.size();
   s.caseCount = bundle.cases.size();

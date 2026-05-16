@@ -3,7 +3,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
-namespace PhantomLedger::inflows::timestamps {
+namespace PhantomLedger::activity::income::timestamps {
 
 struct TimestampJitter {
   int dayOffsetMax = 0;
@@ -46,4 +46,4 @@ inline constexpr TimestampJitter kRentTimestampJitter{
     .hourEndExcl = 22,
 };
 
-} // namespace PhantomLedger::inflows::timestamps
+} // namespace PhantomLedger::activity::income::timestamps

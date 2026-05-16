@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::spending::liquidity {
+namespace PhantomLedger::activity::spending::liquidity {
 
 [[nodiscard]] constexpr double countFactor(double liquidityMult) noexcept {
   const double liq = std::clamp(liquidityMult, 0.0, 1.25);
@@ -27,4 +27,4 @@ namespace PhantomLedger::spending::liquidity {
   return kFloor + (1.0 - kFloor) * t;
 }
 
-} // namespace PhantomLedger::spending::liquidity
+} // namespace PhantomLedger::activity::spending::liquidity

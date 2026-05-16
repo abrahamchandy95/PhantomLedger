@@ -4,7 +4,8 @@
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
+#include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
@@ -24,30 +25,29 @@ struct LifecycleRules;
 
 namespace PhantomLedger::transfers::legit {
 
-using FamilyTransferScenario = ::PhantomLedger::transfers::legit::routines::
-    relatives::FamilyTransferScenario;
+// Relative namespace resolution is much cleaner here
+using FamilyTransferScenario = routines::relatives::FamilyTransferScenario;
 
 class LegitAssembly {
 public:
   struct RunScope {
-    ::PhantomLedger::time::Window window{};
+    time::Window window{};
     std::uint64_t seed = 0;
   };
 
   struct IncomePrograms {
-    ::PhantomLedger::inflows::salary::Rules salary{};
-    ::PhantomLedger::inflows::rent::Rules rent{};
-    ::PhantomLedger::transfers::government::RetirementTerms retirement{};
-    ::PhantomLedger::transfers::government::DisabilityTerms disability{};
+    activity::income::salary::Rules salary{};
+    activity::income::rent::Rules rent{};
+    government::RetirementTerms retirement{};
+    government::DisabilityTerms disability{};
   };
 
   struct OpeningBalances {
-    const ::PhantomLedger::clearing::BalanceRules *balanceRules = nullptr;
+    const clearing::BalanceRules *balanceRules = nullptr;
   };
 
   struct CardLifecycle {
-    const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-        *lifecycleRules = nullptr;
+    const credit_cards::LifecycleRules *lifecycleRules = nullptr;
   };
 
   struct HubSelection {
@@ -63,32 +63,27 @@ public:
   LegitAssembly &familyTransfers(FamilyTransferScenario value) noexcept;
   LegitAssembly &hubSelection(HubSelection value) noexcept;
 
-  LegitAssembly &window(::PhantomLedger::time::Window value) noexcept;
+  LegitAssembly &window(time::Window value) noexcept;
   LegitAssembly &seed(std::uint64_t value) noexcept;
 
-  // Granular rule setters route to the owning subsystem's struct.
-  LegitAssembly &
-  salaryRules(const ::PhantomLedger::inflows::salary::Rules &value);
-  LegitAssembly &rentRules(const ::PhantomLedger::inflows::rent::Rules &value);
+  // Granular rule setters
+  LegitAssembly &salaryRules(const activity::income::salary::Rules &value);
+  LegitAssembly &rentRules(const activity::income::rent::Rules &value);
 
   LegitAssembly &
-  employmentRules(const ::PhantomLedger::recurring::EmploymentRules &value);
-  LegitAssembly &
-  leaseRules(const ::PhantomLedger::recurring::LeaseRules &value);
+  employmentRules(const activity::recurring::EmploymentRules &value);
+  LegitAssembly &leaseRules(const activity::recurring::LeaseRules &value);
   LegitAssembly &salaryPaidFraction(double value) noexcept;
   LegitAssembly &rentPaidFraction(double value) noexcept;
 
-  LegitAssembly &openingBalanceRules(
-      const ::PhantomLedger::clearing::BalanceRules *value) noexcept;
   LegitAssembly &
-  creditLifecycle(const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-                      *value) noexcept;
+  openingBalanceRules(const clearing::BalanceRules *value) noexcept;
+  LegitAssembly &
+  creditLifecycle(const credit_cards::LifecycleRules *value) noexcept;
   LegitAssembly &family(FamilyTransferScenario value) noexcept;
 
-  LegitAssembly &retirementBenefits(
-      const ::PhantomLedger::transfers::government::RetirementTerms &value);
-  LegitAssembly &disabilityBenefits(
-      const ::PhantomLedger::transfers::government::DisabilityTerms &value);
+  LegitAssembly &retirementBenefits(const government::RetirementTerms &value);
+  LegitAssembly &disabilityBenefits(const government::DisabilityTerms &value);
 
   [[nodiscard]] const RunScope &runScope() const noexcept { return run_; }
   [[nodiscard]] const IncomePrograms &incomePrograms() const noexcept {
@@ -100,10 +95,11 @@ public:
 
   void validate() const;
 
-  [[nodiscard]] ::PhantomLedger::transfers::legit::ledger::LegitTransferBuilder
-  builder(::PhantomLedger::random::Rng &rng,
-          const ::PhantomLedger::pipeline::Entities &entities,
-          const ::PhantomLedger::pipeline::Infra &infra) const;
+  [[nodiscard]] ledger::LegitTransferBuilder
+  builder(random::Rng &rng, const pipeline::People &people,
+          const pipeline::Holdings &holdings,
+          const pipeline::Counterparties &cps,
+          const pipeline::Infra &infra) const;
 
 private:
   RunScope run_{};

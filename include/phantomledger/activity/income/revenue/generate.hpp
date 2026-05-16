@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace PhantomLedger::inflows::revenue {
+namespace PhantomLedger::activity::income::revenue {
 
 namespace detail {
 
@@ -109,4 +109,4 @@ generate(const Book &book, const transactions::Factory &txf) {
   return detail::Generator(book, txf).run();
 }
 
-} // namespace PhantomLedger::inflows::revenue
+} // namespace PhantomLedger::activity::income::revenue

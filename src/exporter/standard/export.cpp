@@ -21,25 +21,27 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
   std::filesystem::create_directories(outDir);
 
-  const auto &entities = result.entities;
+  const auto &people = result.people;
+  const auto &holdings = result.holdings;
+  const auto &cps = result.counterparties;
   const auto &infra = result.infra;
   const auto &postedTxns = result.transfers.ledger.posted.txns;
 
   {
     auto w = common::openTable(outDir, schema::kPerson);
-    writePersonRows(w, entities.people.roster);
+    writePersonRows(w, people.roster.roster);
   }
   {
     auto w = common::openTable(outDir, schema::kAccountNumber);
-    writeAccountNumberRows(w, entities.accounts.registry);
+    writeAccountNumberRows(w, holdings.accounts.registry);
   }
   {
     auto w = common::openTable(outDir, schema::kPhone);
-    writePhoneRows(w, entities.pii);
+    writePhoneRows(w, people.pii);
   }
   {
     auto w = common::openTable(outDir, schema::kEmail);
-    writeEmailRows(w, entities.pii);
+    writeEmailRows(w, people.pii);
   }
   {
     auto w = common::openTable(outDir, schema::kDevice);
@@ -51,24 +53,24 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = common::openTable(outDir, schema::kMerchant);
-    writeMerchantRows(w, entities.merchants);
+    writeMerchantRows(w, cps.merchants);
   }
   {
     auto w = common::openTable(outDir, schema::kExternalAccount);
-    writeExternalAccountRows(w, entities.accounts.registry, entities.merchants,
-                             entities.landlords.roster);
+    writeExternalAccountRows(w, holdings.accounts.registry, cps.merchants,
+                             cps.landlords.roster);
   }
   {
     auto w = common::openTable(outDir, schema::kHasAccount);
-    writeHasAccountRows(w, entities.accounts.registry);
+    writeHasAccountRows(w, holdings.accounts.registry);
   }
   {
     auto w = common::openTable(outDir, schema::kHasPhone);
-    writeHasPhoneRows(w, entities.pii);
+    writeHasPhoneRows(w, people.pii);
   }
   {
     auto w = common::openTable(outDir, schema::kHasEmail);
-    writeHasEmailRows(w, entities.pii);
+    writeHasEmailRows(w, people.pii);
   }
   {
     auto w = common::openTable(outDir, schema::kHasUsed);

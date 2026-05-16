@@ -12,7 +12,7 @@
 
 namespace PhantomLedger::diagnostics::spending {
 
-namespace routing = ::PhantomLedger::spending::routing;
+namespace routing = ::PhantomLedger::activity::spending::routing;
 namespace clearing = ::PhantomLedger::clearing;
 
 inline constexpr std::size_t kSlotCount = routing::kSlotCount;

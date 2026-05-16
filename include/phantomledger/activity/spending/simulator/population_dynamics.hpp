@@ -8,7 +8,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::spending::simulator {
+namespace PhantomLedger::activity::spending::simulator {
 
 class PopulationDynamics {
 public:
@@ -29,4 +29,4 @@ private:
   std::vector<double> dailyMultBuffer_{};
 };
 
-} // namespace PhantomLedger::spending::simulator
+} // namespace PhantomLedger::activity::spending::simulator

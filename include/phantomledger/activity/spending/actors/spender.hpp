@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 /// Per-person data needed by the spending hot loop.
 
@@ -47,4 +47,4 @@ struct Spender {
   std::uint16_t burstLen = 0;
 };
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

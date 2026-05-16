@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::spending::actors {
+namespace PhantomLedger::activity::spending::actors {
 
 struct Day {
   std::uint32_t dayIndex = 0;
@@ -24,4 +24,4 @@ struct DayFrame {
 [[nodiscard]] Day buildDay(time::TimePoint windowStart, double dayShockShape,
                            random::Rng &rng, std::uint32_t dayIndex);
 
-} // namespace PhantomLedger::spending::actors
+} // namespace PhantomLedger::activity::spending::actors

@@ -4,7 +4,7 @@
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/aml_txn_edges/derived.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/pipeline/state.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/synth/infra/ips_output.hpp"
@@ -15,76 +15,81 @@
 
 namespace PhantomLedger::exporter::aml_txn_edges::vertices {
 
-namespace clearing = ::PhantomLedger::clearing;
-namespace exporter = ::PhantomLedger::exporter;
-namespace pipe = ::PhantomLedger::pipeline;
-namespace shared = ::PhantomLedger::exporter::aml::vertices;
-namespace synth = ::PhantomLedger::synth;
-namespace time_ns = ::PhantomLedger::time;
-namespace txns = ::PhantomLedger::transactions;
+void writeCustomerRows(csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
+                       const aml::vertices::SharedContext &ctx,
+                       time::TimePoint simStart);
 
-void writeCustomerRows(exporter::csv::Writer &w, const pipe::Entities &entities,
-                       const shared::SharedContext &ctx,
-                       time_ns::TimePoint simStart);
-
-void writeAccountRows(exporter::csv::Writer &w, const pipe::Entities &entities,
+void writeAccountRows(csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps,
                       const clearing::Ledger *finalBook,
-                      const shared::SharedContext &ctx,
-                      time_ns::TimePoint simStart);
+                      const aml::vertices::SharedContext &ctx,
+                      time::TimePoint simStart);
 
-void writeCounterpartyRows(exporter::csv::Writer &w,
-                           const shared::SharedContext &ctx);
+void writeCounterpartyRows(csv::Writer &w,
+                           const aml::vertices::SharedContext &ctx);
 
-void writeBankRows(exporter::csv::Writer &w, const shared::SharedContext &ctx);
+void writeBankRows(csv::Writer &w, const aml::vertices::SharedContext &ctx);
 
-void writeDeviceRows(exporter::csv::Writer &w,
+void writeDeviceRows(csv::Writer &w,
                      const synth::infra::devices::Output &devices);
 
-void writeIpRows(exporter::csv::Writer &w,
-                 const synth::infra::ips::Output &ips);
+void writeIpRows(csv::Writer &w, const synth::infra::ips::Output &ips);
 
-void writeFullNameRows(exporter::csv::Writer &w, const pipe::Entities &entities,
-                       const shared::SharedContext &ctx);
+void writeFullNameRows(csv::Writer &w, const pipeline::People &people,
+                       const pipeline::Holdings &holdings,
+                       const pipeline::Counterparties &cps,
+                       const aml::vertices::SharedContext &ctx);
 
-void writeEmailRows(exporter::csv::Writer &w, const pipe::Entities &entities);
+void writeEmailRows(csv::Writer &w, const pipeline::People &people,
+                    const pipeline::Holdings &holdings,
+                    const pipeline::Counterparties &cps);
 
-void writePhoneRows(exporter::csv::Writer &w, const pipe::Entities &entities);
+void writePhoneRows(csv::Writer &w, const pipeline::People &people,
+                    const pipeline::Holdings &holdings,
+                    const pipeline::Counterparties &cps);
 
-void writeDobRows(exporter::csv::Writer &w, const pipe::Entities &entities);
+void writeDobRows(csv::Writer &w, const pipeline::People &people,
+                  const pipeline::Holdings &holdings,
+                  const pipeline::Counterparties &cps);
 
-void writeGovtIdRows(exporter::csv::Writer &w, const pipe::Entities &entities);
+void writeGovtIdRows(csv::Writer &w, const pipeline::People &people,
+                     const pipeline::Holdings &holdings,
+                     const pipeline::Counterparties &cps);
 
-void writeAddressRows(exporter::csv::Writer &w, const pipe::Entities &entities,
-                      const shared::SharedContext &ctx);
+void writeAddressRows(csv::Writer &w, const pipeline::People &people,
+                      const pipeline::Holdings &holdings,
+                      const pipeline::Counterparties &cps,
+                      const aml::vertices::SharedContext &ctx);
 
-void writeWatchlistRows(exporter::csv::Writer &w,
-                        const pipe::Entities &entities,
-                        time_ns::TimePoint simStart);
+void writeWatchlistRows(csv::Writer &w, const pipeline::People &people,
+                        const pipeline::Holdings &holdings,
+                        const pipeline::Counterparties &cps,
+                        time::TimePoint simStart);
 
-void writeAlertRows(exporter::csv::Writer &w, const derived::Bundle &bundle);
+void writeAlertRows(csv::Writer &w, const derived::Bundle &bundle);
 
-void writeDispositionRows(exporter::csv::Writer &w,
-                          const derived::Bundle &bundle);
+void writeDispositionRows(csv::Writer &w, const derived::Bundle &bundle);
 
-void writeSarRows(exporter::csv::Writer &w,
-                  std::span<const exporter::aml::sar::SarRecord> sars);
+void writeSarRows(csv::Writer &w, std::span<const aml::sar::SarRecord> sars);
 
-void writeCtrRows(exporter::csv::Writer &w, const derived::Bundle &bundle);
+void writeCtrRows(csv::Writer &w, const derived::Bundle &bundle);
 
-void writeMinHashBucketRows(exporter::csv::Writer &w,
-                            const pipe::Entities &entities,
-                            const shared::SharedContext &ctx);
+void writeMinHashBucketRows(csv::Writer &w, const pipeline::People &people,
+                            const pipeline::Holdings &holdings,
+                            const pipeline::Counterparties &cps,
+                            const aml::vertices::SharedContext &ctx);
 
-void writeInvestigationCaseRows(exporter::csv::Writer &w,
-                                const derived::Bundle &bundle);
+void writeInvestigationCaseRows(csv::Writer &w, const derived::Bundle &bundle);
 
-void writeEvidenceArtifactRows(exporter::csv::Writer &w,
-                               const derived::Bundle &bundle);
+void writeEvidenceArtifactRows(csv::Writer &w, const derived::Bundle &bundle);
 
-void writeBusinessRows(exporter::csv::Writer &w, const derived::Bundle &bundle);
+void writeBusinessRows(csv::Writer &w, const derived::Bundle &bundle);
 
 void writeInvestigationCaseTxnRows(
-    exporter::csv::Writer &w, const derived::Bundle &bundle,
-    std::span<const txns::Transaction> postedTxns);
+    csv::Writer &w, const derived::Bundle &bundle,
+    std::span<const transactions::Transaction> postedTxns);
 
 } // namespace PhantomLedger::exporter::aml_txn_edges::vertices
