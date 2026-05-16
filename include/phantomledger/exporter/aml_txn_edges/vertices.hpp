@@ -2,7 +2,6 @@
 
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
-#include "phantomledger/exporter/aml_txn_edges/chains.hpp"
 #include "phantomledger/exporter/aml_txn_edges/derived.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/data.hpp"
@@ -72,9 +71,6 @@ void writeInvestigationCaseRows(csv::Writer &w, const derived::Bundle &bundle);
 void writeEvidenceArtifactRows(csv::Writer &w, const derived::Bundle &bundle);
 
 void writeBusinessRows(csv::Writer &w, const derived::Bundle &bundle);
-
-void writeChainRows(csv::Writer &w,
-                    std::span<const chains::ChainRow> chainRows);
 
 void writeInvestigationCaseTxnRows(
     csv::Writer &w, const derived::Bundle &bundle,

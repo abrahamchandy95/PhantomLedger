@@ -155,6 +155,7 @@ set(PL_APP_SOURCES
 
 set(PL_EXPORTER_SOURCES
     src/exporter/csv.cpp
+    src/exporter/labels.cpp
     src/exporter/standard/export.cpp
     src/exporter/mule_ml/canonical.cpp
     src/exporter/mule_ml/export.cpp
@@ -168,7 +169,6 @@ set(PL_EXPORTER_SOURCES
     src/exporter/aml_txn_edges/vertices.cpp
     src/exporter/aml_txn_edges/edges.cpp
     src/exporter/aml_txn_edges/export.cpp
-    src/exporter/aml_txn_edges/chains.cpp
 )
 
 set(PL_INFRA_SYNTH_SOURCES

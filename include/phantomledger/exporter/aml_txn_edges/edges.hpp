@@ -20,9 +20,6 @@ void writeOwnsRows(csv::Writer &w, const pipeline::Holdings &holdings,
 void writeTransactedRows(csv::Writer &w,
                          std::span<const transactions::Transaction> postedTxns);
 
-void writeTransactionChainLabelRows(
-    csv::Writer &w, std::span<const transactions::Transaction> postedTxns);
-
 void writeInvolvesCounterpartyRows(
     csv::Writer &w, std::span<const transactions::Transaction> postedTxns,
     time::TimePoint simStart);

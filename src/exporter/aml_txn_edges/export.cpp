@@ -7,6 +7,7 @@
 #include "phantomledger/exporter/aml_txn_edges/schema.hpp"
 #include "phantomledger/exporter/aml_txn_edges/vertices.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
+#include "phantomledger/exporter/labels.hpp"
 
 #include <filesystem>
 #include <span>
@@ -20,6 +21,7 @@ namespace amlShared = ::PhantomLedger::exporter::aml::vertices;
 namespace amlSar = ::PhantomLedger::exporter::aml::sar;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace cmn = ::PhantomLedger::exporter::common;
+namespace lbl = ::PhantomLedger::exporter::labels;
 
 using cmn::openTable;
 
@@ -56,6 +58,14 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   const auto bundle =
       derived::buildBundle(people, holdings, txns, std::span(sars));
+
+  const auto chainRows = lbl::buildChains(txns);
+  const lbl::ShellInputs shellInputs{
+      .registry = holdings.accounts.registry,
+      .ownership = holdings.accounts.ownership,
+      .topology = people.roster.topology,
+  };
+  const auto shellRows = lbl::buildShells(shellInputs);
 
   {
     auto w = openTable(vDir, amlTxnSchema::kCustomer);
@@ -143,6 +153,15 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     vertices::writeBusinessRows(w, bundle);
   }
   {
+    auto w = openTable(vDir, amlTxnSchema::kChain);
+    lbl::writeChainRows(w, std::span<const lbl::ChainRow>(chainRows));
+  }
+  {
+    auto w = openTable(vDir, amlTxnSchema::kShellAccount);
+    lbl::writeShellAccountRows(
+        w, std::span<const lbl::ShellAccountRow>(shellRows));
+  }
+  {
     auto w = openTable(vDir, amlTxnSchema::kInvestigationCaseTxn);
     vertices::writeInvestigationCaseTxnRows(w, bundle, txns);
   }
@@ -157,6 +176,10 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   {
     auto w = openTable(eDir, amlTxnSchema::kTransacted);
     edges::writeTransactedRows(w, txns);
+  }
+  {
+    auto w = openTable(eDir, amlTxnSchema::kTransactionChainLabel);
+    lbl::writeTransactionChainLabelRows(w, txns);
   }
   {
     auto w = openTable(eDir, amlTxnSchema::kInvolvesCounterparty);
@@ -297,6 +320,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   s.businessCount = bundle.businesses.size();
   s.flowAggEdgeCount = bundle.flowAgg.size();
   s.linkCommEdgeCount = bundle.linkComm.size();
+  s.chainCount = chainRows.size();
+  s.shellCount = shellRows.size();
   return s;
 }
 

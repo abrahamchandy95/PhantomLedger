@@ -1,14 +1,4 @@
 #pragma once
-/*
- * Almanac — memoized index of recurring date sequences over a
- * simulation window.
- *
- * Every recurring event in the simulation (monthly premiums, annual
- * taxes, SSA cycle payments, quarterly estimated tax, etc.) needs to
- * enumerate the set of timestamps on which it fires. Naively each
- * emitter would re-derive the same sequences; the almanac caches
- * them behind a small key-based map.
- */
 
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"

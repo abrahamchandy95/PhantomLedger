@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/exporter/labels.hpp"
 #include "phantomledger/exporter/schema.hpp"
 
 #include <array>
@@ -9,8 +10,6 @@ namespace PhantomLedger::exporter::schema::aml {
 
 using ::PhantomLedger::exporter::schema::Table;
 using ::PhantomLedger::exporter::schema::detail::make;
-
-// ────────────────────────── Vertices ──────────────────────────────
 
 inline constexpr std::array<std::string_view, 10> kCustomerHeader{
     "id",
@@ -115,7 +114,16 @@ inline constexpr std::array<std::string_view, 1> kConnectedComponentHeader{
 inline constexpr Table kConnectedComponent =
     make("Connected_Component.csv", kConnectedComponentHeader);
 
-// ────────────────────────── Edges ─────────────────────────────────
+inline constexpr Table kChain =
+    make("Chain.csv", ::PhantomLedger::exporter::labels::headers::kChain);
+
+inline constexpr Table kShellAccount =
+    make("ShellAccount.csv",
+         ::PhantomLedger::exporter::labels::headers::kShellAccount);
+
+inline constexpr Table kTransactionChainLabel =
+    make("TRANSACTION_CHAIN_LABEL.csv",
+         ::PhantomLedger::exporter::labels::headers::kTransactionChainLabel);
 
 inline constexpr std::array<std::string_view, 2> kFromTo2Header{"FROM", "TO"};
 
@@ -272,11 +280,6 @@ inline constexpr std::array<std::string_view, 2>
     kCustomerInConnectedComponentHeader{"Customer", "Connected_Component"};
 inline constexpr Table kCustomerInConnectedComponent = make(
     "customer_in_connected_component.csv", kCustomerInConnectedComponentHeader);
-
-// ── MinHash edges — entity, minhash, plus discriminator column(s).
-//    Discriminator names match the AML graph schema's DISCRIMINATOR(...)
-//    declarations one-for-one so that the loading job is a straight
-//    positional read.
 
 inline constexpr std::array<std::string_view, 3> kCustomerHasNameMinhashHeader{
     "Customer", "Name_MinHash", "name"};

@@ -53,10 +53,6 @@ poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
 
 } // namespace
 
-// ──────────────────────────────────────────────────────────────────
-// OWNS — Customer → Account
-// ──────────────────────────────────────────────────────────────────
-
 void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Holdings &holdings,
                    time_ns::TimePoint simStart) {
   const auto ts = time_ns::formatTimestamp(simStart);
@@ -71,10 +67,6 @@ void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Holdings &holdings,
         w.endRow();
       });
 }
-
-// ──────────────────────────────────────────────────────────────────
-// TRANSACTED — Account → Account, with txn_id discriminator
-// ──────────────────────────────────────────────────────────────────
 
 void writeTransactedRows(
     exporter::csv::Writer &w,
@@ -124,10 +116,6 @@ void writeInvolvesCounterpartyRows(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// BANKS_AT — Counterparty → Bank
-// ──────────────────────────────────────────────────────────────────
-
 void writeBanksAtRows(exporter::csv::Writer &w,
                       const aml::vertices::SharedContext &ctx,
                       time_ns::TimePoint simStart) {
@@ -139,10 +127,6 @@ void writeBanksAtRows(exporter::csv::Writer &w,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// ON_WATCHLIST — Customer → Watchlist
-// ──────────────────────────────────────────────────────────────────
 
 void writeOnWatchlistRows(exporter::csv::Writer &w,
                           const pipeline::People &people,
@@ -179,10 +163,6 @@ void writeOnWatchlistRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// SUBJECT_OF_SAR — Account → SAR  (one row per covered account)
-// ──────────────────────────────────────────────────────────────────
-
 void writeSubjectOfSarRows(
     exporter::csv::Writer &w,
     std::span<const exporter::aml::sar::SarRecord> sars) {
@@ -199,10 +179,6 @@ void writeSubjectOfSarRows(
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// FILED_CTR — Account → CTR
-// ──────────────────────────────────────────────────────────────────
-
 void writeFiledCtrRows(exporter::csv::Writer &w,
                        const derived::Bundle &bundle) {
   for (const auto &c : bundle.ctrs) {
@@ -214,10 +190,6 @@ void writeFiledCtrRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// ALERT_ON — Alert → Account
-// ──────────────────────────────────────────────────────────────────
-
 void writeAlertOnRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
   for (const auto &a : bundle.alerts) {
     w.cell(a.id)
@@ -228,10 +200,6 @@ void writeAlertOnRows(exporter::csv::Writer &w, const derived::Bundle &bundle) {
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// DISPOSITIONED_AS — Alert → Disposition
-// ──────────────────────────────────────────────────────────────────
 
 void writeDispositionedAsRows(exporter::csv::Writer &w,
                               const derived::Bundle &bundle) {
@@ -248,10 +216,6 @@ void writeDispositionedAsRows(exporter::csv::Writer &w,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// ESCALATED_TO — Disposition → SAR
-// ──────────────────────────────────────────────────────────────────
 
 void writeEscalatedToRows(exporter::csv::Writer &w,
                           const derived::Bundle &bundle,
@@ -290,10 +254,6 @@ void writeEscalatedToRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// CONTAINS_ALERT — InvestigationCase → Alert
-// ──────────────────────────────────────────────────────────────────
-
 void writeContainsAlertRows(exporter::csv::Writer &w,
                             const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
@@ -308,10 +268,6 @@ void writeContainsAlertRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// RESULTED_IN — InvestigationCase → SAR
-// ──────────────────────────────────────────────────────────────────
-
 void writeResultedInRows(exporter::csv::Writer &w,
                          const derived::Bundle &bundle,
                          std::span<const exporter::aml::sar::SarRecord> sars) {
@@ -323,10 +279,6 @@ void writeResultedInRows(exporter::csv::Writer &w,
     }
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// HAS_EVIDENCE — InvestigationCase → EvidenceArtifact
-// ──────────────────────────────────────────────────────────────────
 
 void writeHasEvidenceRows(exporter::csv::Writer &w,
                           const derived::Bundle &bundle) {
@@ -342,10 +294,6 @@ void writeHasEvidenceRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// CONTAINS_PROMOTED_TXN — InvestigationCase → InvestigationCaseTxn
-// ──────────────────────────────────────────────────────────────────
-
 void writeContainsPromotedTxnRows(exporter::csv::Writer &w,
                                   const derived::Bundle &bundle) {
   for (const auto &c : bundle.cases) {
@@ -359,10 +307,6 @@ void writeContainsPromotedTxnRows(exporter::csv::Writer &w,
     }
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// PROMOTED_TXN_ACCOUNT — InvestigationCaseTxn → Account (×2)
-// ──────────────────────────────────────────────────────────────────
 
 void writePromotedTxnAccountRows(
     exporter::csv::Writer &w, const derived::Bundle &bundle,
@@ -390,10 +334,6 @@ void writePromotedTxnAccountRows(
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// SIGNER_OF / BENEFICIAL_OWNER_OF / CONTROLS / BUSINESS_OWNS_ACCOUNT
-// ──────────────────────────────────────────────────────────────────
 
 void writeSignerOfRows(exporter::csv::Writer &w, const derived::Bundle &bundle,
                        time_ns::TimePoint simStart) {
@@ -450,10 +390,6 @@ void writeBusinessOwnsAccountRows(exporter::csv::Writer &w,
     w.endRow();
   }
 }
-
-// ──────────────────────────────────────────────────────────────────
-// HAS_NAME / HAS_ADDRESS / HAS_EMAIL / HAS_PHONE / HAS_DOB / HAS_ID
-// ──────────────────────────────────────────────────────────────────
 
 void writeHasNameRows(exporter::csv::Writer &w, const pipeline::People &people,
                       time_ns::TimePoint simStart) {
@@ -525,10 +461,6 @@ void writeHasIdRows(exporter::csv::Writer &w, const pipeline::People &people) {
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// USES_DEVICE / USES_IP — per-(person, device|ip) aggregation
-// ──────────────────────────────────────────────────────────────────
-
 void writeUsesDeviceRows(exporter::csv::Writer &w,
                          const synth::infra::devices::Output &devices) {
   struct Key {
@@ -598,10 +530,6 @@ void writeUsesIpRows(exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────
-// IN_BUCKET — Customer → MinHashBucket (5 facets in one file)
-// ──────────────────────────────────────────────────────────────────
-
 void writeInBucketRows(exporter::csv::Writer &w, const pipeline::People &people,
                        const aml::vertices::SharedContext &ctx,
                        time_ns::TimePoint simStart) {
@@ -642,33 +570,6 @@ void writeInBucketRows(exporter::csv::Writer &w, const pipeline::People &people,
     }
   }
 }
-
-void writeTransactionChainLabelRows(
-    exporter::csv::Writer &w,
-    std::span<const transactions::Transaction> postedTxns) {
-  std::size_t idx = 1;
-  for (const auto &tx : postedTxns) {
-    if (!tx.fraud.chainId.has_value()) {
-      ++idx;
-      continue;
-    }
-
-    w.cell(static_cast<std::uint32_t>(idx)).cell(*tx.fraud.chainId);
-
-    if (tx.fraud.ringId.has_value()) {
-      w.cell(*tx.fraud.ringId);
-    } else {
-      w.cellEmpty();
-    }
-
-    w.endRow();
-    ++idx;
-  }
-}
-
-// ──────────────────────────────────────────────────────────────────
-// ACCOUNT_FLOW_AGG / ACCOUNT_LINK_COMM — derived edge tables
-// ──────────────────────────────────────────────────────────────────
 
 namespace {
 
