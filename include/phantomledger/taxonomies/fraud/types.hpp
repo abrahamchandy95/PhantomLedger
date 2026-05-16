@@ -13,6 +13,9 @@ enum class Typology : std::uint8_t {
   structuring = 3,
   invoice = 4,
   mule = 5,
+  cycle = 6,
+  scatterGather = 7,
+  bipartite = 8,
 };
 
 inline constexpr auto kTypologies = std::to_array<Typology>({
@@ -22,6 +25,9 @@ inline constexpr auto kTypologies = std::to_array<Typology>({
     Typology::structuring,
     Typology::invoice,
     Typology::mule,
+    Typology::cycle,
+    Typology::scatterGather,
+    Typology::bipartite,
 });
 
 inline constexpr std::size_t kTypologyCount = kTypologies.size();

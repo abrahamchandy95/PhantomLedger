@@ -10,8 +10,6 @@
 namespace PhantomLedger::channels {
 namespace detail {
 
-// --- Name table --------------------------------------------------
-
 inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
     {"salary", tag(Legit::salary)},
     {"merchant", tag(Legit::merchant)},
@@ -74,6 +72,9 @@ inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
     {"fraud_invoice", tag(Fraud::invoice)},
     {"fraud_mule_in", tag(Fraud::muleIn)},
     {"fraud_mule_forward", tag(Fraud::muleForward)},
+    {"fraud_scatter_gather_split", tag(Fraud::scatterGatherSplit)},
+    {"fraud_scatter_gather_merge", tag(Fraud::scatterGatherMerge)},
+    {"fraud_bipartite", tag(Fraud::bipartite)},
 
     {"camouflage_bill", tag(Camouflage::bill)},
     {"camouflage_p2p", tag(Camouflage::p2p)},
@@ -85,14 +86,12 @@ inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
 
 inline constexpr auto kSorted = lookup::sorted(kEntries);
 
-// Every byte value is a valid Tag slot.
 inline constexpr auto kNames =
     lookup::reverseTable<256>(kEntries, [](Tag tag) { return tag.value; });
 
 inline constexpr auto kKnown =
     lookup::presenceTable<256>(kEntries, [](Tag tag) { return tag.value; });
 
-// Subset of tags that represent inbound payday events.
 [[nodiscard]] consteval std::array<bool, 256> buildPaydayInboundTable() {
   std::array<bool, 256> out{};
 
@@ -114,12 +113,9 @@ inline constexpr auto kKnown =
 
 inline constexpr auto kPaydayInbound = buildPaydayInboundTable();
 
-// Compile-time validation.
 inline constexpr bool kValidated = (lookup::requireUniqueNames(kSorted), true);
 
 } // namespace detail
-
-// --- Public API --------------------------------------------------
 
 [[nodiscard]] constexpr std::string_view name(Tag tag) noexcept {
   return detail::kNames[tag.value];

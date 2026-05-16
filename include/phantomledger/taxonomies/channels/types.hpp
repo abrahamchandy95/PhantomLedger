@@ -94,6 +94,9 @@ enum class Fraud : std::uint8_t {
   invoice = 0x78,
   muleIn = 0x79,
   muleForward = 0x7A,
+  scatterGatherSplit = 0x7B,
+  scatterGatherMerge = 0x7C,
+  bipartite = 0x7D,
 };
 
 enum class Camouflage : std::uint8_t {
