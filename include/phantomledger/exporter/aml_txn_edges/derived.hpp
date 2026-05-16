@@ -2,7 +2,6 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
-#include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -41,21 +40,22 @@ using BusinessId = InlineId<24>;
 using HashHex = InlineId<24>;
 using RunId = InlineId<24>;
 
-using PhoneText = InlineId<16>;
-using DateText = InlineId<11>;
-using InvestigatorId = InlineId<8>;
-using BranchCode = InlineId<6>;
-using TellerId = InlineId<12>;
-using EinText = InlineId<11>;
+using PhoneText = InlineId<16>;     // "+1-NNN-NNN-NNNN"
+using DateText = InlineId<11>;      // "yyyy-mm-dd"
+using InvestigatorId = InlineId<8>; // "INV_NNN"
+using BranchCode = InlineId<6>;     // "BRNNN"
+using TellerId = InlineId<12>;      // "TLR_NNNN"
+using EinText = InlineId<11>;       // "XX-XXXXXXX"
 
-using CpId = InlineId<48>;
-using PrefixedCustomerId = InlineId<32>;
+using CpId = InlineId<48>;               // "CP_" + rendered external key
+using PrefixedCustomerId = InlineId<32>; // "<PREFIX>_<customer id>"
 
 template <std::size_t N>
 [[nodiscard]] InlineId<N>
 hashedId(std::string_view prefix,
          std::initializer_list<std::string_view> hashInputs) noexcept;
 
+// Hex-only id (no prefix), e.g. content_hash columns.
 [[nodiscard]] HashHex
 makeHashHex(std::initializer_list<std::string_view> parts) noexcept;
 
@@ -67,16 +67,12 @@ prefixedCustomerId(std::string_view prefix,
 
 [[nodiscard]] bool isCreditChannel(channels::Tag tag) noexcept;
 
-// ============================================================================
-// Rule / disposition taxonomy.
-// ============================================================================
-
 enum class Rule : std::uint8_t {
   fraudMlFlag = 1,
   highAmountBelowCtr = 2,
   cashCtrThreshold = 3,
   velocityBurst = 4,
-  highRiskCounterparty = 5,
+  highRiskCounterparty = 5, // reserved, never fires
 };
 
 [[nodiscard]] std::string_view ruleName(Rule r) noexcept;
@@ -110,10 +106,6 @@ makeDispositionId(std::string_view alertId) noexcept;
 [[nodiscard]] BusinessId makeBusinessId(std::string_view accountKey,
                                         entity::PersonId owner) noexcept;
 
-// ============================================================================
-// Records.
-// ============================================================================
-
 struct AlertRecord {
   AlertId id{};
   entity::Key onAccount{};
@@ -127,7 +119,7 @@ struct DispositionRecord {
   std::size_t alertIndex = 0;
   DispositionOutcome outcome = DispositionOutcome::closedFp;
   time::TimePoint date{};
-  std::uint32_t investigatorNum = 1; // 1..12  → "INV_NNN"
+  std::uint32_t investigatorNum = 1;
   HashHex notesHash{};
   double confidence = 0.7;
 };
@@ -137,8 +129,8 @@ struct CtrRecord {
   entity::Key onAccount{};
   time::TimePoint filingDate{};
   double amount = 0.0;
-  std::uint32_t branchBucket = 0; // (account.number % 50) + 1
-  std::uint32_t tellerNum = 0;    // 1..200
+  std::uint32_t branchBucket = 0;
+  std::uint32_t tellerNum = 0;
 };
 
 enum class CaseKind : std::uint8_t { ring, solo };
@@ -168,7 +160,7 @@ struct EvidenceRecord {
 struct PromotedTxnRecord {
   PromotedTxnId id{};
   std::size_t caseIndex = 0;
-  std::size_t txnIndex = 0; // 1-based postedTxns index
+  std::size_t txnIndex = 0;
   time::TimePoint promotedAt{};
   time::TimePoint ttlDate{};
 };
@@ -204,10 +196,6 @@ struct AggregateBucket {
 void accumulate(AggregateRow &row, double amount, std::int64_t ts,
                 std::int64_t cut30Epoch, std::int64_t cut90Epoch) noexcept;
 
-// ============================================================================
-// Bundle — output of the single-pass synthesis stage.
-// ============================================================================
-
 struct Bundle {
   time::TimePoint simStart{};
   time::TimePoint simEnd{};
@@ -231,7 +219,6 @@ struct Bundle {
 [[nodiscard]] Bundle
 buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
             std::span<const transactions::Transaction> postedTxns,
-            const aml::vertices::SharedContext &ctx,
             std::span<const aml::sar::SarRecord> sars);
 
 [[nodiscard]] PhoneText phoneFor(entity::PersonId personId) noexcept;

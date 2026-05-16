@@ -2,10 +2,7 @@
 
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transfers/fraud/injector.hpp"
 
-#include <cstddef>
-#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -15,14 +12,7 @@ namespace {
 
 using Transaction = ::PhantomLedger::transactions::Transaction;
 
-constexpr double kFraudHeadroomFraction = 0.05;
-
-[[nodiscard]] std::size_t fraudMergedCapacity(std::size_t legitSize) noexcept {
-  return legitSize + static_cast<std::size_t>(static_cast<double>(legitSize) *
-                                              kFraudHeadroomFraction);
 }
-
-} // namespace
 
 legit::LegitAssembly &TransferStage::legit() noexcept { return legit_; }
 
@@ -44,26 +34,49 @@ FraudEmission &TransferStage::fraud() noexcept { return fraud_; }
 
 const FraudEmission &TransferStage::fraud() const noexcept { return fraud_; }
 
-::PhantomLedger::pipeline::Transfers
-TransferStage::build(::PhantomLedger::random::Rng &rng,
-                     const ::PhantomLedger::pipeline::People &people,
-                     const ::PhantomLedger::pipeline::Holdings &holdings,
-                     const ::PhantomLedger::pipeline::Counterparties &cps,
-                     const ::PhantomLedger::pipeline::Infra &infra) const {
-  legit_.validate();
+TransferStage &TransferStage::infra(const pipeline::Infra &value) noexcept {
+  infra_ = &value;
+  return *this;
+}
 
-  auto builder = legit_.builder(rng, people, holdings, cps, infra);
-  auto legitPayload = builder.build();
+namespace {
 
-  if (!legitPayload.openingBook.hasInitialBook()) {
-    throw std::runtime_error(
-        "transfers::TransferStage::build: legit builder produced no initial "
-        "book");
+[[nodiscard]] const pipeline::Infra &requireInfra(const pipeline::Infra *p) {
+  if (p == nullptr) {
+    throw std::runtime_error("transfers::TransferStage: infra not set; call "
+                             ".infra(out.infra) before "
+                             "any phase method");
   }
+  return *p;
+}
 
+} // namespace
+
+legit::ledger::LegitTransferResult
+TransferStage::buildLegit(::PhantomLedger::random::Rng &rng,
+                          const pipeline::People &people,
+                          const pipeline::Holdings &holdings,
+                          const pipeline::Counterparties &cps) const {
+  legit_.validate();
+  const auto &infra = requireInfra(infra_);
+  auto builder = legit_.builder(rng, people, holdings, cps);
+  builder.router(infra.router);
+  auto result = builder.build();
+  if (!result.openingBook.hasInitialBook()) {
+    throw std::runtime_error(
+        "transfers::TransferStage::buildLegit: legit builder produced no "
+        "initial book");
+  }
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      holdings.accounts.lookup, legitPayload.txns.candidateTxns);
+      holdings.accounts.lookup, result.txns.candidateTxns);
+  return result;
+}
 
+std::vector<Transaction>
+TransferStage::mergeProducts(::PhantomLedger::random::Rng &rng,
+                             const pipeline::Holdings &holdings,
+                             legit::ledger::LegitTxnStreams streams) const {
+  const auto &infra = requireInfra(infra_);
   const auto scope = legit_.runScope();
   const auto primaryAccountsByPerson = primaryAccounts(holdings);
 
@@ -71,18 +84,24 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
                                                     &infra.ringInfra};
   ProductTxnEmitter productEmitter{scope.window, scope.seed, rng, productTxf};
 
-  // products_.merge only needs `holdings` (portfolios live there).
-  auto replaySortedStream = products_.merge(
-      productEmitter, holdings, primaryAccountsByPerson, legitPayload.txns);
+  return products_.merge(productEmitter, holdings, primaryAccountsByPerson,
+                         streams);
+}
 
-  auto candidateReplay = ledger_.preFraud(*legitPayload.openingBook.initialBook,
-                                          rng, std::move(replaySortedStream));
+LedgerReplay::Candidate TransferStage::preFraudReplay(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::clearing::Ledger &initialBook,
+    std::vector<Transaction> sortedStream) const {
+  return ledger_.preFraud(initialBook, rng, std::move(sortedStream));
+}
 
-  const std::span<const Transaction> candidateView{candidateReplay.txns.data(),
-                                                   candidateReplay.txns.size()};
-
-  auto fraudInjector = ::PhantomLedger::transfers::fraud::Injector{
-      ::PhantomLedger::transfers::fraud::InjectorServices{
+fraud_ns::Injector
+TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
+                                 const pipeline::People &people,
+                                 const pipeline::Holdings &holdings) const {
+  const auto &infra = requireInfra(infra_);
+  return fraud_ns::Injector{
+      fraud_ns::InjectorServices{
           .rng = rng,
           .router = &infra.router,
           .ringInfra = &infra.ringInfra,
@@ -92,29 +111,13 @@ TransferStage::build(::PhantomLedger::random::Rng &rng,
                                  holdings.accounts.ownership),
       fraud_.resolvedBehavior(),
   };
+}
 
-  auto fraudOut = fraudInjector.inject(
-      scope.window, candidateView,
-      FraudEmission::legitCounterparties(legitPayload.counterparties));
-
-  auto mergedTxns = std::move(fraudOut.txns);
-  mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
-
-  auto postedReplay = ledger_.postFraud(
-      rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
-
-  ::PhantomLedger::pipeline::validateTransactionAccounts(
-      holdings.accounts.lookup, postedReplay.txns);
-
-  ::PhantomLedger::pipeline::Transfers out{};
-  out.legit = std::move(legitPayload);
-  out.fraud.injectedCount = fraudOut.injectedCount;
-  out.ledger.candidate.txns = std::move(candidateReplay.txns);
-  out.ledger.candidate.drops = std::move(candidateReplay.drops);
-  out.ledger.posted.txns = std::move(postedReplay.txns);
-  out.ledger.posted.book = std::move(postedReplay.book);
-
-  return out;
+LedgerReplay::Posted TransferStage::postFraudReplay(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::clearing::Ledger &initialBook,
+    std::vector<Transaction> merged) const {
+  return ledger_.postFraud(rng, initialBook, std::move(merged));
 }
 
 } // namespace PhantomLedger::pipeline::stages::transfers

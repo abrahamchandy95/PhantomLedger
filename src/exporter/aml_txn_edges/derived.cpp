@@ -77,10 +77,6 @@ struct DecimalBuffer {
 
 } // namespace
 
-// ============================================================================
-// Public id-maker API.
-// ============================================================================
-
 template <std::size_t N>
 InlineId<N>
 hashedId(std::string_view prefix,
@@ -405,35 +401,26 @@ struct OwnerIndex {
   return out;
 }
 
-void emitAlert(Bundle &b, const ent::Key &onAcct, Rule rule,
-               t_ns::TimePoint createdDate, std::size_t idx) {
+[[nodiscard]] AlertRecord makeAlert(const ent::Key &onAcct, Rule rule,
+                                    t_ns::TimePoint createdDate,
+                                    std::size_t idx) {
   const auto acctRendered = ::PhantomLedger::encoding::format(onAcct);
   AlertRecord a;
   a.onAccount = onAcct;
   a.rule = rule;
   a.createdDate = createdDate;
   a.id = makeAlertId(acctRendered.view(), idx, static_cast<std::uint8_t>(rule));
-  b.alerts.push_back(std::move(a));
+  return a;
 }
 
-} // namespace
-
-Bundle buildBundle(
-    const pipe::People &people, const pipe::Holdings &holdings,
-    std::span<const tx_ns::Transaction> postedTxns,
-    const ::PhantomLedger::exporter::aml::vertices::SharedContext &ctx,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
-  (void)ctx;
-  Bundle b;
-
-  // ── 1. simStart / simEnd ──
+void fillSimWindow(Bundle &b, std::span<const tx_ns::Transaction> txns) {
   constexpr std::int64_t kFallbackEpoch = 1735689600;
   std::int64_t minTs = kFallbackEpoch;
   std::int64_t maxTs = kFallbackEpoch;
-  if (!postedTxns.empty()) {
-    minTs = postedTxns.front().timestamp;
-    maxTs = postedTxns.front().timestamp;
-    for (const auto &tx : postedTxns) {
+  if (!txns.empty()) {
+    minTs = txns.front().timestamp;
+    maxTs = txns.front().timestamp;
+    for (const auto &tx : txns) {
       if (tx.timestamp < minTs) {
         minTs = tx.timestamp;
       }
@@ -447,48 +434,55 @@ Bundle buildBundle(
   b.simStart = t_ns::fromEpochSeconds(minTs);
   b.simEnd = t_ns::fromEpochSeconds(maxTs);
 
-  {
-    const auto epochBytes = u64Decimal(static_cast<std::uint64_t>(maxTs));
-    b.derivationRunId = hashedId<24>("RUN_", {"RUN", epochBytes.view()});
-  }
+  const auto epochBytes = u64Decimal(static_cast<std::uint64_t>(maxTs));
+  b.derivationRunId = hashedId<24>("RUN_", {"RUN", epochBytes.view()});
+}
 
-  const auto ownerIdx = buildOwnerIndex(holdings);
+struct BurstKeyInfo {
+  ent::Key account{};
+  std::int64_t day = 0;
+};
 
-  // ── 2. Single sweep: alerts + CTRs + per-day velocity + aggregates ──
-  b.alerts.reserve(postedTxns.size() / 8);
-  b.ctrs.reserve(postedTxns.size() / 100);
-
-  struct BurstKeyInfo {
-    ent::Key account{};
-    std::int64_t day = 0;
-  };
+struct TxnSweepResult {
+  std::vector<AlertRecord> alerts;
+  std::vector<CtrRecord> ctrs;
   std::unordered_map<std::uint64_t, std::uint32_t> burstCounts;
   std::unordered_map<std::uint64_t, BurstKeyInfo> burstInfo;
-  burstCounts.reserve(postedTxns.size() / 4);
-  burstInfo.reserve(postedTxns.size() / 4);
-
   std::map<AcctPair, AggregateRow> flowAccum;
   std::map<AcctPair, AggregateRow> linkAccum;
+};
 
-  const std::int64_t cut30 = maxTs - 30 * t_ns::kSecondsPerDay;
-  const std::int64_t cut90 = maxTs - 90 * t_ns::kSecondsPerDay;
+[[nodiscard]] TxnSweepResult
+sweepTransactions(std::span<const tx_ns::Transaction> txns,
+                  std::int64_t simEndEpoch) {
+  TxnSweepResult r;
+  r.alerts.reserve(txns.size() / 8);
+  r.ctrs.reserve(txns.size() / 100);
+  r.burstCounts.reserve(txns.size() / 4);
+  r.burstInfo.reserve(txns.size() / 4);
+
+  const std::int64_t cut30 = simEndEpoch - 30 * t_ns::kSecondsPerDay;
+  const std::int64_t cut90 = simEndEpoch - 90 * t_ns::kSecondsPerDay;
 
   std::size_t idx = 1;
-  for (const auto &tx : postedTxns) {
+  for (const auto &tx : txns) {
     const double amount = tx.amount;
     const auto onAcct = alertAccount(tx);
     const bool onValid = (onAcct.number != 0);
     const auto createdDate = t_ns::fromEpochSeconds(tx.timestamp);
 
     if (onValid && tx.fraud.flag != 0) {
-      emitAlert(b, onAcct, Rule::fraudMlFlag, createdDate, idx);
+      r.alerts.push_back(
+          makeAlert(onAcct, Rule::fraudMlFlag, createdDate, idx));
     }
     if (onValid && amount >= 9000.0 && amount < 10000.0) {
-      emitAlert(b, onAcct, Rule::highAmountBelowCtr, createdDate, idx);
+      r.alerts.push_back(
+          makeAlert(onAcct, Rule::highAmountBelowCtr, createdDate, idx));
     }
 
     if (onValid && amount >= 10000.0) {
-      emitAlert(b, onAcct, Rule::cashCtrThreshold, createdDate, idx);
+      r.alerts.push_back(
+          makeAlert(onAcct, Rule::cashCtrThreshold, createdDate, idx));
 
       const auto acctRendered = ::PhantomLedger::encoding::format(onAcct);
       CtrRecord c;
@@ -503,7 +497,7 @@ Bundle buildBundle(
            200ULL) +
           1ULL);
       c.id = makeCtrId(acctRendered.view(), idx);
-      b.ctrs.push_back(std::move(c));
+      r.ctrs.push_back(std::move(c));
     }
 
     if (onValid) {
@@ -514,30 +508,37 @@ Bundle buildBundle(
           (static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.role))
            << 4) ^
           static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.bank));
-      burstCounts[packed]++;
-      burstInfo[packed] = BurstKeyInfo{onAcct, day};
+      r.burstCounts[packed]++;
+      r.burstInfo[packed] = BurstKeyInfo{onAcct, day};
     }
 
-    accumulate(flowAccum[AcctPair{tx.source, tx.target}], amount, tx.timestamp,
-               cut30, cut90);
+    accumulate(r.flowAccum[AcctPair{tx.source, tx.target}], amount,
+               tx.timestamp, cut30, cut90);
     const AcctPair linkKey = (tx.source < tx.target)
                                  ? AcctPair{tx.source, tx.target}
                                  : AcctPair{tx.target, tx.source};
-    accumulate(linkAccum[linkKey], amount, tx.timestamp, cut30, cut90);
+    accumulate(r.linkAccum[linkKey], amount, tx.timestamp, cut30, cut90);
 
     ++idx;
   }
 
-  for (const auto &[key, count] : burstCounts) {
+  return r;
+}
+
+void appendVelocityBurstAlerts(Bundle &b, const TxnSweepResult &sweep) {
+  for (const auto &[key, count] : sweep.burstCounts) {
     if (count < 5) {
       continue;
     }
-    const auto &info = burstInfo[key];
-    emitAlert(b, info.account, Rule::velocityBurst,
-              t_ns::fromEpochSeconds(info.day * t_ns::kSecondsPerDay),
-              static_cast<std::size_t>(info.day));
+    const auto &info = sweep.burstInfo.at(key);
+    b.alerts.push_back(
+        makeAlert(info.account, Rule::velocityBurst,
+                  t_ns::fromEpochSeconds(info.day * t_ns::kSecondsPerDay),
+                  static_cast<std::size_t>(info.day)));
   }
+}
 
+void generateDispositions(Bundle &b) {
   b.dispositions.reserve(b.alerts.size());
   for (std::size_t i = 0; i < b.alerts.size(); ++i) {
     auto &alert = b.alerts[i];
@@ -576,7 +577,9 @@ Bundle buildBundle(
     alert.status = alertStatusAfter(d.outcome);
     b.dispositions.push_back(std::move(d));
   }
+}
 
+void buildCases(Bundle &b, const pipe::People &people) {
   const auto &topology = people.roster.topology;
   const auto &memberStore = topology.memberStore;
   b.cases.reserve(topology.rings.size() + 64);
@@ -612,7 +615,9 @@ Bundle buildBundle(
     c.subjectPersons = {p};
     b.cases.push_back(std::move(c));
   }
+}
 
+void attachAlertsToCases(Bundle &b, const OwnerIndex &ownerIdx) {
   std::unordered_map<ent::PersonId, std::vector<std::size_t>> caseByPerson;
   caseByPerson.reserve(b.cases.size() * 4);
   for (std::size_t ci = 0; ci < b.cases.size(); ++ci) {
@@ -640,7 +645,9 @@ Bundle buildBundle(
         std::unique(c.alertIndices.begin(), c.alertIndices.end()),
         c.alertIndices.end());
   }
+}
 
+void attachSarsToCases(Bundle &b, std::span<const aml::sar::SarRecord> sars) {
   for (std::size_t si = 0; si < sars.size(); ++si) {
     std::unordered_set<ent::PersonId> sarSubjects(
         sars[si].subjectPersonIds.begin(), sars[si].subjectPersonIds.end());
@@ -653,8 +660,10 @@ Bundle buildBundle(
       }
     }
   }
+}
 
-  b.evidence.reserve(b.cases.size() * 3);
+void generateEvidence(Bundle &b) {
+  b.evidence.reserve(b.cases.size() * kEvidenceKinds.size());
   for (std::size_t ci = 0; ci < b.cases.size(); ++ci) {
     auto &c = b.cases[ci];
     const auto caseIdView = c.id.view();
@@ -670,7 +679,10 @@ Bundle buildBundle(
       b.evidence.push_back(std::move(e));
     }
   }
+}
 
+void promoteFraudTxns(Bundle &b, std::span<const tx_ns::Transaction> postedTxns,
+                      const OwnerIndex &ownerIdx) {
   std::vector<std::size_t> fraudTxnIdx;
   fraudTxnIdx.reserve(postedTxns.size() / 200);
   for (std::size_t i = 0; i < postedTxns.size(); ++i) {
@@ -711,7 +723,9 @@ Bundle buildBundle(
       ++emitted;
     }
   }
+}
 
+void buildBusinesses(Bundle &b, const pipe::Holdings &holdings) {
   for (const auto &rec : holdings.accounts.registry.records) {
     if ((rec.flags & ent::account::bit(ent::account::Flag::external)) != 0) {
       continue;
@@ -739,24 +753,51 @@ Bundle buildBundle(
         b.simStart - t_ns::Days{static_cast<int>(rec.owner % 365U)};
     b.businesses.push_back(std::move(biz));
   }
+}
 
-  b.flowAgg.reserve(flowAccum.size());
-  for (auto &kv : flowAccum) {
+void sortAggregates(Bundle &b, TxnSweepResult &sweep) {
+  auto byPair = [](const AggregateBucket &a, const AggregateBucket &c) {
+    return a.pair < c.pair;
+  };
+
+  b.flowAgg.reserve(sweep.flowAccum.size());
+  for (auto &kv : sweep.flowAccum) {
     b.flowAgg.push_back({kv.first, kv.second});
   }
-  std::sort(b.flowAgg.begin(), b.flowAgg.end(),
-            [](const AggregateBucket &a, const AggregateBucket &c) {
-              return a.pair < c.pair;
-            });
+  std::sort(b.flowAgg.begin(), b.flowAgg.end(), byPair);
 
-  b.linkComm.reserve(linkAccum.size());
-  for (auto &kv : linkAccum) {
+  b.linkComm.reserve(sweep.linkAccum.size());
+  for (auto &kv : sweep.linkAccum) {
     b.linkComm.push_back({kv.first, kv.second});
   }
-  std::sort(b.linkComm.begin(), b.linkComm.end(),
-            [](const AggregateBucket &a, const AggregateBucket &c) {
-              return a.pair < c.pair;
-            });
+  std::sort(b.linkComm.begin(), b.linkComm.end(), byPair);
+}
+
+} // namespace
+
+Bundle buildBundle(
+    const pipe::People &people, const pipe::Holdings &holdings,
+    std::span<const tx_ns::Transaction> postedTxns,
+    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+  Bundle b;
+
+  fillSimWindow(b, postedTxns);
+
+  const auto ownerIdx = buildOwnerIndex(holdings);
+  auto sweep = sweepTransactions(postedTxns, b.simEndEpoch);
+
+  b.alerts = std::move(sweep.alerts);
+  b.ctrs = std::move(sweep.ctrs);
+
+  appendVelocityBurstAlerts(b, sweep);
+  generateDispositions(b);
+  buildCases(b, people);
+  attachAlertsToCases(b, ownerIdx);
+  attachSarsToCases(b, sars);
+  generateEvidence(b);
+  promoteFraudTxns(b, postedTxns, ownerIdx);
+  buildBusinesses(b, holdings);
+  sortAggregates(b, sweep);
 
   return b;
 }

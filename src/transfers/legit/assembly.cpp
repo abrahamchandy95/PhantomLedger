@@ -46,9 +46,6 @@ makeLegitTimeframe(::PhantomLedger::time::Window window,
   };
 }
 
-// ─── make* helpers ─────────────────────────────────────────────────────────
-// Each helper takes only the sub-domain(s) it actually consumes.
-
 [[nodiscard]] blueprints::AccountCensus
 makeAccountCensus(const pipe::Holdings &holdings) noexcept {
   return blueprints::AccountCensus{
@@ -95,55 +92,6 @@ makeHubSelection(const pipe::People &people, double hubFraction) noexcept {
           .portfolios = &holdings.portfolios,
           .creditCards = &holdings.creditCards,
       },
-  };
-}
-
-// Reads Holdings (accounts) + Counterparties (revenue counterparties). Does
-// not need People. Five params is fine for an internal pass-constructor:
-// it's the integration point of two sub-domains plus rules + government
-// setup, and the IncomePass itself is built from already-named role
-// bundles (AccountAccess, SalarySetup, GovernmentSetup) at the consumer.
-[[nodiscard]] legit_ledger::passes::IncomePass
-makeIncomePass(::PhantomLedger::random::Rng &rng,
-               const pipe::Holdings &holdings, const pipe::Counterparties &cps,
-               const income::salary::Rules &salaryRules,
-               legit_ledger::passes::GovernmentSetup government) {
-  return legit_ledger::passes::IncomePass{
-      &rng,
-      legit_ledger::passes::AccountAccess{
-          .registry = &holdings.accounts.registry,
-          .ownership = &holdings.accounts.ownership,
-      },
-      legit_ledger::passes::SalarySetup{
-          .revenueCounterparties = &cps.counterparties,
-          .rules = salaryRules,
-      },
-      government,
-  };
-}
-
-// Reads Holdings (accounts, lookup, portfolios, credit cards) +
-// Counterparties (merchants). Does not need People.
-[[nodiscard]] legit_ledger::passes::RoutinePass
-makeRoutinePass(::PhantomLedger::random::Rng &rng,
-                const pipe::Holdings &holdings, const pipe::Counterparties &cps,
-                const income::rent::Rules &rentRules,
-                const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-                    *lifecycleRules) {
-  return legit_ledger::passes::RoutinePass{
-      &rng,
-      legit_ledger::passes::AccountAccess{
-          .registry = &holdings.accounts.registry,
-          .ownership = &holdings.accounts.ownership,
-      },
-      legit_ledger::passes::RoutineResources{
-          .accountsLookup = &holdings.accounts.lookup,
-          .merchants = &cps.merchants,
-          .portfolios = &holdings.portfolios,
-          .creditCards = &holdings.creditCards,
-          .cardLifecycle = lifecycleRules,
-      },
-      rentRules,
   };
 }
 
@@ -295,8 +243,7 @@ void LegitAssembly::validate() const {
 
 legit_ledger::LegitTransferBuilder LegitAssembly::builder(
     ::PhantomLedger::random::Rng &rng, const pipe::People &people,
-    const pipe::Holdings &holdings, const pipe::Counterparties &cps,
-    const ::PhantomLedger::pipeline::Infra &infra) const {
+    const pipe::Holdings &holdings, const pipe::Counterparties &cps) const {
   legit_ledger::LegitTransferBuilder out{
       rng,
       makeLegitTimeframe(run_.window, run_.seed),
@@ -304,22 +251,42 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
       makeOpeningBook(rng, holdings, openingBalances_.balanceRules),
   };
 
+  const legit_ledger::passes::AccountAccess accountAccess{
+      .registry = &holdings.accounts.registry,
+      .ownership = &holdings.accounts.ownership,
+  };
+
   out.counterparties(makeCounterpartyPools(cps))
       .personas(makePersonaCatalog(people))
       .hubSelection(makeHubSelection(people, hubSelection_.fraction))
-      .income(makeIncomePass(
-          rng, holdings, cps, income_.salary,
+      .income(legit_ledger::passes::IncomePass{
+          &rng,
+          accountAccess,
+          legit_ledger::passes::SalarySetup{
+              .revenueCounterparties = &cps.counterparties,
+              .rules = income_.salary,
+          },
           legit_ledger::passes::GovernmentSetup{
               .counterparties = defaultGovernmentCounterparties(),
               .retirement = &income_.retirement,
               .disability = &income_.disability,
-          }))
-      .routines(makeRoutinePass(rng, holdings, cps, income_.rent,
-                                cardLifecycle_.lifecycleRules))
+          },
+      })
+      .routines(legit_ledger::passes::RoutinePass{
+          &rng,
+          accountAccess,
+          legit_ledger::passes::RoutineResources{
+              .accountsLookup = &holdings.accounts.lookup,
+              .merchants = &cps.merchants,
+              .portfolios = &holdings.portfolios,
+              .creditCards = &holdings.creditCards,
+              .cardLifecycle = cardLifecycle_.lifecycleRules,
+          },
+          income_.rent,
+      })
       .family(makeFamilyPass(holdings, cps))
       .credit(makeCreditPass(rng, holdings, cardLifecycle_.lifecycleRules))
-      .familyScenario(familyTransfers_)
-      .router(infra.router);
+      .familyScenario(familyTransfers_);
 
   return out;
 }

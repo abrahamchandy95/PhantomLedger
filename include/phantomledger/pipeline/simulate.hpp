@@ -43,6 +43,8 @@ public:
   [[nodiscard]] SimulationResult run() const;
 
 private:
+  void buildEntities(SimulationResult &result) const;
+
   ::PhantomLedger::random::Rng *rng_ = nullptr;
   ::PhantomLedger::time::Window window_{};
   std::uint64_t seed_ = 0;
