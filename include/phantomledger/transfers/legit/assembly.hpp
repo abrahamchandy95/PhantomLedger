@@ -5,7 +5,6 @@
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
 #include "phantomledger/pipeline/data.hpp"
-#include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
@@ -17,15 +16,14 @@
 
 namespace PhantomLedger::clearing {
 struct BalanceRules;
-} // namespace PhantomLedger::clearing
+}
 
 namespace PhantomLedger::transfers::credit_cards {
 struct LifecycleRules;
-} // namespace PhantomLedger::transfers::credit_cards
+}
 
 namespace PhantomLedger::transfers::legit {
 
-// Relative namespace resolution is much cleaner here
 using FamilyTransferScenario = routines::relatives::FamilyTransferScenario;
 
 class LegitAssembly {
@@ -66,7 +64,6 @@ public:
   LegitAssembly &window(time::Window value) noexcept;
   LegitAssembly &seed(std::uint64_t value) noexcept;
 
-  // Granular rule setters
   LegitAssembly &salaryRules(const activity::income::salary::Rules &value);
   LegitAssembly &rentRules(const activity::income::rent::Rules &value);
 
@@ -98,8 +95,7 @@ public:
   [[nodiscard]] ledger::LegitTransferBuilder
   builder(random::Rng &rng, const pipeline::People &people,
           const pipeline::Holdings &holdings,
-          const pipeline::Counterparties &cps,
-          const pipeline::Infra &infra) const;
+          const pipeline::Counterparties &cps) const;
 
 private:
   RunScope run_{};

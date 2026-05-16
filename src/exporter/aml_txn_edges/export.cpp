@@ -49,13 +49,16 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto sharedCtx =
       amlShared::buildSharedContext(people, holdings, txns, pools);
 
+  // SAR subject indexing reads the inner Roster + Topology (both live
+  // under `People::roster`, the synth::people::Pack) plus the account
+  // registry/ownership (Holdings::accounts).
   const auto sarSubjects = amlSar::buildSarSubjectIndex(
       people.roster.roster, people.roster.topology, holdings.accounts.registry,
       holdings.accounts.ownership);
   const auto sars = amlSar::generateSars(sarSubjects, txns);
 
   const auto bundle =
-      derived::buildBundle(people, holdings, txns, sharedCtx, std::span(sars));
+      derived::buildBundle(people, holdings, txns, std::span(sars));
 
   // ── Vertices ──
   {
@@ -64,6 +67,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kAccount);
+    // Two-phase write: internal accounts first, then external counterparty
+    // rows. Each phase takes only the sub-domains it actually reads.
     vertices::writeInternalAccountRows(w, holdings, postedBook, simStart);
     vertices::writeExternalCounterpartyAccountRows(w, sharedCtx, simStart);
   }
@@ -282,6 +287,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   (void)options.showTransactions;
   (void)simEnd;
 
+  // ── Summary ──
+  // Base counts inlined from the (deleted) cmn::fillBaseCounts template.
   Summary s;
   s.customerCount = people.roster.roster.count;
   s.internalAccountCount =
@@ -293,6 +300,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   s.soloFraudCount = cmn::countSoloFraud(people.roster.roster);
   s.sarsFiledCount = sars.size();
 
+  // Bundle-derived counts (specific to this exporter).
   s.alertCount = bundle.alerts.size();
   s.ctrCount = bundle.ctrs.size();
   s.caseCount = bundle.cases.size();
