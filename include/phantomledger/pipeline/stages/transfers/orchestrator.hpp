@@ -6,7 +6,6 @@
 #include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
-#include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
 #include "phantomledger/transfers/legit/assembly.hpp"
@@ -45,17 +44,9 @@ public:
   mergeProducts(random::Rng &rng, const pipeline::Holdings &holdings,
                 legit::ledger::LegitTxnStreams streams) const;
 
-  [[nodiscard]] LedgerReplay::Candidate
-  preFraudReplay(random::Rng &rng, const clearing::Ledger &initialBook,
-                 std::vector<transactions::Transaction> sortedStream) const;
-
   [[nodiscard]] fraud_ns::Injector
   makeFraudInjector(random::Rng &rng, const pipeline::People &people,
                     const pipeline::Holdings &holdings) const;
-
-  [[nodiscard]] LedgerReplay::Posted
-  postFraudReplay(random::Rng &rng, const clearing::Ledger &initialBook,
-                  std::vector<transactions::Transaction> merged) const;
 
 private:
   legit::LegitAssembly legit_{};

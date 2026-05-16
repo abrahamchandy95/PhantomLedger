@@ -178,8 +178,8 @@ set(PL_PIPELINE_SOURCES
     src/pipeline/stages/entities.cpp
     src/pipeline/stages/infra.cpp
     src/pipeline/stages/products.cpp
-    src/pipeline/stages/transfers.cpp
     src/pipeline/stages/transfers/fraud_emission.cpp
+    src/pipeline/stages/transfers/orchestrator.cpp
     src/pipeline/stages/transfers/ledger_replay.cpp
     src/pipeline/stages/transfers/product_replay.cpp
 )

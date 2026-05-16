@@ -1,10 +1,9 @@
-#include "phantomledger/pipeline/stages/transfers.hpp"
+#include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
 
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/transactions/factory.hpp"
 
 #include <stdexcept>
-#include <utility>
 
 namespace PhantomLedger::pipeline::stages::transfers {
 
@@ -88,13 +87,6 @@ TransferStage::mergeProducts(::PhantomLedger::random::Rng &rng,
                          streams);
 }
 
-LedgerReplay::Candidate TransferStage::preFraudReplay(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::clearing::Ledger &initialBook,
-    std::vector<Transaction> sortedStream) const {
-  return ledger_.preFraud(initialBook, rng, std::move(sortedStream));
-}
-
 fraud_ns::Injector
 TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
                                  const pipeline::People &people,
@@ -111,13 +103,6 @@ TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
                                  holdings.accounts.ownership),
       fraud_.resolvedBehavior(),
   };
-}
-
-LedgerReplay::Posted TransferStage::postFraudReplay(
-    ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::clearing::Ledger &initialBook,
-    std::vector<Transaction> merged) const {
-  return ledger_.postFraud(rng, initialBook, std::move(merged));
 }
 
 } // namespace PhantomLedger::pipeline::stages::transfers
