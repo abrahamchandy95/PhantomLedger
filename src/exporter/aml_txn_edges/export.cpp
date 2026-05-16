@@ -64,7 +64,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kAccount);
-    vertices::writeAccountRows(w, holdings, postedBook, sharedCtx, simStart);
+    vertices::writeInternalAccountRows(w, holdings, postedBook, simStart);
+    vertices::writeExternalCounterpartyAccountRows(w, sharedCtx, simStart);
   }
   {
     auto w = openTable(vDir, amlTxnSchema::kCounterparty);
@@ -281,8 +282,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   (void)options.showTransactions;
   (void)simEnd;
 
-  // ── Summary ──
-  // Base counts inlined from the (deleted) cmn::fillBaseCounts template.
   Summary s;
   s.customerCount = people.roster.roster.count;
   s.internalAccountCount =
@@ -294,7 +293,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   s.soloFraudCount = cmn::countSoloFraud(people.roster.roster);
   s.sarsFiledCount = sars.size();
 
-  // Bundle-derived counts (specific to this exporter).
   s.alertCount = bundle.alerts.size();
   s.ctrCount = bundle.ctrs.size();
   s.caseCount = bundle.cases.size();

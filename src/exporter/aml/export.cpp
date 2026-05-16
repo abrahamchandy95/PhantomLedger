@@ -58,7 +58,9 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   }
   {
     auto w = openTable(vtxDir, amlSchema::kAccount);
-    vertices::writeAccountRows(w, holdings, postedBook, ctx, simStart);
+    const auto rows =
+        vertices::buildInternalAccountRows(holdings, postedBook, ctx, simStart);
+    vertices::writeAccountRows(w, rows);
   }
   {
     auto w = openTable(vtxDir, amlSchema::kCounterparty);
@@ -97,7 +99,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     vertices::writeWatchlistRows(w, people, simStart);
   }
 
-  // Minhash-shingle vertex sets (one table per identity facet).
   {
     auto w = openTable(vtxDir, amlSchema::kNameMinhash);
     vertices::writeMinhashIdRows(w, minhashSets.name);
@@ -123,12 +124,9 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     (void)w;
   }
 
-  // Edge tables — one CSV per relationship.
-
   const auto edgeDir = outDir / "aml" / "edges";
   std::filesystem::create_directories(edgeDir);
 
-  // ── Ownership ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasAccount);
     edges::writeCustomerHasAccountRows(w, holdings);
@@ -138,7 +136,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeAccountHasPrimaryCustomerRows(w, holdings);
   }
 
-  // ── Transaction flows ──
   {
     auto w = openTable(edgeDir, amlSchema::kSendTransaction);
     edges::writeAcctTxnRows(w, txnBundle.sendRows);
@@ -165,7 +162,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeAcctCpPairRows(w, txnBundle.receivedFromCpPairs);
   }
 
-  // ── Device / network ──
   {
     auto w = openTable(edgeDir, amlSchema::kUsesDevice);
     edges::writeUsesDeviceRows(w, infra.devices);
@@ -175,7 +171,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeLoggedFromRows(w, holdings, infra.devices);
   }
 
-  // ── Customer / account identity ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasName);
     edges::writeCustomerHasNameRows(w, people, simStart);
@@ -205,7 +200,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeAddressInCountryRows(w, people, ctx, simStart);
   }
 
-  // ── Counterparty / bank identity ──
   {
     auto w = openTable(edgeDir, amlSchema::kCounterpartyHasName);
     edges::writeCounterpartyHasNameRows(w, ctx, simStart);

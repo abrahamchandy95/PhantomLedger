@@ -42,14 +42,10 @@ namespace txns = ::PhantomLedger::transactions;
 
 using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
 
-// `People::roster` is the synth::people::Pack; its inner `.roster` is the
-// entity::person::Roster (which holds `count`).
 [[nodiscard]] auto allPersonIds(const pipe::People &people) {
   return std::views::iota(1u, people.roster.roster.count + 1);
 }
 
-// Inlined replacement for exporter::common::estimateIdentityRowCount,
-// which is a template still keyed off the old monolithic Entities shape.
 [[nodiscard]] std::size_t
 estimateRowCapacity(const pipe::People &people,
                     const SharedContext &ctx) noexcept {
@@ -89,10 +85,6 @@ usPoolFor(const SharedContext &ctx) noexcept {
 
 } // namespace
 
-// ──────────────────────────────────────────────────────────────────────
-// SharedContext build
-// ──────────────────────────────────────────────────────────────────────
-
 SharedContext buildSharedContext(
     const pipe::People &people, const pipe::Holdings &holdings,
     std::span<const txns::Transaction> finalTxns,
@@ -128,10 +120,6 @@ SharedContext buildSharedContext(
 
   return ctx;
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// Customer rows
-// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -185,10 +173,6 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Account rows
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
 [[nodiscard]] std::string lastTxnString(const entity::Key &acct,
@@ -202,14 +186,11 @@ namespace {
 
 } // namespace
 
-// Still 5 params after dropping the unused (People, Counterparties): the body
-// genuinely reads Holdings + finalBook + ctx + simStart. Tier 2 candidate:
-// split the internal-account loop from any external-cp emission (the
-// internal loop reads only Holdings + finalBook + branch helpers, the
-// caller can fold in the rest).
-void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
-                      const ::PhantomLedger::clearing::Ledger *finalBook,
-                      const SharedContext &ctx, time_ns::TimePoint simStart) {
+std::vector<InternalAccountRow>
+buildInternalAccountRows(const pipe::Holdings &holdings,
+                         const ::PhantomLedger::clearing::Ledger *finalBook,
+                         const SharedContext &ctx,
+                         time_ns::TimePoint simStart) {
   const auto cardIds = exporter::common::collectCardIds(holdings.creditCards);
 
   auto is_internal = [](const auto &rec) {
@@ -217,31 +198,39 @@ void writeAccountRows(exporter::csv::Writer &w, const pipe::Holdings &holdings,
             entity::account::bit(entity::account::Flag::external)) == 0;
   };
 
+  std::vector<InternalAccountRow> rows;
+  rows.reserve(holdings.accounts.registry.records.size());
+
   for (const auto &rec :
        holdings.accounts.registry.records | std::views::filter(is_internal)) {
-    const auto idStr = exporter::common::renderKey(rec.id);
-    const auto openDate = (rec.owner == entity::invalidPerson)
-                              ? simStart - time_ns::Days{365}
-                              : identity::onboardingDate(rec.owner, simStart);
-    const auto lastTxnStr = lastTxnString(rec.id, ctx);
-    const auto acctType =
+    InternalAccountRow row;
+    row.idStr = exporter::common::renderKey(rec.id);
+    row.openDate = (rec.owner == entity::invalidPerson)
+                       ? simStart - time_ns::Days{365}
+                       : identity::onboardingDate(rec.owner, simStart);
+    row.lastTxnStr = lastTxnString(rec.id, ctx);
+    row.acctType =
         exporter::common::accountType(rec.id, cardIds.count(rec.id) != 0);
-    const auto branch = branchCodeFor(rec.id);
-
-    const double balance =
+    row.branch = branchCodeFor(rec.id);
+    row.balance =
         (finalBook != nullptr)
             ? primitives::utils::roundMoney(finalBook->liquidity(rec.id))
             : 0.0;
-
-    w.writeRow(idStr, idStr, balance, time_ns::formatTimestamp(openDate),
-               std::string_view{"active"}, lastTxnStr, std::string_view{""},
-               acctType, std::string_view{"USD"}, branch);
+    rows.push_back(std::move(row));
   }
+
+  return rows;
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Counterparty rows
-// ──────────────────────────────────────────────────────────────────────
+void writeAccountRows(exporter::csv::Writer &w,
+                      std::span<const InternalAccountRow> rows) {
+  for (const auto &row : rows) {
+    w.writeRow(row.idStr, row.idStr, row.balance,
+               time_ns::formatTimestamp(row.openDate),
+               std::string_view{"active"}, row.lastTxnStr, std::string_view{""},
+               row.acctType, std::string_view{"USD"}, row.branch);
+  }
+}
 
 void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx) {
   const auto &usPool = usPoolFor(ctx);
@@ -253,10 +242,6 @@ void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx) {
                bankName.firstName, exporter::common::kUsCountry);
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// Name / Address rows
-// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -318,10 +303,6 @@ void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
     emitAddr(identity::addressForBank(bankId, usPool));
   }
 }
-
-// ──────────────────────────────────────────────────────────────────────
-// Country rows
-// ──────────────────────────────────────────────────────────────────────
 
 namespace {
 
@@ -402,10 +383,6 @@ void writeWatchlistRows(exporter::csv::Writer &w, const pipe::People &people,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Device rows
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
 using DeviceWindowMap =
@@ -462,10 +439,6 @@ void writeDeviceRows(::PhantomLedger::exporter::csv::Writer &w,
   }
 }
 
-// ──────────────────────────────────────────────────────────────────────
-// Transaction / SAR rows
-// ──────────────────────────────────────────────────────────────────────
-
 namespace {
 
 [[nodiscard]] bool isCreditChannel(channels::Tag tag) noexcept {
@@ -476,7 +449,6 @@ namespace {
          channels::is(tag, channels::Credit::chargeback);
 }
 
-// C++20: std::to_array
 inline constexpr auto kPurposeEntries =
     std::to_array<lookup::Entry<channels::Tag>>({
         {"payroll", channels::tag(channels::Legit::salary)},
