@@ -13,11 +13,11 @@ namespace PhantomLedger::transfers::legit {
 
 namespace {
 
-namespace blueprints = ::PhantomLedger::transfers::legit::blueprints;
 namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
 namespace validate = ::PhantomLedger::primitives::validate;
 namespace income = ::PhantomLedger::activity::income;
 namespace pipe = ::PhantomLedger::pipeline;
+namespace counterparties = ::PhantomLedger::counterparties;
 
 [[nodiscard]] FamilyTransferScenario makeDefaultFamilyScenario() {
   namespace family_rel = ::PhantomLedger::relationships::family;
@@ -37,46 +37,6 @@ void validateHubFraction(double value) {
   report.throwIfFailed();
 }
 
-[[nodiscard]] blueprints::LegitTimeframe
-makeLegitTimeframe(::PhantomLedger::time::Window window,
-                   std::uint64_t seed) noexcept {
-  return blueprints::LegitTimeframe{
-      .window = window,
-      .seed = seed,
-  };
-}
-
-[[nodiscard]] blueprints::AccountCensus
-makeAccountCensus(const pipe::Holdings &holdings) noexcept {
-  return blueprints::AccountCensus{
-      .accounts = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-}
-
-[[nodiscard]] blueprints::CounterpartyPools
-makeCounterpartyPools(const pipe::Counterparties &cps) noexcept {
-  return blueprints::CounterpartyPools{
-      .directory = &cps.counterparties,
-      .landlords = &cps.landlords.roster,
-  };
-}
-
-[[nodiscard]] blueprints::PersonaCatalog
-makePersonaCatalog(const pipe::People &people) noexcept {
-  return blueprints::PersonaCatalog{
-      .pack = &people.personas,
-  };
-}
-
-[[nodiscard]] blueprints::HubSelectionRules
-makeHubSelection(const pipe::People &people, double hubFraction) noexcept {
-  return blueprints::HubSelectionRules{
-      .populationCount = people.roster.roster.count,
-      .fraction = hubFraction,
-  };
-}
-
 [[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
     ::PhantomLedger::random::Rng &rng, const pipe::Holdings &holdings,
     const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
@@ -92,39 +52,6 @@ makeHubSelection(const pipe::People &people, double hubFraction) noexcept {
           .portfolios = &holdings.portfolios,
           .creditCards = &holdings.creditCards,
       },
-  };
-}
-
-[[nodiscard]] legit_ledger::passes::FamilyPass
-makeFamilyPass(const pipe::Holdings &holdings,
-               const pipe::Counterparties &cps) {
-  return legit_ledger::passes::FamilyPass{
-      legit_ledger::passes::AccountAccess{
-          .registry = &holdings.accounts.registry,
-          .ownership = &holdings.accounts.ownership,
-      },
-      &cps.merchants,
-  };
-}
-
-[[nodiscard]] legit_ledger::passes::CreditLifecyclePass
-makeCreditPass(::PhantomLedger::random::Rng &rng,
-               const pipe::Holdings &holdings,
-               const ::PhantomLedger::transfers::credit_cards::LifecycleRules
-                   *lifecycleRules) {
-  return legit_ledger::passes::CreditLifecyclePass{
-      &rng,
-      &holdings.creditCards,
-      lifecycleRules,
-  };
-}
-
-[[nodiscard]] legit_ledger::passes::GovernmentCounterparties
-defaultGovernmentCounterparties() noexcept {
-  namespace counterparties = ::PhantomLedger::counterparties;
-  return legit_ledger::passes::GovernmentCounterparties{
-      .ssa = counterparties::key(counterparties::Government::ssa),
-      .disability = counterparties::key(counterparties::Government::disability),
   };
 }
 
@@ -246,8 +173,14 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
     const pipe::Holdings &holdings, const pipe::Counterparties &cps) const {
   legit_ledger::LegitTransferBuilder out{
       rng,
-      makeLegitTimeframe(run_.window, run_.seed),
-      makeAccountCensus(holdings),
+      blueprints::LegitTimeframe{
+          .window = run_.window,
+          .seed = run_.seed,
+      },
+      blueprints::AccountCensus{
+          .accounts = &holdings.accounts.registry,
+          .ownership = &holdings.accounts.ownership,
+      },
       makeOpeningBook(rng, holdings, openingBalances_.balanceRules),
   };
 
@@ -256,9 +189,17 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
       .ownership = &holdings.accounts.ownership,
   };
 
-  out.counterparties(makeCounterpartyPools(cps))
-      .personas(makePersonaCatalog(people))
-      .hubSelection(makeHubSelection(people, hubSelection_.fraction))
+  out.counterparties(blueprints::CounterpartyPools{
+                         .directory = &cps.counterparties,
+                         .landlords = &cps.landlords.roster,
+                     })
+      .personas(blueprints::PersonaCatalog{
+          .pack = &people.personas,
+      })
+      .hubSelection(blueprints::HubSelectionRules{
+          .populationCount = people.roster.roster.count,
+          .fraction = hubSelection_.fraction,
+      })
       .income(legit_ledger::passes::IncomePass{
           &rng,
           accountAccess,
@@ -267,7 +208,13 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
               .rules = income_.salary,
           },
           legit_ledger::passes::GovernmentSetup{
-              .counterparties = defaultGovernmentCounterparties(),
+              .counterparties =
+                  legit_ledger::passes::GovernmentCounterparties{
+                      .ssa =
+                          counterparties::key(counterparties::Government::ssa),
+                      .disability = counterparties::key(
+                          counterparties::Government::disability),
+                  },
               .retirement = &income_.retirement,
               .disability = &income_.disability,
           },
@@ -284,8 +231,15 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
           },
           income_.rent,
       })
-      .family(makeFamilyPass(holdings, cps))
-      .credit(makeCreditPass(rng, holdings, cardLifecycle_.lifecycleRules))
+      .family(legit_ledger::passes::FamilyPass{
+          accountAccess,
+          &cps.merchants,
+      })
+      .credit(legit_ledger::passes::CreditLifecyclePass{
+          &rng,
+          &holdings.creditCards,
+          cardLifecycle_.lifecycleRules,
+      })
       .familyScenario(familyTransfers_);
 
   return out;

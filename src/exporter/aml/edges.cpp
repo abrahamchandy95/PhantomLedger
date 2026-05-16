@@ -31,22 +31,12 @@ namespace loc = ::PhantomLedger::locale;
 namespace exporter = ::PhantomLedger::exporter;
 namespace synth = ::PhantomLedger::synth;
 
-[[nodiscard]] exporter::common::CustomerId
-customerIdFor(ent::PersonId p) noexcept {
-  return exporter::common::renderCustomerId(p);
-}
-
 [[nodiscard]] const pii_ns::PoolSet &
 poolsFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built via "
          "buildSharedContext(people, holdings, txns, pools)?");
   return *ctx.pools;
-}
-
-[[nodiscard]] const pii_ns::LocalePool &
-usPoolFor(const vertices::SharedContext &ctx) noexcept {
-  return poolsFor(ctx).forCountry(loc::Country::us);
 }
 
 [[nodiscard]] auto allPersonIds(const pipe::People &people) {
@@ -66,7 +56,7 @@ TransactionEdgeBundle
 classifyTransactionEdges(std::span<const tx_ns::Transaction> finalTxns,
                          const vertices::SharedContext &ctx) {
   TransactionEdgeBundle out;
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(loc::Country::us);
 
   std::unordered_map<ent::Key, std::string> cpNames;
 
@@ -157,7 +147,8 @@ void writeCustomerHasAccountRows(exporter::csv::Writer &w,
                                  const pipe::Holdings &holdings) {
   exporter::common::forEachInternalOwnership(
       holdings, [&](ent::PersonId pid, const ent::Key &k) {
-        w.writeRow(customerIdFor(pid), exporter::common::renderKey(k));
+        w.writeRow(exporter::common::renderCustomerId(pid),
+                   exporter::common::renderKey(k));
       });
 }
 
@@ -165,7 +156,8 @@ void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
                                         const pipe::Holdings &holdings) {
   exporter::common::forEachInternalOwnership(
       holdings, [&](ent::PersonId pid, const ent::Key &k) {
-        w.writeRow(exporter::common::renderKey(k), customerIdFor(pid));
+        w.writeRow(exporter::common::renderKey(k),
+                   exporter::common::renderCustomerId(pid));
       });
 }
 
@@ -204,7 +196,7 @@ void writeUsesDeviceRows(exporter::csv::Writer &w,
   }
 
   for (const auto &[key, slot] : agg) {
-    w.writeRow(customerIdFor(key.first), key.second,
+    w.writeRow(exporter::common::renderCustomerId(key.first), key.second,
                t_ns::formatTimestamp(slot.firstSeen),
                t_ns::formatTimestamp(slot.lastSeen), slot.count);
   }
@@ -246,7 +238,8 @@ void writeCustomerHasNameRows(exporter::csv::Writer &w,
                               t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
-    w.writeRow(customerIdFor(p), identity::nameIdForPerson(p), ts);
+    w.writeRow(exporter::common::renderCustomerId(p),
+               identity::nameIdForPerson(p), ts);
   }
 }
 
@@ -255,7 +248,8 @@ void writeCustomerHasAddressRows(exporter::csv::Writer &w,
                                  t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
-    w.writeRow(customerIdFor(p), identity::addressIdForPerson(p), ts);
+    w.writeRow(exporter::common::renderCustomerId(p),
+               identity::addressIdForPerson(p), ts);
   }
 }
 
@@ -264,7 +258,8 @@ void writeCustomerAssociatedWithCountryRows(exporter::csv::Writer &w,
                                             t_ns::TimePoint simStart) {
   const auto ts = t_ns::formatTimestamp(simStart);
   for (ent::PersonId p : allPersonIds(people)) {
-    w.writeRow(customerIdFor(p), loc::code(people.pii.at(p).country), ts);
+    w.writeRow(exporter::common::renderCustomerId(p),
+               loc::code(people.pii.at(p).country), ts);
   }
 }
 
@@ -368,7 +363,7 @@ void writeCustomerMatchesWatchlistRows(exporter::csv::Writer &w,
         !roster.has(p, ent::person::Flag::mule)) {
       continue;
     }
-    const auto cid = customerIdFor(p);
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto wlView =
         exporter::common::makeWatchlistId(watchlistId, cid.view());
 
@@ -381,7 +376,8 @@ void writeReferencesRows(exporter::csv::Writer &w,
   for (const auto &sar : sars) {
     const auto n = sar.subjectPersonIds.size();
     for (std::size_t i = 0; i < n; ++i) {
-      w.writeRow(sar.sarId, customerIdFor(sar.subjectPersonIds[i]),
+      w.writeRow(sar.sarId,
+                 exporter::common::renderCustomerId(sar.subjectPersonIds[i]),
                  sar.subjectRoles[i]);
     }
   }
@@ -449,7 +445,7 @@ void writeCustomerHasNameMinhashRows(exporter::csv::Writer &w,
   std::string nameScratch;
   for (ent::PersonId p : allPersonIds(people)) {
     const auto nm = identity::nameForPerson(p, pii, pools);
-    const auto cid = customerIdFor(p);
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto nameStr =
         common::joinName(nameScratch, nm.firstName, nm.lastName);
     for (const auto &mhId :
@@ -468,7 +464,7 @@ void writeCustomerHasAddressMinhashRows(exporter::csv::Writer &w,
   std::string addrScratch;
   for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    const auto cid = customerIdFor(p);
+    const auto cid = exporter::common::renderCustomerId(p);
     const auto fullAddr = common::joinAddress(addrScratch, addr);
     for (const auto &mhId : minhash::addressMinhashIds(fullAddr)) {
       w.writeRow(cid, mhId, fullAddr);
@@ -484,7 +480,7 @@ void writeCustomerHasAddressStreetLine1MinhashRows(
 
   for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    const auto cid = customerIdFor(p);
+    const auto cid = exporter::common::renderCustomerId(p);
     for (const auto &mhId : minhash::streetMinhashIds(addr.streetLine1)) {
       w.writeRow(cid, mhId, addr.streetLine1);
     }
@@ -499,7 +495,8 @@ void writeCustomerHasAddressCityMinhashRows(
 
   for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    w.writeRow(customerIdFor(p), minhash::cityMinhashId(addr.city), addr.city);
+    w.writeRow(exporter::common::renderCustomerId(p),
+               minhash::cityMinhashId(addr.city), addr.city);
   }
 }
 
@@ -511,8 +508,8 @@ void writeCustomerHasAddressStateMinhashRows(
 
   for (ent::PersonId p : allPersonIds(people)) {
     const auto addr = identity::addressForPerson(p, pii, pools);
-    w.writeRow(customerIdFor(p), minhash::stateMinhashId(addr.state),
-               addr.state);
+    w.writeRow(exporter::common::renderCustomerId(p),
+               minhash::stateMinhashId(addr.state), addr.state);
   }
 }
 
@@ -555,7 +552,7 @@ void writeAccountHasNameMinhashRows(exporter::csv::Writer &w,
 
 void writeCounterpartyHasNameMinhashRows(exporter::csv::Writer &w,
                                          const vertices::SharedContext &ctx) {
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(loc::Country::us);
 
   std::string nameScratch;
   for (const auto &cpId : ctx.counterpartyIds) {
@@ -580,8 +577,9 @@ void writeResolvesToRows(exporter::csv::Writer &w,
     if (rec.owner == ent::invalidPerson) {
       continue;
     }
-    w.writeRow(exporter::common::renderKey(rec.id), customerIdFor(rec.owner),
-               0.95, std::string_view{"account_link"}, ts);
+    w.writeRow(exporter::common::renderKey(rec.id),
+               exporter::common::renderCustomerId(rec.owner), 0.95,
+               std::string_view{"account_link"}, ts);
   }
 }
 

@@ -9,9 +9,8 @@ namespace PhantomLedger::pipeline::stages::infra {
 
 namespace {
 
-namespace entities = ::PhantomLedger::entities;
-namespace entity = ::PhantomLedger::entity;
 namespace pipe = ::PhantomLedger::pipeline;
+namespace entity = ::PhantomLedger::entity;
 namespace primitives = ::PhantomLedger::primitives;
 namespace random = ::PhantomLedger::random;
 namespace synth = ::PhantomLedger::synth;
@@ -71,45 +70,13 @@ AccessInfraStage &AccessInfraStage::sharedInfra(
   return *this;
 }
 
-time_ns::Window
-AccessInfraStage::activeWindow(time_ns::Window fallback) const noexcept {
-  return window_.value_or(fallback);
-}
-
-AccessInfraStage::RingPlans AccessInfraStage::buildRingPlans(
-    random::Rng &rng, time_ns::Window window,
-    const entities::synth::people::Pack &people) const {
-  return ringAccess_.build(rng, window, people.topology.rings, people.topology);
-}
-
-synth::infra::devices::Output
-AccessInfraStage::buildDevices(random::Rng &rng, time_ns::Window window,
-                               const entity::person::Roster &people,
-                               const RingPlans &ringPlans) const {
-  return deviceAssignment_.build(rng, window, people, ringPlans);
-}
-
-synth::infra::ips::Output
-AccessInfraStage::buildIps(random::Rng &rng, time_ns::Window window,
-                           const entity::person::Roster &people,
-                           const RingPlans &ringPlans) const {
-  return ipAssignment_.build(rng, window, people, ringPlans);
-}
-
-::PhantomLedger::infra::Router
-AccessInfraStage::buildRouter(const entity::account::Registry &accounts,
-                              const synth::infra::devices::Output &devices,
-                              const synth::infra::ips::Output &ips) const {
-  return ::PhantomLedger::infra::Router::build(
-      routerRules_, buildOwnerMap(accounts), devices.byPerson, ips.byPerson);
-}
-
 ::PhantomLedger::infra::SharedInfra
 AccessInfraStage::buildSharedInfra(const synth::infra::devices::Output &devices,
                                    const synth::infra::ips::Output &ips) const {
-  ::PhantomLedger::infra::SharedInfra out;
-  out.ringDevice = devices.ringMap;
-  out.ringIp = ips.ringMap;
+  ::PhantomLedger::infra::SharedInfra out{
+      .ringDevice = devices.ringMap,
+      .ringIp = ips.ringMap,
+  };
   out.apply(sharedInfra_);
   return out;
 }
@@ -127,25 +94,21 @@ pipe::Infra AccessInfraStage::build(random::Rng &rng,
   sharedInfra_.validate(report);
   report.throwIfFailed();
 
-  const auto window = activeWindow(fallbackWindow);
-
-  // `People::roster` is the synth::people::Pack; ring plans build off the
-  // Pack as a whole, while device/IP builders need only the inner Roster.
+  const auto window = window_.value_or(fallbackWindow);
   const auto &peoplePack = people.roster;
 
   pipe::Infra out;
-  out.ringPlans = buildRingPlans(rng, window, peoplePack);
-  out.devices = buildDevices(rng, window, peoplePack.roster, out.ringPlans);
-  out.ips = buildIps(rng, window, peoplePack.roster, out.ringPlans);
-  out.router = buildRouter(holdings.accounts.registry, out.devices, out.ips);
+  out.ringPlans = ringAccess_.build(rng, window, peoplePack.topology.rings,
+                                    peoplePack.topology);
+  out.devices =
+      deviceAssignment_.build(rng, window, peoplePack.roster, out.ringPlans);
+  out.ips = ipAssignment_.build(rng, window, peoplePack.roster, out.ringPlans);
+  out.router = ::PhantomLedger::infra::Router::build(
+      routerRules_, buildOwnerMap(holdings.accounts.registry),
+      out.devices.byPerson, out.ips.byPerson);
   out.ringInfra = buildSharedInfra(out.devices, out.ips);
 
   return out;
-}
-
-pipe::Infra build(random::Rng &rng, const pipe::People &people,
-                  const pipe::Holdings &holdings, time_ns::Window window) {
-  return AccessInfraStage{}.build(rng, people, holdings, window);
 }
 
 } // namespace PhantomLedger::pipeline::stages::infra

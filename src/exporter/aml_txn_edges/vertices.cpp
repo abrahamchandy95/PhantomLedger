@@ -42,11 +42,6 @@ poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
   return *ctx.pools;
 }
 
-[[nodiscard]] const ::PhantomLedger::entities::synth::pii::LocalePool &
-usPoolFor(const aml::vertices::SharedContext &ctx) noexcept {
-  return poolsFor(ctx).forCountry(locale::Country::us);
-}
-
 [[nodiscard]] personas::Type
 resolvedPersona(const aml::vertices::SharedContext &ctx,
                 entity::PersonId p) noexcept {
@@ -183,7 +178,7 @@ void writeExternalCounterpartyAccountRows(
 
 void writeCounterpartyRows(exporter::csv::Writer &w,
                            const aml::vertices::SharedContext &ctx) {
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto bankId = exporter::aml::counterpartyBankId(cpId);
     const auto cpName =
@@ -260,7 +255,7 @@ void writeIpRows(exporter::csv::Writer &w,
 void writeFullNameRows(exporter::csv::Writer &w, const pipe::People &people,
                        const aml::vertices::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
 
   std::unordered_set<std::string> emitted;
   emitted.reserve(estimateRowCapacity(people, ctx));
@@ -329,7 +324,7 @@ void writeGovtIdRows(exporter::csv::Writer &w, const pipe::People &people) {
 void writeAddressRows(exporter::csv::Writer &w, const pipe::People &people,
                       const aml::vertices::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
 
   std::unordered_set<std::string> emitted;
   emitted.reserve(estimateRowCapacity(people, ctx));
@@ -443,7 +438,7 @@ void writeMinHashBucketRows(exporter::csv::Writer &w,
                             const pipe::People &people,
                             const aml::vertices::SharedContext &ctx) {
   const auto &pools = poolsFor(ctx);
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
   const auto &pii = people.pii;
 
   std::set<exporter::aml::minhash::BucketId> nameSet, addrSet, streetSet;
