@@ -10,8 +10,6 @@ namespace PhantomLedger::exporter::schema::aml_txn_edges {
 using ::PhantomLedger::exporter::schema::Table;
 using ::PhantomLedger::exporter::schema::detail::make;
 
-// ──────────────────────────── Vertices ────────────────────────────
-
 inline constexpr std::array<std::string_view, 7> kCustomerHeader{
     "id",     "customer_id", "customer_type", "risk_score",
     "status", "kyc_date",    "country",
@@ -155,6 +153,13 @@ inline constexpr std::array<std::string_view, 6> kBusinessHeader{
 };
 inline constexpr Table kBusiness = make("Business.csv", kBusinessHeader);
 
+inline constexpr std::array<std::string_view, 11> kChainHeader{
+    "id",       "chain_id",  "ring_id",          "typology",
+    "num_hops", "principal", "final_amount",     "total_haircut",
+    "start_ts", "end_ts",    "duration_seconds",
+};
+inline constexpr Table kChain = make("Chain.csv", kChainHeader);
+
 inline constexpr std::array<std::string_view, 13> kInvestigationCaseTxnHeader{
     "id",
     "transaction_id",
@@ -173,7 +178,6 @@ inline constexpr std::array<std::string_view, 13> kInvestigationCaseTxnHeader{
 inline constexpr Table kInvestigationCaseTxn =
     make("InvestigationCaseTxn.csv", kInvestigationCaseTxnHeader);
 
-// Empty by design — populated by downstream TigerGraph GDS queries.
 inline constexpr std::array<std::string_view, 4> kConnectedComponentHeader{
     "id",
     "component_id",
@@ -182,8 +186,6 @@ inline constexpr std::array<std::string_view, 4> kConnectedComponentHeader{
 };
 inline constexpr Table kConnectedComponent =
     make("ConnectedComponent.csv", kConnectedComponentHeader);
-
-// ──────────────────────────── Edges ───────────────────────────────
 
 inline constexpr std::array<std::string_view, 6> kOwnsHeader{
     "from_id",       "to_id",      "effective_date",
@@ -199,6 +201,14 @@ inline constexpr std::array<std::string_view, 10> kTransactedHeader{
     "credit_debit",   "source_system",
 };
 inline constexpr Table kTransacted = make("TRANSACTED.csv", kTransactedHeader);
+
+inline constexpr std::array<std::string_view, 3> kTransactionChainLabelHeader{
+    "transaction_id",
+    "chain_id",
+    "ring_id",
+};
+inline constexpr Table kTransactionChainLabel =
+    make("TRANSACTION_CHAIN_LABEL.csv", kTransactionChainLabelHeader);
 
 inline constexpr std::array<std::string_view, 6> kInvolvesCounterpartyHeader{
     "from_id",       "to_id",      "observed_at",
@@ -405,7 +415,6 @@ inline constexpr std::array<std::string_view, 15> kAccountLinkCommHeader{
 inline constexpr Table kAccountLinkComm =
     make("ACCOUNT_LINK_COMM.csv", kAccountLinkCommHeader);
 
-// Empty by design — populated downstream.
 inline constexpr std::array<std::string_view, 4> kInClusterHeader{
     "from_id",
     "to_id",
