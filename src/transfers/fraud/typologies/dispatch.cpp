@@ -1,10 +1,13 @@
 #include "phantomledger/transfers/fraud/typologies/dispatch.hpp"
 
+#include "phantomledger/transfers/fraud/typologies/bipartite.hpp"
 #include "phantomledger/transfers/fraud/typologies/classic.hpp"
+#include "phantomledger/transfers/fraud/typologies/cycle.hpp"
 #include "phantomledger/transfers/fraud/typologies/funnel.hpp"
 #include "phantomledger/transfers/fraud/typologies/invoice.hpp"
 #include "phantomledger/transfers/fraud/typologies/layering.hpp"
 #include "phantomledger/transfers/fraud/typologies/mule.hpp"
+#include "phantomledger/transfers/fraud/typologies/scatter_gather.hpp"
 #include "phantomledger/transfers/fraud/typologies/structuring.hpp"
 
 namespace PhantomLedger::transfers::fraud::typologies {
@@ -28,6 +31,12 @@ Dispatcher::run(const Plan &plan, Typology typology,
     return invoice::generate(ctx_, plan, budget);
   case Typology::mule:
     return mule::generate(ctx_, plan, budget);
+  case Typology::cycle:
+    return cycle::generate(ctx_, plan, budget);
+  case Typology::scatterGather:
+    return scatterGather::generate(ctx_, plan, budget);
+  case Typology::bipartite:
+    return bipartite::generate(ctx_, plan, budget);
   }
 
   return classic::generate(ctx_, plan, budget);

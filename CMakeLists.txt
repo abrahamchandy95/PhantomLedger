@@ -92,6 +92,9 @@ set(PL_FRAUD_SOURCES
     src/transfers/fraud/typologies/layering.cpp
     src/transfers/fraud/typologies/mule.cpp
     src/transfers/fraud/typologies/structuring.cpp
+    src/transfers/fraud/typologies/cycle.cpp
+    src/transfers/fraud/typologies/scatter_gather.cpp
+    src/transfers/fraud/typologies/bipartite.cpp
 )
 
 set(PL_PRODUCTS_SOURCES
