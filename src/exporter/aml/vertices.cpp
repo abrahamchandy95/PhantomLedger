@@ -41,11 +41,9 @@ namespace time_ns = ::PhantomLedger::time;
 namespace txns = ::PhantomLedger::transactions;
 
 using BranchCode = ::PhantomLedger::encoding::RenderedId<8>;
-
 [[nodiscard]] auto allPersonIds(const pipe::People &people) {
   return std::views::iota(1u, people.roster.roster.count + 1);
 }
-
 [[nodiscard]] std::size_t
 estimateRowCapacity(const pipe::People &people,
                     const SharedContext &ctx) noexcept {
@@ -76,11 +74,6 @@ poolsFor(const SharedContext &ctx) noexcept {
          "SharedContext::pools is null — was the context built with "
          "buildSharedContext(people, holdings, txns, pools)?");
   return *ctx.pools;
-}
-
-[[nodiscard]] const ::PhantomLedger::entities::synth::pii::LocalePool &
-usPoolFor(const SharedContext &ctx) noexcept {
-  return poolsFor(ctx).forCountry(locale::Country::us);
 }
 
 } // namespace
@@ -185,7 +178,6 @@ namespace {
 }
 
 } // namespace
-
 std::vector<InternalAccountRow>
 buildInternalAccountRows(const pipe::Holdings &holdings,
                          const ::PhantomLedger::clearing::Ledger *finalBook,
@@ -233,7 +225,7 @@ void writeAccountRows(exporter::csv::Writer &w,
 }
 
 void writeCounterpartyRows(exporter::csv::Writer &w, const SharedContext &ctx) {
-  const auto &usPool = usPoolFor(ctx);
+  const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto bankId = counterpartyBankId(cpId);
     const auto cpName = identity::nameForCounterparty(cpId, usPool);
@@ -448,7 +440,6 @@ namespace {
          channels::is(tag, channels::Credit::refund) ||
          channels::is(tag, channels::Credit::chargeback);
 }
-
 inline constexpr auto kPurposeEntries =
     std::to_array<lookup::Entry<channels::Tag>>({
         {"payroll", channels::tag(channels::Legit::salary)},

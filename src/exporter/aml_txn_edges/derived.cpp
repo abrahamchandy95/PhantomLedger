@@ -100,10 +100,6 @@ AlertId makeAlertId(std::string_view accountId, std::size_t txnIdx,
                       {"ALT", accountId, idxBytes.view(), ruleBytes.view()});
 }
 
-DispositionId makeDispositionId(std::string_view alertId) noexcept {
-  return hashedId<24>("DSP_", {"DSP", alertId});
-}
-
 CtrId makeCtrId(std::string_view accountId, std::size_t txnIdx) noexcept {
   const auto idxBytes = u64Decimal(static_cast<std::uint64_t>(txnIdx));
   return hashedId<24>("CTR_", {"CTR", accountId, idxBytes.view()});
@@ -117,11 +113,6 @@ CaseId makeRingCaseId(std::uint32_t ringId) noexcept {
 CaseId makeSoloCaseId(ent::PersonId p) noexcept {
   const auto idBytes = u64Decimal(static_cast<std::uint64_t>(p));
   return hashedId<24>("CASE_", {"CASE", "solo", idBytes.view()});
-}
-
-EvidenceId makeEvidenceId(std::string_view caseId,
-                          std::string_view kind) noexcept {
-  return hashedId<24>("EVD_", {"EVD", caseId, kind});
 }
 
 PromotedTxnId makePromotedTxnId(std::string_view caseId,
@@ -400,7 +391,6 @@ struct OwnerIndex {
   }
   return out;
 }
-
 [[nodiscard]] AlertRecord makeAlert(const ent::Key &onAcct, Rule rule,
                                     t_ns::TimePoint createdDate,
                                     std::size_t idx) {
@@ -546,7 +536,7 @@ void generateDispositions(Bundle &b) {
 
     DispositionRecord d;
     d.alertIndex = i;
-    d.id = makeDispositionId(alertIdView);
+    d.id = hashedId<24>("DSP_", {"DSP", alertIdView});
     d.notesHash = makeHashHex({"NOTES", alertIdView});
     d.investigatorNum = static_cast<std::uint32_t>(
         (common::stableU64({"INV", alertIdView}) % 12ULL) + 1ULL);
@@ -672,7 +662,7 @@ void generateEvidence(Bundle &b) {
       e.caseIndex = ci;
       e.artifactType = kind.artifactType;
       e.sourceSystem = kind.sourceSystem;
-      e.id = makeEvidenceId(caseIdView, kind.artifactType);
+      e.id = hashedId<24>("EVD_", {"EVD", caseIdView, kind.artifactType});
       e.contentHash = makeHashHex({"HASH", caseIdView, kind.artifactType});
       e.createdAt = c.openedDate + t_ns::Days{1};
       c.evidenceIndices.push_back(b.evidence.size());
@@ -785,7 +775,6 @@ Bundle buildBundle(
 
   const auto ownerIdx = buildOwnerIndex(holdings);
   auto sweep = sweepTransactions(postedTxns, b.simEndEpoch);
-
   b.alerts = std::move(sweep.alerts);
   b.ctrs = std::move(sweep.ctrs);
 

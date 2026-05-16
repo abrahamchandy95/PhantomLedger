@@ -233,7 +233,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeBankHasNameRows(w, ctx, simStart);
   }
 
-  // ── Watchlist / SAR ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerMatchesWatchlist);
     edges::writeCustomerMatchesWatchlistRows(w, people);
@@ -247,7 +246,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeSarCoversRows(w, sars);
   }
 
-  // ── Minhash-shingle edges ──
   {
     auto w = openTable(edgeDir, amlSchema::kCustomerHasNameMinhash);
     edges::writeCustomerHasNameMinhashRows(w, people, ctx);
@@ -278,7 +276,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     edges::writeCounterpartyHasNameMinhashRows(w, ctx);
   }
 
-  // ── Graph resolution ──
   {
     auto w = openTable(edgeDir, amlSchema::kResolvesTo);
     edges::writeResolvesToRows(w, holdings, simStart);
@@ -309,5 +306,4 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   summary.sarsFiledCount = sars.size();
   return summary;
 }
-
 } // namespace PhantomLedger::exporter::aml

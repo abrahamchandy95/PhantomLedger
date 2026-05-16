@@ -48,10 +48,6 @@ void configureTransferStage(SimulationPipeline::TransferStage &stage,
   stage.fraud().behavior(&fraud::kDefaultBehavior);
 }
 
-[[nodiscard]] std::size_t fraudMergedCapacity(std::size_t legitSize) noexcept {
-  return legitSize + legitSize / 20;
-}
-
 void runTransferStage(SimulationResult &result,
                       SimulationPipeline::TransferStage &stage,
                       random::Rng &rng) {
@@ -74,7 +70,7 @@ void runTransferStage(SimulationResult &result,
                           legitPayload.counterparties));
 
   auto mergedTxns = std::move(fraudOut.txns);
-  mergedTxns.reserve(fraudMergedCapacity(mergedTxns.size()));
+  mergedTxns.reserve(mergedTxns.size() + mergedTxns.size() / 20);
   auto posted = stage.ledger().postFraud(
       rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 

@@ -29,7 +29,6 @@ template <std::size_t N> struct InlineId {
   [[nodiscard]] constexpr bool empty() const noexcept { return length == 0; }
   constexpr operator std::string_view() const noexcept { return view(); }
 };
-
 using AlertId = InlineId<24>;
 using DispositionId = InlineId<24>;
 using CtrId = InlineId<24>;
@@ -39,23 +38,19 @@ using PromotedTxnId = InlineId<24>;
 using BusinessId = InlineId<24>;
 using HashHex = InlineId<24>;
 using RunId = InlineId<24>;
-
-using PhoneText = InlineId<16>;     // "+1-NNN-NNN-NNNN"
-using DateText = InlineId<11>;      // "yyyy-mm-dd"
-using InvestigatorId = InlineId<8>; // "INV_NNN"
-using BranchCode = InlineId<6>;     // "BRNNN"
-using TellerId = InlineId<12>;      // "TLR_NNNN"
-using EinText = InlineId<11>;       // "XX-XXXXXXX"
-
-using CpId = InlineId<48>;               // "CP_" + rendered external key
-using PrefixedCustomerId = InlineId<32>; // "<PREFIX>_<customer id>"
+using PhoneText = InlineId<16>;
+using DateText = InlineId<11>;
+using InvestigatorId = InlineId<8>;
+using BranchCode = InlineId<6>;
+using TellerId = InlineId<12>;
+using EinText = InlineId<11>;
+using CpId = InlineId<48>;
+using PrefixedCustomerId = InlineId<32>;
 
 template <std::size_t N>
 [[nodiscard]] InlineId<N>
 hashedId(std::string_view prefix,
          std::initializer_list<std::string_view> hashInputs) noexcept;
-
-// Hex-only id (no prefix), e.g. content_hash columns.
 [[nodiscard]] HashHex
 makeHashHex(std::initializer_list<std::string_view> parts) noexcept;
 
@@ -93,14 +88,10 @@ dispositionCloseCode(DispositionOutcome o) noexcept;
 [[nodiscard]] AlertId makeAlertId(std::string_view accountId,
                                   std::size_t txnIdx,
                                   std::uint8_t ruleByte) noexcept;
-[[nodiscard]] DispositionId
-makeDispositionId(std::string_view alertId) noexcept;
 [[nodiscard]] CtrId makeCtrId(std::string_view accountId,
                               std::size_t txnIdx) noexcept;
 [[nodiscard]] CaseId makeRingCaseId(std::uint32_t ringId) noexcept;
 [[nodiscard]] CaseId makeSoloCaseId(entity::PersonId p) noexcept;
-[[nodiscard]] EvidenceId makeEvidenceId(std::string_view caseId,
-                                        std::string_view kind) noexcept;
 [[nodiscard]] PromotedTxnId makePromotedTxnId(std::string_view caseId,
                                               std::size_t txnIdx) noexcept;
 [[nodiscard]] BusinessId makeBusinessId(std::string_view accountKey,
@@ -119,7 +110,7 @@ struct DispositionRecord {
   std::size_t alertIndex = 0;
   DispositionOutcome outcome = DispositionOutcome::closedFp;
   time::TimePoint date{};
-  std::uint32_t investigatorNum = 1;
+  std::uint32_t investigatorNum = 1; // 1..12  → "INV_NNN"
   HashHex notesHash{};
   double confidence = 0.7;
 };
@@ -129,8 +120,8 @@ struct CtrRecord {
   entity::Key onAccount{};
   time::TimePoint filingDate{};
   double amount = 0.0;
-  std::uint32_t branchBucket = 0;
-  std::uint32_t tellerNum = 0;
+  std::uint32_t branchBucket = 0; // (account.number % 50) + 1
+  std::uint32_t tellerNum = 0;    // 1..200
 };
 
 enum class CaseKind : std::uint8_t { ring, solo };
@@ -160,7 +151,7 @@ struct EvidenceRecord {
 struct PromotedTxnRecord {
   PromotedTxnId id{};
   std::size_t caseIndex = 0;
-  std::size_t txnIndex = 0;
+  std::size_t txnIndex = 0; // 1-based postedTxns index
   time::TimePoint promotedAt{};
   time::TimePoint ttlDate{};
 };
@@ -215,7 +206,6 @@ struct Bundle {
   std::vector<AggregateBucket> flowAgg;
   std::vector<AggregateBucket> linkComm;
 };
-
 [[nodiscard]] Bundle
 buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
             std::span<const transactions::Transaction> postedTxns,
