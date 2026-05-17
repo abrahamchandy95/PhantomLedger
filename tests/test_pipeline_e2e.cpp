@@ -1,5 +1,3 @@
-#include "phantomledger/entities/synth/pii/pools.hpp"
-#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
@@ -7,6 +5,8 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
+#include "phantomledger/synth/pii/samplers.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
@@ -53,7 +53,6 @@ void expectNonEmptyFile(const fs::path &path) {
 }
 
 /// Build a temp-directory name with a 16-hex-digit random suffix.
-/// Randomness is only for avoiding collisions across concurrent test runs.
 [[nodiscard]] fs::path uniqueTempDir(const std::string &prefix) {
   std::random_device rd;
   std::uint64_t mix = (static_cast<std::uint64_t>(rd()) << 32U) |
@@ -69,18 +68,13 @@ void expectNonEmptyFile(const fs::path &path) {
   return fs::temp_directory_path() / (prefix + buf);
 }
 
-/// Build a US-only PII pool. The accompanying LocaleMix in the test
-/// configuration is `usOnly()`, so no other country's slot will ever be
-/// consulted — the `PoolSet::forCountry` assert in non-US slots stays
-/// dormant by design.
-[[nodiscard]] pl::entities::synth::pii::PoolSet
-buildPoolSet(std::uint64_t seed) {
-  pl::entities::synth::pii::PoolSet poolSet;
-  pl::entities::synth::pii::PoolSizes sizes;
+[[nodiscard]] pl::synth::pii::PoolSet buildPoolSet(std::uint64_t seed) {
+  pl::synth::pii::PoolSet poolSet;
+  pl::synth::pii::PoolSizes sizes;
 
   poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
-      pl::entities::synth::pii::buildLocalePool(
-          pl::locale::Country::us, sizes, static_cast<std::uint32_t>(seed));
+      pl::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
+                                      static_cast<std::uint32_t>(seed));
 
   return poolSet;
 }
@@ -92,45 +86,24 @@ buildPoolSet(std::uint64_t seed) {
   return window;
 }
 
-/// Build the EntitySynthesis config tree for the small E2E test.
-///
-/// The struct is flat: `population` and `identity` are top-level
-/// user-owned fields, `fraud` is a top-level calibration field. All
-/// remaining calibration siblings (personaMix, accountsSizing,
-/// merchants/landlords/counterpartyTargets plans, cards) keep their
-/// research-backed defaults via designated-init omission.
 [[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
-smallEntitySynthesis(const pl::entities::synth::pii::PoolSet &poolSet,
+smallEntitySynthesis(const pl::synth::pii::PoolSet &poolSet,
                      pl::time::TimePoint simStart,
                      const pl::entities::synth::people::Fraud &fraudProfile) {
   return pl::pipeline::stages::entities::EntitySynthesis{
       .population = 100,
       .identity =
-          pl::entities::synth::pii::IdentityContext{
+          pl::synth::pii::IdentityContext{
               .pools = &poolSet,
               .simStart = simStart,
-              .localeMix = pl::entities::synth::pii::LocaleMix::usOnly(),
+              .localeMix = pl::synth::pii::LocaleMix::usOnly(),
           },
       .fraud = fraudProfile,
   };
 }
 
-/// Run the full pipeline end-to-end with default configuration.
-///
-/// All entity flows (employers, clients, merchants, landlords, products,
-/// fraud, recurring income) run with their library defaults. The point of
-/// this test is to exercise the same public simulation pipeline production
-/// callers use and assert that the three exporters produce the file shapes
-/// downstream pipelines depend on.
-///
-/// The PoolSet is passed in by reference because it must outlive the
-/// SimulationResult: PII samplers used during synthesis embed indices
-/// into this pool, and the AML / mule_ml exporters resolve those indices
-/// back to names and addresses against the same instance. Owning the
-/// PoolSet in main() keeps that lifetime explicit.
 [[nodiscard]] pl::pipeline::SimulationResult
-runSmallSim(const pl::entities::synth::pii::PoolSet &poolSet,
-            std::uint64_t seed) {
+runSmallSim(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed) {
   const auto window = smallWindow();
 
   const pl::entities::synth::people::Fraud fraudProfile{};
@@ -185,7 +158,7 @@ void testStandardExport(const pl::pipeline::SimulationResult &result,
 }
 
 void testMuleMlExport(const pl::pipeline::SimulationResult &result,
-                      const pl::entities::synth::pii::PoolSet &poolSet,
+                      const pl::synth::pii::PoolSet &poolSet,
                       const fs::path &outDir) {
   pl::exporter::mule_ml::Options opts{};
   opts.piiPools = &poolSet;
@@ -206,7 +179,7 @@ void testMuleMlExport(const pl::pipeline::SimulationResult &result,
 }
 
 void testAmlExport(const pl::pipeline::SimulationResult &result,
-                   const pl::entities::synth::pii::PoolSet &poolSet,
+                   const pl::synth::pii::PoolSet &poolSet,
                    const fs::path &outDir) {
   pl::exporter::aml::Options opts{};
   opts.piiPools = &poolSet;
@@ -258,11 +231,7 @@ int main() {
   constexpr std::uint64_t seed = 42;
 
   try {
-    // PoolSet is owned here so it outlives every exporter: PII samplers
-    // burned indices into this pool during synthesis, and the AML and
-    // mule_ml exporters dereference those indices back to names / addresses
-    // against the same instance. This mirrors production main.cpp's
-    // ownership pattern.
+
     const auto poolSet = buildPoolSet(seed);
     const auto result = runSmallSim(poolSet, seed);
 

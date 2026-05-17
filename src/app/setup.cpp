@@ -1,10 +1,10 @@
 #include "phantomledger/app/setup.hpp"
 
 #include "phantomledger/app/options.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
-#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
+#include "phantomledger/synth/pii/samplers.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -18,7 +18,7 @@ namespace PhantomLedger::app::setup {
 
 namespace {
 
-namespace pii = ::PhantomLedger::entities::synth::pii;
+namespace pii = ::PhantomLedger::synth::pii;
 namespace pl = ::PhantomLedger;
 
 [[nodiscard]] std::size_t

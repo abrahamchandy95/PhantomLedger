@@ -3,16 +3,16 @@
 #include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
-#include "phantomledger/entities/synth/pii/identity.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
-#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/identity.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
+#include "phantomledger/synth/pii/samplers.hpp"
 
 #include <cassert>
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::pii {
+namespace PhantomLedger::synth::pii {
 
 class Generator {
 public:
@@ -65,4 +65,4 @@ make(random::Rng &rng, const entity::behavior::Assignment &personas,
   return Generator{rng, personas, context}.make();
 }
 
-} // namespace PhantomLedger::entities::synth::pii
+} // namespace PhantomLedger::synth::pii

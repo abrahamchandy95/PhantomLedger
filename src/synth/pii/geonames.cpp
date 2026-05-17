@@ -1,4 +1,4 @@
-#include "phantomledger/entities/synth/pii/geonames.hpp"
+#include "phantomledger/synth/pii/geonames.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 
 #include <cstddef>
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::pii {
+namespace PhantomLedger::synth::pii {
 namespace {
 
 [[nodiscard]] bool parseRow(std::string_view line, ZipEntry &out,
@@ -87,4 +87,4 @@ loadGeoNamesForCountry(const std::filesystem::path &tsvFile,
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::pii
+} // namespace PhantomLedger::synth::pii

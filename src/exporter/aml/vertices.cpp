@@ -68,7 +68,7 @@ resolvedPersona(const SharedContext &ctx, entity::PersonId p) noexcept {
   return ctx.personaByPerson[p - 1];
 }
 
-[[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
+[[nodiscard]] const synth::pii::PoolSet &
 poolsFor(const SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built with "
@@ -78,10 +78,10 @@ poolsFor(const SharedContext &ctx) noexcept {
 
 } // namespace
 
-SharedContext buildSharedContext(
-    const pipe::People &people, const pipe::Holdings &holdings,
-    std::span<const txns::Transaction> finalTxns,
-    const ::PhantomLedger::entities::synth::pii::PoolSet &pools) {
+SharedContext buildSharedContext(const pipe::People &people,
+                                 const pipe::Holdings &holdings,
+                                 std::span<const txns::Transaction> finalTxns,
+                                 const synth::pii::PoolSet &pools) {
   SharedContext ctx;
   ctx.pools = &pools;
 

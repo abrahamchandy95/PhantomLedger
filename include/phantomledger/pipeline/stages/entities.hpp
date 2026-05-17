@@ -7,7 +7,6 @@
 #include "phantomledger/entities/synth/accounts/sizing.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
-#include "phantomledger/entities/synth/pii/identity.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -19,6 +18,7 @@
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/personas/kinds.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
+#include "phantomledger/synth/pii/identity.hpp"
 
 #include <cstdint>
 
@@ -31,7 +31,7 @@ namespace entity = pl::entity;
 
 struct EntitySynthesis {
   std::int32_t population;
-  synth::pii::IdentityContext identity;
+  sy::pii::IdentityContext identity;
   synth::people::Fraud fraud{};
   sy::personas::Mix personaMix{};
   synth::accounts::Sizing accountsSizing{};
@@ -53,8 +53,8 @@ struct EntitySynthesis {
   }
 };
 
-[[nodiscard]] synth::pii::IdentityContext
-defaultStart(synth::pii::IdentityContext identity,
+[[nodiscard]] sy::pii::IdentityContext
+defaultStart(sy::pii::IdentityContext identity,
              pl::time::TimePoint fallbackStart);
 
 [[nodiscard]] synth::people::Pack
@@ -70,9 +70,9 @@ buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
               const sy::personas::Mix &mix = {});
 
-[[nodiscard]] entity::pii::Roster
-buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
-         synth::pii::IdentityContext identity);
+[[nodiscard]] entity::pii::Roster buildPii(pl::random::Rng &rng,
+                                           const sy::personas::Pack &personas,
+                                           sy::pii::IdentityContext identity);
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,

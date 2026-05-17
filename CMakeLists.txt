@@ -38,8 +38,8 @@ set(PL_TRANSACTIONS_SOURCES
 )
 
 set(PL_ENTITIES_SOURCES
-    src/entities/synth/pii/geonames.cpp
-    src/entities/synth/pii/pools.cpp
+    src/synth/pii/geonames.cpp
+    src/synth/pii/pools.cpp
 )
 
 set(PL_TRANSFERS_SOURCES

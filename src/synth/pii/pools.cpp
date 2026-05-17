@@ -1,4 +1,4 @@
-#include "phantomledger/entities/synth/pii/pools.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/taxonomies/locale/us_cities.hpp"
 #include "phantomledger/taxonomies/locale/us_state.hpp"
@@ -14,7 +14,7 @@
 #include <string>
 #include <utility>
 
-namespace PhantomLedger::entities::synth::pii {
+namespace PhantomLedger::synth::pii {
 namespace {
 
 [[nodiscard]] faker::Locale fakerLocale(locale::Country c) noexcept {
@@ -232,4 +232,4 @@ LocalePool buildLocalePool(locale::Country country, PoolSizes sizes,
   return pool;
 }
 
-} // namespace PhantomLedger::entities::synth::pii
+} // namespace PhantomLedger::synth::pii
