@@ -2,8 +2,6 @@
 
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -16,6 +14,8 @@
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/landlords/pack.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/people/fraud.hpp"
+#include "phantomledger/synth/people/pack.hpp"
 #include "phantomledger/synth/personas/kinds.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/synth/pii/identity.hpp"
@@ -25,14 +25,13 @@
 namespace PhantomLedger::pipeline::stages::entities {
 
 namespace pl = ::PhantomLedger;
-namespace synth = pl::entities::synth;
 namespace sy = pl::synth;
 namespace entity = pl::entity;
 
 struct EntitySynthesis {
   std::int32_t population;
   sy::pii::IdentityContext identity;
-  synth::people::Fraud fraud{};
+  sy::people::Fraud fraud{};
   sy::personas::Mix personaMix{};
   sy::accounts::Sizing accountsSizing{};
   sy::merchants::GenerationPlan merchants{};

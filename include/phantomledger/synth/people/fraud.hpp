@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace PhantomLedger::entities::synth::people {
+namespace PhantomLedger::synth::people {
 
 struct Fraud {
   struct Rings {
@@ -70,4 +70,4 @@ struct RingPlan {
   int victims = 0;
 };
 
-} // namespace PhantomLedger::entities::synth::people
+} // namespace PhantomLedger::synth::people

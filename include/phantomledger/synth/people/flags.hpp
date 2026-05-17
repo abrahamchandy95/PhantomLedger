@@ -6,11 +6,11 @@
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::people {
+namespace PhantomLedger::synth::people {
 
 inline void set(std::vector<std::uint8_t> &flags, entity::PersonId person,
                 entity::person::Flag flag) {
   flags[person - 1] |= entity::person::bit(flag);
 }
 
-} // namespace PhantomLedger::entities::synth::people
+} // namespace PhantomLedger::synth::people

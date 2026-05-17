@@ -15,11 +15,15 @@ namespace PhantomLedger::pipeline::stages::products {
 
 class ObligationSynthesis {
 public:
-  using MortgageTerms = entities::synth::products::MortgageTerms;
-  using AutoLoanTerms = entities::synth::products::AutoLoanTerms;
-  using StudentLoanTerms = entities::synth::products::StudentLoanTerms;
-  using TaxTerms = entities::synth::products::TaxTerms;
-  using InsuranceTerms = entities::synth::products::InsuranceTerms;
+  using MortgageTerms =
+      ::PhantomLedger::entities::synth::products::MortgageTerms;
+  using AutoLoanTerms =
+      ::PhantomLedger::entities::synth::products::AutoLoanTerms;
+  using StudentLoanTerms =
+      ::PhantomLedger::entities::synth::products::StudentLoanTerms;
+  using TaxTerms = ::PhantomLedger::entities::synth::products::TaxTerms;
+  using InsuranceTerms =
+      ::PhantomLedger::entities::synth::products::InsuranceTerms;
 
   ObligationSynthesis() = default;
 
@@ -49,7 +53,8 @@ public:
                   time::Window window) const;
 
 private:
-  std::uint64_t seed_ = entities::synth::products::kDefaultProductsSeed;
+  std::uint64_t seed_ =
+      ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
 
   MortgageTerms mortgage_{};
   AutoLoanTerms autoLoan_{};

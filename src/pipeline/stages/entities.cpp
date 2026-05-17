@@ -1,7 +1,6 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
 #include "phantomledger/entities/synth/family/pick.hpp"
-#include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
@@ -12,6 +11,7 @@
 #include "phantomledger/synth/counterparties/make.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
@@ -35,9 +35,9 @@ defaultStart(sy::pii::IdentityContext identity,
   return identity;
 }
 
-[[nodiscard]] synth::people::Pack
-buildPeople(pl::random::Rng &rng, std::int32_t population,
-            const synth::people::Fraud &fraud) {
+[[nodiscard]] sy::people::Pack buildPeople(pl::random::Rng &rng,
+                                           std::int32_t population,
+                                           const synth::people::Fraud &fraud) {
   pl::primitives::validate::nonNegative("population", population);
   return synth::people::make(rng, population, fraud);
 }

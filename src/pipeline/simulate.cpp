@@ -21,7 +21,7 @@ namespace credit_cards = ::PhantomLedger::transfers::credit_cards;
 namespace clearing = ::PhantomLedger::clearing;
 namespace tx_ns = ::PhantomLedger::transactions;
 
-using SynthFraud = ::PhantomLedger::entities::synth::people::Fraud;
+using SynthFraud = ::PhantomLedger::synth::people::Fraud;
 
 [[nodiscard]] auto resolveRunScope(legit::LegitAssembly::RunScope scope,
                                    time::Window fallbackWindow,
