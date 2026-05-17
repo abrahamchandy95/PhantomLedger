@@ -1,8 +1,8 @@
-#include "phantomledger/synth/products/installment_emission.hpp"
 #include "phantomledger/entities/products/event.hpp"
+#include "phantomledger/synth/products/installments.hpp"
 
-#include "phantomledger/synth/products/dates.hpp"
-#include "phantomledger/synth/products/obligation_emission.hpp"
+#include "phantomledger/synth/products/obligations.hpp"
+#include "phantomledger/synth/products/sampling/dates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/products/predicates.hpp"

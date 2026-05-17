@@ -1,4 +1,4 @@
-#include "phantomledger/synth/products/dates.hpp"
+#include "phantomledger/synth/products/sampling/dates.hpp"
 
 namespace PhantomLedger::synth::products {
 
