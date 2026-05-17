@@ -2,12 +2,12 @@
 
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/synth/products/auto_loan.hpp"
-#include "phantomledger/synth/products/insurance.hpp"
-#include "phantomledger/synth/products/mortgage.hpp"
 #include "phantomledger/synth/products/random.hpp"
-#include "phantomledger/synth/products/student_loan.hpp"
-#include "phantomledger/synth/products/tax.hpp"
+#include "phantomledger/synth/products/terms/auto_loan.hpp"
+#include "phantomledger/synth/products/terms/insurance.hpp"
+#include "phantomledger/synth/products/terms/mortgage.hpp"
+#include "phantomledger/synth/products/terms/student_loan.hpp"
+#include "phantomledger/synth/products/terms/tax.hpp"
 
 #include <cstdint>
 

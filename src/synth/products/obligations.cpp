@@ -1,4 +1,4 @@
-#include "phantomledger/synth/products/obligation_emission.hpp"
+#include "phantomledger/synth/products/obligations.hpp"
 
 #include <utility>
 

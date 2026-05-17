@@ -1,4 +1,4 @@
-#include "phantomledger/synth/products/amount_sampling.hpp"
+#include "phantomledger/synth/products/sampling/amounts.hpp"
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"

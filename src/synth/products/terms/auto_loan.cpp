@@ -1,9 +1,9 @@
-#include "phantomledger/synth/products/auto_loan.hpp"
+#include "phantomledger/synth/products/terms/auto_loan.hpp"
 
 #include "phantomledger/primitives/random/distributions/normal.hpp"
-#include "phantomledger/synth/products/amount_sampling.hpp"
-#include "phantomledger/synth/products/dates.hpp"
-#include "phantomledger/synth/products/installment_emission.hpp"
+#include "phantomledger/synth/products/installments.hpp"
+#include "phantomledger/synth/products/sampling/amounts.hpp"
+#include "phantomledger/synth/products/sampling/dates.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
