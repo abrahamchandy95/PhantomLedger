@@ -2,14 +2,14 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/accounts/assign.hpp"
-#include "phantomledger/entities/synth/accounts/pack.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/synth/accounts/assign.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
 
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 using identifiers::Bank;
 using identifiers::Role;
@@ -62,4 +62,4 @@ inline void assignBusinessOwners(Pack &accounts,
       /*external=*/false);
 }
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

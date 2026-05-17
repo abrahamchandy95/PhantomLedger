@@ -1,13 +1,13 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/accounts/pack.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
 
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 inline void rebuild(Pack &pack, std::uint32_t people) {
   std::vector<std::uint32_t> counts(static_cast<std::size_t>(people), 0);
@@ -45,4 +45,4 @@ inline void rebuild(Pack &pack, std::uint32_t people) {
   }
 }
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

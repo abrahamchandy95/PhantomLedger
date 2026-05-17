@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/accounts.hpp"
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 struct Pack {
   entity::account::Registry registry;
@@ -10,4 +10,4 @@ struct Pack {
   entity::account::Lookup lookup;
 };
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

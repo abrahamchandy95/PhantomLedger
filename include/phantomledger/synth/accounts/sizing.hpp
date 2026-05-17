@@ -3,7 +3,7 @@
 #include "phantomledger/primitives/validate/checks.hpp"
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 struct Sizing {
   std::int32_t maxAccountsPerPerson = 3;
@@ -16,4 +16,4 @@ struct Sizing {
   }
 };
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

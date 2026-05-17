@@ -3,13 +3,13 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/accounts/counts.hpp"
-#include "phantomledger/entities/synth/accounts/pack.hpp"
+#include "phantomledger/synth/accounts/counts.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
 
 #include <cstdint>
 #include <numeric>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 using identifiers::Bank;
 using identifiers::Role;
@@ -87,4 +87,4 @@ inline void applyPersonFlags(entity::account::Record &primary,
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

@@ -5,8 +5,8 @@
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
-#include "phantomledger/entities/synth/accounts/pack.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
 #include "phantomledger/synth/landlords/pack.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 
@@ -20,7 +20,7 @@ struct People {
 
 // pipeline/holdings.hpp
 struct Holdings {
-  entities::synth::accounts::Pack accounts;
+  synth::accounts::Pack accounts;
   entity::card::Registry creditCards;
   entity::product::PortfolioRegistry portfolios;
 };

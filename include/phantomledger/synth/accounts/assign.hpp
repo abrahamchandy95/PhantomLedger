@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/accounts/owners.hpp"
+#include "phantomledger/synth/accounts/owners.hpp"
 
 #include <cstdint>
 #include <ranges>
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 inline void addAccounts(Pack &pack, std::span<const entity::Key> ids,
                         bool external = false) {
@@ -156,4 +156,4 @@ inline void assignOwners(Pack &pack, const Records &records, GetKey getKey,
   }
 }
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts

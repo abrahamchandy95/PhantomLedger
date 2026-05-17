@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::accounts {
+namespace PhantomLedger::synth::accounts {
 
 [[nodiscard]] inline std::vector<int> counts(random::Rng &rng, int people,
                                              int maxPerPerson) {
@@ -28,4 +28,4 @@ namespace PhantomLedger::entities::synth::accounts {
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::accounts
+} // namespace PhantomLedger::synth::accounts
