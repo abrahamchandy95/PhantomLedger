@@ -3,10 +3,10 @@
 #include "phantomledger/activity/spending/actors/day.hpp"
 #include "phantomledger/activity/spending/actors/event.hpp"
 #include "phantomledger/activity/spending/actors/explore.hpp"
-#include "phantomledger/activity/spending/clearing/parallel_ledger_view.hpp"
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/routing/emission_result.hpp"
+#include "phantomledger/activity/spending/simulator/gate.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
 #include "phantomledger/math/counts.hpp"
@@ -37,7 +37,7 @@ public:
                 const actors::DayFrame &frame, Rules rules) noexcept;
 
     RateSampler &dailyMultipliers(std::span<const double> value) noexcept;
-    RateSampler &ledgerView(ParallelLedgerView value) noexcept;
+    RateSampler &ledgerView(Gate value) noexcept;
 
     [[nodiscard]] double combinedMultiplierFor(std::uint32_t personIndex) const;
 
@@ -83,7 +83,7 @@ public:
     const actors::DayFrame &frame_;
     std::span<const double> dailyMultipliers_{};
     Rules rules_;
-    ParallelLedgerView ledgerView_{};
+    Gate ledgerView_{};
 
     double lastLiquidityMult_ = 0.0;
     double lastAvailableToSpend_ = 0.0;
@@ -94,7 +94,7 @@ public:
     PaymentEmitter(const market::Market &market,
                    const PreparedRun::Routing &routing,
                    const transactions::Factory &factory,
-                   ParallelLedgerView ledgerView) noexcept;
+                   Gate ledgerView) noexcept;
 
     void bindRateSampler(const RateSampler *sampler) noexcept;
 
@@ -108,7 +108,7 @@ public:
     const PreparedRun::Routing &routing_;
     const transactions::Factory &factory_;
     routing::ResolvedAccounts resolved_{};
-    ParallelLedgerView ledgerView_{};
+    Gate ledgerView_{};
     const RateSampler *rateSampler_ = nullptr;
   };
 

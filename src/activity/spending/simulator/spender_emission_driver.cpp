@@ -1,6 +1,6 @@
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
 
-#include "phantomledger/activity/spending/clearing/parallel_ledger_view.hpp"
+#include "phantomledger/activity/spending/simulator/gate.hpp"
 #include "phantomledger/activity/spending/simulator/loop.hpp"
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
@@ -71,6 +71,7 @@ SpenderEmissionDriver &SpenderEmissionDriver::threads(Threads value) noexcept {
 }
 
 void SpenderEmissionDriver::prepare(double txnsPerMonth) {
+  // Trip the bound-state validators; throws if any required binding is missing.
   (void)market();
   (void)rng();
   (void)factory();
@@ -154,11 +155,13 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
 
   threadStates_.reserve(threadCfg.count);
 
-  const auto perThreadReserve = static_cast<std::size_t>(
-      (static_cast<double>(market().bounds().days) *
-       (static_cast<double>(market().population().count()) / 30.0) *
-       txnsPerMonth * kTxnReserveSlack) /
-      static_cast<double>(threadCfg.count));
+  // Estimate transactions per thread for upfront vector reservation.
+  const auto days = static_cast<double>(market().bounds().days);
+  const auto people = static_cast<double>(market().population().count());
+  const auto months = days / 30.0;
+  const auto expectedTxns = people * months * txnsPerMonth * kTxnReserveSlack;
+  const auto perThreadReserve =
+      static_cast<std::size_t>(expectedTxns / threadCfg.count);
 
   std::array<char, 16> idBuf{};
   for (std::uint32_t t = 0; t < threadCfg.count; ++t) {
@@ -184,16 +187,17 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
     return;
   }
 
-  std::size_t total = state.txns().size();
+  auto &dst = state.txns();
+
+  std::size_t total = dst.size();
   for (const auto &threadState : threadStates_) {
     total += threadState.txns.size();
   }
+  dst.reserve(total);
 
-  state.txns().reserve(total);
   for (auto &threadState : threadStates_) {
-    state.txns().insert(state.txns().end(),
-                        std::make_move_iterator(threadState.txns.begin()),
-                        std::make_move_iterator(threadState.txns.end()));
+    dst.insert(dst.end(), std::make_move_iterator(threadState.txns.begin()),
+               std::make_move_iterator(threadState.txns.end()));
     threadState.txns.clear();
   }
 }
@@ -201,14 +205,14 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
 void SpenderEmissionDriver::emitSerial(
     const PreparedRun::Population &population, RunState &state,
     const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  ParallelLedgerView ledgerView{ledger(), nullptr};
+  Gate gate{ledger(), nullptr};
+
   SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
                                          rulesFrom(behavior_)};
-  rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
+  rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
 
-  const auto &routingSnapshot = routing();
-  SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                               factory(), ledgerView};
+  SpenderEmissionLoop::PaymentEmitter payments{market(), routing(), factory(),
+                                               gate};
   SpenderEmissionLoop loop{population, rates, payments};
 
   loop.run(0, population.spenders.size(), rng(), state.txns());
@@ -223,7 +227,6 @@ void SpenderEmissionDriver::emitParallel(
 
   runParallel(threadCfg.count, [&](std::uint32_t threadIdx) {
     const auto range = partitionRange(spenderCount, threadCfg.count, threadIdx);
-
     if (range.size() == 0) {
       return;
     }
@@ -231,13 +234,14 @@ void SpenderEmissionDriver::emitParallel(
     auto &threadState = threadStates_[threadIdx];
     const auto threadFactory = factory().rebound(threadState.rng);
 
-    ParallelLedgerView ledgerView{ledger(), &lockArray_};
+    Gate gate{ledger(), &lockArray_};
+
     SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
                                            rulesFrom(behavior_)};
-    rates.dailyMultipliers(dailyMultipliers).ledgerView(ledgerView);
+    rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
 
     SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                                 threadFactory, ledgerView};
+                                                 threadFactory, gate};
     SpenderEmissionLoop loop{population, rates, payments};
 
     loop.run(range.begin, range.end, threadState.rng, threadState.txns);
