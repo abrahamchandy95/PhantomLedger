@@ -4,11 +4,11 @@
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/landlords.hpp"
-#include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -55,7 +55,7 @@ struct CounterpartyPools {
 };
 
 struct PersonaCatalog {
-  const entities::synth::personas::Pack *pack = nullptr;
+  const synth::personas::Pack *pack = nullptr;
 };
 
 struct TransferCalendar {
@@ -159,8 +159,8 @@ struct CounterpartyAccess {
 };
 
 struct PersonaAccess {
-  std::optional<entities::synth::personas::Pack> ownedPack{};
-  const entities::synth::personas::Pack *pack = nullptr;
+  std::optional<synth::personas::Pack> ownedPack{};
+  const synth::personas::Pack *pack = nullptr;
 
   std::vector<std::string_view> names;
 

@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::personas {
+namespace PhantomLedger::synth::personas {
 
 [[nodiscard]] inline std::uint64_t seed(std::uint64_t base,
                                         entity::PersonId person) noexcept {
@@ -13,4 +13,4 @@ namespace PhantomLedger::entities::synth::personas {
       base, static_cast<std::uint32_t>(person), 0x50455253U));
 }
 
-} // namespace PhantomLedger::entities::synth::personas
+} // namespace PhantomLedger::synth::personas

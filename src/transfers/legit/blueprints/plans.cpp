@@ -1,9 +1,9 @@
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 
 #include "phantomledger/entities/landlords.hpp"
-#include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/taxonomies/personas/names.hpp"
 
 #include <algorithm>
@@ -232,8 +232,7 @@ buildPersonaAccess(random::Rng &rng, LegitTimeframe timeframe,
     plan.pack = personas.pack;
   } else {
     const auto popSize = static_cast<std::uint32_t>(persons.size());
-    plan.ownedPack =
-        entities::synth::personas::makePack(rng, popSize, timeframe.seed);
+    plan.ownedPack = synth::personas::makePack(rng, popSize, timeframe.seed);
     plan.pack = &*plan.ownedPack;
   }
 

@@ -8,7 +8,7 @@
 #include <array>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::personas {
+namespace PhantomLedger::synth::personas {
 
 struct Mix {
   std::array<double, ::PhantomLedger::personas::kKindCount> fractions =
@@ -75,4 +75,4 @@ assign(random::Rng &rng, std::uint32_t people, const Mix &mix = {}) {
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::personas
+} // namespace PhantomLedger::synth::personas

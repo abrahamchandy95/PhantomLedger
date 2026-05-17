@@ -5,7 +5,6 @@
 #include "phantomledger/entities/synth/accounts/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
-#include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -14,6 +13,7 @@
 #include "phantomledger/synth/counterparties/make.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
@@ -51,15 +51,15 @@ buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
                                    sizing.maxAccountsPerPerson);
 }
 
-[[nodiscard]] synth::personas::Pack
+[[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
-              const synth::personas::Mix &mix) {
+              const sy::personas::Mix &mix) {
   const std::uint64_t personasSeed = rng.nextU64();
-  return synth::personas::makePack(rng, people.roster.count, personasSeed, mix);
+  return sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
 }
 
 [[nodiscard]] entity::pii::Roster
-buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
+buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
          synth::pii::IdentityContext identity) {
   assert(identity.pools != nullptr &&
          "buildPii: IdentityContext::pools must be set. main is the sole "
@@ -84,7 +84,7 @@ buildLandlords(pl::random::Rng &rng, std::int32_t population,
 }
 
 [[nodiscard]] entity::card::Registry
-issueCreditCards(const synth::personas::Pack &personas,
+issueCreditCards(const sy::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
                  const sy::cards::IssuanceRules &issuance) {
   return sy::cards::issue(sy::cards::deriveCardSeed(topLevelSeed),
