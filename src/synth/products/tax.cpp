@@ -1,9 +1,9 @@
-#include "phantomledger/entities/synth/products/tax.hpp"
+#include "phantomledger/synth/products/tax.hpp"
 #include "phantomledger/entities/products/event.hpp"
 
-#include "phantomledger/entities/synth/products/amount_sampling.hpp"
-#include "phantomledger/entities/synth/products/dates.hpp"
-#include "phantomledger/entities/synth/products/obligation_emission.hpp"
+#include "phantomledger/synth/products/amount_sampling.hpp"
+#include "phantomledger/synth/products/dates.hpp"
+#include "phantomledger/synth/products/obligation_emission.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace {
 
@@ -166,4 +166,4 @@ TaxEmitter::TaxEmitter(
   return true;
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

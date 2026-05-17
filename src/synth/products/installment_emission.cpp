@@ -1,8 +1,8 @@
-#include "phantomledger/entities/synth/products/installment_emission.hpp"
+#include "phantomledger/synth/products/installment_emission.hpp"
 #include "phantomledger/entities/products/event.hpp"
 
-#include "phantomledger/entities/synth/products/dates.hpp"
-#include "phantomledger/entities/synth/products/obligation_emission.hpp"
+#include "phantomledger/synth/products/dates.hpp"
+#include "phantomledger/synth/products/obligation_emission.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/products/predicates.hpp"
@@ -10,7 +10,7 @@
 #include <array>
 #include <stdexcept>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace {
 
@@ -87,4 +87,4 @@ void addInstallmentProduct(
   emitInstallmentSchedule(obligations, issue, window);
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

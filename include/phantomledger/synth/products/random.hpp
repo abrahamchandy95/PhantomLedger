@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 inline constexpr std::uint64_t kDefaultProductsSeed = 0xB0A7F00DULL;
 
@@ -19,4 +19,4 @@ personRng(std::uint64_t baseSeed, ::PhantomLedger::entity::PersonId person) {
   return ::PhantomLedger::random::Rng::fromSeed(seed);
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

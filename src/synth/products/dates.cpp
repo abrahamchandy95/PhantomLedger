@@ -1,6 +1,6 @@
-#include "phantomledger/entities/synth/products/dates.hpp"
+#include "phantomledger/synth/products/dates.hpp"
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 [[nodiscard]] std::int32_t samplePaymentDay(::PhantomLedger::random::Rng &rng) {
   return static_cast<std::int32_t>(rng.uniformInt(1, 29));
@@ -18,4 +18,4 @@ namespace PhantomLedger::entities::synth::products {
   return value >= window.start && value < window.endExcl();
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

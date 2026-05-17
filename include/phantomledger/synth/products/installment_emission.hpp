@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 template <class Delinquency>
 [[nodiscard]] constexpr ::PhantomLedger::entity::product::InstallmentTerms
@@ -44,4 +44,4 @@ void addInstallmentProduct(
     ::PhantomLedger::entity::product::ObligationStream &obligations,
     ::PhantomLedger::time::Window window, const InstallmentIssue &issue);
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

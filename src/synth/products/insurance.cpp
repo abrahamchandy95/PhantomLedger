@@ -1,15 +1,15 @@
-#include "phantomledger/entities/synth/products/insurance.hpp"
+#include "phantomledger/synth/products/insurance.hpp"
 
 #include "phantomledger/entities/products/insurance.hpp"
-#include "phantomledger/entities/synth/products/amount_sampling.hpp"
-#include "phantomledger/entities/synth/products/dates.hpp"
+#include "phantomledger/synth/products/amount_sampling.hpp"
+#include "phantomledger/synth/products/dates.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <optional>
 #include <utility>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace {
 
@@ -111,4 +111,4 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
   return true;
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products
