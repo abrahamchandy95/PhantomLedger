@@ -1,15 +1,15 @@
 #pragma once
 
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/personas/kinds.hpp"
-#include "phantomledger/entities/synth/personas/pack.hpp"
-#include "phantomledger/entities/synth/personas/profile.hpp"
-#include "phantomledger/entities/synth/personas/seeds.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/synth/personas/kinds.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
+#include "phantomledger/synth/personas/profile.hpp"
+#include "phantomledger/synth/personas/seeds.hpp"
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::personas {
+namespace PhantomLedger::synth::personas {
 
 [[nodiscard]] inline Pack makePack(random::Rng &rng, std::uint32_t people,
                                    std::uint64_t baseSeed,
@@ -34,4 +34,4 @@ namespace PhantomLedger::entities::synth::personas {
   return makePack(rng, people.count, baseSeed, mix);
 }
 
-} // namespace PhantomLedger::entities::synth::personas
+} // namespace PhantomLedger::synth::personas

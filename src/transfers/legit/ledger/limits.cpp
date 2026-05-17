@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/cards.hpp"
-#include "phantomledger/entities/synth/personas/pack.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 
@@ -116,9 +116,6 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
     ledger->createHub(idx);
   }
 
-  // Burden buffers — 35% of the per-person monthly fixed obligation
-  // total. Built from the obligations stream + insurance ledger; see
-  // burdens.hpp for the windowing rationale.
   if (protections_.portfolios != nullptr) {
     const auto personCount = static_cast<std::uint32_t>(plan.persons().size());
     const auto monthlyBurdens = buildMonthlyBurdens(
@@ -127,8 +124,6 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
                               personCount);
   }
 
-  // Credit-card limits, applied last so they don't interact with
-  // protection sampling above.
   if (hasCreditCards(protections_.creditCards)) {
     applyCreditCardLimits(*ledger, *protections_.creditCards,
                           *accounts_.lookup);

@@ -7,8 +7,6 @@
 #include "phantomledger/entities/synth/accounts/sizing.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
-#include "phantomledger/entities/synth/personas/kinds.hpp"
-#include "phantomledger/entities/synth/personas/pack.hpp"
 #include "phantomledger/entities/synth/pii/identity.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -19,6 +17,8 @@
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/landlords/pack.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/personas/kinds.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
 
 #include <cstdint>
 
@@ -33,7 +33,7 @@ struct EntitySynthesis {
   std::int32_t population;
   synth::pii::IdentityContext identity;
   synth::people::Fraud fraud{};
-  synth::personas::Mix personaMix{};
+  sy::personas::Mix personaMix{};
   synth::accounts::Sizing accountsSizing{};
   sy::merchants::GenerationPlan merchants{};
   sy::landlords::GenerationPlan landlords{};
@@ -66,12 +66,12 @@ buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
               std::int32_t population,
               const synth::accounts::Sizing &sizing = {});
 
-[[nodiscard]] synth::personas::Pack
+[[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
-              const synth::personas::Mix &mix = {});
+              const sy::personas::Mix &mix = {});
 
 [[nodiscard]] entity::pii::Roster
-buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
+buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
          synth::pii::IdentityContext identity);
 
 [[nodiscard]] entity::merchant::Catalog
@@ -83,7 +83,7 @@ buildLandlords(pl::random::Rng &rng, std::int32_t population,
                const sy::landlords::GenerationPlan &plan = {});
 
 [[nodiscard]] entity::card::Registry
-issueCreditCards(const synth::personas::Pack &personas,
+issueCreditCards(const sy::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
                  const sy::cards::IssuanceRules &issuance = {});
 

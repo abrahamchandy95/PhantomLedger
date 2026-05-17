@@ -9,7 +9,7 @@
 
 #include <algorithm>
 
-namespace PhantomLedger::entities::synth::personas {
+namespace PhantomLedger::synth::personas {
 namespace detail {
 
 inline double perturbMedian(random::Rng &rng, double median,
@@ -69,4 +69,4 @@ profile(random::Rng &rng, ::PhantomLedger::personas::Type type) {
   };
 }
 
-} // namespace PhantomLedger::entities::synth::personas
+} // namespace PhantomLedger::synth::personas
