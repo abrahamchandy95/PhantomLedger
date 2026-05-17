@@ -3,15 +3,15 @@
 #include "phantomledger/entities/synth/accounts/assign.hpp"
 #include "phantomledger/entities/synth/accounts/business_owners.hpp"
 #include "phantomledger/entities/synth/accounts/make.hpp"
-#include "phantomledger/entities/synth/cards/issue.hpp"
-#include "phantomledger/entities/synth/cards/seeds.hpp"
-#include "phantomledger/entities/synth/counterparties/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/cards/issue.hpp"
+#include "phantomledger/synth/cards/seeds.hpp"
+#include "phantomledger/synth/counterparties/make.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
@@ -86,17 +86,17 @@ buildLandlords(pl::random::Rng &rng, std::int32_t population,
 [[nodiscard]] entity::card::Registry
 issueCreditCards(const synth::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
-                 const synth::cards::IssuanceRules &issuance) {
-  return synth::cards::issue(synth::cards::deriveCardSeed(topLevelSeed),
-                             personas.table, people.roster.count, issuance);
+                 const sy::cards::IssuanceRules &issuance) {
+  return sy::cards::issue(sy::cards::deriveCardSeed(topLevelSeed),
+                          personas.table, people.roster.count, issuance);
 }
 
 [[nodiscard]] entity::counterparty::Directory
 buildCounterparties(pl::random::Rng &rng, std::int32_t population,
-                    const synth::counterparties::CounterpartyTargets &targets) {
+                    const sy::counterparties::CounterpartyTargets &targets) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(targets);
-  return synth::counterparties::make(rng, population, targets);
+  return sy::counterparties::make(rng, population, targets);
 }
 
 namespace {

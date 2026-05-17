@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::counterparties {
+namespace PhantomLedger::synth::counterparties {
 
 using identifiers::Bank;
 using identifiers::Role;
@@ -152,4 +152,4 @@ make(random::Rng &rng, int population,
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::counterparties
+} // namespace PhantomLedger::synth::counterparties

@@ -3,16 +3,16 @@
 #include "phantomledger/entities/behaviors.hpp"
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/cards/seeds.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/cards/seeds.hpp"
 
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::cards {
+namespace PhantomLedger::synth::cards {
 
 struct IssuanceRules {
   // ---- APR distribution ----
@@ -154,4 +154,4 @@ issue(std::uint64_t base, const entity::behavior::Table &personas,
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::cards
+} // namespace PhantomLedger::synth::cards
