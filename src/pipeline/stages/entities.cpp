@@ -1,6 +1,5 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
-#include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
@@ -9,6 +8,7 @@
 #include "phantomledger/synth/cards/issue.hpp"
 #include "phantomledger/synth/cards/seeds.hpp"
 #include "phantomledger/synth/counterparties/make.hpp"
+#include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/people/make.hpp"
@@ -102,7 +102,7 @@ buildCounterparties(pl::random::Rng &rng, std::int32_t population,
 namespace {
 
 namespace cps_tax = ::PhantomLedger::counterparties;
-namespace family_synth = pl::entities::synth::family;
+namespace family_synth = pl::synth::family;
 namespace family_rt = pl::transfers::legit::routines::family;
 namespace legit_ldg = pl::transfers::legit::ledger;
 
