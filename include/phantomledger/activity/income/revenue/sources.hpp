@@ -5,9 +5,9 @@
 #include "phantomledger/activity/income/revenue/profiles.hpp"
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/inflow/ids.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/ids.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <optional>
@@ -74,8 +74,8 @@ namespace detail {
                                           PersonId person,
                                           personas::Type persona,
                                           const Key &personal) {
-  const auto businessKey = entities::synth::inflow::businessId(person);
-  const auto brokerageKey = entities::synth::inflow::brokerageId(person);
+  const auto businessKey = ::PhantomLedger::synth::businessId(person);
+  const auto brokerageKey = ::PhantomLedger::synth::brokerageId(person);
 
   std::optional<Key> business;
   if (population.owns(person, businessKey)) {

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/synth/suffix.hpp"
+#include "phantomledger/synth/ids.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
 namespace PhantomLedger::synth::family {
