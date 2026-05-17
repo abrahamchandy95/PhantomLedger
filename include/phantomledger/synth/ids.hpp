@@ -63,4 +63,14 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
   return readLe64(digest);
 }
 
+[[nodiscard]] inline entity::Key businessId(entity::PersonId person) {
+  return entity::makeKey(Role::business, Bank::internal,
+                         suffix("business_operating", person));
+}
+
+[[nodiscard]] inline entity::Key brokerageId(entity::PersonId person) {
+  return entity::makeKey(Role::brokerage, Bank::internal,
+                         suffix("brokerage_custody", person));
+}
+
 } // namespace PhantomLedger::synth

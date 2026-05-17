@@ -4,7 +4,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/synth/family/ids.hpp"
-#include "phantomledger/synth/suffix.hpp"
+#include "phantomledger/synth/ids.hpp"
 
 #include <optional>
 #include <ranges>
