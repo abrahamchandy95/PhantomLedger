@@ -8,12 +8,12 @@
 #include "phantomledger/entities/synth/counterparties/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/entities/synth/landlords/make.hpp"
-#include "phantomledger/entities/synth/merchants/make.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
@@ -69,10 +69,10 @@ buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
-               const synth::merchants::GenerationPlan &plan) {
+               const sy::merchants::GenerationPlan &plan) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
-  return synth::merchants::makeCatalog(rng, population, plan);
+  return sy::merchants::makeCatalog(rng, population, plan);
 }
 
 [[nodiscard]] synth::landlords::Pack

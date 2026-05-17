@@ -2,10 +2,10 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/synth/merchants/weights.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/merchants/weights.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
 #include <algorithm>
@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::merchants {
+namespace PhantomLedger::synth::merchants {
 
 struct GenerationPlan {
   struct Scale {
@@ -120,4 +120,4 @@ makeCatalog(random::Rng &rng, int population, const GenerationPlan &plan = {}) {
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::merchants
+} // namespace PhantomLedger::synth::merchants
