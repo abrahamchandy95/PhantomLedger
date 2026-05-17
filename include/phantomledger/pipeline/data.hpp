@@ -5,15 +5,15 @@
 #include "phantomledger/entities/merchants.hpp"
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
-#include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/synth/accounts/pack.hpp"
 #include "phantomledger/synth/landlords/pack.hpp"
+#include "phantomledger/synth/people/pack.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 
 namespace PhantomLedger::pipeline {
 
 struct People {
-  entities::synth::people::Pack roster;
+  synth::people::Pack roster;
   entity::pii::Roster pii;
   synth::personas::Pack personas;
 };

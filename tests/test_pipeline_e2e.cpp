@@ -89,7 +89,7 @@ void expectNonEmptyFile(const fs::path &path) {
 [[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
 smallEntitySynthesis(const pl::synth::pii::PoolSet &poolSet,
                      pl::time::TimePoint simStart,
-                     const pl::entities::synth::people::Fraud &fraudProfile) {
+                     const pl::synth::people::Fraud &fraudProfile) {
   return pl::pipeline::stages::entities::EntitySynthesis{
       .population = 100,
       .identity =
@@ -106,7 +106,7 @@ smallEntitySynthesis(const pl::synth::pii::PoolSet &poolSet,
 runSmallSim(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed) {
   const auto window = smallWindow();
 
-  const pl::entities::synth::people::Fraud fraudProfile{};
+  const pl::synth::people::Fraud fraudProfile{};
   const auto entities =
       smallEntitySynthesis(poolSet, window.start, fraudProfile);
 

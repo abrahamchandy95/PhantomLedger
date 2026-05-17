@@ -2,18 +2,18 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/people/flags.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
-#include "phantomledger/entities/synth/people/pack.hpp"
-#include "phantomledger/entities/synth/people/rings.hpp"
-#include "phantomledger/entities/synth/people/topology.hpp"
+#include "phantomledger/synth/people/flags.hpp"
+#include "phantomledger/synth/people/fraud.hpp"
+#include "phantomledger/synth/people/pack.hpp"
+#include "phantomledger/synth/people/rings.hpp"
+#include "phantomledger/synth/people/topology.hpp"
 
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::people {
+namespace PhantomLedger::synth::people {
 
 [[nodiscard]] inline Pack make(random::Rng &rng, int population,
                                const Fraud &fraud = {}) {
@@ -200,4 +200,4 @@ namespace PhantomLedger::entities::synth::people {
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::people
+} // namespace PhantomLedger::synth::people

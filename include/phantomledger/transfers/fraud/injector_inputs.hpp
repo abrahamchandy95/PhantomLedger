@@ -5,8 +5,8 @@
 #include "phantomledger/entities/infra/router.hpp"
 #include "phantomledger/entities/infra/shared.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/synth/people/fraud.hpp"
 
 #include <span>
 
@@ -19,7 +19,7 @@ struct InjectorServices {
 };
 
 struct InjectorRingView {
-  const entities::synth::people::Fraud *profile = nullptr;
+  const synth::people::Fraud *profile = nullptr;
   const entity::person::Topology *topology = nullptr;
 };
 

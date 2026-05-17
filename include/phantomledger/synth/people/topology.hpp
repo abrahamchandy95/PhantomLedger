@@ -1,9 +1,9 @@
 #pragma once
 
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/people/rings.hpp"
+#include "phantomledger/synth/people/rings.hpp"
 
-namespace PhantomLedger::entities::synth::people {
+namespace PhantomLedger::synth::people {
 
 inline void flatten(const std::vector<TempRing> &rings,
                     entity::person::Topology &out) {
@@ -68,4 +68,4 @@ inline void flatten(const std::vector<TempRing> &rings,
   }
 }
 
-} // namespace PhantomLedger::entities::synth::people
+} // namespace PhantomLedger::synth::people

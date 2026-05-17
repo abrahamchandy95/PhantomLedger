@@ -1,11 +1,11 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/primitives/random/distributions/beta.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/distributions/poisson.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/synth/people/fraud.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,7 +13,7 @@
 #include <optional>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::people {
+namespace PhantomLedger::synth::people {
 
 struct TempRing {
   std::vector<entity::PersonId> members;
@@ -140,4 +140,4 @@ injectMultiRingMules(random::Rng &rng, const Fraud &cfg,
   }
 }
 
-} // namespace PhantomLedger::entities::synth::people
+} // namespace PhantomLedger::synth::people

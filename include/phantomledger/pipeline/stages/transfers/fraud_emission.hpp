@@ -2,7 +2,7 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/people/fraud.hpp"
+#include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/transfers/fraud/injector_inputs.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
 
@@ -17,8 +17,8 @@ class FraudEmission {
 public:
   FraudEmission() = default;
 
-  FraudEmission &profile(
-      const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept;
+  FraudEmission &
+  profile(const ::PhantomLedger::synth::people::Fraud *value) noexcept;
 
   FraudEmission &
   behavior(const ::PhantomLedger::transfers::fraud::Behavior *value) noexcept;
@@ -41,7 +41,7 @@ public:
               &counterparties) noexcept;
 
 private:
-  const ::PhantomLedger::entities::synth::people::Fraud *profile_ = nullptr;
+  const ::PhantomLedger::synth::people::Fraud *profile_ = nullptr;
   const ::PhantomLedger::transfers::fraud::Behavior *behavior_ = nullptr;
 };
 

@@ -7,7 +7,7 @@ namespace PhantomLedger::pipeline::stages::transfers {
 namespace fraud = ::PhantomLedger::transfers::fraud;
 
 FraudEmission &FraudEmission::profile(
-    const ::PhantomLedger::entities::synth::people::Fraud *value) noexcept {
+    const ::PhantomLedger::synth::people::Fraud *value) noexcept {
   profile_ = value;
   return *this;
 }
