@@ -5,7 +5,7 @@
 
 #include <vector>
 
-namespace PhantomLedger::entities::synth::landlords {
+namespace PhantomLedger::synth::landlords {
 
 struct Pack {
   entity::landlord::Roster roster;
@@ -16,4 +16,4 @@ struct Pack {
   std::vector<entity::Key> externals;
 };
 
-} // namespace PhantomLedger::entities::synth::landlords
+} // namespace PhantomLedger::synth::landlords

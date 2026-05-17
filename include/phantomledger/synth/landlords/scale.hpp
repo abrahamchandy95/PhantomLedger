@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace PhantomLedger::entities::synth::landlords {
+namespace PhantomLedger::synth::landlords {
 
 [[nodiscard]] inline int scale(double perTenK, int population, int floor = 3) {
   const int scaled = static_cast<int>(
@@ -11,4 +11,4 @@ namespace PhantomLedger::entities::synth::landlords {
   return std::max(floor, scaled);
 }
 
-} // namespace PhantomLedger::entities::synth::landlords
+} // namespace PhantomLedger::synth::landlords

@@ -7,12 +7,12 @@
 #include "phantomledger/entities/synth/cards/seeds.hpp"
 #include "phantomledger/entities/synth/counterparties/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
-#include "phantomledger/entities/synth/landlords/make.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/entities/synth/personas/make.hpp"
 #include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
@@ -75,12 +75,12 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
   return sy::merchants::makeCatalog(rng, population, plan);
 }
 
-[[nodiscard]] synth::landlords::Pack
+[[nodiscard]] sy::landlords::Pack
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
-               const synth::landlords::GenerationPlan &plan) {
+               const sy::landlords::GenerationPlan &plan) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
-  return synth::landlords::makePack(rng, population, plan);
+  return sy::landlords::makePack(rng, population, plan);
 }
 
 [[nodiscard]] entity::card::Registry
@@ -145,7 +145,7 @@ void registerMerchants(AccountsPack &accounts,
 }
 
 void registerLandlords(AccountsPack &accounts,
-                       const synth::landlords::Pack &landlords) {
+                       const sy::landlords::Pack &landlords) {
   const auto keys = keysFromRecords(
       landlords.roster.records, [](const auto &rec) { return rec.accountId; });
   registerExternal(accounts, keys);
@@ -200,10 +200,8 @@ void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                               const pl::pipeline::People &peopleData,
                               pl::random::Rng &rng,
                               const synth::accounts::BusinessOwnerPlan &plan) {
-  synth::accounts::assignBusinessOwners(
-      holdings.accounts,
-      peopleData.roster.roster, // see note in finalizeAccountRegistry
-      rng, plan);
+  synth::accounts::assignBusinessOwners(holdings.accounts,
+                                        peopleData.roster.roster, rng, plan);
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities
