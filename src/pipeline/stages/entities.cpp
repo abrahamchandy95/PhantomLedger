@@ -1,12 +1,12 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
-#include "phantomledger/entities/synth/accounts/assign.hpp"
-#include "phantomledger/entities/synth/accounts/business_owners.hpp"
-#include "phantomledger/entities/synth/accounts/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/accounts/assign.hpp"
+#include "phantomledger/synth/accounts/business_owners.hpp"
+#include "phantomledger/synth/accounts/make.hpp"
 #include "phantomledger/synth/cards/issue.hpp"
 #include "phantomledger/synth/cards/seeds.hpp"
 #include "phantomledger/synth/counterparties/make.hpp"
@@ -42,13 +42,13 @@ buildPeople(pl::random::Rng &rng, std::int32_t population,
   return synth::people::make(rng, population, fraud);
 }
 
-[[nodiscard]] synth::accounts::Pack
+[[nodiscard]] sy::accounts::Pack
 buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
-              std::int32_t population, const synth::accounts::Sizing &sizing) {
+              std::int32_t population, const sy::accounts::Sizing &sizing) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(sizing);
-  return synth::accounts::makePack(rng, people.roster,
-                                   sizing.maxAccountsPerPerson);
+  return sy::accounts::makePack(rng, people.roster,
+                                sizing.maxAccountsPerPerson);
 }
 
 [[nodiscard]] sy::personas::Pack
@@ -107,7 +107,7 @@ namespace family_rt = pl::transfers::legit::routines::family;
 namespace legit_ldg = pl::transfers::legit::ledger;
 
 using Key = entity::Key;
-using AccountsPack = synth::accounts::Pack;
+using AccountsPack = sy::accounts::Pack;
 
 template <std::ranges::range Records, typename Projection>
 [[nodiscard]] std::vector<Key> keysFromRecords(const Records &records,
@@ -117,11 +117,11 @@ template <std::ranges::range Records, typename Projection>
 }
 
 void registerExternal(AccountsPack &accounts, std::span<const Key> keys) {
-  synth::accounts::addAccounts(accounts, keys, /*external=*/true);
+  sy::accounts::addAccounts(accounts, keys, /*external=*/true);
 }
 
 void registerInternal(AccountsPack &accounts, std::span<const Key> keys) {
-  synth::accounts::addAccounts(accounts, keys, /*external=*/false);
+  sy::accounts::addAccounts(accounts, keys, /*external=*/false);
 }
 
 void registerSystemAccounts(AccountsPack &accounts) {
@@ -199,9 +199,9 @@ void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
 void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                               const pl::pipeline::People &peopleData,
                               pl::random::Rng &rng,
-                              const synth::accounts::BusinessOwnerPlan &plan) {
-  synth::accounts::assignBusinessOwners(holdings.accounts,
-                                        peopleData.roster.roster, rng, plan);
+                              const sy::accounts::BusinessOwnerPlan &plan) {
+  sy::accounts::assignBusinessOwners(holdings.accounts,
+                                     peopleData.roster.roster, rng, plan);
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities

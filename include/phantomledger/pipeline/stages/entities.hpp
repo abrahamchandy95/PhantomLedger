@@ -2,15 +2,15 @@
 
 #include "phantomledger/entities/counterparties.hpp"
 #include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/synth/accounts/business_owners.hpp"
-#include "phantomledger/entities/synth/accounts/pack.hpp"
-#include "phantomledger/entities/synth/accounts/sizing.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/accounts/business_owners.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
+#include "phantomledger/synth/accounts/sizing.hpp"
 #include "phantomledger/synth/cards/issue.hpp"
 #include "phantomledger/synth/counterparties/make.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
@@ -34,13 +34,13 @@ struct EntitySynthesis {
   sy::pii::IdentityContext identity;
   synth::people::Fraud fraud{};
   sy::personas::Mix personaMix{};
-  synth::accounts::Sizing accountsSizing{};
+  sy::accounts::Sizing accountsSizing{};
   sy::merchants::GenerationPlan merchants{};
   sy::landlords::GenerationPlan landlords{};
   sy::counterparties::CounterpartyTargets counterpartyTargets{};
   sy::cards::IssuanceRules cards{};
 
-  synth::accounts::BusinessOwnerPlan businessOwners{};
+  sy::accounts::BusinessOwnerPlan businessOwners{};
 
   void validate(pl::primitives::validate::Report &r) const {
     r.check([&] {
@@ -61,10 +61,9 @@ defaultStart(sy::pii::IdentityContext identity,
 buildPeople(pl::random::Rng &rng, std::int32_t population,
             const synth::people::Fraud &fraud = {});
 
-[[nodiscard]] synth::accounts::Pack
+[[nodiscard]] sy::accounts::Pack
 buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
-              std::int32_t population,
-              const synth::accounts::Sizing &sizing = {});
+              std::int32_t population, const sy::accounts::Sizing &sizing = {});
 
 [[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
@@ -95,8 +94,9 @@ void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
                              const pl::pipeline::Counterparties &cps,
                              const pl::pipeline::People &people);
 
-void synthesizeBusinessOwners(
-    pl::pipeline::Holdings &holdings, const pl::pipeline::People &people,
-    pl::random::Rng &rng, const synth::accounts::BusinessOwnerPlan &plan = {});
+void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
+                              const pl::pipeline::People &people,
+                              pl::random::Rng &rng,
+                              const sy::accounts::BusinessOwnerPlan &plan = {});
 
 } // namespace PhantomLedger::pipeline::stages::entities
