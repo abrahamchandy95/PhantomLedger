@@ -6,7 +6,7 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace personaTax = ::PhantomLedger::personas;
 
@@ -73,4 +73,4 @@ private:
   TaxTerms terms_;
 };
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

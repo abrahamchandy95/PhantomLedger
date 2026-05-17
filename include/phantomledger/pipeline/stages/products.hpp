@@ -1,13 +1,13 @@
 #pragma once
 
-#include "phantomledger/entities/synth/products/auto_loan.hpp"
-#include "phantomledger/entities/synth/products/insurance.hpp"
-#include "phantomledger/entities/synth/products/mortgage.hpp"
-#include "phantomledger/entities/synth/products/random.hpp"
-#include "phantomledger/entities/synth/products/student_loan.hpp"
-#include "phantomledger/entities/synth/products/tax.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/products/auto_loan.hpp"
+#include "phantomledger/synth/products/insurance.hpp"
+#include "phantomledger/synth/products/mortgage.hpp"
+#include "phantomledger/synth/products/random.hpp"
+#include "phantomledger/synth/products/student_loan.hpp"
+#include "phantomledger/synth/products/tax.hpp"
 
 #include <cstdint>
 
@@ -15,15 +15,11 @@ namespace PhantomLedger::pipeline::stages::products {
 
 class ObligationSynthesis {
 public:
-  using MortgageTerms =
-      ::PhantomLedger::entities::synth::products::MortgageTerms;
-  using AutoLoanTerms =
-      ::PhantomLedger::entities::synth::products::AutoLoanTerms;
-  using StudentLoanTerms =
-      ::PhantomLedger::entities::synth::products::StudentLoanTerms;
-  using TaxTerms = ::PhantomLedger::entities::synth::products::TaxTerms;
-  using InsuranceTerms =
-      ::PhantomLedger::entities::synth::products::InsuranceTerms;
+  using MortgageTerms = ::PhantomLedger::synth::products::MortgageTerms;
+  using AutoLoanTerms = ::PhantomLedger::synth::products::AutoLoanTerms;
+  using StudentLoanTerms = ::PhantomLedger::synth::products::StudentLoanTerms;
+  using TaxTerms = ::PhantomLedger::synth::products::TaxTerms;
+  using InsuranceTerms = ::PhantomLedger::synth::products::InsuranceTerms;
 
   ObligationSynthesis() = default;
 
@@ -53,8 +49,7 @@ public:
                   time::Window window) const;
 
 private:
-  std::uint64_t seed_ =
-      ::PhantomLedger::entities::synth::products::kDefaultProductsSeed;
+  std::uint64_t seed_ = ::PhantomLedger::synth::products::kDefaultProductsSeed;
 
   MortgageTerms mortgage_{};
   AutoLoanTerms autoLoan_{};

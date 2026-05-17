@@ -1,14 +1,14 @@
-#include "phantomledger/entities/synth/products/student_loan.hpp"
+#include "phantomledger/synth/products/student_loan.hpp"
 
-#include "phantomledger/entities/synth/products/amount_sampling.hpp"
-#include "phantomledger/entities/synth/products/dates.hpp"
-#include "phantomledger/entities/synth/products/installment_emission.hpp"
+#include "phantomledger/synth/products/amount_sampling.hpp"
+#include "phantomledger/synth/products/dates.hpp"
+#include "phantomledger/synth/products/installment_emission.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <utility>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace {
 
@@ -102,4 +102,4 @@ StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
   return true;
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

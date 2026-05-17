@@ -9,7 +9,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace personaTax = ::PhantomLedger::personas;
 
@@ -95,4 +95,4 @@ private:
   AutoLoanTerms terms_;
 };
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

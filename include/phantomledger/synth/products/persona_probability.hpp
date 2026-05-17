@@ -5,7 +5,7 @@
 
 #include <array>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace personas = ::PhantomLedger::personas;
 namespace enums = ::PhantomLedger::taxonomies::enums;
@@ -20,4 +20,4 @@ struct PerPersonaP {
   }
 };
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

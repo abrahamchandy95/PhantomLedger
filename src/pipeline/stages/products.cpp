@@ -2,7 +2,7 @@
 
 namespace PhantomLedger::pipeline::stages::products {
 
-namespace productSynth = ::PhantomLedger::entities::synth::products;
+namespace productSynth = ::PhantomLedger::synth::products;
 
 ObligationSynthesis &ObligationSynthesis::seed(std::uint64_t value) noexcept {
   seed_ = value;

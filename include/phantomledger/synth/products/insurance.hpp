@@ -5,7 +5,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace personaTax = ::PhantomLedger::personas;
 
@@ -118,4 +118,4 @@ private:
   InsuranceTerms terms_;
 };
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

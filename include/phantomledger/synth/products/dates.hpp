@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 [[nodiscard]] std::int32_t samplePaymentDay(::PhantomLedger::random::Rng &rng);
 
@@ -16,4 +16,4 @@ namespace PhantomLedger::entities::synth::products {
 [[nodiscard]] bool inWindow(::PhantomLedger::time::TimePoint value,
                             ::PhantomLedger::time::Window window);
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products

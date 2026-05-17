@@ -1,14 +1,14 @@
-#include "phantomledger/entities/synth/products/mortgage.hpp"
+#include "phantomledger/synth/products/mortgage.hpp"
 
-#include "phantomledger/entities/synth/products/amount_sampling.hpp"
-#include "phantomledger/entities/synth/products/installment_emission.hpp"
+#include "phantomledger/synth/products/amount_sampling.hpp"
+#include "phantomledger/synth/products/installment_emission.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <utility>
 
-namespace PhantomLedger::entities::synth::products {
+namespace PhantomLedger::synth::products {
 
 namespace {
 
@@ -84,4 +84,4 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
   return true;
 }
 
-} // namespace PhantomLedger::entities::synth::products
+} // namespace PhantomLedger::synth::products
