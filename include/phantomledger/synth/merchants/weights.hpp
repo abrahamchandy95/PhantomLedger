@@ -3,7 +3,7 @@
 #include <cmath>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::merchants {
+namespace PhantomLedger::synth::merchants {
 
 [[nodiscard]] inline std::vector<double>
 normalize(const std::vector<double> &raw) {
@@ -34,4 +34,4 @@ normalize(const std::vector<double> &raw) {
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::merchants
+} // namespace PhantomLedger::synth::merchants

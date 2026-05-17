@@ -9,7 +9,6 @@
 #include "phantomledger/entities/synth/counterparties/make.hpp"
 #include "phantomledger/entities/synth/landlords/make.hpp"
 #include "phantomledger/entities/synth/landlords/pack.hpp"
-#include "phantomledger/entities/synth/merchants/make.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/kinds.hpp"
@@ -19,6 +18,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/merchants/make.hpp"
 
 #include <cstdint>
 
@@ -26,6 +26,7 @@ namespace PhantomLedger::pipeline::stages::entities {
 
 namespace pl = ::PhantomLedger;
 namespace synth = pl::entities::synth;
+namespace sy = pl::synth;
 namespace entity = pl::entity;
 
 struct EntitySynthesis {
@@ -34,7 +35,7 @@ struct EntitySynthesis {
   synth::people::Fraud fraud{};
   synth::personas::Mix personaMix{};
   synth::accounts::Sizing accountsSizing{};
-  synth::merchants::GenerationPlan merchants{};
+  sy::merchants::GenerationPlan merchants{};
   synth::landlords::GenerationPlan landlords{};
   synth::counterparties::CounterpartyTargets counterpartyTargets{};
   synth::cards::IssuanceRules cards{};
@@ -75,7 +76,7 @@ buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
-               const synth::merchants::GenerationPlan &plan = {});
+               const sy::merchants::GenerationPlan &plan = {});
 
 [[nodiscard]] synth::landlords::Pack
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
@@ -90,17 +91,10 @@ issueCreditCards(const synth::personas::Pack &personas,
     pl::random::Rng &rng, std::int32_t population,
     const synth::counterparties::CounterpartyTargets &targets = {});
 
-/// Register system / taxonomy / merchant / landlord / counterparty /
-/// credit-card / per-person-payee accounts into `holdings.accounts`.
-/// Reads sources from `cps` (merchants, landlords, directory) and `people`
-/// (roster) — but only writes into `holdings`, so `holdings` is the sole
-/// mutable parameter.
 void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
                              const pl::pipeline::Counterparties &cps,
                              const pl::pipeline::People &people);
 
-/// Synthesize business-owner records into `holdings.accounts`, driven by
-/// the person roster in `people`.
 void synthesizeBusinessOwners(
     pl::pipeline::Holdings &holdings, const pl::pipeline::People &people,
     pl::random::Rng &rng, const synth::accounts::BusinessOwnerPlan &plan = {});
