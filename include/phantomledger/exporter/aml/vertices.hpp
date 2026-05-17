@@ -2,7 +2,6 @@
 
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/csv.hpp"
@@ -10,6 +9,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/synth/infra/ips_output.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -30,14 +30,14 @@ struct SharedContext {
   std::vector<personas::Type> personaByPerson;
   std::unordered_map<entity::Key, std::int64_t> lastTransactionByAccount;
 
-  const entities::synth::pii::PoolSet *pools = nullptr;
+  const synth::pii::PoolSet *pools = nullptr;
 };
 
 [[nodiscard]] SharedContext
 buildSharedContext(const pipeline::People &people,
                    const pipeline::Holdings &holdings,
                    std::span<const transactions::Transaction> finalTxns,
-                   const entities::synth::pii::PoolSet &pools);
+                   const synth::pii::PoolSet &pools);
 
 // ────────── Vertex writers ──────────
 

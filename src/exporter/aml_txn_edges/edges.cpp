@@ -41,7 +41,7 @@ inline constexpr std::string_view kSourceKyc = "kyc_system";
 inline constexpr std::string_view kSourceAml = "aml_system";
 inline constexpr std::string_view kSourceCases = "case_mgmt";
 
-[[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
+[[nodiscard]] const synth::pii::PoolSet &
 poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr);
   return *ctx.pools;

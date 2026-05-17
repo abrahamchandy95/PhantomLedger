@@ -2,9 +2,9 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/taxonomies/locale/us_state.hpp"
@@ -17,7 +17,7 @@
 #include <limits>
 #include <string_view>
 
-namespace PhantomLedger::entities::synth::pii {
+namespace PhantomLedger::synth::pii {
 
 namespace pii = ::PhantomLedger::entity::pii;
 
@@ -416,4 +416,4 @@ struct LocaleMix {
   return locale::kDefaultCountry;
 }
 
-} // namespace PhantomLedger::entities::synth::pii
+} // namespace PhantomLedger::synth::pii

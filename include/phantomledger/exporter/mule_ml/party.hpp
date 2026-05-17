@@ -5,10 +5,10 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/entities/pii.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/mule_ml/canonical.hpp"
 #include "phantomledger/exporter/mule_ml/identity.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 
 #include <string>
 #include <string_view>
@@ -17,7 +17,7 @@
 namespace PhantomLedger::exporter::mule_ml {
 
 struct PartyInputs {
-  const ::PhantomLedger::entities::synth::pii::PoolSet *piiPools = nullptr;
+  const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
   const CanonicalMap *canonical = nullptr;
 };

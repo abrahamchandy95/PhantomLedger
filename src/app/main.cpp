@@ -2,7 +2,6 @@
 #include "phantomledger/app/options.hpp"
 #include "phantomledger/app/progress.hpp"
 #include "phantomledger/app/setup.hpp"
-#include "phantomledger/entities/synth/pii/samplers.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/aml_txn_edges/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
@@ -12,6 +11,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/pii/samplers.hpp"
 
 #include <cstddef>
 #include <cstdio>
@@ -94,7 +94,7 @@ void printAmlTxnEdgesSummary(
 
 int main(int argc, char **argv) {
   using namespace ::PhantomLedger;
-  namespace pii = entities::synth::pii;
+  namespace pii = synth::pii;
   namespace pg = app::progress;
 
   try {

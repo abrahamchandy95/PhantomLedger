@@ -3,8 +3,8 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/pii.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <array>
@@ -72,11 +72,11 @@ struct AddressRecord {
 [[nodiscard]] NameRecord
 nameForPerson(::PhantomLedger::entity::PersonId personId,
               const ::PhantomLedger::entity::pii::Roster &pii,
-              const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
+              const ::PhantomLedger::synth::pii::PoolSet &pools);
 
-[[nodiscard]] NameRecord nameForCounterparty(
-    std::string_view counterpartyId,
-    const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+[[nodiscard]] NameRecord
+nameForCounterparty(std::string_view counterpartyId,
+                    const ::PhantomLedger::synth::pii::LocalePool &usPool);
 
 [[nodiscard]] NameRecord nameForBank(std::string_view bankId);
 
@@ -88,15 +88,15 @@ routingNumberForId(std::string_view bankId) noexcept;
 [[nodiscard]] AddressRecord
 addressForPerson(::PhantomLedger::entity::PersonId personId,
                  const ::PhantomLedger::entity::pii::Roster &pii,
-                 const ::PhantomLedger::entities::synth::pii::PoolSet &pools);
+                 const ::PhantomLedger::synth::pii::PoolSet &pools);
 
-[[nodiscard]] AddressRecord addressForCounterparty(
-    std::string_view counterpartyId,
-    const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+[[nodiscard]] AddressRecord
+addressForCounterparty(std::string_view counterpartyId,
+                       const ::PhantomLedger::synth::pii::LocalePool &usPool);
 
 [[nodiscard]] AddressRecord
 addressForBank(std::string_view bankId,
-               const ::PhantomLedger::entities::synth::pii::LocalePool &usPool);
+               const ::PhantomLedger::synth::pii::LocalePool &usPool);
 
 [[nodiscard]] StackString<24>
 nameIdForPerson(::PhantomLedger::entity::PersonId personId) noexcept;

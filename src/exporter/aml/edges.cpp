@@ -26,12 +26,11 @@ namespace ent = ::PhantomLedger::entity;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace t_ns = ::PhantomLedger::time;
 namespace pipe = ::PhantomLedger::pipeline;
-namespace pii_ns = ::PhantomLedger::entities::synth::pii;
 namespace loc = ::PhantomLedger::locale;
 namespace exporter = ::PhantomLedger::exporter;
 namespace synth = ::PhantomLedger::synth;
 
-[[nodiscard]] const pii_ns::PoolSet &
+[[nodiscard]] const synth::pii::PoolSet &
 poolsFor(const vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
          "SharedContext::pools is null — was the context built via "

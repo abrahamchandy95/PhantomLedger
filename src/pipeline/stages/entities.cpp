@@ -5,7 +5,6 @@
 #include "phantomledger/entities/synth/accounts/make.hpp"
 #include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/entities/synth/people/make.hpp"
-#include "phantomledger/entities/synth/pii/make.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/cards/issue.hpp"
@@ -14,6 +13,7 @@
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/personas/make.hpp"
+#include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
@@ -26,8 +26,8 @@
 
 namespace PhantomLedger::pipeline::stages::entities {
 
-[[nodiscard]] synth::pii::IdentityContext
-defaultStart(synth::pii::IdentityContext identity,
+[[nodiscard]] sy::pii::IdentityContext
+defaultStart(sy::pii::IdentityContext identity,
              pl::time::TimePoint fallbackStart) {
   if (identity.simStart == pl::time::TimePoint{}) {
     identity.simStart = fallbackStart;
@@ -58,13 +58,13 @@ buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
   return sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
 }
 
-[[nodiscard]] entity::pii::Roster
-buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
-         synth::pii::IdentityContext identity) {
+[[nodiscard]] entity::pii::Roster buildPii(pl::random::Rng &rng,
+                                           const sy::personas::Pack &personas,
+                                           sy::pii::IdentityContext identity) {
   assert(identity.pools != nullptr &&
          "buildPii: IdentityContext::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
-  return synth::pii::make(rng, personas.assignment, identity);
+  return sy::pii::make(rng, personas.assignment, identity);
 }
 
 [[nodiscard]] entity::merchant::Catalog

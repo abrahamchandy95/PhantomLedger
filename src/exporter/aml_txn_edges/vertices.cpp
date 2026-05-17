@@ -36,7 +36,7 @@ namespace txns = ::PhantomLedger::transactions;
 
 namespace {
 
-[[nodiscard]] const ::PhantomLedger::entities::synth::pii::PoolSet &
+[[nodiscard]] const synth::pii::PoolSet &
 poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr);
   return *ctx.pools;

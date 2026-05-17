@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/synth/pii/geonames.hpp"
+#include "phantomledger/synth/pii/geonames.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-namespace PhantomLedger::entities::synth::pii {
+namespace PhantomLedger::synth::pii {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
@@ -65,4 +65,4 @@ struct PoolSet {
 [[nodiscard]] LocalePool buildLocalePool(locale::Country country,
                                          PoolSizes sizes, std::uint32_t seed);
 
-} // namespace PhantomLedger::entities::synth::pii
+} // namespace PhantomLedger::synth::pii

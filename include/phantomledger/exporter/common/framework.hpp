@@ -2,11 +2,11 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -26,7 +26,7 @@ inline constexpr std::int64_t kFallbackEpoch = 1735689600;
 
 struct ExportOptions {
   bool showTransactions = false;
-  const entities::synth::pii::PoolSet *piiPools = nullptr;
+  const synth::pii::PoolSet *piiPools = nullptr;
 };
 
 struct BaseSummary {
@@ -67,7 +67,7 @@ deriveSimEnd(std::span<const transactions::Transaction> txns) noexcept {
   return time::fromEpochSeconds(max_tx.timestamp);
 }
 
-[[nodiscard]] inline const entities::synth::pii::PoolSet &
+[[nodiscard]] inline const synth::pii::PoolSet &
 requirePools(const ExportOptions &opts, std::string_view exporterName) {
   if (opts.piiPools == nullptr) {
     throw std::invalid_argument(

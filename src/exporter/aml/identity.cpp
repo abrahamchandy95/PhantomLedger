@@ -15,7 +15,7 @@ namespace PhantomLedger::exporter::aml::identity {
 
 namespace {
 
-namespace pii_ns = ::PhantomLedger::entities::synth::pii;
+namespace pii_ns = ::PhantomLedger::synth::pii;
 
 template <std::size_t N>
 void appendBytes(StackString<N> &out, std::string_view bytes) noexcept {

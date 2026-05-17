@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/pii.hpp"
-#include "phantomledger/entities/synth/pii/pools.hpp"
+#include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 
 #include <string>
@@ -53,7 +53,7 @@ formatDob(::PhantomLedger::entity::pii::Dob dob) {
 }
 
 [[nodiscard]] inline std::string
-formatName(const ::PhantomLedger::entities::synth::pii::LocalePool &pool,
+formatName(const ::PhantomLedger::synth::pii::LocalePool &pool,
            ::PhantomLedger::entity::pii::Name name) {
   std::string out;
   if (name.firstIdx < pool.firstNames.size()) {
@@ -79,7 +79,7 @@ formatName(const ::PhantomLedger::entities::synth::pii::LocalePool &pool,
 
 [[nodiscard]] inline PartyIdentity
 renderIdentity(const ::PhantomLedger::entity::pii::Record &record,
-               const ::PhantomLedger::entities::synth::pii::PoolSet &pools) {
+               const ::PhantomLedger::synth::pii::PoolSet &pools) {
   PartyIdentity out;
   const auto &pool = pools.forCountry(record.country);
 
