@@ -2,18 +2,18 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/landlords.hpp"
-#include "phantomledger/entities/synth/landlords/pack.hpp"
-#include "phantomledger/entities/synth/landlords/scale.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/landlords/pack.hpp"
+#include "phantomledger/synth/landlords/scale.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 
-namespace PhantomLedger::entities::synth::landlords {
+namespace PhantomLedger::synth::landlords {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 namespace landlord = ::PhantomLedger::entity::landlord;
@@ -142,4 +142,4 @@ using identifiers::Role;
   return out;
 }
 
-} // namespace PhantomLedger::entities::synth::landlords
+} // namespace PhantomLedger::synth::landlords

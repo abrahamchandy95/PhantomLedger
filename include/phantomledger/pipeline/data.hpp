@@ -6,9 +6,9 @@
 #include "phantomledger/entities/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/entities/synth/accounts/pack.hpp"
-#include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/pack.hpp"
+#include "phantomledger/synth/landlords/pack.hpp"
 
 namespace PhantomLedger::pipeline {
 
@@ -28,7 +28,7 @@ struct Holdings {
 // pipeline/counterparties.hpp
 struct Counterparties {
   entity::merchant::Catalog merchants;
-  entities::synth::landlords::Pack landlords;
+  synth::landlords::Pack landlords;
   entity::counterparty::Directory counterparties;
 };
 

@@ -7,8 +7,6 @@
 #include "phantomledger/entities/synth/accounts/sizing.hpp"
 #include "phantomledger/entities/synth/cards/issue.hpp"
 #include "phantomledger/entities/synth/counterparties/make.hpp"
-#include "phantomledger/entities/synth/landlords/make.hpp"
-#include "phantomledger/entities/synth/landlords/pack.hpp"
 #include "phantomledger/entities/synth/people/fraud.hpp"
 #include "phantomledger/entities/synth/people/pack.hpp"
 #include "phantomledger/entities/synth/personas/kinds.hpp"
@@ -18,6 +16,8 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/landlords/make.hpp"
+#include "phantomledger/synth/landlords/pack.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 
 #include <cstdint>
@@ -36,7 +36,7 @@ struct EntitySynthesis {
   synth::personas::Mix personaMix{};
   synth::accounts::Sizing accountsSizing{};
   sy::merchants::GenerationPlan merchants{};
-  synth::landlords::GenerationPlan landlords{};
+  sy::landlords::GenerationPlan landlords{};
   synth::counterparties::CounterpartyTargets counterpartyTargets{};
   synth::cards::IssuanceRules cards{};
 
@@ -78,9 +78,9 @@ buildPii(pl::random::Rng &rng, const synth::personas::Pack &personas,
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
                const sy::merchants::GenerationPlan &plan = {});
 
-[[nodiscard]] synth::landlords::Pack
+[[nodiscard]] sy::landlords::Pack
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
-               const synth::landlords::GenerationPlan &plan = {});
+               const sy::landlords::GenerationPlan &plan = {});
 
 [[nodiscard]] entity::card::Registry
 issueCreditCards(const synth::personas::Pack &personas,
