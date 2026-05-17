@@ -3,13 +3,13 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/synth/family/pick.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/network.hpp"
+#include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -149,8 +149,8 @@ public:
 
   [[nodiscard]] std::optional<entity::Key>
   memberAccount(entity::PersonId person, double externalP) const {
-    return entities::synth::family::pickMemberId(person, *accounts_,
-                                                 *ownership_, externalP);
+    return ::PhantomLedger::synth::family::pickMemberId(person, *accounts_,
+                                                        *ownership_, externalP);
   }
 
   [[nodiscard]] CounterpartyRouting routing() const noexcept {

@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace PhantomLedger::entities::synth::common {
+namespace PhantomLedger::synth {
 
 using identifiers::Bank;
 using identifiers::Role;
@@ -63,4 +63,4 @@ readLe64(const std::array<std::uint8_t, 8> &bytes) noexcept {
   return readLe64(digest);
 }
 
-} // namespace PhantomLedger::entities::synth::common
+} // namespace PhantomLedger::synth
