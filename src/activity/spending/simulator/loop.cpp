@@ -22,9 +22,30 @@ namespace {
 
 namespace diag = ::PhantomLedger::diagnostics;
 
+using Ledger = ::PhantomLedger::clearing::Ledger;
+
+constexpr std::uint32_t kAttemptMultiplier = 4;
+constexpr std::uint32_t kMaxConsecutiveFailures = 3;
+
 [[nodiscard]] inline std::uint16_t
 personaBucketOf(const actors::Spender &spender) noexcept {
   return static_cast<std::uint16_t>(spender.personaType);
+}
+
+[[nodiscard]] inline double readLiquidity(const Gate &gate, Ledger::Index idx,
+                                          double fallback) noexcept {
+  if (!gate.attached() || idx == Ledger::invalid) {
+    return fallback;
+  }
+  return gate.liquidity(idx);
+}
+
+[[nodiscard]] inline double readCash(const Gate &gate, Ledger::Index idx,
+                                     double fallback) noexcept {
+  if (!gate.attached() || idx == Ledger::invalid) {
+    return fallback;
+  }
+  return gate.availableCash(idx);
 }
 
 } // namespace
@@ -42,52 +63,30 @@ SpenderEmissionLoop::RateSampler::dailyMultipliers(
   return *this;
 }
 
-SpenderEmissionLoop::RateSampler &SpenderEmissionLoop::RateSampler::ledgerView(
-    ParallelLedgerView value) noexcept {
+SpenderEmissionLoop::RateSampler &
+SpenderEmissionLoop::RateSampler::ledgerView(Gate value) noexcept {
   ledgerView_ = value;
   return *this;
 }
 
 double SpenderEmissionLoop::RateSampler::availableToSpendFor(
     const spenders::PreparedSpender &prepared) {
-  if (ledgerView_.empty()) {
-    return prepared.initialCash;
-  }
-
-  const auto idx = prepared.spender.depositAccountIdx;
-  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
-    return prepared.initialCash;
-  }
-
-  return ledgerView_.liquidity(idx);
+  return readLiquidity(ledgerView_, prepared.spender.depositAccountIdx,
+                       prepared.initialCash);
 }
 
 double SpenderEmissionLoop::RateSampler::availableCashFor(
     const spenders::PreparedSpender &prepared) {
-  if (ledgerView_.empty()) {
-    return prepared.initialCash;
-  }
-
-  const auto idx = prepared.spender.depositAccountIdx;
-  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
-    return prepared.initialCash;
-  }
-
-  return ledgerView_.availableCash(idx);
+  return readCash(ledgerView_, prepared.spender.depositAccountIdx,
+                  prepared.initialCash);
 }
 
 double SpenderEmissionLoop::RateSampler::cardLiquidityFor(
     const spenders::PreparedSpender &prepared) {
-  if (ledgerView_.empty() || !prepared.spender.hasCard) {
+  if (!prepared.spender.hasCard) {
     return 0.0;
   }
-
-  const auto idx = prepared.spender.cardIdx;
-  if (idx == ::PhantomLedger::clearing::Ledger::invalid) {
-    return 0.0;
-  }
-
-  return ledgerView_.liquidity(idx);
+  return readLiquidity(ledgerView_, prepared.spender.cardIdx, 0.0);
 }
 
 double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
@@ -107,7 +106,6 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
 
   lastLiquidityMult_ = mult;
   lastAvailableToSpend_ = snapshot.availableToSpend;
-
   return mult;
 }
 
@@ -116,8 +114,9 @@ double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
   return dailyMultipliers_[personIndex] * frame_.seasonalMult;
 }
 
-double SpenderEmissionLoop::RateSampler::latentBaseRateFor(
-    const actors::Spender & /*spender*/, DailyMultipliers /*mults*/) const {
+double
+SpenderEmissionLoop::RateSampler::latentBaseRateFor(const actors::Spender &,
+                                                    DailyMultipliers) const {
   if (budget_.totalPersonDays == 0) {
     return 0.0;
   }
@@ -151,7 +150,6 @@ double SpenderEmissionLoop::RateSampler::exploreProbabilityFor(
       std::clamp(liquidityMult * liquidityMult * liquidityMult, 0.0, 1.0);
 
   exploreP *= std::max(rules_.liquidity.explorationFloor, cubed);
-
   return exploreP;
 }
 
@@ -180,10 +178,9 @@ double SpenderEmissionLoop::RateSampler::lastAvailableToSpend() const noexcept {
 
 SpenderEmissionLoop::PaymentEmitter::PaymentEmitter(
     const market::Market &market, const PreparedRun::Routing &routing,
-    const transactions::Factory &factory,
-    ParallelLedgerView ledgerView) noexcept
+    const transactions::Factory &factory, Gate gate) noexcept
     : market_(market), routing_(routing), factory_(factory),
-      resolved_(routing.resolvedAccounts()), ledgerView_(ledgerView) {}
+      resolved_(routing.resolvedAccounts()), ledgerView_(gate) {}
 
 void SpenderEmissionLoop::PaymentEmitter::bindRateSampler(
     const RateSampler *sampler) noexcept {
@@ -203,9 +200,7 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                                              const actors::Event &event) {
   auto &stats = diag::spending::Stats::instance();
 
-  const routing::Slot slot =
-      routing::pickSlot(routing_.channelCdf, rng.nextDouble());
-
+  const auto slot = routing::pickSlot(routing_.channelCdf, rng.nextDouble());
   const auto personaBucket = personaBucketOf(*event.spender);
   stats.recordAttempt(slot, personaBucket);
 
@@ -225,9 +220,9 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
 
   auto txn = factory_.make(maybeResult->draft);
 
-  auto decision = ledgerView_.transfer(maybeResult->srcIdx, maybeResult->dstIdx,
-                                       maybeResult->draft.amount,
-                                       maybeResult->draft.channel);
+  const auto decision = ledgerView_.transfer(
+      maybeResult->srcIdx, maybeResult->dstIdx, maybeResult->draft.amount,
+      maybeResult->draft.channel);
 
   if (decision.rejected()) {
     stats.recordTransferRejected(0u, event.spender->personIndex, personaBucket,
@@ -262,7 +257,6 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
                                               .liquidity = liquidityMult};
 
     const double latentBaseRate = rates_.latentBaseRateFor(spender, mults);
-
     const auto txnCount =
         rates_.transactionCountFor(rng, spender, latentBaseRate, mults);
 
@@ -274,29 +268,26 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
 
     const double exploreP =
         rates_.exploreProbabilityFor(spender, liquidityMult);
-
     const double availableCash = rates_.availableCashFor(prepared);
     const double cardAvailable = rates_.cardLiquidityFor(prepared);
     const double amountFactor = liquidity::amountFactor(liquidityMult);
 
     std::uint32_t accepted = 0;
     std::uint32_t consecutiveFailures = 0;
-    std::uint32_t attemptBudget = txnCount * 4u;
-    constexpr std::uint32_t kMaxConsecutiveFailures = 3u;
+    std::uint32_t attemptBudget = txnCount * kAttemptMultiplier;
 
     while (accepted < txnCount && attemptBudget > 0) {
       --attemptBudget;
 
-      const std::int32_t offsetSec =
-          math::timing::sampleOffset(rng, spender.timing);
-
-      actors::Event event{};
-      event.spender = &spender;
-      event.ts = rates_.timestampAtOffset(offsetSec);
-      event.exploreP = exploreP;
-      event.availableCash = availableCash;
-      event.cardAvailable = cardAvailable;
-      event.amountFactor = amountFactor;
+      const auto offsetSec = math::timing::sampleOffset(rng, spender.timing);
+      const actors::Event event{
+          .spender = &spender,
+          .ts = rates_.timestampAtOffset(offsetSec),
+          .exploreP = exploreP,
+          .availableCash = availableCash,
+          .cardAvailable = cardAvailable,
+          .amountFactor = amountFactor,
+      };
 
       auto maybeTxn = payments_.tryEmit(rng, event);
       if (!maybeTxn.has_value()) {
