@@ -10,6 +10,7 @@
 #include "phantomledger/exporter/mule_ml/identity.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -54,7 +55,7 @@ isPartyFraud(const ent::account::Record &record,
 
 inline void writeIdentityCells(::PhantomLedger::exporter::csv::Writer &w,
                                const ent::account::Record &record,
-                               bool isFraud) {
+                               std::uint8_t isFraud) {
   w.cell(enc::format(record.id).view()).cell(isFraud);
 }
 
@@ -144,8 +145,9 @@ writePartyRows(::PhantomLedger::exporter::csv::Writer &w,
         detail::resolvePartyIdentity(record, piiRoster, inputs);
     const auto session = detail::resolveSession(record, inputs);
 
-    detail::writeIdentityCells(w, record,
-                               detail::isPartyFraud(record, peopleRoster));
+    detail::writeIdentityCells(
+        w, record,
+        static_cast<std::uint8_t>(detail::isPartyFraud(record, peopleRoster)));
     detail::writeContactCells(w, contact.phone, contact.email);
     detail::writeNameCells(w, identity);
     detail::writeAddressCells(w, identity);

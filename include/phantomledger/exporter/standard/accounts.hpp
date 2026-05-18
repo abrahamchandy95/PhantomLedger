@@ -5,6 +5,8 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/exporter/csv.hpp"
 
+#include <cstdint>
+
 namespace PhantomLedger::exporter::standard {
 
 namespace enc = ::PhantomLedger::encoding;
@@ -16,10 +18,14 @@ inline void writeAccountNumberRows(::PhantomLedger::exporter::csv::Writer &w,
   using ent::account::Flag;
 
   for (const auto &record : registry.records) {
-    const bool isMule = (record.flags & bit(Flag::mule)) != 0;
-    const bool isFraud = (record.flags & bit(Flag::fraud)) != 0;
-    const bool isVictim = (record.flags & bit(Flag::victim)) != 0;
-    const bool isExternal = (record.flags & bit(Flag::external)) != 0;
+    const auto isMule =
+        static_cast<std::uint8_t>((record.flags & bit(Flag::mule)) != 0);
+    const auto isFraud =
+        static_cast<std::uint8_t>((record.flags & bit(Flag::fraud)) != 0);
+    const auto isVictim =
+        static_cast<std::uint8_t>((record.flags & bit(Flag::victim)) != 0);
+    const auto isExternal =
+        static_cast<std::uint8_t>((record.flags & bit(Flag::external)) != 0);
 
     w.writeRow(enc::format(record.id).view(), isMule, isFraud, isVictim,
                isExternal);

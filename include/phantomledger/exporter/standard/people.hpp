@@ -5,6 +5,8 @@
 #include "phantomledger/entities/people.hpp"
 #include "phantomledger/exporter/csv.hpp"
 
+#include <cstdint>
+
 namespace PhantomLedger::exporter::standard {
 
 inline void
@@ -18,9 +20,15 @@ writePersonRows(::PhantomLedger::exporter::csv::Writer &w,
     const auto customerKey =
         ent::makeKey(ent::Role::customer, ent::Bank::internal, p);
 
-    w.writeRow(enc::format(customerKey).view(), roster.has(p, Flag::mule),
-               roster.has(p, Flag::fraud), roster.has(p, Flag::victim),
-               roster.has(p, Flag::soloFraud));
+    const auto isMule = static_cast<std::uint8_t>(roster.has(p, Flag::mule));
+    const auto isFraud = static_cast<std::uint8_t>(roster.has(p, Flag::fraud));
+    const auto isVictim =
+        static_cast<std::uint8_t>(roster.has(p, Flag::victim));
+    const auto isSoloFraud =
+        static_cast<std::uint8_t>(roster.has(p, Flag::soloFraud));
+
+    w.writeRow(enc::format(customerKey).view(), isMule, isFraud, isVictim,
+               isSoloFraud);
   }
 }
 
