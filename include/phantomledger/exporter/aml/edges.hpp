@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -16,6 +16,8 @@
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::edges {
+
+namespace minhash = ::PhantomLedger::exporter::common::minhash;
 
 struct TransactionEdgeBundle {
   using AcctTxnRow = std::pair<entity::Key, std::size_t>;

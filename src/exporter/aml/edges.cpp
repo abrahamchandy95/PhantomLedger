@@ -2,8 +2,8 @@
 
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
-#include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"

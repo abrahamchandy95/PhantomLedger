@@ -19,6 +19,7 @@
 #include "phantomledger/synth/personas/kinds.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/synth/pii/identity.hpp"
+#include "phantomledger/synth/pii/sharing.hpp"
 
 #include <cstdint>
 
@@ -31,6 +32,7 @@ namespace entity = pl::entity;
 struct EntitySynthesis {
   std::int32_t population;
   sy::pii::IdentityContext identity;
+  sy::pii::Sharing piiSharing{};
   sy::people::Fraud fraud{};
   sy::personas::Mix personaMix{};
   sy::accounts::Sizing accountsSizing{};
@@ -45,6 +47,7 @@ struct EntitySynthesis {
     r.check([&] {
       pl::primitives::validate::nonNegative("population", population);
     });
+    piiSharing.validate(r);
     accountsSizing.validate(r);
     merchants.validate(r);
     landlords.validate(r);
@@ -68,9 +71,11 @@ buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
               const sy::personas::Mix &mix = {});
 
-[[nodiscard]] entity::pii::Roster buildPii(pl::random::Rng &rng,
-                                           const sy::personas::Pack &personas,
-                                           sy::pii::IdentityContext identity);
+[[nodiscard]] entity::pii::Roster
+buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
+         sy::pii::IdentityContext identity,
+         const entity::person::Topology &topology,
+         const sy::pii::Sharing &sharing);
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,

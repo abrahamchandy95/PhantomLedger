@@ -121,6 +121,8 @@ int main(int argc, char **argv) {
     case app::UseCase::standard: {
       exporter::standard::Options exportOpts;
       exportOpts.showTransactions = opts.showTransactions;
+      exportOpts.piiPools = &pools;
+      exportOpts.window = window;
       exporter::standard::exportAll(result, opts.outDir, exportOpts);
       printGenericSummary(result, opts);
       break;

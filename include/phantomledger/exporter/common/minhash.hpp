@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace PhantomLedger::exporter::aml::minhash {
+namespace PhantomLedger::exporter::common::minhash {
 
 inline constexpr std::uint32_t kMh2M = 0x5BD1E995U;
 inline constexpr std::uint32_t kMh2R = 24U;
@@ -56,4 +56,4 @@ streetMinhashIds(std::string_view streetLine1);
 
 [[nodiscard]] std::string stateMinhashId(std::string_view state);
 
-} // namespace PhantomLedger::exporter::aml::minhash
+} // namespace PhantomLedger::exporter::common::minhash

@@ -40,6 +40,7 @@ set(PL_TRANSACTIONS_SOURCES
 set(PL_ENTITIES_SOURCES
     src/synth/pii/geonames.cpp
     src/synth/pii/pools.cpp
+    src/synth/pii/correlate.cpp
 )
 
 set(PL_TRANSFERS_SOURCES
@@ -159,7 +160,7 @@ set(PL_EXPORTER_SOURCES
     src/exporter/standard/export.cpp
     src/exporter/mule_ml/canonical.cpp
     src/exporter/mule_ml/export.cpp
-    src/exporter/aml/minhash.cpp
+    src/exporter/common/minhash.cpp
     src/exporter/aml/identity.cpp
     src/exporter/aml/sar.cpp
     src/exporter/aml/vertices.cpp

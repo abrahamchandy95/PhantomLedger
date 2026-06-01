@@ -397,8 +397,6 @@ struct LocaleMix {
   }
 };
 
-/// Sample one country from the configured `LocaleMix` via inverse
-/// CDF. Caller is expected to have at least one positive weight.
 [[nodiscard]] inline locale::Country sampleCountry(random::Rng &rng,
                                                    const LocaleMix &mix) {
   double total = 0.0;
@@ -413,7 +411,13 @@ struct LocaleMix {
       return static_cast<locale::Country>(i);
     }
   }
+
+  for (std::size_t i = 0; i < mix.weights.size(); ++i) {
+    if (mix.weights[i] > 0.0) {
+      return static_cast<locale::Country>(i);
+    }
+  }
+
   return locale::kDefaultCountry;
 }
-
 } // namespace PhantomLedger::synth::pii

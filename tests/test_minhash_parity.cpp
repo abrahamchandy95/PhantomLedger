@@ -1,11 +1,11 @@
-#include "phantomledger/exporter/aml/minhash.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <span>
 #include <string_view>
-namespace mh = ::PhantomLedger::exporter::aml::minhash;
+namespace mh = ::PhantomLedger::exporter::common::minhash;
 namespace {
 int failures = 0;
 void check(bool condition, const char *what) {

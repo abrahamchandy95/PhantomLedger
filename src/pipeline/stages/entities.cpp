@@ -13,6 +13,7 @@
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/make.hpp"
+#include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
@@ -58,13 +59,17 @@ buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
   return sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
 }
 
-[[nodiscard]] entity::pii::Roster buildPii(pl::random::Rng &rng,
-                                           const sy::personas::Pack &personas,
-                                           sy::pii::IdentityContext identity) {
+[[nodiscard]] entity::pii::Roster
+buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
+         sy::pii::IdentityContext identity,
+         const entity::person::Topology &topology,
+         const sy::pii::Sharing &sharing) {
   assert(identity.pools != nullptr &&
          "buildPii: IdentityContext::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
-  return sy::pii::make(rng, personas.assignment, identity);
+  auto pii = sy::pii::make(rng, personas.assignment, identity);
+  sy::pii::correlateRingPii(rng, topology, sharing, pii);
+  return pii;
 }
 
 [[nodiscard]] entity::merchant::Catalog

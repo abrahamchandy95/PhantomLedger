@@ -10,12 +10,99 @@
 #include "phantomledger/exporter/standard/people.hpp"
 #include "phantomledger/exporter/standard/pii.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
+#include "phantomledger/synth/pii/membership.hpp"
+#include "phantomledger/synth/pii/membership_filter.hpp"
 
+#include <cstddef>
 #include <filesystem>
 
 namespace PhantomLedger::exporter::standard {
 
 namespace schema = ::PhantomLedger::exporter::schema;
+namespace pii = ::PhantomLedger::synth::pii;
+
+namespace {
+
+template <class Body>
+void emit(const std::filesystem::path &outDir, const schema::Table &table,
+          Body body) {
+  auto w = common::openTable(outDir, table);
+  body(w);
+}
+
+void exportEntityResolution(const std::filesystem::path &outDir,
+                            const ::PhantomLedger::pipeline::People &people,
+                            const ::PhantomLedger::pipeline::Holdings &holdings,
+                            const ::PhantomLedger::pipeline::Infra &infra,
+                            const ::PhantomLedger::synth::pii::PoolSet &pools,
+                            const pii::Membership &membership) {
+  const auto &piiRoster = people.pii;
+  const auto &roster = people.roster.roster;
+  const auto &registry = holdings.accounts.registry;
+  using W = ::PhantomLedger::exporter::csv::Writer;
+
+  // Core vertices + ownership. customer.csv created_at comes from Membership.
+  emit(outDir, schema::kErCustomer,
+       [&](W &w) { writeCustomerRows(w, roster, membership); });
+  emit(outDir, schema::kErAccount,
+       [&](W &w) { writeAccountRows(w, registry); });
+  emit(outDir, schema::kErOwnsAccount,
+       [&](W &w) { writeOwnsAccountRows(w, registry); });
+
+  // Deduplicated phone / email vertices.
+  emit(outDir, schema::kPhone,
+       [&](W &w) { writePhoneVertexRows(w, piiRoster); });
+  emit(outDir, schema::kEmail,
+       [&](W &w) { writeEmailVertexRows(w, piiRoster); });
+
+  // PII value vertices.
+  emit(outDir, schema::kName,
+       [&](W &w) { writeNameVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kBirthdate,
+       [&](W &w) { writeBirthdateVertexRows(w, piiRoster); });
+  emit(outDir, schema::kStreetAddress,
+       [&](W &w) { writeStreetVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kCity,
+       [&](W &w) { writeCityVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kState,
+       [&](W &w) { writeStateVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kPostcode,
+       [&](W &w) { writePostcodeVertexRows(w, pools, piiRoster); });
+
+  // PII edges (customer -> value).
+  emit(outDir, schema::kHasName,
+       [&](W &w) { writeHasNameRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasBirthdate,
+       [&](W &w) { writeHasBirthdateRows(w, piiRoster); });
+  emit(outDir, schema::kHasStreetAddress,
+       [&](W &w) { writeHasStreetRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasCity,
+       [&](W &w) { writeHasCityRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasState,
+       [&](W &w) { writeHasStateRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasPostcode,
+       [&](W &w) { writeHasPostcodeRows(w, pools, piiRoster); });
+
+  emit(outDir, schema::kHasDeviceEr,
+       [&](W &w) { writeHasDeviceEdgeRows(w, infra.devices, membership); });
+  emit(outDir, schema::kHasIpEr,
+       [&](W &w) { writeHasIpEdgeRows(w, infra.ips, membership); });
+
+  emit(outDir, schema::kNameMinhash,
+       [&](W &w) { writeNameMinhashVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasNameMinhash,
+       [&](W &w) { writeHasNameMinhashRows(w, pools, piiRoster); });
+  emit(outDir, schema::kAddressMinhash,
+       [&](W &w) { writeAddressMinhashVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasAddressMinhash,
+       [&](W &w) { writeHasAddressMinhashRows(w, pools, piiRoster); });
+  emit(outDir, schema::kStreetMinhash,
+       [&](W &w) { writeStreetMinhashVertexRows(w, pools, piiRoster); });
+  emit(outDir, schema::kHasStreetMinhash,
+       [&](W &w) { writeHasStreetMinhashRows(w, pools, piiRoster); });
+}
+
+} // namespace
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
@@ -26,68 +113,52 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto &cps = result.counterparties;
   const auto &infra = result.infra;
   const auto &postedTxns = result.transfers.ledger.posted.txns;
+  using W = ::PhantomLedger::exporter::csv::Writer;
 
-  {
-    auto w = common::openTable(outDir, schema::kPerson);
-    writePersonRows(w, people.roster.roster);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kAccountNumber);
-    writeAccountNumberRows(w, holdings.accounts.registry);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kPhone);
-    writePhoneRows(w, people.pii);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kEmail);
-    writeEmailRows(w, people.pii);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kDevice);
-    writeDeviceRows(w, infra.devices);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kIpAddress);
-    writeIpAddressRows(w, infra.ips);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kMerchant);
-    writeMerchantRows(w, cps.merchants);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kExternalAccount);
+  const auto population = static_cast<std::size_t>(people.roster.roster.count);
+  const pii::Membership membership(population, options.window, options.growth);
+
+  const auto visibleTxns =
+      pii::filterByMembership(postedTxns, holdings.accounts.registry,
+                              holdings.accounts.lookup, membership);
+
+  emit(outDir, schema::kPerson,
+       [&](W &w) { writePersonRows(w, people.roster.roster); });
+  emit(outDir, schema::kAccountNumber,
+       [&](W &w) { writeAccountNumberRows(w, holdings.accounts.registry); });
+  emit(outDir, schema::kPhone, [&](W &w) { writePhoneRows(w, people.pii); });
+  emit(outDir, schema::kEmail, [&](W &w) { writeEmailRows(w, people.pii); });
+  emit(outDir, schema::kDevice,
+       [&](W &w) { writeDeviceRows(w, infra.devices); });
+  emit(outDir, schema::kIpAddress,
+       [&](W &w) { writeIpAddressRows(w, infra.ips); });
+  emit(outDir, schema::kMerchant,
+       [&](W &w) { writeMerchantRows(w, cps.merchants); });
+  emit(outDir, schema::kExternalAccount, [&](W &w) {
     writeExternalAccountRows(w, holdings.accounts.registry, cps.merchants,
                              cps.landlords.roster);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasAccount);
-    writeHasAccountRows(w, holdings.accounts.registry);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasPhone);
-    writeHasPhoneRows(w, people.pii);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasEmail);
-    writeHasEmailRows(w, people.pii);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasUsed);
-    writeHasUsedRows(w, infra.devices);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasIp);
-    writeHasIpRows(w, infra.ips);
-  }
-  {
-    auto w = common::openTable(outDir, schema::kHasPaid);
-    writeHasPaidRows(w, postedTxns);
+  });
+  emit(outDir, schema::kHasAccount,
+       [&](W &w) { writeHasAccountRows(w, holdings.accounts.registry); });
+  emit(outDir, schema::kHasPhone,
+       [&](W &w) { writeHasPhoneRows(w, people.pii); });
+  emit(outDir, schema::kHasEmail,
+       [&](W &w) { writeHasEmailRows(w, people.pii); });
+  emit(outDir, schema::kHasUsed,
+       [&](W &w) { writeHasUsedRows(w, infra.devices); });
+  emit(outDir, schema::kHasIp, [&](W &w) { writeHasIpRows(w, infra.ips); });
+
+  emit(outDir, schema::kHasPaid,
+       [&](W &w) { writeHasPaidRows(w, visibleTxns); });
+
+  if (options.emitEntityResolution && options.piiPools != nullptr) {
+    exportEntityResolution(outDir, people, holdings, infra, *options.piiPools,
+                           membership);
   }
 
   if (options.showTransactions) {
-    auto w = common::openTable(outDir, schema::kLedger);
-    common::writeLedgerRows(w, postedTxns);
+    emit(outDir, schema::kLedger,
+         [&](W &w) { common::writeLedgerRows(w, visibleTxns); });
   }
 }
 

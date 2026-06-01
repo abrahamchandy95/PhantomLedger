@@ -1,11 +1,11 @@
-#include "phantomledger/exporter/aml/minhash.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cstring>
 
-namespace PhantomLedger::exporter::aml::minhash {
+namespace PhantomLedger::exporter::common::minhash {
 
 const std::array<std::uint32_t, 101> kUhC1{{
     1U,          482067061U,  1133999723U, 2977257653U, 2666089543U,
@@ -250,4 +250,4 @@ std::string stateMinhashId(std::string_view state) {
   return out;
 }
 
-} // namespace PhantomLedger::exporter::aml::minhash
+} // namespace PhantomLedger::exporter::common::minhash

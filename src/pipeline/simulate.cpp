@@ -135,7 +135,8 @@ void SimulationPipeline::buildEntities(SimulationResult &result) const {
       *rng_, people.roster, cfg.population, cfg.accountsSizing);
   people.personas =
       entityStage::buildPersonas(*rng_, people.roster, cfg.personaMix);
-  people.pii = entityStage::buildPii(*rng_, people.personas, identity);
+  people.pii = entityStage::buildPii(*rng_, people.personas, identity,
+                                     people.roster.topology, cfg.piiSharing);
 
   cps.merchants =
       entityStage::buildMerchants(*rng_, cfg.population, cfg.merchants);

@@ -3,9 +3,9 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
-#include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -441,7 +441,7 @@ void writeMinHashBucketRows(exporter::csv::Writer &w,
   const auto &usPool = poolsFor(ctx).forCountry(locale::Country::us);
   const auto &pii = people.pii;
 
-  std::set<exporter::aml::minhash::BucketId> nameSet, addrSet, streetSet;
+  std::set<exporter::common::minhash::BucketId> nameSet, addrSet, streetSet;
   std::unordered_set<std::string> citySet, stateSet;
   citySet.reserve(people.roster.roster.count);
   stateSet.reserve(64);
@@ -453,27 +453,27 @@ void writeMinHashBucketRows(exporter::csv::Writer &w,
     const auto addr = exporter::aml::identity::addressForPerson(p, pii, pools);
 
     for (auto &id :
-         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+         exporter::common::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       nameSet.insert(std::move(id));
     }
 
     const auto fullAddr = exporter::common::joinAddress(addrScratch, addr);
-    for (auto &id : exporter::aml::minhash::addressMinhashIds(fullAddr)) {
+    for (auto &id : exporter::common::minhash::addressMinhashIds(fullAddr)) {
       addrSet.insert(std::move(id));
     }
 
     for (auto &id :
-         exporter::aml::minhash::streetMinhashIds(addr.streetLine1)) {
+         exporter::common::minhash::streetMinhashIds(addr.streetLine1)) {
       streetSet.insert(std::move(id));
     }
-    citySet.insert(exporter::aml::minhash::cityMinhashId(addr.city));
-    stateSet.insert(exporter::aml::minhash::stateMinhashId(addr.state));
+    citySet.insert(exporter::common::minhash::cityMinhashId(addr.city));
+    stateSet.insert(exporter::common::minhash::stateMinhashId(addr.state));
   }
 
   for (const auto &cpId : ctx.counterpartyIds) {
     const auto nm = exporter::aml::identity::nameForCounterparty(cpId, usPool);
     for (auto &id :
-         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+         exporter::common::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       nameSet.insert(std::move(id));
     }
   }

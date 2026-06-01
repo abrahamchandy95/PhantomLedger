@@ -3,9 +3,13 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/pii/membership.hpp"
 
 #include <cstdint>
+#include <string_view>
 
 namespace PhantomLedger::exporter::standard {
 
@@ -29,6 +33,20 @@ writePersonRows(::PhantomLedger::exporter::csv::Writer &w,
 
     w.writeRow(enc::format(customerKey).view(), isMule, isFraud, isVictim,
                isSoloFraud);
+  }
+}
+
+inline void
+writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
+                  const ::PhantomLedger::entity::person::Roster &roster,
+                  const ::PhantomLedger::synth::pii::Membership &membership) {
+  namespace ent = ::PhantomLedger::entity;
+  namespace common = ::PhantomLedger::exporter::common;
+  for (ent::PersonId p = 1; p <= roster.count; ++p) {
+    const auto created = membership.joinTs(p);
+    const auto createdStr = ::PhantomLedger::time::formatTimestamp(created);
+    w.writeRow(common::renderCustomerId(p).view(),
+               std::string_view{createdStr});
   }
 }
 

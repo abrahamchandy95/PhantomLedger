@@ -3,9 +3,9 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
-#include "phantomledger/exporter/aml/minhash.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/hashing.hpp"
+#include "phantomledger/exporter/common/minhash.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/common/support.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -545,26 +545,28 @@ void writeInBucketRows(exporter::csv::Writer &w, const pipeline::People &people,
     const auto fullAddr = exporter::common::joinAddress(addrScratch, addr);
 
     for (const auto &id :
-         exporter::aml::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
+         exporter::common::minhash::nameMinhashIds(nm.firstName, nm.lastName)) {
       w.cell(cid).cell(id).cell(ts).cell(0.9);
       w.endRow();
     }
-    for (const auto &id : exporter::aml::minhash::addressMinhashIds(fullAddr)) {
+    for (const auto &id :
+         exporter::common::minhash::addressMinhashIds(fullAddr)) {
       w.cell(cid).cell(id).cell(ts).cell(0.85);
       w.endRow();
     }
     for (const auto &id :
-         exporter::aml::minhash::streetMinhashIds(addr.streetLine1)) {
+         exporter::common::minhash::streetMinhashIds(addr.streetLine1)) {
       w.cell(cid).cell(id).cell(ts).cell(0.8);
       w.endRow();
     }
     {
-      const auto cityId = exporter::aml::minhash::cityMinhashId(addr.city);
+      const auto cityId = exporter::common::minhash::cityMinhashId(addr.city);
       w.cell(cid).cell(std::string_view{cityId}).cell(ts).cell(0.7);
       w.endRow();
     }
     {
-      const auto stateId = exporter::aml::minhash::stateMinhashId(addr.state);
+      const auto stateId =
+          exporter::common::minhash::stateMinhashId(addr.state);
       w.cell(cid).cell(std::string_view{stateId}).cell(ts).cell(0.6);
       w.endRow();
     }
