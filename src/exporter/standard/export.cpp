@@ -4,6 +4,7 @@
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/accounts.hpp"
+#include "phantomledger/exporter/standard/aggregates.hpp"
 #include "phantomledger/exporter/standard/counterparties.hpp"
 #include "phantomledger/exporter/standard/infra.hpp"
 #include "phantomledger/exporter/standard/merchants.hpp"
@@ -41,13 +42,11 @@ void exportEntityResolution(const std::filesystem::path &outDir,
   const auto &registry = holdings.accounts.registry;
   using W = ::PhantomLedger::exporter::csv::Writer;
 
-  // Core vertices + ownership. customer.csv created_at comes from Membership.
+  // Core vertices. customer.csv created_at comes from Membership.
   emit(outDir, schema::kErCustomer,
        [&](W &w) { writeCustomerRows(w, roster, membership); });
   emit(outDir, schema::kErAccount,
        [&](W &w) { writeAccountRows(w, registry); });
-  emit(outDir, schema::kErOwnsAccount,
-       [&](W &w) { writeOwnsAccountRows(w, registry); });
 
   // Deduplicated phone / email vertices.
   emit(outDir, schema::kPhone,
@@ -150,6 +149,13 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
 
   emit(outDir, schema::kHasPaid,
        [&](W &w) { writeHasPaidRows(w, visibleTxns); });
+
+  // Temporal flow aggregates (fixed-width bins). Mirrors writeHasPaidRows'
+  // input (visibleTxns) so flow-agg pairs align with HAS_PAID edges. num_bins
+  // scales with options.window; bin width defaults to 14 days (bi-weekly).
+  emit(outDir, schema::kAccountFlowAggBin, [&](W &w) {
+    flow_agg::writeAccountFlowAggRows(w, visibleTxns, options.window);
+  });
 
   if (options.emitEntityResolution && options.piiPools != nullptr) {
     exportEntityResolution(outDir, people, holdings, infra, *options.piiPools,

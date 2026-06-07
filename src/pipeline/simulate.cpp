@@ -153,28 +153,41 @@ void SimulationPipeline::buildEntities(SimulationResult &result) const {
                                         cfg.businessOwners);
 }
 
-SimulationResult SimulationPipeline::run() const {
+SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
   SimulationResult out;
 
+  // Helper: notify the observer (if any) that a phase finished. Kept trivial
+  // so the no-observer path is a single null check per phase.
+  const auto notify = [&](std::string_view phase) {
+    if (onPhase) {
+      onPhase(phase);
+    }
+  };
+
   buildEntities(out);
+  notify("entities");
 
   products_.synthesize(out.people, out.holdings, window_);
+  notify("products");
 
   out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
+  notify("infra");
 
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
   stage.infra(out.infra);
 
   runTransferStage(out, stage, *rng_);
+  notify("transfers");
 
   return out;
 }
 
 SimulationResult simulate(random::Rng &rng, time::Window window,
                           SimulationPipeline::EntitySynthesis entities,
-                          std::uint64_t seed) {
-  return SimulationPipeline{rng, window, std::move(entities), seed}.run();
+                          std::uint64_t seed, const PhaseObserver &onPhase) {
+  return SimulationPipeline{rng, window, std::move(entities), seed}.run(
+      onPhase);
 }
 
 } // namespace PhantomLedger::pipeline

@@ -21,6 +21,7 @@ public:
 
   void tick(std::size_t n = 1) noexcept;
   void setProgress(std::size_t current) noexcept;
+  void setLabel(std::string label) noexcept;
   void done() noexcept;
 
 private:

@@ -16,6 +16,8 @@
 #include <cstddef>
 #include <cstdio>
 #include <exception>
+#include <string>
+#include <string_view>
 
 namespace {
 
@@ -111,10 +113,25 @@ int main(int argc, char **argv) {
     const auto entityConfig =
         app::setup::buildEntitySynthesis(opts, pools, mix, window.start);
 
-    pg::status("Running simulation...");
     auto rng = random::Rng::fromSeed(opts.seed);
-    const auto result =
-        pipeline::simulate(rng, window, entityConfig, opts.seed);
+
+    // Phase-level progress bar for generation. Always on. The Stage is scoped
+    // to a block so its destructor (which prints the closing newline) runs
+    // before the "Exporting..." status line below, keeping the two from
+    // colliding on the same terminal line. Four phases, in order:
+    // entities, products, infra, transfers.
+    pl::pipeline::SimulationResult result;
+    {
+      pg::Stage genStage("Generating (entities)", 4);
+      const auto onPhase = [&](std::string_view phase) {
+        // phase names the stage that JUST finished; advance the bar, then
+        // relabel it for the phase now starting (best-effort cosmetic).
+        genStage.tick();
+        genStage.setLabel("Generating (" + std::string{phase} + " done)");
+      };
+      result =
+          pipeline::simulate(rng, window, entityConfig, opts.seed, onPhase);
+    } // genStage destructor prints trailing newline here
 
     pg::status("Exporting...");
     switch (opts.usecase) {

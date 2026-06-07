@@ -62,6 +62,13 @@ void Stage::setProgress(std::size_t current) noexcept {
   render(/*force=*/false);
 }
 
+void Stage::setLabel(std::string label) noexcept {
+  label_ = std::move(label);
+  // Force a redraw so the new label is visible immediately, even if the last
+  // render was under the throttle interval.
+  render(/*force=*/true);
+}
+
 void Stage::done() noexcept {
   if (!active_) {
     return;

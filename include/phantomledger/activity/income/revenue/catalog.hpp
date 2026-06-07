@@ -14,132 +14,82 @@ namespace detail {
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
-  return RevenuePersonaProfile{
-      .client =
-          {
-              .activeP = 0.88,
-              .counterpartiesMin = 2,
-              .counterpartiesMax = 5,
-              .paymentsMin = 1,
-              .paymentsMax = 4,
-              .median = 1400.0,
-              .sigma = 0.70,
-          },
-      .platform =
-          {
-              .activeP = 0.42,
-              .counterpartiesMin = 1,
-              .counterpartiesMax = 2,
-              .paymentsMin = 1,
-              .paymentsMax = 4,
-              .median = 425.0,
-              .sigma = 0.60,
-          },
-      .settlement = {},
-      .ownerDraw =
-          {
-              .activeP = 0.70,
-              .paymentsMin = 1,
-              .paymentsMax = 2,
-              .median = 1800.0,
-              .sigma = 0.75,
-          },
-      .investment = {},
-      .quietMonth = {.probability = 0.12},
-  };
+  return {.client = {.activeP = 0.88,
+                     .counterpartiesMin = 2,
+                     .counterpartiesMax = 5,
+                     .paymentsMin = 1,
+                     .paymentsMax = 4,
+                     .median = 1400.0,
+                     .sigma = 0.70},
+          .platform = {.activeP = 0.42,
+                       .counterpartiesMin = 1,
+                       .counterpartiesMax = 2,
+                       .paymentsMin = 1,
+                       .paymentsMax = 4,
+                       .median = 425.0,
+                       .sigma = 0.60},
+          .ownerDraw = {.activeP = 0.70,
+                        .paymentsMin = 1,
+                        .paymentsMax = 2,
+                        .median = 1800.0,
+                        .sigma = 0.75},
+          .quietMonth = {.probability = 0.12}};
 }
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile smallBusinessProfile() {
-  return RevenuePersonaProfile{
-      .client =
-          {
-              .activeP = 0.55,
-              .counterpartiesMin = 2,
-              .counterpartiesMax = 6,
-              .paymentsMin = 0,
-              .paymentsMax = 3,
-              .median = 2600.0,
-              .sigma = 0.75,
-          },
-      .platform =
-          {
-              .activeP = 0.22,
-              .counterpartiesMin = 1,
-              .counterpartiesMax = 2,
-              .paymentsMin = 0,
-              .paymentsMax = 3,
-              .median = 950.0,
-              .sigma = 0.70,
-          },
-      .settlement =
-          {
-              .activeP = 0.74,
-              .paymentsMin = 4,
-              .paymentsMax = 12,
-              .median = 680.0,
-              .sigma = 0.55,
-          },
-      .ownerDraw =
-          {
-              .activeP = 0.86,
-              .paymentsMin = 1,
-              .paymentsMax = 2,
-              .median = 3400.0,
-              .sigma = 0.70,
-          },
-      .investment = {},
-      .quietMonth = {.probability = 0.06},
-  };
+  return {.client = {.activeP = 0.55,
+                     .counterpartiesMin = 2,
+                     .counterpartiesMax = 6,
+                     .paymentsMin = 0,
+                     .paymentsMax = 3,
+                     .median = 2600.0,
+                     .sigma = 0.75},
+          .platform = {.activeP = 0.22,
+                       .counterpartiesMin = 1,
+                       .counterpartiesMax = 2,
+                       .paymentsMin = 0,
+                       .paymentsMax = 3,
+                       .median = 950.0,
+                       .sigma = 0.70},
+          .settlement = {.activeP = 0.74,
+                         .paymentsMin = 4,
+                         .paymentsMax = 12,
+                         .median = 680.0,
+                         .sigma = 0.55},
+          .ownerDraw = {.activeP = 0.86,
+                        .paymentsMin = 1,
+                        .paymentsMax = 2,
+                        .median = 3400.0,
+                        .sigma = 0.70},
+          .quietMonth = {.probability = 0.06}};
 }
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile highNetWorthProfile() {
-  return RevenuePersonaProfile{
-      .client = {},
-      .platform = {},
-      .settlement = {},
-      .ownerDraw =
-          {
-              .activeP = 0.55,
-              .paymentsMin = 1,
-              .paymentsMax = 2,
-              .median = 6000.0,
-              .sigma = 0.65,
-          },
-      .investment =
-          {
-              .activeP = 0.72,
-              .paymentsMin = 1,
-              .paymentsMax = 3,
-              .median = 12000.0,
-              .sigma = 1.00,
-          },
-      .quietMonth = {.probability = 0.02},
-  };
+  return {.ownerDraw = {.activeP = 0.55,
+                        .paymentsMin = 1,
+                        .paymentsMax = 2,
+                        .median = 6000.0,
+                        .sigma = 0.65},
+          .investment = {.activeP = 0.72,
+                         .paymentsMin = 1,
+                         .paymentsMax = 3,
+                         .median = 12000.0,
+                         .sigma = 1.00},
+          .quietMonth = {.probability = 0.02}};
 }
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile retireeProfile() {
-  return RevenuePersonaProfile{
-      .client = {},
-      .platform = {},
-      .settlement = {},
-      .ownerDraw =
-          {
-              .activeP = 0.33,
-              .paymentsMin = 1,
-              .paymentsMax = 1,
-              .median = 1100.0,
-              .sigma = 0.50,
-          },
-      .investment =
-          {
-              .activeP = 0.50,
-              .paymentsMin = 1,
-              .paymentsMax = 2,
-              .median = 400.0,
-              .sigma = 0.65,
-          },
-      .quietMonth = {.probability = 0.05},
-  };
+  return {.ownerDraw = {.activeP = 0.33,
+                        .paymentsMin = 1,
+                        .paymentsMax = 1,
+                        .median = 1100.0,
+                        .sigma = 0.50},
+          .investment = {.activeP = 0.50,
+                         .paymentsMin = 1,
+                         .paymentsMax = 2,
+                         .median = 400.0,
+                         .sigma = 0.65},
+          .quietMonth = {.probability = 0.05}};
 }
 
 [[nodiscard]] inline constexpr auto buildCatalog() {

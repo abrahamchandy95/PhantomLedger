@@ -9,8 +9,12 @@
 #include "phantomledger/primitives/time/window.hpp"
 
 #include <cstdint>
+#include <functional>
+#include <string_view>
 
 namespace PhantomLedger::pipeline {
+
+using PhaseObserver = std::function<void(std::string_view phase)>;
 
 class SimulationPipeline {
 public:
@@ -40,7 +44,7 @@ public:
   [[nodiscard]] TransferStage &transferStage() noexcept;
   [[nodiscard]] const TransferStage &transferStage() const noexcept;
 
-  [[nodiscard]] SimulationResult run() const;
+  [[nodiscard]] SimulationResult run(const PhaseObserver &onPhase = {}) const;
 
 private:
   void buildEntities(SimulationResult &result) const;
@@ -59,6 +63,7 @@ private:
 [[nodiscard]] SimulationResult
 simulate(::PhantomLedger::random::Rng &rng,
          ::PhantomLedger::time::Window window,
-         SimulationPipeline::EntitySynthesis entities, std::uint64_t seed = 0);
+         SimulationPipeline::EntitySynthesis entities, std::uint64_t seed = 0,
+         const PhaseObserver &onPhase = {});
 
 } // namespace PhantomLedger::pipeline

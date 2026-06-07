@@ -84,6 +84,16 @@ inline constexpr std::string_view kLedgerHeader[]{
     "ring_id",  "device_id", "ip_address", "channel"};
 inline constexpr Table kLedger{"transactions.csv", kLedgerHeader};
 
+// Standard-path temporal flow aggregates (fixed-width bin sequence per pair).
+// Distinct from the aml_txn_edges kit's 30d/90d kAccountFlowAgg; same on-disk
+// filename, but written into the standard export directory by a separate path.
+inline constexpr std::string_view kAccountFlowAggBinHeader[]{
+    "from_id",        "to_id",         "total_amount", "txn_count",
+    "first_txn_date", "last_txn_date", "span_days",    "num_bins",
+    "bin_days",       "amount_bins",   "count_bins"};
+inline constexpr Table kAccountFlowAggBin{"ACCOUNT_FLOW_AGG.csv",
+                                          kAccountFlowAggBinHeader};
+
 inline constexpr std::array kEdges{kHasAccount, kHasPhone, kHasEmail,
                                    kHasUsed,    kHasIp,    kHasPaid};
 
@@ -140,9 +150,6 @@ inline constexpr std::array kErVertices{
     kStreetAddress, kCity,           kState,        kPostcode,
     kNameMinhash,   kAddressMinhash, kStreetMinhash};
 
-inline constexpr std::string_view kErOwnsAccountHeader[]{"FROM", "TO"};
-inline constexpr Table kErOwnsAccount{"OWNS_ACCOUNT.csv", kErOwnsAccountHeader};
-
 inline constexpr std::string_view kHasNameHeader[]{"FROM", "TO"};
 inline constexpr Table kHasName{"HAS_NAME.csv", kHasNameHeader};
 
@@ -183,9 +190,9 @@ inline constexpr Table kHasStreetMinhash{"HAS_STREET_MINHASH.csv",
                                          kHasStreetMinhashHeader};
 
 inline constexpr std::array kErEdges{
-    kErOwnsAccount, kHasName,        kHasBirthdate,      kHasStreetAddress,
-    kHasCity,       kHasState,       kHasPostcode,       kHasDeviceEr,
-    kHasIpEr,       kHasNameMinhash, kHasAddressMinhash, kHasStreetMinhash};
+    kHasName,        kHasBirthdate,      kHasStreetAddress, kHasCity,
+    kHasState,       kHasPostcode,       kHasDeviceEr,      kHasIpEr,
+    kHasNameMinhash, kHasAddressMinhash, kHasStreetMinhash};
 
 // ===========================================================================
 // Machine Learning Tables
@@ -209,8 +216,5 @@ inline constexpr Table kMlAccountDevice{"Account_Device.csv",
 inline constexpr std::string_view kMlAccountIpHeader[]{
     "accountID", "ip_address", "txn_count", "first_seen", "last_seen"};
 inline constexpr Table kMlAccountIp{"Account_IP.csv", kMlAccountIpHeader};
-
-inline constexpr std::array kMlTables{kMlParty, kMlTransfer, kMlAccountDevice,
-                                      kMlAccountIp};
 
 } // namespace PhantomLedger::exporter::schema

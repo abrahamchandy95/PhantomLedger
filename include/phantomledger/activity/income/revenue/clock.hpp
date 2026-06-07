@@ -73,9 +73,6 @@ rolledBusinessDay(time::TimePoint monthStart, random::Rng &rng,
 
 } // namespace detail
 
-/// Sample a business-day timestamp within
-/// [monthStart + startDay, monthStart + endDayExclusive),
-/// at an hour within [earliestHour, latestHour].
 [[nodiscard]] inline time::TimePoint businessDayTs(time::TimePoint monthStart,
                                                    random::Rng &rng,
                                                    BusinessDayWindow window) {
