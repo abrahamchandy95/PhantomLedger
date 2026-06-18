@@ -105,7 +105,8 @@ public:
     }
 
     if (out.empty() && !cdf.empty()) {
-      out.push_back(0);
+      out.push_back(static_cast<std::uint32_t>(
+          probability::distributions::sampleIndex(cdf, rng.nextDouble())));
     }
   }
 

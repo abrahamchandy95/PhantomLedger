@@ -13,15 +13,52 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <cstdio>
 #include <exception>
 #include <string>
 #include <string_view>
+#include <sys/resource.h>
 
 namespace {
 
 namespace pl = ::PhantomLedger;
+
+double peakRssMB() {
+  struct rusage ru;
+  getrusage(RUSAGE_SELF, &ru);
+#if defined(__APPLE__)
+  return static_cast<double>(ru.ru_maxrss) / (1024.0 * 1024.0);
+#else
+  return static_cast<double>(ru.ru_maxrss) / 1024.0;
+#endif
+}
+
+class PhaseMonitor {
+public:
+  PhaseMonitor() : start_(Clock::now()), last_(start_) {}
+
+  void mark(std::string_view label) {
+    const auto now = Clock::now();
+    const auto deltaMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - last_)
+            .count();
+    const auto totalMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(now - start_)
+            .count();
+    std::fprintf(
+        stderr, "[phase] %-24s  +%9.1fs  (total %9.1fs)  peakRSS=%9.1f MB\n",
+        std::string{label}.c_str(), static_cast<double>(deltaMs) / 1000.0,
+        static_cast<double>(totalMs) / 1000.0, peakRssMB());
+    last_ = now;
+  }
+
+private:
+  using Clock = std::chrono::steady_clock;
+  Clock::time_point start_;
+  Clock::time_point last_;
+};
 
 void printGenericSummary(const pl::pipeline::SimulationResult &result,
                          const pl::app::RunOptions &opts) {
@@ -115,17 +152,13 @@ int main(int argc, char **argv) {
 
     auto rng = random::Rng::fromSeed(opts.seed);
 
-    // Phase-level progress bar for generation. Always on. The Stage is scoped
-    // to a block so its destructor (which prints the closing newline) runs
-    // before the "Exporting..." status line below, keeping the two from
-    // colliding on the same terminal line. Four phases, in order:
-    // entities, products, infra, transfers.
+    PhaseMonitor mon;
+
     pl::pipeline::SimulationResult result;
     {
       pg::Stage genStage("Generating (entities)", 4);
       const auto onPhase = [&](std::string_view phase) {
-        // phase names the stage that JUST finished; advance the bar, then
-        // relabel it for the phase now starting (best-effort cosmetic).
+        mon.mark(phase);
         genStage.tick();
         genStage.setLabel("Generating (" + std::string{phase} + " done)");
       };
@@ -174,6 +207,8 @@ int main(int argc, char **argv) {
       break;
     }
     }
+
+    mon.mark("export");
 
     pg::status("Done.");
     return 0;

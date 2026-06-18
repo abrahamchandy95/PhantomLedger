@@ -79,8 +79,6 @@ void runTransferStage(SimulationResult &result,
   Transfers out{};
   out.legit = std::move(legitPayload);
   out.fraud.injectedCount = fraudOut.injectedCount;
-  out.ledger.candidate.txns = std::move(candidate.txns);
-  out.ledger.candidate.drops = std::move(candidate.drops);
   out.ledger.posted.txns = std::move(posted.txns);
   out.ledger.posted.book = std::move(posted.book);
   result.transfers = std::move(out);
@@ -156,8 +154,6 @@ void SimulationPipeline::buildEntities(SimulationResult &result) const {
 SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
   SimulationResult out;
 
-  // Helper: notify the observer (if any) that a phase finished. Kept trivial
-  // so the no-observer path is a single null check per phase.
   const auto notify = [&](std::string_view phase) {
     if (onPhase) {
       onPhase(phase);
