@@ -1,8 +1,12 @@
 # PhantomLedger
 
-A synthetic bank transaction generator. PhantomLedger produces realistic, research-grounded retail-bank ledger data — people, accounts, salaries, rent, bills, loans, insurance, credit cards, fraud rings, devices, IPs — suitable for training ML models for mule detection, AML graph analytics, and general transaction-pattern research.
+A synthetic bank transaction generator. PhantomLedger produces realistic, research-grounded retail-bank ledger data.
+People, accounts, salaries, rent, bills, loans, insurance, credit cards, fraud rings, devices, IPs are created
+suitable for training ML models for mule detection, AML graph analytics, and general transaction-pattern research.
 
-The defining property of the data is that **legitimate activity is structurally rich enough that the fraud signal isn't trivially separable**. Every behavioral dimension the ML models need to learn — temporal bursts, high fan-in, device sharing, rapid forwarding — exists in milder form in legitimate accounts. Mules differ in *degree*, not in *kind*.
+The **legitimate activity is structurally rich enough that the fraud signal isn't trivially separable**. Every behavioral
+dimension the ML models need to learn like temporal bursts, high fan-in, device sharing and rapid forwarding also exists 
+in milder form in legitimate accounts. Mules differ in *degree*, not in *kind*.
 
 ## Table of Contents
 
@@ -26,8 +30,9 @@ The defining property of the data is that **legitimate activity is structurally 
 
 ## Overview
 
-PhantomLedger generates a complete bank-internal view of a synthetic population over a configurable time window (default 365 days, 70,000 people). Each person is assigned:
+PhantomLedger generates a complete bank-internal view of a synthetic population over a configurable time window.
 
+Each person is assigned:
 - a persona archetype (student, retired, salaried, freelancer, small business, HNW)
 - one or more accounts, possibly including a credit card and a business operating or brokerage account
 - PII (phone, email, deterministic address)
@@ -36,13 +41,19 @@ PhantomLedger generates a complete bank-internal view of a synthetic population 
 - device(s) and IP(s) with session history
 - a portfolio of financial products (mortgage, auto loan, student loan, tax profile, insurance holdings)
 
-On top of that static universe, the pipeline emits transactions across ~40 canonical channels — salary, rent (five variants by landlord type), merchant purchases, bills, subscriptions, ATM, self-transfers, credit card lifecycle events, government benefits, insurance premiums and claims, loan payments, tax payments, family transfers (allowance, tuition, support, spouse, parent gifts, sibling transfers, grandparent gifts, inheritance), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
+On top of that static universe, the pipeline emits transactions across several channels like
+salary, rent (five variants by landlord type), merchant purchases, bills, subscriptions, ATM,
+self-transfers, credit card lifecycle events, government benefits, insurance premiums and claims,
+loan payments, tax payments, family transfers (allowance, tuition, support, spouse, parent gifts,
+sibling transfers, grandparent gifts, inheritance), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
 
-Output formats include a standard transaction graph (vertices + edges CSVs), an ML-ready schema for mule detection, a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, and a transaction-edges variant of the AML schema with derived graph features.
+Output formats include a standard transaction graph (including vertices + edges in CSVs), an ML-ready schema for mule detection,
+a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, and a transaction-edges variant of the
+AML schema with derived graph features.
 
 ### Design Principles
 
-- **Deterministic.** Every stochastic decision derives from a seed via `blake2b` hashing, so a given `(seed, config)` yields bit-identical output.
+- **Deterministic.** Every decision derives from a keyed stream seed: a string key (top-level seed + stream parts) is hashed with `blake2b`, the first 8 bytes seed a SplitMix64 expansion, and that initializes a PCG64 engine. A given `(seed, config)` yields bit-identical output on a fixed toolchain. The day-to-day spending simulator runs person-partitioned across hardware threads; determinism survives because every stream is seeded from entity keys, never from a shared sequence.
 - **Research-grounded.** Every probability, median, and sigma has a published citation or an explicitly documented modeling choice.
 - **Structurally realistic.** Balance ledgers enforce affordability; overdraft protection is a per-account product with tier-specific fees; LOC interest accrues on a dollar-seconds integral; merchants receive business-checking seeds; credit cards operate as liability accounts.
 - **Strict validation.** Configuration structs participate in a `validate::Report` framework; misconfigured rules surface as `validate::Error` at construction time rather than as silent zeros mid-simulation.
@@ -80,7 +91,6 @@ All targets accept the following overrides:
 | `CONFIG` | `Release` | CMake build type (`Debug`, `Release`, `RelWithDebInfo`). |
 | `BUILD_DIR` | `build` | Out-of-tree build directory. |
 | `TESTS` | `ON` | `PL_BUILD_TESTS` — build the C++ test suite. |
-| `PYTHON` | `OFF` | `PL_BUILD_PYTHON` — build the pybind11 module. |
 | `BIN` | `phantomledger` | Binary name (used by the `run` targets). |
 | `ARGS` | *(empty)* | Arguments forwarded to the binary by `make run` / `make run-fast`. |
 
@@ -89,10 +99,12 @@ Examples:
 ```sh
 make build CONFIG=Debug
 make test BUILD_DIR=build-debug CONFIG=Debug
-make run ARGS="--usecase aml --days 90 --population 5000"
+make run ARGS="--usecase standard --days 120 --population 200000"
 ```
 
-The CMake configure step audits the source list against `src/*.cpp` on every run; adding a translation unit without registering it in `CMakeLists.txt` is a hard configure-time error rather than a silent missing-symbol surprise at link.
+The CMake configure step audits the source list against `src/*.cpp` on every run;
+adding a translation unit without registering it in `CMakeLists.txt` is a hard
+configure-time error rather than a silent missing-symbol surprise at link.
 
 ## Usage
 
@@ -111,7 +123,8 @@ phantomledger [options]
 | `--show-transactions` | off | Also emit the raw `transactions.csv` next to the aggregated edges. |
 | `--help`, `-h` | — | Print the usage message. |
 
-Each `--usecase` writes into its own subdirectory layout, so two runs with the same `--seed` and `--out` produce a coherent multi-format dataset without colliding:
+Each `--usecase` writes into its own subdirectory layout, so two runs with the same `--seed` and `--out`
+produce a coherent multi-format dataset without colliding:
 
 - `standard` → `<out>/*.csv`
 - `mule-ml` → `<out>/ml_ready/*.csv`
@@ -156,7 +169,7 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
    The builder also returns a starting clearing house with per-account balances, overdraft products, and credit limits applied.
 2. Insurance premium and claim events are merged in.
 3. Financial-product obligations (mortgage/auto/student/tax) are emitted through a unified obligation emitter that models late/missed/partial/cure cycles with delinquency clustering.
-4. **Authoritative pre-fraud chronological replay.** The combined stream is sorted by `(timestamp, source, target, amount)` and replayed against the starting ledger. This pass is the only place where balance-gated drops are recorded, and the only place that **emits liquidity events** — overdraft fees (one per courtesy-tap, capped at 3/day) and monthly LOC interest (dollar-seconds integral × APR / seconds-per-year).
+4. **Authoritative pre-fraud chronological replay.** The combined stream is stable-sorted by the composite audit key `(timestamp, source, target, amount, fraud flag, ring, channel, device, IP)` and replayed against the starting ledger. This pass is the only place where balance-gated drops are recorded, and the only place that **emits liquidity events** — overdraft fees (one per courtesy-tap, capped at 3/day) and monthly LOC interest (dollar-seconds integral × APR / seconds-per-year).
 5. **Fraud injection.** Camouflage and illicit transactions are added to the draft ledger based on the target illicit ratio (`targetIllicitP`, default 0.5%).
 6. **Post-fraud replay.** Same ledger replayed with fraud included, but liquidity-event emission disabled so the fees/interest from the first pass aren't double-emitted.
 7. **Account-registry validation.** Every referenced account ID must be in the registry.
@@ -185,6 +198,8 @@ All IDs are fixed-width prefixed strings:
 | `XGOV…` / `XINS…` / `XLND…` / `XIRS…` / `XBNK…` | Government / insurance / lender / IRS / bank servicing | fixed |
 
 **Leading `X` signals external.** `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
+
+These prefixed strings are the export-time rendering only. Internally, every account and counterparty is a 16-byte plain-old-data `entity::Key` `{role, bank, number}`; the simulation core never allocates or compares ID strings.
 
 ### Merchants
 
@@ -283,7 +298,7 @@ Every person gets a portfolio of optional products. Ownership is conditioned on 
 | New | $734 | 0.28 | 68 mo | 8 mo |
 | Used | $525 | 0.32 | 72 mo | 10 mo |
 
-Anchors: Experian Q3 2024 (85% of new cars and 55% of used financed; average payments; average terms). Term range [36, 84] months.
+Anchors: Experian State of the Automotive Finance Market, Q2 2024 (average payments $734 new / $525 used; average terms 68.5 / 67.4 months; ~80% of new and ~36% of used purchases financed). Term range [36, 84] months.
 
 Late rate 4% (broader than the 2.1% 60+ day stat from Fed NY Q4 2024), late window 1–10 days, miss 1%, partial 2%, cure 58%.
 
@@ -359,18 +374,18 @@ Annual rates are converted to a window probability via `1 - (1 - p)^(n_months/12
 
 At issuance the policy draws:
 - APR: lognormal, median 22%, σ = 0.25, clamped to [8%, 36%] (Fed G.19 Q4 2024 average 21.5%).
-- Limit: lognormal around persona credit limit, σ = 0.65 (Experian 2024 avg $29,855).
+- Limit: lognormal around persona credit limit, σ = 0.65. (Context: Experian Q3 2023 average total credit limit across all of a consumer's cards was $29,855; per-card persona limits sit deliberately below that aggregate.)
 - Cycle day: uniform [1, 28].
 - Autopay mode: 40% full, 10% minimum, 50% manual.
 
-Stats anchors: 84% of US adults have ≥1 card (Fed 2023); average balance carried $6,580 (TransUnion Q3 2024).
+Stats anchors: 82% of US adults have ≥1 card (Fed SHED 2023); average balance carried $6,580 (TransUnion Q4 2024).
 
 **Lifecycle generator** processes each billing cycle:
 1. Purchases accumulate on the card.
 2. Each purchase probabilistically produces a refund (0.6%, 1–14 day delay) or chargeback (0.1%, 7–45 day delay) **from the same merchant that received the charge** — no synthetic refund counterparty.
 3. Cycle-end: compute average balance via piecewise-constant integration; if out of grace and there is a debt integral, charge interest at `APR × interval_days / 365`.
 4. Minimum due = max(2% of statement, $25). Autopay mode drives payment amount (full / min / manual). Manual splits into pay-full (35%), partial Beta(2, 5) (30%), minimum (25%), miss (10%). Late by cycle has 8% probability with 1–20 day delay.
-5. Late fee $32 fires if not paid by due date (+grace_days default 25).
+5. Late fee $32 fires if not paid by due date (+grace_days default 25). ($32 is the CARD Act safe-harbor level restored when the CFPB's $8 cap was vacated in April 2025; real schedules step to ~$43 for repeat violations, which the model simplifies to a flat fee.)
 
 ## Banking Mechanics
 
@@ -428,7 +443,7 @@ After any accepted debit that leaves a COURTESY-protected account negative, the 
 | Tier | Median | σ | Example banks |
 |------|--------|---|---------------|
 | ZERO_FEE | $0 | — | Capital One, Citibank, Ally |
-| REDUCED_FEE | $15 | 0.25 | Bank of America (2022 policy) |
+| REDUCED_FEE | $15 | 0.25 | Huntington / BMO / Santander $15 (2022 cuts); BofA $10 |
 | STANDARD_FEE | $35 | 0.20 | Chase $34, Wells $35, US Bank $36, PNC $36 |
 
 Cap: 3 fees per account per calendar day (Wells Fargo / industry standard). Liquidity-event channels bypass the insufficient-funds check so the fee always posts.
@@ -511,7 +526,7 @@ $$
 m_t = \phi \cdot m_{t-1} + (1 - \phi) \cdot 1.0 + \varepsilon_t, \quad \varepsilon_t \sim \mathcal{N}(0, \sigma^2)
 $$
 
-Default φ = 0.45, σ = 0.15, clamped to [0.20, 3.00]. Vilella et al. (2021) measured weekly spending autocorrelations of 0.3–0.6 across personality types. At daily resolution this produces effective weekly persistence of ~0.35–0.50. Grounded in Barabási (2005, *Nature* 435:207–211) on bursty human dynamics; Goh & Barabási (2008, *EPL* 81:48002) formal memory coefficient; Karsai et al. (2012, *Scientific Reports* 2:397) universality across activity domains.
+Default φ = 0.45, σ = 0.15, clamped to [0.20, 3.00]. At daily resolution this produces effective weekly persistence of ~0.35–0.50, a calibration choice rather than a published estimate; Tovanich et al. (2021, *EPJ Data Science* 10:24) motivate treating temporal spending persistence and burstiness as stable per-person features. Grounded in Barabási (2005, *Nature* 435:207–211) on bursty human dynamics; Goh & Barabási (2008, *EPL* 81:48002) formal memory coefficient; Karsai et al. (2012, *Scientific Reports* 2:397) universality across activity domains.
 
 ### Dormancy — Three-State Machine
 
@@ -535,7 +550,7 @@ At month boundaries:
 - `contactAddP` = 0.08 — add a new P2P peer.
 - `contactDropP` = 0.03 — replace a contact slot with a duplicate (reduces effective diversity).
 
-Vilella et al. (2021) found monthly category turnover of 0.15–0.30 is a stable individual trait correlated with Openness to Experience. This matters for mule detection: mules show SUDDEN counterparty explosion (10–25 new counterparties in days, per FATF 2022); legitimate accounts show 1–2 new merchants/month.
+Tovanich et al. (2021) model category diversity, persistence, and monthly turnover as stable per-person spending features, building on work linking Openness to higher contact turnover; the add/drop rates above are modeling choices in that spirit, not estimates from the paper. This matters for mule detection: mules show SUDDEN counterparty explosion (10–25 new counterparties in days, per FATF 2022); legitimate accounts show 1–2 new merchants/month.
 
 ### Seasonal Multipliers
 
@@ -768,7 +783,7 @@ Sticky "current" device/IP per person. Default switch probability 5% per transac
 
 ## Chronological Replay and Screening
 
-The authoritative pre-fraud replay is the single source of truth for balance-gated drops and liquidity-event emission. It sorts by `(timestamp, source, target, amount)` and processes each transaction:
+The authoritative pre-fraud replay is the single source of truth for balance-gated drops and liquidity-event emission. It stable-sorts by the composite audit key `(timestamp, source, target, amount, fraud flag, ring, channel, device, IP)` and processes each transaction:
 
 1. Attempt transfer. On acceptance, check whether the debit tapped a COURTESY-protected account into negative — if so, emit an overdraft-fee transaction (capped at 3/day).
 2. On insufficient-funds rejection, try to find a future inbound credit that would "cure" the shortfall:
@@ -777,7 +792,7 @@ The authoritative pre-fraud replay is the single source of truth for balance-gat
 
    Cure candidates are from the set of channels that legitimately top up an account: salary, government, insurance claims, refunds, self-transfers, incoming family support, etc.
 3. If no cure exists, blind-retry with 55% probability after 18 hours (first retry) or 72 hours (second). Max retries: 1 for card-like, 2 for ACH-like.
-4. For LOC accounts, billing events are pre-generated (23:55 on each account's cycle day) and interleaved into the heap so same-timestamp ties process balance changes before interest computation. Periodically the replay invokes the LOC accrual tracker, which sweeps every enabled account, rolls its dollar-seconds integral forward to the current timestamp using the current cash value, and for any account whose last billing was ≥ 30 days ago emits an interest accrual. The ledger debits interest from cash (bypassing the funding check) and forwards a liquidity event to the sink. Accounts whose `lastBillingTs = 0` are silently anchored on first sweep so billing does not fire retroactively over the simulation's pre-history.
+4. For LOC accounts, billing events are pre-generated (23:55 on each account's cycle day) and merged into the stream ahead of the authoritative stable sort, whose composite audit key orders same-timestamp balance changes before the interest computation. Periodically the replay invokes the LOC accrual tracker, which sweeps every enabled account, rolls its dollar-seconds integral forward to the current timestamp using the current cash value, and for any account whose last billing was ≥ 30 days ago emits an interest accrual. The ledger debits interest from cash (bypassing the funding check) and forwards a liquidity event to the sink. Accounts whose `lastBillingTs = 0` are silently anchored on first sweep so billing does not fire retroactively over the simulation's pre-history.
 
 The post-fraud replay uses the same logic but with liquidity-event emission disabled so overdraft fees and LOC interest already in the stream aren't double-posted.
 
@@ -840,18 +855,18 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Fed Diary of Consumer Payment Choice 2024 — P2P, ATM distributions.
 - Federal Reserve G.19 Q4 2024 — credit card APR (21.5%).
 - Federal Reserve Payments Study 2024 — non-card remote payment medians, transaction frequency distributions.
-- Federal Reserve 2023 Survey — 84% of US adults have ≥1 credit card.
+- Federal Reserve SHED 2023: 82% of US adults have ≥1 credit card.
 - Federal Reserve Bank of New York Q4 2024 — 60+ day auto-loan delinquency (2.1%).
 - NFIB 2023 Small Business Survey — 56% of small businesses bank personal+business at same bank.
 - SoFi / NerdWallet 2025 — overdraft LOC prevalence.
 
 **Credit Cards**
-- Experian 2024 — avg 3.9 cards/holder; avg credit limit $29,855.
-- TransUnion Q3 2024 — avg carried balance $6,580.
+- Experian: avg 3.9 cards/holder (2023 data); avg total credit limit across all cards $29,855 (Q3 2023, aggregate rather than per-card).
+- TransUnion Q4 2024 CIIR: avg carried balance $6,580 (Q2 2024 was $6,329).
 
 **Mortgages & Auto Loans**
-- Census AHS 2023 — median mortgage payment $1,672; 65% of homeowners have mortgages.
-- Experian Q3 2024 — auto loan payments, terms, financing rates.
+- Census AHS 2023: median mortgage payment $1,672 (within the $1,520–$1,960 band across ACS/AHS/NMDB measures). Census/ACS: ~60% of owner-occupied homes carry a mortgage (59.7% in the 2024 ACS).
+- Experian State of the Automotive Finance Market Q2 2024: payments $734 new / $525 used; ~80% of new and ~36% of used purchases financed.
 - Freddie Mac 2024 — effective mortgage duration ~7–10 years.
 - Insurance Information Institute 2024 — 4.2 auto claims/100 drivers/year; avg collision claim $4,700.
 - MBA Q3 2024 — 3.5% of mortgages 30+ days delinquent.
@@ -904,7 +919,7 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Barabási 2005 — "The origin of bursts and heavy tails in human dynamics," *Nature* 435:207–211.
 - Goh & Barabási 2008 — memory coefficient formalization, *EPL* 81:48002.
 - Karsai et al. 2012 — universal correlations in human activity, *Scientific Reports* 2:397.
-- Vilella et al. 2021 — spending persistence & category turnover as stable individual traits (correlated with Openness), *EPJ Data Science* 10:25.
+- Tovanich, Centellegher, Bennacer Seghouani, Gladstone, Matz et al. 2021: "Inferring psychological traits from spending categories and dynamic consumption patterns," *EPJ Data Science* 10:24. Motivates the persistence/burstiness/turnover feature framing; note the paper's own conclusion is that trait inference from spending is hard, and the specific rates used in this repo are modeling choices.
 
 **Fraud & AML**
 - FATF 2022 — "Money Laundering Through Money Mules" typology report.
