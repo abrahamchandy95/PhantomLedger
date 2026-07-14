@@ -9,7 +9,9 @@
 
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include <queue>
+#include <span>
 #include <string>
 #include <utility>
 
@@ -174,7 +176,7 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
 void ChronoReplayAccumulator::extend(
     std::vector<transactions::Transaction> items, bool presorted) {
   if (!presorted) {
-    items = sortForReplay(std::move(items));
+    items = sortForReplay(std::move(items)); // in place; no second copy
   }
 
   if (book_ == nullptr) {
@@ -187,10 +189,8 @@ void ChronoReplayAccumulator::extend(
   buildFutureInboundIndex(items);
   installLiquiditySink();
 
-  std::priority_queue<QueuedItem, std::vector<QueuedItem>, QueueOrder> pending;
-
   for (const auto &txn : items) {
-    pending.push(QueuedItem{
+    pending_.push(QueuedItem{
         .timestamp = txn.timestamp,
         .sequence = nextSequence_++,
         .kind = ItemKind::txn,
@@ -199,9 +199,35 @@ void ChronoReplayAccumulator::extend(
     });
   }
 
-  while (!pending.empty()) {
-    auto item = pending.top();
-    pending.pop();
+  drainPending(std::numeric_limits<std::int64_t>::max());
+
+  if (!items.empty()) {
+    book_->accrueLocInterestThrough(items.back().timestamp + 1);
+  }
+
+  uninstallLiquiditySink();
+  futureInboundTimes_.clear();
+
+  std::sort(txns_.begin(), txns_.end(),
+            [](const transactions::Transaction &a,
+               const transactions::Transaction &b) noexcept {
+              if (a.timestamp != b.timestamp) {
+                return a.timestamp < b.timestamp;
+              }
+              if (a.source != b.source) {
+                return a.source < b.source;
+              }
+              if (a.target != b.target) {
+                return a.target < b.target;
+              }
+              return a.amount < b.amount;
+            });
+}
+
+void ChronoReplayAccumulator::drainPending(std::int64_t emitBoundExcl) {
+  while (!pending_.empty() && pending_.top().timestamp < emitBoundExcl) {
+    auto item = pending_.top();
+    pending_.pop();
 
     book_->accrueLocInterestThrough(item.timestamp);
 
@@ -259,22 +285,66 @@ void ChronoReplayAccumulator::extend(
     auto retried = item.txn;
     retried.timestamp = retryTs;
 
-    pending.push(QueuedItem{
+    pending_.push(QueuedItem{
         .timestamp = retryTs,
-        .sequence = nextSequence_++,
+        .sequence = retrySequence_++,
         .kind = ItemKind::txn,
         .retryCount = item.retryCount + 1,
         .txn = retried,
     });
   }
+}
 
-  if (!items.empty()) {
+void ChronoReplayAccumulator::indexInbound(
+    const transactions::Transaction &txn) {
+  if (isCureInbound(txn)) {
+    futureInboundTimes_[txn.target].push_back(txn.timestamp);
+  }
+}
+
+void ChronoReplayAccumulator::extendChunk(
+    std::span<const transactions::Transaction> items,
+    std::span<const transactions::Transaction> lookahead,
+    std::int64_t emitBoundExcl) {
+  if (book_ == nullptr) {
+    txns_.insert(txns_.end(), items.begin(), items.end());
+    return;
+  }
+
+  futureInboundTimes_.clear();
+  for (const auto &txn : items) {
+    indexInbound(txn);
+  }
+  for (const auto &txn : lookahead) {
+    indexInbound(txn);
+  }
+
+  installLiquiditySink();
+
+  for (const auto &txn : items) {
+    pending_.push(QueuedItem{
+        .timestamp = txn.timestamp,
+        .sequence = nextSequence_++,
+        .kind = ItemKind::txn,
+        .retryCount = 0,
+        .txn = txn,
+    });
+  }
+
+  drainPending(emitBoundExcl);
+
+  const bool finalSlice =
+      emitBoundExcl == std::numeric_limits<std::int64_t>::max();
+  if (finalSlice && !items.empty()) {
     book_->accrueLocInterestThrough(items.back().timestamp + 1);
   }
 
   uninstallLiquiditySink();
   futureInboundTimes_.clear();
+}
 
+std::vector<transactions::Transaction>
+ChronoReplayAccumulator::takeSettledBefore(std::int64_t boundExcl) {
   std::sort(txns_.begin(), txns_.end(),
             [](const transactions::Transaction &a,
                const transactions::Transaction &b) noexcept {
@@ -289,6 +359,19 @@ void ChronoReplayAccumulator::extend(
               }
               return a.amount < b.amount;
             });
+
+  const auto split =
+      std::lower_bound(txns_.begin(), txns_.end(), boundExcl,
+                       [](const transactions::Transaction &t, std::int64_t s) {
+                         return t.timestamp < s;
+                       });
+
+  std::vector<transactions::Transaction> out;
+  out.reserve(static_cast<std::size_t>(split - txns_.begin()));
+  out.insert(out.end(), std::make_move_iterator(txns_.begin()),
+             std::make_move_iterator(split));
+  txns_.erase(txns_.begin(), split);
+  return out;
 }
 
 // ---------------------------------------------------------------------------

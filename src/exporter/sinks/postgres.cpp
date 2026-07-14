@@ -10,8 +10,6 @@ namespace PhantomLedger::exporter::sinks {
 
 namespace {
 
-// Column list mirrors schema::kLedger. The static_assert couples this
-// DDL to the schema header so they cannot drift apart silently.
 constexpr std::string_view kColumns =
     "src_acct, dst_acct, amount, ts, is_fraud, ring_id, "
     "device_id, ip_address, channel";
@@ -20,7 +18,8 @@ constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
                                         "amount     double precision NOT NULL, "
                                         "ts         timestamp        NOT NULL, "
                                         "is_fraud   smallint         NOT NULL, "
-                                        "ring_id    bigint           NOT NULL, "
+                                        "ring_id    bigint, "
+
                                         "device_id  text, "
                                         "ip_address text             NOT NULL, "
                                         "channel    text             NOT NULL";

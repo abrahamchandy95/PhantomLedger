@@ -7,6 +7,8 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstdint>
+#include <queue>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -150,6 +152,13 @@ public:
   void extend(std::vector<transactions::Transaction> items,
               bool presorted = false);
 
+  void extendChunk(std::span<const transactions::Transaction> items,
+                   std::span<const transactions::Transaction> lookahead,
+                   std::int64_t emitBoundExcl);
+
+  [[nodiscard]] std::vector<transactions::Transaction>
+  takeSettledBefore(std::int64_t boundExcl);
+
   [[nodiscard]] const std::vector<transactions::Transaction> &
   txns() const noexcept {
     return txns_;
@@ -227,6 +236,13 @@ private:
   ReplayDropLedger drops_;
 
   std::uint64_t nextSequence_ = 0;
+
+  std::uint64_t retrySequence_ = (1ULL << 62U);
+
+  std::priority_queue<QueuedItem, std::vector<QueuedItem>, QueueOrder> pending_;
+
+  void drainPending(std::int64_t emitBoundExcl);
+  void indexInbound(const transactions::Transaction &txn);
 
   std::unordered_map<entity::Key, std::vector<std::int64_t>>
       futureInboundTimes_;

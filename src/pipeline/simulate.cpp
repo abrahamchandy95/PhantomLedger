@@ -1,5 +1,7 @@
 #include "phantomledger/pipeline/simulate.hpp"
 
+#include "phantomledger/pipeline/chunk/schedule.hpp"
+
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
@@ -56,10 +58,14 @@ void runTransferStage(SimulationResult &result,
   const auto &cps = result.counterparties;
 
   auto legitPayload = stage.buildLegit(rng, people, holdings, cps);
+
+  const auto replaySchedule = pipeline::chunk::Schedule::partition(
+      stage.legit().runScope().window, pipeline::chunk::Strategy{});
   auto productStream =
       stage.mergeProducts(rng, holdings, std::move(legitPayload.txns));
-  auto candidate = stage.ledger().preFraud(
-      *legitPayload.openingBook.initialBook, rng, std::move(productStream));
+  auto candidate =
+      stage.ledger().preFraudChunked(*legitPayload.openingBook.initialBook, rng,
+                                     std::move(productStream), replaySchedule);
 
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
@@ -70,12 +76,9 @@ void runTransferStage(SimulationResult &result,
                           legitPayload.counterparties));
 
   const auto injectedCount = fraudOut.injected.size();
-  auto mergedTxns = std::move(candidate.txns);
-  mergedTxns.insert(mergedTxns.end(),
-                    std::make_move_iterator(fraudOut.injected.begin()),
-                    std::make_move_iterator(fraudOut.injected.end()));
-  auto posted = stage.ledger().postFraud(
-      rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
+  auto posted = stage.ledger().postFraudChunkedMerged(
+      rng, *legitPayload.openingBook.initialBook, std::move(candidate.txns),
+      std::move(fraudOut.injected), replaySchedule);
 
   validateTransactionAccounts(holdings.accounts.lookup, posted.txns);
 

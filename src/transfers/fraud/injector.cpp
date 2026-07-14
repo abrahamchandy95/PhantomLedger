@@ -1,5 +1,11 @@
 #include "phantomledger/transfers/fraud/injector.hpp"
 
+#include "phantomledger/entities/infra/devices.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
+
+#include <unordered_set>
+
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 #include "phantomledger/transfers/fraud/playbook.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
@@ -170,12 +176,108 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
 
 [[nodiscard]] InjectionOutput
 assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
-               std::vector<transactions::Transaction> &&illicitTxns) {
+               std::vector<transactions::Transaction> &&illicitTxns,
+               std::vector<transactions::Transaction> &&unauthorizedTxns) {
   auto injected = std::move(camoTxns);
-  injected.reserve(injected.size() + illicitTxns.size());
+  injected.reserve(injected.size() + illicitTxns.size() +
+                   unauthorizedTxns.size());
   injected.insert(injected.end(), std::make_move_iterator(illicitTxns.begin()),
                   std::make_move_iterator(illicitTxns.end()));
+  injected.insert(injected.end(),
+                  std::make_move_iterator(unauthorizedTxns.begin()),
+                  std::make_move_iterator(unauthorizedTxns.end()));
   return InjectionOutput{.injected = std::move(injected)};
+}
+
+// Transaction-fraud planning: victims are legitimate customers, never
+// ring participants, each plan owning one attacker device+IP session.
+[[nodiscard]] std::vector<typologies::unauthorized::CompromisePlan>
+buildCompromisePlans(random::Rng &rng, time::Window window,
+                     const entity::account::Registry &registry,
+                     const entity::account::Ownership &ownership,
+                     std::span<const Plan> ringPlans, std::int64_t budget) {
+  std::vector<typologies::unauthorized::CompromisePlan> plans;
+  if (budget <= 0) {
+    return plans;
+  }
+
+  std::unordered_set<entity::Key> excluded;
+  for (const auto &ring : ringPlans) {
+    excluded.insert(ring.fraudAccounts.begin(), ring.fraudAccounts.end());
+    excluded.insert(ring.shellFraudAccounts.begin(),
+                    ring.shellFraudAccounts.end());
+    excluded.insert(ring.muleAccounts.begin(), ring.muleAccounts.end());
+    excluded.insert(ring.victimAccounts.begin(), ring.victimAccounts.end());
+  }
+
+  const auto offsets = ownership.byPersonOffset.size();
+  const std::size_t personLimit = offsets >= 2 ? offsets - 1 : 0;
+  if (personLimit == 0) {
+    return plans;
+  }
+  const detail::AccountView view{registry, ownership};
+
+  const auto pickAccount = [&](entity::Key avoid) -> entity::Key {
+    for (int attempt = 0; attempt < 32; ++attempt) {
+      const auto person =
+          static_cast<entity::PersonId>(rng.choiceIndex(personLimit));
+      const auto key = detail::primaryKey(view, person);
+      if (key != avoid && !excluded.contains(key)) {
+        return key;
+      }
+    }
+    return avoid; // caller treats "== avoid" as failure
+  };
+
+  const auto windowStart = window.start.time_since_epoch().count();
+  const auto usableDays = std::max(1, window.days - 8);
+
+  std::int64_t remaining = budget;
+  std::uint64_t seq = 0;
+  while (remaining > 0) {
+    const bool cardRail = rng.coin(0.72);
+    const auto target = static_cast<std::int32_t>(std::min<std::int64_t>(
+        remaining, cardRail
+                       ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
+                       : 2 + static_cast<std::int64_t>(rng.choiceIndex(4))));
+
+    const auto victim = pickAccount(entity::Key{});
+    if (victim == entity::Key{}) {
+      break; // population too small or too excluded; give up cleanly
+    }
+    entity::Key drop{};
+    if (!cardRail) {
+      drop = pickAccount(victim);
+      if (drop == victim) {
+        break;
+      }
+    }
+
+    const auto startDay = static_cast<std::int64_t>(
+        rng.choiceIndex(static_cast<std::size_t>(usableDays)));
+    const auto intraDay =
+        3600 + static_cast<std::int64_t>(rng.nextDouble() * 72000.0);
+    const auto spanSeconds = static_cast<std::int32_t>(
+        3600 * (cardRail ? 6 + rng.choiceIndex(66) : 2 + rng.choiceIndex(30)));
+
+    plans.push_back(typologies::unauthorized::CompromisePlan{
+        .victimAccount = victim,
+        .dropAccount = drop,
+        .device = devices::Identity{.ownerType = devices::OwnerType::ring,
+                                    .ownerId = 0xACE00000ULL + seq,
+                                    .slot = 0},
+        .ip = network::Ipv4::pack(198, 51, 100,
+                                  static_cast<std::uint8_t>(1 + (seq % 250))),
+        .cardRail = cardRail,
+        .startTs = windowStart + startDay * 86400 + intraDay,
+        .spanSeconds = spanSeconds,
+        .targetEvents = target,
+    });
+
+    remaining -= target;
+    ++seq;
+  }
+  return plans;
 }
 
 } // namespace
@@ -231,7 +333,21 @@ Injector::inject(time::Window window,
   auto illicitTxns = generateIllicit(
       illicitCtx, behavior_, std::span<const Plan>(ringPlans), targetIllicit);
 
-  return assembleOutput(std::move(camoTxns), std::move(illicitTxns));
+  const auto txnFraudBudget = calculateIllicitBudget(
+      static_cast<double>(rings_.profile->limits.targetTxnFraudP),
+      static_cast<std::int64_t>(baseTxns.size() + camoTxns.size() +
+                                illicitTxns.size()));
+  const auto compromisePlans = buildCompromisePlans(
+      *execution.rng, window, *accounts_.registry, *accounts_.ownership,
+      std::span<const Plan>(ringPlans), txnFraudBudget);
+  auto unauthorizedTxns = typologies::unauthorized::generate(
+      illicitCtx,
+      std::span<const typologies::unauthorized::CompromisePlan>(
+          compromisePlans),
+      txnFraudBudget);
+
+  return assembleOutput(std::move(camoTxns), std::move(illicitTxns),
+                        std::move(unauthorizedTxns));
 }
 
 } // namespace PhantomLedger::transfers::fraud

@@ -128,6 +128,7 @@ set(PL_FRAUD_SOURCES
     src/transfers/fraud/typologies/cycle.cpp
     src/transfers/fraud/typologies/scatter_gather.cpp
     src/transfers/fraud/typologies/bipartite.cpp
+    src/transfers/fraud/typologies/unauthorized.cpp
 )
 
 set(PL_PRODUCTS_SOURCES

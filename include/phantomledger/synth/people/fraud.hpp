@@ -41,6 +41,7 @@ struct Fraud {
   struct Limits {
     double maxParticipationP = 0.06;
     double targetIllicitP = 0.005;
+    double targetTxnFraudP = 0.0012;
   } limits;
 
   [[nodiscard]] int maxParticipants(int population) const {

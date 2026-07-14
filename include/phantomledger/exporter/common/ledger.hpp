@@ -36,8 +36,13 @@ inline void writePaymentCells(::PhantomLedger::exporter::csv::Writer &w,
 // is_fraud, ring_id
 inline void writeFraudCells(::PhantomLedger::exporter::csv::Writer &w,
                             const tx_ns::Transaction &tx) {
-  const std::uint32_t ringId = tx.fraud.ringId.value_or(0U);
-  w.cell(static_cast<std::uint32_t>(tx.fraud.flag)).cell(ringId);
+  w.cell(static_cast<std::uint32_t>(tx.fraud.flag));
+  if (tx.fraud.ringId.has_value()) {
+    w.cell(*tx.fraud.ringId);
+  } else {
+    // no ring
+    w.cell(std::string_view{});
+  }
 }
 
 // device_id, ip_address, channel

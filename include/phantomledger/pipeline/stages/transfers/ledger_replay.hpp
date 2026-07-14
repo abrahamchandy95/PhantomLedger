@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/transfers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
@@ -43,6 +44,22 @@ public:
   [[nodiscard]] Posted postFraud(random::Rng &rng,
                                  const clearing::Ledger &initialBook,
                                  std::vector<Transaction> merged) const;
+
+  [[nodiscard]] Candidate
+  preFraudChunked(const clearing::Ledger &initialBook, random::Rng &rng,
+                  std::vector<Transaction> sorted,
+                  const pipeline::chunk::Schedule &schedule) const;
+
+  [[nodiscard]] Posted
+  postFraudChunked(random::Rng &rng, const clearing::Ledger &initialBook,
+                   std::vector<Transaction> merged,
+                   const pipeline::chunk::Schedule &schedule) const;
+
+  [[nodiscard]] Posted
+  postFraudChunkedMerged(random::Rng &rng, const clearing::Ledger &initialBook,
+                         std::vector<Transaction> candidatesSorted,
+                         std::vector<Transaction> fraud,
+                         const pipeline::chunk::Schedule &schedule) const;
 
 private:
   Ordering ordering_{};

@@ -2,6 +2,9 @@
 
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
+#include <algorithm>
+#include <limits>
+#include <span>
 #include <utility>
 
 namespace PhantomLedger::pipeline::stages::transfers {
@@ -57,6 +60,178 @@ LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
   out.txns = accumulator.takeTxns();
   out.book = std::move(bookCopy);
 
+  return out;
+}
+
+namespace {
+
+void replayChunked(legit_ledger::ChronoReplayAccumulator &accumulator,
+                   const std::vector<LedgerReplay::Transaction> &rows,
+                   const ::PhantomLedger::pipeline::chunk::Schedule &schedule,
+                   std::vector<LedgerReplay::Transaction> &out) {
+  using Txn = LedgerReplay::Transaction;
+  const auto tsBefore = [](const Txn &t, std::int64_t s) noexcept {
+    return t.timestamp < s;
+  };
+
+  out.reserve(rows.size());
+  std::size_t begin = 0;
+  const std::size_t spanCount = schedule.size();
+
+  for (std::size_t k = 0; k < spanCount; ++k) {
+    const auto &span = schedule[k];
+    const bool last = (k + 1 == spanCount);
+
+    std::size_t end = rows.size();
+    std::size_t lookEnd = rows.size();
+    std::int64_t bound = std::numeric_limits<std::int64_t>::max();
+
+    if (!last) {
+      bound = span.activeWindow.endExcl().time_since_epoch().count();
+      end = static_cast<std::size_t>(
+          std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(begin),
+                           rows.end(), bound, tsBefore) -
+          rows.begin());
+      const auto lookSec = span.lookaheadBoundExcl.time_since_epoch().count();
+      lookEnd = static_cast<std::size_t>(
+          std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(end),
+                           rows.end(), lookSec, tsBefore) -
+          rows.begin());
+    }
+
+    accumulator.extendChunk(
+        std::span<const Txn>{rows.data() + begin, end - begin},
+        std::span<const Txn>{rows.data() + end, lookEnd - end}, bound);
+
+    auto settled = accumulator.takeSettledBefore(bound);
+    out.insert(out.end(), std::make_move_iterator(settled.begin()),
+               std::make_move_iterator(settled.end()));
+    begin = end;
+  }
+}
+
+} // namespace
+
+LedgerReplay::Candidate LedgerReplay::preFraudChunked(
+    const ::PhantomLedger::clearing::Ledger &initialBook,
+    ::PhantomLedger::random::Rng &rng, std::vector<Transaction> sorted,
+    const ::PhantomLedger::pipeline::chunk::Schedule &schedule) const {
+  auto bookCopy =
+      std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
+
+  legit_ledger::ChronoReplayAccumulator accumulator(
+      bookCopy.get(), &rng, ordering_.funding,
+      /*emitLiquidityEvents=*/true);
+
+  Candidate out;
+  replayChunked(accumulator, sorted, schedule, out.txns);
+  out.drops.byReason = accumulator.dropCounts();
+  out.drops.byChannel = accumulator.dropCountsByChannel();
+  return out;
+}
+
+LedgerReplay::Posted LedgerReplay::postFraudChunked(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::clearing::Ledger &initialBook,
+    std::vector<Transaction> merged,
+    const ::PhantomLedger::pipeline::chunk::Schedule &schedule) const {
+  auto bookCopy =
+      std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
+
+  legit_ledger::ChronoReplayAccumulator accumulator(
+      bookCopy.get(), &rng, ordering_.funding,
+      /*emitLiquidityEvents=*/false);
+
+  const auto rows = legit_ledger::sortForReplay(std::move(merged));
+
+  Posted out;
+  replayChunked(accumulator, rows, schedule, out.txns);
+  out.book = std::move(bookCopy);
+  return out;
+}
+
+LedgerReplay::Posted LedgerReplay::postFraudChunkedMerged(
+    ::PhantomLedger::random::Rng &rng,
+    const ::PhantomLedger::clearing::Ledger &initialBook,
+    std::vector<Transaction> candidatesSorted, std::vector<Transaction> fraud,
+    const ::PhantomLedger::pipeline::chunk::Schedule &schedule) const {
+  auto bookCopy =
+      std::make_unique<::PhantomLedger::clearing::Ledger>(initialBook);
+
+  legit_ledger::ChronoReplayAccumulator accumulator(
+      bookCopy.get(), &rng, ordering_.funding,
+      /*emitLiquidityEvents=*/false);
+
+  const auto &cand = candidatesSorted; // replay-sorted (preFraud output)
+  const auto fr = legit_ledger::sortForReplay(std::move(fraud));
+
+  const auto tsBefore = [](const Transaction &t, std::int64_t s) noexcept {
+    return t.timestamp < s;
+  };
+  const auto sliceTo = [&tsBefore](const std::vector<Transaction> &rows,
+                                   std::size_t from, std::int64_t sec) {
+    return static_cast<std::size_t>(
+        std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(from),
+                         rows.end(), sec, tsBefore) -
+        rows.begin());
+  };
+
+  Posted out;
+  out.txns.reserve(cand.size() + fr.size());
+
+  std::vector<Transaction> slice;
+  std::vector<Transaction> look;
+  std::size_t cb = 0;
+  std::size_t fb = 0;
+  const std::size_t spanCount = schedule.size();
+
+  for (std::size_t k = 0; k < spanCount; ++k) {
+    const auto &span = schedule[k];
+    const bool last = (k + 1 == spanCount);
+
+    std::size_t cEnd = cand.size();
+    std::size_t fEnd = fr.size();
+    std::size_t cLook = cand.size();
+    std::size_t fLook = fr.size();
+    std::int64_t bound = std::numeric_limits<std::int64_t>::max();
+
+    if (!last) {
+      bound = span.activeWindow.endExcl().time_since_epoch().count();
+      cEnd = sliceTo(cand, cb, bound);
+      fEnd = sliceTo(fr, fb, bound);
+      const auto lookSec = span.lookaheadBoundExcl.time_since_epoch().count();
+      cLook = sliceTo(cand, cEnd, lookSec);
+      fLook = sliceTo(fr, fEnd, lookSec);
+    }
+
+    slice.clear();
+    slice.reserve((cEnd - cb) + (fEnd - fb));
+    std::merge(cand.begin() + static_cast<std::ptrdiff_t>(cb),
+               cand.begin() + static_cast<std::ptrdiff_t>(cEnd),
+               fr.begin() + static_cast<std::ptrdiff_t>(fb),
+               fr.begin() + static_cast<std::ptrdiff_t>(fEnd),
+               std::back_inserter(slice), legit_ledger::detail::fundsLess);
+
+    // Cure discovery only indexes the lookahead; order is irrelevant.
+    look.clear();
+    look.reserve((cLook - cEnd) + (fLook - fEnd));
+    look.insert(look.end(), cand.begin() + static_cast<std::ptrdiff_t>(cEnd),
+                cand.begin() + static_cast<std::ptrdiff_t>(cLook));
+    look.insert(look.end(), fr.begin() + static_cast<std::ptrdiff_t>(fEnd),
+                fr.begin() + static_cast<std::ptrdiff_t>(fLook));
+
+    accumulator.extendChunk(
+        std::span<const Transaction>{slice.data(), slice.size()},
+        std::span<const Transaction>{look.data(), look.size()}, bound);
+
+    auto settled = accumulator.takeSettledBefore(bound);
+    out.txns.insert(out.txns.end(), std::make_move_iterator(settled.begin()),
+                    std::make_move_iterator(settled.end()));
+    cb = cEnd;
+    fb = fEnd;
+  }
+
+  out.book = std::move(bookCopy);
   return out;
 }
 
