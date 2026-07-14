@@ -4,6 +4,7 @@
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/fraud/types.hpp"
 
 #include <compare>
 #include <cstdint>
@@ -16,10 +17,9 @@ struct Fraud {
   std::uint8_t flag = 0;
   std::optional<std::uint32_t> ringId;
 
-  // Discrete "chain" identifier — one chain corresponds to one typology
-  // operation (e.g., one layering event, one mule's funnel burst, one
-  // structuring batch). A ring's transactions may span multiple chains.
   std::optional<std::uint32_t> chainId;
+
+  fraud::FraudType type = fraud::FraudType::none;
 
   constexpr std::strong_ordering operator<=>(const Fraud &) const = default;
 };

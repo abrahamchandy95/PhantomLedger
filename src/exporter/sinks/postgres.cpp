@@ -11,7 +11,7 @@ namespace PhantomLedger::exporter::sinks {
 namespace {
 
 constexpr std::string_view kColumns =
-    "src_acct, dst_acct, amount, ts, is_fraud, ring_id, "
+    "src_acct, dst_acct, amount, ts, is_fraud, ring_id, fraud_type, "
     "device_id, ip_address, channel";
 constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
                                         "dst_acct   text             NOT NULL, "
@@ -19,11 +19,11 @@ constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
                                         "ts         timestamp        NOT NULL, "
                                         "is_fraud   smallint         NOT NULL, "
                                         "ring_id    bigint, "
-
+                                        "fraud_type text, "
                                         "device_id  text, "
                                         "ip_address text             NOT NULL, "
                                         "channel    text             NOT NULL";
-static_assert(schema::kLedger.header.size() == 9,
+static_assert(schema::kLedger.header.size() == 10,
               "kLedger changed; update sinks::Postgres DDL and columns");
 
 } // namespace

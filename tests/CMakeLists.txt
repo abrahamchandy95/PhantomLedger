@@ -68,3 +68,10 @@ add_dependencies(test_run_golden phantomledger)
 set_tests_properties(test_run_golden PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 300)
+
+# ---------------------------------------------------------------------
+# Fraud amount sampler calibration (registered after test_run_golden so
+# the end-to-end golden keeps its historical test number)
+# ---------------------------------------------------------------------
+
+pl_add_test(test_fraud_amounts)

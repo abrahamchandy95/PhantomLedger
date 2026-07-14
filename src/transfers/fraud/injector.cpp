@@ -178,6 +178,12 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
 assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
                std::vector<transactions::Transaction> &&illicitTxns,
                std::vector<transactions::Transaction> &&unauthorizedTxns) {
+  for (auto &tx : illicitTxns) {
+    tx.fraud.type = ::PhantomLedger::fraud::FraudType::launderRing;
+  }
+  for (auto &tx : unauthorizedTxns) {
+    tx.fraud.type = ::PhantomLedger::fraud::FraudType::txnFraudSolo;
+  }
   auto injected = std::move(camoTxns);
   injected.reserve(injected.size() + illicitTxns.size() +
                    unauthorizedTxns.size());
@@ -189,8 +195,6 @@ assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
   return InjectionOutput{.injected = std::move(injected)};
 }
 
-// Transaction-fraud planning: victims are legitimate customers, never
-// ring participants, each plan owning one attacker device+IP session.
 [[nodiscard]] std::vector<typologies::unauthorized::CompromisePlan>
 buildCompromisePlans(random::Rng &rng, time::Window window,
                      const entity::account::Registry &registry,

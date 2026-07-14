@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace PhantomLedger::fraud {
 
@@ -31,5 +32,29 @@ inline constexpr auto kTypologies = std::to_array<Typology>({
 });
 
 inline constexpr std::size_t kTypologyCount = kTypologies.size();
+
+enum class FraudType : std::uint8_t {
+  none = 0,
+  launderRing = 1,
+  launderSolo = 2,
+  txnFraudSolo = 3,
+  txnFraudRing = 4,
+};
+
+[[nodiscard]] constexpr std::string_view fraudTypeName(FraudType t) noexcept {
+  switch (t) {
+  case FraudType::none:
+    return {};
+  case FraudType::launderRing:
+    return "launder_ring";
+  case FraudType::launderSolo:
+    return "launder_solo";
+  case FraudType::txnFraudSolo:
+    return "txn_fraud_solo";
+  case FraudType::txnFraudRing:
+    return "txn_fraud_ring";
+  }
+  return {};
+}
 
 } // namespace PhantomLedger::fraud

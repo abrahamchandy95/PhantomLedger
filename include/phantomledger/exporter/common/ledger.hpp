@@ -20,6 +20,7 @@ namespace t = ::PhantomLedger::time;
 namespace net = ::PhantomLedger::network;
 namespace ch = ::PhantomLedger::channels;
 namespace tx_ns = ::PhantomLedger::transactions;
+namespace fr = ::PhantomLedger::fraud;
 
 // src_acct, dst_acct
 inline void writeRoutingCells(::PhantomLedger::exporter::csv::Writer &w,
@@ -33,16 +34,15 @@ inline void writePaymentCells(::PhantomLedger::exporter::csv::Writer &w,
   w.cell(tx.amount).cell(t::formatTimestamp(t::fromEpochSeconds(tx.timestamp)));
 }
 
-// is_fraud, ring_id
 inline void writeFraudCells(::PhantomLedger::exporter::csv::Writer &w,
                             const tx_ns::Transaction &tx) {
   w.cell(static_cast<std::uint32_t>(tx.fraud.flag));
   if (tx.fraud.ringId.has_value()) {
     w.cell(*tx.fraud.ringId);
   } else {
-    // no ring
     w.cell(std::string_view{});
   }
+  w.cell(fr::fraudTypeName(tx.fraud.type));
 }
 
 // device_id, ip_address, channel

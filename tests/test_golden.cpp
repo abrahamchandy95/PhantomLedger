@@ -33,6 +33,7 @@ Transaction makeTx(std::uint64_t src, std::uint64_t dst, double amount,
   if (fraud) {
     tx.fraud.ringId = 7;
     tx.fraud.chainId = 3;
+    tx.fraud.type = fraud::FraudType::launderRing;
   }
   tx.session.deviceId = devices::Identity::person(src, 1);
   tx.session.ipAddress =

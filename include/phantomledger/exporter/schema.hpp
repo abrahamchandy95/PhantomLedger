@@ -80,8 +80,8 @@ inline constexpr std::string_view kHasPaidHeader[]{
 inline constexpr Table kHasPaid{"HAS_PAID.csv", kHasPaidHeader};
 
 inline constexpr std::string_view kLedgerHeader[]{
-    "src_acct", "dst_acct",  "amount",     "ts",     "is_fraud",
-    "ring_id",  "device_id", "ip_address", "channel"};
+    "src_acct", "dst_acct",   "amount",    "ts",         "is_fraud",
+    "ring_id",  "fraud_type", "device_id", "ip_address", "channel"};
 inline constexpr Table kLedger{"transactions.csv", kLedgerHeader};
 
 // Standard-path temporal flow aggregates (fixed-width bin sequence per pair).

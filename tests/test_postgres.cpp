@@ -185,8 +185,8 @@ int main() {
     for (std::size_t i = 0; i < pgRows.size(); ++i) {
       const auto a = splitCsv(fileRows[i]);
       const auto b = splitCsv(pgRows[i]);
-      assert(a.size() == 9 && b.size() == 9);
-      for (std::size_t f = 0; f < 9; ++f) {
+      assert(a.size() == 10 && b.size() == 10);
+      for (std::size_t f = 0; f < 10; ++f) {
         if (f == 2) {
           assert(std::stod(a[f]) == std::stod(b[f]));
         } else {
