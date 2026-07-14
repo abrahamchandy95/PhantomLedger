@@ -116,6 +116,13 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
     ledger->createHub(idx);
   }
 
+  for (const auto &key : plan.counterparties().fundingHubs) {
+    const auto it = accounts_.lookup->byId.find(key);
+    if (it != accounts_.lookup->byId.end()) {
+      ledger->createHub(static_cast<clearing::Ledger::Index>(it->second));
+    }
+  }
+
   if (protections_.portfolios != nullptr) {
     const auto personCount = static_cast<std::uint32_t>(plan.persons().size());
     const auto monthlyBurdens = buildMonthlyBurdens(

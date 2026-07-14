@@ -143,6 +143,9 @@ struct CounterpartyAccess {
   std::unordered_set<entity::Key> hubSet;
 
   std::vector<entity::Key> employers;
+
+  std::vector<entity::Key> fundingHubs;
+
   std::vector<entity::Key> landlords;
   std::unordered_map<entity::Key, entity::landlord::Type> landlordTypeOf;
 

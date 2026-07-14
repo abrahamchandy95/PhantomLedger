@@ -208,6 +208,17 @@ buildCounterpartyAccess(random::Rng &rng, const Population &pop,
     plan.employers.push_back(fallbackAcct);
   }
 
+  if (directory != nullptr) {
+    plan.fundingHubs.reserve(directory->employers.accounts.all.size() +
+                             directory->clients.accounts.all.size());
+    plan.fundingHubs.insert(plan.fundingHubs.end(),
+                            directory->employers.accounts.all.begin(),
+                            directory->employers.accounts.all.end());
+    plan.fundingHubs.insert(plan.fundingHubs.end(),
+                            directory->clients.accounts.all.begin(),
+                            directory->clients.accounts.all.end());
+  }
+
   auto landlords =
       resolveLandlords(counterparties, plan.hubAccounts, fallbackAcct);
   plan.landlords = std::move(landlords.ids);
