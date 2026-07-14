@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <cassert>
 #include <queue>
-#include <span>
 #include <string>
 #include <utility>
 
@@ -175,7 +174,7 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
 void ChronoReplayAccumulator::extend(
     std::vector<transactions::Transaction> items, bool presorted) {
   if (!presorted) {
-    items = sortForReplay(std::span<const transactions::Transaction>(items));
+    items = sortForReplay(std::move(items));
   }
 
   if (book_ == nullptr) {

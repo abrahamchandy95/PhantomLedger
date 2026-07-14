@@ -69,8 +69,11 @@ void runTransferStage(SimulationResult &result,
                       stages::transfers::FraudEmission::legitCounterparties(
                           legitPayload.counterparties));
 
-  auto mergedTxns = std::move(fraudOut.txns);
-  mergedTxns.reserve(mergedTxns.size() + mergedTxns.size() / 20);
+  const auto injectedCount = fraudOut.injected.size();
+  auto mergedTxns = std::move(candidate.txns);
+  mergedTxns.insert(mergedTxns.end(),
+                    std::make_move_iterator(fraudOut.injected.begin()),
+                    std::make_move_iterator(fraudOut.injected.end()));
   auto posted = stage.ledger().postFraud(
       rng, *legitPayload.openingBook.initialBook, std::move(mergedTxns));
 
@@ -78,7 +81,7 @@ void runTransferStage(SimulationResult &result,
 
   Transfers out{};
   out.legit = std::move(legitPayload);
-  out.fraud.injectedCount = fraudOut.injectedCount;
+  out.fraud.injectedCount = injectedCount;
   out.ledger.posted.txns = std::move(posted.txns);
   out.ledger.posted.book = std::move(posted.book);
   result.transfers = std::move(out);

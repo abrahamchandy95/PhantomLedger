@@ -169,33 +169,13 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
 }
 
 [[nodiscard]] InjectionOutput
-passthrough(std::span<const transactions::Transaction> baseTxns) {
-  return InjectionOutput{
-      .txns = std::vector<transactions::Transaction>(baseTxns.begin(),
-                                                     baseTxns.end()),
-      .injectedCount = 0,
-  };
-}
-
-[[nodiscard]] InjectionOutput
-assembleOutput(std::span<const transactions::Transaction> baseTxns,
-               std::vector<transactions::Transaction> &&camoTxns,
+assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
                std::vector<transactions::Transaction> &&illicitTxns) {
-  const auto camoCount = camoTxns.size();
-  const auto illicitCount = illicitTxns.size();
-
-  std::vector<transactions::Transaction> out;
-  out.reserve(baseTxns.size() + camoCount + illicitCount);
-  out.assign(baseTxns.begin(), baseTxns.end());
-  out.insert(out.end(), std::make_move_iterator(camoTxns.begin()),
-             std::make_move_iterator(camoTxns.end()));
-  out.insert(out.end(), std::make_move_iterator(illicitTxns.begin()),
-             std::make_move_iterator(illicitTxns.end()));
-
-  return InjectionOutput{
-      .txns = std::move(out),
-      .injectedCount = camoCount + illicitCount,
-  };
+  auto injected = std::move(camoTxns);
+  injected.reserve(injected.size() + illicitTxns.size());
+  injected.insert(injected.end(), std::make_move_iterator(illicitTxns.begin()),
+                  std::make_move_iterator(illicitTxns.end()));
+  return InjectionOutput{.injected = std::move(injected)};
 }
 
 } // namespace
@@ -219,7 +199,7 @@ Injector::inject(time::Window window,
   requireInjectorPointers(rings_, accounts_);
 
   if (rings_.topology->rings.empty()) {
-    return passthrough(baseTxns);
+    return {};
   }
 
   Execution execution = makeExecution(services_);
@@ -251,7 +231,7 @@ Injector::inject(time::Window window,
   auto illicitTxns = generateIllicit(
       illicitCtx, behavior_, std::span<const Plan>(ringPlans), targetIllicit);
 
-  return assembleOutput(baseTxns, std::move(camoTxns), std::move(illicitTxns));
+  return assembleOutput(std::move(camoTxns), std::move(illicitTxns));
 }
 
 } // namespace PhantomLedger::transfers::fraud

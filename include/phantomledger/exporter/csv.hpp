@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <ostream>
 #include <span>
 #include <string>
 #include <string_view>
@@ -15,6 +16,11 @@ namespace PhantomLedger::exporter::csv {
 class Writer {
 public:
   explicit Writer(const std::filesystem::path &path);
+
+  // Write into an externally-owned stream (e.g. a COPY pipe). The
+  // caller keeps ownership and buffering responsibility; the stream
+  // must outlive the Writer.
+  explicit Writer(std::ostream &out);
 
   Writer(const Writer &) = delete;
   Writer &operator=(const Writer &) = delete;
@@ -57,14 +63,19 @@ public:
 
   void endRow();
 
-  void flush() { out_.flush(); }
+  void flush() { out().flush(); }
 
 private:
   void writeSeparatorIfNeeded();
   void writeEscaped(std::string_view s);
   [[nodiscard]] static bool needsQuoting(std::string_view s) noexcept;
 
-  std::ofstream out_;
+  [[nodiscard]] std::ostream &out() noexcept {
+    return external_ != nullptr ? *external_ : file_;
+  }
+
+  std::ofstream file_;
+  std::ostream *external_ = nullptr;
   std::vector<char> buffer_; // owned 1 MiB streambuf backing store
   bool firstCell_ = true;
 };

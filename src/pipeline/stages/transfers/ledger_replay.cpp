@@ -2,7 +2,6 @@
 
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
-#include <span>
 #include <utility>
 
 namespace PhantomLedger::pipeline::stages::transfers {
@@ -51,9 +50,8 @@ LedgerReplay::postFraud(::PhantomLedger::random::Rng &rng,
       bookCopy.get(), &rng, ordering_.funding,
       /*emitLiquidityEvents=*/false);
 
-  auto sorted = legit_ledger::sortForReplay(
-      std::span<const Transaction>{merged.data(), merged.size()});
-  accumulator.extend(std::move(sorted), /*presorted=*/true);
+  accumulator.extend(legit_ledger::sortForReplay(std::move(merged)),
+                     /*presorted=*/true);
 
   Posted out;
   out.txns = accumulator.takeTxns();

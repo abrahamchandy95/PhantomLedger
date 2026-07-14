@@ -1,39 +1,112 @@
-.venv/
-.cache/
-venv/
-env/
-# python bytecode / caches
-__pycache__/
-*.py[cod]
-*.pyd
+# =====================================================================
+# PhantomLedger .gitignore
+# Stack: C++23 / CMake / ctest, developed primarily on macOS.
+# Comments must stay on their own lines: git parses trailing text
+# after a pattern as part of the pattern.
+# =====================================================================
 
-# build / packaging
-build/
-dist/
-*.egg-info/
-.eggs/
-pip-wheel-metadata/
+# ---------------------------------------------------------------------
+# Build trees
+# ---------------------------------------------------------------------
+build*/
+cmake-build-*/
 
-# test / tooling caches
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
+# ---------------------------------------------------------------------
+# CMake artifacts (protects against accidental in-source configure)
+# ---------------------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+CTestTestfile.cmake
+CMakeUserPresets.json
+compile_commands.json
+_deps/
 
-# outputs (generated data)
-out/
-out_*/
-*.csv
+# ---------------------------------------------------------------------
+# CTest logs (created when ctest runs from the source root)
+# ---------------------------------------------------------------------
+Testing/
+DartConfiguration.tcl
 
-# logs
+# ---------------------------------------------------------------------
+# Compiled objects, libraries, executables
+# ---------------------------------------------------------------------
+*.o
+*.obj
+*.a
+*.la
+*.lo
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# ---------------------------------------------------------------------
+# Precompiled headers
+# ---------------------------------------------------------------------
+*.gch
+*.pch
+
+# ---------------------------------------------------------------------
+# Debug, profiling, and crash artifacts
+# ---------------------------------------------------------------------
+*.dSYM/
+*.pdb
+*.gcda
+*.gcno
+*.gcov
+callgrind.out.*
+perf.data
+perf.data.old
+core
+core.*
+vgcore.*
+
+# ---------------------------------------------------------------------
+# Generated run output (regenerable synthetic data)
+# ---------------------------------------------------------------------
+out_bank_data/
 *.log
 
-# OS / editor
+# ---------------------------------------------------------------------
+# Commit-message scratch used with `git commit -F`
+# ---------------------------------------------------------------------
+/commit_message.txt
+
+# ---------------------------------------------------------------------
+# Tooling caches. __pycache__ appears from helper scripts/tooling even
+# though the shipped binary is pure C++ (see PL_BUILD_PYTHON).
+# ---------------------------------------------------------------------
+.cache/
+__pycache__/
+
+# ---------------------------------------------------------------------
+# macOS filesystem litter
+# ---------------------------------------------------------------------
 .DS_Store
-Thumbs.db
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# ---------------------------------------------------------------------
+# Editors and IDEs
+# ---------------------------------------------------------------------
 .vscode/
 .idea/
-out_bank_data/
-.clangd
-.gitignore
+.vs/
+*.swp
+*.swo
+*~
+
+# ---------------------------------------------------------------------
+# Deliberately tracked (no rule above may match these):
+#   tests/golden_run.b2sum  - the per-machine end-to-end baseline;
+#                             behavior itself belongs in version
+#                             control.
+# ---------------------------------------------------------------------

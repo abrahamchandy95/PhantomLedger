@@ -7,21 +7,12 @@
 #include <cstring>
 
 namespace PhantomLedger::crypto::blake2b {
+
+using detail::State;
+
 namespace {
 
-constexpr std::size_t kBlockBytes = 128;
-constexpr std::size_t kMaxDigestBytes = 64;
-constexpr std::size_t kMaxKeyBytes = 64;
 constexpr std::size_t kRounds = 12;
-
-struct State {
-  std::array<std::uint64_t, 8> chain{};
-  std::array<std::uint64_t, 2> count{};
-  std::array<std::uint64_t, 2> last{};
-  std::array<std::uint8_t, kBlockBytes> buf{};
-  std::size_t bufSize = 0;
-  std::size_t outSize = 0;
-};
 
 constexpr std::array<std::uint64_t, 8> kInitialVector{
     0x6A09E667F3BCC908ULL, 0xBB67AE8584CAA73BULL, 0x3C6EF372FE94F82BULL,
@@ -131,8 +122,12 @@ void compress(State &state, const std::uint8_t *block) noexcept {
   }
 }
 
-[[nodiscard]] bool start(State &state, std::size_t outSize, const void *key,
-                         std::size_t keySize) noexcept {
+} // namespace
+
+namespace detail {
+
+bool start(State &state, std::size_t outSize, const void *key,
+           std::size_t keySize) noexcept {
   if (outSize == 0 || outSize > kMaxDigestBytes) {
     return false;
   }
@@ -160,8 +155,7 @@ void compress(State &state, const std::uint8_t *block) noexcept {
   return true;
 }
 
-[[nodiscard]] bool absorb(State &state, const void *data,
-                          std::size_t size) noexcept {
+bool absorb(State &state, const void *data, std::size_t size) noexcept {
   if (size > 0 && data == nullptr) {
     return false;
   }
@@ -185,7 +179,7 @@ void compress(State &state, const std::uint8_t *block) noexcept {
   return true;
 }
 
-[[nodiscard]] bool finish(State &state, void *output) noexcept {
+bool finish(State &state, void *output) noexcept {
   if (state.outSize > 0 && output == nullptr) {
     return false;
   }
@@ -216,24 +210,26 @@ void compress(State &state, const std::uint8_t *block) noexcept {
   return true;
 }
 
-} // namespace
+void wipe(State &state) noexcept { secureZero(&state, sizeof(state)); }
+
+} // namespace detail
 
 bool digest(const void *data, std::size_t size, void *output,
             std::size_t outSize, const void *key,
             std::size_t keySize) noexcept {
   State state{};
 
-  if (!start(state, outSize, key, keySize)) {
+  if (!detail::start(state, outSize, key, keySize)) {
     return false;
   }
 
-  if (!absorb(state, data, size)) {
-    secureZero(&state, sizeof(state));
+  if (!detail::absorb(state, data, size)) {
+    detail::wipe(state);
     return false;
   }
 
-  const bool ok = finish(state, output);
-  secureZero(&state, sizeof(state));
+  const bool ok = detail::finish(state, output);
+  detail::wipe(state);
   return ok;
 }
 

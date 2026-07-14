@@ -25,10 +25,41 @@ FetchContent_MakeAvailable(faker-cxx)
 
 set(BUILD_TESTING ON CACHE BOOL "" FORCE)
 
+# PostgreSQL (libpq)
+if(APPLE AND NOT DEFINED PostgreSQL_ROOT)
+    find_program(PL_HOMEBREW brew)
+    if(PL_HOMEBREW)
+        foreach(formula libpq postgresql@17 postgresql@16 postgresql@15 postgresql)
+            execute_process(
+                COMMAND ${PL_HOMEBREW} --prefix ${formula}
+                OUTPUT_VARIABLE PL_BREW_PG_PREFIX
+                OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET
+                RESULT_VARIABLE PL_BREW_PG_RESULT
+            )
+            if(PL_BREW_PG_RESULT EQUAL 0
+               AND EXISTS "${PL_BREW_PG_PREFIX}/include")
+                set(PostgreSQL_ROOT "${PL_BREW_PG_PREFIX}")
+                message(STATUS "PostgreSQL hint from Homebrew: ${PostgreSQL_ROOT}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    if(NOT DEFINED PostgreSQL_ROOT
+       AND EXISTS "/Applications/Postgres.app/Contents/Versions/latest/include")
+        set(PostgreSQL_ROOT
+            "/Applications/Postgres.app/Contents/Versions/latest")
+        message(STATUS "PostgreSQL hint from Postgres.app: ${PostgreSQL_ROOT}")
+    endif()
+endif()
+
+find_package(PostgreSQL REQUIRED)
+
 set(PL_PRIMITIVES_SOURCES
     src/primitives/time/almanac.cpp
     src/primitives/time/calendar.cpp
     src/primitives/crypto/blake2b.cpp
+    src/primitives/postgres/connection.cpp
     src/primitives/random/rng.cpp
 )
 
@@ -157,6 +188,7 @@ set(PL_APP_SOURCES
 set(PL_EXPORTER_SOURCES
     src/exporter/csv.cpp
     src/exporter/labels.cpp
+    src/exporter/sinks/postgres.cpp
     src/exporter/standard/export.cpp
     src/exporter/mule_ml/canonical.cpp
     src/exporter/mule_ml/export.cpp
@@ -180,6 +212,7 @@ set(PL_INFRA_SYNTH_SOURCES
 
 set(PL_PIPELINE_SOURCES
     src/pipeline/simulate.cpp
+    src/pipeline/chunk/schedule.cpp
     src/pipeline/stages/entities.cpp
     src/pipeline/stages/infra.cpp
     src/pipeline/stages/products.cpp
@@ -259,6 +292,7 @@ add_library(phantomledger_core STATIC ${PL_ALL_SOURCES})
 target_include_directories(phantomledger_core PUBLIC include)
 target_compile_features(phantomledger_core PUBLIC cxx_std_23)
 target_link_libraries(phantomledger_core PUBLIC faker-cxx)
+target_link_libraries(phantomledger_core PRIVATE PostgreSQL::PostgreSQL)
 
 if(MSVC)
     target_compile_options(phantomledger_core PRIVATE /W4 /permissive-)

@@ -10,14 +10,6 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-// ---------------------------------------------------------------------------
-// Replay-key helpers
-// ---------------------------------------------------------------------------
-//
-// These are deliberately free functions, not part of TxnStreams, so the
-// builder can use them on raw vectors during the bootstrap-time replay
-// passes (where the streams object isn't around yet).
-
 namespace detail {
 
 /// Funds-transfer replay key — (timestamp, source, target, amount).
@@ -44,8 +36,6 @@ timestampLess(const transactions::Transaction &a,
 
 } // namespace detail
 
-/// Return a vector of `txns` sorted by the full replay key. Mirrors
-/// `transfers.legit.ledger.posting.sort_for_replay`.
 [[nodiscard]] inline std::vector<transactions::Transaction>
 sortForReplay(std::span<const transactions::Transaction> txns) {
   std::vector<transactions::Transaction> out(txns.begin(), txns.end());
@@ -53,8 +43,13 @@ sortForReplay(std::span<const transactions::Transaction> txns) {
   return out;
 }
 
+[[nodiscard]] inline std::vector<transactions::Transaction>
+sortForReplay(std::vector<transactions::Transaction> &&txns) {
+  std::ranges::sort(txns, detail::fundsLess);
+  return std::move(txns);
+}
+
 /// Merge a new (unsorted) batch into an already-replay-sorted prefix.
-/// The result is replay-sorted. Both arguments may be empty.
 [[nodiscard]] inline std::vector<transactions::Transaction>
 mergeReplaySorted(std::vector<transactions::Transaction> existing,
                   std::span<const transactions::Transaction> newItems) {
@@ -77,17 +72,10 @@ mergeReplaySorted(std::vector<transactions::Transaction> existing,
   return merged;
 }
 
-// ---------------------------------------------------------------------------
-// TxnStreams
-// ---------------------------------------------------------------------------
-
 class TxnStreams {
 public:
   TxnStreams() = default;
 
-  /// Optional capacity hint when the caller can estimate the total
-  /// transaction volume. Skipping this is fine; reserving avoids a few
-  /// reallocations in long pipelines.
   void reserve(std::size_t total) {
     candidates_.reserve(total);
     screened_.reserve(total);
@@ -109,8 +97,6 @@ public:
     return replayReady_;
   }
 
-  /// Move-out accessors, used at the end of the build to hand off
-  /// without a copy. After moving out, the streams must not be reused.
   [[nodiscard]] std::vector<transactions::Transaction> &&
   takeCandidates() noexcept {
     return std::move(candidates_);
@@ -135,9 +121,6 @@ public:
     // ---- screened: in-place merge by timestamp ----
     addSortedView(screened_, items, detail::timestampLess);
 
-    // ---- replayReady: in-place merge by full funds-transfer key ----
-    // Take ownership of `items` for this final view since the caller's
-    // vector is no longer needed afterwards.
     addSortedView(replayReady_, std::move(items), detail::fundsLess);
   }
 

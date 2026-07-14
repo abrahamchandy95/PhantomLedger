@@ -31,7 +31,7 @@ openWriteOrThrow(const std::filesystem::path &path) {
   return out;
 }
 
-template <class T> void writeIntegerTo(std::ofstream &out, T v) {
+template <class T> void writeIntegerTo(std::ostream &out, T v) {
   // 24 chars is enough for any 64-bit integer including sign and NUL.
   std::array<char, 24> buf{};
   const auto [end, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);
@@ -41,7 +41,7 @@ template <class T> void writeIntegerTo(std::ofstream &out, T v) {
   out.write(buf.data(), end - buf.data());
 }
 
-void writeDoubleTo(std::ofstream &out, double v) {
+void writeDoubleTo(std::ostream &out, double v) {
   // 32 chars is enough for any normal double in shortest-round-trip form.
   std::array<char, 32> buf{};
   const auto [end, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);
@@ -65,10 +65,12 @@ void writeDoubleTo(std::ofstream &out, double v) {
 // -----------------------------------------------------------------------
 
 Writer::Writer(const std::filesystem::path &path)
-    : out_{openWriteOrThrow(path)}, buffer_(kStreamBufferBytes) {
-  out_.rdbuf()->pubsetbuf(buffer_.data(),
-                          static_cast<std::streamsize>(buffer_.size()));
+    : file_{openWriteOrThrow(path)}, buffer_(kStreamBufferBytes) {
+  file_.rdbuf()->pubsetbuf(buffer_.data(),
+                           static_cast<std::streamsize>(buffer_.size()));
 }
+
+Writer::Writer(std::ostream &out) : external_{&out} {}
 
 // -----------------------------------------------------------------------
 // Quoting
@@ -80,31 +82,31 @@ bool Writer::needsQuoting(std::string_view s) noexcept {
 
 void Writer::writeEscaped(std::string_view s) {
   if (!needsQuoting(s)) {
-    out_.write(s.data(), static_cast<std::streamsize>(s.size()));
+    out().write(s.data(), static_cast<std::streamsize>(s.size()));
     return;
   }
 
-  out_.put('"');
+  out().put('"');
   std::size_t pos = 0;
   while (pos < s.size()) {
     const std::size_t next = s.find('"', pos);
     if (next == std::string_view::npos) {
-      out_.write(s.data() + pos, static_cast<std::streamsize>(s.size() - pos));
+      out().write(s.data() + pos, static_cast<std::streamsize>(s.size() - pos));
       break;
     }
-    out_.write(s.data() + pos, static_cast<std::streamsize>(next - pos));
-    out_.put('"');
-    out_.put('"');
+    out().write(s.data() + pos, static_cast<std::streamsize>(next - pos));
+    out().put('"');
+    out().put('"');
     pos = next + 1;
   }
-  out_.put('"');
+  out().put('"');
 }
 
 void Writer::writeSeparatorIfNeeded() {
   if (firstCell_) {
     firstCell_ = false;
   } else {
-    out_.put(',');
+    out().put(',');
   }
 }
 
@@ -125,19 +127,19 @@ Writer &Writer::cellEmpty() {
 
 Writer &Writer::cell(std::int64_t v) {
   writeSeparatorIfNeeded();
-  writeIntegerTo(out_, v);
+  writeIntegerTo(out(), v);
   return *this;
 }
 
 Writer &Writer::cell(std::uint64_t v) {
   writeSeparatorIfNeeded();
-  writeIntegerTo(out_, v);
+  writeIntegerTo(out(), v);
   return *this;
 }
 
 Writer &Writer::cell(double v) {
   writeSeparatorIfNeeded();
-  writeDoubleTo(out_, v);
+  writeDoubleTo(out(), v);
   return *this;
 }
 
@@ -146,7 +148,7 @@ Writer &Writer::cell(bool v) {
   static constexpr std::string_view kTrue{"True"};
   static constexpr std::string_view kFalse{"False"};
   const auto s = v ? kTrue : kFalse;
-  out_.write(s.data(), static_cast<std::streamsize>(s.size()));
+  out().write(s.data(), static_cast<std::streamsize>(s.size()));
   return *this;
 }
 
@@ -166,8 +168,8 @@ void Writer::writeHeader(std::initializer_list<std::string_view> header) {
 }
 
 void Writer::endRow() {
-  out_.put('\r');
-  out_.put('\n');
+  out().put('\r');
+  out().put('\n');
   firstCell_ = true;
 }
 
