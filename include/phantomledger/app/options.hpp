@@ -62,6 +62,8 @@ struct RunOptions {
   std::uint64_t seed = 0xDEADBEEFULL;
   std::filesystem::path outDir = "out_bank_data";
   bool showTransactions = false;
+
+  std::string pgConninfo = "dbname=phantomledger";
   ::PhantomLedger::time::CalendarDate startDate{2025, 1, 1};
 };
 

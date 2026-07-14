@@ -187,15 +187,7 @@ void SpenderEmissionLoop::PaymentEmitter::bindRateSampler(
   rateSampler_ = sampler;
 }
 
-bool SpenderEmissionLoop::PaymentEmitter::accept(
-    const routing::EmissionResult &result) {
-  return ledgerView_
-      .transfer(result.srcIdx, result.dstIdx, result.draft.amount,
-                result.draft.channel)
-      .accepted();
-}
-
-std::optional<transactions::Transaction>
+std::optional<SpenderEmissionLoop::PaymentEmitter::Emitted>
 SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                                              const actors::Event &event) {
   auto &stats = diag::spending::Stats::instance();
@@ -218,11 +210,11 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
     return std::nullopt;
   }
 
-  auto txn = factory_.make(maybeResult->draft);
+  auto txn = factory_.rebound(rng).make(maybeResult->draft);
 
-  const auto decision = ledgerView_.transfer(
-      maybeResult->srcIdx, maybeResult->dstIdx, maybeResult->draft.amount,
-      maybeResult->draft.channel);
+  const auto decision =
+      ledgerView_.decide(maybeResult->srcIdx, maybeResult->dstIdx,
+                         maybeResult->draft.amount, maybeResult->draft.channel);
 
   if (decision.rejected()) {
     stats.recordTransferRejected(0u, event.spender->personIndex, personaBucket,
@@ -231,7 +223,14 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
   }
 
   stats.recordEmitted(slot, personaBucket);
-  return txn;
+  return Emitted{
+      .txn = std::move(txn),
+      .posting = {.srcIdx = maybeResult->srcIdx,
+                  .dstIdx = maybeResult->dstIdx,
+                  .amount = maybeResult->draft.amount,
+                  .channel = maybeResult->draft.channel,
+                  .timestamp = 0},
+  };
 }
 
 SpenderEmissionLoop::SpenderEmissionLoop(
@@ -241,15 +240,17 @@ SpenderEmissionLoop::SpenderEmissionLoop(
   payments_.bindRateSampler(&rates_);
 }
 
-void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
-                              random::Rng &rng,
-                              std::vector<transactions::Transaction> &outTxns) {
+void SpenderEmissionLoop::run(
+    std::size_t begin, std::size_t end, std::span<random::Rng> spenderRngs,
+    std::vector<transactions::Transaction> &outTxns,
+    std::vector<clearing::Ledger::Posting> &outPostings) {
   const auto &spenders = population_.spenders;
 
   for (std::size_t i = begin; i < end; ++i) {
     const auto &prepared = spenders[i];
     const auto &spender = prepared.spender;
     const auto personIndex = spender.personIndex;
+    auto &rng = spenderRngs[i];
 
     const double liquidityMult = rates_.liquidityMultiplierFor(prepared);
     const double combinedMult = rates_.combinedMultiplierFor(personIndex);
@@ -289,8 +290,8 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
           .amountFactor = amountFactor,
       };
 
-      auto maybeTxn = payments_.tryEmit(rng, event);
-      if (!maybeTxn.has_value()) {
+      auto maybeEmitted = payments_.tryEmit(rng, event);
+      if (!maybeEmitted.has_value()) {
         if (++consecutiveFailures >= kMaxConsecutiveFailures) {
           break;
         }
@@ -298,7 +299,8 @@ void SpenderEmissionLoop::run(std::size_t begin, std::size_t end,
       }
 
       consecutiveFailures = 0;
-      outTxns.push_back(std::move(*maybeTxn));
+      outTxns.push_back(std::move(maybeEmitted->txn));
+      outPostings.push_back(maybeEmitted->posting);
       ++accepted;
     }
 

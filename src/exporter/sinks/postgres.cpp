@@ -21,7 +21,7 @@ constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
                                         "ts         timestamp        NOT NULL, "
                                         "is_fraud   smallint         NOT NULL, "
                                         "ring_id    bigint           NOT NULL, "
-                                        "device_id  text             NOT NULL, "
+                                        "device_id  text, "
                                         "ip_address text             NOT NULL, "
                                         "channel    text             NOT NULL";
 static_assert(schema::kLedger.header.size() == 9,
@@ -42,11 +42,10 @@ Postgres::Postgres(Options options)
 
   const auto table = conn_.escapeIdentifier(options_.table);
   if (options_.createTable) {
+    conn_.exec("DROP TABLE IF EXISTS " + table);
     conn_.exec(std::string{"CREATE "} + (options_.unlogged ? "UNLOGGED " : "") +
-               "TABLE IF NOT EXISTS " + table + " (" + std::string{kColumnDdl} +
-               ")");
-  }
-  if (options_.truncateFirst) {
+               "TABLE " + table + " (" + std::string{kColumnDdl} + ")");
+  } else if (options_.truncateFirst) {
     conn_.exec("TRUNCATE " + table);
   }
 }
@@ -75,8 +74,8 @@ void Postgres::endSpan(const pipeline::chunk::Span &) {
   if (!copy_.has_value()) {
     throw std::logic_error("sinks::Postgres: endSpan without beginSpan");
   }
-  stream_.flush(); // drain CallbackStreambuf into the COPY pipe
-  copy_->done();   // commits: one transaction per span
+  stream_.flush();
+  copy_->done();
   copy_.reset();
   ++spans_;
 }

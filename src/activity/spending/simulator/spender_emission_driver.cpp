@@ -5,13 +5,13 @@
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 
+#include <algorithm>
 #include <array>
 #include <charconv>
 #include <cstdint>
 #include <iterator>
 #include <stdexcept>
 #include <string_view>
-#include <utility>
 
 namespace PhantomLedger::activity::spending::simulator {
 namespace {
@@ -80,7 +80,7 @@ void SpenderEmissionDriver::prepare(double txnsPerMonth) {
   routing_ = nullptr;
 
   prepareThreadStates(txnsPerMonth);
-  prepareLockArray();
+  prepareSpenderRngs();
 }
 
 void SpenderEmissionDriver::bindRun(
@@ -142,18 +142,8 @@ const PreparedRun::Routing &SpenderEmissionDriver::routing() const {
 void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   threadStates_.clear();
 
-  const auto &threadCfg = threading();
-  if (!threadCfg.parallel()) {
-    return;
-  }
-
-  if (threadCfg.rngFactory == nullptr) {
-    throw std::runtime_error(
-        "spending::SpenderEmissionDriver: parallel emission requires "
-        "Threads::rngFactory");
-  }
-
-  threadStates_.reserve(threadCfg.count);
+  const auto threadCount = std::max(threading().count, std::uint32_t{1});
+  threadStates_.reserve(threadCount);
 
   // Estimate transactions per thread for upfront vector reservation.
   const auto days = static_cast<double>(market().bounds().days);
@@ -161,25 +151,31 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   const auto months = days / 30.0;
   const auto expectedTxns = people * months * txnsPerMonth * kTxnReserveSlack;
   const auto perThreadReserve =
-      static_cast<std::size_t>(expectedTxns / threadCfg.count);
+      static_cast<std::size_t>(expectedTxns / threadCount);
 
-  std::array<char, 16> idBuf{};
-  for (std::uint32_t t = 0; t < threadCfg.count; ++t) {
-    const auto idStr = renderUInt(idBuf, t);
-    auto threadRng = threadCfg.rngFactory->rng({"spending_thread", idStr});
-    threadStates_.emplace_back(std::move(threadRng));
+  for (std::uint32_t t = 0; t < threadCount; ++t) {
+    threadStates_.emplace_back();
     threadStates_.back().txns.reserve(perThreadReserve);
   }
 }
 
-void SpenderEmissionDriver::prepareLockArray() {
-  const auto &threadCfg = threading();
-  if (!threadCfg.parallel() || ledger() == nullptr) {
-    lockArray_.resize(0);
-    return;
+void SpenderEmissionDriver::prepareSpenderRngs() {
+  if (threading().rngFactory == nullptr) {
+    throw std::runtime_error(
+        "spending::SpenderEmissionDriver: emission requires "
+        "Threads::rngFactory (per-spender streams)");
   }
 
-  lockArray_.resize(static_cast<std::size_t>(ledger()->size()));
+  const auto count = market().population().count();
+  spenderRngs_.clear();
+  spenderRngs_.reserve(count);
+
+  std::array<char, 16> idBuf{};
+  for (std::uint32_t i = 0; i < count; ++i) {
+    const auto idStr = renderUInt(idBuf, i);
+    spenderRngs_.push_back(
+        threading().rngFactory->rng({"spender_stream", idStr}));
+  }
 }
 
 void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
@@ -190,75 +186,68 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
   auto &dst = state.txns();
 
   std::size_t total = dst.size();
+  std::size_t totalPostings = dayPostings_.size();
   for (const auto &threadState : threadStates_) {
     total += threadState.txns.size();
+    totalPostings += threadState.postings.size();
   }
   dst.reserve(total);
+  dayPostings_.reserve(totalPostings);
 
   for (auto &threadState : threadStates_) {
     dst.insert(dst.end(), std::make_move_iterator(threadState.txns.begin()),
                std::make_move_iterator(threadState.txns.end()));
     threadState.txns.clear();
+
+    dayPostings_.insert(dayPostings_.end(), threadState.postings.begin(),
+                        threadState.postings.end());
+    threadState.postings.clear();
   }
 }
 
-void SpenderEmissionDriver::emitSerial(
-    const PreparedRun::Population &population, RunState &state,
-    const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  Gate gate{ledger(), nullptr};
+void SpenderEmissionDriver::applyDayPostings() {
+  auto *book = ledger();
+  if (book != nullptr) {
 
-  SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
-                                         rulesFrom(behavior_)};
-  rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
-
-  SpenderEmissionLoop::PaymentEmitter payments{market(), routing(), factory(),
-                                               gate};
-  SpenderEmissionLoop loop{population, rates, payments};
-
-  loop.run(0, population.spenders.size(), rng(), state.txns());
-}
-
-void SpenderEmissionDriver::emitParallel(
-    const PreparedRun::Population &population, RunState &state,
-    const actors::DayFrame &frame, std::span<const double> dailyMultipliers) {
-  const auto &threadCfg = threading();
-  const auto spenderCount = population.spenders.size();
-  const auto &routingSnapshot = routing();
-
-  runParallel(threadCfg.count, [&](std::uint32_t threadIdx) {
-    const auto range = partitionRange(spenderCount, threadCfg.count, threadIdx);
-    if (range.size() == 0) {
-      return;
+    for (const auto &posting : dayPostings_) {
+      (void)book->transfer(posting.srcIdx, posting.dstIdx, posting.amount,
+                           posting.channel);
     }
-
-    auto &threadState = threadStates_[threadIdx];
-    const auto threadFactory = factory().rebound(threadState.rng);
-
-    Gate gate{ledger(), &lockArray_};
-
-    SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
-                                           rulesFrom(behavior_)};
-    rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
-
-    SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                                 threadFactory, gate};
-    SpenderEmissionLoop loop{population, rates, payments};
-
-    loop.run(range.begin, range.end, threadState.rng, threadState.txns);
-  });
+  }
+  dayPostings_.clear();
 }
 
 void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
                                     RunState &state,
                                     const actors::DayFrame &frame,
                                     std::span<const double> dailyMultipliers) {
-  if (!threading().parallel()) {
-    emitSerial(population, state, frame, dailyMultipliers);
-    return;
-  }
+  const auto threadCount = std::max(threading().count, std::uint32_t{1});
+  const auto spenderCount = population.spenders.size();
+  const auto &routingSnapshot = routing();
+  const Gate gate{ledger()};
 
-  emitParallel(population, state, frame, dailyMultipliers);
+  runParallel(threadCount, [&](std::uint32_t threadIdx) {
+    const auto range = partitionRange(spenderCount, threadCount, threadIdx);
+    if (range.size() == 0) {
+      return;
+    }
+
+    auto &threadState = threadStates_[threadIdx];
+
+    SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
+                                           rulesFrom(behavior_)};
+    rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
+
+    SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
+                                                 factory(), gate};
+    SpenderEmissionLoop loop{population, rates, payments};
+
+    loop.run(range.begin, range.end, std::span<random::Rng>{spenderRngs_},
+             threadState.txns, threadState.postings);
+  });
+
   mergeThreadTxns(state);
+  applyDayPostings();
 }
 
 void SpenderEmissionDriver::finish(RunState &state) { mergeThreadTxns(state); }

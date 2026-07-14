@@ -7,7 +7,6 @@
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
 #include "phantomledger/math/counts.hpp"
-#include "phantomledger/primitives/concurrent/account_lock_array.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
@@ -71,14 +70,9 @@ private:
   [[nodiscard]] const PreparedRun::Routing &routing() const;
 
   void prepareThreadStates(double txnsPerMonth);
-  void prepareLockArray();
-  void emitSerial(const PreparedRun::Population &population, RunState &state,
-                  const actors::DayFrame &frame,
-                  std::span<const double> dailyMultipliers);
-  void emitParallel(const PreparedRun::Population &population, RunState &state,
-                    const actors::DayFrame &frame,
-                    std::span<const double> dailyMultipliers);
+  void prepareSpenderRngs();
   void mergeThreadTxns(RunState &state);
+  void applyDayPostings();
 
   Behavior behavior_{};
   const market::Market *market_ = nullptr;
@@ -89,7 +83,8 @@ private:
   const PreparedRun::Budget *budget_ = nullptr;
   const PreparedRun::Routing *routing_ = nullptr;
   std::vector<ThreadLocalState> threadStates_{};
-  primitives::concurrent::AccountLockArray lockArray_{};
+  std::vector<random::Rng> spenderRngs_{};
+  std::vector<clearing::Ledger::Posting> dayPostings_{};
 };
 
 } // namespace PhantomLedger::activity::spending::simulator

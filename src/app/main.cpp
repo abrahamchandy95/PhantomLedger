@@ -5,9 +5,15 @@
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/aml_txn_edges/export.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
+#include "phantomledger/exporter/sinks/golden.hpp"
+#include "phantomledger/exporter/sinks/postgres.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
+#include "phantomledger/pipeline/chunk/flush.hpp"
+#include "phantomledger/pipeline/chunk/schedule.hpp"
+#include "phantomledger/pipeline/chunk/sink.hpp"
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
+#include "phantomledger/primitives/postgres/csv_loader.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -16,6 +22,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <string>
 #include <string_view>
@@ -166,6 +173,98 @@ int main(int argc, char **argv) {
           pipeline::simulate(rng, window, entityConfig, opts.seed, onPhase);
     } // genStage destructor prints trailing newline here
 
+    std::string pgConninfo = opts.pgConninfo;
+    if (const char *env = std::getenv("PL_PG")) {
+      pgConninfo = env;
+    }
+    bool pgUp = true;
+    long long manifestId = -1;
+    try {
+      pl::postgres::Connection probe{pgConninfo};
+    } catch (const std::exception &err) {
+      pgUp = false;
+      std::fprintf(stderr,
+                   "warning: PostgreSQL unavailable, continuing file-only "
+                   "(set PL_PG to override the conninfo): %s",
+                   err.what());
+    }
+
+    std::string streamDigest;
+    std::uint64_t streamRows = 0;
+    {
+      const auto &posted = result.transfers.ledger.posted.txns;
+
+      const auto schedule = pipeline::chunk::Schedule::partition(
+          window, pipeline::chunk::Strategy{});
+      exporter::sinks::Golden golden;
+
+      if (pgUp) {
+        pl::postgres::Connection conn{pgConninfo};
+        conn.exec("CREATE TABLE IF NOT EXISTS pl_run_manifest ("
+                  " id bigserial PRIMARY KEY,"
+                  " started timestamptz NOT NULL DEFAULT now(),"
+                  " finished timestamptz,"
+                  " seed text NOT NULL,"
+                  " population integer NOT NULL,"
+                  " days integer NOT NULL,"
+                  " start_date text NOT NULL,"
+                  " txn_rows bigint,"
+                  " stream_digest text)");
+        conn.exec("CREATE TABLE IF NOT EXISTS pl_run_spans ("
+                  " manifest_id bigint NOT NULL,"
+                  " span_index integer NOT NULL,"
+                  " txn_rows bigint NOT NULL,"
+                  " finished timestamptz NOT NULL DEFAULT now(),"
+                  " PRIMARY KEY (manifest_id, span_index))");
+        {
+          char sql[512];
+          std::snprintf(sql, sizeof(sql),
+                        "INSERT INTO pl_run_manifest "
+                        "(seed, population, days, start_date) VALUES "
+                        "('%llu', %d, %lld, '%04d-%02u-%02u') RETURNING id",
+                        static_cast<unsigned long long>(opts.seed),
+                        opts.population, static_cast<long long>(opts.days),
+                        opts.startDate.year, opts.startDate.month,
+                        opts.startDate.day);
+          manifestId = std::atoll(conn.queryValue(sql).c_str());
+        }
+
+        exporter::sinks::Postgres pgSink({.conninfo = pgConninfo});
+        pipeline::chunk::Tee tee{golden, pgSink};
+        pipeline::chunk::flushPartitioned(
+            schedule,
+            std::span<const pl::transactions::Transaction>{posted.data(),
+                                                           posted.size()},
+            tee,
+            [&conn, manifestId](const pipeline::chunk::Span &span,
+                                std::uint64_t rowsInSpan) {
+              char sql[256];
+              std::snprintf(sql, sizeof(sql),
+                            "INSERT INTO pl_run_spans "
+                            "(manifest_id, span_index, txn_rows) "
+                            "VALUES (%lld, %u, %llu)",
+                            manifestId, span.index,
+                            static_cast<unsigned long long>(rowsInSpan));
+              conn.exec(sql);
+            });
+        std::printf("PostgreSQL: %llu rows -> table 'transactions' "
+                    "(%zu spans)\n",
+                    static_cast<unsigned long long>(pgSink.rowsWritten()),
+                    schedule.size());
+      } else {
+        pipeline::chunk::flushPartitioned(
+            schedule,
+            std::span<const pl::transactions::Transaction>{posted.data(),
+                                                           posted.size()},
+            golden);
+      }
+      streamDigest = golden.digest();
+      streamRows = golden.rowsWritten();
+      std::printf("Stream digest: %s  rows: %llu\n", streamDigest.c_str(),
+                  static_cast<unsigned long long>(streamRows));
+      mon.mark("stream flush");
+    }
+
     pg::status("Exporting...");
     switch (opts.usecase) {
     case app::UseCase::standard: {
@@ -206,6 +305,50 @@ int main(int argc, char **argv) {
       printAmlTxnEdgesSummary(summary, opts);
       break;
     }
+    }
+
+    if (pgUp) {
+      pl::postgres::Connection conn{pgConninfo};
+      static constexpr std::string_view kSkip[] = {"transactions"};
+      std::vector<pl::postgres::TableReport> reports;
+      const char *where = "public";
+      switch (opts.usecase) {
+      case app::UseCase::standard:
+        reports = pl::postgres::loadCsvDirectory(
+            conn, opts.outDir, std::span<const std::string_view>{kSkip});
+        break;
+      case app::UseCase::muleMl:
+        where = "mule_ml";
+        reports = pl::postgres::loadCsvTree(
+            conn, opts.outDir, where, std::span<const std::string_view>{kSkip});
+        break;
+      case app::UseCase::aml:
+        where = "aml";
+        reports = pl::postgres::loadCsvTree(
+            conn, opts.outDir, where, std::span<const std::string_view>{kSkip});
+        break;
+      case app::UseCase::amlTxnEdges:
+        where = "aml_txn_edges";
+        reports = pl::postgres::loadCsvTree(
+            conn, opts.outDir, where, std::span<const std::string_view>{kSkip});
+        break;
+      }
+      std::uint64_t totalRows = 0;
+      for (const auto &report : reports) {
+        totalRows += report.rows;
+      }
+      std::printf(
+          "PostgreSQL: mirrored %zu tables (%llu rows) into schema %s\n",
+          reports.size(), static_cast<unsigned long long>(totalRows), where);
+
+      char sql[512];
+      std::snprintf(sql, sizeof(sql),
+                    "UPDATE pl_run_manifest SET finished = now(), "
+                    "txn_rows = %llu, stream_digest = '%s' WHERE id = %lld",
+                    static_cast<unsigned long long>(streamRows),
+                    streamDigest.c_str(), manifestId);
+      conn.exec(sql);
+      mon.mark("pg table mirror");
     }
 
     mon.mark("export");

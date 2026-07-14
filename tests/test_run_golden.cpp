@@ -55,7 +55,13 @@ int main() {
   const fs::path logPath = fs::temp_directory_path() / "pl_run_golden.log";
   fs::remove_all(outDir);
 
-  const std::string cmd = std::string{"\""} + PL_BIN_PATH +
+  // PostgreSQL is implicit in the binary; pin the subprocess to an
+  // unreachable target so this test stays serverless and never
+  // touches the developer's real mirror (make test must not clobber
+  // the database). The binary warns and continues file-only.
+  const std::string cmd = std::string{"PL_PG='host=127.0.0.1 port=9 "
+                                      "dbname=pl_disabled' \""} +
+                          PL_BIN_PATH +
                           "\" --population 2000 --days 60"
                           " --seed 3405691582 --show-transactions --out \"" +
                           outDir.string() + "\" > \"" + logPath.string() +
@@ -85,8 +91,19 @@ int main() {
   const fs::path baseline{PL_GOLDEN_BASELINE};
   if (!fs::exists(baseline)) {
     std::ofstream out{baseline};
+    if (!out) {
+      std::fprintf(stderr, "golden-run: cannot open baseline for write: %s\n",
+                   baseline.c_str());
+      return 1;
+    }
     for (const auto &line : lines) {
       out << line << '\n';
+    }
+    out.flush();
+    if (!out) {
+      std::fprintf(stderr, "golden-run: baseline write FAILED: %s\n",
+                   baseline.c_str());
+      return 1;
     }
     std::printf("golden-run: baseline captured (%zu files) at %s\n",
                 lines.size(), baseline.c_str());

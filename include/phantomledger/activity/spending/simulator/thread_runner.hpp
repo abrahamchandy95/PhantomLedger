@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <thread>
 #include <vector>
 
@@ -29,6 +30,13 @@ partitionRange(std::size_t total, std::uint32_t threadCount,
 }
 
 [[nodiscard]] inline std::uint32_t resolveThreadCount() noexcept {
+  if (const char *env = std::getenv("PL_THREADS")) {
+    char *end = nullptr;
+    const auto parsed = std::strtoul(env, &end, 10);
+    if (end != env && parsed > 0 && parsed < 1024) {
+      return static_cast<std::uint32_t>(parsed);
+    }
+  }
   const auto hw = std::thread::hardware_concurrency();
   return hw == 0 ? std::uint32_t{1} : hw;
 }

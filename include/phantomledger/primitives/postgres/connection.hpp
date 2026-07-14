@@ -28,6 +28,8 @@ public:
 
   void exec(const std::string &sql);
 
+  [[nodiscard]] std::string queryValue(const std::string &sql);
+
   // Quote an SQL identifier (table/column name) server-appropriately.
   [[nodiscard]] std::string escapeIdentifier(std::string_view name) const;
 

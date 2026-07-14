@@ -2,8 +2,6 @@
 
 #include <libpq-fe.h>
 
-#include <utility>
-
 namespace PhantomLedger::postgres {
 
 namespace {
@@ -34,6 +32,15 @@ void Connection::exec(const std::string &sql) {
   if (res == nullptr || PQresultStatus(res.get()) != PGRES_COMMAND_OK) {
     throwPg(conn_.get(), sql.c_str());
   }
+}
+
+std::string Connection::queryValue(const std::string &sql) {
+  Result res{PQexec(conn_.get(), sql.c_str())};
+  if (res == nullptr || PQresultStatus(res.get()) != PGRES_TUPLES_OK ||
+      PQntuples(res.get()) < 1 || PQnfields(res.get()) < 1) {
+    throwPg(conn_.get(), sql.c_str());
+  }
+  return PQgetvalue(res.get(), 0, 0);
 }
 
 std::string Connection::escapeIdentifier(std::string_view name) const {

@@ -19,8 +19,6 @@ concept Sink = requires(S s, const S cs, const Span &span,
   { cs.rowsWritten() } -> std::convertible_to<std::uint64_t>;
 };
 
-// Counts rows and discards them. Used by tests and by dry runs that
-// only want the volume forecast and the per-chunk memory watermark.
 class NullSink {
 public:
   void beginSpan(const Span &) noexcept {}
@@ -39,5 +37,40 @@ private:
 };
 
 static_assert(Sink<NullSink>);
+
+template <Sink A, Sink B> class Tee {
+public:
+  Tee(A &a, B &b) noexcept : a_(&a), b_(&b) {}
+
+  void beginSpan(const Span &span) {
+    a_->beginSpan(span);
+    b_->beginSpan(span);
+  }
+
+  void append(std::span<const transactions::Transaction> txns) {
+    a_->append(txns);
+    b_->append(txns);
+  }
+
+  void endSpan(const Span &span) {
+    a_->endSpan(span);
+    b_->endSpan(span);
+  }
+
+  void finish() {
+    a_->finish();
+    b_->finish();
+  }
+
+  [[nodiscard]] std::uint64_t rowsWritten() const noexcept {
+    return a_->rowsWritten();
+  }
+
+private:
+  A *a_;
+  B *b_;
+};
+
+static_assert(Sink<Tee<NullSink, NullSink>>);
 
 } // namespace PhantomLedger::pipeline::chunk

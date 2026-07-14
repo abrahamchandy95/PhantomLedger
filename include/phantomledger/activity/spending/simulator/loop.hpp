@@ -91,6 +91,14 @@ public:
 
   class PaymentEmitter {
   public:
+    // An accepted proposal: the transaction record for the stream,
+    // and the indexed posting the day driver applies to the soft
+    // ledger at the day boundary.
+    struct Emitted {
+      transactions::Transaction txn;
+      clearing::Ledger::Posting posting;
+    };
+
     PaymentEmitter(const market::Market &market,
                    const PreparedRun::Routing &routing,
                    const transactions::Factory &factory,
@@ -98,12 +106,10 @@ public:
 
     void bindRateSampler(const RateSampler *sampler) noexcept;
 
-    [[nodiscard]] std::optional<transactions::Transaction>
-    tryEmit(random::Rng &rng, const actors::Event &event);
+    [[nodiscard]] std::optional<Emitted> tryEmit(random::Rng &rng,
+                                                 const actors::Event &event);
 
   private:
-    [[nodiscard]] bool accept(const routing::EmissionResult &result);
-
     const market::Market &market_;
     const PreparedRun::Routing &routing_;
     const transactions::Factory &factory_;
@@ -115,8 +121,10 @@ public:
   SpenderEmissionLoop(const PreparedRun::Population &population,
                       RateSampler &rates, PaymentEmitter &payments) noexcept;
 
-  void run(std::size_t begin, std::size_t end, random::Rng &rng,
-           std::vector<transactions::Transaction> &outTxns);
+  void run(std::size_t begin, std::size_t end,
+           std::span<random::Rng> spenderRngs,
+           std::vector<transactions::Transaction> &outTxns,
+           std::vector<clearing::Ledger::Posting> &outPostings);
 
 private:
   const PreparedRun::Population &population_;

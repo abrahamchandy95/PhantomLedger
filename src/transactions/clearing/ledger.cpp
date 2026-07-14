@@ -237,51 +237,63 @@ void Ledger::setEmitLiquidity(bool emit) noexcept { emitLiquidity_ = emit; }
 
 // --- Core transfer logic ---
 
+TransferDecision Ledger::decide(Index srcIdx, Index dstIdx, double amount,
+                                channels::Tag channel) const noexcept {
+  if (amount <= 0.0 || !std::isfinite(amount)) {
+    return TransferDecision::reject(RejectReason::invalid);
+  }
+
+  const bool srcExternal = (srcIdx == invalid);
+  const bool dstExternal = (dstIdx == invalid);
+
+  if (srcExternal && dstExternal) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+  if (srcExternal) {
+    return TransferDecision::accept();
+  }
+
+  if (!isHub(srcIdx) && !channels::isLiquidity(channel)) {
+    const bool selfTransfer =
+        channels::is(channel, channels::Legit::selfTransfer);
+    const double spendable =
+        selfTransfer ? cash_[srcIdx] : totalLiquidity(srcIdx);
+    if (spendable < amount) {
+      return TransferDecision::reject(RejectReason::unfunded);
+    }
+  }
+
+  return TransferDecision::accept();
+}
+
 TransferDecision Ledger::applyTransfer(const Posting &posting,
                                        double &srcCashBefore) noexcept {
   srcCashBefore = 0.0;
 
-  if (posting.amount <= 0.0 || !std::isfinite(posting.amount)) {
-    return TransferDecision::reject(RejectReason::invalid);
+  const auto decision =
+      decide(posting.srcIdx, posting.dstIdx, posting.amount, posting.channel);
+  if (decision.rejected()) {
+    return decision;
   }
 
   const bool srcExternal = (posting.srcIdx == invalid);
   const bool dstExternal = (posting.dstIdx == invalid);
 
-  if (srcExternal && dstExternal) {
-    return TransferDecision::reject(RejectReason::unbooked);
-  }
-
   if (srcExternal) {
     cash_[posting.dstIdx] += posting.amount;
-    return TransferDecision::accept();
+    return decision;
   }
 
   const bool srcHub = isHub(posting.srcIdx);
   srcCashBefore = cash_[posting.srcIdx];
 
-  if (!srcHub && !channels::isLiquidity(posting.channel)) {
-    const bool selfTransfer =
-        channels::is(posting.channel, channels::Legit::selfTransfer);
-    const double spendable =
-        selfTransfer ? cash_[posting.srcIdx] : totalLiquidity(posting.srcIdx);
-    if (spendable < posting.amount) {
-      return TransferDecision::reject(RejectReason::unfunded);
-    }
-  }
-
-  if (dstExternal) {
-    if (!srcHub) {
-      cash_[posting.srcIdx] -= posting.amount;
-    }
-    return TransferDecision::accept();
-  }
-
   if (!srcHub) {
     cash_[posting.srcIdx] -= posting.amount;
   }
-  cash_[posting.dstIdx] += posting.amount;
-  return TransferDecision::accept();
+  if (!dstExternal) {
+    cash_[posting.dstIdx] += posting.amount;
+  }
+  return decision;
 }
 
 TransferDecision Ledger::transfer(Index srcIdx, Index dstIdx, double amount,
@@ -362,9 +374,6 @@ TransferDecision Ledger::transferAt(const Posting &posting) noexcept {
 }
 
 void Ledger::accrueLocInterestThrough(std::int64_t timestamp) noexcept {
-  // Pull matured accruals out of the tracker, then turn each into a
-  // debit + emission here. Keeping the tracker ignorant of Ledger /
-  // LiquiditySink means the tracker stays independently testable.
   std::vector<InterestAccrual> matured;
   locTracker_.sweep(
       timestamp, [this](Index idx) noexcept { return cash_[idx]; }, matured);
@@ -390,10 +399,6 @@ void Ledger::restore(const Ledger &other) {
   std::copy(other.linked_.begin(), other.linked_.end(), linked_.begin());
   std::copy(other.courtesy_.begin(), other.courtesy_.end(), courtesy_.begin());
 
-  // LOC tracker integrals + timestamps must be restored so the next
-  // replay starts from the same integration state. The prior
-  // implementation only copied three vectors and silently drifted if
-  // the billing clock had already been anchored in the first pass.
   locTracker_.copyStateFrom(other.locTracker_);
 }
 

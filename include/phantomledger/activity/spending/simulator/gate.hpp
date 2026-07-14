@@ -1,10 +1,7 @@
 #pragma once
 
-#include "phantomledger/primitives/concurrent/account_lock_array.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
-
-#include <cstddef>
 
 namespace PhantomLedger::activity::spending::simulator {
 
@@ -14,33 +11,19 @@ public:
   using Index = Ledger::Index;
   using Decision = ::PhantomLedger::clearing::TransferDecision;
   using Channel = ::PhantomLedger::channels::Tag;
-  using LockArray = ::PhantomLedger::primitives::concurrent::AccountLockArray;
 
   Gate() = default;
 
-  Gate(Ledger *ledger, LockArray *lockArray) noexcept
-      : ledger_(ledger), lockArray_(lockArray) {}
+  explicit Gate(const Ledger *ledger) noexcept : ledger_(ledger) {}
 
   [[nodiscard]] bool attached() const noexcept { return ledger_ != nullptr; }
-  [[nodiscard]] Ledger *ledger() const noexcept { return ledger_; }
 
-  [[nodiscard]] Decision transfer(Index srcIdx, Index dstIdx, double amount,
-                                  Channel channel) noexcept {
+  [[nodiscard]] Decision decide(Index srcIdx, Index dstIdx, double amount,
+                                Channel channel) const noexcept {
     if (ledger_ == nullptr) {
       return Decision::accept();
     }
-    if (lockArray_ == nullptr) {
-      return ledger_->transfer(srcIdx, dstIdx, amount, channel);
-    }
-
-    const auto src = static_cast<std::size_t>(srcIdx);
-    const auto dst = static_cast<std::size_t>(dstIdx);
-    constexpr auto inv = static_cast<std::size_t>(Ledger::invalid);
-
-    lockArray_->lockPair(src, dst, inv);
-    const auto decision = ledger_->transfer(srcIdx, dstIdx, amount, channel);
-    lockArray_->unlockPair(src, dst, inv);
-    return decision;
+    return ledger_->decide(srcIdx, dstIdx, amount, channel);
   }
 
   [[nodiscard]] double availableCash(Index idx) const noexcept {
@@ -56,8 +39,7 @@ private:
     return ledger_ != nullptr && idx != Ledger::invalid;
   }
 
-  Ledger *ledger_ = nullptr;
-  LockArray *lockArray_ = nullptr;
+  const Ledger *ledger_ = nullptr;
 };
 
 } // namespace PhantomLedger::activity::spending::simulator

@@ -60,6 +60,7 @@ set(PL_PRIMITIVES_SOURCES
     src/primitives/time/calendar.cpp
     src/primitives/crypto/blake2b.cpp
     src/primitives/postgres/connection.cpp
+    src/primitives/postgres/csv_loader.cpp
     src/primitives/random/rng.cpp
 )
 
