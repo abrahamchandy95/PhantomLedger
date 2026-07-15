@@ -90,3 +90,11 @@ pl_add_test(test_ownership_invariant)
 # ---------------------------------------------------------------------
 
 pl_add_test(test_unauthorized_keyed)
+
+# ---------------------------------------------------------------------
+# Full-pipeline chunk-strategy invariance: the settlement replay must
+# produce a byte-identical corpus at any chunk size (bedrock for the
+# chunk-generation work)
+# ---------------------------------------------------------------------
+
+pl_add_test(test_chunk_invariance)

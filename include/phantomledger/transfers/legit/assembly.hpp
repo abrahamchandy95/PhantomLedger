@@ -4,6 +4,7 @@
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
+#include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -31,6 +32,8 @@ public:
   struct RunScope {
     time::Window window{};
     std::uint64_t seed = 0;
+
+    pipeline::chunk::Strategy chunkStrategy{};
   };
 
   struct IncomePrograms {

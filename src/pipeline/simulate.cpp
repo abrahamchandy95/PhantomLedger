@@ -91,7 +91,7 @@ void runTransferStage(SimulationResult &result,
               {{"replaySorted", legitPayload.txns.replaySortedTxns.size()}});
 
   const auto replaySchedule = pipeline::chunk::Schedule::partition(
-      stage.legit().runScope().window, pipeline::chunk::Strategy{});
+      stage.legit().runScope().window, stage.legit().runScope().chunkStrategy);
   auto productStream =
       stage.mergeProducts(rng, holdings, std::move(legitPayload.txns));
   logStageMem("mergeProducts", {{"productStream", productStream.size()}});
