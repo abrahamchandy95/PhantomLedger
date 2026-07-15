@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/taxonomies/channels/predicates.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -77,14 +78,8 @@ public:
   TxnStreams() = default;
 
   void reserve(std::size_t total) {
-    candidates_.reserve(total);
     screened_.reserve(total);
     replayReady_.reserve(total);
-  }
-
-  [[nodiscard]] const std::vector<transactions::Transaction> &
-  candidates() const noexcept {
-    return candidates_;
   }
 
   [[nodiscard]] const std::vector<transactions::Transaction> &
@@ -93,13 +88,13 @@ public:
   }
 
   [[nodiscard]] const std::vector<transactions::Transaction> &
-  replayReady() const noexcept {
-    return replayReady_;
+  paydayInbound() const noexcept {
+    return paydayInbound_;
   }
 
-  [[nodiscard]] std::vector<transactions::Transaction> &&
-  takeCandidates() noexcept {
-    return std::move(candidates_);
+  [[nodiscard]] const std::vector<transactions::Transaction> &
+  replayReady() const noexcept {
+    return replayReady_;
   }
 
   [[nodiscard]] std::vector<transactions::Transaction> &&
@@ -107,20 +102,19 @@ public:
     return std::move(replayReady_);
   }
 
-  /// Append a freshly-generated batch. Mutates all three views.
   void add(std::vector<transactions::Transaction> items) {
     if (items.empty()) {
       return;
     }
 
-    // ---- candidates: append in semantic order, no sort ----
-    const auto previousSize = candidates_.size();
-    candidates_.reserve(previousSize + items.size());
-    candidates_.insert(candidates_.end(), items.begin(), items.end());
+    for (const auto &txn : items) {
+      if (channels::isPaydayInbound(txn.session.channel)) {
+        paydayInbound_.push_back(txn);
+      }
+    }
 
-    // ---- screened: in-place merge by timestamp ----
-    addSortedView(screened_, items, detail::timestampLess);
-
+    addSortedView(screened_, std::span<const transactions::Transaction>(items),
+                  detail::timestampLess);
     addSortedView(replayReady_, std::move(items), detail::fundsLess);
   }
 
@@ -168,9 +162,9 @@ private:
     std::inplace_merge(dst.begin(), dst.begin() + seam, dst.end(), less);
   }
 
-  std::vector<transactions::Transaction> candidates_;
   std::vector<transactions::Transaction> screened_;
   std::vector<transactions::Transaction> replayReady_;
+  std::vector<transactions::Transaction> paydayInbound_;
 };
 
 } // namespace PhantomLedger::transfers::legit::ledger

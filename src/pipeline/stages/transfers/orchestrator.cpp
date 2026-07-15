@@ -67,7 +67,7 @@ TransferStage::buildLegit(::PhantomLedger::random::Rng &rng,
         "initial book");
   }
   ::PhantomLedger::pipeline::validateTransactionAccounts(
-      holdings.accounts.lookup, result.txns.candidateTxns);
+      holdings.accounts.lookup, result.txns.replaySortedTxns);
   return result;
 }
 

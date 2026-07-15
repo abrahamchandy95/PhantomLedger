@@ -11,7 +11,6 @@
 namespace PhantomLedger::transfers::legit::ledger {
 
 struct LegitTxnStreams {
-  std::vector<transactions::Transaction> candidateTxns;
   std::vector<transactions::Transaction> replaySortedTxns;
 };
 

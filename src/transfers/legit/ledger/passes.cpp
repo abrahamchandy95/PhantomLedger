@@ -228,7 +228,7 @@ void addSplitDeposits(const RoutinePass &pass,
 
   streams.add(routines::paychecks::emitSplitTransfers(
       rng, routineTxf(pass), splitters,
-      std::span<const transactions::Transaction>(streams.candidates())));
+      std::span<const transactions::Transaction>(streams.paydayInbound())));
 }
 
 void addRent(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
