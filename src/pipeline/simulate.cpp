@@ -9,7 +9,10 @@
 #include "phantomledger/transfers/legit/assembly.hpp"
 
 #include <cstdint>
+#include <cstdio>
+#include <initializer_list>
 #include <span>
+#include <sys/resource.h>
 #include <utility>
 
 namespace PhantomLedger::pipeline {
@@ -24,6 +27,32 @@ namespace clearing = ::PhantomLedger::clearing;
 namespace tx_ns = ::PhantomLedger::transactions;
 
 using SynthFraud = ::PhantomLedger::synth::people::Fraud;
+
+[[nodiscard]] double stagePeakRssMB() noexcept {
+  struct rusage ru{};
+  getrusage(RUSAGE_SELF, &ru);
+#if defined(__APPLE__)
+  return static_cast<double>(ru.ru_maxrss) / (1024.0 * 1024.0);
+#else
+  return static_cast<double>(ru.ru_maxrss) / 1024.0;
+#endif
+}
+
+[[nodiscard]] constexpr double rowsMB(std::size_t rows) noexcept {
+  return static_cast<double>(rows) *
+         static_cast<double>(sizeof(tx_ns::Transaction)) / (1024.0 * 1024.0);
+}
+
+inline void logStageMem(
+    const char *stage,
+    std::initializer_list<std::pair<const char *, std::size_t>> liveStreams) {
+  std::fprintf(stderr, "[mem] %-18s peakRSS=%9.1f MB  live:", stage,
+               stagePeakRssMB());
+  for (const auto &[name, rows] : liveStreams) {
+    std::fprintf(stderr, "  %s=%zu (~%.0f MB)", name, rows, rowsMB(rows));
+  }
+  std::fprintf(stderr, "\n");
+}
 
 [[nodiscard]] auto resolveRunScope(legit::LegitAssembly::RunScope scope,
                                    time::Window fallbackWindow,
@@ -58,14 +87,18 @@ void runTransferStage(SimulationResult &result,
   const auto &cps = result.counterparties;
 
   auto legitPayload = stage.buildLegit(rng, people, holdings, cps);
+  logStageMem("buildLegit",
+              {{"replaySorted", legitPayload.txns.replaySortedTxns.size()}});
 
   const auto replaySchedule = pipeline::chunk::Schedule::partition(
       stage.legit().runScope().window, pipeline::chunk::Strategy{});
   auto productStream =
       stage.mergeProducts(rng, holdings, std::move(legitPayload.txns));
+  logStageMem("mergeProducts", {{"productStream", productStream.size()}});
   auto candidate =
       stage.ledger().preFraudChunked(*legitPayload.openingBook.initialBook, rng,
                                      std::move(productStream), replaySchedule);
+  logStageMem("preFraudSettle", {{"candidate", candidate.txns.size()}});
 
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
@@ -76,9 +109,12 @@ void runTransferStage(SimulationResult &result,
                           legitPayload.counterparties));
 
   const auto injectedCount = fraudOut.injected.size();
+  logStageMem("fraudInject", {{"candidate", candidate.txns.size()},
+                              {"fraud", fraudOut.injected.size()}});
   auto posted = stage.ledger().postFraudChunkedMerged(
       rng, *legitPayload.openingBook.initialBook, std::move(candidate.txns),
       std::move(fraudOut.injected), replaySchedule);
+  logStageMem("postFraudSettle", {{"posted", posted.txns.size()}});
 
   validateTransactionAccounts(holdings.accounts.lookup, posted.txns);
 
