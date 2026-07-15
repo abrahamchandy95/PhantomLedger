@@ -118,11 +118,23 @@ buildRingPlans(const entity::person::Topology &topology,
 generateCamouflage(CamouflageContext &ctx, std::span<const Plan> plans,
                    const camouflage::Rates &rates) {
   std::vector<transactions::Transaction> out;
+
+  auto *savedRng = ctx.execution.rng;
+  const auto *keyFactory = ctx.execution.factory;
+
   for (const auto &plan : plans) {
+    random::Rng camoRng =
+        keyFactory->rng({"fraud", "ring", ringStreamKey(plan.ringId), "camo"});
+    ctx.execution.rng = &camoRng;
+    ctx.execution.txf = ctx.execution.txf.rebound(camoRng);
+
     auto produced = camouflage::generate(ctx, plan, rates);
     out.insert(out.end(), std::make_move_iterator(produced.begin()),
                std::make_move_iterator(produced.end()));
   }
+
+  ctx.execution.rng = savedRng;
+  ctx.execution.txf = ctx.execution.txf.rebound(*savedRng);
   return out;
 }
 
