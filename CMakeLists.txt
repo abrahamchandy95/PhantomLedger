@@ -55,6 +55,9 @@ endif()
 
 find_package(PostgreSQL REQUIRED)
 
+# ---------------------------------------------------------------------
+# 1. Core Utilities
+# ---------------------------------------------------------------------
 set(PL_PRIMITIVES_SOURCES
     src/primitives/time/almanac.cpp
     src/primitives/time/calendar.cpp
@@ -64,32 +67,52 @@ set(PL_PRIMITIVES_SOURCES
     src/primitives/random/rng.cpp
 )
 
-set(PL_TRANSACTIONS_SOURCES
-    src/transactions/clearing/ledger.cpp
-    src/transactions/clearing/loc_accrual.cpp
+set(PL_DIAGNOSTICS_SOURCES
+    src/diagnostics/logger.cpp
+    src/diagnostics/spending_stats.cpp
 )
 
-set(PL_ENTITIES_SOURCES
+# ---------------------------------------------------------------------
+# 2. Synthetic Data Generation
+# ---------------------------------------------------------------------
+set(PL_SYNTH_PII_SOURCES
     src/synth/pii/geonames.cpp
     src/synth/pii/pools.cpp
     src/synth/pii/correlate.cpp
 )
 
-set(PL_TRANSFERS_SOURCES
-    src/transfers/channels/credit_cards/card_cycle_driver.cpp
-    src/transfers/channels/credit_cards/cycle.cpp
-    src/transfers/channels/credit_cards/dispute/sampler.cpp
-    src/transfers/channels/credit_cards/lifecycle.cpp
-    src/transfers/channels/credit_cards/payment.cpp
-    src/transfers/channels/credit_cards/session.cpp
-    src/transfers/channels/credit_cards/statement.cpp
-    src/transfers/channels/insurance/claims.cpp
-    src/transfers/channels/insurance/premiums.cpp
-    src/transfers/channels/obligations/schedule.cpp
-    src/transfers/channels/subscriptions/debits.cpp
+set(PL_SYNTH_PRODUCTS_SOURCES
+    src/synth/products/sampling/amounts.cpp
+    src/synth/products/sampling/dates.cpp
+    src/synth/products/installments.cpp
+    src/synth/products/obligations.cpp
+    src/synth/products/terms/auto_loan.cpp
+    src/synth/products/terms/insurance.cpp
+    src/synth/products/terms/mortgage.cpp
+    src/synth/products/terms/student_loan.cpp
+    src/synth/products/terms/tax.cpp
 )
 
-set(PL_SPENDING_SOURCES
+set(PL_SYNTH_INFRA_SOURCES
+    src/synth/infra/devices.cpp
+    src/synth/infra/ips.cpp
+    src/synth/infra/rings.cpp
+)
+
+# ---------------------------------------------------------------------
+# 3. Relationships & Economic Activity
+# ---------------------------------------------------------------------
+set(PL_RELATIONSHIPS_SOURCES
+    src/relationships/family/builder.cpp
+    src/relationships/family/links.cpp
+    src/relationships/family/partition.cpp
+    src/relationships/family/support.cpp
+    src/relationships/social/builder.cpp
+    src/relationships/social/communities.cpp
+    src/relationships/social/sampler.cpp
+)
+
+set(PL_ACTIVITY_SPENDING_SOURCES
     src/activity/spending/actors/day.cpp
     src/activity/spending/dynamics/monthly/evolution.cpp
     src/activity/spending/market/bootstrap.cpp
@@ -107,43 +130,63 @@ set(PL_SPENDING_SOURCES
     src/activity/spending/spenders/targets.cpp
 )
 
-set(PL_DIAGNOSTICS_SOURCES
-    src/diagnostics/logger.cpp
-    src/diagnostics/spending_stats.cpp
+# ---------------------------------------------------------------------
+# 4. Transactions & Pipeline
+# ---------------------------------------------------------------------
+set(PL_TRANSACTIONS_SOURCES
+    src/transactions/clearing/ledger.cpp
+    src/transactions/clearing/loc_accrual.cpp
 )
 
-set(PL_FRAUD_SOURCES
+set(PL_PIPELINE_SOURCES
+    src/pipeline/simulate.cpp
+    src/pipeline/chunk/schedule.cpp
+    src/pipeline/stages/entities.cpp
+    src/pipeline/stages/infra.cpp
+    src/pipeline/stages/products.cpp
+    src/pipeline/stages/transfers/fraud_emission.cpp
+    src/pipeline/stages/transfers/orchestrator.cpp
+    src/pipeline/stages/transfers/ledger_replay.cpp
+    src/pipeline/stages/transfers/product_replay.cpp
+)
+
+# ---------------------------------------------------------------------
+# 5. Transfers (Fragmented by Domain)
+# ---------------------------------------------------------------------
+set(PL_TRANSFERS_CHANNELS_SOURCES
+    src/transfers/channels/credit_cards/card_cycle_driver.cpp
+    src/transfers/channels/credit_cards/cycle.cpp
+    src/transfers/channels/credit_cards/dispute/sampler.cpp
+    src/transfers/channels/credit_cards/lifecycle.cpp
+    src/transfers/channels/credit_cards/payment.cpp
+    src/transfers/channels/credit_cards/session.cpp
+    src/transfers/channels/credit_cards/statement.cpp
+    src/transfers/channels/insurance/claims.cpp
+    src/transfers/channels/insurance/premiums.cpp
+    src/transfers/channels/obligations/schedule.cpp
+    src/transfers/channels/subscriptions/debits.cpp
+)
+
+set(PL_TRANSFERS_FRAUD_SOURCES
     src/transfers/fraud/camouflage.cpp
     src/transfers/fraud/engine.cpp
     src/transfers/fraud/injector.cpp
     src/transfers/fraud/rings.cpp
     src/transfers/fraud/schedule.cpp
+    src/transfers/fraud/typologies/bipartite.cpp
     src/transfers/fraud/typologies/classic.cpp
+    src/transfers/fraud/typologies/cycle.cpp
     src/transfers/fraud/typologies/dispatch.cpp
     src/transfers/fraud/typologies/funnel.cpp
     src/transfers/fraud/typologies/invoice.cpp
     src/transfers/fraud/typologies/layering.cpp
     src/transfers/fraud/typologies/mule.cpp
-    src/transfers/fraud/typologies/structuring.cpp
-    src/transfers/fraud/typologies/cycle.cpp
     src/transfers/fraud/typologies/scatter_gather.cpp
-    src/transfers/fraud/typologies/bipartite.cpp
+    src/transfers/fraud/typologies/structuring.cpp
     src/transfers/fraud/typologies/unauthorized.cpp
 )
 
-set(PL_PRODUCTS_SOURCES
-    src/synth/products/sampling/amounts.cpp
-    src/synth/products/terms/auto_loan.cpp
-    src/synth/products/sampling/dates.cpp
-    src/synth/products/installments.cpp
-    src/synth/products/terms/insurance.cpp
-    src/synth/products/terms/mortgage.cpp
-    src/synth/products/obligations.cpp
-    src/synth/products/terms/student_loan.cpp
-    src/synth/products/terms/tax.cpp
-)
-
-set(PL_LEGIT_SOURCES
+set(PL_TRANSFERS_LEGIT_SOURCES
     src/transfers/legit/assembly.cpp
     src/transfers/legit/blueprints/paydays.cpp
     src/transfers/legit/blueprints/plans.cpp
@@ -171,30 +214,26 @@ set(PL_LEGIT_SOURCES
     src/transfers/legit/routines/subscriptions.cpp
 )
 
-set(PL_RELATIONSHIPS_SOURCES
-    src/relationships/family/builder.cpp
-    src/relationships/family/links.cpp
-    src/relationships/family/partition.cpp
-    src/relationships/family/support.cpp
-    src/relationships/social/builder.cpp
-    src/relationships/social/communities.cpp
-    src/relationships/social/sampler.cpp
-)
-
-set(PL_APP_SOURCES
-    src/app/cli.cpp
-    src/app/progress.cpp
-    src/app/setup.cpp
-)
-
-set(PL_EXPORTER_SOURCES
+# ---------------------------------------------------------------------
+# 6. Exporters (Fragmented by Format/Sink)
+# ---------------------------------------------------------------------
+set(PL_EXPORTER_CORE_SOURCES
     src/exporter/csv.cpp
     src/exporter/labels.cpp
+    src/exporter/common/minhash.cpp
     src/exporter/sinks/postgres.cpp
+)
+
+set(PL_EXPORTER_STANDARD_SOURCES
     src/exporter/standard/export.cpp
+)
+
+set(PL_EXPORTER_MULE_ML_SOURCES
     src/exporter/mule_ml/canonical.cpp
     src/exporter/mule_ml/export.cpp
-    src/exporter/common/minhash.cpp
+)
+
+set(PL_EXPORTER_AML_SOURCES
     src/exporter/aml/identity.cpp
     src/exporter/aml/sar.cpp
     src/exporter/aml/vertices.cpp
@@ -206,39 +245,36 @@ set(PL_EXPORTER_SOURCES
     src/exporter/aml_txn_edges/export.cpp
 )
 
-set(PL_INFRA_SYNTH_SOURCES
-    src/synth/infra/devices.cpp
-    src/synth/infra/ips.cpp
-    src/synth/infra/rings.cpp
+# ---------------------------------------------------------------------
+# 7. Application Entry
+# ---------------------------------------------------------------------
+set(PL_APP_SOURCES
+    src/app/cli.cpp
+    src/app/progress.cpp
+    src/app/setup.cpp
 )
 
-set(PL_PIPELINE_SOURCES
-    src/pipeline/simulate.cpp
-    src/pipeline/chunk/schedule.cpp
-    src/pipeline/stages/entities.cpp
-    src/pipeline/stages/infra.cpp
-    src/pipeline/stages/products.cpp
-    src/pipeline/stages/transfers/fraud_emission.cpp
-    src/pipeline/stages/transfers/orchestrator.cpp
-    src/pipeline/stages/transfers/ledger_replay.cpp
-    src/pipeline/stages/transfers/product_replay.cpp
-)
-
+# ---------------------------------------------------------------------
+# Source List Consolidation
+# ---------------------------------------------------------------------
 set(PL_ALL_SOURCES
     ${PL_PRIMITIVES_SOURCES}
-    ${PL_DIAGNOSTICS_SOURCES} 
-    ${PL_TRANSACTIONS_SOURCES}
-    ${PL_ENTITIES_SOURCES}
-    ${PL_TRANSFERS_SOURCES}
-    ${PL_SPENDING_SOURCES}
-    ${PL_FRAUD_SOURCES}
-    ${PL_PRODUCTS_SOURCES}
-    ${PL_LEGIT_SOURCES}
+    ${PL_DIAGNOSTICS_SOURCES}
+    ${PL_SYNTH_PII_SOURCES}
+    ${PL_SYNTH_PRODUCTS_SOURCES}
+    ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
-    ${PL_APP_SOURCES}
-    ${PL_EXPORTER_SOURCES}
-    ${PL_INFRA_SYNTH_SOURCES}
+    ${PL_ACTIVITY_SPENDING_SOURCES}
+    ${PL_TRANSACTIONS_SOURCES}
     ${PL_PIPELINE_SOURCES}
+    ${PL_TRANSFERS_CHANNELS_SOURCES}
+    ${PL_TRANSFERS_FRAUD_SOURCES}
+    ${PL_TRANSFERS_LEGIT_SOURCES}
+    ${PL_EXPORTER_CORE_SOURCES}
+    ${PL_EXPORTER_STANDARD_SOURCES}
+    ${PL_EXPORTER_MULE_ML_SOURCES}
+    ${PL_EXPORTER_AML_SOURCES}
+    ${PL_APP_SOURCES}
 )
 
 # ---------------------------------------------------------------------
