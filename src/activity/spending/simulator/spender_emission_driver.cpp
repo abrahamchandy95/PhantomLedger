@@ -9,6 +9,7 @@
 #include <array>
 #include <charconv>
 #include <cstdint>
+#include <cstdio>
 #include <iterator>
 #include <stdexcept>
 #include <string_view>
@@ -146,13 +147,6 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   const auto threadCount = std::max(threading().count, std::uint32_t{1});
   threadStates_.reserve(threadCount);
 
-  // Per-thread scratch holds ONE day of one thread's emissions before the
-  // daily merge drains it (clear() keeps capacity), so reserve for a heavy
-  // day, not the whole run. The previous estimate reserved
-  // people * months * txnsPerMonth / threadCount, the entire run's target,
-  // in EVERY thread: at population 2,000 over 29 years that is ~245 MB per
-  // thread, ~2.9 GB of permanently dead capacity across 12 threads.
-  // Reservation is allocation-only; emitted values are unchanged.
   const auto people = static_cast<double>(market().population().count());
   const auto expectedPerDay = people * txnsPerMonth / 30.0 * kTxnReserveSlack;
   constexpr double kHeavyDayHeadroom = 8.0; // payday spikes run several x mean
@@ -198,11 +192,8 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
     total += threadState.txns.size();
     totalPostings += threadState.postings.size();
   }
-  // Account for rows already merged on previous days; reserve(total) alone
-  // is a no-op once size() exceeds the day count and the insert below then
-  // grows through doubling. Redundant when the driver pre-reserves the whole
-  // run, kept as a correct local invariant.
-  dst.reserve(dst.size() + total);
+
+  dst.reserve(total);
   dayPostings_.reserve(totalPostings);
 
   for (auto &threadState : threadStates_) {
