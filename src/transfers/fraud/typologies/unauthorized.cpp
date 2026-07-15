@@ -32,6 +32,7 @@ struct Event {
 
 [[nodiscard]] std::int64_t offsetIn(random::Rng &rng, std::int64_t lo,
                                     std::int64_t hi) {
+  // Uniform integer offset in [lo, hi); consumes exactly one uniform.
   if (hi <= lo) {
     return lo;
   }
@@ -71,7 +72,7 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
 
     auto rng = keyFactory.rng(
         {"fraud", "unauth", "plan", renderUInt(seqBuf, plan.seq)});
-    const auto planTxf = ctx.execution.txf.withRng(rng);
+    const auto planTxf = ctx.execution.txf.rebound(rng);
 
     events.clear();
     isTest.assign(static_cast<std::size_t>(target), false);

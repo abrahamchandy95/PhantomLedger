@@ -91,6 +91,10 @@ struct IllicitContext {
 
   std::uint32_t nextChainId = 1;
 
+  void seedChainIds(std::uint32_t ringId) noexcept {
+    nextChainId = (ringId << 16U) | 1U;
+  }
+
   [[nodiscard]] std::int32_t allocateChainId() noexcept {
     const auto id = nextChainId++;
     return static_cast<std::int32_t>(id);

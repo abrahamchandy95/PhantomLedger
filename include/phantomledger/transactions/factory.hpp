@@ -13,14 +13,10 @@ class Factory {
 public:
   Factory(random::Rng &rng, const infra::Router *router = nullptr,
           const infra::SharedInfra *ringInfra = nullptr)
-      : rng_(rng), router_(router), ringInfra_(ringInfra) {}
+      : rng_(&rng), router_(router), ringInfra_(ringInfra) {}
 
   [[nodiscard]] Factory rebound(random::Rng &newRng) const noexcept {
     return Factory(newRng, router_, ringInfra_);
-  }
-
-  [[nodiscard]] Factory withRng(random::Rng &rng) const {
-    return Factory(rng, router_, ringInfra_);
   }
 
   [[nodiscard]] Transaction make(const Draft &draft) const {
@@ -45,13 +41,14 @@ public:
 
     if (draft.ringId >= 0 && ringInfra_ != nullptr) {
       const auto sharedDevice = ringInfra_->deviceForRing(draft.ringId);
-      if (sharedDevice.has_value() && rng_.coin(ringInfra_->useSharedDeviceP)) {
+      if (sharedDevice.has_value() &&
+          (*rng_).coin(ringInfra_->useSharedDeviceP)) {
         txn.session.deviceId = *sharedDevice;
         deviceResolved = true;
       }
 
       const auto sharedIp = ringInfra_->ipForRing(draft.ringId);
-      if (sharedIp.has_value() && rng_.coin(ringInfra_->useSharedIpP)) {
+      if (sharedIp.has_value() && (*rng_).coin(ringInfra_->useSharedIpP)) {
         txn.session.ipAddress = *sharedIp;
         ipResolved = true;
       }
@@ -65,13 +62,13 @@ public:
       const auto owner = router_->ownerOf(draft.source);
       if (owner.has_value()) {
         if (!deviceResolved) {
-          const auto d = router_->routeDeviceFor(rng_, *owner);
+          const auto d = router_->routeDeviceFor(*rng_, *owner);
           if (d.has_value()) {
             txn.session.deviceId = *d;
           }
         }
         if (!ipResolved) {
-          const auto ip = router_->routeIpFor(rng_, *owner);
+          const auto ip = router_->routeIpFor(*rng_, *owner);
           if (ip.has_value()) {
             txn.session.ipAddress = *ip;
           }
@@ -83,7 +80,7 @@ public:
   }
 
 private:
-  random::Rng &rng_;
+  random::Rng *rng_;
   const infra::Router *router_;
   const infra::SharedInfra *ringInfra_;
 };

@@ -13,17 +13,26 @@
 #include "phantomledger/transfers/fraud/typologies/dispatch.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <iterator>
 #include <limits>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace PhantomLedger::transfers::fraud {
 
 namespace {
+
+[[nodiscard]] inline std::string ringStreamKey(std::uint32_t value) {
+  char buf[16];
+  auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
+  (void)ec;
+  return std::string(buf, ptr);
+}
 
 [[nodiscard]] std::int32_t ringBudget(std::int64_t remaining,
                                       std::int64_t ringsLeft) noexcept {
@@ -160,12 +169,23 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
   const auto totalRings = static_cast<std::int64_t>(plans.size());
   const typologies::Dispatcher dispatcher{ctx, behavior};
 
+  auto *savedRng = ctx.execution.rng;
+  const auto *keyFactory = ctx.execution.factory;
+
   for (std::int64_t ringIdx = 0; ringIdx < totalRings; ++ringIdx) {
     if (remainingBudget <= 0) {
       break;
     }
+    const auto ringId = plans[ringIdx].ringId;
+
+    random::Rng ringRng =
+        keyFactory->rng({"fraud", "ring", ringStreamKey(ringId)});
+    ctx.execution.rng = &ringRng;
+    ctx.execution.txf = ctx.execution.txf.rebound(ringRng);
+    ctx.seedChainIds(ringId);
+
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
-    const auto &playbook = behavior.playbooks.choose(*ctx.execution.rng);
+    const auto &playbook = behavior.playbooks.choose(ringRng);
 
     auto produced =
         runRingPlaybook(dispatcher, plans[ringIdx], perRing, playbook);
@@ -173,6 +193,9 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
     out.insert(out.end(), std::make_move_iterator(produced.begin()),
                std::make_move_iterator(produced.end()));
   }
+
+  ctx.execution.rng = savedRng;
+  ctx.execution.txf = ctx.execution.txf.rebound(*savedRng);
   return out;
 }
 
@@ -225,8 +248,10 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
 
   const auto pickAccount = [&](entity::Key avoid) -> entity::Key {
     for (int attempt = 0; attempt < 32; ++attempt) {
+
       const auto person =
           static_cast<entity::PersonId>(1 + rng.choiceIndex(personLimit));
+      // A roster person with no accounts is a skip, not a fatal error.
       if (ownership.byPersonOffset[person - 1] ==
           ownership.byPersonOffset[person]) {
         continue;
@@ -348,10 +373,7 @@ Injector::inject(time::Window window,
       static_cast<double>(rings_.profile->limits.targetTxnFraudP),
       static_cast<std::int64_t>(baseTxns.size() + camoTxns.size() +
                                 illicitTxns.size()));
-  // S9: the unauthorized planner draws from its own content-keyed
-  // stream. Under chunked generation, planning re-runs globally every
-  // chunk; keying it makes the plan list identical regardless of how
-  // many draws camouflage and ring typologies consumed beforehand.
+
   auto unauthorizedPlannerRng =
       fraudFactory_.rng({"fraud", "unauth", "planner"});
   const auto compromisePlans = buildCompromisePlans(
