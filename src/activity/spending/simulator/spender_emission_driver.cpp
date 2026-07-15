@@ -145,13 +145,12 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   const auto threadCount = std::max(threading().count, std::uint32_t{1});
   threadStates_.reserve(threadCount);
 
-  // Estimate transactions per thread for upfront vector reservation.
-  const auto days = static_cast<double>(market().bounds().days);
   const auto people = static_cast<double>(market().population().count());
-  const auto months = days / 30.0;
-  const auto expectedTxns = people * months * txnsPerMonth * kTxnReserveSlack;
-  const auto perThreadReserve =
-      static_cast<std::size_t>(expectedTxns / threadCount);
+  const auto expectedPerDay = people * txnsPerMonth / 30.0 * kTxnReserveSlack;
+  constexpr double kHeavyDayHeadroom = 8.0; // payday spikes run several x mean
+  const auto perThreadReserve = static_cast<std::size_t>(
+      std::max(64.0, kHeavyDayHeadroom * expectedPerDay /
+                         static_cast<double>(threadCount)));
 
   for (std::uint32_t t = 0; t < threadCount; ++t) {
     threadStates_.emplace_back();
@@ -191,7 +190,7 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
     total += threadState.txns.size();
     totalPostings += threadState.postings.size();
   }
-  dst.reserve(total);
+  dst.reserve(dst.size() + total);
   dayPostings_.reserve(totalPostings);
 
   for (auto &threadState : threadStates_) {

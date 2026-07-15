@@ -91,10 +91,7 @@ std::vector<transactions::Transaction> Simulator::run() {
   dayDriver_.bindEmission(run.budget(), run.routing());
 
   const std::size_t reserveCapacity =
-      !emissionThreads_.parallel()
-          ? static_cast<std::size_t>(run.budget().targetTotalTxns *
-                                     kTxnReserveSlack)
-          : 0;
+      static_cast<std::size_t>(run.budget().targetTotalTxns * kTxnReserveSlack);
 
   RunState state(market_.population().count(), reserveCapacity,
                  run.budget().totalPersonDays, run.budget().targetTotalTxns);
