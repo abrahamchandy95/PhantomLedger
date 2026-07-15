@@ -65,11 +65,13 @@ void requireInjectorPointers(const InjectorRingView &rings,
   }
 }
 
-[[nodiscard]] Execution makeExecution(InjectorServices services) {
+[[nodiscard]] Execution makeExecution(InjectorServices services,
+                                      const random::RngFactory &factory) {
   return Execution{
       .txf = transactions::Factory(services.rng, services.router,
                                    services.ringInfra),
       .rng = &services.rng,
+      .factory = &factory,
   };
 }
 
@@ -294,7 +296,7 @@ Injector::Injector(InjectorServices services, InjectorRingView rings,
                    InjectorAccountView accounts,
                    const Behavior &behavior) noexcept
     : services_(services), rings_(rings), accounts_(accounts),
-      behavior_(behavior) {}
+      behavior_(behavior), fraudFactory_(services.fraudSeed) {}
 
 InjectionOutput
 Injector::inject(time::Window window,
@@ -312,7 +314,7 @@ Injector::inject(time::Window window,
     return {};
   }
 
-  Execution execution = makeExecution(services_);
+  Execution execution = makeExecution(services_, fraudFactory_);
   AccountPools pools = makeAccountPools(*accounts_.registry, counterparties);
 
   CamouflageContext camouflageCtx{

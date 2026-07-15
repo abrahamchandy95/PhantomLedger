@@ -8,6 +8,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 
+#include <cstdint>
 #include <span>
 
 namespace PhantomLedger::transfers::fraud {
@@ -16,6 +17,8 @@ struct InjectorServices {
   random::Rng &rng;
   const infra::Router *router = nullptr;
   const infra::SharedInfra *ringInfra = nullptr;
+
+  std::uint64_t fraudSeed = 0;
 };
 
 struct InjectorRingView {

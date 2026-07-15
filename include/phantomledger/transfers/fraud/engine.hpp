@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -66,6 +67,8 @@ struct InjectionOutput {
 struct Execution {
   transactions::Factory txf;
   random::Rng *rng = nullptr;
+
+  const random::RngFactory *factory = nullptr;
 };
 
 /// Pre-materialized account pools used by the camouflage layer.

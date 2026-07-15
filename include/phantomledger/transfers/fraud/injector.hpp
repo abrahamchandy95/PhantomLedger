@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/behavior.hpp"
@@ -29,6 +30,7 @@ private:
   InjectorRingView rings_{};
   InjectorAccountView accounts_{};
   const Behavior &behavior_;
+  random::RngFactory fraudFactory_;
 };
 
 } // namespace PhantomLedger::transfers::fraud

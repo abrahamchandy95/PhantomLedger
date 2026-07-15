@@ -75,3 +75,11 @@ set_tests_properties(test_run_golden PROPERTIES
 # ---------------------------------------------------------------------
 
 pl_add_test(test_fraud_amounts)
+
+# ---------------------------------------------------------------------
+# Ownership invariant: every roster person owns at least one account
+# (structural guarantee from synth/accounts/counts.hpp, enforced as a
+# gate so no synthesis refactor can silently drop it)
+# ---------------------------------------------------------------------
+
+pl_add_test(test_ownership_invariant)
