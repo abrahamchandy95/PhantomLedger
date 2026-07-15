@@ -224,7 +224,11 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
   const auto pickAccount = [&](entity::Key avoid) -> entity::Key {
     for (int attempt = 0; attempt < 32; ++attempt) {
       const auto person =
-          static_cast<entity::PersonId>(rng.choiceIndex(personLimit));
+          static_cast<entity::PersonId>(1 + rng.choiceIndex(personLimit));
+      if (ownership.byPersonOffset[person - 1] ==
+          ownership.byPersonOffset[person]) {
+        continue;
+      }
       const auto key = detail::primaryKey(view, person);
       if (key != avoid && !excluded.contains(key)) {
         return key;
