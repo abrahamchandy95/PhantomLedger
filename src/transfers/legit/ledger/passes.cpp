@@ -1,5 +1,7 @@
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
 
+#include "phantomledger/transfers/legit/ledger/memlog.hpp"
+
 #include "phantomledger/activity/income/rent.hpp"
 #include "phantomledger/activity/income/revenue/generate.hpp"
 #include "phantomledger/activity/income/revenue/sources.hpp"
@@ -422,11 +424,17 @@ void addRoutines(const RoutinePass &pass,
   (void)routineAccounts(pass);
 
   addSplitDeposits(pass, plan, streams);
+  memlog::log("routines:splitters", streams);
   addRent(pass, plan, streams);
+  memlog::log("routines:rent", streams);
   addSubscriptions(pass, plan, streams, screen);
+  memlog::log("routines:subscriptions", streams);
   addAtm(pass, plan, streams, screen);
+  memlog::log("routines:atm", streams);
   addInternalTransfers(pass, plan, streams, screen);
+  memlog::log("routines:internal", streams);
   addSpending(pass, plan, streams, screen);
+  memlog::log("routines:spending", streams);
 }
 
 void addFamily(

@@ -80,6 +80,7 @@ void SpenderEmissionDriver::prepare(double txnsPerMonth) {
   routing_ = nullptr;
 
   prepareThreadStates(txnsPerMonth);
+  preparePool();
   prepareSpenderRngs();
 }
 
@@ -145,6 +146,13 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
   const auto threadCount = std::max(threading().count, std::uint32_t{1});
   threadStates_.reserve(threadCount);
 
+  // Per-thread scratch holds ONE day of one thread's emissions before the
+  // daily merge drains it (clear() keeps capacity), so reserve for a heavy
+  // day, not the whole run. The previous estimate reserved
+  // people * months * txnsPerMonth / threadCount, the entire run's target,
+  // in EVERY thread: at population 2,000 over 29 years that is ~245 MB per
+  // thread, ~2.9 GB of permanently dead capacity across 12 threads.
+  // Reservation is allocation-only; emitted values are unchanged.
   const auto people = static_cast<double>(market().population().count());
   const auto expectedPerDay = people * txnsPerMonth / 30.0 * kTxnReserveSlack;
   constexpr double kHeavyDayHeadroom = 8.0; // payday spikes run several x mean
@@ -190,6 +198,10 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
     total += threadState.txns.size();
     totalPostings += threadState.postings.size();
   }
+  // Account for rows already merged on previous days; reserve(total) alone
+  // is a no-op once size() exceeds the day count and the insert below then
+  // grows through doubling. Redundant when the driver pre-reserves the whole
+  // run, kept as a correct local invariant.
   dst.reserve(dst.size() + total);
   dayPostings_.reserve(totalPostings);
 
@@ -201,6 +213,13 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
     dayPostings_.insert(dayPostings_.end(), threadState.postings.begin(),
                         threadState.postings.end());
     threadState.postings.clear();
+  }
+}
+
+void SpenderEmissionDriver::preparePool() {
+  const auto threadCount = std::max(threading().count, std::uint32_t{1});
+  if (pool_ == nullptr || pool_->threadCount() != threadCount) {
+    pool_ = std::make_unique<WorkerPool>(threadCount);
   }
 }
 
@@ -225,25 +244,30 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
   const auto &routingSnapshot = routing();
   const Gate gate{ledger()};
 
-  runParallel(threadCount, [&](std::uint32_t threadIdx) {
-    const auto range = partitionRange(spenderCount, threadCount, threadIdx);
-    if (range.size() == 0) {
-      return;
-    }
+  if (pool_ == nullptr) {
+    preparePool();
+  }
+  const std::function<void(std::uint32_t)> emitBody =
+      [&](std::uint32_t threadIdx) {
+        const auto range = partitionRange(spenderCount, threadCount, threadIdx);
+        if (range.size() == 0) {
+          return;
+        }
 
-    auto &threadState = threadStates_[threadIdx];
+        auto &threadState = threadStates_[threadIdx];
 
-    SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
-                                           rulesFrom(behavior_)};
-    rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
+        SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
+                                               rulesFrom(behavior_)};
+        rates.dailyMultipliers(dailyMultipliers).ledgerView(gate);
 
-    SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
-                                                 factory(), gate};
-    SpenderEmissionLoop loop{population, rates, payments};
+        SpenderEmissionLoop::PaymentEmitter payments{market(), routingSnapshot,
+                                                     factory(), gate};
+        SpenderEmissionLoop loop{population, rates, payments};
 
-    loop.run(range.begin, range.end, std::span<random::Rng>{spenderRngs_},
-             threadState.txns, threadState.postings);
-  });
+        loop.run(range.begin, range.end, std::span<random::Rng>{spenderRngs_},
+                 threadState.txns, threadState.postings);
+      };
+  pool_->run(emitBody);
 
   mergeThreadTxns(state);
   applyDayPostings();

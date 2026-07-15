@@ -6,6 +6,7 @@
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
+#include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/math/counts.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -13,6 +14,7 @@
 #include "phantomledger/transactions/factory.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -70,10 +72,12 @@ private:
   [[nodiscard]] const PreparedRun::Routing &routing() const;
 
   void prepareThreadStates(double txnsPerMonth);
+  void preparePool();
   void prepareSpenderRngs();
   void mergeThreadTxns(RunState &state);
   void applyDayPostings();
 
+  std::unique_ptr<WorkerPool> pool_;
   Behavior behavior_{};
   const market::Market *market_ = nullptr;
   random::Rng *rng_ = nullptr;

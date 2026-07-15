@@ -1,5 +1,7 @@
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
 
+#include "phantomledger/transfers/legit/ledger/memlog.hpp"
+
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
@@ -142,6 +144,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
       .addPersonas(*rng_, timeframe_, personas_);
 
   auto initialBook = openingBook_.build(plan);
+  memlog::logPlain("openingBook");
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
@@ -149,6 +152,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
   const transactions::Factory txf(*rng_, router_);
 
   passes::addIncome(income_, plan, txf, streams);
+  memlog::log("income", streams);
 
   if (census_.ownership != nullptr && census_.accounts != nullptr) {
     auto routinePass = routines_;
@@ -159,6 +163,8 @@ LegitTransferResult LegitTransferBuilder::build() const {
     routinePass.txf(txf);
     passes::addRoutines(routinePass, plan, streams, screen);
   }
+
+  memlog::log("routines:done", streams);
 
   const random::RngFactory familyRngFactory{plan.seed()};
   streams.add(relatives::generateFamilyTxns(
@@ -172,6 +178,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
       std::move(counterparties.billerAccounts);
   result.counterparties.employers = std::move(counterparties.employers);
   result.openingBook.initialBook = std::move(initialBook);
+  memlog::log("family", streams);
   result.txns.replaySortedTxns = streams.takeReplayReady();
 
   return result;
