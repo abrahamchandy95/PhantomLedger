@@ -6,51 +6,32 @@
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
 #include <cstdint>
+#include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace PhantomLedger::transfers::fraud::typologies::unauthorized {
 
 namespace {
 
-// Per-plan event schedule.
-//
-// Card-compromise rail (two-phase; tests PROVABLY precede spend):
-//   phase 1: settled card-testing micro-charges inside a 10-60 minute
-//            window at the start of the compromise span
-//            (tWindow = clamp(span/6, 600s, 3600s));
-//   phase 2: escalated spend, beginning at least one hour after the
-//            test window opens (spendStart = tWindow + max(3600, span/6))
-//            and running to the end of the span.
-//   The two offset ranges are disjoint by construction, so a validated
-//   test can never carry a later timestamp than the spend it validated
-//   (the original implementation drew every offset uniformly over the
-//   whole span, which allowed exactly that inversion).
-//   Real-world anchor: validated cards escalate to larger purchases
-//   within hours to days (see citations in amounts.hpp).
-//
-// Account-takeover rail: p2p drains spread over the (2-32h) compromise
-//   span, emitted in ascending-timestamp order.
-//
-// Determinism: draws come only from ctx.execution.rng, in a fixed,
-// documented order per plan:
-//   card rail: coin(0.7) per test-candidate slot (at most 2), then per
-//              event in slot order: 1 uniform (timestamp) + 2 uniforms
-//              (amount);
-//   ato rail:  per event: 1 uniform (timestamp) + 2 uniforms (amount).
-// Events are then stable-sorted by timestamp (pairs stay paired) and
-// emitted chronologically; card-rail biller destinations draw one
-// further uniform per emitted event, in emission order. The stream is
-// therefore a pure function of the incoming Rng state.
-
 struct Event {
   std::int64_t ts = 0;
   double amount = 0.0;
 };
 
+[[nodiscard]] std::string_view renderUInt(std::array<char, 16> &buf,
+                                          std::uint32_t value) noexcept {
+  auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
+  (void)ec;
+  return std::string_view(buf.data(),
+                          static_cast<std::size_t>(ptr - buf.data()));
+}
+
 [[nodiscard]] std::int64_t offsetIn(random::Rng &rng, std::int64_t lo,
                                     std::int64_t hi) {
-  // Uniform integer offset in [lo, hi); consumes exactly one uniform.
   if (hi <= lo) {
     return lo;
   }
@@ -70,7 +51,12 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
   }
   out.reserve(static_cast<std::size_t>(budget));
 
-  random::Rng &rng = *ctx.execution.rng;
+  if (ctx.execution.factory == nullptr) {
+    throw std::logic_error("unauthorized::generate requires the S9 "
+                           "content-keyed RngFactory on Execution");
+  }
+  const auto &keyFactory = *ctx.execution.factory;
+  std::array<char, 16> seqBuf{};
 
   std::vector<Event> events;
   std::vector<bool> isTest;
@@ -82,6 +68,10 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     if (target <= 0) {
       continue;
     }
+
+    auto rng = keyFactory.rng(
+        {"fraud", "unauth", "plan", renderUInt(seqBuf, plan.seq)});
+    const auto planTxf = ctx.execution.txf.withRng(rng);
 
     events.clear();
     isTest.assign(static_cast<std::size_t>(target), false);
@@ -137,7 +127,7 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         draft.channel = channels::tag(channels::Legit::p2p);
       }
 
-      if (!appendBoundedTxn(ctx, out, budget, draft)) {
+      if (!appendBoundedTxn(planTxf, out, budget, draft)) {
         return out;
       }
       out.back().session.deviceId = plan.device;

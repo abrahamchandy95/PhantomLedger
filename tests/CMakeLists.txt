@@ -83,3 +83,10 @@ pl_add_test(test_fraud_amounts)
 # ---------------------------------------------------------------------
 
 pl_add_test(test_ownership_invariant)
+
+# ---------------------------------------------------------------------
+# S9 acceptance for unauthorized: per-plan keyed streams make a plan's
+# output independent of process history and batching
+# ---------------------------------------------------------------------
+
+pl_add_test(test_unauthorized_keyed)

@@ -19,6 +19,10 @@ public:
     return Factory(newRng, router_, ringInfra_);
   }
 
+  [[nodiscard]] Factory withRng(random::Rng &rng) const {
+    return Factory(rng, router_, ringInfra_);
+  }
+
   [[nodiscard]] Transaction make(const Draft &draft) const {
     Transaction txn;
     txn.source = draft.source;

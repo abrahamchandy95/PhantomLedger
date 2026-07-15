@@ -10,14 +10,21 @@
 namespace PhantomLedger::transfers::fraud::typologies {
 
 [[nodiscard]] inline bool
-appendBoundedTxn(IllicitContext &ctx,
+appendBoundedTxn(const transactions::Factory &txf,
                  std::vector<transactions::Transaction> &out,
                  std::int32_t budget, const transactions::Draft &draft) {
   if (static_cast<std::int32_t>(out.size()) >= budget) {
     return false;
   }
-  out.push_back(ctx.execution.txf.make(draft));
+  out.push_back(txf.make(draft));
   return true;
+}
+
+[[nodiscard]] inline bool
+appendBoundedTxn(IllicitContext &ctx,
+                 std::vector<transactions::Transaction> &out,
+                 std::int32_t budget, const transactions::Draft &draft) {
+  return appendBoundedTxn(ctx.execution.txf, out, budget, draft);
 }
 
 template <class T>

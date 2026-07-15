@@ -21,6 +21,8 @@ struct CompromisePlan {
   std::int64_t startTs = 0;
   std::int32_t spanSeconds = 0;
   std::int32_t targetEvents = 0;
+
+  std::uint32_t seq = 0;
 };
 
 [[nodiscard]] std::vector<transactions::Transaction>

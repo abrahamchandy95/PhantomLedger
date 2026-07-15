@@ -282,6 +282,7 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
         .startTs = windowStart + startDay * 86400 + intraDay,
         .spanSeconds = spanSeconds,
         .targetEvents = target,
+        .seq = static_cast<std::uint32_t>(seq),
     });
 
     remaining -= target;
@@ -347,8 +348,14 @@ Injector::inject(time::Window window,
       static_cast<double>(rings_.profile->limits.targetTxnFraudP),
       static_cast<std::int64_t>(baseTxns.size() + camoTxns.size() +
                                 illicitTxns.size()));
+  // S9: the unauthorized planner draws from its own content-keyed
+  // stream. Under chunked generation, planning re-runs globally every
+  // chunk; keying it makes the plan list identical regardless of how
+  // many draws camouflage and ring typologies consumed beforehand.
+  auto unauthorizedPlannerRng =
+      fraudFactory_.rng({"fraud", "unauth", "planner"});
   const auto compromisePlans = buildCompromisePlans(
-      *execution.rng, window, *accounts_.registry, *accounts_.ownership,
+      unauthorizedPlannerRng, window, *accounts_.registry, *accounts_.ownership,
       std::span<const Plan>(ringPlans), txnFraudBudget);
   auto unauthorizedTxns = typologies::unauthorized::generate(
       illicitCtx,
