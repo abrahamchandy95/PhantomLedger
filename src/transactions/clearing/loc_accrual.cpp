@@ -1,5 +1,6 @@
 #include "phantomledger/transactions/clearing/loc_accrual.hpp"
 
+#include <algorithm>
 #include <cassert>
 
 namespace PhantomLedger::clearing {
@@ -12,6 +13,7 @@ void LocAccrualTracker::initialize(Index count) {
   dollarSecondsIntegral_.assign(count, 0.0);
   lastUpdateTs_.assign(count, 0);
   lastBillingTs_.assign(count, 0);
+  enabledIdx_.clear();
 }
 
 bool LocAccrualTracker::isEnabled(Index idx) const noexcept {
@@ -20,6 +22,11 @@ bool LocAccrualTracker::isEnabled(Index idx) const noexcept {
 
 void LocAccrualTracker::enable(Index idx, double apr, int billingDay) noexcept {
   assert(idx < size_);
+  if (enabled_[idx] == 0) {
+    const auto pos =
+        std::lower_bound(enabledIdx_.begin(), enabledIdx_.end(), idx);
+    enabledIdx_.insert(pos, idx);
+  }
   enabled_[idx] = 1;
   apr_[idx] = apr;
   billingDay_[idx] = static_cast<std::int32_t>(billingDay);
@@ -32,6 +39,13 @@ void LocAccrualTracker::enable(Index idx, double apr, int billingDay) noexcept {
 
 void LocAccrualTracker::disable(Index idx) noexcept {
   assert(idx < size_);
+  if (enabled_[idx] != 0) {
+    const auto pos =
+        std::lower_bound(enabledIdx_.begin(), enabledIdx_.end(), idx);
+    if (pos != enabledIdx_.end() && *pos == idx) {
+      enabledIdx_.erase(pos);
+    }
+  }
   enabled_[idx] = 0;
   apr_[idx] = 0.0;
   billingDay_[idx] = 0;
@@ -71,6 +85,9 @@ void LocAccrualTracker::update(Index idx, double preCash,
 }
 
 void LocAccrualTracker::copyStateFrom(const LocAccrualTracker &other) noexcept {
+  // Copies accrual STATE only; enablement (and therefore enabledIdx_)
+  // must already match between the two trackers — the clone/restore
+  // pattern restores onto a book with identical account setup.
   assert(size_ == other.size_);
   dollarSecondsIntegral_ = other.dollarSecondsIntegral_;
   lastUpdateTs_ = other.lastUpdateTs_;

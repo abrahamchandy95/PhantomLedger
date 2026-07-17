@@ -3,6 +3,7 @@
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 
 #include "phantomledger/pipeline/invariants.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 #include "phantomledger/transfers/fraud/behavior.hpp"
@@ -86,6 +87,16 @@ void runTransferStage(SimulationResult &result,
   const auto &holdings = result.holdings;
   const auto &cps = result.counterparties;
 
+  // Product generation and both settlement passes draw from dedicated
+  // deterministic lanes derived from the run seed — the same lanes the
+  // windowed driver owns — so both architectures share one RNG regime.
+  // Legit generation and fraud planning stay on the shared sequential
+  // stream. Corpus baseline is pinned in tests/golden_run.b2sum.
+  const random::RngFactory laneFactory{stage.legit().runScope().seed};
+  auto productRng = laneFactory.rng({"products", "full_schedule"});
+  auto preSettleRng = laneFactory.rng({"settlement", "pre_fraud"});
+  auto postSettleRng = laneFactory.rng({"settlement", "post_fraud"});
+
   auto legitPayload = stage.buildLegit(rng, people, holdings, cps);
   logStageMem("buildLegit",
               {{"replaySorted", legitPayload.txns.replaySortedTxns.size()}});
@@ -93,11 +104,11 @@ void runTransferStage(SimulationResult &result,
   const auto replaySchedule = pipeline::chunk::Schedule::partition(
       stage.legit().runScope().window, stage.legit().runScope().chunkStrategy);
   auto productStream =
-      stage.mergeProducts(rng, holdings, std::move(legitPayload.txns));
+      stage.mergeProducts(productRng, holdings, std::move(legitPayload.txns));
   logStageMem("mergeProducts", {{"productStream", productStream.size()}});
-  auto candidate =
-      stage.ledger().preFraudChunked(*legitPayload.openingBook.initialBook, rng,
-                                     std::move(productStream), replaySchedule);
+  auto candidate = stage.ledger().preFraudChunked(
+      *legitPayload.openingBook.initialBook, preSettleRng,
+      std::move(productStream), replaySchedule);
   logStageMem("preFraudSettle", {{"candidate", candidate.txns.size()}});
 
   auto injector = stage.makeFraudInjector(rng, people, holdings);
@@ -112,8 +123,8 @@ void runTransferStage(SimulationResult &result,
   logStageMem("fraudInject", {{"candidate", candidate.txns.size()},
                               {"fraud", fraudOut.injected.size()}});
   auto posted = stage.ledger().postFraudChunkedMerged(
-      rng, *legitPayload.openingBook.initialBook, std::move(candidate.txns),
-      std::move(fraudOut.injected), replaySchedule);
+      postSettleRng, *legitPayload.openingBook.initialBook,
+      std::move(candidate.txns), std::move(fraudOut.injected), replaySchedule);
   logStageMem("postFraudSettle", {{"posted", posted.txns.size()}});
 
   validateTransactionAccounts(holdings.accounts.lookup, posted.txns);
@@ -193,7 +204,8 @@ void SimulationPipeline::buildEntities(SimulationResult &result) const {
                                         cfg.businessOwners);
 }
 
-SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
+SimulationResult
+SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
   SimulationResult out;
 
   const auto notify = [&](std::string_view phase) {
@@ -211,12 +223,49 @@ SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
   out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
   notify("infra");
 
+  return out;
+}
+
+SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
+  auto out = buildWorld(onPhase);
+
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
   stage.infra(out.infra);
 
   runTransferStage(out, stage, *rng_);
-  notify("transfers");
+  if (onPhase) {
+    onPhase("transfers");
+  }
+
+  return out;
+}
+
+stages::transfers::WindowedRunResult
+SimulationPipeline::runWindowedTransfersErased(
+    SimulationResult &world, stages::transfers::SinkRef sink,
+    const WindowedRunOptions &options, const PhaseObserver &onPhase) const {
+  auto stage = transfers_;
+  configureTransferStage(stage, window_, seed_, entities_.fraud);
+  stage.infra(world.infra);
+
+  auto out = stage.runWindowedErased(*rng_, world.people, world.holdings,
+                                     world.counterparties, sink, options);
+  if (onPhase) {
+    onPhase("transfers");
+  }
+  return out;
+}
+
+WindowedSimulationResult SimulationPipeline::runWindowedErased(
+    stages::transfers::SinkRef sink, const WindowedRunOptions &options,
+    const PhaseObserver &onPhase) const {
+  WindowedSimulationResult out;
+
+  // Identical world build to run(): same stages, same shared-stream
+  // consumption, so the transfer fold starts from a byte-identical world.
+  out.world = buildWorld(onPhase);
+  out.transfers = runWindowedTransfersErased(out.world, sink, options, onPhase);
 
   return out;
 }

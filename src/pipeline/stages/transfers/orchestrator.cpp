@@ -33,8 +33,10 @@ FraudEmission &TransferStage::fraud() noexcept { return fraud_; }
 
 const FraudEmission &TransferStage::fraud() const noexcept { return fraud_; }
 
-TransferStage &TransferStage::infra(const pipeline::Infra &value) noexcept {
+TransferStage &TransferStage::infra(const pipeline::Infra &value) {
   infra_ = &value;
+  // Pristine-router snapshot for product routing; see the member comment.
+  productRouter_ = value.router;
   return *this;
 }
 
@@ -79,7 +81,9 @@ TransferStage::mergeProducts(::PhantomLedger::random::Rng &rng,
   const auto scope = legit_.runScope();
   const auto primaryAccountsByPerson = primaryAccounts(holdings);
 
-  ::PhantomLedger::transactions::Factory productTxf{rng, &infra.router,
+  // Products route from the pristine snapshot, not the live shared router;
+  // see the productRouter_ member comment in orchestrator.hpp.
+  ::PhantomLedger::transactions::Factory productTxf{rng, &productRouter_,
                                                     &infra.ringInfra};
   ProductTxnEmitter productEmitter{scope.window, scope.seed, rng, productTxf};
 

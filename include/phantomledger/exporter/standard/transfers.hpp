@@ -33,31 +33,38 @@ struct Aggregate {
 using AggregateMap =
     std::unordered_map<ent::KeyPair, Aggregate, ent::KeyPairHash>;
 
+// Per-row accumulation, shared by the one-shot aggregation below and the
+// windowed streaming exporter. Rows must arrive in corpus order so the
+// floating-point sums stay bit-identical between the two paths.
+inline void accumulateHasPaid(AggregateMap &agg, const tx_ns::Transaction &tx) {
+  const ent::KeyPair key{tx.source, tx.target};
+  auto it = agg.find(key);
+  if (it == agg.end()) {
+    Aggregate fresh{};
+    fresh.totalAmount = tx.amount;
+    fresh.txnCount = 1;
+    fresh.firstTs = tx.timestamp;
+    fresh.lastTs = tx.timestamp;
+    agg.emplace(key, fresh);
+  } else {
+    auto &rec = it->second;
+    rec.totalAmount += tx.amount;
+    ++rec.txnCount;
+    if (tx.timestamp < rec.firstTs) {
+      rec.firstTs = tx.timestamp;
+    } else if (tx.timestamp > rec.lastTs) {
+      rec.lastTs = tx.timestamp;
+    }
+  }
+}
+
 [[nodiscard]] inline AggregateMap
 aggregateHasPaid(std::span<const tx_ns::Transaction> txns) {
   AggregateMap agg;
   agg.reserve(txns.size() / 2 + 1);
 
   for (const auto &tx : txns) {
-    const ent::KeyPair key{tx.source, tx.target};
-    auto it = agg.find(key);
-    if (it == agg.end()) {
-      Aggregate fresh{};
-      fresh.totalAmount = tx.amount;
-      fresh.txnCount = 1;
-      fresh.firstTs = tx.timestamp;
-      fresh.lastTs = tx.timestamp;
-      agg.emplace(key, fresh);
-    } else {
-      auto &rec = it->second;
-      rec.totalAmount += tx.amount;
-      ++rec.txnCount;
-      if (tx.timestamp < rec.firstTs) {
-        rec.firstTs = tx.timestamp;
-      } else if (tx.timestamp > rec.lastTs) {
-        rec.lastTs = tx.timestamp;
-      }
-    }
+    accumulateHasPaid(agg, tx);
   }
   return agg;
 }
@@ -107,13 +114,20 @@ sortedEntries(const AggregateMap &agg) {
 
 } // namespace detail
 
-inline void writeHasPaidRows(
-    ::PhantomLedger::exporter::csv::Writer &w,
-    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns) {
-  const auto agg = detail::aggregateHasPaid(finalTxns);
+// Write side over an already-accumulated map (sorted, so output is
+// independent of accumulation layout). The streaming exporter calls this
+// at finish().
+inline void writeHasPaidAggregates(::PhantomLedger::exporter::csv::Writer &w,
+                                   const detail::AggregateMap &agg) {
   for (const auto &[key, recPtr] : detail::sortedEntries(agg)) {
     detail::writeHasPaidRow(w, key, *recPtr);
   }
+}
+
+inline void writeHasPaidRows(
+    ::PhantomLedger::exporter::csv::Writer &w,
+    std::span<const ::PhantomLedger::transactions::Transaction> finalTxns) {
+  writeHasPaidAggregates(w, detail::aggregateHasPaid(finalTxns));
 }
 
 } // namespace PhantomLedger::exporter::standard

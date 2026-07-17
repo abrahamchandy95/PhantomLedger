@@ -59,6 +59,12 @@ public:
   ProductReplay &insuranceClaims(
       ::PhantomLedger::transfers::insurance::ClaimRates value) noexcept;
 
+  // Read side for the windowed composition: the product cursor source must
+  // generate with the same configured claim rates as merge().
+  [[nodiscard]] const InsurancePrograms &insurancePrograms() const noexcept {
+    return insurance_;
+  }
+
   [[nodiscard]] std::vector<Transaction>
   merge(ProductTxnEmitter &emitter, const pipeline::Holdings &holdings,
         const PrimaryAccounts &primaryAccounts,

@@ -48,6 +48,9 @@ public:
 
   void drainResidual();
 
+  [[nodiscard]] std::vector<transactions::Transaction>
+  takeEmittedBefore(std::int64_t boundExcl);
+
   [[nodiscard]] std::vector<transactions::Transaction> takeEmitted();
 
   [[nodiscard]] bool active() const noexcept { return active_; }
@@ -57,25 +60,37 @@ private:
     std::vector<transactions::Transaction> purchases;
     std::vector<std::uint32_t> indices;
     std::vector<time::TimePoint> closes;
+
     std::size_t closeCursor = 0;
     std::uint8_t cycleDay = 1;
+
     time::TimePoint priorClose{};
+
     bool sessionReady = false;
     std::unique_ptr<detail::Session> session;
   };
 
   void ensureSession(const entity::Key &cardKey, PerCard &card);
+
   void closeCyclesUpTo(PerCard &card, time::TimePoint hardLimit);
+
+  void compactConsumedPurchases(PerCard &card);
 
   const LifecycleRules *rules_ = nullptr;
   const transactions::Factory *factory_ = nullptr;
+
   std::uint64_t rngBase_ = 0;
+
   DriverInputs inputs_{};
+
   ::PhantomLedger::clearing::Ledger *ledger_ = nullptr;
 
   std::unique_ptr<detail::Environment> env_;
+
   std::unordered_map<entity::Key, PerCard> cards_;
+
   std::vector<transactions::Transaction> emitted_;
+
   bool active_ = false;
 };
 

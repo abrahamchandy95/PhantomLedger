@@ -53,12 +53,19 @@ inline void writeSessionCells(::PhantomLedger::exporter::csv::Writer &w,
       .cell(ch::name(tx.session.channel));
 }
 
-inline void writeLedgerRow(::PhantomLedger::exporter::csv::Writer &w,
-                           const tx_ns::Transaction &tx) {
+// All ten ledger cells WITHOUT the row terminator, so callers (the
+// Postgres sink) can prepend bookkeeping columns on the same row.
+inline void writeLedgerCells(::PhantomLedger::exporter::csv::Writer &w,
+                             const tx_ns::Transaction &tx) {
   writeRoutingCells(w, tx);
   writePaymentCells(w, tx);
   writeFraudCells(w, tx);
   writeSessionCells(w, tx);
+}
+
+inline void writeLedgerRow(::PhantomLedger::exporter::csv::Writer &w,
+                           const tx_ns::Transaction &tx) {
+  writeLedgerCells(w, tx);
   w.endRow();
 }
 

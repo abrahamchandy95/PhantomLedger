@@ -55,11 +55,14 @@ int main() {
   const fs::path logPath = fs::temp_directory_path() / "pl_run_golden.log";
   fs::remove_all(outDir);
 
-  // PostgreSQL is implicit in the binary; pin the subprocess to an
-  // unreachable target so this test stays serverless and never
-  // touches the developer's real mirror (make test must not clobber
-  // the database). The binary warns and continues file-only.
-  const std::string cmd = std::string{"PL_PG='host=127.0.0.1 port=9 "
+  // The golden must never depend on PostgreSQL: PL_FILE_ONLY=1 is the
+  // sanctioned harness escape (without it the binary now fails fast
+  // when no server answers), and PL_PG additionally pins an
+  // unreachable target as defense in depth — if the escape ever
+  // breaks, this test fails loudly instead of clobbering the
+  // developer's real mirror.
+  const std::string cmd = std::string{"PL_FILE_ONLY=1 "
+                                      "PL_PG='host=127.0.0.1 port=9 "
                                       "dbname=pl_disabled' \""} +
                           PL_BIN_PATH +
                           "\" --population 2000 --days 60"

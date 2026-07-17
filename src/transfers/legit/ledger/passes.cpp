@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/legit/ledger/passes.hpp"
 
+#include "phantomledger/transfers/legit/ledger/card_config.hpp"
 #include "phantomledger/transfers/legit/ledger/memlog.hpp"
 
 #include "phantomledger/activity/income/rent.hpp"
@@ -291,7 +292,12 @@ void addInternalTransfers(const RoutinePass &pass,
   streams.add(internalTransfers.generate(plan));
 }
 
-[[nodiscard]] routines::spending::SpendingRoutine::CardLifecycleConfig
+} // namespace
+
+// Public (card_config.hpp): shared by addSpending() below and the windowed
+// session composition, so the two spending engines cannot drift apart on
+// card-lifecycle configuration.
+routines::spending::SpendingRoutine::CardLifecycleConfig
 buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
                          const RoutineResources &resources) {
   routines::spending::SpendingRoutine::CardLifecycleConfig cfg{};
@@ -318,6 +324,8 @@ buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
 
   return cfg;
 }
+
+namespace {
 
 void addSpending(const RoutinePass &pass,
                  const blueprints::LegitBlueprint &plan, TxnStreams &streams,
@@ -416,9 +424,9 @@ void addIncome(const IncomePass &pass, const blueprints::LegitBlueprint &plan,
   streams.add(income::revenue::generate(book, txf));
 }
 
-void addRoutines(const RoutinePass &pass,
-                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
-                 ScreenBook &screen) {
+void addRoutinesWithoutSpending(const RoutinePass &pass,
+                                const blueprints::LegitBlueprint &plan,
+                                TxnStreams &streams, ScreenBook &screen) {
   (void)routineRng(pass);
   (void)routineTxf(pass);
   (void)routineAccounts(pass);
@@ -433,6 +441,12 @@ void addRoutines(const RoutinePass &pass,
   memlog::log("routines:atm", streams);
   addInternalTransfers(pass, plan, streams, screen);
   memlog::log("routines:internal", streams);
+}
+
+void addRoutines(const RoutinePass &pass,
+                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
+                 ScreenBook &screen) {
+  addRoutinesWithoutSpending(pass, plan, streams, screen);
   addSpending(pass, plan, streams, screen);
   memlog::log("routines:spending", streams);
 }
@@ -444,9 +458,15 @@ void addFamily(
   streams.add(routines::relatives::generateFamilyTxns(run, transferModel));
 }
 
-void addCredit(const CreditLifecyclePass & /*pass*/,
-               const blueprints::LegitBlueprint & /*plan*/,
-               const transactions::Factory & /*txf*/,
-               TxnStreams & /*streams*/) {}
+// Card lifecycle is generated inside the spending routine (CardCycleDriver);
+// this pass currently emits nothing and is retained for interface stability.
+void addCredit(const CreditLifecyclePass &pass,
+               const blueprints::LegitBlueprint &plan,
+               const transactions::Factory &txf, TxnStreams &streams) {
+  (void)pass;
+  (void)plan;
+  (void)txf;
+  (void)streams;
+}
 
 } // namespace PhantomLedger::transfers::legit::ledger::passes

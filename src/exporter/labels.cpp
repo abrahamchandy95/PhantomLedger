@@ -54,34 +54,18 @@ mapFraudChannel(ch::Fraud channel) noexcept {
          value <= static_cast<std::uint8_t>(ch::Fraud::bipartite);
 }
 
-struct ChainBucket {
-  std::vector<const tx_ns::Transaction *> txns;
-};
-
-[[nodiscard]] std::unordered_map<std::uint32_t, ChainBucket>
-groupByChainId(std::span<const tx_ns::Transaction> postedTxns) {
-  std::unordered_map<std::uint32_t, ChainBucket> out;
-  for (const auto &tx : postedTxns) {
-    if (!tx.fraud.chainId.has_value()) {
-      continue;
-    }
-    out[*tx.fraud.chainId].txns.push_back(&tx);
-  }
-  return out;
-}
-
-void sortByTimestamp(std::vector<const tx_ns::Transaction *> &txns) {
+void sortByTimestamp(std::vector<tx_ns::Transaction> &txns) {
   std::sort(txns.begin(), txns.end(),
-            [](const tx_ns::Transaction *a, const tx_ns::Transaction *b) {
-              return a->timestamp < b->timestamp;
+            [](const tx_ns::Transaction &a, const tx_ns::Transaction &b) {
+              return a.timestamp < b.timestamp;
             });
 }
 
 [[nodiscard]] fr::Typology
-dominantTypology(const std::vector<const tx_ns::Transaction *> &txns) noexcept {
+dominantTypology(const std::vector<tx_ns::Transaction> &txns) noexcept {
   std::array<std::uint32_t, fr::kTypologyCount> counts{};
-  for (const auto *tx : txns) {
-    const auto t = typologyForChannel(tx->session.channel);
+  for (const auto &tx : txns) {
+    const auto t = typologyForChannel(tx.session.channel);
     if (!t.has_value()) {
       continue;
     }
@@ -98,12 +82,11 @@ dominantTypology(const std::vector<const tx_ns::Transaction *> &txns) noexcept {
   return static_cast<fr::Typology>(bestIdx);
 }
 
-[[nodiscard]] ChainRow
-summarizeChain(std::uint32_t chainId,
-               std::vector<const tx_ns::Transaction *> &txns) {
+[[nodiscard]] ChainRow summarizeChain(std::uint32_t chainId,
+                                      std::vector<tx_ns::Transaction> &txns) {
   sortByTimestamp(txns);
-  const auto &first = *txns.front();
-  const auto &last = *txns.back();
+  const auto &first = txns.front();
+  const auto &last = txns.back();
   const double principal = first.amount;
   const double finalAmount = last.amount;
   const double haircut =
@@ -145,9 +128,20 @@ void collectShellsForRing(ShellInputs in, const ent::person::Ring &ring,
     out.push_back(ShellAccountRow{
         .accountId = rec.id,
         .ringId = ring.id,
-        .shellScore = 1.0,
     });
   }
+}
+
+// fraud-audit-2026-07 F2: the score is a derived pass-through statistic,
+// not the constant 1.0. Every input is an order-insensitive aggregate.
+[[nodiscard]] double shellScoreOf(const ShellAggregates &agg) noexcept {
+  const double high = std::max(agg.inflow, agg.outflow);
+  const double passThrough =
+      std::min(agg.inflow, agg.outflow) / std::max(high, 1e-9);
+  const double total = static_cast<double>(agg.totalCount);
+  const double organicShare =
+      (total - static_cast<double>(agg.fraudCount)) / std::max(total, 1.0);
+  return passThrough * (1.0 - organicShare);
 }
 
 } // namespace
@@ -159,16 +153,21 @@ std::optional<fr::Typology> typologyForChannel(ch::Tag channel) noexcept {
   return mapFraudChannel(static_cast<ch::Fraud>(channel.value));
 }
 
-std::vector<ChainRow>
-buildChains(std::span<const tx_ns::Transaction> postedTxns) {
-  auto buckets = groupByChainId(postedTxns);
+void accumulateChainTxn(ChainGroups &groups, const tx_ns::Transaction &tx) {
+  if (!tx.fraud.chainId.has_value()) {
+    return;
+  }
+  groups[*tx.fraud.chainId].push_back(tx);
+}
+
+std::vector<ChainRow> finalizeChains(ChainGroups &groups) {
   std::vector<ChainRow> rows;
-  rows.reserve(buckets.size());
-  for (auto &[chainId, bucket] : buckets) {
-    if (bucket.txns.empty()) {
+  rows.reserve(groups.size());
+  for (auto &[chainId, txns] : groups) {
+    if (txns.empty()) {
       continue;
     }
-    rows.push_back(summarizeChain(chainId, bucket.txns));
+    rows.push_back(summarizeChain(chainId, txns));
   }
   std::sort(rows.begin(), rows.end(), [](const ChainRow &a, const ChainRow &b) {
     return a.chainId < b.chainId;
@@ -176,17 +175,81 @@ buildChains(std::span<const tx_ns::Transaction> postedTxns) {
   return rows;
 }
 
-std::vector<ShellAccountRow> buildShells(ShellInputs in) {
-  std::vector<ShellAccountRow> rows;
-  rows.reserve(in.topology.rings.size() * 2);
-  for (const auto &ring : in.topology.rings) {
-    collectShellsForRing(in, ring, rows);
+std::vector<ChainRow>
+buildChains(std::span<const tx_ns::Transaction> postedTxns) {
+  ChainGroups groups;
+  for (const auto &tx : postedTxns) {
+    accumulateChainTxn(groups, tx);
   }
-  std::sort(rows.begin(), rows.end(),
+  return finalizeChains(groups);
+}
+
+ShellStats initShellStats(ShellInputs in) {
+  ShellStats stats;
+  stats.candidates.reserve(in.topology.rings.size() * 2);
+  for (const auto &ring : in.topology.rings) {
+    collectShellsForRing(in, ring, stats.candidates);
+  }
+  std::sort(stats.candidates.begin(), stats.candidates.end(),
             [](const ShellAccountRow &a, const ShellAccountRow &b) {
               return a.accountId.number < b.accountId.number;
             });
+  stats.byAccount.reserve(stats.candidates.size());
+  for (const auto &row : stats.candidates) {
+    stats.byAccount.try_emplace(row.accountId);
+  }
+  return stats;
+}
+
+void accumulateShellTxn(ShellStats &stats, const tx_ns::Transaction &tx) {
+  if (stats.byAccount.empty()) {
+    return;
+  }
+  const bool isFraud = tx.fraud.flag != 0;
+  const auto touch = [&](const ent::Key &account, bool inbound) {
+    const auto it = stats.byAccount.find(account);
+    if (it == stats.byAccount.end()) {
+      return;
+    }
+    auto &agg = it->second;
+    (inbound ? agg.inflow : agg.outflow) += tx.amount;
+    if (agg.totalCount == 0) {
+      agg.firstTs = tx.timestamp;
+      agg.lastTs = tx.timestamp;
+    } else {
+      agg.firstTs = std::min(agg.firstTs, tx.timestamp);
+      agg.lastTs = std::max(agg.lastTs, tx.timestamp);
+    }
+    ++agg.totalCount;
+    if (isFraud) {
+      ++agg.fraudCount;
+    }
+  };
+  touch(tx.source, /*inbound=*/false);
+  touch(tx.target, /*inbound=*/true);
+}
+
+std::vector<ShellAccountRow> finalizeShells(const ShellStats &stats) {
+  std::vector<ShellAccountRow> rows = stats.candidates;
+  for (auto &row : rows) {
+    // Every candidate's slot is seeded by initShellStats; an absent
+    // entry means zero activity and keeps the dormant 0.0 default.
+    const auto it = stats.byAccount.find(row.accountId);
+    if (it == stats.byAccount.end()) {
+      continue;
+    }
+    row.shellScore = shellScoreOf(it->second);
+  }
   return rows;
+}
+
+std::vector<ShellAccountRow>
+buildShells(ShellInputs in, std::span<const tx_ns::Transaction> postedTxns) {
+  auto stats = initShellStats(in);
+  for (const auto &tx : postedTxns) {
+    accumulateShellTxn(stats, tx);
+  }
+  return finalizeShells(stats);
 }
 
 void writeChainRows(csv::Writer &w, std::span<const ChainRow> rows) {
@@ -224,22 +287,28 @@ void writeShellAccountRows(csv::Writer &w,
 }
 
 void writeTransactionChainLabelRows(
-    csv::Writer &w, std::span<const tx_ns::Transaction> postedTxns) {
-  std::size_t idx = 1;
+    csv::Writer &w, std::span<const tx_ns::Transaction> postedTxns,
+    std::size_t &nextIndex1) {
   for (const auto &tx : postedTxns) {
     if (!tx.fraud.chainId.has_value()) {
-      ++idx;
+      ++nextIndex1;
       continue;
     }
-    w.cell(static_cast<std::uint32_t>(idx)).cell(*tx.fraud.chainId);
+    w.cell(static_cast<std::uint32_t>(nextIndex1)).cell(*tx.fraud.chainId);
     if (tx.fraud.ringId.has_value()) {
       w.cell(*tx.fraud.ringId);
     } else {
       w.cellEmpty();
     }
     w.endRow();
-    ++idx;
+    ++nextIndex1;
   }
+}
+
+void writeTransactionChainLabelRows(
+    csv::Writer &w, std::span<const tx_ns::Transaction> postedTxns) {
+  std::size_t idx = 1;
+  writeTransactionChainLabelRows(w, postedTxns, idx);
 }
 
 } // namespace PhantomLedger::exporter::labels

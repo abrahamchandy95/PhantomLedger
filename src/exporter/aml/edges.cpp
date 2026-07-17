@@ -49,57 +49,100 @@ estimateRowCapacity(const pipe::People &people,
          ctx.counterpartyIds.size() + 21U;
 }
 
+// Corpus-path emitter: retains the row-scale outputs in the bundle
+// vectors, exactly as the pre-seam classification loop did.
+struct BundleEmitter final : TransactionEdgeEmitter {
+  explicit BundleEmitter(TransactionEdgeBundle &bundle) : out(&bundle) {}
+
+  void send(const ent::Key &acct, std::size_t idx1) override {
+    out->sendRows.emplace_back(acct, idx1);
+  }
+
+  void receive(const ent::Key &acct, std::size_t idx1) override {
+    out->receiveRows.emplace_back(acct, idx1);
+  }
+
+  void cpSend(const ent::Key &cp, std::size_t idx1,
+              const std::string &name) override {
+    out->cpSendRows.emplace_back(cp, idx1, name);
+  }
+
+  void cpReceive(const ent::Key &cp, std::size_t idx1,
+                 const std::string &name) override {
+    out->cpReceiveRows.emplace_back(cp, idx1, name);
+  }
+
+  TransactionEdgeBundle *out = nullptr;
+};
+
 } // namespace
+
+TransactionEdgeClassifier::TransactionEdgeClassifier(
+    const vertices::SharedContext &ctx)
+    : ctx_(&ctx) {
+  assert(ctx.pools != nullptr);
+}
+
+const std::string &TransactionEdgeClassifier::cpNameFor(const ent::Key &k) {
+  auto it = cpNames_.find(k);
+  if (it == cpNames_.end()) {
+    const auto &usPool = poolsFor(*ctx_).forCountry(loc::Country::us);
+    auto name = std::string{
+        identity::nameForCounterparty(exporter::common::renderKey(k), usPool)
+            .firstName};
+    it = cpNames_.emplace(k, std::move(name)).first;
+  }
+  return it->second;
+}
+
+void TransactionEdgeClassifier::observe(const tx_ns::Transaction &tx,
+                                        TransactionEdgeEmitter &emit) {
+  const bool srcExt = exporter::common::isExternalKey(tx.source);
+  const bool dstExt = exporter::common::isExternalKey(tx.target);
+
+  if (srcExt) {
+    emit.cpSend(tx.source, idx_, cpNameFor(tx.source));
+    sets_.cpSenders.insert(tx.source);
+    if (!dstExt) {
+      sets_.receivedFromCpPairs.emplace(tx.target, tx.source);
+    }
+  } else {
+    emit.send(tx.source, idx_);
+    if (dstExt) {
+      sets_.sentToCpPairs.emplace(tx.source, tx.target);
+    }
+  }
+
+  if (dstExt) {
+    emit.cpReceive(tx.target, idx_, cpNameFor(tx.target));
+    sets_.cpReceivers.insert(tx.target);
+  } else {
+    emit.receive(tx.target, idx_);
+  }
+
+  ++idx_;
+}
 
 TransactionEdgeBundle
 classifyTransactionEdges(std::span<const tx_ns::Transaction> finalTxns,
                          const vertices::SharedContext &ctx) {
   TransactionEdgeBundle out;
-  const auto &usPool = poolsFor(ctx).forCountry(loc::Country::us);
-
-  std::unordered_map<ent::Key, std::string> cpNames;
 
   out.sendRows.reserve(finalTxns.size());
   out.receiveRows.reserve(finalTxns.size());
 
-  const auto cpNameFor = [&](const ent::Key &k) -> const std::string & {
-    auto it = cpNames.find(k);
-    if (it == cpNames.end()) {
-      auto name = std::string{
-          identity::nameForCounterparty(exporter::common::renderKey(k), usPool)
-              .firstName};
-      it = cpNames.emplace(k, std::move(name)).first;
-    }
-    return it->second;
-  };
+  TransactionEdgeClassifier classifier{ctx};
+  BundleEmitter emitter{out};
 
-  std::size_t idx = 1;
   for (const auto &tx : finalTxns) {
-    const bool srcExt = exporter::common::isExternalKey(tx.source);
-    const bool dstExt = exporter::common::isExternalKey(tx.target);
-
-    if (srcExt) {
-      out.cpSendRows.emplace_back(tx.source, idx, cpNameFor(tx.source));
-      out.cpSenders.insert(tx.source);
-      if (!dstExt) {
-        out.receivedFromCpPairs.emplace(tx.target, tx.source);
-      }
-    } else {
-      out.sendRows.emplace_back(tx.source, idx);
-      if (dstExt) {
-        out.sentToCpPairs.emplace(tx.source, tx.target);
-      }
-    }
-
-    if (dstExt) {
-      out.cpReceiveRows.emplace_back(tx.target, idx, cpNameFor(tx.target));
-      out.cpReceivers.insert(tx.target);
-    } else {
-      out.receiveRows.emplace_back(tx.target, idx);
-    }
-
-    ++idx;
+    classifier.observe(tx, emitter);
   }
+
+  auto sets = classifier.takeSets();
+  out.sentToCpPairs = std::move(sets.sentToCpPairs);
+  out.receivedFromCpPairs = std::move(sets.receivedFromCpPairs);
+  out.cpSenders = std::move(sets.cpSenders);
+  out.cpReceivers = std::move(sets.cpReceivers);
 
   return out;
 }
@@ -160,17 +203,27 @@ void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
       });
 }
 
+void writeAcctTxnRow(exporter::csv::Writer &w, const ent::Key &acct,
+                     std::size_t idx1) {
+  w.writeRow(exporter::common::renderKey(acct), transactionId(idx1));
+}
+
+void writeCpTxnRow(exporter::csv::Writer &w, const ent::Key &cp,
+                   std::size_t idx1, const std::string &name) {
+  w.writeRow(exporter::common::renderKey(cp), transactionId(idx1), name);
+}
+
 void writeAcctTxnRows(exporter::csv::Writer &w,
                       std::span<const TransactionEdgeBundle::AcctTxnRow> rows) {
   for (const auto &[acct, idx] : rows) {
-    w.writeRow(exporter::common::renderKey(acct), transactionId(idx));
+    writeAcctTxnRow(w, acct, idx);
   }
 }
 
 void writeCpTxnRows(exporter::csv::Writer &w,
                     std::span<const TransactionEdgeBundle::CpTxnRow> rows) {
   for (const auto &[cp, idx, name] : rows) {
-    w.writeRow(exporter::common::renderKey(cp), transactionId(idx), name);
+    writeCpTxnRow(w, cp, idx, name);
   }
 }
 

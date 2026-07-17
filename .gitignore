@@ -110,3 +110,8 @@ __pycache__/
 #                             behavior itself belongs in version
 #                             control.
 # ---------------------------------------------------------------------
+CLAUDE.md
+systemprompt.md
+.claude
+/graphify-out/
+.gitignore

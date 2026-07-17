@@ -9,15 +9,73 @@
 #include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstddef>
 #include <set>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::edges {
 
 namespace minhash = ::PhantomLedger::exporter::common::minhash;
+
+// Bounded accumulation over the transaction stream: distinct
+// account/counterparty pairs and counterparty banks. std::set members, so
+// every writer that consumes them emits in sorted, layout-independent
+// order.
+struct TransactionEdgeSets {
+  std::set<std::pair<entity::Key, entity::Key>> sentToCpPairs;
+  std::set<std::pair<entity::Key, entity::Key>> receivedFromCpPairs;
+  std::set<entity::Key> cpSenders;
+  std::set<entity::Key> cpReceivers;
+};
+
+// Row-scale outputs of one classified transaction. The corpus path
+// retains them in TransactionEdgeBundle vectors; the windowed streaming
+// exporter writes them straight to the four CSV tables.
+class TransactionEdgeEmitter {
+public:
+  virtual ~TransactionEdgeEmitter() = default;
+
+  virtual void send(const entity::Key &acct, std::size_t idx1) = 0;
+  virtual void receive(const entity::Key &acct, std::size_t idx1) = 0;
+  virtual void cpSend(const entity::Key &cp, std::size_t idx1,
+                      const std::string &name) = 0;
+  virtual void cpReceive(const entity::Key &cp, std::size_t idx1,
+                         const std::string &name) = 0;
+};
+
+// Per-row transaction-edge classification, shared by the one-shot corpus
+// bundle and the windowed streaming exporter. Classification is a pure
+// key predicate (isExternalKey) — each row is self-contained — and the
+// memoized counterparty-name cache plus the bounded sets accumulate
+// identically in corpus order, so the two engines' outputs are
+// byte-identical. The 1-based transaction index advances internally.
+class TransactionEdgeClassifier {
+public:
+  explicit TransactionEdgeClassifier(const vertices::SharedContext &ctx);
+
+  void observe(const transactions::Transaction &tx,
+               TransactionEdgeEmitter &emit);
+
+  [[nodiscard]] const TransactionEdgeSets &sets() const noexcept {
+    return sets_;
+  }
+
+  [[nodiscard]] TransactionEdgeSets takeSets() noexcept {
+    return std::move(sets_);
+  }
+
+private:
+  [[nodiscard]] const std::string &cpNameFor(const entity::Key &k);
+
+  const vertices::SharedContext *ctx_ = nullptr;
+  std::unordered_map<entity::Key, std::string> cpNames_;
+  TransactionEdgeSets sets_;
+  std::size_t idx_ = 1;
+};
 
 struct TransactionEdgeBundle {
   using AcctTxnRow = std::pair<entity::Key, std::size_t>;
@@ -54,6 +112,14 @@ void writeCustomerHasAccountRows(exporter::csv::Writer &w,
 
 void writeAccountHasPrimaryCustomerRows(exporter::csv::Writer &w,
                                         const pipeline::Holdings &holdings);
+
+// Single-row forms (the windowed streaming exporter's per-row writes);
+// the span/set writers below delegate to them.
+void writeAcctTxnRow(exporter::csv::Writer &w, const entity::Key &acct,
+                     std::size_t idx1);
+
+void writeCpTxnRow(exporter::csv::Writer &w, const entity::Key &cp,
+                   std::size_t idx1, const std::string &name);
 
 void writeAcctTxnRows(exporter::csv::Writer &w,
                       std::span<const TransactionEdgeBundle::AcctTxnRow> rows);

@@ -62,16 +62,20 @@ private:
   std::vector<double> dollarSecondsIntegral_;
   std::vector<std::int64_t> lastUpdateTs_;
   std::vector<std::int64_t> lastBillingTs_;
+
+  // The enabled slots, kept SORTED ASCENDING by enable()/disable().
+  // sweep() runs once per replayed row (drainPending), so it must not
+  // scan the full slot table; iterating this list in ascending order
+  // reproduces the full scan's update/billing call sequence EXACTLY —
+  // the dollar-seconds integral is a piecewise float sum, so the call
+  // pattern (not just the math) is the output contract.
+  std::vector<Index> enabledIdx_;
 };
 
 template <class CashFn>
 void LocAccrualTracker::sweep(std::int64_t ts, CashFn &&currentCash,
                               std::vector<InterestAccrual> &out) {
-  for (Index idx = 0; idx < size_; ++idx) {
-    if (!isEnabled(idx)) {
-      continue;
-    }
-
+  for (const Index idx : enabledIdx_) {
     update(idx, currentCash(idx), ts);
 
     const auto lastBilling = lastBillingTs_[idx];

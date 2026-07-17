@@ -208,20 +208,12 @@ void ChronoReplayAccumulator::extend(
   uninstallLiquiditySink();
   futureInboundTimes_.clear();
 
-  std::sort(txns_.begin(), txns_.end(),
-            [](const transactions::Transaction &a,
-               const transactions::Transaction &b) noexcept {
-              if (a.timestamp != b.timestamp) {
-                return a.timestamp < b.timestamp;
-              }
-              if (a.source != b.source) {
-                return a.source < b.source;
-              }
-              if (a.target != b.target) {
-                return a.target < b.target;
-              }
-              return a.amount < b.amount;
-            });
+  // The settled output order IS the replay order (S10): the funds key
+  // totalized by the remaining audit fields. A funds-key-only comparator
+  // here would leave tie order to the unstable sort — stdlib-determined,
+  // not content-determined — and downstream replay-sorted contracts
+  // (spool cursor, Phase B merges) reject exactly that.
+  std::sort(txns_.begin(), txns_.end(), detail::fundsLess);
 }
 
 void ChronoReplayAccumulator::drainPending(std::int64_t emitBoundExcl) {
@@ -345,20 +337,11 @@ void ChronoReplayAccumulator::extendChunk(
 
 std::vector<transactions::Transaction>
 ChronoReplayAccumulator::takeSettledBefore(std::int64_t boundExcl) {
-  std::sort(txns_.begin(), txns_.end(),
-            [](const transactions::Transaction &a,
-               const transactions::Transaction &b) noexcept {
-              if (a.timestamp != b.timestamp) {
-                return a.timestamp < b.timestamp;
-              }
-              if (a.source != b.source) {
-                return a.source < b.source;
-              }
-              if (a.target != b.target) {
-                return a.target < b.target;
-              }
-              return a.amount < b.amount;
-            });
+  // Totalized replay order (S10), same as extend(): this per-span output
+  // is the candidate/posted stream, and its ties must be content-ordered.
+  // The timestamp split below is unaffected — ties share a timestamp, so
+  // the same row SET leaves regardless of the comparator's tail fields.
+  std::sort(txns_.begin(), txns_.end(), detail::fundsLess);
 
   const auto split =
       std::lower_bound(txns_.begin(), txns_.end(), boundExcl,

@@ -116,7 +116,13 @@ void DayDriver::ingestEmittedTo(
     ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards,
     const RunState &state) {
   const auto &txns = state.txns();
-  if (cardIngestCursor_ >= txns.size()) {
+
+  if (cardIngestCursor_ > txns.size()) {
+    throw std::logic_error(
+        "DayDriver card-ingest cursor exceeds emitted transaction count");
+  }
+
+  if (cardIngestCursor_ == txns.size()) {
     return;
   }
 
@@ -125,6 +131,25 @@ void DayDriver::ingestEmittedTo(
 
   cards->ingestPurchases(newTxns);
   cardIngestCursor_ = txns.size();
+}
+
+std::vector<transactions::Transaction> DayDriver::takeEmitted(RunState &state) {
+  if (cards_ != nullptr && cards_->active()) {
+    ingestEmittedTo(cards_, state);
+
+    if (cardIngestCursor_ != state.txns().size()) {
+      throw std::logic_error(
+          "DayDriver card-ingest cursor does not cover emitted rows");
+    }
+  } else if (cardIngestCursor_ != 0) {
+    throw std::logic_error(
+        "DayDriver has a card-ingest cursor without an active card driver");
+  }
+
+  auto out = std::move(state.txns());
+  state.txns().clear();
+  cardIngestCursor_ = 0;
+  return out;
 }
 
 void DayDriver::advanceLedgerToDay(const PreparedRun::LedgerReplay &replay,

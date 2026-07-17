@@ -43,6 +43,10 @@ struct Transaction {
 
 namespace detail {
 
+// The semantic funds-transfer key. NOT a total order over rows — distinct
+// rows can tie here while differing in fraud/session fields. Use this for
+// funds-key equality censuses (the tie register); use the Comparator (or
+// auditKey) for every sort and merge.
 [[nodiscard]] inline auto fundsKey(const Transaction &tx) noexcept {
   return std::tie(tx.timestamp, tx.source, tx.target, tx.amount);
 }
@@ -55,6 +59,16 @@ namespace detail {
 
 } // namespace detail
 
+// S10 ordering re-pin: the funds-transfer REPLAY ORDER is the funds key
+// (timestamp, source, target, amount) TOTALIZED by the remaining audit
+// fields as tie-breakers — the audit key, whose first four fields ARE the
+// funds key. The soak-scale tie register found adjacent funds-key ties,
+// which made tie placement merge-history-dependent across architectures;
+// with the audit-key extension the order is content-determined and total.
+// Rows that still compare equal are byte-identical, so their permutation
+// cannot affect output. Scope::fundsTransfer therefore orders by the
+// audit key; the two scopes now agree and are both kept for call-site
+// intent.
 class Comparator {
 public:
   enum class Scope : std::uint8_t {
@@ -68,7 +82,7 @@ public:
                                 const Transaction &rhs) const noexcept {
     switch (scope_) {
     case Scope::fundsTransfer:
-      return detail::fundsKey(lhs) < detail::fundsKey(rhs);
+      return detail::auditKey(lhs) < detail::auditKey(rhs);
 
     case Scope::fullAudit:
       return detail::auditKey(lhs) < detail::auditKey(rhs);

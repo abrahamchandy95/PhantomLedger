@@ -16,6 +16,14 @@ namespace PhantomLedger::pipeline {
 
 using PhaseObserver = std::function<void(std::string_view phase)>;
 
+// Result of a windowed run: the built world (entities, infra; the
+// transfers member of `world` stays empty) plus the transfer-fold summary.
+// The posted corpus is NOT retained — it streamed to the caller's sink.
+struct WindowedSimulationResult {
+  SimulationResult world;
+  ::PhantomLedger::pipeline::stages::transfers::WindowedRunResult transfers;
+};
+
 class SimulationPipeline {
 public:
   using EntitySynthesis =
@@ -25,6 +33,8 @@ public:
       ::PhantomLedger::pipeline::stages::products::ObligationSynthesis;
   using TransferStage =
       ::PhantomLedger::pipeline::stages::transfers::TransferStage;
+  using WindowedRunOptions =
+      ::PhantomLedger::pipeline::stages::transfers::WindowedRunOptions;
 
   SimulationPipeline(::PhantomLedger::random::Rng &rng,
                      ::PhantomLedger::time::Window window,
@@ -45,6 +55,51 @@ public:
   [[nodiscard]] const TransferStage &transferStage() const noexcept;
 
   [[nodiscard]] SimulationResult run(const PhaseObserver &onPhase = {}) const;
+
+  // World build shared by run() and the windowed path: entities, products,
+  // infra, consuming the shared sequential stream in the exact same order.
+  // The transfers member of the returned result stays empty. Callers that
+  // need the world BEFORE the transfer fold (e.g. to bind a streaming
+  // exporter to the account registry) pair this with
+  // runWindowedTransfers().
+  [[nodiscard]] SimulationResult
+  buildWorld(const PhaseObserver &onPhase = {}) const;
+
+  // Windowed transfer fold over a world previously built by buildWorld()
+  // on the SAME pipeline (the shared RNG has advanced accordingly). Rows
+  // stream to `sink`.
+  template <class S>
+  [[nodiscard]] ::PhantomLedger::pipeline::stages::transfers::WindowedRunResult
+  runWindowedTransfers(SimulationResult &world, S &sink,
+                       const WindowedRunOptions &options = {},
+                       const PhaseObserver &onPhase = {}) const {
+    ::PhantomLedger::pipeline::stages::transfers::SinkRef ref(sink);
+    return runWindowedTransfersErased(world, ref, options, onPhase);
+  }
+
+  [[nodiscard]] ::PhantomLedger::pipeline::stages::transfers::WindowedRunResult
+  runWindowedTransfersErased(
+      SimulationResult &world,
+      ::PhantomLedger::pipeline::stages::transfers::SinkRef sink,
+      const WindowedRunOptions &options, const PhaseObserver &onPhase) const;
+
+  // Windowed two-phase run: identical world build and deterministic
+  // regime as run(), but transfers fold through the bounded-memory
+  // windowed driver and STREAM to `sink` (SinkRef-compatible: beginSpan/
+  // append/endSpan/finish/rowsWritten) instead of accumulating a posted
+  // corpus. Byte-identical output to run() (test_production_windowed).
+  // Equivalent to buildWorld() followed by runWindowedTransfers().
+  template <class S>
+  [[nodiscard]] WindowedSimulationResult
+  runWindowed(S &sink, const WindowedRunOptions &options = {},
+              const PhaseObserver &onPhase = {}) const {
+    ::PhantomLedger::pipeline::stages::transfers::SinkRef ref(sink);
+    return runWindowedErased(ref, options, onPhase);
+  }
+
+  [[nodiscard]] WindowedSimulationResult runWindowedErased(
+      ::PhantomLedger::pipeline::stages::transfers::SinkRef sink,
+      const WindowedRunOptions &options, const PhaseObserver &onPhase) const;
 
 private:
   void buildEntities(SimulationResult &result) const;

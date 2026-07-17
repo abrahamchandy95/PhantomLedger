@@ -1,3 +1,27 @@
+//
+// tests/test_postgres.cpp
+//
+// Live-PostgreSQL pinning for the transaction stream (skips with 77 when
+// no server is reachable; honors PL_TEST_PG for a custom conninfo).
+//
+// Pinned rules (roadmap: PostgreSQL end-game, identity/ordering step):
+//
+//   IDENTITY   every streamed row lands exactly once, carrying a 1-based
+//              global ordinal (row_seq) and its settlement span
+//              (span_index); row_seq is contiguous 1..N
+//   ORDERING   `ORDER BY row_seq` reconstructs the exact stream — the
+//              read-back contract derived-analytics passes depend on;
+//              rows are compared POSITIONALLY against the legacy ledger
+//              writer, byte-for-byte (amount as a value: the server
+//              re-renders float8 on output)
+//   SPANS      each row's span_index matches the span whose COPY
+//              committed it
+//   RESTART    an abandoned mid-COPY span commits nothing (crash loses
+//              only the open span); constructing a new sink on the same
+//              table is a full rewrite (drop + recreate)
+//   LOADERS    CSV directory/tree mirroring semantics
+//
+
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
@@ -6,7 +30,6 @@
 
 #include <libpq-fe.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
@@ -96,7 +119,10 @@ int main() {
   const auto sched = Schedule::partition(run, {});
   assert(sched.size() == 4);
 
-  // 1. Stream through Postgres, one COPY per span.
+  // 1. Stream through Postgres, one COPY per span, recording the stream
+  //    order and the span that committed each row.
+  std::vector<Transaction> streamedOrder;
+  std::vector<unsigned> expectedSpans;
   {
     Postgres sink({.conninfo = conninfo, .table = "transactions"});
     for (const auto &span : sched) {
@@ -106,6 +132,8 @@ int main() {
         const auto ts = time::fromEpochSeconds(tx.timestamp);
         if (ts >= span.activeWindow.start && ts < span.activeWindow.endExcl()) {
           slice.push_back(tx);
+          streamedOrder.push_back(tx);
+          expectedSpans.push_back(span.index);
         }
       }
       sink.append(slice);
@@ -115,10 +143,12 @@ int main() {
     assert(sink.rowsWritten() == txns.size());
     assert(sink.spansWritten() == 4);
   }
+  assert(streamedOrder.size() == txns.size());
 
   postgres::Connection conn{conninfo};
 
-  // 2. Server-side checks.
+  // 2. Server-side identity checks: counts, and the row_seq ordinal is
+  //    contiguous 1..N with all four spans attributed.
   {
     PGresult *r = PQexec(
         conn.raw(), "SELECT count(*), sum(is_fraud), count(DISTINCT channel) "
@@ -134,15 +164,44 @@ int main() {
     assert(PQresultStatus(r) == PGRES_TUPLES_OK);
     assert(std::string{PQgetvalue(r, 0, 0)} == "1");
     PQclear(r);
+
+    r = PQexec(conn.raw(),
+               "SELECT min(row_seq), max(row_seq), count(DISTINCT row_seq), "
+               "count(DISTINCT span_index) FROM transactions");
+    assert(PQresultStatus(r) == PGRES_TUPLES_OK);
+    assert(std::string{PQgetvalue(r, 0, 0)} == "1");
+    assert(std::string{PQgetvalue(r, 0, 1)} == "11");
+    assert(std::string{PQgetvalue(r, 0, 2)} == "11");
+    assert(std::string{PQgetvalue(r, 0, 3)} == "4");
+    PQclear(r);
   }
 
-  // 3. Equivalence vs the legacy single-file writer: pull rows back
-  //    out and compare. Amount (field 2) compares as a value because
-  //    the server re-renders float8 on output ('250.0' in, '250' out);
-  //    every other column must match byte-for-byte.
+  // 3. Span attribution: each row's span_index is the span whose COPY
+  //    committed it, in stream order.
   {
-    PGresult *r =
-        PQexec(conn.raw(), "COPY transactions TO STDOUT WITH (FORMAT csv)");
+    PGresult *r = PQexec(conn.raw(),
+                         "SELECT span_index FROM transactions "
+                         "ORDER BY row_seq");
+    assert(PQresultStatus(r) == PGRES_TUPLES_OK);
+    assert(static_cast<std::size_t>(PQntuples(r)) == expectedSpans.size());
+    for (int i = 0; i < PQntuples(r); ++i) {
+      assert(std::string{PQgetvalue(r, i, 0)} ==
+             std::to_string(expectedSpans[static_cast<std::size_t>(i)]));
+    }
+    PQclear(r);
+  }
+
+  // 4. Ordered read-back identity vs the legacy single-file writer:
+  //    `ORDER BY row_seq` must reconstruct the exact stream, compared
+  //    POSITIONALLY (no sorting). Amount (field 2) compares as a value
+  //    because the server re-renders float8 on output ('250.0' in,
+  //    '250' out); every other column must match byte-for-byte.
+  {
+    PGresult *r = PQexec(
+        conn.raw(),
+        "COPY (SELECT src_acct, dst_acct, amount, ts, is_fraud, ring_id, "
+        "fraud_type, device_id, ip_address, channel FROM transactions "
+        "ORDER BY row_seq) TO STDOUT WITH (FORMAT csv)");
     assert(PQresultStatus(r) == PGRES_COPY_OUT);
     PQclear(r);
     std::vector<std::string> pgRows;
@@ -159,14 +218,14 @@ int main() {
     while (PGresult *tail = PQgetResult(conn.raw())) {
       PQclear(tail);
     }
-    assert(pgRows.size() == txns.size());
+    assert(pgRows.size() == streamedOrder.size());
 
     namespace fs = std::filesystem;
     const fs::path ref = fs::temp_directory_path() / "pl_pg_ref.csv";
     {
       exporter::csv::Writer w{ref};
       w.writeHeader(exporter::schema::kLedger.header);
-      exporter::common::writeLedgerRows(w, txns);
+      exporter::common::writeLedgerRows(w, streamedOrder);
     }
     std::vector<std::string> fileRows;
     std::ifstream in{ref};
@@ -180,8 +239,6 @@ int main() {
     }
     assert(fileRows.size() == pgRows.size());
 
-    std::sort(pgRows.begin(), pgRows.end());
-    std::sort(fileRows.begin(), fileRows.end());
     for (std::size_t i = 0; i < pgRows.size(); ++i) {
       const auto a = splitCsv(fileRows[i]);
       const auto b = splitCsv(pgRows[i]);
@@ -196,16 +253,18 @@ int main() {
     }
   }
 
-  // 4. CopyIn abort-on-destruction: a batch abandoned mid-COPY commits
-  //    nothing. This is the exception-safety guarantee for spans.
+  // 5. CopyIn abort-on-destruction: a batch abandoned mid-COPY commits
+  //    nothing. This is the exception-safety guarantee for spans: a
+  //    crash loses only the open span, never committed ones.
   {
     {
       postgres::CopyIn copy{
-          conn, "COPY transactions (src_acct, dst_acct, amount, ts, is_fraud,"
-                " ring_id, device_id, ip_address, channel)"
-                " FROM STDIN WITH (FORMAT csv)"};
+          conn,
+          "COPY transactions (row_seq, span_index, src_acct, dst_acct, "
+          "amount, ts, is_fraud, ring_id, device_id, ip_address, channel)"
+          " FROM STDIN WITH (FORMAT csv)"};
       const std::string row =
-          "X1,X2,1.0,2025-01-01 00:00:00,0,0,d,ip,merchant\n";
+          "999,0,X1,X2,1.0,2025-01-01 00:00:00,0,0,d,ip,merchant\n";
       copy.put(row.data(), row.size());
       // scope exit without done() -> server-side abort
     }
@@ -215,7 +274,9 @@ int main() {
     PQclear(r);
   }
 
-  // 5. Protocol violations fail loudly.
+  // 6. Protocol violations fail loudly, and constructing a sink on the
+  //    same table is a FULL REWRITE (drop + recreate): the restart
+  //    semantic for a rerun.
   {
     Postgres sink({.conninfo = conninfo, .table = "transactions"});
     bool threw = false;
@@ -225,9 +286,14 @@ int main() {
       threw = true;
     }
     assert(threw);
+
+    PGresult *r = PQexec(conn.raw(), "SELECT count(*) FROM transactions");
+    assert(PQresultStatus(r) == PGRES_TUPLES_OK);
+    assert(std::string{PQgetvalue(r, 0, 0)} == "0");
+    PQclear(r);
   }
 
-  // 6. CSV directory loader: files stream verbatim into all-text
+  // 7. CSV directory loader: files stream verbatim into all-text
   //    tables; header-derived columns; quoted commas survive; empty
   //    fields become NULL; skip list honored.
   {
@@ -263,7 +329,7 @@ int main() {
     conn.exec("DROP TABLE alpha");
   }
 
-  // 7. Tree loader: recursive walk into a schema, relative paths
+  // 8. Tree loader: recursive walk into a schema, relative paths
   //    folded into table names, duplicate header columns suffixed,
   //    leaf-stem skip honored.
   {

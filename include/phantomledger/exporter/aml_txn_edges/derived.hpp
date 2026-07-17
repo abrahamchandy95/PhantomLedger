@@ -9,11 +9,14 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
+#include <map>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -187,6 +190,62 @@ struct AggregateBucket {
 void accumulate(AggregateRow &row, double amount, std::int64_t ts,
                 std::int64_t cut30Epoch, std::int64_t cut90Epoch) noexcept;
 
+// Empty-corpus sim window (2025-01-01 UTC), shared by the corpus and
+// read-back builders.
+inline constexpr std::int64_t kFallbackEpoch = 1735689600;
+
+// -------------------------------------------------- shared per-row sweep
+//
+// The one-code-path seam for the PostgreSQL read-back: the corpus-based
+// buildBundle and the read-back builder both feed rows through THE SAME
+// TxnSweep::observe in corpus (row_seq) order and hand the result to THE
+// SAME finishBundle, so the two corpus stores cannot drift. observe
+// reads only source/target/amount/timestamp/fraud.flag — exactly the
+// fields the read-back decode contract pins losslessly
+// (test_pg_readback).
+
+// Fraud-scale retention (documented acceptable): everything
+// promoteFraudTxns needs from a fraud row.
+struct FraudTxnRef {
+  std::size_t txnIndex1 = 0; // 1-based corpus index == row_seq
+  entity::Key source{};
+  entity::Key target{};
+};
+
+// Fraud-scale retention of FULL fraud rows keyed by their 1-based
+// corpus index (row_seq): the promoted-txn table writers need amount,
+// timestamp and channel for the rows the bundle promoted — and every
+// promoted index is a fraud index by construction (promoteFraudTxns
+// draws exclusively from FraudTxnRef).
+using FraudTxnByIndex =
+    std::unordered_map<std::size_t, transactions::Transaction>;
+
+struct BurstKeyInfo {
+  entity::Key account{};
+  std::int64_t day = 0;
+};
+
+struct TxnSweep {
+  // expectedRows sizes the reserves identically on both paths (corpus
+  // size vs queryStreamBounds().rows), which also keeps the
+  // unordered_map bucket trajectories — and hence velocity-alert
+  // iteration order — identical between them.
+  TxnSweep(std::int64_t simEndEpoch, std::size_t expectedRows);
+
+  void observe(const transactions::Transaction &tx, std::size_t idx1);
+
+  std::vector<AlertRecord> alerts;
+  std::vector<CtrRecord> ctrs;
+  std::unordered_map<std::uint64_t, std::uint32_t> burstCounts;
+  std::unordered_map<std::uint64_t, BurstKeyInfo> burstInfo;
+  std::map<AcctPair, AggregateRow> flowAccum;
+  std::map<AcctPair, AggregateRow> linkAccum;
+  std::vector<FraudTxnRef> fraudRefs;
+
+  std::int64_t cut30 = 0;
+  std::int64_t cut90 = 0;
+};
+
 struct Bundle {
   time::TimePoint simStart{};
   time::TimePoint simEnd{};
@@ -206,6 +265,20 @@ struct Bundle {
   std::vector<AggregateBucket> flowAgg;
   std::vector<AggregateBucket> linkComm;
 };
+
+// Sim window + derivation run id from the corpus timestamp extent (the
+// read-back path supplies these from queryStreamBounds).
+void applySimWindow(Bundle &b, std::int64_t minTs, std::int64_t maxTs);
+
+// Everything after the sweep: velocity alerts, dispositions, cases,
+// SAR/alert attachment, evidence, fraud-txn promotion, businesses, and
+// the sorted aggregates — from the world plus the sweep only. Shared
+// verbatim by both builders; applySimWindow must already have run on b.
+[[nodiscard]] Bundle finishBundle(Bundle b, TxnSweep sweep,
+                                  const pipeline::People &people,
+                                  const pipeline::Holdings &holdings,
+                                  std::span<const aml::sar::SarRecord> sars);
+
 [[nodiscard]] Bundle
 buildBundle(const pipeline::People &people, const pipeline::Holdings &holdings,
             std::span<const transactions::Transaction> postedTxns,

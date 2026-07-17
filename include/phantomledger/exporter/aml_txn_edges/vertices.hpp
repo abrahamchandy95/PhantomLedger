@@ -11,6 +11,7 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstdint>
 #include <span>
 
 namespace PhantomLedger::exporter::aml_txn_edges::vertices {
@@ -75,5 +76,15 @@ void writeBusinessRows(csv::Writer &w, const derived::Bundle &bundle);
 void writeInvestigationCaseTxnRows(
     csv::Writer &w, const derived::Bundle &bundle,
     std::span<const transactions::Transaction> postedTxns);
+
+// Bounded-memory twin: promoted rows resolved through the fraud-scale
+// retention map instead of the retained corpus (every promoted index is
+// a fraud index by construction; the map carries the FULL fraud rows —
+// this table needs amount, timestamp and channel). totalRows preserves
+// the span overload's validity filter exactly.
+void writeInvestigationCaseTxnRows(csv::Writer &w,
+                                   const derived::Bundle &bundle,
+                                   const derived::FraudTxnByIndex &fraudTxns,
+                                   std::uint64_t totalRows);
 
 } // namespace PhantomLedger::exporter::aml_txn_edges::vertices

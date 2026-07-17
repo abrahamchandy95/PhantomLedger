@@ -10,9 +10,8 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-#include <map>
-#include <unordered_map>
 #include <unordered_set>
+#include <utility>
 
 namespace PhantomLedger::exporter::aml_txn_edges::derived {
 
@@ -404,7 +403,6 @@ struct OwnerIndex {
 }
 
 void fillSimWindow(Bundle &b, std::span<const tx_ns::Transaction> txns) {
-  constexpr std::int64_t kFallbackEpoch = 1735689600;
   std::int64_t minTs = kFallbackEpoch;
   std::int64_t maxTs = kFallbackEpoch;
   if (!txns.empty()) {
@@ -419,103 +417,10 @@ void fillSimWindow(Bundle &b, std::span<const tx_ns::Transaction> txns) {
       }
     }
   }
-  b.simStartEpoch = minTs;
-  b.simEndEpoch = maxTs;
-  b.simStart = t_ns::fromEpochSeconds(minTs);
-  b.simEnd = t_ns::fromEpochSeconds(maxTs);
-
-  const auto epochBytes = u64Decimal(static_cast<std::uint64_t>(maxTs));
-  b.derivationRunId = hashedId<24>("RUN_", {"RUN", epochBytes.view()});
+  applySimWindow(b, minTs, maxTs);
 }
 
-struct BurstKeyInfo {
-  ent::Key account{};
-  std::int64_t day = 0;
-};
-
-struct TxnSweepResult {
-  std::vector<AlertRecord> alerts;
-  std::vector<CtrRecord> ctrs;
-  std::unordered_map<std::uint64_t, std::uint32_t> burstCounts;
-  std::unordered_map<std::uint64_t, BurstKeyInfo> burstInfo;
-  std::map<AcctPair, AggregateRow> flowAccum;
-  std::map<AcctPair, AggregateRow> linkAccum;
-};
-
-[[nodiscard]] TxnSweepResult
-sweepTransactions(std::span<const tx_ns::Transaction> txns,
-                  std::int64_t simEndEpoch) {
-  TxnSweepResult r;
-  r.alerts.reserve(txns.size() / 8);
-  r.ctrs.reserve(txns.size() / 100);
-  r.burstCounts.reserve(txns.size() / 4);
-  r.burstInfo.reserve(txns.size() / 4);
-
-  const std::int64_t cut30 = simEndEpoch - 30 * t_ns::kSecondsPerDay;
-  const std::int64_t cut90 = simEndEpoch - 90 * t_ns::kSecondsPerDay;
-
-  std::size_t idx = 1;
-  for (const auto &tx : txns) {
-    const double amount = tx.amount;
-    const auto onAcct = alertAccount(tx);
-    const bool onValid = (onAcct.number != 0);
-    const auto createdDate = t_ns::fromEpochSeconds(tx.timestamp);
-
-    if (onValid && tx.fraud.flag != 0) {
-      r.alerts.push_back(
-          makeAlert(onAcct, Rule::fraudMlFlag, createdDate, idx));
-    }
-    if (onValid && amount >= 9000.0 && amount < 10000.0) {
-      r.alerts.push_back(
-          makeAlert(onAcct, Rule::highAmountBelowCtr, createdDate, idx));
-    }
-
-    if (onValid && amount >= 10000.0) {
-      r.alerts.push_back(
-          makeAlert(onAcct, Rule::cashCtrThreshold, createdDate, idx));
-
-      const auto acctRendered = ::PhantomLedger::encoding::format(onAcct);
-      CtrRecord c;
-      c.onAccount = onAcct;
-      c.filingDate = createdDate;
-      c.amount = primitives::utils::roundMoney(amount);
-      c.branchBucket = static_cast<std::uint32_t>((onAcct.number % 50U) + 1U);
-      const auto dayBytes = u64Decimal(
-          static_cast<std::uint64_t>(tx.timestamp / t_ns::kSecondsPerDay));
-      c.tellerNum = static_cast<std::uint32_t>(
-          (common::stableU64({"TLR", acctRendered.view(), dayBytes.view()}) %
-           200ULL) +
-          1ULL);
-      c.id = makeCtrId(acctRendered.view(), idx);
-      r.ctrs.push_back(std::move(c));
-    }
-
-    if (onValid) {
-      const std::int64_t day = tx.timestamp / t_ns::kSecondsPerDay;
-      const auto packed =
-          (static_cast<std::uint64_t>(day) << 24) ^
-          (static_cast<std::uint64_t>(onAcct.number) << 8) ^
-          (static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.role))
-           << 4) ^
-          static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.bank));
-      r.burstCounts[packed]++;
-      r.burstInfo[packed] = BurstKeyInfo{onAcct, day};
-    }
-
-    accumulate(r.flowAccum[AcctPair{tx.source, tx.target}], amount,
-               tx.timestamp, cut30, cut90);
-    const AcctPair linkKey = (tx.source < tx.target)
-                                 ? AcctPair{tx.source, tx.target}
-                                 : AcctPair{tx.target, tx.source};
-    accumulate(r.linkAccum[linkKey], amount, tx.timestamp, cut30, cut90);
-
-    ++idx;
-  }
-
-  return r;
-}
-
-void appendVelocityBurstAlerts(Bundle &b, const TxnSweepResult &sweep) {
+void appendVelocityBurstAlerts(Bundle &b, const TxnSweep &sweep) {
   for (const auto &[key, count] : sweep.burstCounts) {
     if (count < 5) {
       continue;
@@ -671,16 +576,8 @@ void generateEvidence(Bundle &b) {
   }
 }
 
-void promoteFraudTxns(Bundle &b, std::span<const tx_ns::Transaction> postedTxns,
+void promoteFraudTxns(Bundle &b, std::span<const FraudTxnRef> fraudRefs,
                       const OwnerIndex &ownerIdx) {
-  std::vector<std::size_t> fraudTxnIdx;
-  fraudTxnIdx.reserve(postedTxns.size() / 200);
-  for (std::size_t i = 0; i < postedTxns.size(); ++i) {
-    if (postedTxns[i].fraud.flag != 0) {
-      fraudTxnIdx.push_back(i + 1);
-    }
-  }
-
   for (std::size_t ci = 0; ci < b.cases.size(); ++ci) {
     auto &c = b.cases[ci];
     std::unordered_set<ent::PersonId> subjects(c.subjectPersons.begin(),
@@ -689,13 +586,12 @@ void promoteFraudTxns(Bundle &b, std::span<const tx_ns::Transaction> postedTxns,
     const auto promotedAt = c.openedDate + t_ns::Days{2};
     const auto ttlDate = c.openedDate + t_ns::Days{365 * 7};
     std::size_t emitted = 0;
-    for (const auto txnIdx1 : fraudTxnIdx) {
+    for (const auto &ref : fraudRefs) {
       if (emitted >= 100) {
         break;
       }
-      const auto &tx = postedTxns[txnIdx1 - 1];
-      const auto srcOwner = ownerIdx.at(tx.source);
-      const auto dstOwner = ownerIdx.at(tx.target);
+      const auto srcOwner = ownerIdx.at(ref.source);
+      const auto dstOwner = ownerIdx.at(ref.target);
       const bool touches =
           (srcOwner != ent::invalidPerson && subjects.contains(srcOwner)) ||
           (dstOwner != ent::invalidPerson && subjects.contains(dstOwner));
@@ -704,10 +600,10 @@ void promoteFraudTxns(Bundle &b, std::span<const tx_ns::Transaction> postedTxns,
       }
       PromotedTxnRecord r;
       r.caseIndex = ci;
-      r.txnIndex = txnIdx1;
+      r.txnIndex = ref.txnIndex1;
       r.promotedAt = promotedAt;
       r.ttlDate = ttlDate;
-      r.id = makePromotedTxnId(caseIdView, txnIdx1);
+      r.id = makePromotedTxnId(caseIdView, ref.txnIndex1);
       c.promotedTxnIndices.push_back(b.promotedTxns.size());
       b.promotedTxns.push_back(std::move(r));
       ++emitted;
@@ -745,19 +641,19 @@ void buildBusinesses(Bundle &b, const pipe::Holdings &holdings) {
   }
 }
 
-void sortAggregates(Bundle &b, TxnSweepResult &sweep) {
+void sortAggregates(Bundle &b, const TxnSweep &sweep) {
   auto byPair = [](const AggregateBucket &a, const AggregateBucket &c) {
     return a.pair < c.pair;
   };
 
   b.flowAgg.reserve(sweep.flowAccum.size());
-  for (auto &kv : sweep.flowAccum) {
+  for (const auto &kv : sweep.flowAccum) {
     b.flowAgg.push_back({kv.first, kv.second});
   }
   std::sort(b.flowAgg.begin(), b.flowAgg.end(), byPair);
 
   b.linkComm.reserve(sweep.linkAccum.size());
-  for (auto &kv : sweep.linkAccum) {
+  for (const auto &kv : sweep.linkAccum) {
     b.linkComm.push_back({kv.first, kv.second});
   }
   std::sort(b.linkComm.begin(), b.linkComm.end(), byPair);
@@ -765,16 +661,94 @@ void sortAggregates(Bundle &b, TxnSweepResult &sweep) {
 
 } // namespace
 
-Bundle buildBundle(
-    const pipe::People &people, const pipe::Holdings &holdings,
-    std::span<const tx_ns::Transaction> postedTxns,
-    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
-  Bundle b;
+void applySimWindow(Bundle &b, std::int64_t minTs, std::int64_t maxTs) {
+  b.simStartEpoch = minTs;
+  b.simEndEpoch = maxTs;
+  b.simStart = t_ns::fromEpochSeconds(minTs);
+  b.simEnd = t_ns::fromEpochSeconds(maxTs);
 
-  fillSimWindow(b, postedTxns);
+  const auto epochBytes = u64Decimal(static_cast<std::uint64_t>(maxTs));
+  b.derivationRunId = hashedId<24>("RUN_", {"RUN", epochBytes.view()});
+}
 
+// ---------------------------------------------------- shared per-row sweep
+
+TxnSweep::TxnSweep(std::int64_t simEndEpoch, std::size_t expectedRows)
+    : cut30(simEndEpoch - 30 * t_ns::kSecondsPerDay),
+      cut90(simEndEpoch - 90 * t_ns::kSecondsPerDay) {
+  alerts.reserve(expectedRows / 8);
+  ctrs.reserve(expectedRows / 100);
+  burstCounts.reserve(expectedRows / 4);
+  burstInfo.reserve(expectedRows / 4);
+  fraudRefs.reserve(expectedRows / 200);
+}
+
+void TxnSweep::observe(const tx_ns::Transaction &tx, std::size_t idx1) {
+  const double amount = tx.amount;
+  const auto onAcct = alertAccount(tx);
+  const bool onValid = (onAcct.number != 0);
+  const auto createdDate = t_ns::fromEpochSeconds(tx.timestamp);
+
+  if (tx.fraud.flag != 0) {
+    fraudRefs.push_back(FraudTxnRef{
+        .txnIndex1 = idx1, .source = tx.source, .target = tx.target});
+  }
+
+  if (onValid && tx.fraud.flag != 0) {
+    alerts.push_back(makeAlert(onAcct, Rule::fraudMlFlag, createdDate, idx1));
+  }
+  if (onValid && amount >= 9000.0 && amount < 10000.0) {
+    alerts.push_back(
+        makeAlert(onAcct, Rule::highAmountBelowCtr, createdDate, idx1));
+  }
+
+  if (onValid && amount >= 10000.0) {
+    alerts.push_back(
+        makeAlert(onAcct, Rule::cashCtrThreshold, createdDate, idx1));
+
+    const auto acctRendered = ::PhantomLedger::encoding::format(onAcct);
+    CtrRecord c;
+    c.onAccount = onAcct;
+    c.filingDate = createdDate;
+    c.amount = primitives::utils::roundMoney(amount);
+    c.branchBucket = static_cast<std::uint32_t>((onAcct.number % 50U) + 1U);
+    const auto dayBytes = u64Decimal(
+        static_cast<std::uint64_t>(tx.timestamp / t_ns::kSecondsPerDay));
+    c.tellerNum = static_cast<std::uint32_t>(
+        (common::stableU64({"TLR", acctRendered.view(), dayBytes.view()}) %
+         200ULL) +
+        1ULL);
+    c.id = makeCtrId(acctRendered.view(), idx1);
+    ctrs.push_back(std::move(c));
+  }
+
+  if (onValid) {
+    const std::int64_t day = tx.timestamp / t_ns::kSecondsPerDay;
+    const auto packed =
+        (static_cast<std::uint64_t>(day) << 24) ^
+        (static_cast<std::uint64_t>(onAcct.number) << 8) ^
+        (static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.role))
+         << 4) ^
+        static_cast<std::uint64_t>(static_cast<std::uint8_t>(onAcct.bank));
+    burstCounts[packed]++;
+    burstInfo[packed] = BurstKeyInfo{onAcct, day};
+  }
+
+  accumulate(flowAccum[AcctPair{tx.source, tx.target}], amount, tx.timestamp,
+             cut30, cut90);
+  const AcctPair linkKey = (tx.source < tx.target)
+                               ? AcctPair{tx.source, tx.target}
+                               : AcctPair{tx.target, tx.source};
+  accumulate(linkAccum[linkKey], amount, tx.timestamp, cut30, cut90);
+}
+
+// -------------------------------------------------------- shared finisher
+
+Bundle finishBundle(Bundle b, TxnSweep sweep, const pipe::People &people,
+                    const pipe::Holdings &holdings,
+                    std::span<const aml::sar::SarRecord> sars) {
   const auto ownerIdx = buildOwnerIndex(holdings);
-  auto sweep = sweepTransactions(postedTxns, b.simEndEpoch);
+
   b.alerts = std::move(sweep.alerts);
   b.ctrs = std::move(sweep.ctrs);
 
@@ -784,11 +758,29 @@ Bundle buildBundle(
   attachAlertsToCases(b, ownerIdx);
   attachSarsToCases(b, sars);
   generateEvidence(b);
-  promoteFraudTxns(b, postedTxns, ownerIdx);
+  promoteFraudTxns(b, sweep.fraudRefs, ownerIdx);
   buildBusinesses(b, holdings);
   sortAggregates(b, sweep);
 
   return b;
+}
+
+Bundle buildBundle(
+    const pipe::People &people, const pipe::Holdings &holdings,
+    std::span<const tx_ns::Transaction> postedTxns,
+    std::span<const ::PhantomLedger::exporter::aml::sar::SarRecord> sars) {
+  Bundle b;
+
+  fillSimWindow(b, postedTxns);
+
+  TxnSweep sweep(b.simEndEpoch, postedTxns.size());
+  std::size_t idx = 1;
+  for (const auto &tx : postedTxns) {
+    sweep.observe(tx, idx);
+    ++idx;
+  }
+
+  return finishBundle(std::move(b), std::move(sweep), people, holdings, sars);
 }
 
 } // namespace PhantomLedger::exporter::aml_txn_edges::derived

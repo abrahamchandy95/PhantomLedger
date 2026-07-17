@@ -40,6 +40,23 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "  --show-transactions               Emit raw transactions.csv\n"
       "  --help, -h                        Show this message\n"
       "\n"
+      "Environment:\n"
+      "  PL_PG='host=... port=... dbname=...'\n"
+      "      PostgreSQL conninfo (default: dbname=phantomledger). A\n"
+      "      reachable server is REQUIRED: the corpus streams into the\n"
+      "      'transactions' table during settlement and the derived\n"
+      "      analytics read it back. The run fails fast before any\n"
+      "      generation when no server answers. Reruns with the same\n"
+      "      seed and config rewrite byte-identical content.\n"
+      "  PL_FILE_ONLY=1\n"
+      "      Skip PostgreSQL and write files only (test-harness escape;\n"
+      "      aml-txn-edges cannot run this way).\n"
+      "  PL_ENGINE={windowed,monolithic}\n"
+      "      Force the corpus engine (test infrastructure: monolithic\n"
+      "      is the memory-unbounded reference engine the equivalence\n"
+      "      gates compare against; output bytes are identical either\n"
+      "      way).\n"
+      "\n"
       "Each --usecase emits exactly its own outputs:\n"
       "  standard  -> <out>/*.csv\n"
       "  mule-ml   -> <out>/ml_ready/*.csv\n"
@@ -75,6 +92,17 @@ pl::app::RunOptions parse(int argc, char **argv) {
     }
     return argv[++i];
   };
+
+  // Engine selection is automatic; PL_ENGINE is the test-infrastructure
+  // override for the monolithic reference engine (never a CLI flag).
+  if (const char *env = std::getenv("PL_ENGINE")) {
+    if (const auto parsed = pl::app::parseEngine(env)) {
+      opts.engine = *parsed;
+    } else {
+      die("Unknown PL_ENGINE value: {} (expected windowed or monolithic)",
+          std::string_view{env});
+    }
+  }
 
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg{argv[i]};
@@ -143,6 +171,19 @@ pl::app::RunOptions parse(int argc, char **argv) {
     if (arg == "--show-transactions") {
       opts.showTransactions = true;
       continue;
+    }
+
+    if (arg == "--engine") {
+      die("--engine has been removed: engine selection is automatic and "
+          "output bytes are engine-independent. The monolithic reference "
+          "engine is test infrastructure, reachable via "
+          "PL_ENGINE=monolithic.");
+    }
+
+    if (arg == "--windowed") {
+      die("--windowed has been removed: the windowed engine is the "
+          "default for every use case. The monolithic reference engine "
+          "is test infrastructure, reachable via PL_ENGINE=monolithic.");
     }
 
     die("Unknown argument: {}", arg);

@@ -6,11 +6,30 @@
 #include "phantomledger/transfers/legit/ledger/result.hpp"
 #include "phantomledger/transfers/legit/routines/relatives.hpp"
 
+#include <memory>
+#include <vector>
+
 namespace PhantomLedger::infra {
 class Router;
 } // namespace PhantomLedger::infra
 
 namespace PhantomLedger::transfers::legit::ledger {
+
+// Windowed-composition prologue: everything build() produces BEFORE
+// spending — blueprint, opening book, income and base routines — plus the
+// configured pieces the session composition needs. Move-safe by
+// construction: every cross-reference targets heap-stable memory (the
+// screen borrows *initialBook, the routine pass points at *txf). The
+// TxnStreams' screened view backs the session's market and obligations
+// snapshots; do not mutate `streams` while a session built over it runs.
+struct WindowedPrologue {
+  blueprints::LegitBlueprint plan;
+  std::unique_ptr<clearing::Ledger> initialBook;
+  TxnStreams streams;
+  ScreenBook screen;
+  std::unique_ptr<const transactions::Factory> txf;
+  passes::RoutinePass routinePass;
+};
 
 class LegitTransferBuilder {
 public:
@@ -44,6 +63,23 @@ public:
   router(const ::PhantomLedger::infra::Router *value) noexcept;
 
   [[nodiscard]] LegitTransferResult build() const;
+
+  // Windowed-mode prologue: the exact generation build() performs before
+  // spending — blueprint (counterparties, personas), opening book, income,
+  // base routines via addRoutinesWithoutSpending — consuming the shared
+  // sequential stream identically. The windowed driver composition takes
+  // over from here (session spending, cursor sources, two-phase fold).
+  [[nodiscard]] WindowedPrologue buildWindowedPrologue() const;
+
+  // Family rows on their dedicated deterministic lanes, routed against the
+  // supplied pristine router copy. build() calls this with a snapshot taken
+  // at its own entry; a windowed composition passes a snapshot taken before
+  // ANY pass routed through the shared router — same state, so the rows
+  // are byte-identical at any generation point (the order-decoupling law).
+  // Rows are emission-ordered; sort with sortForReplay() before cursoring.
+  [[nodiscard]] std::vector<transactions::Transaction>
+  buildFamilyRows(const blueprints::LegitBlueprint &plan,
+                  const ::PhantomLedger::infra::Router *familyRouter) const;
 
 private:
   [[nodiscard]] const entity::account::Registry *accounts() const noexcept;

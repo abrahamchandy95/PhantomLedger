@@ -40,6 +40,24 @@ void expect(bool cond, const std::string &what) {
   return poolSet;
 }
 
+// Test-scaled fraud profile (mirrors tests/window_leg_support.hpp). The
+// production default plans ~6 rings per 10,000 people and the count ROUNDS,
+// so a 300-person world plans zero fraud participants and this gate's
+// digest would never cover fraud injection or post-fraud settlement.
+// Raising the ring RATE (sigma zeroed => deterministic count) guarantees
+// rings at this population. The fraud BUDGET (targetTxnFraudP and the
+// realized-corpus ratio) is untouched: leg-constant test configuration,
+// not a model change. This test compares digests across chunk strategies
+// within one execution only, so no pinned baseline is affected.
+[[nodiscard]] pl::synth::people::Fraud scaledFraudProfile() {
+  pl::synth::people::Fraud profile{};
+  profile.rings.perTenKMean = 200.0;
+  profile.rings.perTenKSigma = 0.0;
+  profile.solos.perTenK = 100.0;
+  profile.limits.maxParticipationP = 0.10;
+  return profile;
+}
+
 [[nodiscard]] std::string
 digestForStrategy(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
                   pl::pipeline::chunk::Strategy strategy) {
@@ -47,10 +65,10 @@ digestForStrategy(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
   window.start = pl::time::makeTime({2015, 1, 1});
   window.days = 365 * 2; // two years: enough to exercise several chunks
 
-  const pl::synth::people::Fraud fraudProfile{};
+  const auto fraudProfile = scaledFraudProfile();
 
   pl::pipeline::stages::entities::EntitySynthesis entities{
-      .population = 300, // small enough to be fast, large enough for rings
+      .population = 300, // small enough to be fast; see scaledFraudProfile()
       .identity =
           pl::synth::pii::IdentityContext{
               .pools = &poolSet,
@@ -78,6 +96,11 @@ digestForStrategy(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
   pipeline.transferStage().fraud().profile(&fraudProfile);
 
   const auto result = pipeline.run();
+
+  // The gate is only meaningful if the digest actually covers fraud
+  // injection and post-fraud settlement.
+  expect(result.transfers.fraud.injectedCount > 0,
+         "fraud rows injected (rings planned at this population)");
 
   const auto wrap = pl::pipeline::chunk::Schedule::unpartitioned(window);
   pl::exporter::sinks::Golden g;
@@ -141,8 +164,8 @@ int main() {
     return EXIT_FAILURE;
   }
 
-  std::printf("chunk-strategy invariance holds: unpartitioned, 1/3/6-month "
-              "chunks all yield digest %s\n",
+  std::printf("chunk-strategy invariance holds with fraud engaged: "
+              "unpartitioned, 1/3/6-month chunks all yield digest %s\n",
               reference.c_str());
   return EXIT_SUCCESS;
 }

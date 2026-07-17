@@ -10,15 +10,39 @@
 #include "phantomledger/synth/infra/ips_output.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <cstddef>
+#include <cstdint>
+#include <set>
 #include <span>
+#include <utility>
 
 namespace PhantomLedger::exporter::aml_txn_edges::edges {
 
 void writeOwnsRows(csv::Writer &w, const pipeline::Holdings &holdings,
                    time::TimePoint simStart);
 
+// Streaming seam: emits one Transacted row per transaction, carrying the
+// 1-based corpus index (== row_seq) across batches. The span overload
+// delegates with a fresh index — one emission body, two corpus stores.
+void writeTransactedRows(csv::Writer &w,
+                         std::span<const transactions::Transaction> txnsBatch,
+                         std::size_t &nextIndex1);
+
 void writeTransactedRows(csv::Writer &w,
                          std::span<const transactions::Transaction> postedTxns);
+
+// Streaming seam for the involves-counterparty edge: the per-row
+// accumulator collects distinct (internal account, external
+// counterparty) pairs — pair-scale, bounded like the aml edge sets —
+// and the finisher writes them in set (sorted) order, so output is
+// layout-independent. The span overload composes the two.
+using AcctCpPairs = std::set<std::pair<entity::Key, entity::Key>>;
+
+void accumulateInvolvesCounterparty(AcctCpPairs &pairs,
+                                    const transactions::Transaction &tx);
+
+void writeInvolvesCounterpartyRows(csv::Writer &w, const AcctCpPairs &pairs,
+                                   time::TimePoint simStart);
 
 void writeInvolvesCounterpartyRows(
     csv::Writer &w, std::span<const transactions::Transaction> postedTxns,
@@ -55,6 +79,14 @@ void writeContainsPromotedTxnRows(csv::Writer &w,
 void writePromotedTxnAccountRows(
     csv::Writer &w, const derived::Bundle &bundle,
     std::span<const transactions::Transaction> postedTxns);
+
+// Bounded-memory twin: promoted rows resolved through the fraud-scale
+// retention map instead of the retained corpus (every promoted index is
+// a fraud index by construction). totalRows preserves the span
+// overload's validity filter exactly.
+void writePromotedTxnAccountRows(csv::Writer &w, const derived::Bundle &bundle,
+                                 const derived::FraudTxnByIndex &fraudTxns,
+                                 std::uint64_t totalRows);
 
 void writeSignerOfRows(csv::Writer &w, const derived::Bundle &bundle,
                        time::TimePoint simStart);

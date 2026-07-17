@@ -84,6 +84,86 @@ inline void touchEdge(EdgeAggregate &agg, std::int64_t ts,
   }
 }
 
+// -------------------------------------------------- per-row accumulation
+//
+// Shared by the one-shot writers below and the windowed streaming sink.
+// Integer count/min/max aggregates, so accumulation order cannot affect
+// the (sorted) output.
+
+inline void accumulateDeviceEdge(EdgeMap &edges, const txns::Transaction &tx) {
+  const auto deviceBuf = exporter::common::renderDeviceId(tx.session.deviceId);
+  if (deviceBuf.empty()) {
+    return;
+  }
+  AccountItemKey key{tx.source, std::string{deviceBuf.view()}};
+  touchEdge(edges[std::move(key)], tx.timestamp, /*incrementCount=*/true);
+}
+
+inline void accumulateIpEdge(EdgeMap &edges, const txns::Transaction &tx) {
+  const auto ipBuf = network::format(tx.session.ipAddress);
+  if (ipBuf.empty()) {
+    return;
+  }
+  AccountItemKey key{tx.source, std::string{ipBuf.view()}};
+  touchEdge(edges[std::move(key)], tx.timestamp, /*incrementCount=*/true);
+}
+
+// -------------------------------------------- entity-scale usage ranges
+
+inline void addDeviceUsageRanges(
+    EdgeMap &edges, const synth::infra::devices::Output &devices,
+    const std::unordered_map<entity::PersonId, std::vector<entity::Key>>
+        &accountsByPerson) {
+  for (const auto &usage : devices.usages) {
+    const auto deviceBuf = exporter::common::renderDeviceId(usage.deviceId);
+    if (deviceBuf.empty()) {
+      continue;
+    }
+    const std::string deviceStr{deviceBuf.view()};
+    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
+    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
+
+    const auto it = accountsByPerson.find(usage.personId);
+    if (it == accountsByPerson.end()) {
+      continue;
+    }
+    for (const auto &accountKey : it->second) {
+      detail::AccountItemKey key{accountKey, deviceStr};
+      auto &agg = edges[key];
+      touchEdge(agg, firstSeenEpoch, /*incrementCount=*/false);
+      touchEdge(agg, lastSeenEpoch, /*incrementCount=*/false);
+    }
+  }
+}
+
+inline void addIpUsageRanges(
+    EdgeMap &edges, const synth::infra::ips::Output &ips,
+    const std::unordered_map<entity::PersonId, std::vector<entity::Key>>
+        &accountsByPerson) {
+  for (const auto &usage : ips.usages) {
+    const auto ipBuf = network::format(usage.ipAddress);
+    if (ipBuf.empty()) {
+      continue;
+    }
+    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
+    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
+
+    const auto it = accountsByPerson.find(usage.personId);
+    if (it == accountsByPerson.end()) {
+      continue;
+    }
+    const auto ipStr = std::string{ipBuf.view()};
+    for (const auto &accountKey : it->second) {
+      detail::AccountItemKey key{accountKey, ipStr};
+      auto &agg = edges[key];
+      touchEdge(agg, firstSeenEpoch, /*incrementCount=*/false);
+      touchEdge(agg, lastSeenEpoch, /*incrementCount=*/false);
+    }
+  }
+}
+
+// ------------------------------------------------------------ write side
+
 [[nodiscard]] inline std::vector<std::pair<AccountItemKey, EdgeAggregate>>
 sortedEdges(const EdgeMap &edges) {
   std::vector<std::pair<AccountItemKey, EdgeAggregate>> out(edges.begin(),
@@ -139,36 +219,10 @@ inline void writeAccountDeviceRows(
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    const auto deviceBuf =
-        exporter::common::renderDeviceId(tx.session.deviceId);
-    if (deviceBuf.empty()) {
-      continue;
-    }
-    detail::AccountItemKey key{tx.source, std::string{deviceBuf.view()}};
-    detail::touchEdge(edges[std::move(key)], tx.timestamp,
-                      /*incrementCount=*/true);
+    detail::accumulateDeviceEdge(edges, tx);
   }
 
-  for (const auto &usage : devices.usages) {
-    const auto deviceBuf = exporter::common::renderDeviceId(usage.deviceId);
-    if (deviceBuf.empty()) {
-      continue;
-    }
-    const std::string deviceStr{deviceBuf.view()};
-    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
-    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
-
-    const auto it = accountsByPerson.find(usage.personId);
-    if (it == accountsByPerson.end()) {
-      continue;
-    }
-    for (const auto &accountKey : it->second) {
-      detail::AccountItemKey key{accountKey, deviceStr};
-      auto &agg = edges[key];
-      detail::touchEdge(agg, firstSeenEpoch, /*incrementCount=*/false);
-      detail::touchEdge(agg, lastSeenEpoch, /*incrementCount=*/false);
-    }
-  }
+  detail::addDeviceUsageRanges(edges, devices, accountsByPerson);
 
   detail::emitSortedRows(w, edges);
 }
@@ -183,35 +237,10 @@ inline void writeAccountIpRows(
   edges.reserve(finalTxns.size() / 4 + 1);
 
   for (const auto &tx : finalTxns) {
-    const auto ipBuf = network::format(tx.session.ipAddress);
-    if (ipBuf.empty()) {
-      continue;
-    }
-    detail::AccountItemKey key{tx.source, std::string{ipBuf.view()}};
-    detail::touchEdge(edges[std::move(key)], tx.timestamp,
-                      /*incrementCount=*/true);
+    detail::accumulateIpEdge(edges, tx);
   }
 
-  for (const auto &usage : ips.usages) {
-    const auto ipBuf = network::format(usage.ipAddress);
-    if (ipBuf.empty()) {
-      continue;
-    }
-    const auto firstSeenEpoch = time_ns::toEpochSeconds(usage.firstSeen);
-    const auto lastSeenEpoch = time_ns::toEpochSeconds(usage.lastSeen);
-
-    const auto it = accountsByPerson.find(usage.personId);
-    if (it == accountsByPerson.end()) {
-      continue;
-    }
-    const auto ipStr = std::string{ipBuf.view()};
-    for (const auto &accountKey : it->second) {
-      detail::AccountItemKey key{accountKey, ipStr};
-      auto &agg = edges[key];
-      detail::touchEdge(agg, firstSeenEpoch, /*incrementCount=*/false);
-      detail::touchEdge(agg, lastSeenEpoch, /*incrementCount=*/false);
-    }
-  }
+  detail::addIpUsageRanges(edges, ips, accountsByPerson);
 
   detail::emitSortedRows(w, edges);
 }

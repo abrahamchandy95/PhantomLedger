@@ -11,9 +11,11 @@ namespace PhantomLedger::exporter::sinks {
 namespace {
 
 constexpr std::string_view kColumns =
-    "src_acct, dst_acct, amount, ts, is_fraud, ring_id, fraud_type, "
-    "device_id, ip_address, channel";
-constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
+    "row_seq, span_index, src_acct, dst_acct, amount, ts, is_fraud, ring_id, "
+    "fraud_type, device_id, ip_address, channel";
+constexpr std::string_view kColumnDdl = "row_seq    bigint           NOT NULL, "
+                                        "span_index integer          NOT NULL, "
+                                        "src_acct   text             NOT NULL, "
                                         "dst_acct   text             NOT NULL, "
                                         "amount     double precision NOT NULL, "
                                         "ts         timestamp        NOT NULL, "
@@ -24,7 +26,8 @@ constexpr std::string_view kColumnDdl = "src_acct   text             NOT NULL, "
                                         "ip_address text             NOT NULL, "
                                         "channel    text             NOT NULL";
 static_assert(schema::kLedger.header.size() == 10,
-              "kLedger changed; update sinks::Postgres DDL and columns");
+              "kLedger changed; update sinks::Postgres DDL and columns "
+              "(the sink adds row_seq and span_index in front)");
 
 } // namespace
 
@@ -36,7 +39,7 @@ Postgres::Postgres(Options options)
         }
         copy_->put(d, n);
       }),
-      stream_(&streambuf_) {
+      stream_(&streambuf_), rows_(options_.startRowSeq) {
   writer_.emplace(stream_);
 
   const auto table = conn_.escapeIdentifier(options_.table);
@@ -49,13 +52,14 @@ Postgres::Postgres(Options options)
   }
 }
 
-void Postgres::beginSpan(const pipeline::chunk::Span &) {
+void Postgres::beginSpan(const pipeline::chunk::Span &span) {
   if (finished_) {
     throw std::logic_error("sinks::Postgres: beginSpan after finish");
   }
   if (copy_.has_value()) {
     throw std::logic_error("sinks::Postgres: beginSpan without endSpan");
   }
+  spanIndex_ = span.index;
   copy_.emplace(conn_, "COPY " + conn_.escapeIdentifier(options_.table) + " (" +
                            std::string{kColumns} +
                            ") FROM STDIN WITH (FORMAT csv)");
@@ -65,8 +69,12 @@ void Postgres::append(std::span<const transactions::Transaction> txns) {
   if (!copy_.has_value()) {
     throw std::logic_error("sinks::Postgres: append requires an open span");
   }
-  common::writeLedgerRows(*writer_, txns);
-  rows_ += txns.size();
+  for (const auto &tx : txns) {
+    ++rows_; // pre-increment: row_seq is 1-based
+    writer_->cell(rows_).cell(static_cast<std::uint64_t>(spanIndex_));
+    common::detail::writeLedgerCells(*writer_, tx);
+    writer_->endRow();
+  }
 }
 
 void Postgres::endSpan(const pipeline::chunk::Span &) {

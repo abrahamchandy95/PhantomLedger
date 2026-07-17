@@ -13,20 +13,15 @@ namespace PhantomLedger::transfers::legit::ledger {
 
 namespace detail {
 
-/// Funds-transfer replay key — (timestamp, source, target, amount).
+/// Funds-transfer replay order: the funds key (timestamp, source, target,
+/// amount) totalized by the remaining audit fields as tie-breakers (the
+/// S10 ordering re-pin — see transactions::Comparator). Rows that still
+/// compare equal are byte-identical, so this order is total for every
+/// output-affecting purpose.
 [[nodiscard]] inline bool
 fundsLess(const transactions::Transaction &a,
           const transactions::Transaction &b) noexcept {
-  if (a.timestamp != b.timestamp) {
-    return a.timestamp < b.timestamp;
-  }
-  if (a.source != b.source) {
-    return a.source < b.source;
-  }
-  if (a.target != b.target) {
-    return a.target < b.target;
-  }
-  return a.amount < b.amount;
+  return transactions::detail::auditKey(a) < transactions::detail::auditKey(b);
 }
 
 [[nodiscard]] inline bool

@@ -78,10 +78,9 @@ poolsFor(const SharedContext &ctx) noexcept {
 
 } // namespace
 
-SharedContext buildSharedContext(const pipe::People &people,
-                                 const pipe::Holdings &holdings,
-                                 std::span<const txns::Transaction> finalTxns,
-                                 const synth::pii::PoolSet &pools) {
+SharedContext buildSharedContextEntities(const pipe::People &people,
+                                         const pipe::Holdings &holdings,
+                                         const synth::pii::PoolSet &pools) {
   SharedContext ctx;
   ctx.pools = &pools;
 
@@ -99,16 +98,29 @@ SharedContext buildSharedContext(const pipe::People &people,
 
   ctx.personaByPerson = people.personas.assignment.byPerson;
 
-  ctx.lastTransactionByAccount.reserve(finalTxns.size() / 2);
+  return ctx;
+}
+
+void observeTransaction(SharedContext &ctx, const txns::Transaction &tx) {
   const auto bump = [&](const entity::Key &account, std::int64_t ts) {
     auto &slot = ctx.lastTransactionByAccount[account];
     if (ts > slot) {
       slot = ts;
     }
   };
+  bump(tx.source, tx.timestamp);
+  bump(tx.target, tx.timestamp);
+}
+
+SharedContext buildSharedContext(const pipe::People &people,
+                                 const pipe::Holdings &holdings,
+                                 std::span<const txns::Transaction> finalTxns,
+                                 const synth::pii::PoolSet &pools) {
+  auto ctx = buildSharedContextEntities(people, holdings, pools);
+
+  ctx.lastTransactionByAccount.reserve(finalTxns.size() / 2);
   for (const auto &tx : finalTxns) {
-    bump(tx.source, tx.timestamp);
-    bump(tx.target, tx.timestamp);
+    observeTransaction(ctx, tx);
   }
 
   return ctx;
@@ -495,8 +507,8 @@ inline constexpr auto kPurposeTable = lookup::reverseTable<256>(
 } // namespace
 
 void writeTransactionRows(exporter::csv::Writer &w,
-                          std::span<const txns::Transaction> finalTxns) {
-  std::size_t idx = 1;
+                          std::span<const txns::Transaction> finalTxns,
+                          std::size_t &nextIndex1) {
   for (const auto &tx : finalTxns) {
     const auto channelTag = tx.session.channel;
     const auto channelName = channels::name(channelTag);
@@ -505,12 +517,18 @@ void writeTransactionRows(exporter::csv::Writer &w,
     const double amount = primitives::utils::roundMoney(tx.amount);
 
     w.writeRow(
-        transactionId(idx), std::string_view{credDeb},
+        transactionId(nextIndex1), std::string_view{credDeb},
         time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)),
         channelName, purpose, riskScore(tx), std::string_view{"USD"}, amount,
         1.0, amount);
-    ++idx;
+    ++nextIndex1;
   }
+}
+
+void writeTransactionRows(exporter::csv::Writer &w,
+                          std::span<const txns::Transaction> finalTxns) {
+  std::size_t idx = 1;
+  writeTransactionRows(w, finalTxns, idx);
 }
 
 void writeSarRows(exporter::csv::Writer &w,

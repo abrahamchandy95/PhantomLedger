@@ -76,32 +76,40 @@ struct Aggregate {
 using AggregateMap =
     std::unordered_map<ent::KeyPair, Aggregate, ent::KeyPairHash>;
 
+// Per-row accumulation, shared by the one-shot aggregation below and the
+// windowed streaming exporter. Rows must arrive in corpus order so the
+// floating-point sums stay bit-identical between the two paths.
+inline void accumulate(AggregateMap &agg, const tx_ns::Transaction &tx,
+                       const BinSpec &spec) {
+  const ent::KeyPair key{tx.source, tx.target};
+  auto &rec = agg[key];
+  if (rec.txnCount == 0) {
+    rec.firstTs = tx.timestamp;
+    rec.lastTs = tx.timestamp;
+  } else {
+    if (tx.timestamp < rec.firstTs) {
+      rec.firstTs = tx.timestamp;
+    }
+    if (tx.timestamp > rec.lastTs) {
+      rec.lastTs = tx.timestamp;
+    }
+  }
+  rec.totalAmount += tx.amount;
+  ++rec.txnCount;
+
+  const auto idx = static_cast<std::uint32_t>(spec.indexFor(tx.timestamp));
+  auto &cell = rec.bins[idx];
+  cell.amount += tx.amount;
+  cell.count += 1U;
+}
+
 [[nodiscard]] inline AggregateMap
 aggregate(std::span<const tx_ns::Transaction> txns, const BinSpec &spec) {
   AggregateMap agg;
   agg.reserve(txns.size() / 2 + 1);
 
   for (const auto &tx : txns) {
-    const ent::KeyPair key{tx.source, tx.target};
-    auto &rec = agg[key];
-    if (rec.txnCount == 0) {
-      rec.firstTs = tx.timestamp;
-      rec.lastTs = tx.timestamp;
-    } else {
-      if (tx.timestamp < rec.firstTs) {
-        rec.firstTs = tx.timestamp;
-      }
-      if (tx.timestamp > rec.lastTs) {
-        rec.lastTs = tx.timestamp;
-      }
-    }
-    rec.totalAmount += tx.amount;
-    ++rec.txnCount;
-
-    const auto idx = static_cast<std::uint32_t>(spec.indexFor(tx.timestamp));
-    auto &cell = rec.bins[idx];
-    cell.amount += tx.amount;
-    cell.count += 1U;
+    accumulate(agg, tx, spec);
   }
   return agg;
 }
@@ -187,6 +195,22 @@ inline void writeRow(::PhantomLedger::exporter::csv::Writer &w,
 
 } // namespace detail
 
+// Write side over an already-accumulated map (sorted, so output is
+// independent of accumulation layout). The streaming exporter calls this
+// at finish().
+inline void
+writeAccountFlowAggAggregates(::PhantomLedger::exporter::csv::Writer &w,
+                              const detail::AggregateMap &agg,
+                              const detail::BinSpec &spec,
+                              int moneyDecimals = 2) {
+  std::string amountScratch;
+  std::string countScratch;
+  for (const auto &[key, recPtr] : detail::sortedEntries(agg)) {
+    detail::writeRow(w, key, *recPtr, spec, moneyDecimals, amountScratch,
+                     countScratch);
+  }
+}
+
 inline void writeAccountFlowAggRows(
     ::PhantomLedger::exporter::csv::Writer &w,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns,
@@ -194,12 +218,7 @@ inline void writeAccountFlowAggRows(
     int binDays = detail::kDefaultBinDays, int moneyDecimals = 2) {
   const auto spec = detail::makeBinSpec(window, binDays);
   const auto agg = detail::aggregate(finalTxns, spec);
-  std::string amountScratch;
-  std::string countScratch;
-  for (const auto &[key, recPtr] : detail::sortedEntries(agg)) {
-    detail::writeRow(w, key, *recPtr, spec, moneyDecimals, amountScratch,
-                     countScratch);
-  }
+  writeAccountFlowAggAggregates(w, agg, spec, moneyDecimals);
 }
 
 } // namespace PhantomLedger::exporter::standard::flow_agg

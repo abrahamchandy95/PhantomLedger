@@ -93,6 +93,32 @@ void writeGdsZeroCells(exporter::csv::Writer &w) {
       .cell(0.0);
 }
 
+// Both investigation-case-txn overloads emit through this one body, so
+// the corpus path and the fraud-retention path cannot drift.
+void writeInvestigationCaseTxnRow(exporter::csv::Writer &w,
+                                  const derived::Bundle &bundle,
+                                  const derived::PromotedTxnRecord &r,
+                                  const txns::Transaction &tx) {
+  const auto srcId = exporter::common::renderKey(tx.source);
+  const auto dstId = exporter::common::renderKey(tx.target);
+  const auto &caseRec = bundle.cases[r.caseIndex];
+
+  w.cell(r.id)
+      .cell(static_cast<std::uint32_t>(r.txnIndex))
+      .cell(caseRec.id)
+      .cell(srcId)
+      .cell(dstId)
+      .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)))
+      .cell(primitives::utils::roundMoney(tx.amount))
+      .cell(std::string_view{"USD"})
+      .cell(static_cast<std::int64_t>(tx.session.channel.value))
+      .cell(exporter::common::kUsCountry)
+      .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
+      .cell(time_ns::formatTimestamp(r.promotedAt))
+      .cell(time_ns::formatTimestamp(r.ttlDate));
+  w.endRow();
+}
+
 } // namespace
 
 void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
@@ -575,25 +601,23 @@ void writeInvestigationCaseTxnRows(
   };
 
   for (const auto &r : bundle.promotedTxns | std::views::filter(is_valid_txn)) {
-    const auto &tx = postedTxns[r.txnIndex - 1];
-    const auto srcId = exporter::common::renderKey(tx.source);
-    const auto dstId = exporter::common::renderKey(tx.target);
-    const auto &caseRec = bundle.cases[r.caseIndex];
+    writeInvestigationCaseTxnRow(w, bundle, r, postedTxns[r.txnIndex - 1]);
+  }
+}
 
-    w.cell(r.id)
-        .cell(static_cast<std::uint32_t>(r.txnIndex))
-        .cell(caseRec.id)
-        .cell(srcId)
-        .cell(dstId)
-        .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)))
-        .cell(primitives::utils::roundMoney(tx.amount))
-        .cell(std::string_view{"USD"})
-        .cell(static_cast<std::int64_t>(tx.session.channel.value))
-        .cell(exporter::common::kUsCountry)
-        .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
-        .cell(time_ns::formatTimestamp(r.promotedAt))
-        .cell(time_ns::formatTimestamp(r.ttlDate));
-    w.endRow();
+void writeInvestigationCaseTxnRows(exporter::csv::Writer &w,
+                                   const derived::Bundle &bundle,
+                                   const derived::FraudTxnByIndex &fraudTxns,
+                                   std::uint64_t totalRows) {
+  for (const auto &r : bundle.promotedTxns) {
+    if (r.txnIndex == 0 || r.txnIndex > totalRows) {
+      continue;
+    }
+    const auto it = fraudTxns.find(r.txnIndex);
+    if (it == fraudTxns.end()) {
+      continue; // unreachable when retention fed the same stream
+    }
+    writeInvestigationCaseTxnRow(w, bundle, r, it->second);
   }
 }
 

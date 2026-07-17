@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 namespace PhantomLedger::exporter::aml::sar {
@@ -85,7 +86,36 @@ private:
     const ::PhantomLedger::entity::account::Registry &accounts,
     const ::PhantomLedger::entity::account::Ownership &ownership);
 
-/// Generate one SAR per ring + one per solo fraudster.
+// Fraud rows grouped for SAR generation: per-ring buckets plus the solo
+// stream, retained as COPIES in corpus order. This is fraud-scale
+// retention (the fraud budget fraction of the corpus), never
+// transaction-scale, which is what makes SAR generation windowed-safe.
+struct FraudTxnGroups {
+  std::unordered_map<std::uint32_t,
+                     std::vector<::PhantomLedger::transactions::Transaction>>
+      byRing;
+  std::vector<::PhantomLedger::transactions::Transaction> solo;
+};
+
+// Per-row accumulation, shared by the one-shot corpus path and the
+// windowed streaming exporter. Rows must arrive in corpus order so the
+// group contents — and therefore every SAR amount, activity period and
+// dominant-channel violation type derived from them — are identical
+// between the two paths.
+void accumulateFraudTxn(FraudTxnGroups &groups,
+                        const ::PhantomLedger::transactions::Transaction &tx);
+
+/// Generate SARs from groups accumulated via accumulateFraudTxn (the
+/// windowed path). fraud-audit-2026-07 F3: SAR presence is an
+/// incomplete institutional-response label, not ground truth — a ring
+/// or solo group files iff its content-keyed 70% draw passes AND its
+/// activity total meets the 31 CFR §1020.320 $5,000 floor, so
+/// downstream SAR consumers must (and do) handle any subset of groups.
+[[nodiscard]] std::vector<SarRecord>
+generateSars(const SarSubjectIndex &subjects, const FraudTxnGroups &groups);
+
+/// One-shot corpus form: groups the fraud rows, then delegates to the
+/// overload above — one code path, two engines.
 [[nodiscard]] std::vector<SarRecord> generateSars(
     const SarSubjectIndex &subjects,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);

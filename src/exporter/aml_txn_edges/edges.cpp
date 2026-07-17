@@ -51,6 +51,28 @@ poolsFor(const aml::vertices::SharedContext &ctx) noexcept {
   return std::views::iota(1u, people.roster.roster.count + 1);
 }
 
+// Both promoted-txn-account overloads emit through this one body, so
+// the corpus path and the fraud-retention path cannot drift.
+void writePromotedTxnAccountPair(exporter::csv::Writer &w,
+                                 const derived::PromotedTxnRecord &r,
+                                 const txns::Transaction &tx) {
+  const auto promotedAt = time_ns::formatTimestamp(r.promotedAt);
+
+  w.cell(r.id)
+      .cell(exporter::common::renderKey(tx.source))
+      .cell(std::string_view{"originator"})
+      .cell(promotedAt)
+      .cell(kSourceCases);
+  w.endRow();
+
+  w.cell(r.id)
+      .cell(exporter::common::renderKey(tx.target))
+      .cell(std::string_view{"beneficiary"})
+      .cell(promotedAt)
+      .cell(kSourceCases);
+  w.endRow();
+}
+
 } // namespace
 
 void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Holdings &holdings,
@@ -68,14 +90,13 @@ void writeOwnsRows(exporter::csv::Writer &w, const pipeline::Holdings &holdings,
       });
 }
 
-void writeTransactedRows(
-    exporter::csv::Writer &w,
-    std::span<const transactions::Transaction> postedTxns) {
-  std::size_t idx = 1;
-  for (const auto &tx : postedTxns) {
+void writeTransactedRows(exporter::csv::Writer &w,
+                         std::span<const txns::Transaction> txnsBatch,
+                         std::size_t &nextIndex1) {
+  for (const auto &tx : txnsBatch) {
     w.cell(exporter::common::renderKey(tx.source))
         .cell(exporter::common::renderKey(tx.target))
-        .cell(static_cast<std::uint32_t>(idx))
+        .cell(static_cast<std::uint32_t>(nextIndex1))
         .cell(time_ns::formatTimestamp(time_ns::fromEpochSeconds(tx.timestamp)))
         .cell(primitives::utils::roundMoney(tx.amount))
         .cell(std::string_view{"USD"})
@@ -84,25 +105,31 @@ void writeTransactedRows(
         .cell(derived::isCreditChannel(tx.session.channel) ? 1 : 0)
         .cell(kSourceCore);
     w.endRow();
-    ++idx;
+    ++nextIndex1;
   }
 }
 
-void writeInvolvesCounterpartyRows(
-    exporter::csv::Writer &w, std::span<const txns::Transaction> postedTxns,
-    time_ns::TimePoint simStart) {
-  std::set<std::pair<entity::Key, entity::Key>> pairs;
+void writeTransactedRows(
+    exporter::csv::Writer &w,
+    std::span<const transactions::Transaction> postedTxns) {
+  std::size_t idx = 1;
+  writeTransactedRows(w, postedTxns, idx);
+}
 
-  for (const auto &tx : postedTxns) {
-    const bool srcExt = exporter::common::isExternalKey(tx.source);
-    const bool dstExt = exporter::common::isExternalKey(tx.target);
-    if (srcExt && !dstExt) {
-      pairs.emplace(tx.target, tx.source);
-    } else if (!srcExt && dstExt) {
-      pairs.emplace(tx.source, tx.target);
-    }
+void accumulateInvolvesCounterparty(AcctCpPairs &pairs,
+                                    const txns::Transaction &tx) {
+  const bool srcExt = exporter::common::isExternalKey(tx.source);
+  const bool dstExt = exporter::common::isExternalKey(tx.target);
+  if (srcExt && !dstExt) {
+    pairs.emplace(tx.target, tx.source);
+  } else if (!srcExt && dstExt) {
+    pairs.emplace(tx.source, tx.target);
   }
+}
 
+void writeInvolvesCounterpartyRows(exporter::csv::Writer &w,
+                                   const AcctCpPairs &pairs,
+                                   time_ns::TimePoint simStart) {
   const auto ts = time_ns::formatTimestamp(simStart);
   for (const auto &[acct, cp] : pairs) {
     const auto cpRendered = exporter::common::renderKey(cp);
@@ -114,6 +141,16 @@ void writeInvolvesCounterpartyRows(
         .cellEmpty();
     w.endRow();
   }
+}
+
+void writeInvolvesCounterpartyRows(
+    exporter::csv::Writer &w, std::span<const txns::Transaction> postedTxns,
+    time_ns::TimePoint simStart) {
+  AcctCpPairs pairs;
+  for (const auto &tx : postedTxns) {
+    accumulateInvolvesCounterparty(pairs, tx);
+  }
+  writeInvolvesCounterpartyRows(w, pairs, simStart);
 }
 
 void writeBanksAtRows(exporter::csv::Writer &w,
@@ -316,22 +353,23 @@ void writePromotedTxnAccountRows(
   };
 
   for (const auto &r : bundle.promotedTxns | std::views::filter(is_valid_txn)) {
-    const auto &tx = postedTxns[r.txnIndex - 1];
-    const auto promotedAt = time_ns::formatTimestamp(r.promotedAt);
+    writePromotedTxnAccountPair(w, r, postedTxns[r.txnIndex - 1]);
+  }
+}
 
-    w.cell(r.id)
-        .cell(exporter::common::renderKey(tx.source))
-        .cell(std::string_view{"originator"})
-        .cell(promotedAt)
-        .cell(kSourceCases);
-    w.endRow();
-
-    w.cell(r.id)
-        .cell(exporter::common::renderKey(tx.target))
-        .cell(std::string_view{"beneficiary"})
-        .cell(promotedAt)
-        .cell(kSourceCases);
-    w.endRow();
+void writePromotedTxnAccountRows(exporter::csv::Writer &w,
+                                 const derived::Bundle &bundle,
+                                 const derived::FraudTxnByIndex &fraudTxns,
+                                 std::uint64_t totalRows) {
+  for (const auto &r : bundle.promotedTxns) {
+    if (r.txnIndex == 0 || r.txnIndex > totalRows) {
+      continue;
+    }
+    const auto it = fraudTxns.find(r.txnIndex);
+    if (it == fraudTxns.end()) {
+      continue; // unreachable when retention fed the same stream
+    }
+    writePromotedTxnAccountPair(w, r, it->second);
   }
 }
 

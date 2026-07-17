@@ -7,6 +7,7 @@
 #include "phantomledger/transfers/fraud/engine.hpp"
 #include "phantomledger/transfers/fraud/injector_inputs.hpp"
 
+#include <cstddef>
 #include <span>
 
 namespace PhantomLedger::transfers::fraud {
@@ -23,6 +24,10 @@ public:
   [[nodiscard]] InjectionOutput
   inject(time::Window window,
          std::span<const transactions::Transaction> baseTxns,
+         InjectorLegitCounterparties counterparties) const;
+
+  [[nodiscard]] InjectionOutput
+  inject(time::Window window, std::size_t realizedBaseCount,
          InjectorLegitCounterparties counterparties) const;
 
 private:

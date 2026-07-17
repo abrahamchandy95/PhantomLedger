@@ -202,6 +202,17 @@ void addRoutines(const RoutinePass &pass,
                  const blueprints::LegitBlueprint &plan, TxnStreams &streams,
                  ScreenBook &screen);
 
+// Every routine in addRoutines() EXCEPT spending, in the same order with
+// the same screening. This is the windowed-composition seam: the windowed
+// path generates spending through the persistent Session instead of the
+// monolithic Simulator, but must reuse the exact base-stream generation
+// (split deposits, rent, subscriptions, ATM, internal transfers) for the
+// two architectures to stay byte-comparable. addRoutines() is exactly
+// addRoutinesWithoutSpending() followed by the spending routine.
+void addRoutinesWithoutSpending(const RoutinePass &pass,
+                                const blueprints::LegitBlueprint &plan,
+                                TxnStreams &streams, ScreenBook &screen);
+
 void addFamily(
     const ::PhantomLedger::transfers::legit::routines::family::TransferRun &run,
     const routines::relatives::FamilyTransferModel &transferModel,

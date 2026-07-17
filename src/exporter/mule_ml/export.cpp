@@ -1,15 +1,15 @@
 #include "phantomledger/exporter/mule_ml/export.hpp"
 
 #include "phantomledger/exporter/common/framework.hpp"
+#include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/mule_ml/canonical.hpp"
 #include "phantomledger/exporter/mule_ml/infra_edges.hpp"
 #include "phantomledger/exporter/mule_ml/party.hpp"
+#include "phantomledger/exporter/mule_ml/registry_maps.hpp"
 #include "phantomledger/exporter/mule_ml/transfer.hpp"
 #include "phantomledger/exporter/schema.hpp"
 
 #include <filesystem>
-#include <unordered_map>
-#include <vector>
 
 namespace PhantomLedger::exporter::mule_ml {
 
@@ -18,61 +18,16 @@ namespace {
 namespace schema = ::PhantomLedger::exporter::schema;
 namespace common = ::PhantomLedger::exporter::common;
 
-[[nodiscard]] std::unordered_map<::PhantomLedger::entity::PersonId,
-                                 std::vector<::PhantomLedger::entity::Key>>
-buildAccountsByPerson(
-    const ::PhantomLedger::entity::account::Registry &registry) {
-  std::unordered_map<::PhantomLedger::entity::PersonId,
-                     std::vector<::PhantomLedger::entity::Key>>
-      out;
-
-  for (const auto &record : registry.records) {
-    if (record.owner == ::PhantomLedger::entity::invalidPerson) {
-      continue;
-    }
-
-    out[record.owner].push_back(record.id);
-  }
-
-  return out;
-}
-
-[[nodiscard]] std::unordered_map<::PhantomLedger::entity::Key,
-                                 ::PhantomLedger::entity::PersonId>
-buildAccountToOwner(
-    const ::PhantomLedger::entity::account::Registry &registry) {
-  std::unordered_map<::PhantomLedger::entity::Key,
-                     ::PhantomLedger::entity::PersonId>
-      out;
-  out.reserve(registry.records.size());
-
-  for (const auto &record : registry.records) {
-    if (record.owner != ::PhantomLedger::entity::invalidPerson) {
-      out.emplace(record.id, record.owner);
-    }
-  }
-
-  return out;
-}
-
-[[nodiscard]] std::vector<::PhantomLedger::entity::Key>
-collectPartyIds(const ::PhantomLedger::entity::account::Registry &registry) {
-  std::vector<::PhantomLedger::entity::Key> out;
-  out.reserve(registry.records.size());
-
-  for (const auto &record : registry.records) {
-    out.push_back(record.id);
-  }
-
-  return out;
-}
-
 } // namespace
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
   const auto mlDir = outDir / "ml_ready";
   std::filesystem::create_directories(mlDir);
+
+  // Files always; direct PostgreSQL tables too when the mirror is
+  // armed (one rendering, two destinations — common::Table).
+  const common::TableTarget target{.dir = mlDir, .pg = options.pgMirror};
 
   // SimulationResult no longer carries a god-struct `entities`; reach
   // into the SRP-split sub-domains directly.
@@ -94,7 +49,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto canonical = buildCanonicalMaps(partyIds, canonInputs);
 
   {
-    auto w = common::openTable(mlDir, schema::kMlParty);
+    auto w = common::openTable(target, schema::kMlParty);
     PartyInputs partyInputs{};
     partyInputs.piiPools = options.piiPools;
     partyInputs.canonical = &canonical;
@@ -104,15 +59,15 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                    people.pii, partyInputs);
   }
   {
-    auto w = common::openTable(mlDir, schema::kMlTransfer);
+    auto w = common::openTable(target, schema::kMlTransfer);
     writeTransferRows(w, postedTxns);
   }
   {
-    auto w = common::openTable(mlDir, schema::kMlAccountDevice);
+    auto w = common::openTable(target, schema::kMlAccountDevice);
     writeAccountDeviceRows(w, postedTxns, infra.devices, accountsByPerson);
   }
   {
-    auto w = common::openTable(mlDir, schema::kMlAccountIp);
+    auto w = common::openTable(target, schema::kMlAccountIp);
     writeAccountIpRows(w, postedTxns, infra.ips, accountsByPerson);
   }
 }

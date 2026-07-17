@@ -1,4 +1,5 @@
 #include "phantomledger/exporter/aml/sar.hpp"
+#include "phantomledger/exporter/common/hashing.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -6,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdio>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -17,11 +19,6 @@ namespace tx_ns = ::PhantomLedger::transactions;
 namespace ent = ::PhantomLedger::entity;
 namespace t_ns = ::PhantomLedger::time;
 namespace ch = ::PhantomLedger::channels;
-
-struct FraudTxnGroups {
-  std::unordered_map<std::uint32_t, std::vector<tx_ns::Transaction>> byRing;
-  std::vector<tx_ns::Transaction> solo;
-};
 
 struct ActivityPeriod {
   double total = 0.0;
@@ -174,6 +171,33 @@ violationTypeForRing(std::span<const tx_ns::Transaction> txns) noexcept {
   return out;
 }
 
+// ────────────────────────────────────────────────────────────────────
+// filesSar — fraud-audit-2026-07 F3
+//
+// SAR presence is an institutional-response label, not ground truth: a
+// group's SAR is filed iff BOTH gates pass —
+//   (a) the content-keyed filing draw at 70%, keyed on the SAR id (the
+//       same stableU64 device as the 1-in-8 alert escalation draw, so
+//       it is deterministic and batching-independent), and
+//   (b) the activity total meets the $5,000 monetary floor of
+//       31 CFR §1020.320 (suspected insider / known-suspect activity).
+// The floor compares the rounded amountInvolved — the value every
+// downstream table renders.
+// ────────────────────────────────────────────────────────────────────
+
+constexpr double kSarAmountFloor = 5'000.0;
+constexpr std::uint64_t kSarFilingPercent = 70;
+
+[[nodiscard]] bool filesSar(const SarRecord &sar) noexcept {
+  if (sar.amountInvolved < kSarAmountFloor) {
+    return false;
+  }
+  const std::string_view idKey{sar.sarId.bytes.data(), sar.sarId.length};
+  return ::PhantomLedger::exporter::common::stableU64({"SAR_FILE", idKey}) %
+             100 <
+         kSarFilingPercent;
+}
+
 [[nodiscard]] std::span<const ent::PersonId>
 sliceOf(const std::vector<ent::PersonId> &store,
         const ent::person::Slice &slice) noexcept {
@@ -250,22 +274,6 @@ soloSubject(ent::PersonId person, const ent::account::Registry &accounts,
   return out;
 }
 
-[[nodiscard]] FraudTxnGroups
-fraudTxnGroups(std::span<const tx_ns::Transaction> finalTxns) {
-  FraudTxnGroups out;
-  for (const auto &tx : finalTxns) {
-    if (tx.fraud.flag == 0) {
-      continue;
-    }
-    if (tx.fraud.ringId.has_value()) {
-      out.byRing[*tx.fraud.ringId].push_back(tx);
-    } else {
-      out.solo.push_back(tx);
-    }
-  }
-  return out;
-}
-
 void applyActivity(SarRecord &sar, std::span<const tx_ns::Transaction> txns) {
   const auto activity = activityPeriod(txns);
   const auto activityStart = t_ns::fromEpochSeconds(activity.firstTs);
@@ -333,7 +341,11 @@ void appendRingSars(std::vector<SarRecord> &out,
     if (it == txns.byRing.end() || it->second.empty()) {
       continue;
     }
-    out.push_back(ringSar(ring, it->second, subjects.internalAccounts()));
+    auto sar = ringSar(ring, it->second, subjects.internalAccounts());
+    if (!filesSar(sar)) {
+      continue;
+    }
+    out.push_back(std::move(sar));
   }
 }
 
@@ -345,7 +357,11 @@ void appendSoloSars(std::vector<SarRecord> &out,
     if (myTxns.empty()) {
       continue;
     }
-    out.push_back(soloSar(subject, myTxns));
+    auto sar = soloSar(subject, myTxns);
+    if (!filesSar(sar)) {
+      continue;
+    }
+    out.push_back(std::move(sar));
   }
 }
 
@@ -390,16 +406,35 @@ SarSubjectIndex buildSarSubjectIndex(const ent::person::Roster &peopleRoster,
   return out;
 }
 
+void accumulateFraudTxn(FraudTxnGroups &groups, const tx_ns::Transaction &tx) {
+  if (tx.fraud.flag == 0) {
+    return;
+  }
+  if (tx.fraud.ringId.has_value()) {
+    groups.byRing[*tx.fraud.ringId].push_back(tx);
+  } else {
+    groups.solo.push_back(tx);
+  }
+}
+
+std::vector<SarRecord> generateSars(const SarSubjectIndex &subjects,
+                                    const FraudTxnGroups &groups) {
+  std::vector<SarRecord> out;
+
+  appendRingSars(out, subjects, groups);
+  appendSoloSars(out, subjects, groups.solo);
+
+  return out;
+}
+
 std::vector<SarRecord>
 generateSars(const SarSubjectIndex &subjects,
              std::span<const tx_ns::Transaction> finalTxns) {
-  std::vector<SarRecord> out;
-
-  const auto txns = fraudTxnGroups(finalTxns);
-  appendRingSars(out, subjects, txns);
-  appendSoloSars(out, subjects, txns.solo);
-
-  return out;
+  FraudTxnGroups groups;
+  for (const auto &tx : finalTxns) {
+    accumulateFraudTxn(groups, tx);
+  }
+  return generateSars(subjects, groups);
 }
 
 } // namespace PhantomLedger::exporter::aml::sar

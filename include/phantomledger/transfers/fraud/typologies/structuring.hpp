@@ -13,7 +13,10 @@ namespace PhantomLedger::transfers::fraud::typologies::structuring {
 struct Rules {
   double threshold = 10'000.0;
   double epsilonMin = 50.0;
-  double epsilonMax = 400.0;
+  // fraud-audit-2026-07 F1: ε ∈ [50, 1500] puts threshold-profile splits
+  // in $8,500–$9,950, so ≈⅓ of them fall BELOW the [9,000, 10,000) alert
+  // band — the alert label is realistically incomplete by design.
+  double epsilonMax = 1'500.0;
   std::int32_t splitsMin = 3;
   std::int32_t splitsMax = 12;
 

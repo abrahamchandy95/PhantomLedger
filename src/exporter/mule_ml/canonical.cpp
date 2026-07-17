@@ -21,11 +21,6 @@ namespace net = ::PhantomLedger::network;
 namespace ent = ::PhantomLedger::entity;
 namespace dev_ns = ::PhantomLedger::devices;
 
-struct AccountHistograms {
-  std::unordered_map<dev_ns::Identity, std::uint32_t> deviceCounts;
-  std::unordered_map<net::Ipv4, std::uint32_t> ipCounts;
-};
-
 template <typename K, typename H>
 [[nodiscard]] K
 pickMostFrequent(const std::unordered_map<K, std::uint32_t, H> &counts) {
@@ -67,18 +62,9 @@ pickMostFrequent(const std::unordered_map<K, std::uint32_t, H> &counts) {
   return out;
 }
 
-inline void recordDevice(AccountHistograms &hist, const dev_ns::Identity &id) {
-  if (id.assigned()) {
-    ++hist.deviceCounts[id];
-  }
-}
-
-inline void recordIp(AccountHistograms &hist, const net::Ipv4 &ip) {
-  ++hist.ipCounts[ip];
-}
-
 [[nodiscard]] inline std::string
-resolveDeviceFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
+resolveDeviceFromPerson(const CanonicalResolveInputs &inputs,
+                        ent::PersonId person) {
   if (inputs.devicesByPerson == nullptr) {
     return {};
   }
@@ -90,7 +76,8 @@ resolveDeviceFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
 }
 
 [[nodiscard]] inline std::string
-resolveIpFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
+resolveIpFromPerson(const CanonicalResolveInputs &inputs,
+                    ent::PersonId person) {
   if (inputs.ipsByPerson == nullptr) {
     return {};
   }
@@ -101,7 +88,8 @@ resolveIpFromPerson(const CanonicalInputs &inputs, ent::PersonId person) {
   return std::string{net::format(ipIt->second.front()).view()};
 }
 
-inline void fillFromPerson(CanonicalPair &pair, const CanonicalInputs &inputs,
+inline void fillFromPerson(CanonicalPair &pair,
+                           const CanonicalResolveInputs &inputs,
                            const ent::Key &accountKey) {
   if (!pair.deviceId.empty() && !pair.ipAddress.empty()) {
     return;
@@ -133,8 +121,9 @@ inline void fillFallbacks(CanonicalPair &pair, const ent::Key &accountKey) {
 }
 
 [[nodiscard]] inline CanonicalPair
-resolveCanonicalPair(const ent::Key &accountKey, const AccountHistograms *hist,
-                     const CanonicalInputs &inputs) {
+resolveCanonicalPair(const ent::Key &accountKey,
+                     const detail::AccountHistograms *hist,
+                     const CanonicalResolveInputs &inputs) {
   CanonicalPair pair{};
   if (hist != nullptr) {
     if (!hist->deviceCounts.empty()) {
@@ -153,30 +142,47 @@ resolveCanonicalPair(const ent::Key &accountKey, const AccountHistograms *hist,
 
 } // namespace
 
-CanonicalMap
-buildCanonicalMaps(std::span<const ::PhantomLedger::entity::Key> partyIds,
-                   const CanonicalInputs &inputs) {
+void CanonicalAccumulator::observe(
+    const ::PhantomLedger::transactions::Transaction &tx) {
+  auto &hist = perAccount_[tx.source];
+  if (tx.session.deviceId.assigned()) {
+    ++hist.deviceCounts[tx.session.deviceId];
+  }
+  ++hist.ipCounts[tx.session.ipAddress];
+}
+
+CanonicalMap CanonicalAccumulator::resolve(
+    std::span<const ::PhantomLedger::entity::Key> partyIds,
+    const CanonicalResolveInputs &inputs) const {
   CanonicalMap out;
   out.reserve(partyIds.size());
 
-  std::unordered_map<ent::Key, AccountHistograms> perAccount;
-  perAccount.reserve(partyIds.size());
-
-  for (const auto &tx : inputs.finalTxns) {
-    auto &hist = perAccount[tx.source];
-    recordDevice(hist, tx.session.deviceId);
-    recordIp(hist, tx.session.ipAddress);
-  }
-
   for (const auto &accountKey : partyIds) {
-    const AccountHistograms *hist = nullptr;
-    if (const auto it = perAccount.find(accountKey); it != perAccount.end()) {
+    const detail::AccountHistograms *hist = nullptr;
+    if (const auto it = perAccount_.find(accountKey);
+        it != perAccount_.end()) {
       hist = &it->second;
     }
     out.emplace(accountKey, resolveCanonicalPair(accountKey, hist, inputs));
   }
 
   return out;
+}
+
+CanonicalMap
+buildCanonicalMaps(std::span<const ::PhantomLedger::entity::Key> partyIds,
+                   const CanonicalInputs &inputs) {
+  CanonicalAccumulator accumulator;
+  for (const auto &tx : inputs.finalTxns) {
+    accumulator.observe(tx);
+  }
+
+  const CanonicalResolveInputs resolveInputs{
+      .devicesByPerson = inputs.devicesByPerson,
+      .ipsByPerson = inputs.ipsByPerson,
+      .accountToOwner = inputs.accountToOwner,
+  };
+  return accumulator.resolve(partyIds, resolveInputs);
 }
 
 } // namespace PhantomLedger::exporter::mule_ml

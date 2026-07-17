@@ -64,6 +64,7 @@ set(PL_PRIMITIVES_SOURCES
     src/primitives/crypto/blake2b.cpp
     src/primitives/postgres/connection.cpp
     src/primitives/postgres/csv_loader.cpp
+    src/primitives/postgres/txn_readback.cpp
     src/primitives/random/rng.cpp
 )
 
@@ -125,6 +126,7 @@ set(PL_ACTIVITY_SPENDING_SOURCES
     src/activity/spending/simulator/population_dynamics.cpp
     src/activity/spending/simulator/run.cpp
     src/activity/spending/simulator/run_planner.cpp
+    src/activity/spending/simulator/session.cpp
     src/activity/spending/simulator/spender_emission_driver.cpp
     src/activity/spending/spenders/prepare.cpp
     src/activity/spending/spenders/targets.cpp
@@ -140,14 +142,19 @@ set(PL_TRANSACTIONS_SOURCES
 
 set(PL_PIPELINE_SOURCES
     src/pipeline/simulate.cpp
+    src/pipeline/batch/cogen.cpp
     src/pipeline/chunk/schedule.cpp
     src/pipeline/stages/entities.cpp
     src/pipeline/stages/infra.cpp
     src/pipeline/stages/products.cpp
+    src/pipeline/stages/transfers/binary_spool.cpp
     src/pipeline/stages/transfers/fraud_emission.cpp
     src/pipeline/stages/transfers/orchestrator.cpp
     src/pipeline/stages/transfers/ledger_replay.cpp
     src/pipeline/stages/transfers/product_replay.cpp
+    src/pipeline/stages/transfers/windowed_driver.cpp
+    src/pipeline/stages/transfers/windowed_run.cpp
+    src/pipeline/stages/transfers/window_sources.cpp
 )
 
 # ---------------------------------------------------------------------
@@ -212,6 +219,7 @@ set(PL_TRANSFERS_LEGIT_SOURCES
     src/transfers/legit/routines/relatives.cpp
     src/transfers/legit/routines/spending.cpp
     src/transfers/legit/routines/subscriptions.cpp
+    src/transfers/legit/routines/spending_session.cpp
 )
 
 # ---------------------------------------------------------------------
@@ -222,6 +230,8 @@ set(PL_EXPORTER_CORE_SOURCES
     src/exporter/labels.cpp
     src/exporter/common/minhash.cpp
     src/exporter/sinks/postgres.cpp
+    src/exporter/sinks/run_ledger.cpp
+    src/exporter/sinks/table_mirror.cpp
 )
 
 set(PL_EXPORTER_STANDARD_SOURCES
@@ -240,6 +250,7 @@ set(PL_EXPORTER_AML_SOURCES
     src/exporter/aml/edges.cpp
     src/exporter/aml/export.cpp
     src/exporter/aml_txn_edges/derived.cpp
+    src/exporter/aml_txn_edges/readback.cpp
     src/exporter/aml_txn_edges/vertices.cpp
     src/exporter/aml_txn_edges/edges.cpp
     src/exporter/aml_txn_edges/export.cpp

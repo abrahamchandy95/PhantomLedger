@@ -5,39 +5,44 @@
 #include "phantomledger/exporter/aml_txn_edges/derived.hpp"
 #include "phantomledger/exporter/aml_txn_edges/edges.hpp"
 #include "phantomledger/exporter/aml_txn_edges/schema.hpp"
+#include "phantomledger/exporter/aml_txn_edges/streaming.hpp"
 #include "phantomledger/exporter/aml_txn_edges/vertices.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
+#include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/labels.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
 
 #include <filesystem>
+#include <optional>
 #include <span>
+#include <utility>
 
 namespace PhantomLedger::exporter::aml_txn_edges {
 
 namespace {
 
 namespace amlTxnSchema = ::PhantomLedger::exporter::schema::aml_txn_edges;
-namespace amlShared = ::PhantomLedger::exporter::aml::vertices;
 namespace amlSar = ::PhantomLedger::exporter::aml::sar;
 namespace tx_ns = ::PhantomLedger::transactions;
 namespace cmn = ::PhantomLedger::exporter::common;
 namespace lbl = ::PhantomLedger::exporter::labels;
+namespace t_ns = ::PhantomLedger::time;
 
 using cmn::openTable;
 
 } // namespace
 
-Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-                  const std::filesystem::path &outDir, const Options &options) {
-  const auto &pools = cmn::requirePools(options, "aml_txn_edges");
+Summary exportFromArtifacts(
+    const ::PhantomLedger::pipeline::SimulationResult &world,
+    const ::PhantomLedger::clearing::Ledger *postedBook,
+    const std::filesystem::path &outDir, const Options &options,
+    StreamedArtifacts artifacts, const derived::Bundle &bundle,
+    std::span<const amlSar::SarRecord> sars) {
+  (void)cmn::requirePools(options, "aml_txn_edges");
 
-  const auto &people = result.people;
-  const auto &holdings = result.holdings;
-  const auto &infra = result.infra;
-
-  const auto &postedTxns = result.transfers.ledger.posted.txns;
-  const auto *postedBook = result.transfers.ledger.posted.book.get();
-  const auto txns = std::span<const tx_ns::Transaction>{postedTxns};
+  const auto &people = world.people;
+  const auto &holdings = world.holdings;
+  const auto &infra = world.infra;
 
   const auto root = outDir / "aml_txn_edges";
   const auto vDir = root / "vertices";
@@ -45,271 +50,273 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   std::filesystem::create_directories(vDir);
   std::filesystem::create_directories(eDir);
 
-  const auto simStart = cmn::deriveSimStart(txns);
-  const auto simEnd = cmn::deriveSimEnd(txns);
+  // Direct-table mirrors reproduce the csv_loader tree naming
+  // (aml_txn_edges_vertices_<stem> / aml_txn_edges_edges_<stem>).
+  std::optional<sinks::PgMirror> vtxMirror;
+  std::optional<sinks::PgMirror> edgeMirror;
+  if (options.pgMirror != nullptr) {
+    vtxMirror.emplace(sinks::PgMirror{
+        .conninfo = options.pgMirror->conninfo,
+        .schema = options.pgMirror->schema,
+        .tablePrefix = options.pgMirror->tablePrefix + "vertices_"});
+    edgeMirror.emplace(sinks::PgMirror{
+        .conninfo = options.pgMirror->conninfo,
+        .schema = options.pgMirror->schema,
+        .tablePrefix = options.pgMirror->tablePrefix + "edges_"});
+  }
+  const cmn::TableTarget vTarget{
+      .dir = vDir, .pg = vtxMirror.has_value() ? &*vtxMirror : nullptr};
+  const cmn::TableTarget eTarget{
+      .dir = eDir, .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr};
 
-  const auto sharedCtx =
-      amlShared::buildSharedContext(people, holdings, txns, pools);
+  const auto simStart =
+      (artifacts.rows > 0)
+          ? t_ns::fromEpochSeconds(artifacts.firstTs)
+          : t_ns::fromEpochSeconds(cmn::kFallbackEpoch);
 
-  const auto sarSubjects = amlSar::buildSarSubjectIndex(
-      people.roster.roster, people.roster.topology, holdings.accounts.registry,
-      holdings.accounts.ownership);
-  const auto sars = amlSar::generateSars(sarSubjects, txns);
+  const auto &sharedCtx = artifacts.ctx;
 
-  const auto bundle =
-      derived::buildBundle(people, holdings, txns, std::span(sars));
-
-  const auto chainRows = lbl::buildChains(txns);
-  const lbl::ShellInputs shellInputs{
-      .registry = holdings.accounts.registry,
-      .ownership = holdings.accounts.ownership,
-      .topology = people.roster.topology,
-  };
-  const auto shellRows = lbl::buildShells(shellInputs);
+  auto chainRows = lbl::finalizeChains(artifacts.chainGroups);
+  const auto shellRows = lbl::finalizeShells(artifacts.shellStats);
 
   {
-    auto w = openTable(vDir, amlTxnSchema::kCustomer);
+    auto w = openTable(vTarget, amlTxnSchema::kCustomer);
     vertices::writeCustomerRows(w, people, sharedCtx, simStart);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kAccount);
+    auto w = openTable(vTarget, amlTxnSchema::kAccount);
     vertices::writeInternalAccountRows(w, holdings, postedBook, simStart);
     vertices::writeExternalCounterpartyAccountRows(w, sharedCtx, simStart);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kCounterparty);
+    auto w = openTable(vTarget, amlTxnSchema::kCounterparty);
     vertices::writeCounterpartyRows(w, sharedCtx);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kBank);
+    auto w = openTable(vTarget, amlTxnSchema::kBank);
     vertices::writeBankRows(w, sharedCtx);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kDevice);
+    auto w = openTable(vTarget, amlTxnSchema::kDevice);
     vertices::writeDeviceRows(w, infra.devices);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kIp);
+    auto w = openTable(vTarget, amlTxnSchema::kIp);
     vertices::writeIpRows(w, infra.ips);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kFullName);
+    auto w = openTable(vTarget, amlTxnSchema::kFullName);
     vertices::writeFullNameRows(w, people, sharedCtx);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kEmail);
+    auto w = openTable(vTarget, amlTxnSchema::kEmail);
     vertices::writeEmailRows(w, people);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kPhone);
+    auto w = openTable(vTarget, amlTxnSchema::kPhone);
     vertices::writePhoneRows(w, people);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kDob);
+    auto w = openTable(vTarget, amlTxnSchema::kDob);
     vertices::writeDobRows(w, people);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kGovtId);
+    auto w = openTable(vTarget, amlTxnSchema::kGovtId);
     vertices::writeGovtIdRows(w, people);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kAddress);
+    auto w = openTable(vTarget, amlTxnSchema::kAddress);
     vertices::writeAddressRows(w, people, sharedCtx);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kWatchlist);
+    auto w = openTable(vTarget, amlTxnSchema::kWatchlist);
     vertices::writeWatchlistRows(w, people, simStart);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kAlert);
+    auto w = openTable(vTarget, amlTxnSchema::kAlert);
     vertices::writeAlertRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kDisposition);
+    auto w = openTable(vTarget, amlTxnSchema::kDisposition);
     vertices::writeDispositionRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kSar);
-    vertices::writeSarRows(w, std::span(sars));
+    auto w = openTable(vTarget, amlTxnSchema::kSar);
+    vertices::writeSarRows(w, sars);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kCtr);
+    auto w = openTable(vTarget, amlTxnSchema::kCtr);
     vertices::writeCtrRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kMinHashBucket);
+    auto w = openTable(vTarget, amlTxnSchema::kMinHashBucket);
     vertices::writeMinHashBucketRows(w, people, sharedCtx);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kInvestigationCase);
+    auto w = openTable(vTarget, amlTxnSchema::kInvestigationCase);
     vertices::writeInvestigationCaseRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kEvidenceArtifact);
+    auto w = openTable(vTarget, amlTxnSchema::kEvidenceArtifact);
     vertices::writeEvidenceArtifactRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kBusiness);
+    auto w = openTable(vTarget, amlTxnSchema::kBusiness);
     vertices::writeBusinessRows(w, bundle);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kChain);
+    auto w = openTable(vTarget, amlTxnSchema::kChain);
     lbl::writeChainRows(w, std::span<const lbl::ChainRow>(chainRows));
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kShellAccount);
+    auto w = openTable(vTarget, amlTxnSchema::kShellAccount);
     lbl::writeShellAccountRows(
         w, std::span<const lbl::ShellAccountRow>(shellRows));
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kInvestigationCaseTxn);
-    vertices::writeInvestigationCaseTxnRows(w, bundle, txns);
+    auto w = openTable(vTarget, amlTxnSchema::kInvestigationCaseTxn);
+    vertices::writeInvestigationCaseTxnRows(w, bundle, artifacts.fraudTxns,
+                                            artifacts.rows);
   }
   {
-    auto w = openTable(vDir, amlTxnSchema::kConnectedComponent);
+    auto w = openTable(vTarget, amlTxnSchema::kConnectedComponent);
   }
 
   {
-    auto w = openTable(eDir, amlTxnSchema::kOwns);
+    auto w = openTable(eTarget, amlTxnSchema::kOwns);
     edges::writeOwnsRows(w, holdings, simStart);
   }
+  // TRANSACTED and TRANSACTION_CHAIN_LABEL are streamed by
+  // StreamingAmlTxnEdgesExport during the fold.
   {
-    auto w = openTable(eDir, amlTxnSchema::kTransacted);
-    edges::writeTransactedRows(w, txns);
+    auto w = openTable(eTarget, amlTxnSchema::kInvolvesCounterparty);
+    edges::writeInvolvesCounterpartyRows(w, artifacts.cpPairs, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kTransactionChainLabel);
-    lbl::writeTransactionChainLabelRows(w, txns);
-  }
-  {
-    auto w = openTable(eDir, amlTxnSchema::kInvolvesCounterparty);
-    edges::writeInvolvesCounterpartyRows(w, txns, simStart);
-  }
-  {
-    auto w = openTable(eDir, amlTxnSchema::kBanksAt);
+    auto w = openTable(eTarget, amlTxnSchema::kBanksAt);
     edges::writeBanksAtRows(w, sharedCtx, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kOnWatchlist);
+    auto w = openTable(eTarget, amlTxnSchema::kOnWatchlist);
     edges::writeOnWatchlistRows(w, people, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kSubjectOfSar);
-    edges::writeSubjectOfSarRows(w, std::span(sars));
+    auto w = openTable(eTarget, amlTxnSchema::kSubjectOfSar);
+    edges::writeSubjectOfSarRows(w, sars);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kFiledCtr);
+    auto w = openTable(eTarget, amlTxnSchema::kFiledCtr);
     edges::writeFiledCtrRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kAlertOn);
+    auto w = openTable(eTarget, amlTxnSchema::kAlertOn);
     edges::writeAlertOnRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kDispositionedAs);
+    auto w = openTable(eTarget, amlTxnSchema::kDispositionedAs);
     edges::writeDispositionedAsRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kEscalatedTo);
-    edges::writeEscalatedToRows(w, bundle, std::span(sars));
+    auto w = openTable(eTarget, amlTxnSchema::kEscalatedTo);
+    edges::writeEscalatedToRows(w, bundle, sars);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kContainsAlert);
+    auto w = openTable(eTarget, amlTxnSchema::kContainsAlert);
     edges::writeContainsAlertRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kResultedIn);
-    edges::writeResultedInRows(w, bundle, std::span(sars));
+    auto w = openTable(eTarget, amlTxnSchema::kResultedIn);
+    edges::writeResultedInRows(w, bundle, sars);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasEvidence);
+    auto w = openTable(eTarget, amlTxnSchema::kHasEvidence);
     edges::writeHasEvidenceRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kContainsPromotedTxn);
+    auto w = openTable(eTarget, amlTxnSchema::kContainsPromotedTxn);
     edges::writeContainsPromotedTxnRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kPromotedTxnAccount);
-    edges::writePromotedTxnAccountRows(w, bundle, txns);
+    auto w = openTable(eTarget, amlTxnSchema::kPromotedTxnAccount);
+    edges::writePromotedTxnAccountRows(w, bundle, artifacts.fraudTxns,
+                                       artifacts.rows);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kSignerOf);
+    auto w = openTable(eTarget, amlTxnSchema::kSignerOf);
     edges::writeSignerOfRows(w, bundle, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kBeneficialOwnerOf);
+    auto w = openTable(eTarget, amlTxnSchema::kBeneficialOwnerOf);
     edges::writeBeneficialOwnerOfRows(w, bundle, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kControls);
+    auto w = openTable(eTarget, amlTxnSchema::kControls);
     edges::writeControlsRows(w, bundle, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kBusinessOwnsAccount);
+    auto w = openTable(eTarget, amlTxnSchema::kBusinessOwnsAccount);
     edges::writeBusinessOwnsAccountRows(w, bundle, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasName);
+    auto w = openTable(eTarget, amlTxnSchema::kHasName);
     edges::writeHasNameRows(w, people, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasAddress);
+    auto w = openTable(eTarget, amlTxnSchema::kHasAddress);
     edges::writeHasAddressRows(w, people, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasEmail);
+    auto w = openTable(eTarget, amlTxnSchema::kHasEmail);
     edges::writeHasEmailRows(w, people, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasPhone);
+    auto w = openTable(eTarget, amlTxnSchema::kHasPhone);
     edges::writeHasPhoneRows(w, people, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasDob);
+    auto w = openTable(eTarget, amlTxnSchema::kHasDob);
     edges::writeHasDobRows(w, people);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kHasId);
+    auto w = openTable(eTarget, amlTxnSchema::kHasId);
     edges::writeHasIdRows(w, people);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kUsesDevice);
+    auto w = openTable(eTarget, amlTxnSchema::kUsesDevice);
     edges::writeUsesDeviceRows(w, infra.devices);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kUsesIp);
+    auto w = openTable(eTarget, amlTxnSchema::kUsesIp);
     edges::writeUsesIpRows(w, infra.ips);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kInBucket);
+    auto w = openTable(eTarget, amlTxnSchema::kInBucket);
     edges::writeInBucketRows(w, people, sharedCtx, simStart);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kAccountFlowAgg);
+    auto w = openTable(eTarget, amlTxnSchema::kAccountFlowAgg);
     edges::writeAccountFlowAggRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kAccountLinkComm);
+    auto w = openTable(eTarget, amlTxnSchema::kAccountLinkComm);
     edges::writeAccountLinkCommRows(w, bundle);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kInCluster);
+    auto w = openTable(eTarget, amlTxnSchema::kInCluster);
   }
   {
-    auto w = openTable(eDir, amlTxnSchema::kSameAs);
+    auto w = openTable(eTarget, amlTxnSchema::kSameAs);
   }
 
   (void)options.showTransactions;
-  (void)simEnd;
 
   Summary s;
   s.customerCount = people.roster.roster.count;
   s.internalAccountCount =
       cmn::countInternalAccounts(holdings.accounts.registry);
   s.counterpartyCount = sharedCtx.counterpartyIds.size();
-  s.totalTxnCount = txns.size();
-  s.illicitTxnCount = cmn::countIllicitTxns(txns);
+  s.totalTxnCount = static_cast<std::size_t>(artifacts.rows);
+  s.illicitTxnCount = static_cast<std::size_t>(artifacts.illicitRows);
   s.fraudRingCount = people.roster.topology.rings.size();
   s.soloFraudCount = cmn::countSoloFraud(people.roster.roster);
   s.sarsFiledCount = sars.size();
@@ -323,6 +330,43 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   s.chainCount = chainRows.size();
   s.shellCount = shellRows.size();
   return s;
+}
+
+Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
+                  const std::filesystem::path &outDir, const Options &options) {
+  const auto &pools = cmn::requirePools(options, "aml_txn_edges");
+
+  const auto &postedTxns = result.transfers.ledger.posted.txns;
+  const auto *postedBook = result.transfers.ledger.posted.book.get();
+  const auto txns = std::span<const tx_ns::Transaction>{postedTxns};
+
+  // The SAME sink the windowed engine streams through, run over the
+  // retained corpus as one batch — the engines cannot drift.
+  StreamingAmlTxnEdgesExport sink({
+      .people = &result.people,
+      .holdings = &result.holdings,
+      .piiPools = &pools,
+      .outDir = outDir,
+      .pgMirror = options.pgMirror,
+  });
+  sink.append(txns);
+  sink.finish();
+  auto artifacts = sink.takeArtifacts();
+
+  const auto sarSubjects = amlSar::buildSarSubjectIndex(
+      result.people.roster.roster, result.people.roster.topology,
+      result.holdings.accounts.registry, result.holdings.accounts.ownership);
+  const auto sars = amlSar::generateSars(sarSubjects, artifacts.fraudGroups);
+
+  // Corpus-side bundle; the windowed engine builds the identical bundle
+  // from PostgreSQL via readback::buildBundle (test_derived_readback).
+  const auto bundle =
+      derived::buildBundle(result.people, result.holdings, txns,
+                           std::span<const amlSar::SarRecord>(sars));
+
+  return exportFromArtifacts(result, postedBook, outDir, options,
+                             std::move(artifacts), bundle,
+                             std::span<const amlSar::SarRecord>(sars));
 }
 
 } // namespace PhantomLedger::exporter::aml_txn_edges

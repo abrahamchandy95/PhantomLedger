@@ -54,6 +54,9 @@ public:
 
   void finish(RunState &state);
 
+  [[nodiscard]] std::vector<transactions::Transaction>
+  takeEmitted(RunState &state);
+
   [[nodiscard]] std::vector<transactions::Transaction> drainCardCycles();
 
   [[nodiscard]] std::span<const double> sensitivities() const noexcept;

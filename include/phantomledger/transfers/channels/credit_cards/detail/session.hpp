@@ -22,15 +22,19 @@ namespace PhantomLedger::transfers::credit_cards::detail {
 struct Account {
   entity::Key card;
   entity::Key funding;
+
   double apr = 0.0;
   std::uint8_t cycleDay = 1;
+
   entity::card::Autopay autopay = entity::card::Autopay::manual;
 };
 
 struct State {
   double balance = 0.0;
   bool inGrace = true;
+
   std::size_t purchaseCursor = 0;
+
   std::vector<transactions::Transaction> deferredCredits;
 };
 
@@ -49,16 +53,21 @@ struct Environment {
   const BillingTerms &billing;
   const PaymentBehavior &payments;
   const DisputeBehavior &disputes;
+
   const transactions::Factory &factory;
+
   entity::Key issuerAccount;
 };
 
 struct LedgerBinding {
   ::PhantomLedger::clearing::Ledger *ledger = nullptr;
+
   ::PhantomLedger::clearing::Ledger::Index cardIdx =
       ::PhantomLedger::clearing::Ledger::invalid;
+
   ::PhantomLedger::clearing::Ledger::Index fundingIdx =
       ::PhantomLedger::clearing::Ledger::invalid;
+
   ::PhantomLedger::clearing::Ledger::Index issuerIdx =
       ::PhantomLedger::clearing::Ledger::invalid;
 };
@@ -73,12 +82,21 @@ public:
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
+
   Session(Session &&) noexcept = default;
   Session &operator=(Session &&) noexcept = delete;
 
   void run(CardPurchases purchases, Cycle cycle);
 
   [[nodiscard]] const Account &account() const noexcept { return account_; }
+
+  [[nodiscard]] std::size_t purchaseCursor() const noexcept {
+    return state_.purchaseCursor;
+  }
+
+  void rebasePurchaseCursor(std::size_t value) noexcept {
+    state_.purchaseCursor = value;
+  }
 
 private:
   struct PaymentIntent {
@@ -87,22 +105,33 @@ private:
   };
 
   void collectPurchases(CardPurchases purchases, Cycle cycle);
+
   void drainDueCredits(Cycle cycle);
+
   void sortEventsByTime();
+
   void accrueInterest(double averageBalance, Cycle cycle);
+
   [[nodiscard]] PaymentIntent
   draftPayment(double statementAbs, double minimumDueAmt, time::TimePoint due);
+
   void postPayment(const PaymentIntent &intent, time::TimePoint windowEndExcl);
+
   void postLateFee(time::TimePoint due, time::TimePoint windowEndExcl);
 
   void book(const transactions::Draft &draft, double balanceDelta);
+
   void postToLedger(const transactions::Draft &draft);
 
   const Environment &env_;
+
   Account account_;
   State state_{};
+
   random::Rng rng_;
+
   std::vector<transactions::Transaction> &out_;
+
   LedgerBinding ledger_{};
 
   std::vector<transactions::Transaction> events_{};

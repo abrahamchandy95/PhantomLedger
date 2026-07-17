@@ -20,6 +20,10 @@
 #include <string_view>
 #include <type_traits>
 
+namespace PhantomLedger::exporter::sinks {
+struct PgMirror;
+} // namespace PhantomLedger::exporter::sinks
+
 namespace PhantomLedger::exporter::common {
 
 inline constexpr std::int64_t kFallbackEpoch = 1735689600;
@@ -27,6 +31,14 @@ inline constexpr std::int64_t kFallbackEpoch = 1735689600;
 struct ExportOptions {
   bool showTransactions = false;
   const synth::pii::PoolSet *piiPools = nullptr;
+
+  // When set, every table is ALSO written directly into PostgreSQL as
+  // the same bytes the CSV file receives (CSV retirement arc; see
+  // common/table.hpp). The raw ledger CSV is the standing exception
+  // and stays file-only: its stem is the streamed 'transactions'
+  // corpus table's name, which is canonical and must never be
+  // overwritten by its dump.
+  const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
 };
 
 struct BaseSummary {
