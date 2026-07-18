@@ -49,18 +49,14 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "      generation when no server answers. Reruns with the same\n"
       "      seed and config rewrite byte-identical content.\n"
       "\n"
-      "Test infrastructure (not for production use; retired with the\n"
-      "CSV arc):\n"
+      "Test infrastructure (not for production use):\n"
       "  PL_FILE_ONLY=1                    Skip PostgreSQL (serverless\n"
-      "                                    harness escape; aml-txn-edges\n"
-      "                                    cannot run this way)\n"
+      "                                    harness escape; produces only\n"
+      "                                    the stream digest; aml-txn-\n"
+      "                                    edges cannot run this way)\n"
       "  PL_ENGINE={windowed,monolithic}   Force the corpus engine (the\n"
       "                                    monolithic reference engine\n"
-      "                                    backs the equivalence gates)\n"
-      "  --out PATH                        Legacy CSV tree for the\n"
-      "                                    file-based parity gates\n"
-      "  --show-transactions               Legacy raw-ledger dump\n"
-      "                                    (requires --out)\n",
+      "                                    backs the equivalence gates)\n",
       prog);
 }
 
@@ -149,14 +145,6 @@ pl::app::RunOptions parse(int argc, char **argv) {
       continue;
     }
 
-    if (arg == "--out") {
-      // Test infrastructure: keeps the file-based parity gates alive
-      // until they are deleted with the rest of the CSV arc. A default
-      // run writes no files.
-      opts.outDir = requireValue(i, arg);
-      continue;
-    }
-
     if (arg == "--start") {
       const auto value = requireValue(i, arg);
       if (const auto parsed = parseDate(value)) {
@@ -167,17 +155,17 @@ pl::app::RunOptions parse(int argc, char **argv) {
       continue;
     }
 
-    if (arg == "--show-transactions") {
-      // Test infrastructure (see --out); a ledger dump needs a file
-      // tree to land in.
-      opts.showTransactions = true;
-      continue;
+    if (arg == "--out" || arg == "--csv") {
+      die("{} has been removed: PhantomLedger is PostgreSQL-native and "
+          "writes no files. Every table lands directly in PostgreSQL "
+          "(PL_PG) during the run.",
+          arg);
     }
 
-    if (arg == "--csv") {
-      die("--csv does not exist: PhantomLedger is PostgreSQL-native and "
-          "writes no files. The file-based test gates use --out until "
-          "they are retired.");
+    if (arg == "--show-transactions") {
+      die("--show-transactions has been removed: the raw ledger IS the "
+          "streamed 'transactions' table in PostgreSQL — "
+          "SELECT * FROM transactions ORDER BY row_seq.");
     }
 
     if (arg == "--engine") {

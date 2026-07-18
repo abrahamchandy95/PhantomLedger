@@ -10,7 +10,6 @@
 //     send / receive edge tables      (TransactionEdgeClassifier + the
 //     cp-send / cp-receive tables      single-row writers)
 //     transaction chain-label edges   (index-carrying writer)
-//     transactions.csv (optional)     (the shared ledger writer)
 //
 //   ACCUMULATES (bounded, the shared per-row functions):
 //     SharedContext observations      per-account last-txn max
@@ -23,18 +22,13 @@
 // exportFromArtifacts (export.hpp) writes every remaining table from the
 // world, the final posted book, and these artifacts. The corpus-based
 // exportAll() runs THIS SAME SINK over the retained corpus and then calls
-// the same finisher — one code path, two engines, byte-identical files.
+// the same finisher — one code path, two engines, byte-identical tables.
 //
-// CSV retirement arc: the six transaction-streamed tables go through
-// common::Table, so when Config::pgMirror is armed the same bytes
-// stream into PostgreSQL directly, each table on its own connection,
-// open across the whole fold. An EMPTY Config::outDir disables the
-// file leg (5b): the composed aml/{vertices,edges} subdirectories
-// must then never reach a TableTarget, or they would resolve as
-// relative paths in the working directory. The raw ledger CSV stays
-// FILE-ONLY — its stem is "transactions", the streamed corpus table's
-// name, and the canonical stream must never be overwritten by its
-// dump.
+// The six streamed tables go through common::Table: when Config::pgMirror
+// is armed the rendered bytes stream into PostgreSQL directly — the only
+// production destination (no files) — each table on its own connection,
+// open across the whole fold. The raw ledger is the streamed
+// 'transactions' corpus table itself, never a table here.
 //
 
 #include "phantomledger/exporter/aml/edges.hpp"
@@ -42,7 +36,6 @@
 #include "phantomledger/exporter/aml/schema.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
-#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
@@ -53,7 +46,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <span>
 #include <utility>
@@ -67,16 +59,13 @@ public:
     const ::PhantomLedger::pipeline::Holdings *holdings = nullptr;
     const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
-    // The run output directory; tables land under <outDir>/aml/{vertices,
-    // edges} and transactions.csv (when enabled) at <outDir>, exactly
-    // like exportAll. Empty => no files (PG-only run).
-    std::filesystem::path outDir;
-    bool showTransactions = false;
-
-    // When set, the streamed tables are ALSO written directly into
-    // PostgreSQL as the same bytes the CSV files receive (the ledger
-    // CSV is deliberately excluded; see file comment).
+    // When set, the streamed tables are written directly into
+    // PostgreSQL as the bytes the csv::Writer renders — the only
+    // production destination.
     const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
+
+    // Test infrastructure: rendered bytes per table stem.
+    common::TableCapture *capture = nullptr;
   };
 
   explicit StreamingAmlExport(Config config) : config_(std::move(config)) {
@@ -88,17 +77,7 @@ public:
          .topology = config_.people->roster.topology});
     classifier_.emplace(artifacts_.ctx);
 
-    const bool files = !config_.outDir.empty();
-    const auto vtxDir =
-        files ? config_.outDir / "aml" / "vertices" : std::filesystem::path{};
-    const auto edgeDir =
-        files ? config_.outDir / "aml" / "edges" : std::filesystem::path{};
-    if (files) {
-      std::filesystem::create_directories(vtxDir);
-      std::filesystem::create_directories(edgeDir);
-    }
-
-    // Direct-table mirrors reproduce the csv_loader tree naming
+    // Direct-table mirrors keep the historical tree naming
     // (aml_vertices_<stem> / aml_edges_<stem> in the target schema).
     if (config_.pgMirror != nullptr) {
       vtxMirror_.emplace(sinks::PgMirror{
@@ -111,11 +90,11 @@ public:
           .tablePrefix = config_.pgMirror->tablePrefix + "edges_"});
     }
     const common::TableTarget vtxTarget{
-        .dir = vtxDir,
-        .pg = vtxMirror_.has_value() ? &*vtxMirror_ : nullptr};
+        .pg = vtxMirror_.has_value() ? &*vtxMirror_ : nullptr,
+        .capture = config_.capture};
     const common::TableTarget edgeTarget{
-        .dir = edgeDir,
-        .pg = edgeMirror_.has_value() ? &*edgeMirror_ : nullptr};
+        .pg = edgeMirror_.has_value() ? &*edgeMirror_ : nullptr,
+        .capture = config_.capture};
 
     namespace amlSchema = ::PhantomLedger::exporter::schema::aml;
     txnW_.emplace(common::openTable(vtxTarget, amlSchema::kTransaction));
@@ -128,12 +107,6 @@ public:
         edgeTarget, amlSchema::kCounterpartyReceiveTransaction));
     chainLabelW_.emplace(
         common::openTable(edgeTarget, amlSchema::kTransactionChainLabel));
-    if (config_.showTransactions && files) {
-      // File-only: stem "transactions" is the streamed corpus table.
-      const common::TableTarget fileOnly{.dir = config_.outDir, .pg = nullptr};
-      ledgerW_.emplace(common::openTable(
-          fileOnly, ::PhantomLedger::exporter::schema::kLedger));
-    }
 
     emitter_.send_ = &sendW_->writer();
     emitter_.recv_ = &recvW_->writer();
@@ -157,9 +130,6 @@ public:
     vertices::writeTransactionRows(*txnW_, txnsBatch, txnIndex_);
     ::PhantomLedger::exporter::labels::writeTransactionChainLabelRows(
         *chainLabelW_, txnsBatch, chainLabelIndex_);
-    if (ledgerW_.has_value()) {
-      common::writeLedgerRows(*ledgerW_, txnsBatch);
-    }
 
     for (const auto &tx : txnsBatch) {
       classifier_->observe(tx, emitter_);
@@ -186,7 +156,6 @@ public:
     cpSendW_.reset();
     cpRecvW_.reset();
     chainLabelW_.reset();
-    ledgerW_.reset();
   }
 
   [[nodiscard]] std::uint64_t rowsWritten() const noexcept {
@@ -237,7 +206,6 @@ private:
   std::optional<common::Table> cpSendW_;
   std::optional<common::Table> cpRecvW_;
   std::optional<common::Table> chainLabelW_;
-  std::optional<common::Table> ledgerW_;
 
   std::size_t txnIndex_ = 1;
   std::size_t chainLabelIndex_ = 1;

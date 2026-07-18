@@ -1,4 +1,22 @@
+//
+// tests/test_pipeline_e2e.cpp
+//
+// Serverless smoke gate for the three corpus exporters: run a small
+// simulation, then require each exporter to render its complete table
+// set with real content. PhantomLedger writes no files, so the
+// observation seam is common::TableCapture (table.hpp) — the exact
+// bytes each table's csv::Writer renders, keyed by stem, which is also
+// exactly what the PostgreSQL COPY receives on a live run. Schema
+// placement (mule_ml / aml schemas, vertices_/edges_ prefixes) is a
+// mirror concern pinned by the live-PG table golden, not here.
+//
+// The standard exporter must NEVER render a table with stem
+// "transactions": that is the streamed corpus table's name, and the
+// canonical stream must never be overwritten by a rendered twin.
+//
+
 #include "phantomledger/exporter/aml/export.hpp"
+#include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
@@ -12,18 +30,15 @@
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
-#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
-#include <filesystem>
-#include <fstream>
-#include <random>
+#include <map>
 #include <string>
-#include <system_error>
+#include <string_view>
 
 namespace pl = ::PhantomLedger;
-namespace fs = std::filesystem;
 
 namespace {
 
@@ -36,36 +51,39 @@ void check(bool condition, const std::string &what) {
   }
 }
 
-/// Verify the file exists and has at least a header line.
-void expectNonEmptyFile(const fs::path &path) {
-  if (!fs::exists(path)) {
-    std::fprintf(stderr, "FAIL: file missing: %s\n", path.string().c_str());
+// Accumulates every rendered table's bytes by stem — the serverless
+// stand-in for the PostgreSQL COPY destination.
+class Capture final : public pl::exporter::common::TableCapture {
+public:
+  void put(std::string_view stem, const char *data,
+           std::size_t size) override {
+    tables_[std::string{stem}].append(data, size);
+  }
+
+  [[nodiscard]] const std::map<std::string, std::string> &tables() const {
+    return tables_;
+  }
+
+  [[nodiscard]] bool has(const std::string &stem) const {
+    return tables_.contains(stem);
+  }
+
+private:
+  std::map<std::string, std::string> tables_;
+};
+
+/// Verify the table was rendered and carries at least a header line.
+void expectTable(const Capture &capture, const std::string &stem) {
+  const auto it = capture.tables().find(stem);
+  if (it == capture.tables().end()) {
+    std::fprintf(stderr, "FAIL: table missing: %s\n", stem.c_str());
     ++failures;
     return;
   }
-
-  std::ifstream in(path);
-  std::string line;
-  if (!std::getline(in, line) || line.empty()) {
-    std::fprintf(stderr, "FAIL: file empty: %s\n", path.string().c_str());
+  if (it->second.empty()) {
+    std::fprintf(stderr, "FAIL: table empty: %s\n", stem.c_str());
     ++failures;
   }
-}
-
-/// Build a temp-directory name with a 16-hex-digit random suffix.
-[[nodiscard]] fs::path uniqueTempDir(const std::string &prefix) {
-  std::random_device rd;
-  std::uint64_t mix = (static_cast<std::uint64_t>(rd()) << 32U) |
-                      static_cast<std::uint64_t>(rd());
-
-  mix ^= static_cast<std::uint64_t>(
-      std::chrono::high_resolution_clock::now().time_since_epoch().count());
-
-  char buf[24];
-  std::snprintf(buf, sizeof(buf), "%016llx",
-                static_cast<unsigned long long>(mix));
-
-  return fs::temp_directory_path() / (prefix + buf);
 }
 
 [[nodiscard]] pl::synth::pii::PoolSet buildPoolSet(std::uint64_t seed) {
@@ -129,92 +147,98 @@ runSmallSim(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed) {
   return pipeline.run();
 }
 
-void testStandardExport(const pl::pipeline::SimulationResult &result,
-                        const fs::path &outDir) {
+void testStandardExport(const pl::pipeline::SimulationResult &result) {
+  Capture capture;
   pl::exporter::standard::Options opts{};
-  pl::exporter::standard::exportAll(result, outDir, opts);
+  opts.capture = &capture;
+  pl::exporter::standard::exportAll(result, opts);
 
-  for (const auto *name : {
-           "person.csv",
-           "accountnumber.csv",
-           "phone.csv",
-           "email.csv",
-           "device.csv",
-           "ipaddress.csv",
-           "merchants.csv",
-           "external_accounts.csv",
-           "HAS_ACCOUNT.csv",
-           "HAS_PHONE.csv",
-           "HAS_EMAIL.csv",
-           "HAS_USED.csv",
-           "HAS_IP.csv",
-           "HAS_PAID.csv",
+  for (const auto *stem : {
+           "person",
+           "accountnumber",
+           "phone",
+           "email",
+           "device",
+           "ipaddress",
+           "merchants",
+           "external_accounts",
+           "HAS_ACCOUNT",
+           "HAS_PHONE",
+           "HAS_EMAIL",
+           "HAS_USED",
+           "HAS_IP",
+           "HAS_PAID",
        }) {
-    expectNonEmptyFile(outDir / name);
+    expectTable(capture, stem);
   }
 
-  check(!fs::exists(outDir / "transactions.csv"),
-        "transactions.csv NOT emitted by default");
+  check(!capture.has("transactions"),
+        "the 'transactions' stem is the streamed corpus table and must "
+        "never be rendered by the standard exporter");
 }
 
 void testMuleMlExport(const pl::pipeline::SimulationResult &result,
-                      const pl::synth::pii::PoolSet &poolSet,
-                      const fs::path &outDir) {
+                      const pl::synth::pii::PoolSet &poolSet) {
+  Capture capture;
   pl::exporter::mule_ml::Options opts{};
   opts.piiPools = &poolSet;
+  opts.capture = &capture;
 
-  pl::exporter::mule_ml::exportAll(result, outDir, opts);
+  pl::exporter::mule_ml::exportAll(result, opts);
 
-  for (const auto *name : {
-           "Party.csv",
-           "Transfer_Transaction.csv",
-           "Account_Device.csv",
-           "Account_IP.csv",
+  for (const auto *stem : {
+           "Party",
+           "Transfer_Transaction",
+           "Account_Device",
+           "Account_IP",
        }) {
-    expectNonEmptyFile(outDir / "ml_ready" / name);
+    expectTable(capture, stem);
   }
 
-  check(!fs::exists(outDir / "person.csv"),
-        "Mule ML default export is ML-only and does not emit person.csv");
+  check(!capture.has("person"),
+        "Mule ML default export is ML-only and does not render person");
 }
 
 void testAmlExport(const pl::pipeline::SimulationResult &result,
-                   const pl::synth::pii::PoolSet &poolSet,
-                   const fs::path &outDir) {
+                   const pl::synth::pii::PoolSet &poolSet) {
+  Capture capture;
   pl::exporter::aml::Options opts{};
   opts.piiPools = &poolSet;
-  const auto summary = pl::exporter::aml::exportAll(result, outDir, opts);
+  opts.capture = &capture;
+  const auto summary = pl::exporter::aml::exportAll(result, opts);
 
-  for (const auto *name : {
-           "Customer.csv",
-           "Account.csv",
-           "Counterparty.csv",
-           "Name.csv",
-           "Address.csv",
-           "Country.csv",
-           "Watchlist.csv",
-           "Device.csv",
-           "Transaction.csv",
-           "SAR.csv",
-           "Bank.csv",
-           "Name_MinHash.csv",
-           "Address_MinHash.csv",
-           "Street_Line1_MinHash.csv",
-           "City_MinHash.csv",
-           "State_MinHash.csv",
-           "Connected_Component.csv",
+  // Vertex tables (incl. Transaction, streamed by StreamingAmlExport).
+  for (const auto *stem : {
+           "Customer",
+           "Account",
+           "Counterparty",
+           "Name",
+           "Address",
+           "Country",
+           "Watchlist",
+           "Device",
+           "Transaction",
+           "SAR",
+           "Bank",
+           "Name_MinHash",
+           "Address_MinHash",
+           "Street_Line1_MinHash",
+           "City_MinHash",
+           "State_MinHash",
+           "Connected_Component",
        }) {
-    expectNonEmptyFile(outDir / "aml" / "vertices" / name);
+    expectTable(capture, stem);
   }
 
-  for (const auto *name : {
-           "customer_has_account.csv",
-           "send_transaction.csv",
-           "uses_device.csv",
-           "customer_has_name_minhash.csv",
-           "sar_covers.csv",
+  // Edge tables.
+  for (const auto *stem : {
+           "customer_has_account",
+           "send_transaction",
+           "uses_device",
+           "customer_has_name_minhash",
+           "sar_covers",
        }) {
-    expectNonEmptyFile(outDir / "aml" / "edges" / name);
+    expectTable(capture, stem);
   }
 
   check(summary.customerCount == 100,
@@ -225,9 +249,6 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
 } // namespace
 
 int main() {
-  const auto base = uniqueTempDir("phantomledger_e2e_");
-  fs::create_directories(base);
-
   constexpr std::uint64_t seed = 42;
 
   try {
@@ -235,23 +256,18 @@ int main() {
     const auto poolSet = buildPoolSet(seed);
     const auto result = runSmallSim(poolSet, seed);
 
-    testStandardExport(result, base / "standard");
-    testMuleMlExport(result, poolSet, base / "mule_ml");
-    testAmlExport(result, poolSet, base / "aml");
+    testStandardExport(result);
+    testMuleMlExport(result, poolSet);
+    testAmlExport(result, poolSet);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "FAIL: exception: %s\n", e.what());
-    std::fprintf(stderr, "Output preserved at: %s\n", base.string().c_str());
     return 2;
   }
 
   if (failures > 0) {
-    std::fprintf(stderr, "\n%d check(s) failed. Output preserved at: %s\n",
-                 failures, base.string().c_str());
+    std::fprintf(stderr, "\n%d check(s) failed.\n", failures);
     return 1;
   }
-
-  std::error_code ec;
-  fs::remove_all(base, ec);
 
   std::printf("All E2E checks passed.\n");
   return 0;

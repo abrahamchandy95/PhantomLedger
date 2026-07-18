@@ -29,14 +29,12 @@
 // test_derived_readback. exportFromArtifacts (export.hpp) then writes
 // every remaining table. The corpus-based exportAll() runs THIS SAME
 // SINK over the retained corpus and calls the same finisher — one code
-// path, two engines, byte-identical files.
+// path, two engines, byte-identical tables.
 //
-// CSV retirement arc: both streamed tables go through common::Table, so
-// when Config::pgMirror is armed the same bytes stream into PostgreSQL
-// directly, each on its own connection, open across the whole fold. An
-// EMPTY Config::outDir disables the file leg (5b): the composed
-// aml_txn_edges/edges subdirectory must then never reach a TableTarget,
-// or it would resolve as a relative path in the working directory.
+// Both streamed tables go through common::Table: when Config::pgMirror
+// is armed the rendered bytes stream into PostgreSQL directly — the
+// only production destination (no files) — each on its own connection,
+// open across the whole fold.
 //
 
 #include "phantomledger/exporter/aml/sar.hpp"
@@ -55,7 +53,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <span>
 #include <utility>
@@ -69,14 +66,13 @@ public:
     const ::PhantomLedger::pipeline::Holdings *holdings = nullptr;
     const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
-    // The run output directory; the streamed tables land under
-    // <outDir>/aml_txn_edges/edges, exactly like exportAll. Empty =>
-    // no files (PG-only run).
-    std::filesystem::path outDir;
-
-    // When set, the streamed tables are ALSO written directly into
-    // PostgreSQL as the same bytes the CSV files receive.
+    // When set, the streamed tables are written directly into
+    // PostgreSQL as the bytes the csv::Writer renders — the only
+    // production destination.
     const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
+
+    // Test infrastructure: rendered bytes per table stem.
+    common::TableCapture *capture = nullptr;
   };
 
   explicit StreamingAmlTxnEdgesExport(Config config)
@@ -89,14 +85,7 @@ public:
          .ownership = config_.holdings->accounts.ownership,
          .topology = config_.people->roster.topology});
 
-    const bool files = !config_.outDir.empty();
-    const auto edgeDir = files ? config_.outDir / "aml_txn_edges" / "edges"
-                               : std::filesystem::path{};
-    if (files) {
-      std::filesystem::create_directories(edgeDir);
-    }
-
-    // Direct-table mirror reproduces the csv_loader tree naming
+    // Direct-table mirror keeps the historical tree naming
     // (aml_txn_edges_edges_<stem> in the target schema).
     if (config_.pgMirror != nullptr) {
       edgeMirror_.emplace(sinks::PgMirror{
@@ -105,8 +94,8 @@ public:
           .tablePrefix = config_.pgMirror->tablePrefix + "edges_"});
     }
     const common::TableTarget edgeTarget{
-        .dir = edgeDir,
-        .pg = edgeMirror_.has_value() ? &*edgeMirror_ : nullptr};
+        .pg = edgeMirror_.has_value() ? &*edgeMirror_ : nullptr,
+        .capture = config_.capture};
 
     namespace sch = ::PhantomLedger::exporter::schema::aml_txn_edges;
     transactedW_.emplace(common::openTable(edgeTarget, sch::kTransacted));

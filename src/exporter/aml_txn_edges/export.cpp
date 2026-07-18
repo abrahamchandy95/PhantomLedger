@@ -12,7 +12,6 @@
 #include "phantomledger/exporter/labels.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
-#include <filesystem>
 #include <optional>
 #include <span>
 #include <utility>
@@ -34,8 +33,7 @@ using cmn::openTable;
 
 Summary exportFromArtifacts(
     const ::PhantomLedger::pipeline::SimulationResult &world,
-    const ::PhantomLedger::clearing::Ledger *postedBook,
-    const std::filesystem::path &outDir, const Options &options,
+    const ::PhantomLedger::clearing::Ledger *postedBook, const Options &options,
     StreamedArtifacts artifacts, const derived::Bundle &bundle,
     std::span<const amlSar::SarRecord> sars) {
   (void)cmn::requirePools(options, "aml_txn_edges");
@@ -44,20 +42,7 @@ Summary exportFromArtifacts(
   const auto &holdings = world.holdings;
   const auto &infra = world.infra;
 
-  // Empty outDir => no file leg (PostgreSQL-only run); the composed
-  // subdirectories must then stay empty too, or they would resolve as
-  // relative paths in the working directory.
-  const bool files = !outDir.empty();
-  const auto vDir = files ? outDir / "aml_txn_edges" / "vertices"
-                          : std::filesystem::path{};
-  const auto eDir = files ? outDir / "aml_txn_edges" / "edges"
-                          : std::filesystem::path{};
-  if (files) {
-    std::filesystem::create_directories(vDir);
-    std::filesystem::create_directories(eDir);
-  }
-
-  // Direct-table mirrors reproduce the csv_loader tree naming
+  // Direct-table mirrors keep the historical tree naming
   // (aml_txn_edges_vertices_<stem> / aml_txn_edges_edges_<stem>).
   std::optional<sinks::PgMirror> vtxMirror;
   std::optional<sinks::PgMirror> edgeMirror;
@@ -72,9 +57,11 @@ Summary exportFromArtifacts(
         .tablePrefix = options.pgMirror->tablePrefix + "edges_"});
   }
   const cmn::TableTarget vTarget{
-      .dir = vDir, .pg = vtxMirror.has_value() ? &*vtxMirror : nullptr};
+      .pg = vtxMirror.has_value() ? &*vtxMirror : nullptr,
+      .capture = options.capture};
   const cmn::TableTarget eTarget{
-      .dir = eDir, .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr};
+      .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr,
+      .capture = options.capture};
 
   const auto simStart =
       (artifacts.rows > 0)
@@ -315,8 +302,6 @@ Summary exportFromArtifacts(
     auto w = openTable(eTarget, amlTxnSchema::kSameAs);
   }
 
-  (void)options.showTransactions;
-
   Summary s;
   s.customerCount = people.roster.roster.count;
   s.internalAccountCount =
@@ -340,7 +325,7 @@ Summary exportFromArtifacts(
 }
 
 Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-                  const std::filesystem::path &outDir, const Options &options) {
+                  const Options &options) {
   const auto &pools = cmn::requirePools(options, "aml_txn_edges");
 
   const auto &postedTxns = result.transfers.ledger.posted.txns;
@@ -353,8 +338,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       .people = &result.people,
       .holdings = &result.holdings,
       .piiPools = &pools,
-      .outDir = outDir,
       .pgMirror = options.pgMirror,
+      .capture = options.capture,
   });
   sink.append(txns);
   sink.finish();
@@ -371,9 +356,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       derived::buildBundle(result.people, result.holdings, txns,
                            std::span<const amlSar::SarRecord>(sars));
 
-  return exportFromArtifacts(result, postedBook, outDir, options,
-                             std::move(artifacts), bundle,
-                             std::span<const amlSar::SarRecord>(sars));
+  return exportFromArtifacts(result, postedBook, options, std::move(artifacts),
+                             bundle, std::span<const amlSar::SarRecord>(sars));
 }
 
 } // namespace PhantomLedger::exporter::aml_txn_edges

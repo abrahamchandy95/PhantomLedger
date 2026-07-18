@@ -40,7 +40,8 @@ pl_add_test(test_golden)
 pl_add_test(test_fingerprint)
 
 # ---------------------------------------------------------------------
-# Unit tests: simulation and exporters
+# Unit tests: simulation and exporters (serverless; exporter table sets
+# observed via the common::TableCapture test seam — no files)
 # ---------------------------------------------------------------------
 
 pl_add_test(test_spending)
@@ -102,64 +103,25 @@ set_tests_properties(test_resume PROPERTIES
     TIMEOUT 120)
 
 # ---------------------------------------------------------------------
-# Integration: CSV retirement arc — direct-table parity gates. Each
-# runs the real binary (DEFAULT engine, live server), reloads the CSVs
-# the run just wrote into a scratch schema via csv_loader (the loader's
-# only remaining job: verification oracle), and requires every loaded
-# table to match its direct twin cell-for-cell (row count + order-
-# insensitive content hash). Generic over the loader's report. Skip 77;
-# honor PL_TEST_PG.
-#
-#   test_mule_ml_direct        step 1 pilot (schema mule_ml)
-#   test_standard_direct       step 2, fully direct (public schema) +
-#                              streamed-table protection (the ledger
-#                              CSV stays file-only)
-#   test_aml_direct            step 3 (~50 tables, schema aml)
-#   test_aml_txn_edges_direct  step 3b, the LAST exporter (~57 tables,
-#                              schema aml_txn_edges)
+# RETIRED (CSV retirement arc, step 5c): the four direct-table parity
+# gates — test_mule_ml_direct, test_standard_direct, test_aml_direct,
+# test_aml_txn_edges_direct — and their csv_loader verification oracle.
+# Parity is structural (the TableMirror COPYs the writer's own rendered
+# bytes; there is no second rendering to drift), and the table-digest
+# golden below pins the resulting table bytes. Invariants 16–19 retired
+# with them.
 # ---------------------------------------------------------------------
 
-pl_add_test(test_mule_ml_direct)
-target_compile_definitions(test_mule_ml_direct PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_mule_ml_direct phantomledger)
-set_tests_properties(test_mule_ml_direct PROPERTIES
-    SKIP_RETURN_CODE 77
-    TIMEOUT 600)
-
-pl_add_test(test_standard_direct)
-target_compile_definitions(test_standard_direct PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_standard_direct phantomledger)
-set_tests_properties(test_standard_direct PROPERTIES
-    SKIP_RETURN_CODE 77
-    TIMEOUT 600)
-
-pl_add_test(test_aml_direct)
-target_compile_definitions(test_aml_direct PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_aml_direct phantomledger)
-set_tests_properties(test_aml_direct PROPERTIES
-    SKIP_RETURN_CODE 77
-    TIMEOUT 600)
-
-pl_add_test(test_aml_txn_edges_direct)
-target_compile_definitions(test_aml_txn_edges_direct PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_aml_txn_edges_direct phantomledger)
-set_tests_properties(test_aml_txn_edges_direct PROPERTIES
-    SKIP_RETURN_CODE 77
-    TIMEOUT 600)
-
 # ---------------------------------------------------------------------
-# CSV retirement arc step 4 + the FRAUD-VISIBLE PIN: the TABLE-DIGEST
-# GOLDEN. Two sections, each with its own baseline (first live run
-# captures a missing one, SKIP 77; baselines belong in git IMMEDIATELY,
-# per-server):
+# The TABLE-DIGEST GOLDEN (and the FRAUD-VISIBLE PIN). Two sections,
+# each with its own baseline (first live run captures a missing one,
+# SKIP 77; baselines belong in git IMMEDIATELY, per-server). Tables are
+# discovered from the run's own registrations in public.pl_direct_tables
+# — the binary runs with no file flags; PostgreSQL content IS the
+# output.
 #
-#   standard  the CSV golden's exact config; corpus stream in row_seq
-#             order + every public-schema direct table (discovered from
-#             the run's own CSV stems).
+#   standard  the run golden's exact config; corpus stream in row_seq
+#             order + every public-schema direct table.
 #             Baseline: tests/golden_tables.md5
 #   fraud     aml-txn-edges at the fraud-dense probe config (pop 10000,
 #             60d, seed 7): pins the fraud-label tables (ShellAccount,
@@ -170,10 +132,8 @@ set_tests_properties(test_aml_txn_edges_direct PROPERTIES
 #             is structurally blind to fraud labels).
 #             Baseline: tests/golden_tables_aml.md5
 #
-# The fraud section's first intentional-model-change round is the table
-# golden's promotion trial. Re-pins must update every touched baseline
-# in the same named commit. Skips with 77 when no server is reachable;
-# honors PL_TEST_PG.
+# Re-pins must update every touched baseline in the same named commit.
+# Skips with 77 when no server is reachable; honors PL_TEST_PG.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_table_golden)
@@ -192,8 +152,9 @@ set_tests_properties(test_table_golden PROPERTIES
 # corpus back from PostgreSQL). Reference engine (PL_ENGINE=monolithic,
 # test-only env override) vs the DEFAULT selection — which this gate
 # thereby pins as auto -> windowed for aml-txn-edges: same stream
-# digest, byte-identical aml_txn_edges CSV tree. Skips with 77; honors
-# PL_TEST_PG.
+# digest, digest-identical PostgreSQL content (every registered
+# aml_txn_edges table + the corpus in row_seq order, per leg). Skips
+# with 77; honors PL_TEST_PG.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_windowed_aml_txn_edges)
@@ -205,13 +166,15 @@ set_tests_properties(test_windowed_aml_txn_edges PROPERTIES
     TIMEOUT 600)
 
 # ---------------------------------------------------------------------
-# End-to-end output fingerprint. First run on a machine captures a
-# per-toolchain baseline (reported as SKIP so capture is explicit);
-# every later run enforces byte-identical output. Delete
-# tests/golden_run.b2sum to re-pin after an intentional behavior
-# change or a toolchain upgrade. The baseline file belongs in git.
-# Serverless via PL_FILE_ONLY=1 (the golden never depends on
-# PostgreSQL) + PL_PG pinned unreachable as defense in depth.
+# End-to-end corpus fingerprint: the binary's printed "Stream digest:
+# <hex>  rows: <N>" line vs the pinned baseline (BLAKE2b over the
+# rendered corpus stream in row_seq order). The run is serverless
+# (PL_FILE_ONLY=1 + PL_PG pinned unreachable) and writes NO files.
+# First run on a machine captures a per-toolchain baseline (reported as
+# SKIP so capture is explicit); every later run enforces the exact
+# line. Delete tests/golden_run.b2sum to re-pin after an intentional
+# behavior change or a toolchain upgrade. The baseline file belongs in
+# git. Table bytes are pinned by test_table_golden (live PG).
 # ---------------------------------------------------------------------
 
 pl_add_test(test_run_golden)
@@ -303,10 +266,10 @@ set_tests_properties(test_production_windowed PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
 # Windowed CLI end-to-end: the DEFAULT engine (auto -> windowed) vs the
-# monolithic reference engine (PL_ENGINE=monolithic): same stream
-# digest, byte-identical CSV set per use case, default pinned via the
-# Engine: log line (serverless: PL_FILE_ONLY=1 + PL_PG pinned
-# unreachable). HARD-ENFORCED.
+# monolithic reference engine (PL_ENGINE=monolithic): same printed
+# stream digest per use case, default pinned via the Engine: log line
+# (serverless: PL_FILE_ONLY=1 + PL_PG pinned unreachable; no files
+# written). HARD-ENFORCED.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_windowed_e2e)

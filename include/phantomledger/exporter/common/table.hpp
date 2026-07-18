@@ -2,22 +2,23 @@
 //
 // phantomledger/exporter/common/table.hpp
 //
-// The direct-table twin of common::openTable — step 1 of the CSV
-// retirement arc. openTable(TableTarget, schema::Table) returns a
-// common::Table whose csv::Writer renders each row ONCE into a single
-// byte stream that is tee'd to the CSV file and (when the target's
-// PgMirror is armed) to a PostgreSQL COPY. One rendering, two
-// destinations: the table content in PostgreSQL is byte-identical to
-// the file by construction, which is what lets the CSV files become
-// optional without a falsifiability gap.
+// Direct-table writing — the CSV retirement arc's end state. A
+// common::Table renders each row ONCE through its csv::Writer into a
+// single byte stream that feeds the table's PostgreSQL COPY (when the
+// target's PgMirror is armed). PhantomLedger writes no files: the
+// rendered bytes ARE the COPY payload, so what lands in PostgreSQL is
+// the writer's output by construction — there is no second rendering
+// to drift.
 //
-// CSV retirement step 5b: an EMPTY target.dir means "no file leg" —
-// the table renders once and streams only into the mirror (or, with
-// no mirror either, nowhere: a legal null sink for file-less
-// serverless runs). Exporters that compose subdirectories must pass a
-// TRULY EMPTY dir when files are disabled — an empty base composed
-// with a subdir ("aml/vertices") is a NON-empty relative path and
-// would silently write into the working directory.
+// With no mirror the rendering goes nowhere (a legal null sink: the
+// serverless PL_FILE_ONLY harness runs this way and yields only the
+// corpus stream digest).
+//
+// TableCapture is TEST INFRASTRUCTURE: a capture installed on the
+// target receives every table's exact rendered bytes, keyed by the
+// table's filename stem — the serverless seam test_pipeline_e2e uses
+// to pin each exporter's table set now that there are no files to
+// inspect. Production code never installs one.
 //
 // A Table converts implicitly to csv::Writer&, so every existing
 // write function (writePartyRows, writeTransferRows, ...) works
@@ -29,43 +30,50 @@
 #include "phantomledger/exporter/sinks/table_mirror.hpp"
 #include "phantomledger/primitives/io/callback_streambuf.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <filesystem>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <ostream>
-#include <stdexcept>
-#include <utility>
+#include <string>
+#include <string_view>
 
 namespace PhantomLedger::exporter::common {
 
-// Where an exporter's tables go: the directory when non-empty (empty
-// => no file is written); additionally a PostgreSQL mirror when `pg`
-// is set. Exporters receive this from their Options/Config and never
-// decide backend policy themselves.
+// Test seam: receives the exact rendered bytes of every table opened
+// against a target that carries it, keyed by the table's filename stem
+// (e.g. "Party", "SAR"). Streamed tables deliver their bytes
+// incrementally across the whole fold.
+struct TableCapture {
+  TableCapture() = default;
+  TableCapture(const TableCapture &) = delete;
+  TableCapture &operator=(const TableCapture &) = delete;
+  TableCapture(TableCapture &&) = delete;
+  TableCapture &operator=(TableCapture &&) = delete;
+  virtual ~TableCapture() = default;
+
+  virtual void put(std::string_view stem, const char *data,
+                   std::size_t size) = 0;
+};
+
+// Where an exporter's tables go: a direct PostgreSQL table when `pg`
+// is set, plus the test capture when one is installed. Exporters
+// receive this from their Options/Config and never decide backend
+// policy themselves.
 struct TableTarget {
-  std::filesystem::path dir;
   const sinks::PgMirror *pg = nullptr; // nullptr => no direct table
+  TableCapture *capture = nullptr;     // test infrastructure only
 };
 
 class Table {
 public:
   Table(const TableTarget &target, const schema::Table &table)
       : guts_(std::make_unique<Guts>(
-            target.dir.empty()
-                ? std::optional<std::filesystem::path>{}
-                : std::optional<std::filesystem::path>{
-                      target.dir / std::filesystem::path(table.filename)})) {
-    if (!target.dir.empty() && !guts_->file) {
-      throw std::runtime_error(
-          "exporter: cannot open table file " +
-          (target.dir / std::filesystem::path(table.filename)).string());
-    }
+            std::filesystem::path(table.filename).stem().string(),
+            target.capture)) {
     if (target.pg != nullptr) {
-      const auto stem =
-          std::filesystem::path(table.filename).stem().string();
-      guts_->mirror.emplace(*target.pg, stem, table.header);
+      guts_->mirror.emplace(*target.pg, guts_->stem, table.header);
     }
     writer_.emplace(guts_->stream);
     writer_->writeHeader(table.header);
@@ -90,8 +98,8 @@ public:
   // Lets a Table stand in wherever a write function takes csv::Writer&.
   operator csv::Writer &() noexcept { return *writer_; }
 
-  // Flushes the tee and finishes the COPY. Idempotent; also invoked by
-  // the destructor (which downgrades errors to stderr).
+  // Flushes the rendering and finishes the COPY. Idempotent; also
+  // invoked by the destructor (which downgrades errors to stderr).
   void close() {
     if (guts_ == nullptr || guts_->closed) {
       return;
@@ -101,31 +109,26 @@ public:
     if (guts_->mirror.has_value()) {
       guts_->mirror->close();
     }
-    if (guts_->file.is_open()) {
-      guts_->file.close();
-    }
   }
 
 private:
   // Heap-held so the stream addresses the Writer and the callback
   // capture stay stable across moves of the Table.
   struct Guts {
-    explicit Guts(const std::optional<std::filesystem::path> &path)
-        : buf([this](const char *data, std::size_t size) {
-            if (file.is_open()) {
-              file.write(data, static_cast<std::streamsize>(size));
-            }
+    Guts(std::string tableStem, TableCapture *cap)
+        : stem(std::move(tableStem)), capture(cap),
+          buf([this](const char *data, std::size_t size) {
             if (mirror.has_value()) {
               mirror->put(data, size);
             }
+            if (capture != nullptr) {
+              capture->put(stem, data, size);
+            }
           }),
-          stream(&buf) {
-      if (path.has_value()) {
-        file.open(*path, std::ios::binary);
-      }
-    }
+          stream(&buf) {}
 
-    std::ofstream file;
+    std::string stem;
+    TableCapture *capture;
     std::optional<sinks::TableMirror> mirror;
     io::CallbackStreambuf buf;
     std::ostream stream;

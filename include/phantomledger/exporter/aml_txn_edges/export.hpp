@@ -11,7 +11,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <span>
 
 namespace PhantomLedger::exporter::aml_txn_edges {
@@ -53,8 +52,7 @@ struct StreamedArtifacts {
 // the derived bundle + SARs. Shared by both engines.
 [[nodiscard]] Summary exportFromArtifacts(
     const ::PhantomLedger::pipeline::SimulationResult &world,
-    const ::PhantomLedger::clearing::Ledger *postedBook,
-    const std::filesystem::path &outDir, const Options &options,
+    const ::PhantomLedger::clearing::Ledger *postedBook, const Options &options,
     StreamedArtifacts artifacts, const derived::Bundle &bundle,
     std::span<const aml::sar::SarRecord> sars);
 
@@ -63,6 +61,6 @@ struct StreamedArtifacts {
 // bundle from the corpus, then calls the same finisher.
 [[nodiscard]] Summary
 exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-          const std::filesystem::path &outDir, const Options &options = {});
+          const Options &options = {});
 
 } // namespace PhantomLedger::exporter::aml_txn_edges

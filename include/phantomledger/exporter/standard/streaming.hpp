@@ -4,7 +4,7 @@
 //
 // Streaming twin of the standard exporter's transaction-scale artifacts,
 // for the windowed engine: a chunk sink that consumes settled spans as
-// Phase B folds them and produces byte-identical files to exportAll()'s
+// Phase B folds them and produces byte-identical tables to exportAll()'s
 // corpus-based path:
 //
 //   has_paid            per-(source,target) aggregate — accumulated row
@@ -12,27 +12,23 @@
 //                       sums are bit-identical), written SORTED at
 //                       finish(), exactly like writeHasPaidRows
 //   account_flow_agg    same, with fixed-width temporal bins
-//   transactions (opt)  raw ledger rows, streamed as they arrive
 //
 // The membership filter is applied per row (the same activeAt predicate
 // filterByMembership uses), so no visible-corpus copy is ever
-// materialized. Retained state is bounded by distinct account PAIRS and
-// the open CSV writer — account-pair scale, not transaction scale.
+// materialized. Retained state is bounded by distinct account PAIRS —
+// account-pair scale, not transaction scale.
 //
 // Entity-scale tables come from exportEntities() after the fold; pairing
 // the two reproduces exportAll() completely (test_windowed_e2e).
 //
-// CSV retirement arc: has_paid and account_flow_agg go through
-// common::Table, so when Config::pgMirror is armed the same bytes
-// stream into PostgreSQL directly. An EMPTY Config::outDir disables
-// the file leg entirely (5b). The ledger CSV stays FILE-ONLY — its
-// stem is "transactions", the streamed corpus table's name, and the
-// canonical stream must never be overwritten by its dump.
+// Both tables go through common::Table: when Config::pgMirror is armed
+// the rendered bytes stream into PostgreSQL directly — the only
+// production destination (no files). The raw ledger is the streamed
+// 'transactions' corpus table itself, never a table here.
 //
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
-#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
@@ -45,8 +41,6 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstdint>
-#include <filesystem>
-#include <optional>
 #include <span>
 #include <utility>
 
@@ -63,30 +57,22 @@ public:
     ::PhantomLedger::synth::pii::Membership membership;
 
     ::PhantomLedger::time::Window window{};
-    std::filesystem::path outDir; // empty => no files (PG-only run)
-    bool showTransactions = false;
 
-    // When set, has_paid / account_flow_agg are ALSO written directly
-    // into PostgreSQL as the same bytes the CSV files receive (CSV
-    // retirement arc). The ledger CSV is deliberately excluded (see
-    // file comment).
+    // When set, has_paid / account_flow_agg are written directly into
+    // PostgreSQL as the bytes the csv::Writer renders — the only
+    // production destination.
     const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
+
+    // Test infrastructure: rendered bytes per table stem.
+    common::TableCapture *capture = nullptr;
   };
 
   explicit StreamingTransfersExport(Config config)
       : config_(std::move(config)),
         binSpec_(flow_agg::detail::makeBinSpec(config_.window,
                                                flow_agg::detail::kDefaultBinDays)) {
-    const bool files = !config_.outDir.empty();
-    if (files) {
-      std::filesystem::create_directories(config_.outDir);
-    }
-    target_ = common::TableTarget{.dir = config_.outDir,
-                                  .pg = config_.pgMirror};
-    if (config_.showTransactions && files) {
-      const common::TableTarget fileOnly{.dir = config_.outDir, .pg = nullptr};
-      ledger_.emplace(common::openTable(fileOnly, schema::kLedger));
-    }
+    target_ = common::TableTarget{.pg = config_.pgMirror,
+                                  .capture = config_.capture};
   }
 
   void beginSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
@@ -107,10 +93,6 @@ public:
 
       detail::accumulateHasPaid(hasPaid_, tx);
       flow_agg::detail::accumulate(flowAgg_, tx, binSpec_);
-
-      if (ledger_.has_value()) {
-        common::detail::writeLedgerRow(*ledger_, tx);
-      }
     }
   }
 
@@ -125,7 +107,6 @@ public:
       auto w = common::openTable(target_, schema::kAccountFlowAggBin);
       flow_agg::writeAccountFlowAggAggregates(w, flowAgg_, binSpec_);
     }
-    ledger_.reset(); // closes transactions.csv
   }
 
   [[nodiscard]] std::uint64_t rowsWritten() const noexcept { return rows_; }
@@ -141,8 +122,6 @@ private:
 
   detail::AggregateMap hasPaid_;
   flow_agg::detail::AggregateMap flowAgg_;
-
-  std::optional<common::Table> ledger_;
 
   std::uint64_t rows_ = 0;
   std::uint64_t visibleRows_ = 0;

@@ -10,7 +10,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 
 namespace PhantomLedger::exporter::aml {
 
@@ -39,22 +38,21 @@ struct StreamedArtifacts {
 };
 
 // Writes every table EXCEPT the transaction-streamed ones (transaction
-// vertices, the four send/receive edge tables, chain-label edges, and
-// the optional raw ledger — those come from StreamingAmlExport), using
-// the world, the FINAL posted book (account balances), and the
-// accumulated artifacts. `world.transfers` is not touched, so the
-// windowed engine's world is accepted directly.
+// vertices, the four send/receive edge tables and chain-label edges —
+// those come from StreamingAmlExport), using the world, the FINAL
+// posted book (account balances), and the accumulated artifacts.
+// `world.transfers` is not touched, so the windowed engine's world is
+// accepted directly.
 [[nodiscard]] Summary
 exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
                     const ::PhantomLedger::clearing::Ledger *postedBook,
-                    const std::filesystem::path &outDir, const Options &options,
-                    StreamedArtifacts artifacts);
+                    const Options &options, StreamedArtifacts artifacts);
 
 // Corpus form: runs StreamingAmlExport over the retained posted corpus
 // (one batch), then exportFromArtifacts — the SAME code path the
 // windowed engine uses, so the two engines cannot drift.
 [[nodiscard]] Summary
 exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-          const std::filesystem::path &outDir, const Options &options = {});
+          const Options &options = {});
 
 } // namespace PhantomLedger::exporter::aml

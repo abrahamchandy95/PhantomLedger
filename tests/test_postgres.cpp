@@ -19,14 +19,16 @@
 //   RESTART    an abandoned mid-COPY span commits nothing (crash loses
 //              only the open span); constructing a new sink on the same
 //              table is a full rewrite (drop + recreate)
-//   LOADERS    CSV directory/tree mirroring semantics
+//
+// The csv_loader directory/tree sections retired with the loader itself
+// (CSV retirement, step 5c): direct-table parity is structural — the
+// TableMirror COPYs the writer's own rendered bytes.
 //
 
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
 #include "phantomledger/primitives/postgres/connection.hpp"
-#include "phantomledger/primitives/postgres/csv_loader.hpp"
 
 #include <libpq-fe.h>
 
@@ -291,78 +293,6 @@ int main() {
     assert(PQresultStatus(r) == PGRES_TUPLES_OK);
     assert(std::string{PQgetvalue(r, 0, 0)} == "0");
     PQclear(r);
-  }
-
-  // 7. CSV directory loader: files stream verbatim into all-text
-  //    tables; header-derived columns; quoted commas survive; empty
-  //    fields become NULL; skip list honored.
-  {
-    namespace fs = std::filesystem;
-    const fs::path dir = fs::temp_directory_path() / "pl_pg_loader";
-    fs::remove_all(dir);
-    fs::create_directories(dir);
-    {
-      std::ofstream a{dir / "alpha.csv", std::ios::binary};
-      a << "id,label,note\r\n"
-        << "1,\"Main St, Apt 4\",x\r\n"
-        << "2,plain,\r\n"
-        << "3,q,z\r\n";
-      std::ofstream t{dir / "transactions.csv", std::ios::binary};
-      t << "src_acct,dst_acct\r\nA,B\r\n";
-    }
-
-    static constexpr std::string_view kSkip[] = {"transactions"};
-    const auto reports = postgres::loadCsvDirectory(
-        conn, dir, std::span<const std::string_view>{kSkip});
-    assert(reports.size() == 1);
-    assert(reports[0].table == "alpha");
-    assert(reports[0].rows == 3);
-
-    PGresult *r = PQexec(
-        conn.raw(), "SELECT count(*), count(*) FILTER (WHERE note IS NULL), "
-                    "(SELECT label FROM alpha WHERE id = '1') FROM alpha");
-    assert(PQresultStatus(r) == PGRES_TUPLES_OK);
-    assert(std::string{PQgetvalue(r, 0, 0)} == "3");
-    assert(std::string{PQgetvalue(r, 0, 1)} == "1");
-    assert(std::string{PQgetvalue(r, 0, 2)} == "Main St, Apt 4");
-    PQclear(r);
-    conn.exec("DROP TABLE alpha");
-  }
-
-  // 8. Tree loader: recursive walk into a schema, relative paths
-  //    folded into table names, duplicate header columns suffixed,
-  //    leaf-stem skip honored.
-  {
-    namespace fs = std::filesystem;
-    const fs::path root = fs::temp_directory_path() / "pl_pg_tree";
-    fs::remove_all(root);
-    fs::create_directories(root / "edges");
-    {
-      std::ofstream v{root / "party.csv", std::ios::binary};
-      v << "id,name\r\n1,ann\r\n2,bo\r\n";
-      std::ofstream e{root / "edges" / "same_as.csv", std::ios::binary};
-      e << "Customer,Customer,score\r\nA,B,0.9\r\n";
-      std::ofstream t{root / "edges" / "transactions.csv", std::ios::binary};
-      t << "a,b\r\nx,y\r\n";
-    }
-
-    conn.exec("DROP SCHEMA IF EXISTS pl_test_tree CASCADE");
-    static constexpr std::string_view kSkip[] = {"transactions"};
-    const auto reports = postgres::loadCsvTree(
-        conn, root, "pl_test_tree", std::span<const std::string_view>{kSkip});
-    assert(reports.size() == 2);
-    assert(reports[0].table == "edges_same_as");
-    assert(reports[1].table == "party");
-
-    PGresult *r = PQexec(
-        conn.raw(),
-        "SELECT \"Customer_2\", (SELECT count(*) FROM pl_test_tree.party) "
-        "FROM pl_test_tree.edges_same_as");
-    assert(PQresultStatus(r) == PGRES_TUPLES_OK);
-    assert(std::string{PQgetvalue(r, 0, 0)} == "B");
-    assert(std::string{PQgetvalue(r, 0, 1)} == "2");
-    PQclear(r);
-    conn.exec("DROP SCHEMA pl_test_tree CASCADE");
   }
 
   std::puts("postgres: all assertions passed");

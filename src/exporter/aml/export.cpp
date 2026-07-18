@@ -6,11 +6,9 @@
 #include "phantomledger/exporter/aml/streaming.hpp"
 #include "phantomledger/exporter/aml/vertices.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
-#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/labels.hpp"
 
-#include <filesystem>
 #include <optional>
 #include <span>
 #include <utility>
@@ -30,16 +28,7 @@ using cmn::openTable;
 Summary
 exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
                     const ::PhantomLedger::clearing::Ledger *postedBook,
-                    const std::filesystem::path &outDir, const Options &options,
-                    StreamedArtifacts artifacts) {
-  // Empty outDir => no file leg (PostgreSQL-only run); the composed
-  // subdirectories must then stay empty too, or they would resolve as
-  // relative paths in the working directory.
-  const bool files = !outDir.empty();
-  if (files) {
-    std::filesystem::create_directories(outDir);
-  }
-
+                    const Options &options, StreamedArtifacts artifacts) {
   const auto &people = world.people;
   const auto &holdings = world.holdings;
   const auto &infra = world.infra;
@@ -69,13 +58,7 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
   const auto chainRows = lbl::finalizeChains(artifacts.chainGroups);
   const auto shellRows = lbl::finalizeShells(artifacts.shellStats);
 
-  const auto vtxDir =
-      files ? outDir / "aml" / "vertices" : std::filesystem::path{};
-  if (files) {
-    std::filesystem::create_directories(vtxDir);
-  }
-
-  // Direct-table mirrors reproduce the csv_loader tree naming
+  // Direct-table mirrors keep the historical tree naming
   // (aml_vertices_<stem> / aml_edges_<stem> in the target schema).
   std::optional<sinks::PgMirror> vtxMirror;
   std::optional<sinks::PgMirror> edgeMirror;
@@ -90,7 +73,8 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
         .tablePrefix = options.pgMirror->tablePrefix + "edges_"});
   }
   const cmn::TableTarget vtxTarget{
-      .dir = vtxDir, .pg = vtxMirror.has_value() ? &*vtxMirror : nullptr};
+      .pg = vtxMirror.has_value() ? &*vtxMirror : nullptr,
+      .capture = options.capture};
 
   {
     auto w = openTable(vtxTarget, amlSchema::kCustomer);
@@ -169,13 +153,9 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     (void)w;
   }
 
-  const auto edgeDir =
-      files ? outDir / "aml" / "edges" : std::filesystem::path{};
-  if (files) {
-    std::filesystem::create_directories(edgeDir);
-  }
   const cmn::TableTarget edgeTarget{
-      .dir = edgeDir, .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr};
+      .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr,
+      .capture = options.capture};
 
   {
     auto w = openTable(edgeTarget, amlSchema::kCustomerHasAccount);
@@ -340,7 +320,7 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
 }
 
 Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-                  const std::filesystem::path &outDir, const Options &options) {
+                  const Options &options) {
   const auto &pools = cmn::requirePools(options, "aml");
 
   const auto &postedTxns = result.transfers.ledger.posted.txns;
@@ -351,16 +331,15 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       .people = &result.people,
       .holdings = &result.holdings,
       .piiPools = &pools,
-      .outDir = outDir,
-      .showTransactions = options.showTransactions,
       .pgMirror = options.pgMirror,
+      .capture = options.capture,
   });
   sink.append(std::span<const ::PhantomLedger::transactions::Transaction>{
       postedTxns.data(), postedTxns.size()});
   sink.finish();
 
   return exportFromArtifacts(result, result.transfers.ledger.posted.book.get(),
-                             outDir, options, sink.takeArtifacts());
+                             options, sink.takeArtifacts());
 }
 
 } // namespace PhantomLedger::exporter::aml

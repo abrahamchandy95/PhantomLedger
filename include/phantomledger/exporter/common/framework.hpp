@@ -2,7 +2,6 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -12,7 +11,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <format>
 #include <ranges>
 #include <span>
@@ -26,19 +24,21 @@ struct PgMirror;
 
 namespace PhantomLedger::exporter::common {
 
+struct TableCapture; // test seam; full definition in common/table.hpp
+
 inline constexpr std::int64_t kFallbackEpoch = 1735689600;
 
 struct ExportOptions {
-  bool showTransactions = false;
   const synth::pii::PoolSet *piiPools = nullptr;
 
-  // When set, every table is ALSO written directly into PostgreSQL as
-  // the same bytes the CSV file receives (CSV retirement arc; see
-  // common/table.hpp). The raw ledger CSV is the standing exception
-  // and stays file-only: its stem is the streamed 'transactions'
-  // corpus table's name, which is canonical and must never be
-  // overwritten by its dump.
+  // When set, every table is written directly into PostgreSQL as the
+  // bytes the csv::Writer renders (see common/table.hpp). This is the
+  // only production destination — PhantomLedger writes no files.
   const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
+
+  // Test infrastructure: receives every table's rendered bytes, keyed
+  // by stem (serverless exporter gates). Never set in production.
+  TableCapture *capture = nullptr;
 };
 
 struct BaseSummary {
@@ -51,13 +51,6 @@ struct BaseSummary {
   std::size_t soloFraudCount = 0;
   std::size_t sarsFiledCount = 0;
 };
-
-[[nodiscard]] inline csv::Writer openTable(const std::filesystem::path &dir,
-                                           const schema::Table &table) {
-  csv::Writer w{dir / std::filesystem::path(table.filename)};
-  w.writeHeader(table.header);
-  return w;
-}
 
 [[nodiscard]] inline time::TimePoint
 deriveSimStart(std::span<const transactions::Transaction> txns) noexcept {

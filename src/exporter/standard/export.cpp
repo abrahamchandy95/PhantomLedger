@@ -1,7 +1,6 @@
 #include "phantomledger/exporter/standard/export.hpp"
 
 #include "phantomledger/exporter/common/framework.hpp"
-#include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/accounts.hpp"
@@ -16,7 +15,6 @@
 #include "phantomledger/synth/pii/membership_filter.hpp"
 
 #include <cstddef>
-#include <filesystem>
 
 namespace PhantomLedger::exporter::standard {
 
@@ -25,9 +23,9 @@ namespace pii = ::PhantomLedger::synth::pii;
 
 namespace {
 
-// One rendering, two destinations (common::Table): the CSV file when
-// the target carries a directory, a direct PostgreSQL table when the
-// target's mirror is armed.
+// One rendering, one destination (common::Table): a direct PostgreSQL
+// table when the target's mirror is armed (plus the test capture when
+// one is installed).
 template <class Body>
 void emit(const common::TableTarget &target, const schema::Table &table,
           Body body) {
@@ -108,15 +106,9 @@ void exportEntityResolution(const common::TableTarget &target,
 } // namespace
 
 void exportEntities(const ::PhantomLedger::pipeline::SimulationResult &result,
-                    const std::filesystem::path &outDir,
                     const Options &options) {
-  // Empty outDir => no file leg (PostgreSQL-only run).
-  const bool files = !outDir.empty();
-  if (files) {
-    std::filesystem::create_directories(outDir);
-  }
-
-  const common::TableTarget target{.dir = outDir, .pg = options.pgMirror};
+  const common::TableTarget target{.pg = options.pgMirror,
+                                   .capture = options.capture};
 
   const auto &people = result.people;
   const auto &holdings = result.holdings;
@@ -160,14 +152,9 @@ void exportEntities(const ::PhantomLedger::pipeline::SimulationResult &result,
 }
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-               const std::filesystem::path &outDir, const Options &options) {
-  // Empty outDir => no file leg (PostgreSQL-only run).
-  const bool files = !outDir.empty();
-  if (files) {
-    std::filesystem::create_directories(outDir);
-  }
-
-  const common::TableTarget target{.dir = outDir, .pg = options.pgMirror};
+               const Options &options) {
+  const common::TableTarget target{.pg = options.pgMirror,
+                                   .capture = options.capture};
 
   const auto &people = result.people;
   const auto &holdings = result.holdings;
@@ -181,7 +168,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       pii::filterByMembership(postedTxns, holdings.accounts.registry,
                               holdings.accounts.lookup, membership);
 
-  exportEntities(result, outDir, options);
+  exportEntities(result, options);
 
   emit(target, schema::kHasPaid,
        [&](W &w) { writeHasPaidRows(w, visibleTxns); });
@@ -193,15 +180,9 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     flow_agg::writeAccountFlowAggRows(w, visibleTxns, options.window);
   });
 
-  if (options.showTransactions && files) {
-    // FILE-ONLY on purpose: the ledger CSV's stem is "transactions",
-    // which is the streamed corpus table's name — the canonical stream
-    // (row_seq/span_index, sinks::Postgres) must never be overwritten
-    // by a mirror of its human-readable dump.
-    const common::TableTarget fileOnly{.dir = outDir, .pg = nullptr};
-    emit(fileOnly, schema::kLedger,
-         [&](W &w) { common::writeLedgerRows(w, visibleTxns); });
-  }
+  // The raw ledger is deliberately NOT a table here: its stem is
+  // "transactions", the streamed corpus table's name — the canonical
+  // stream (row_seq/span_index, sinks::Postgres) IS the ledger.
 }
 
 } // namespace PhantomLedger::exporter::standard

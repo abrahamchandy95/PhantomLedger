@@ -1,16 +1,17 @@
 //
 // tests/test_table_golden.cpp
 //
-// CSV retirement arc, step 4 + the FRAUD-VISIBLE PIN: the TABLE-DIGEST
-// GOLDEN — falsifiability transferred from CSV bytes to PostgreSQL
-// content (skips with 77 when no server is reachable; honors
-// PL_TEST_PG). TWO sections, each with its own baseline file:
+// The TABLE-DIGEST GOLDEN + the FRAUD-VISIBLE PIN: falsifiability
+// carried by PostgreSQL content (skips with 77 when no server is
+// reachable; honors PL_TEST_PG). The binary runs with no file flags —
+// PhantomLedger writes no files. TWO sections, each with its own
+// baseline file:
 //
-//   SECTION "standard" — the CSV golden's exact config (standard use
-//   case, pop 2000, 60 days, seed 3405691582, --show-transactions),
-//   digesting the corpus stream (row_seq order, bookkeeping columns
-//   included — the load-bearing corpus pin) plus every direct table
-//   the run wrote in the public schema.
+//   SECTION "standard" — the run golden's exact config (standard use
+//   case, pop 2000, 60 days, seed 3405691582), digesting the corpus
+//   stream (row_seq order, bookkeeping columns included — the
+//   load-bearing corpus pin) plus every direct table the run wrote in
+//   the public schema.
 //   Baseline: tests/golden_tables.md5.
 //
 //   SECTION "fraud" — aml-txn-edges at a FRAUD-DENSE config (pop
@@ -26,19 +27,16 @@
 //   section's run overwrites — hence it runs AFTER the standard
 //   section is digested). Baseline: tests/golden_tables_aml.md5.
 //
-// TABLE DISCOVERY (CSV retirement step 5a): each section's table list
-// comes from the DIRECT-TABLE REGISTRY (public.pl_direct_tables) that
-// the run's own TableMirrors populate — the run itself declares what
-// it wrote. This replaces the old written-CSV-stem discovery, so the
-// gate no longer depends on any file output while staying immune to
-// stray tables in a shared database (the registry is rewritten per
-// schema by each run). The file-only ledger dump is never mirrored,
-// so it never appears in the registry; the corpus stream table is
-// digested explicitly with row_seq ordering.
+// TABLE DISCOVERY: each section's table list comes from the
+// DIRECT-TABLE REGISTRY (public.pl_direct_tables) that the run's own
+// TableMirrors populate — the run itself declares what it wrote, and
+// the registry is rewritten per schema by each run, so the gate is
+// immune to stray tables in a shared database. The corpus stream table
+// is digested explicitly with row_seq ordering.
 //
 // First live run captures a missing baseline (reported as SKIP so
 // capture is explicit — a captured baseline belongs in git IMMEDIATELY,
-// per-server like the CSV golden is per-toolchain); every later run
+// per-server like the run golden is per-toolchain); every later run
 // enforces exact equality. Delete a baseline to re-pin after an
 // intentional model change, and re-pin EVERY baseline the change
 // touches in the SAME named commit.
@@ -117,14 +115,11 @@ registeredTables(Connection &conn, const std::string &schemaKey) {
   return out;
 }
 
-[[nodiscard]] bool runBinary(const std::string &args, const fs::path &outDir,
-                             const fs::path &logPath,
+[[nodiscard]] bool runBinary(const std::string &args, const fs::path &logPath,
                              const std::string &conninfo) {
-  fs::remove_all(outDir);
   const std::string cmd = std::string{"PL_PG='"} + conninfo + "' \"" +
-                          PL_BIN_PATH + "\" " + args + " --out \"" +
-                          outDir.string() + "\" > \"" + logPath.string() +
-                          "\" 2>&1";
+                          PL_BIN_PATH + "\" " + args + " > \"" +
+                          logPath.string() + "\" 2>&1";
   if (const int rc = std::system(cmd.c_str()); rc != 0) {
     std::fprintf(stderr, "binary exited %d; log: %s\n", rc, logPath.c_str());
     return false;
@@ -222,24 +217,21 @@ int main() {
   const fs::path tmp = fs::temp_directory_path();
 
   // ------------------------------------------------------------------
-  // SECTION "standard": the CSV golden's exact config, so the two
+  // SECTION "standard": the run golden's exact config, so the two
   // goldens pin the SAME corpus and their catch-power is directly
   // comparable.
   // ------------------------------------------------------------------
-  const fs::path outStd = tmp / "pl_table_golden";
   std::printf("=== table-digest golden (live PostgreSQL) ===\n"
               "  [standard] running binary ...\n");
   std::fflush(stdout);
-  if (!runBinary("--population 2000 --days 60 --seed 3405691582"
-                 " --show-transactions",
-                 outStd, tmp / "pl_table_golden.log", conninfo)) {
+  if (!runBinary("--population 2000 --days 60 --seed 3405691582",
+                 tmp / "pl_table_golden.log", conninfo)) {
     return 1;
   }
 
   // Discovery via the direct-table registry: exactly the tables this
-  // run's mirrors wrote into the public schema (the file-only ledger
-  // dump is never mirrored; the stream table is handled explicitly
-  // with row_seq ordering below).
+  // run's mirrors wrote into the public schema (the stream table is
+  // handled explicitly with row_seq ordering below).
   const auto stdTables = registeredTables(*conn, "public");
   assert(stdTables.size() >= 10);
 
@@ -256,12 +248,11 @@ int main() {
   // Runs strictly AFTER the standard section is digested — this run
   // overwrites the shared public.transactions stream table.
   // ------------------------------------------------------------------
-  const fs::path outFraud = tmp / "pl_table_golden_aml";
   std::printf("  [fraud] running binary (aml-txn-edges, pop 10000) ...\n");
   std::fflush(stdout);
   if (!runBinary("--usecase aml-txn-edges --population 10000 --days 60"
                  " --seed 7",
-                 outFraud, tmp / "pl_table_golden_aml.log", conninfo)) {
+                 tmp / "pl_table_golden_aml.log", conninfo)) {
     return 1;
   }
 

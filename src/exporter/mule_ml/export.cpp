@@ -9,8 +9,6 @@
 #include "phantomledger/exporter/mule_ml/transfer.hpp"
 #include "phantomledger/exporter/schema.hpp"
 
-#include <filesystem>
-
 namespace PhantomLedger::exporter::mule_ml {
 
 namespace {
@@ -21,20 +19,12 @@ namespace common = ::PhantomLedger::exporter::common;
 } // namespace
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
-               const std::filesystem::path &outDir, const Options &options) {
-  // Empty outDir => no file leg (PostgreSQL-only run); the composed
-  // ml_ready subdirectory must then stay empty too, or it would
-  // resolve as a relative path in the working directory.
-  const bool files = !outDir.empty();
-  const auto mlDir = files ? outDir / "ml_ready" : std::filesystem::path{};
-  if (files) {
-    std::filesystem::create_directories(mlDir);
-  }
-
-  // One rendering, two destinations (common::Table): the CSV file when
-  // files are enabled, a direct PostgreSQL table when the mirror is
-  // armed.
-  const common::TableTarget target{.dir = mlDir, .pg = options.pgMirror};
+               const Options &options) {
+  // One rendering, one destination (common::Table): a direct
+  // PostgreSQL table when the mirror is armed (plus the test capture
+  // when one is installed).
+  const common::TableTarget target{.pg = options.pgMirror,
+                                   .capture = options.capture};
 
   // SimulationResult no longer carries a god-struct `entities`; reach
   // into the SRP-split sub-domains directly.

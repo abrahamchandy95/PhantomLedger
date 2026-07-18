@@ -1,12 +1,33 @@
-#include "phantomledger/primitives/crypto/blake2b.hpp"
+//
+// tests/test_run_golden.cpp
+//
+// End-to-end corpus fingerprint. The binary, run serverless with the
+// pinned config, must print the exact
+//
+//   Stream digest: <hex>  rows: <N>
+//
+// line recorded in the baseline — the Golden sink's BLAKE2b over the
+// rendered corpus stream, in row_seq order. The run writes NO files
+// (PostgreSQL-only product; no --out): PL_FILE_ONLY=1 is the sanctioned
+// harness escape from the fail-fast PostgreSQL requirement, and PL_PG
+// additionally pins an unreachable target as defense in depth — if the
+// escape ever breaks, this test fails loudly instead of clobbering the
+// developer's real mirror.
+//
+// First run on a machine captures a per-toolchain baseline (reported as
+// SKIP so capture is explicit, never a silent pass). Delete
+// tests/golden_run.b2sum to re-pin after an intentional behavior change
+// or a toolchain upgrade; the baseline belongs in git. Table bytes are
+// pinned separately by the live-PostgreSQL table-digest golden
+// (test_table_golden); this gate keeps the corpus pinned even with no
+// server anywhere.
+//
 
-#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <string>
-#include <vector>
 
 #ifndef PL_BIN_PATH
 #error "PL_BIN_PATH must be defined (path to the phantomledger binary)"
@@ -16,78 +37,41 @@
 #endif
 
 namespace fs = std::filesystem;
-using PhantomLedger::crypto::blake2b::Stream;
 
 namespace {
 
-constexpr std::size_t kDigestBytes = 32;
-
-std::string hashFile(const fs::path &p) {
-  Stream hasher{kDigestBytes};
-  std::ifstream in{p, std::ios::binary};
-  std::vector<char> buf(64 * 1024);
-  while (in.read(buf.data(), static_cast<std::streamsize>(buf.size())) ||
-         in.gcount() > 0) {
-    if (!hasher.update(buf.data(), static_cast<std::size_t>(in.gcount()))) {
-      std::fprintf(stderr, "hash update failed for %s\n", p.c_str());
-      std::exit(1);
-    }
-  }
-  std::uint8_t out[kDigestBytes];
-  if (!hasher.finalize(out, sizeof(out))) {
-    std::fprintf(stderr, "hash finalize failed for %s\n", p.c_str());
-    std::exit(1);
-  }
-  static constexpr char kHex[] = "0123456789abcdef";
-  std::string hex;
-  hex.reserve(kDigestBytes * 2);
-  for (const auto b : out) {
-    hex.push_back(kHex[b >> 4U]);
-    hex.push_back(kHex[b & 0x0FU]);
-  }
-  return hex;
-}
+constexpr const char *kDigestPrefix = "Stream digest: ";
 
 } // namespace
 
 int main() {
-  const fs::path outDir = fs::temp_directory_path() / "pl_run_golden";
   const fs::path logPath = fs::temp_directory_path() / "pl_run_golden.log";
-  fs::remove_all(outDir);
 
-  // The golden must never depend on PostgreSQL: PL_FILE_ONLY=1 is the
-  // sanctioned harness escape (without it the binary now fails fast
-  // when no server answers), and PL_PG additionally pins an
-  // unreachable target as defense in depth — if the escape ever
-  // breaks, this test fails loudly instead of clobbering the
-  // developer's real mirror.
   const std::string cmd = std::string{"PL_FILE_ONLY=1 "
                                       "PL_PG='host=127.0.0.1 port=9 "
                                       "dbname=pl_disabled' \""} +
                           PL_BIN_PATH +
                           "\" --population 2000 --days 60"
-                          " --seed 3405691582 --show-transactions --out \"" +
-                          outDir.string() + "\" > \"" + logPath.string() +
-                          "\" 2>&1";
+                          " --seed 3405691582 > \"" +
+                          logPath.string() + "\" 2>&1";
   if (const int rc = std::system(cmd.c_str()); rc != 0) {
     std::fprintf(stderr, "binary exited %d; log: %s\n", rc, logPath.c_str());
     return 1;
   }
 
-  std::vector<std::string> lines;
-  for (const auto &entry : fs::recursive_directory_iterator(outDir)) {
-    if (!entry.is_regular_file()) {
-      continue;
+  std::string digestLine;
+  {
+    std::ifstream in{logPath};
+    std::string line;
+    while (std::getline(in, line)) {
+      if (line.rfind(kDigestPrefix, 0) == 0) {
+        digestLine = line;
+      }
     }
-    const auto rel = fs::relative(entry.path(), outDir).generic_string();
-    lines.push_back(hashFile(entry.path()) + "  ./" + rel);
   }
-  std::sort(lines.begin(), lines.end(),
-            [](const std::string &a, const std::string &b) {
-              return a.substr(kDigestBytes * 2) < b.substr(kDigestBytes * 2);
-            });
-  if (lines.empty()) {
-    std::fprintf(stderr, "no output files produced in %s\n", outDir.c_str());
+  if (digestLine.empty()) {
+    std::fprintf(stderr, "golden-run: no '%s' line in the run log: %s\n",
+                 kDigestPrefix, logPath.c_str());
     return 1;
   }
 
@@ -99,58 +83,48 @@ int main() {
                    baseline.c_str());
       return 1;
     }
-    for (const auto &line : lines) {
-      out << line << '\n';
-    }
+    out << digestLine << '\n';
     out.flush();
     if (!out) {
       std::fprintf(stderr, "golden-run: baseline write FAILED: %s\n",
                    baseline.c_str());
       return 1;
     }
-    std::printf("golden-run: baseline captured (%zu files) at %s\n",
-                lines.size(), baseline.c_str());
+    std::printf("golden-run: baseline captured at %s\n  %s\n",
+                baseline.c_str(), digestLine.c_str());
     return 77; // reported as SKIP: capture is explicit, never a pass
   }
 
-  std::vector<std::string> expected;
+  std::string expected;
   {
     std::ifstream in{baseline};
     std::string line;
     while (std::getline(in, line)) {
       if (!line.empty()) {
-        expected.push_back(line);
+        expected = line;
+        break;
       }
     }
   }
+  if (expected.empty()) {
+    std::fprintf(stderr, "golden-run: baseline is empty: %s\n",
+                 baseline.c_str());
+    return 1;
+  }
 
-  if (expected == lines) {
-    std::printf("golden-run: %zu files byte-identical to baseline\n",
-                lines.size());
+  if (expected == digestLine) {
+    std::printf("golden-run: corpus stream matches baseline\n  %s\n",
+                digestLine.c_str());
     return 0;
   }
 
-  std::fprintf(stderr, "golden-run: OUTPUT DIVERGES FROM BASELINE\n");
-  std::size_t shown = 0;
-  for (const auto &line : lines) {
-    if (std::find(expected.begin(), expected.end(), line) == expected.end() &&
-        shown < 10) {
-      std::fprintf(stderr, "  changed-or-new: %s\n",
-                   line.substr(kDigestBytes * 2 + 2).c_str());
-      ++shown;
-    }
-  }
-  for (const auto &line : expected) {
-    if (std::find(lines.begin(), lines.end(), line) == lines.end() &&
-        shown < 10) {
-      std::fprintf(stderr, "  was-in-baseline: %s\n",
-                   line.substr(kDigestBytes * 2 + 2).c_str());
-      ++shown;
-    }
-  }
   std::fprintf(stderr,
-               "if this change was intentional, delete %s and rerun to "
+               "golden-run: STREAM DIVERGES FROM BASELINE\n"
+               "  expected: %s\n"
+               "  actual:   %s\n"
+               "if this change was intentional (or the baseline is still "
+               "in the retired file-tree format), delete %s and rerun to "
                "re-pin\n",
-               baseline.c_str());
+               expected.c_str(), digestLine.c_str(), baseline.c_str());
   return 1;
 }
