@@ -32,7 +32,13 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
                     const ::PhantomLedger::clearing::Ledger *postedBook,
                     const std::filesystem::path &outDir, const Options &options,
                     StreamedArtifacts artifacts) {
-  std::filesystem::create_directories(outDir);
+  // Empty outDir => no file leg (PostgreSQL-only run); the composed
+  // subdirectories must then stay empty too, or they would resolve as
+  // relative paths in the working directory.
+  const bool files = !outDir.empty();
+  if (files) {
+    std::filesystem::create_directories(outDir);
+  }
 
   const auto &people = world.people;
   const auto &holdings = world.holdings;
@@ -63,8 +69,11 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
   const auto chainRows = lbl::finalizeChains(artifacts.chainGroups);
   const auto shellRows = lbl::finalizeShells(artifacts.shellStats);
 
-  const auto vtxDir = outDir / "aml" / "vertices";
-  std::filesystem::create_directories(vtxDir);
+  const auto vtxDir =
+      files ? outDir / "aml" / "vertices" : std::filesystem::path{};
+  if (files) {
+    std::filesystem::create_directories(vtxDir);
+  }
 
   // Direct-table mirrors reproduce the csv_loader tree naming
   // (aml_vertices_<stem> / aml_edges_<stem> in the target schema).
@@ -160,8 +169,11 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     (void)w;
   }
 
-  const auto edgeDir = outDir / "aml" / "edges";
-  std::filesystem::create_directories(edgeDir);
+  const auto edgeDir =
+      files ? outDir / "aml" / "edges" : std::filesystem::path{};
+  if (files) {
+    std::filesystem::create_directories(edgeDir);
+  }
   const cmn::TableTarget edgeTarget{
       .dir = edgeDir, .pg = edgeMirror.has_value() ? &*edgeMirror : nullptr};
 

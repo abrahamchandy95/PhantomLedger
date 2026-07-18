@@ -33,7 +33,10 @@
 //
 // CSV retirement arc: both streamed tables go through common::Table, so
 // when Config::pgMirror is armed the same bytes stream into PostgreSQL
-// directly, each on its own connection, open across the whole fold.
+// directly, each on its own connection, open across the whole fold. An
+// EMPTY Config::outDir disables the file leg (5b): the composed
+// aml_txn_edges/edges subdirectory must then never reach a TableTarget,
+// or it would resolve as a relative path in the working directory.
 //
 
 #include "phantomledger/exporter/aml/sar.hpp"
@@ -67,7 +70,8 @@ public:
     const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
     // The run output directory; the streamed tables land under
-    // <outDir>/aml_txn_edges/edges, exactly like exportAll.
+    // <outDir>/aml_txn_edges/edges, exactly like exportAll. Empty =>
+    // no files (PG-only run).
     std::filesystem::path outDir;
 
     // When set, the streamed tables are ALSO written directly into
@@ -85,8 +89,12 @@ public:
          .ownership = config_.holdings->accounts.ownership,
          .topology = config_.people->roster.topology});
 
-    const auto edgeDir = config_.outDir / "aml_txn_edges" / "edges";
-    std::filesystem::create_directories(edgeDir);
+    const bool files = !config_.outDir.empty();
+    const auto edgeDir = files ? config_.outDir / "aml_txn_edges" / "edges"
+                               : std::filesystem::path{};
+    if (files) {
+      std::filesystem::create_directories(edgeDir);
+    }
 
     // Direct-table mirror reproduces the csv_loader tree naming
     // (aml_txn_edges_edges_<stem> in the target schema).

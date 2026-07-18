@@ -44,11 +44,18 @@ Summary exportFromArtifacts(
   const auto &holdings = world.holdings;
   const auto &infra = world.infra;
 
-  const auto root = outDir / "aml_txn_edges";
-  const auto vDir = root / "vertices";
-  const auto eDir = root / "edges";
-  std::filesystem::create_directories(vDir);
-  std::filesystem::create_directories(eDir);
+  // Empty outDir => no file leg (PostgreSQL-only run); the composed
+  // subdirectories must then stay empty too, or they would resolve as
+  // relative paths in the working directory.
+  const bool files = !outDir.empty();
+  const auto vDir = files ? outDir / "aml_txn_edges" / "vertices"
+                          : std::filesystem::path{};
+  const auto eDir = files ? outDir / "aml_txn_edges" / "edges"
+                          : std::filesystem::path{};
+  if (files) {
+    std::filesystem::create_directories(vDir);
+    std::filesystem::create_directories(eDir);
+  }
 
   // Direct-table mirrors reproduce the csv_loader tree naming
   // (aml_txn_edges_vertices_<stem> / aml_txn_edges_edges_<stem>).

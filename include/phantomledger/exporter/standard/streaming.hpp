@@ -24,9 +24,10 @@
 //
 // CSV retirement arc: has_paid and account_flow_agg go through
 // common::Table, so when Config::pgMirror is armed the same bytes
-// stream into PostgreSQL directly. The ledger CSV stays FILE-ONLY —
-// its stem is "transactions", the streamed corpus table's name, and
-// the canonical stream must never be overwritten by its dump.
+// stream into PostgreSQL directly. An EMPTY Config::outDir disables
+// the file leg entirely (5b). The ledger CSV stays FILE-ONLY — its
+// stem is "transactions", the streamed corpus table's name, and the
+// canonical stream must never be overwritten by its dump.
 //
 
 #include "phantomledger/entities/accounts.hpp"
@@ -62,7 +63,7 @@ public:
     ::PhantomLedger::synth::pii::Membership membership;
 
     ::PhantomLedger::time::Window window{};
-    std::filesystem::path outDir;
+    std::filesystem::path outDir; // empty => no files (PG-only run)
     bool showTransactions = false;
 
     // When set, has_paid / account_flow_agg are ALSO written directly
@@ -76,10 +77,13 @@ public:
       : config_(std::move(config)),
         binSpec_(flow_agg::detail::makeBinSpec(config_.window,
                                                flow_agg::detail::kDefaultBinDays)) {
-    std::filesystem::create_directories(config_.outDir);
+    const bool files = !config_.outDir.empty();
+    if (files) {
+      std::filesystem::create_directories(config_.outDir);
+    }
     target_ = common::TableTarget{.dir = config_.outDir,
                                   .pg = config_.pgMirror};
-    if (config_.showTransactions) {
+    if (config_.showTransactions && files) {
       const common::TableTarget fileOnly{.dir = config_.outDir, .pg = nullptr};
       ledger_.emplace(common::openTable(fileOnly, schema::kLedger));
     }

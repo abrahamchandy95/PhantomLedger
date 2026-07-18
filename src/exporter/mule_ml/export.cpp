@@ -22,11 +22,18 @@ namespace common = ::PhantomLedger::exporter::common;
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
-  const auto mlDir = outDir / "ml_ready";
-  std::filesystem::create_directories(mlDir);
+  // Empty outDir => no file leg (PostgreSQL-only run); the composed
+  // ml_ready subdirectory must then stay empty too, or it would
+  // resolve as a relative path in the working directory.
+  const bool files = !outDir.empty();
+  const auto mlDir = files ? outDir / "ml_ready" : std::filesystem::path{};
+  if (files) {
+    std::filesystem::create_directories(mlDir);
+  }
 
-  // Files always; direct PostgreSQL tables too when the mirror is
-  // armed (one rendering, two destinations — common::Table).
+  // One rendering, two destinations (common::Table): the CSV file when
+  // files are enabled, a direct PostgreSQL table when the mirror is
+  // armed.
   const common::TableTarget target{.dir = mlDir, .pg = options.pgMirror};
 
   // SimulationResult no longer carries a god-struct `entities`; reach

@@ -24,6 +24,11 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "\n"
       "Usage: %s [options]\n"
       "\n"
+      "All output lands in PostgreSQL: the corpus streams into the\n"
+      "'transactions' table during settlement and every exporter writes\n"
+      "its tables directly (one schema per use case: public / mule_ml /\n"
+      "aml / aml_txn_edges). No files are written.\n"
+      "\n"
       "Options:\n"
       "  --usecase {standard,mule-ml,aml,aml-txn-edges}  Exporter to run "
       "(default: standard)\n"
@@ -33,38 +38,29 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "(default: 70000)\n"
       "  --seed N                          Top-level RNG seed "
       "(default: 0xDEADBEEF)\n"
-      "  --out PATH                        Output directory "
-      "(default: out_bank_data)\n"
       "  --start YYYY-MM-DD                Simulation start date "
       "(default: 2025-01-01)\n"
-      "  --show-transactions               Emit raw transactions.csv\n"
       "  --help, -h                        Show this message\n"
       "\n"
       "Environment:\n"
       "  PL_PG='host=... port=... dbname=...'\n"
       "      PostgreSQL conninfo (default: dbname=phantomledger). A\n"
-      "      reachable server is REQUIRED: the corpus streams into the\n"
-      "      'transactions' table during settlement and the derived\n"
-      "      analytics read it back. The run fails fast before any\n"
+      "      reachable server is REQUIRED; the run fails fast before any\n"
       "      generation when no server answers. Reruns with the same\n"
       "      seed and config rewrite byte-identical content.\n"
-      "  PL_FILE_ONLY=1\n"
-      "      Skip PostgreSQL and write files only (test-harness escape;\n"
-      "      aml-txn-edges cannot run this way).\n"
-      "  PL_ENGINE={windowed,monolithic}\n"
-      "      Force the corpus engine (test infrastructure: monolithic\n"
-      "      is the memory-unbounded reference engine the equivalence\n"
-      "      gates compare against; output bytes are identical either\n"
-      "      way).\n"
       "\n"
-      "Each --usecase emits exactly its own outputs:\n"
-      "  standard  -> <out>/*.csv\n"
-      "  mule-ml   -> <out>/ml_ready/*.csv\n"
-      "  aml       -> <out>/aml/{vertices,edges}/*.csv\n"
-      "  aml-txn-edges -> <out>/aml_txn_edges/{vertices,edges}/*.csv\n"
-      "\n"
-      "To produce both standard and mule-ml CSVs over the same dataset,\n"
-      "run twice with the same --seed; the directories don't collide.\n",
+      "Test infrastructure (not for production use; retired with the\n"
+      "CSV arc):\n"
+      "  PL_FILE_ONLY=1                    Skip PostgreSQL (serverless\n"
+      "                                    harness escape; aml-txn-edges\n"
+      "                                    cannot run this way)\n"
+      "  PL_ENGINE={windowed,monolithic}   Force the corpus engine (the\n"
+      "                                    monolithic reference engine\n"
+      "                                    backs the equivalence gates)\n"
+      "  --out PATH                        Legacy CSV tree for the\n"
+      "                                    file-based parity gates\n"
+      "  --show-transactions               Legacy raw-ledger dump\n"
+      "                                    (requires --out)\n",
       prog);
 }
 
@@ -154,6 +150,9 @@ pl::app::RunOptions parse(int argc, char **argv) {
     }
 
     if (arg == "--out") {
+      // Test infrastructure: keeps the file-based parity gates alive
+      // until they are deleted with the rest of the CSV arc. A default
+      // run writes no files.
       opts.outDir = requireValue(i, arg);
       continue;
     }
@@ -169,8 +168,16 @@ pl::app::RunOptions parse(int argc, char **argv) {
     }
 
     if (arg == "--show-transactions") {
+      // Test infrastructure (see --out); a ledger dump needs a file
+      // tree to land in.
       opts.showTransactions = true;
       continue;
+    }
+
+    if (arg == "--csv") {
+      die("--csv does not exist: PhantomLedger is PostgreSQL-native and "
+          "writes no files. The file-based test gates use --out until "
+          "they are retired.");
     }
 
     if (arg == "--engine") {

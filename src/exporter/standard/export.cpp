@@ -25,8 +25,9 @@ namespace pii = ::PhantomLedger::synth::pii;
 
 namespace {
 
-// One rendering, two destinations (common::Table): the CSV file always,
-// a direct PostgreSQL table too when the target's mirror is armed.
+// One rendering, two destinations (common::Table): the CSV file when
+// the target carries a directory, a direct PostgreSQL table when the
+// target's mirror is armed.
 template <class Body>
 void emit(const common::TableTarget &target, const schema::Table &table,
           Body body) {
@@ -109,7 +110,11 @@ void exportEntityResolution(const common::TableTarget &target,
 void exportEntities(const ::PhantomLedger::pipeline::SimulationResult &result,
                     const std::filesystem::path &outDir,
                     const Options &options) {
-  std::filesystem::create_directories(outDir);
+  // Empty outDir => no file leg (PostgreSQL-only run).
+  const bool files = !outDir.empty();
+  if (files) {
+    std::filesystem::create_directories(outDir);
+  }
 
   const common::TableTarget target{.dir = outDir, .pg = options.pgMirror};
 
@@ -156,7 +161,11 @@ void exportEntities(const ::PhantomLedger::pipeline::SimulationResult &result,
 
 void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
                const std::filesystem::path &outDir, const Options &options) {
-  std::filesystem::create_directories(outDir);
+  // Empty outDir => no file leg (PostgreSQL-only run).
+  const bool files = !outDir.empty();
+  if (files) {
+    std::filesystem::create_directories(outDir);
+  }
 
   const common::TableTarget target{.dir = outDir, .pg = options.pgMirror};
 
@@ -184,7 +193,7 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
     flow_agg::writeAccountFlowAggRows(w, visibleTxns, options.window);
   });
 
-  if (options.showTransactions) {
+  if (options.showTransactions && files) {
     // FILE-ONLY on purpose: the ledger CSV's stem is "transactions",
     // which is the streamed corpus table's name — the canonical stream
     // (row_seq/span_index, sinks::Postgres) must never be overwritten

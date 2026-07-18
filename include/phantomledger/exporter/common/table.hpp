@@ -9,15 +9,19 @@
 // PgMirror is armed) to a PostgreSQL COPY. One rendering, two
 // destinations: the table content in PostgreSQL is byte-identical to
 // the file by construction, which is what lets the CSV files become
-// optional later without a falsifiability gap.
+// optional without a falsifiability gap.
+//
+// CSV retirement step 5b: an EMPTY target.dir means "no file leg" —
+// the table renders once and streams only into the mirror (or, with
+// no mirror either, nowhere: a legal null sink for file-less
+// serverless runs). Exporters that compose subdirectories must pass a
+// TRULY EMPTY dir when files are disabled — an empty base composed
+// with a subdir ("aml/vertices") is a NON-empty relative path and
+// would silently write into the working directory.
 //
 // A Table converts implicitly to csv::Writer&, so every existing
 // write function (writePartyRows, writeTransferRows, ...) works
-// unchanged; migrating an exporter means switching its openTable calls
-// from a directory path to a TableTarget — nothing else.
-//
-// The path-based openTable in framework.hpp stays for unmigrated
-// exporters and is exactly equivalent to an unarmed TableTarget.
+// unchanged.
 //
 
 #include "phantomledger/exporter/csv.hpp"
@@ -36,20 +40,24 @@
 
 namespace PhantomLedger::exporter::common {
 
-// Where an exporter's tables go: always the directory; additionally a
-// PostgreSQL mirror when `pg` is set. Exporters receive this from
-// their Options/Config and never decide backend policy themselves.
+// Where an exporter's tables go: the directory when non-empty (empty
+// => no file is written); additionally a PostgreSQL mirror when `pg`
+// is set. Exporters receive this from their Options/Config and never
+// decide backend policy themselves.
 struct TableTarget {
   std::filesystem::path dir;
-  const sinks::PgMirror *pg = nullptr; // nullptr => files only
+  const sinks::PgMirror *pg = nullptr; // nullptr => no direct table
 };
 
 class Table {
 public:
   Table(const TableTarget &target, const schema::Table &table)
       : guts_(std::make_unique<Guts>(
-            target.dir / std::filesystem::path(table.filename))) {
-    if (!guts_->file) {
+            target.dir.empty()
+                ? std::optional<std::filesystem::path>{}
+                : std::optional<std::filesystem::path>{
+                      target.dir / std::filesystem::path(table.filename)})) {
+    if (!target.dir.empty() && !guts_->file) {
       throw std::runtime_error(
           "exporter: cannot open table file " +
           (target.dir / std::filesystem::path(table.filename)).string());
@@ -93,22 +101,29 @@ public:
     if (guts_->mirror.has_value()) {
       guts_->mirror->close();
     }
-    guts_->file.close();
+    if (guts_->file.is_open()) {
+      guts_->file.close();
+    }
   }
 
 private:
   // Heap-held so the stream addresses the Writer and the callback
   // capture stay stable across moves of the Table.
   struct Guts {
-    explicit Guts(const std::filesystem::path &path)
-        : file(path, std::ios::binary),
-          buf([this](const char *data, std::size_t size) {
-            file.write(data, static_cast<std::streamsize>(size));
+    explicit Guts(const std::optional<std::filesystem::path> &path)
+        : buf([this](const char *data, std::size_t size) {
+            if (file.is_open()) {
+              file.write(data, static_cast<std::streamsize>(size));
+            }
             if (mirror.has_value()) {
               mirror->put(data, size);
             }
           }),
-          stream(&buf) {}
+          stream(&buf) {
+      if (path.has_value()) {
+        file.open(*path, std::ios::binary);
+      }
+    }
 
     std::ofstream file;
     std::optional<sinks::TableMirror> mirror;

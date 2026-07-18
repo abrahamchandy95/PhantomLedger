@@ -104,7 +104,12 @@ struct RunOptions {
   std::int64_t days = 365;
   std::int32_t population = 70'000;
   std::uint64_t seed = 0xDEADBEEFULL;
-  std::filesystem::path outDir = "out_bank_data";
+
+  // Empty by default: a run writes NO files — PostgreSQL is the only
+  // output. Set only by the test-infrastructure --out flag, which
+  // keeps the file-based parity gates alive until the CSV arc deletes
+  // them.
+  std::filesystem::path outDir{};
   bool showTransactions = false;
 
   Engine engine = Engine::automatic;

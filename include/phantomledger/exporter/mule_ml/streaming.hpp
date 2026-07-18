@@ -25,7 +25,10 @@
 // CSV retirement arc step 1: every table goes through common::Table,
 // so when Config::pgMirror is armed the same bytes stream into
 // PostgreSQL directly — including transfer.csv, which stays open (file
-// + COPY) across the whole fold on its own connection.
+// + COPY) across the whole fold on its own connection. An EMPTY
+// Config::outDir disables the file leg entirely (5b): the composed
+// ml_ready subdirectory must then never reach a TableTarget, or it
+// would resolve as a relative path in the working directory.
 //
 // mule-ml applies no membership filter (exportAll consumes the posted
 // corpus raw); neither does this sink.
@@ -70,7 +73,7 @@ public:
     const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
     // The run output directory; the sink writes into <outDir>/ml_ready,
-    // exactly like exportAll.
+    // exactly like exportAll. Empty => no files (PG-only run).
     std::filesystem::path outDir;
 
     // When set, tables are ALSO written directly into PostgreSQL as
@@ -83,8 +86,11 @@ public:
         accountsByPerson_(buildAccountsByPerson(*config_.registry)),
         accountToOwner_(buildAccountToOwner(*config_.registry)),
         partyIds_(collectPartyIds(*config_.registry)),
-        mlDir_(config_.outDir / "ml_ready") {
-    std::filesystem::create_directories(mlDir_);
+        mlDir_(config_.outDir.empty() ? std::filesystem::path{}
+                                      : config_.outDir / "ml_ready") {
+    if (!mlDir_.empty()) {
+      std::filesystem::create_directories(mlDir_);
+    }
     target_ = common::TableTarget{.dir = mlDir_, .pg = config_.pgMirror};
     transfers_.emplace(common::openTable(target_, schema::kMlTransfer));
   }

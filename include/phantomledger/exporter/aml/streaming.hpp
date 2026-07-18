@@ -28,9 +28,13 @@
 // CSV retirement arc: the six transaction-streamed tables go through
 // common::Table, so when Config::pgMirror is armed the same bytes
 // stream into PostgreSQL directly, each table on its own connection,
-// open across the whole fold. The raw ledger CSV stays FILE-ONLY —
-// its stem is "transactions", the streamed corpus table's name, and
-// the canonical stream must never be overwritten by its dump.
+// open across the whole fold. An EMPTY Config::outDir disables the
+// file leg (5b): the composed aml/{vertices,edges} subdirectories
+// must then never reach a TableTarget, or they would resolve as
+// relative paths in the working directory. The raw ledger CSV stays
+// FILE-ONLY — its stem is "transactions", the streamed corpus table's
+// name, and the canonical stream must never be overwritten by its
+// dump.
 //
 
 #include "phantomledger/exporter/aml/edges.hpp"
@@ -65,7 +69,7 @@ public:
 
     // The run output directory; tables land under <outDir>/aml/{vertices,
     // edges} and transactions.csv (when enabled) at <outDir>, exactly
-    // like exportAll.
+    // like exportAll. Empty => no files (PG-only run).
     std::filesystem::path outDir;
     bool showTransactions = false;
 
@@ -84,10 +88,15 @@ public:
          .topology = config_.people->roster.topology});
     classifier_.emplace(artifacts_.ctx);
 
-    const auto vtxDir = config_.outDir / "aml" / "vertices";
-    const auto edgeDir = config_.outDir / "aml" / "edges";
-    std::filesystem::create_directories(vtxDir);
-    std::filesystem::create_directories(edgeDir);
+    const bool files = !config_.outDir.empty();
+    const auto vtxDir =
+        files ? config_.outDir / "aml" / "vertices" : std::filesystem::path{};
+    const auto edgeDir =
+        files ? config_.outDir / "aml" / "edges" : std::filesystem::path{};
+    if (files) {
+      std::filesystem::create_directories(vtxDir);
+      std::filesystem::create_directories(edgeDir);
+    }
 
     // Direct-table mirrors reproduce the csv_loader tree naming
     // (aml_vertices_<stem> / aml_edges_<stem> in the target schema).
@@ -119,7 +128,7 @@ public:
         edgeTarget, amlSchema::kCounterpartyReceiveTransaction));
     chainLabelW_.emplace(
         common::openTable(edgeTarget, amlSchema::kTransactionChainLabel));
-    if (config_.showTransactions) {
+    if (config_.showTransactions && files) {
       // File-only: stem "transactions" is the streamed corpus table.
       const common::TableTarget fileOnly{.dir = config_.outDir, .pg = nullptr};
       ledgerW_.emplace(common::openTable(
