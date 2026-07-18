@@ -200,9 +200,10 @@ inline constexpr std::int64_t kFallbackEpoch = 1735689600;
 // buildBundle and the read-back builder both feed rows through THE SAME
 // TxnSweep::observe in corpus (row_seq) order and hand the result to THE
 // SAME finishBundle, so the two corpus stores cannot drift. observe
-// reads only source/target/amount/timestamp/fraud.flag — exactly the
-// fields the read-back decode contract pins losslessly
-// (test_pg_readback).
+// reads only source/target/amount/timestamp/fraud.flag/session.channel
+// — exactly the fields the read-back decode contract pins losslessly
+// (test_pg_readback; the channel joined the contract with the
+// currency-scoped CTR rule, conformance-statutory 2026-07-18).
 
 // Fraud-scale retention (documented acceptable): everything
 // promoteFraudTxns needs from a fraud row.

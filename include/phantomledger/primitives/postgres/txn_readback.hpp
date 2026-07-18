@@ -20,6 +20,9 @@
 //   ts       "YYYY-MM-DD HH:MM:SS" under DateStyle 'ISO, YMD', the
 //            exact inverse of the ledger's formatTimestamp
 //   fraud    is_fraud round-trips the flag byte
+//   channel  the stored name (channels::name, validated unique) parses
+//            back to the exact channels::Tag via channels::parse — the
+//            currency-scoped CTR rule (31 CFR 1010.311) reads it
 //
 // The rendered id text is surfaced alongside the parsed key because
 // derived IDs (alerts, CTRs) hash the RENDERED account string — using
@@ -33,6 +36,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/postgres/connection.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 
 #include <cstdint>
 #include <string>
@@ -43,7 +47,7 @@ struct pg_result;
 namespace PhantomLedger::postgres {
 
 // One decoded row of the streamed table: exactly the fields the ledger
-// row reconstructs losslessly (ring_id/fraud_type/device/ip/channel are
+// row reconstructs losslessly (ring_id/fraud_type/device/ip are
 // rendered forms; consumers needing them use the world, not the table).
 struct StreamTxnRow {
   std::uint64_t rowSeq = 0;
@@ -52,6 +56,7 @@ struct StreamTxnRow {
   double amount = 0.0;
   std::int64_t timestamp = 0;
   std::uint8_t fraudFlag = 0;
+  ::PhantomLedger::channels::Tag channel{};
 
   // src_acct / dst_acct exactly as stored (hash inputs for derived IDs).
   std::string sourceRendered;

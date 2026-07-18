@@ -2,6 +2,7 @@
 
 #include "phantomledger/encoding/parse.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/taxonomies/channels/names.hpp"
 
 #include <libpq-fe.h>
 
@@ -50,6 +51,19 @@ parseKeyField(std::string_view text) {
                 "'");
   }
   return *key;
+}
+
+// The sink writes channels::name(tag) (validated unique, never empty
+// for a posted row — the column is NOT NULL and an empty CSV field
+// would COPY as NULL), so any unparseable text is table corruption,
+// not a decodable value.
+[[nodiscard]] ::PhantomLedger::channels::Tag parseChannelField(
+    const char *text) {
+  const auto tag = ::PhantomLedger::channels::parse(text);
+  if (!tag.has_value()) {
+    throw Error(std::string{"txn_readback: unknown channel '"} + text + "'");
+  }
+  return *tag;
 }
 
 } // namespace
@@ -112,7 +126,7 @@ TransactionScan::TransactionScan(Connection &conn, const std::string &table)
   conn_->exec("SET LOCAL DateStyle = 'ISO, YMD'");
   conn_->exec(std::string{"DECLARE "} + kCursorName +
               " NO SCROLL CURSOR FOR SELECT row_seq, src_acct, dst_acct, "
-              "amount, ts, is_fraud FROM " +
+              "amount, ts, is_fraud, channel FROM " +
               conn_->escapeIdentifier(table) + " ORDER BY row_seq");
   active_ = true;
 }
@@ -189,6 +203,7 @@ bool TransactionScan::next(StreamTxnRow &out) {
   out.amount = parseAmountField(field(3));
   out.timestamp = parseLedgerTimestamp(field(4));
   out.fraudFlag = static_cast<std::uint8_t>(parseU64Field(field(5), "is_fraud"));
+  out.channel = parseChannelField(field(6));
 
   ++rows_;
   return true;

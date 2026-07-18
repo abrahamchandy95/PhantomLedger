@@ -21,6 +21,10 @@
 //             parity instead of a model-version change
 //   TS/FRAUD  timestamps invert formatTimestamp exactly; is_fraud
 //             round-trips the flag
+//   CHANNEL   channels::parse inverts channels::name (validated unique)
+//             to the exact Tag — pinned over a channel-diverse fixture
+//             (legit, cash, fraud, rent, credit groups) because the
+//             currency-scoped CTR rule (31 CFR 1010.311) reads it
 //   LIFECYCLE bounds query, empty tables, and an abandoned scan rolling
 //             back cleanly with the connection still usable
 //
@@ -46,6 +50,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cmath>
@@ -130,6 +135,17 @@ void checkParseKeyPins() {
   std::printf("pg-readback: parseKey pins hold (18 layouts)\n");
   std::fflush(stdout);
 }
+
+// Cross-group channel rotation: the decode must round-trip every tag
+// family the writer can emit, cash channels included (the currency-
+// scoped CTR rule consumes exactly this field).
+inline constexpr std::array<channels::Tag, 5> kFixtureChannels{
+    channels::tag(channels::Legit::merchant),
+    channels::tag(channels::Legit::atm),
+    channels::tag(channels::Fraud::structuring),
+    channels::tag(channels::Legit::salary),
+    channels::tag(channels::Rent::check),
+};
 
 [[nodiscard]] std::vector<Transaction> buildFixture(std::int64_t startEpoch,
                                                     std::size_t count) {
@@ -225,7 +241,7 @@ void checkParseKeyPins() {
     }
     tx.session.ipAddress =
         network::Ipv4::pack(10, 0, static_cast<std::uint8_t>(i % 200), 5);
-    tx.session.channel = channels::tag(channels::Legit::merchant);
+    tx.session.channel = kFixtureChannels[i % kFixtureChannels.size()];
 
     rows.push_back(tx);
   }
@@ -311,6 +327,7 @@ int main() {
       assert(bits(row.amount) == bits(tx.amount));
       assert(row.timestamp == tx.timestamp);
       assert(row.fraudFlag == tx.fraud.flag);
+      assert(row.channel == tx.session.channel);
       assert(row.sourceRendered ==
              std::string_view{encoding::format(tx.source).view()});
       assert(row.targetRendered ==
@@ -337,8 +354,8 @@ int main() {
     assert(fromPg.count30d < fromPg.count90d);
     assert(fromPg.count90d < fromPg.txnCount);
 
-    std::printf("pg-readback: %zu rows bit-exact; 30/90-day sums match "
-                "(30d=%u 90d=%u total=%u)\n",
+    std::printf("pg-readback: %zu rows bit-exact (channels incl.); 30/90-day "
+                "sums match (30d=%u 90d=%u total=%u)\n",
                 i, fromPg.count30d, fromPg.count90d, fromPg.txnCount);
     std::fflush(stdout);
   }

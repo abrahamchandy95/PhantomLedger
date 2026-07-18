@@ -697,12 +697,23 @@ void TxnSweep::observe(const tx_ns::Transaction &tx, std::size_t idx1) {
   if (onValid && tx.fraud.flag != 0) {
     alerts.push_back(makeAlert(onAcct, Rule::fraudMlFlag, createdDate, idx1));
   }
-  if (onValid && amount >= 9000.0 && amount < 10000.0) {
+
+  // Sev-2 band: a generic high-amount monitoring heuristic, all
+  // channels BY CHOICE (docs/fraud_model_audit.md F-6). The upper edge
+  // is INCLUSIVE so exactly $10,000.00 — which the statute excludes
+  // from CTR filing — still surfaces at sev 2.
+  if (onValid && amount >= 9000.0 && amount <= 10000.0) {
     alerts.push_back(
         makeAlert(onAcct, Rule::highAmountBelowCtr, createdDate, idx1));
   }
 
-  if (onValid && amount >= 10000.0) {
+  // CTR: 31 CFR 1010.311 — a transaction IN CURRENCY of MORE THAN
+  // $10,000. Strictly more than (exactly $10,000.00 must NOT file) and
+  // currency-only (channels::isCurrency), so ACH/card/wire/salary rows
+  // can never file. Same-business-day aggregation (31 CFR 1010.313(b))
+  // is deliberately unmodeled — a known simplification recorded in the
+  // master citation document.
+  if (onValid && ch::isCurrency(tx.session.channel) && amount > 10000.0) {
     alerts.push_back(
         makeAlert(onAcct, Rule::cashCtrThreshold, createdDate, idx1));
 

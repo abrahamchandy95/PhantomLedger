@@ -32,8 +32,9 @@ derived::Bundle buildBundle(const pipeline::People &people,
                           static_cast<std::size_t>(bounds.rows));
 
   // One ordered scan; observe() reads only the losslessly decoded
-  // fields, so the reconstructed row is equivalent to the corpus row
-  // for every derived purpose.
+  // fields (keys, amount, ts, fraud flag, channel), so the
+  // reconstructed row is equivalent to the corpus row for every
+  // derived purpose.
   pg::TransactionScan scan{conn, table};
   pg::StreamTxnRow row;
   transactions::Transaction tx{};
@@ -43,6 +44,7 @@ derived::Bundle buildBundle(const pipeline::People &people,
     tx.amount = row.amount;
     tx.timestamp = row.timestamp;
     tx.fraud.flag = row.fraudFlag;
+    tx.session.channel = row.channel;
     sweep.observe(tx, static_cast<std::size_t>(row.rowSeq));
   }
 

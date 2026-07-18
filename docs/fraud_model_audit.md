@@ -20,7 +20,9 @@ This document is NORMATIVE, in two phases per row:
   a silent edit.
 * **CHOICE rows** are normative too, but their normative content is the
   DOCUMENTED DEVIATION: cite the real-world value, state the deviation
-  and its reason (e.g., fraud oversampled ~100× for ML label density).
+  and its reason (e.g., fraud deliberately oversampled for ML label
+  density — the older "~100×" figure was dropped per the F-1 Pass 1
+  finding: the count-axis oversampling factor is unknown).
   A CHOICE row conforms when the deviation is explicit and justified —
   not when the raw number matches the world.
 
@@ -87,6 +89,16 @@ mean; see the L-3 Pass 2 block. New NONCONFORMING verdicts from Pass
 2: student employment (L-4), allowances (L-9), lease tenure (L-5).
 document.
 
+### C0 code reads + C1 conformance-statutory (2026-07-18, same session)
+
+The owner adopted the CONFORMANCE PROGRAM: PhantomLedger's numbers are
+progressively corrected to fit this document. C0 (the code reads that
+settled every CONTESTED/unit-definition verdict blocked on the code)
+is DONE — results are written into the affected sections below, marked
+"C0 code read". C1 (the statutory correctness batch) is SHIPPED as
+model version **conformance-statutory** — see the F-6 C1 block and the
+change history.
+
 ═══════════════════════════════════════════════════════════════════════
 # PART I — FRAUD / AML MODEL
 ═══════════════════════════════════════════════════════════════════════
@@ -98,7 +110,7 @@ document.
 | Fraud rings per 10k customers | mean 6.0, lognormal σ 0.4 | CHOICE | real organized-group density per customer base is far lower; we oversample for label density | Europol EMMA cycles; UK Finance Annual Fraud Report |
 | Solo fraudsters per 10k | 4.0 | CHOICE | lone-actor density (oversampled) | FTC Consumer Sentinel; FBI IC3 |
 | Max fraud participation / illicit persons | 6% / ≤0.5% of population | CHOICE | internal caps | — |
-| Fraud budget p | 0.0012 of TRANSACTIONS (F = pL/(1−p), exact L) | CHOICE | real unauthorized-txn rates are a few bp; we run ~12 bp deliberately | Federal Reserve Payments Study; Nilson Report |
+| Fraud budget p | 0.0012 of TRANSACTIONS (F = pL/(1−p), exact L) | CHOICE | PL runs fraud at 12 bp of transaction COUNT; published US benchmarks are value-based (~11–18 bp of value in 2023); count-based incidence benchmarks are not published in these sources, so the oversampling factor vs. count is UNKNOWN (deviation text rewritten per the Pass 1 finding below) | Federal Reserve Payments Study; Nilson Report |
 
 **Pass 1 results (F-1):**
 * Fraud budget p | Citation: Nilson Report issue on 2023 card fraud
@@ -121,6 +133,8 @@ document.
   sources, so the oversampling factor vs. count is UNKNOWN, not
   ~100x." The ~100x oversample language in the AUTHORITY RULE
   example should be re-derived or dropped.
+  *(C1 doc ride: the row's claim cell and the AUTHORITY RULE example
+  now carry exactly this rewrite.)*
 
 ### F-2. Ring topology
 
@@ -178,16 +192,16 @@ report at ADJUST time only.
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
-| CTR threshold | $10,000 | MEASUREMENT (statutory) | 31 CFR §1010.311 (eCFR) |
+| CTR threshold | $10,000 — the CTR files strictly ABOVE this, currency-only (C1; see F-6) | MEASUREMENT (statutory) | 31 CFR §1010.311 (eCFR) |
 | Layering hops | 3–8 | TYPOLOGY | FATF Professional ML (2018) |
 | Structuring ε below threshold | U[$50, $1,500] (fraud-audit-2026-07 F1) | TYPOLOGY | FinCEN structuring guidance; FFIEC BSA/AML manual |
 | Structuring profile mix | 60% threshold ($8.5k–$9.95k) / 25% medium ($3–7k) / 15% small ($300–1.5k) | CHOICE | FinCEN SAR narratives |
 | Splits per victim burst | 3–12; burst 3–8 d; sub-burst 1–2 d; 08–22 h; secondary target p .20 | CHOICE | — |
-| Classic-fraud amount | LN($900, .70) floor $50 | MEASUREMENT | UK Finance APP losses; FTC medians |
+| Classic-fraud amount | LN($900, .70) floor $50 | CHOICE (re-classed per Pass 2) — targets money-movement/bank-drain scams (phone-contact median $1,400 in 2022; APP per-case ~$2,950), deliberately above the all-fraud CSN median ~$497 | UK Finance APP losses; FTC medians |
 | Cycle / boost-cycle amounts | LN($600, .25) / LN($500, .20) | CHOICE | — |
 | Card-test charge | U[$0.50,$5.00], ~40% anchors {.50,1,2,5} (test-pinned) | MEASUREMENT | Nilson; issuer advisories |
-| Card fraud spend | median ≈ $79, mean ≈ $162, clamp [$1,$5k] (test-pinned) | MEASUREMENT | Fed Payments Study; UK Finance |
-| ATO drain | median ≈ $180, mean ≈ $554, clamp [$10,$85k], ~0.4% ≥ $10k (test-pinned) | MEASUREMENT | FTC Sentinel; IC3 |
+| Card fraud spend | median ≈ $79, mean ≈ $162, clamp [$1,$5k] (test-pinned; PER TRANSACTION — see the C0 axis flag below) | MEASUREMENT | Fed Payments Study; UK Finance |
+| ATO drain | median ≈ $180, mean ≈ $554, clamp [$10,$85k], ~0.4% ≥ $10k (test-pinned; PER DRAIN TRANSACTION — case unit written by C0 below) | MEASUREMENT | FTC Sentinel; IC3 |
 
 **Pass 1 results (F-4):**
 * CTR threshold | Citation: eCFR, 31 CFR 1010.311 (current, retrieved
@@ -204,6 +218,7 @@ report at ADJUST time only.
   files CTRs only on cash-channel rows, never on ACH/card/wire.
   Structuring profile "threshold" band top of $9.95k remains valid
   either way.
+  *(RESOLVED by C1 conformance-statutory — see the F-6 C1 block.)*
 * Classic-fraud amount | Citation slot (partial): FTC press releases
   2025-03 and 2026-06 (Consumer Sentinel 2024/2025 totals),
   ftc.gov/news-events. | Real-world anchors: reported fraud losses
@@ -234,12 +249,15 @@ report at ADJUST time only.
   playbook the intermediate value is defensible ONLY with that
   sentence written into the row. Alternative: ADJUST median to ~$500
   and accept all-fraud calibration.
+  *(C1 doc ride: the row now carries the re-class and the sentence.)*
 * Card fraud spend | Citation: UK Finance Annual Fraud Report 2026
   (May 2026 data on 2025). | Real-world value: remote purchase card
   fraud GBP 423.5M across 3.2M cases = ~GBP 132 (~$167) average per
   case [Certain, Derived]. | Status: CONFORMS: PL mean $162 (median
   $79, lognormal) is within 3% of the UK per-case average; the
   test-pinned distribution stands.
+  *(RE-OPENED by the C0 axis flag below: this compared per-txn to
+  per-case.)*
 * ATO drain | Citation: same report. | Real-world value: remote
   banking fraud GBP 104.4M across 37,646 cases = ~GBP 2,773 (~$3.5k)
   average per CASE [Certain, Derived]. | Status: UNIT CHECK REQUIRED
@@ -253,6 +271,33 @@ report at ADJUST time only.
   [Likely]; pull one named advisory (Visa card-testing bulletin) for
   the citation slot. The pattern, not the exact bounds, is the claim.
 
+**C0 code reads (F-4, 2026-07-18):**
+* ATO drain UNIT (closes the Pass 2 unit check) | One ATO case = one
+  `CompromisePlan` executing `plan.targetEvents` drain transactions
+  (`transfers/fraud/typologies/unauthorized.cpp`). The sampler
+  (`injector.cpp` budget-split loop): rail is card at p .72;
+  NON-CARD (bank-drain) plans draw targetEvents ~ U{2..5}, mean 3.5,
+  each event an atoDrainAmount draw (mean $554) ⇒ implied per-case
+  mean ≈ 3.5 × $554 ≈ **$1.9k vs the UK remote-banking ~$3.5k per
+  case** [Derived] — same order of magnitude, low side (~55%).
+  Owner call (rides with C3): CONFORMS-as-band, or ADJUST (raise
+  non-card targetEvents toward ~4–7 or the drain median).
+* Card fraud spend AXIS FLAG (re-opens the Pass 2 CONFORMS) | CARD
+  plans draw targetEvents ~ U{5..14}, mean 9.5 (≤2 sub-$5 test
+  charges at p .7, the remainder spends at the pinned per-txn
+  distribution, mean $162) ⇒ implied per-case spend ≈ $1.2–1.5k.
+  The Pass 2 verdict compared PL's PER-TRANSACTION mean ($162) to
+  the UK PER-CASE average (~$167) — an axis mismatch; the near-match
+  is coincidence. On the per-case axis PL runs ~8× the UK
+  remote-purchase average. The per-txn distribution remains
+  test-pinned (`test_fraud_amounts`) and individually plausible; the
+  per-case total is the open question. Owner call (rides with C3):
+  re-class CHOICE (dense drains per compromise for label density) or
+  ADJUST card-rail targetEvents downward.
+* CTR trigger | Both statutory defects were confirmed in code
+  (`derived.cpp TxnSweep::observe`: `>= 10000.0`, no channel filter)
+  and FIXED by C1 — see the F-6 C1 block.
+
 ### F-5. Camouflage
 
 Small P2P p .03/day; monthly bill p .35; salary inbound p .12 — CHOICE
@@ -262,10 +307,10 @@ Small P2P p .03/day; monthly bill p .35; salary inbound p .12 — CHOICE
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
-| Below-CTR alert band | [$9,000, $10,000) → sev 2 | CHOICE | FFIEC; TM vendor catalogs |
-| CTR record | ≥ $10,000 → sev 3 + CTR row | MEASUREMENT (statutory) | 31 CFR §1010.311 |
+| Below-CTR alert band | [$9,000, $10,000] → sev 2, ALL channels (upper edge inclusive since C1, so exactly-$10,000 lands here) | CHOICE | FFIEC; TM vendor catalogs |
+| CTR record | STRICTLY > $10,000 AND currency channel (`channels::isCurrency`: atm_withdrawal, fraud_structuring) → sev 3 + CTR row (C1) | MEASUREMENT (statutory) | 31 CFR §1010.311 |
 | Velocity alert | ≥5 txns/(account,day) → sev 2 | CHOICE | TM vendor docs |
-| Alert→case escalation | 1 in 8 (content-hash) | CHOICE | TM conversion stats (5–15%) |
+| Alert→case escalation | 1 in 8 (content-hash) | CHOICE — no external claim (the "TM conversion stats 5–15%" source was uncitable vendor folklore; re-annotated per Pass 2) | — |
 | SAR filing probability | 0.70 per group (content-keyed) | CHOICE (F3) | FinCEN SAR Stats |
 | SAR monetary floor | ≥ $5,000 group total | MEASUREMENT (statutory) | 31 CFR §1020.320 |
 | SAR filing lag | activity end + 30 days | MEASUREMENT | 31 CFR §1020.320(b)(3) |
@@ -282,6 +327,8 @@ Small P2P p .03/day; monthly bill p .35; salary inbound p .12 — CHOICE
   correctly once the trigger is fixed: decide whether $10,000.00
   lands in the sev-2 band (recommended: extend band to [$9,000,
   $10,000]) or stays unalerted.
+  *(RESOLVED by C1 — block below; the recommended band extension
+  shipped.)*
 * SAR monetary floor | Citation: eCFR, 31 CFR 1020.320(a)(2)
   (current, retrieved 2026-07-18). | Real-world value: reporting
   required when a transaction "involves or aggregates at least
@@ -317,6 +364,50 @@ Small P2P p .03/day; monthly bill p .35; salary inbound p .12 — CHOICE
   regulator speeches quote false-positive rates above 90%, implying
   under-10% conversion) or re-annotate the row as CHOICE with no
   external claim.
+  *(C1 doc ride: row re-annotated exactly so.)*
+
+**C1 conformance (2026-07-18) — model version `conformance-statutory`
+SHIPPED:**
+* Both statutory defects are FIXED to the cited 1010.311 text: the
+  CTR (alert + row) fires on **strictly more than $10,000** and
+  **only on currency channels** — `channels::isCurrency` in
+  `taxonomies/channels/predicates.hpp` = {`Legit::atm`
+  ("atm_withdrawal", cash-out) and `Fraud::structuring` (structured
+  cash deposits; structuring is definitionally a currency offense,
+  31 USC 5324)}. No other tag in the taxonomy models physical cash
+  (everything else is ACH/card/wire/check-like); widening the set is
+  a model-version decision recorded here first.
+* Band edge: the sev-2 band extended to **[$9,000, $10,000]
+  inclusive** (the Pass 1 recommendation), so exactly-$10,000.00
+  alerts at sev 2 and files nothing. The band stays ALL-channel by
+  CHOICE (generic high-amount monitoring heuristic).
+* Plumbing: `TxnSweep::observe` now reads `session.channel`, so the
+  PostgreSQL read-back decode contract was extended — the scan
+  decodes the `channel` column losslessly (`channels::parse` inverts
+  `channels::name`, names validated unique). Pinned by
+  `test_pg_readback` (channel-diverse fixture, exact Tag round-trip)
+  and `test_derived_readback` (corpus-vs-readback bundle parity PLUS
+  the two statutory pins: an exactly-$10,000.00 currency row files
+  nothing; a $15,000.77 merchant row files nothing; exactly the two
+  handcrafted currency rows above $10k file).
+* KNOWN SIMPLIFICATION (logged, unmodeled): same-business-day
+  currency aggregation, 31 CFR 1010.313(b) — PL files
+  single-transaction CTRs only, so a structurer's five same-day
+  $2,500 cash deposits do not aggregate into a CTR.
+* VOLUME CONSEQUENCE (expected, not a defect): at the pinned fraud
+  config the CTR table collapses from 340 rows to ~0. Every prior
+  CTR was a NON-currency ≥$10k row (dominated by the salary tail —
+  LN($4,500,.55) puts ~7% of salary credits above $10k — plus
+  inheritance/invoice/layering tails), i.e., pure manifestations of
+  the scope defect. PL currently models NO legitimate large-currency
+  behavior (business cash deposits — the source of the real ~20.5M
+  CTRs/yr). CTR label liveness is therefore gated on a FUTURE model
+  version adding legit cash-deposit behavior, calibrated against the
+  FinCEN FY2024 anchors (20.5M CTRs / 4.7M SARs, ratio ~4.4). Until
+  then the near-empty CTR table is the statutorily correct output.
+* Status after C1: the F-4/F-6 CTR rows conform to the cited
+  1010.311 text (boundary + scope); owner confirms CONFORMS at the
+  re-pin commit.
 
 ### F-7. Measured emergent properties (from generated corpora)
 
@@ -324,6 +415,8 @@ Threshold splits below alert band 0.375 (analytic 0.345); posted
 structuring mix 15/32/53 vs sampler 60/25/15 (unfunded victim debits
 bounce at clearing — emergent); SAR filing observed 2/9 and 0/2 groups;
 fraud rows 1,769 / candidates L=909,116 (0.19%) at pop 10k/60d/seed 7.
+(CTR count at this config pre-C1: 340, all non-currency — see the F-6
+C1 block; re-measure at the C1 re-pin.)
 
 ═══════════════════════════════════════════════════════════════════════
 # PART II — LEGITIMATE ECONOMY
@@ -343,6 +436,9 @@ Shares (CHOICE — verify demographic context): salaried .60, student
 | highNetWorth | 1.3 | 2.8 | consumer | $25,000 | .98 | .80 | $15,000 | 2.20 | .11 |
 | salaried | 1.0 | 1.0 | consumer | $1,200 | .88 | .70 | $3,000 | 1.00 | .40 |
 
+`cardP` gates CREDIT-card issuance specifically (`synth/cards/
+issue.hpp` coins `persona.card.prob`); `ccShare` = credit share of
+spend; `limit` = credit limit (C0 code read, 2026-07-18).
 Paycheck-sensitivity Beta(α,β): student (4,2), retiree (3,3),
 freelancer (2,4), smallBusiness (2,5), HNW (1,8), salaried (2,3).
 Heterogeneity: medians jittered LN σ.15; probabilities Normal σ.08
@@ -364,13 +460,17 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
   unless HNW wealth is held off-ledger by design; state that.
 * Card ownership | already cited in the L-7 Pass 1 block (S-DCPC
   Table 3: credit 82.3%, debit 90.3%).
+* cardP definition (C0 code read, 2026-07-18) | cardP is strictly
+  CREDIT-card issuance, so the right comparator is credit adoption
+  82.3%: PL's weighted ~.85 is slightly HIGH (a couple of points),
+  near-CONFORMS; final call rides with C3 (card-behavior batch).
 
 ### L-2. Spending engine
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
 | Transaction load | 40 txns/person/month | MEASUREMENT | Fed Diary of Consumer Payment Choice |
-| Daily counts | gamma-Poisson k=1.5; weekend ×0.8; day shock shape 1.3 | TYPOLOGY | payment-count dispersion literature |
+| Daily counts | gamma-Poisson k=1.5; weekend ×0.8; day shock Gamma(shape 1.3, scale 1/1.3) — unit mean, fatter tail at lower shape (`actors/day.cpp`, C0) | TYPOLOGY | payment-count dispersion literature |
 | Slot mix | merchant .82 / bills .10 / p2p .08 around external .05 ⇒ effective 77.9/9.5/7.6/5.0 (matches run-log attempt shares) | MEASUREMENT | Fed Diary payment purposes |
 | Known-biller preference | .55; merchant retry limit 6; pick attempts 250 | CHOICE | — |
 | Exploration | base .02/txn; per-person propensity Beta(1.6, 9.5); burst p .08 for 3–9 d | CHOICE | — |
@@ -525,12 +625,38 @@ average tickets.
   with the DCPC citation. This is a code-reading decision, not a
   literature decision.
 
+**C0 code read (L-3 rent, 2026-07-18) — CONTESTED resolved:
+NONCONFORMING.**
+* Unit: each renter is a SOLE TENANT of their own dwelling — one
+  lease per payer, the FULL rent every month, and NO roommate/
+  household split mechanism exists (`activity/recurring/lease.hpp`).
+  The household axis therefore governs: the ACS median gross rent
+  (~$1,487 in 2024) is the comparator, and the DCPC per-consumer
+  transaction average does not apply. **ADJUST queued in C2:
+  retarget the rent mean to ~$1,450–1,550 with right skew**, exactly
+  as Pass 1 proposed, with the liquidity-throttle knock-on noted
+  there (rent shifts the throttle calibration and the
+  posted-structuring mix).
+* Rent-LEVEL mechanics (correctly modeled — NOT part of the ADJUST):
+  the monthly debit is CONSTANT within each lease year and steps up
+  once per lease anniversary by 1 + 2.5% inflation + real raise
+  N(2.0%, 1.5%) floor −1% (one content-keyed draw per lease-year;
+  `growth::compoundGrowth` counts full 12-month anniversaries, zero
+  anniversaries ⇒ factor exactly 1.0) — an annual renewal escalation
+  of ~4.5%/yr nominal, not month-over-month compounding. Moving
+  re-draws the base rent fresh; leases are BACKDATED at world
+  creation so some tenants start mid-tenancy with past steps
+  applied. The ~4.5%/yr escalation rate itself is the L-5 growth
+  row (UNCITED; comparator: CPI rent of primary residence).
+* Residual read at C2 time: the renter-selection share (who rents at
+  all).
+
 ### L-4. Income & employment
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
 | Employment probability | salaried .98, student .12, retiree .02, freelancer .08, smallBiz .04, HNW .12; overall fit .95 of eligible | MEASUREMENT | BLS employment-population ratios |
-| Pay cadences | weekly .20 / biweekly .55 / semimonthly .15 / monthly .10 | MEASUREMENT | BLS length-of-pay-period data |
+| Pay cadences | weekly .20 / biweekly .55 / semimonthly .15 / monthly .10 | DEVIATES-BY-CHOICE (re-classed from MEASUREMENT per Pass 1: BLS publishes establishment shares, PL needs worker-weighted shares) | BLS length-of-pay-period data |
 | Payday mechanics | Friday default (25% Thu↔Fri); semimonthly {15,31} (35% {1,15}); monthly ∈ {28,30,31}; roll to previous business day; posting lag 0–1 d; salary posts 06:00–12:00 same day | MEASUREMENT | payroll-industry conventions |
 | Job tenure | 1.5–4.0 y/job | MEASUREMENT | BLS median tenure |
 | Wage growth | 2.5% inflation + real raise N(1.5%, 2.0%) floor −2%; switch bump N(+8%, 6%) floor −5% | MEASUREMENT | Atlanta Fed Wage Growth Tracker |
@@ -550,6 +676,7 @@ average tickets.
   consistent with worker-weighting but cannot claim conformance to a
   published number. Document exactly that; alternatively locate a
   worker-weighted source next pass and re-class back to MEASUREMENT.
+  *(C1 doc ride: row class cell re-classed exactly so.)*
 * Employment probability, Job tenure, Wage growth | Status: UNCITED,
   queued. AT RISK flag on student employment .12: BLS reports roughly
   40% of full-time college students employed [Likely]; either the
@@ -583,8 +710,12 @@ average tickets.
 ### L-5. Housing
 
 Lease tenure 1–3 y; on move: new landlord, fresh base rent (jitter LN
-σ.05); growth 2.5% inflation + real N(2.0%, 1.5%) floor −1%/y.
-MEASUREMENT — Census mover rate (~13%/y), CPI rent index.
+σ.05); growth 2.5% inflation + real N(2.0%, 1.5%) floor −1%/y (applied
+once per lease anniversary ≈ 4.5%/yr nominal — mechanics in the L-3 C0
+block). MEASUREMENT — CPS renter turnover ~15–22%/y (the overall CPS
+mover rate was 11.0% in 2017 and has run single-digit %/y in the
+2020s; the stale "~13%/y" parenthetical is removed per Pass 2), CPI
+rent index.
 
 **Pass 2 results (L-5):**
 * Lease tenure 1-3y | Citation: Census CPS ASEC mobility (renter
@@ -599,6 +730,7 @@ MEASUREMENT — Census mover rate (~13%/y), CPI rent index.
   mover-rate parenthetical is stale; the overall CPS mover rate was
   11.0% in 2017 and has run in the single digits in the 2020s
   [Likely]. Fix the parenthetical regardless of the tenure decision.
+  *(C1 doc ride: parenthetical fixed in the header above.)*
 
 ### L-6. Recurring debits
 
@@ -632,13 +764,13 @@ MEASUREMENT — Census mover rate (~13%/y), CPI rent index.
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
-| Ownership / share / limits | per persona (L-1) | MEASUREMENT | Fed SCF; CFPB CCM |
+| Ownership / share / limits | per persona (L-1); cardP = strictly CREDIT-card issuance (C0) | MEASUREMENT | Fed SCF; CFPB CCM |
 | Grace period | 25 days | MEASUREMENT | CARD Act ≥21 d; issuer norms |
 | Minimum payment | max(2%, $25) | MEASUREMENT | issuer norms |
 | Late fee | $32 | MEASUREMENT | CFPB late-fee data (verify current rule status) |
 | Payment mixture | full .35 / partial .30 / minimum .25 / miss .10; partial fraction Beta(2,5) of statement | MEASUREMENT | CFPB CCM payment-behavior distributions (transactor/revolver) |
 | Payment timing | late p .08, 1–20 d late | MEASUREMENT | issuer delinquency curves |
-| Disputes | refund p .006/purchase (1–14 d); chargeback p .001 (7–45 d) | MEASUREMENT | network chargeback rates (~0.05–0.1%) |
+| Disputes | refund p .006/purchase (1–14 d); chargeback p .001 (7–45 d) | CHOICE (re-classed per Pass 2) — e-comm dispute benchmark ~0.6% of txns; PL runs 0.1% blended all-channel by choice (the old "(~0.05–0.1%)" parenthetical misstated published benchmarks) | Visa/Mastercard monitoring thresholds (VAMP 1.5% eff. Apr 2026; legacy 0.9%/0.65%) |
 | Cycle finalization | 32-day session lag (architecture) | CHOICE | — |
 
 **Pass 1 results (L-7):**
@@ -677,6 +809,8 @@ MEASUREMENT — Census mover rate (~13%/y), CPI rent index.
   cardP ~ .85 sits between debit and credit adoption; acceptable if
   cardP means "has any payment card", slightly high if strictly
   credit. Limits and balances remain UNCITED (SCF 2022, queued).
+  *(C0 code read settled the definition: STRICTLY credit — see the
+  L-1 block. The "slightly high" branch applies.)*
 * Disputes | Status: UNCITED, AT RISK both directions: the suggested
   source text "network chargeback rates (~0.05-0.1%)" needs a real
   citation; public benchmarks cluster nearer 0.1-0.2% of transactions
@@ -699,7 +833,18 @@ MEASUREMENT — Census mover rate (~13%/y), CPI rent index.
   stays UNCITED (merchandise return rates ~ 15%+ of e-comm orders
   are a different concept; define what a refund row represents
   before citing anything).
+  *(C1 doc ride: row rewritten exactly so; refund defined below.)*
   next pass.
+
+**C0 code read (L-7 refund, 2026-07-18):**
+* A "refund" row is a post-purchase MERCHANT CREDIT back to the
+  cardholder (`channels/credit_cards/dispute/sampler.cpp`): per
+  purchase, p .006 → channel `Credit::refund` with a 1–14 day lag;
+  independently p .001 → `Credit::chargeback` with a 7–45 day lag.
+  The right comparator is merchandise-RETURN incidence per purchase
+  across ALL channels (not e-commerce return rates, which run ~15%+
+  and measure a different, order-level concept). Row stays UNCITED
+  with this definition in place.
 
 ### L-8. Credit & obligation products (adoption by persona: student/retiree/freelancer/smallBiz/HNW/salaried)
 
@@ -870,9 +1015,13 @@ Accounts per person: 1 + Binomial(2, .25) — mean 1.5, max 3
 (MEASUREMENT — Fed SCF accounts-per-household). Merchants: core
 120/10k + tail 400/10k. Landlords: 12/10k. Counterparties per 10k
 (floor): platforms 2 (2), processors 1 (2), owner businesses 200 (25),
-brokerages 40 (5), plus two classes 25 (5) and 250 (25) — labels at
-`synth/counterparties/make.hpp:66,71`. Government cohort: synthetic
-birth-day = content-hash 1–28 (mechanical, no claim).
+brokerages 40 (5), plus employers 25 (floor 5, 4% internal-bank) and
+clients 250 (floor 25, 2% internal-bank) —
+`synth/counterparties/make.hpp:64–73` (labels closed by C0).
+Government cohort: synthetic birth-day = content-hash 1–28
+(mechanical, no claim). Merchant/landlord/counterparty densities:
+re-classed CHOICE (2026-07-18, per the Pass 2 recommendation below —
+no public per-10k-customer source exists).
 
 **Pass 2 results (L-11):**
 * Accounts per person 1.5 | Citation: S-DCPC Table 1 (2024: bank
@@ -887,13 +1036,18 @@ birth-day = content-hash 1–28 (mechanical, no claim).
   permanently CHOICE: no public per-10k-customer density source
   exists. Recommend re-classing these rows CHOICE now rather than
   leaving them as implied measurements.
+  *(C1 doc ride: re-classed CHOICE in the header above.)*
 
-## EXTRACTION QUEUE — CLOSED (remaining: cosmetic only)
+## EXTRACTION QUEUE — CLOSED (2026-07-18: nothing remains)
 
-Labels of the two ScaledCounts at `counterparties/make.hpp:66,71`;
-`kRentTimestampJitter` values; the day-shock distribution family behind
-`shockShape = 1.3` (`day_source.cpp`). Nothing else remains untabulated;
-no value above was guessed.
+The final cosmetic items were resolved by the C0 code reads: the two
+ScaledCounts at `counterparties/make.hpp:64–73` are **employers**
+{25/10k, floor 5, 4% internal-bank} and **clients** {250/10k, floor
+25, 2% internal-bank}; `kRentTimestampJitter` = day offset ≤ 6, hours
+07–22 (`activity/income/timestamps.hpp`); the day shock behind
+`shockShape = 1.3` is Gamma(shape 1.3, scale 1/shape) — unit mean
+(`activity/spending/actors/day.cpp`). No value in this document was
+guessed.
 
 ## Change history (model versions)
 
@@ -918,6 +1072,32 @@ Probe pitfalls: ledger CSV rows end CRLF (awk: `sub(/\r$/,"",$10)`);
 ledger columns amount=$3, channel=$10; fraud-dense probe pop 10000/
 seed 7 (5 rings, 53 structuring rows, shells, 2 SARs).
 
+### conformance-statutory (SHIPPED 2026-07-18)
+
+The C1 batch of the conformance program; the table golden's REAL
+promotion trial (fraud-audit-2026-07's was vacuous). CTR trigger
+brought to the cited 31 CFR 1010.311 text: fires on STRICTLY MORE
+THAN $10,000 (was >=) AND only on currency channels — new
+`channels::isCurrency` predicate {atm_withdrawal, fraud_structuring}
+in `taxonomies/channels/predicates.hpp`, applied in
+`derived.cpp TxnSweep::observe` (was channel-blind: salary/ACH/card/
+wire rows filed CTRs; the salary tail alone put ~7% of salary credits
+over $10k). Sev-2 band extended to [$9,000, $10,000] INCLUSIVE so
+exactly-$10,000.00 alerts at sev 2 and files nothing; band stays
+all-channel by CHOICE. Read-back decode contract extended: the
+transactions-table scan decodes `channel` losslessly
+(`channels::parse` inverts `channels::name`); `test_pg_readback` pins
+the round-trip, `test_derived_readback` pins corpus/readback parity
+plus the boundary and scope negatives. Same-day aggregation
+(1010.313(b)) stays unmodeled — known simplification. Expected golden
+effect: ONLY `tests/golden_tables_aml.md5` (fraud section) re-pins —
+corpus digest unchanged; Alert/CTR/Disposition vertices and
+ALERT_ON/DISPOSITIONED_AS/FILED_CTR/CONTAINS_ALERT/ESCALATED_TO edges
+diff; CTR row count collapses 340 → ~0 (statutorily correct — legit
+large-cash behavior is unmodeled; future model version, FinCEN
+FY2024 anchors). Standard-section golden and the CSV golden must NOT
+move.
+
 ## Findings log
 
 | Date | Item | Verdict | Action |
@@ -941,22 +1121,29 @@ seed 7 (5 rings, 53 structuring rows, shells, 2 SARs).
 | 2026-07-18 | Card fraud spend vs UK Finance 2025 per-case avg | CONFORMS (PL mean $162 vs ~$167) | none |
 | 2026-07-18 | Fuel ticket LN($45,.35) vs Diary gas avg $32.8 | NONCONFORMING (~46% high) | ADJUST fuel median toward $32-38 |
 | 2026-07-18 | Seasonality Dec/Jan amplitude 1.39 vs Census NSA ~1.22 | shape ok, amplitude wide | damp tails or CHOICE re-class |
+| 2026-07-18 | C0 code reads executed | CTR defects CONFIRMED in code; rent CONTESTED → NONCONFORMING (sole tenant, household axis); cardP = strictly credit; refund = merchant credit; ATO unit = CompromisePlan × targetEvents; cosmetic queue closed | C1 shipped; rent ADJUST queued C2 |
+| 2026-07-18 | conformance-statutory (C1) | CTR strict-> + currency scope {atm_withdrawal, fraud_structuring}; band → [$9,000, $10,000]; readback decodes channel | fraud golden re-pin; CTR volume note in F-6 C1 block |
+| 2026-07-18 | Card fraud spend AXIS | Pass 2 CONFORMS compared per-TXN $162 to UK per-CASE ~$167 — mismatch; PL per-case ≈ $1.2–1.5k (targetEvents U{5..14}) ≈ 8× UK | re-opened; owner call rides with C3 |
+| 2026-07-18 | ATO per-case ≈ $1.9k (targetEvents U{2..5}) vs UK ~$3.5k/case | same order, low side (~55%) | owner: CONFORMS-as-band or ADJUST; rides with C3 |
 
-## REMAINING OPEN ITEMS (after Pass 2, 2026-07-18)
+## REMAINING OPEN ITEMS (after Pass 2 + C0/C1, 2026-07-18)
 
 Everything below is either a code-reading task, a definition task, or
 a thin-tail row with no strong published comparator. Nothing here is
 a known numeric contradiction; all known contradictions are already
 logged as NONCONFORMING above.
 
-1. Code reads (block verdicts until done): CTR currency-only scope in
-   the label layer; ATO drain per-txn vs per-case unit; rent debits
-   per tenancy (decides the CONTESTED rent verdict); whether persona
-   cardP means any card or credit specifically; what a "refund" row
-   represents in L-7.
-2. Definition writes: spousal-separate definition; tuition COA-vs-net
-   definition; subscription comparator source; repeat-victimization
-   window; accounts-per-person scope.
+1. Code reads: DONE except one — the renter-selection share (who
+   rents at all), queued with the C2 rent ADJUST. Resolved by C0:
+   CTR currency-only scope (shipped in C1); ATO drain unit +
+   targetEvents sampler (F-4 C0 block); rent debits per tenancy (L-3
+   C0 block — decided the CONTESTED verdict); cardP strictly-credit
+   (L-1); refund-row semantics (L-7 C0 block).
+2. Definition writes still open: spousal-separate definition; tuition
+   COA-vs-net definition; subscription comparator source (name one —
+   PL sits closest to Bango 2025); repeat-victimization window (usual
+   definition: same fraud type within 12 months); accounts-per-person
+   scope (checking-only vs checking+savings).
 3. Citations to pull verbatim at ADJUST time: eCFR section text
    snapshots; FATF Professional ML (2018) page cites; a named Visa
    card-testing advisory; FinCEN structuring guidance and FFIEC
@@ -968,7 +1155,12 @@ logged as NONCONFORMING above.
    grandparent/gift/inheritance distributions (SHED gives incidence
    only); L-10 freelancer/small-business revenue profiles (platform
    earning studies are non-comparable); L-11 merchant/landlord/
-   counterparty densities (no public per-10k source; re-class CHOICE).
+   counterparty densities (re-classed CHOICE 2026-07-18).
 5. Funnel calibration (F3 finding): fit SAR p and alert-to-case
    against the FinCEN FY2024 anchors (4.7M SARs, 20.5M CTRs, fraud
-   52%) as sanity bands under deliberate oversampling.
+   52%) as sanity bands under deliberate oversampling. Note the C1
+   volume consequence: CTR count is ~0 until a legitimate
+   cash-deposit behavior ships (its own future model version).
+6. Owner calls riding with C3 (card behavior): payment mixture (L-7);
+   cardP slightly-high (L-1); card-rail per-case spend axis and ATO
+   per-case level (F-4 C0 block).

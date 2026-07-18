@@ -7,12 +7,23 @@
 // Builds ONE corpus with a real small-world simulation (scaled fraud
 // profile so rings, solo fraudsters and fraud rows exist), appends
 // handcrafted rows that deterministically exercise every alert rule
-// (below-CTR, CTR threshold, velocity burst), then constructs the
-// derived Bundle twice:
+// (below-CTR band, currency CTR, velocity burst) AND the two statutory
+// CTR pins of conformance-statutory (2026-07-18, 31 CFR 1010.311):
+//
+//   boundary  a currency row of exactly $10,000.00 must NOT file a CTR
+//             (the statute says strictly MORE THAN $10,000); it lands
+//             in the sev-2 band instead (inclusive upper edge)
+//   scope     a NON-currency row above $10,000 (merchant channel) must
+//             file nothing — CTRs cover transactions in currency only
+//             (channels::isCurrency: atm_withdrawal, fraud_structuring)
+//
+// then constructs the derived Bundle twice:
 //
 //   corpus  derived::buildBundle over the retained vector
 //   pg      readback::buildBundle over the streamed transactions table
-//           (queryStreamBounds + one TransactionScan in row_seq order)
+//           (queryStreamBounds + one TransactionScan in row_seq order —
+//           the scan's channel decode is what keeps the currency rule
+//           identical on both paths)
 //
 // and requires the two bundles to be IDENTICAL, field by field — IDs
 // (hash outputs), timestamps, index vectors, and every float bit
@@ -49,6 +60,7 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
@@ -378,9 +390,10 @@ int main() {
   check(fraudRows > 0, "world contains fraud rows at the scaled profile");
 
   // The fixture corpus: the posted stream plus handcrafted rows that
-  // deterministically exercise below-CTR, CTR-threshold and velocity
-  // rules (all on one internal account, same second as the last posted
-  // row, so replay-nondecreasing timestamps hold).
+  // deterministically exercise below-CTR, currency-CTR and velocity
+  // rules plus the two statutory pins (all on one internal account,
+  // same second as the last posted row, so replay-nondecreasing
+  // timestamps hold).
   std::vector<Transaction> corpus(posted.begin(), posted.end());
   {
     pl::entity::Key probeAcct{};
@@ -393,23 +406,28 @@ int main() {
     }
     check(probeAcct.number != 0, "found an internal source account");
 
+    const auto merchant = pl::channels::tag(pl::channels::Legit::merchant);
+    const auto atm = pl::channels::tag(pl::channels::Legit::atm);
+
     const auto lastTs = posted.back().timestamp;
-    const auto extra = [&](double amount) {
+    const auto extra = [&](double amount, pl::channels::Tag channel) {
       Transaction t;
       t.source = probeAcct;
       t.target = pl::entity::makeKey(pl::entity::Role::merchant,
                                      pl::entity::Bank::internal, 3);
       t.amount = amount;
       t.timestamp = lastTs;
-      t.session.channel = pl::channels::tag(pl::channels::Legit::merchant);
+      t.session.channel = channel;
       return t;
     };
 
-    corpus.push_back(extra(9500.55));  // HIGH_AMOUNT_BELOW_CTR
-    corpus.push_back(extra(12000.01)); // CASH_CTR_THRESHOLD + CTR
-    corpus.push_back(extra(15000.00)); // CASH_CTR_THRESHOLD + CTR
-    for (int i = 0; i < 6; ++i) {      // VELOCITY_BURST (>= 5 same acct/day)
-      corpus.push_back(extra(42.42));
+    corpus.push_back(extra(9500.55, merchant));  // band (all-channel CHOICE)
+    corpus.push_back(extra(10000.00, atm));      // BOUNDARY: band, NO CTR
+    corpus.push_back(extra(12000.01, atm));      // currency CTR + alert
+    corpus.push_back(extra(15000.00, atm));      // currency CTR + alert
+    corpus.push_back(extra(15000.77, merchant)); // SCOPE: non-currency, silent
+    for (int i = 0; i < 6; ++i) { // VELOCITY_BURST (>= 5 same acct/day)
+      corpus.push_back(extra(42.42, merchant));
     }
   }
 
@@ -433,16 +451,28 @@ int main() {
               corpusBundle.linkComm.size());
   std::fflush(stdout);
 
-  // Every rule must actually fire, or the parity below is vacuous.
+  // Every rule must actually fire, or the parity below is vacuous. The
+  // CTR counts are EXACT: only the two handcrafted atm rows above
+  // $10,000 can file — the sim world has no currency row over the
+  // threshold (legit ATM draws LN($80,.30); structuring tops out at
+  // $9,950 = threshold - epsilonMin), the exactly-$10,000.00 atm row is
+  // excluded by the strict statutory boundary, and the $15,000.77
+  // merchant row is excluded by the currency scope. A third CTR here
+  // means one of those pins broke.
   check(countRule(corpusBundle, derived::Rule::fraudMlFlag) > 0,
         "fraud-ml alerts present");
-  check(countRule(corpusBundle, derived::Rule::highAmountBelowCtr) >= 1,
-        "below-CTR alerts present");
-  check(countRule(corpusBundle, derived::Rule::cashCtrThreshold) >= 2,
-        "CTR-threshold alerts present");
+  check(countRule(corpusBundle, derived::Rule::highAmountBelowCtr) >= 2,
+        "below-CTR alerts present (incl. the exactly-$10,000.00 edge)");
+  check(countRule(corpusBundle, derived::Rule::cashCtrThreshold) == 2,
+        "exactly the two currency rows above $10,000 raise CTR alerts");
   check(countRule(corpusBundle, derived::Rule::velocityBurst) >= 1,
         "velocity alerts present");
-  check(corpusBundle.ctrs.size() >= 2, "CTR records present");
+  check(corpusBundle.ctrs.size() == 2,
+        "exactly two CTR records (strict boundary + currency scope)");
+  for (const auto &c : corpusBundle.ctrs) {
+    check(c.amount > 10000.0,
+          "every CTR amount strictly above $10,000 (31 CFR 1010.311)");
+  }
   check(!corpusBundle.cases.empty(), "cases present");
   check(!corpusBundle.promotedTxns.empty(), "promoted fraud txns present");
   check(!corpusBundle.flowAgg.empty() && !corpusBundle.linkComm.empty(),
