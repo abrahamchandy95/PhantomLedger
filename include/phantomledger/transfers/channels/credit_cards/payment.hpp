@@ -6,6 +6,12 @@
 
 namespace PhantomLedger::transfers::credit_cards {
 
+// This mixture applies to MANUAL payers only (~50% of cards):
+// autopay-full (.40) and autopay-minimum (.10) cards bypass it in
+// Session::draftPayment. The POPULATION full-payment share is
+// .40 + .50 x payFull ~= .575, on the S-DCPC ~58% measured share —
+// do not compare payFull alone to population statistics
+// (card-behavior-2026-07 finding; docs/fraud_model_audit.md L-7).
 struct PaymentMixture {
   double payFull = 0.35;
   double payPartial = 0.30;

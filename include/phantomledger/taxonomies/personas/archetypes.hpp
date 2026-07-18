@@ -31,13 +31,16 @@ namespace detail {
 
 static_assert(enumTax::isIndexable(kTypes));
 
+// cardProb (5th column) gates strictly-CREDIT card issuance; the
+// share-weighted mean is ~.826 against the S-DCPC credit-adoption
+// 82.3% (card-behavior-2026-07; docs/fraud_model_audit.md L-1).
 inline constexpr auto kArchetypes = std::to_array<Archetype>({
-    {0.7, 0.7, Timing::consumer, 200.0, 0.65, 0.55, 800.0, 0.18, 0.67},
-    {0.6, 0.9, Timing::consumerDay, 1500.0, 0.84, 0.55, 2500.0, 0.30, 0.50},
-    {1.1, 1.1, Timing::consumer, 900.0, 0.88, 0.65, 4000.0, 0.95, 0.33},
+    {0.7, 0.7, Timing::consumer, 200.0, 0.60, 0.55, 800.0, 0.18, 0.67},
+    {0.6, 0.9, Timing::consumerDay, 1500.0, 0.82, 0.55, 2500.0, 0.30, 0.50},
+    {1.1, 1.1, Timing::consumer, 900.0, 0.85, 0.65, 4000.0, 0.95, 0.33},
     {1.2, 1.4, Timing::business, 8000.0, 0.95, 0.75, 7000.0, 1.50, 0.29},
     {1.3, 2.8, Timing::consumer, 25000.0, 0.98, 0.80, 15000.0, 2.20, 0.11},
-    {1.0, 1.0, Timing::consumer, 1200.0, 0.88, 0.70, 3000.0, 1.00, 0.40},
+    {1.0, 1.0, Timing::consumer, 1200.0, 0.85, 0.70, 3000.0, 1.00, 0.40},
 });
 
 inline constexpr auto kPaycheckBetas = std::to_array<BetaParams>({

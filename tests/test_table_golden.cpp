@@ -10,8 +10,7 @@
 //   case, pop 2000, 60 days, seed 3405691582, --show-transactions),
 //   digesting the corpus stream (row_seq order, bookkeeping columns
 //   included — the load-bearing corpus pin) plus every direct table
-//   the run wrote in the public schema, discovered from the run's own
-//   CSV stems (immune to stray tables in a shared database).
+//   the run wrote in the public schema.
 //   Baseline: tests/golden_tables.md5.
 //
 //   SECTION "fraud" — aml-txn-edges at a FRAUD-DENSE config (pop
@@ -26,6 +25,16 @@
 //   corpus itself (the shared public.transactions stream, which this
 //   section's run overwrites — hence it runs AFTER the standard
 //   section is digested). Baseline: tests/golden_tables_aml.md5.
+//
+// TABLE DISCOVERY (CSV retirement step 5a): each section's table list
+// comes from the DIRECT-TABLE REGISTRY (public.pl_direct_tables) that
+// the run's own TableMirrors populate — the run itself declares what
+// it wrote. This replaces the old written-CSV-stem discovery, so the
+// gate no longer depends on any file output while staying immune to
+// stray tables in a shared database (the registry is rewritten per
+// schema by each run). The file-only ledger dump is never mirrored,
+// so it never appears in the registry; the corpus stream table is
+// digested explicitly with row_seq ordering.
 //
 // First live run captures a missing baseline (reported as SKIP so
 // capture is explicit — a captured baseline belongs in git IMMEDIATELY,
@@ -51,6 +60,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -85,6 +95,26 @@ namespace {
       ")), '') FROM " + qualified + " t");
   const auto rows = conn.queryValue("SELECT count(*) FROM " + qualified);
   return hash + "  " + rows + "  " + table;
+}
+
+// The run's own declaration of what it wrote: the direct-table
+// registry, rewritten per schema by every run (table_mirror.cpp).
+// Names arrive sorted; registry identifiers never contain newlines.
+[[nodiscard]] std::vector<std::string>
+registeredTables(Connection &conn, const std::string &schemaKey) {
+  const auto agg = conn.queryValue(
+      "SELECT coalesce(string_agg(table_name, E'\\n' ORDER BY table_name), "
+      "'') FROM public.pl_direct_tables WHERE schema_name = '" +
+      schemaKey + "'");
+  std::vector<std::string> out;
+  std::stringstream ss{agg};
+  std::string line;
+  while (std::getline(ss, line)) {
+    if (!line.empty()) {
+      out.push_back(line);
+    }
+  }
+  return out;
 }
 
 [[nodiscard]] bool runBinary(const std::string &args, const fs::path &outDir,
@@ -206,22 +236,12 @@ int main() {
     return 1;
   }
 
-  // Table discovery from the run's own output: every CSV stem is a
-  // direct table in the public schema (the ledger dump's stem is the
-  // stream table, handled explicitly with row_seq ordering).
-  std::vector<std::string> stdTables;
-  for (const auto &entry : fs::directory_iterator(outStd)) {
-    if (!entry.is_regular_file() || entry.path().extension() != ".csv") {
-      continue;
-    }
-    const auto stem = entry.path().stem().string();
-    if (stem == "transactions") {
-      continue; // file-only ledger dump; the stream table is below
-    }
-    stdTables.push_back(stem);
-  }
+  // Discovery via the direct-table registry: exactly the tables this
+  // run's mirrors wrote into the public schema (the file-only ledger
+  // dump is never mirrored; the stream table is handled explicitly
+  // with row_seq ordering below).
+  const auto stdTables = registeredTables(*conn, "public");
   assert(stdTables.size() >= 10);
-  std::sort(stdTables.begin(), stdTables.end());
 
   std::vector<std::string> stdLines;
   stdLines.reserve(stdTables.size() + 1);
@@ -245,21 +265,11 @@ int main() {
     return 1;
   }
 
-  // Discovery mirrors TableMirror naming: schema aml_txn_edges, table
-  // "aml_txn_edges_<subdir>_<stem>" with the stem verbatim.
-  std::vector<std::string> fraudTables;
-  for (const char *sub : {"vertices", "edges"}) {
-    const fs::path dir = outFraud / "aml_txn_edges" / sub;
-    for (const auto &entry : fs::directory_iterator(dir)) {
-      if (!entry.is_regular_file() || entry.path().extension() != ".csv") {
-        continue;
-      }
-      fraudTables.push_back(std::string{"aml_txn_edges_"} + sub + "_" +
-                            entry.path().stem().string());
-    }
-  }
+  // Registry discovery for the dedicated aml_txn_edges schema; names
+  // carry the TableMirror prefixing verbatim
+  // ("aml_txn_edges_<subdir>_<stem>", stems verbatim incl. case).
+  const auto fraudTables = registeredTables(*conn, "aml_txn_edges");
   assert(fraudTables.size() >= 40);
-  std::sort(fraudTables.begin(), fraudTables.end());
 
   // The whole point of this section: the fraud-LABEL tables the
   // standard config never produces MUST be under the pin. Stems are
@@ -273,7 +283,7 @@ int main() {
                   std::string{required}) == fraudTables.end()) {
       std::fprintf(stderr,
                    "table-golden[fraud]: required fraud-label table missing "
-                   "from the run's output: %s\n",
+                   "from the run's registry: %s\n",
                    required);
       return 1;
     }
@@ -305,6 +315,7 @@ int main() {
     return 77;
   }
   std::printf("table-golden: both sections pinned (corpus via row_seq; "
-              "fraud labels via the aml section)\n");
+              "fraud labels via the aml section; discovery via the "
+              "direct-table registry)\n");
   return 0;
 }

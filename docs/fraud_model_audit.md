@@ -141,6 +141,22 @@ renter share. Both fixed. A ledger COVERAGE GAP also closed: the
 government-benefits stream (SSA retirement + disability deposits) was
 never tabulated here — now at L-4b, UNCITED with recalled anchors.
 
+### card-behavior-2026-07 (2026-07-18 — C3 card behavior + per-case calls)
+
+The C3 batch. THE HEADLINE IS A REVERSAL: the Pass 1 payment-mixture
+NONCONFORMING verdict was an AXIS MISREAD of the same class C2 found
+in employment — the mixture {full .35 …} applies only to MANUAL
+payers (~50% of cards); autopay-full (.40) and autopay-minimum (.10)
+cards bypass it, so PL's EFFECTIVE full-payment share was already
+.40 + .50×.35 = **.575 against the measured ~.58 — CONFORMS, no code
+change** (L-7 C3 block). Shipped code: **cardP trimmed** to weighted
+≈ .826 vs credit adoption 82.3% (L-1) and **ATO events-per-case
+raised** U{2..5} → U{3..8} so per-case drain ≈ $3.0k vs the UK ~$3.5k
+(F-4). Card-rail per-case density re-classed **CHOICE** (label
+density; F-4). The ATO **Reg E remediation design** is now written
+(F-4 C3 block) but stays unimplemented pending the owner's
+entity/channel decision.
+
 ═══════════════════════════════════════════════════════════════════════
 # PART I — FRAUD / AML MODEL
 ═══════════════════════════════════════════════════════════════════════
@@ -242,11 +258,11 @@ report at ADJUST time only.
 | Classic-fraud amount | LN($900, .70) floor $50 | CHOICE (re-classed per Pass 2) — targets money-movement/bank-drain scams (phone-contact median $1,400 in 2022; APP per-case ~$2,950), deliberately above the all-fraud CSN median ~$497 | UK Finance APP losses; FTC medians |
 | Cycle / boost-cycle amounts | LN($600, .25) / LN($500, .20) | CHOICE | — |
 | Card-test charge | U[$0.50,$5.00], ~40% anchors {.50,1,2,5} (test-pinned) | MEASUREMENT | Nilson; issuer advisories |
-| Card fraud spend | median ≈ $79, mean ≈ $162, clamp [$1,$5k] (test-pinned; PER TRANSACTION — see the C0 axis flag below) | MEASUREMENT | Fed Payments Study; UK Finance |
-| ATO drain | median ≈ $180, mean ≈ $554, clamp [$10,$85k], ~0.4% ≥ $10k (test-pinned; PER DRAIN TRANSACTION — case unit written by C0 below) | MEASUREMENT | FTC Sentinel; IC3 |
+| Card fraud spend | median ≈ $79, mean ≈ $162, clamp [$1,$5k] (test-pinned; PER TRANSACTION). Per-CASE: targetEvents U{5..14} ⇒ ≈ $1.2–1.5k ≈ 8× the UK per-case average — CHOICE, re-classed by card-behavior-2026-07 (dense compromise events for label density; the per-txn distribution is the measured object) | MEASUREMENT (per-txn) / CHOICE (per-case) | Fed Payments Study; UK Finance |
+| ATO drain | median ≈ $180, mean ≈ $554, clamp [$10,$85k], ~0.4% ≥ $10k (test-pinned; PER DRAIN TRANSACTION). Per-CASE: targetEvents U{3..8} (card-behavior-2026-07 — was U{2..5}) ⇒ ≈ $3.0k vs UK remote-banking ~$3.5k/case — CONFORMS as a band | MEASUREMENT | FTC Sentinel; IC3; UK Finance |
 | Unauthorized rail mix | card compromise .60 / gift-card scam .12 / ATO .28 (scam-fraud-2026-07; the scam share carved from the card rail) | MEASUREMENT-adjacent | FTC CSN payment-method report mix |
 | Gift-card scam (victim-AUTHORIZED) | 2–6 cards/case in ONE 1–4 h coached burst; denominations 75% {$100,$200,$500 triple-weighted} else $50–$500 in $10 steps (mean ≈ $339/card ⇒ ≈ $700–2,000/case, test-pinned); retail merchants; channel card_purchase; fraud_type `scam_gift_card`; NEVER reimbursed | MEASUREMENT-adjacent | FTC gift-card Data Spotlights |
-| Card-fraud reporting | per-case reported p .85 → every fraudulent SPEND made whole by a merchant chargeback credit (flag-0, cc_chargeback, lag 1–10 d, outside the fraud budget); sub-$5 test charges never reimbursed; ATO (Reg E) remediation UNMODELED — known gap | MEASUREMENT-adjacent | Reg Z / 15 U.S.C. §1643; network zero-liability; Security.org |
+| Card-fraud reporting | per-case reported p .85 → every fraudulent SPEND made whole by a merchant chargeback credit (flag-0, cc_chargeback, lag 1–10 d, outside the fraud budget); sub-$5 test charges never reimbursed; ATO (Reg E) remediation UNMODELED — design written in the C3 block below, owner-gated | MEASUREMENT-adjacent | Reg Z / 15 U.S.C. §1643; network zero-liability; Security.org |
 
 **Pass 1 results (F-4):**
 * CTR threshold | Citation: eCFR, 31 CFR 1010.311 (current, retrieved
@@ -302,7 +318,8 @@ report at ADJUST time only.
   $79, lognormal) is within 3% of the UK per-case average; the
   test-pinned distribution stands.
   *(RE-OPENED by the C0 axis flag below: this compared per-txn to
-  per-case.)*
+  per-case. CLOSED by card-behavior-2026-07: per-case re-classed
+  CHOICE — see the C3 block.)*
 * ATO drain | Citation: same report. | Real-world value: remote
   banking fraud GBP 104.4M across 37,646 cases = ~GBP 2,773 (~$3.5k)
   average per CASE [Certain, Derived]. | Status: UNIT CHECK REQUIRED
@@ -311,6 +328,8 @@ report at ADJUST time only.
   with the UK average. Read the code, write the per-case expectation
   into the row, then set CONFORMS or ADJUST. Do not compare per-txn
   to per-case again.
+  *(CLOSED by card-behavior-2026-07: targetEvents raised to U{3..8}
+  ⇒ per-case ≈ $3.0k, CONFORMS as a band — see the C3 block.)*
 * Card-test charge | Status: UNCITED, low risk: sub-$5 authorization
   testing is qualitatively described in issuer and network advisories
   [Likely]; pull one named advisory (Visa card-testing bulletin) for
@@ -327,6 +346,7 @@ report at ADJUST time only.
   [Derived] — same order of magnitude, low side (~55%). Owner call
   (rides with C3): CONFORMS-as-band, or ADJUST (raise non-card
   targetEvents toward ~4–7 or the drain median).
+  *(RESOLVED by card-behavior-2026-07: ADJUST shipped, U{3..8}.)*
 * Card fraud spend AXIS FLAG (re-opens the Pass 2 CONFORMS) | CARD
   plans draw targetEvents ~ U{5..14}, mean 9.5 (≤2 sub-$5 test
   charges at p .7, the remainder spends at the pinned per-txn
@@ -339,6 +359,7 @@ report at ADJUST time only.
   per-case total is the open question. Owner call (rides with C3):
   re-class CHOICE (dense drains per compromise for label density) or
   ADJUST card-rail targetEvents downward.
+  *(RESOLVED by card-behavior-2026-07: re-classed CHOICE.)*
 * CTR trigger | Both statutory defects were confirmed in code
   (`derived.cpp TxnSweep::observe`: `>= 10000.0`, no channel filter)
   and FIXED by C1 — see the F-6 C1 block.
@@ -382,6 +403,38 @@ owner's retrieval pass (assistant browser unavailable this session):**
   the exact fraud budget F = pL/(1−p); `unauthorized::generate`
   bounds only flag-1 rows against the budget (`fraudEmitted`
   counter). Fraud density on the flag axis is unchanged.
+
+**card-behavior-2026-07 (F-4, C3) — per-case calls closed + the Reg E
+design:**
+* CARD-RAIL PER-CASE → CHOICE (re-classed) | targetEvents stays
+  U{5..14}. Documented deviation: PL runs dense compromise events per
+  case (~8× the UK per-case remote-purchase average) DELIBERATELY —
+  compromise sessions need enough rows for device/IP/burst pattern
+  learning, the same label-density rationale as the F-1 fraud budget.
+  The per-txn distribution (median $79, mean $162) remains the
+  MEASUREMENT and is test-pinned. The row conforms through this
+  paragraph.
+* ATO PER-CASE → ADJUST SHIPPED | `injector.cpp` non-card
+  targetEvents U{2..5} → **U{3..8}** (mean 5.5) ⇒ implied per-case
+  drain ≈ 5.5 × $554 ≈ **$3.0k vs the UK remote-banking ~$3.5k/case
+  (~87%) — CONFORMS as a band** [Derived]. The drain-amount sampler
+  is untouched (its median $180 is the cited Security.org per-victim
+  median; raising it would break that row's own anchor).
+* REG E REMEDIATION DESIGN (written, NOT implemented — owner-gated) |
+  Statute: Reg E / 12 CFR 1005.6 caps consumer liability for
+  unauthorized EFTs ($50 if reported ≤2 business days, $500 ≤60
+  days); 1005.11 requires investigation with PROVISIONAL CREDIT
+  within 10 business days [Certain on the framework]. Model design:
+  per-ATO-case reported p ≈ .90 (large drains get noticed); the
+  VICTIM'S BANK (not a merchant) posts a credit for each drain,
+  lag ~2–10 business days. Two prerequisites the owner must approve:
+  (1) a bank-remediation counterparty account (the cash hub is
+  semantically wrong; the card issuerAccount is card-side); (2) a
+  dedicated credit channel — reusing `cc_chargeback` would conflate
+  merchant-funded card chargebacks with bank-funded Reg E credits
+  and corrupt the F-4 reporting row's semantics. New channel ⇒
+  taxonomy byte + names + exporter purpose + `test_channels` re-pin;
+  ship as its own model version when approved.
 
 ### F-5. Camouflage
 
@@ -527,13 +580,21 @@ income/rent liquidity knock-ons: more bounced debits for the
 newly-unwaged personas, fewer rent debits overall); the posted
 structuring mix and the [$9,000, $10,000] band composition.
 
+**At the card-behavior re-pin (#13), measure:** issued-card count
+(expect ≈ −3%: weighted cardP .855 → .826, content-keyed per-person
+coins so ~all existing holders keep their cards minus the trimmed
+margin); ATO case count and per-case drain totals (targetEvents mean
+3.5 → 5.5 ⇒ FEWER cases at the same flag-1 budget, each ≈ $3.0k);
+CTR count (expect ≈ unchanged); card-payment row mix (unchanged
+mixture — only issuance moved).
+
 ═══════════════════════════════════════════════════════════════════════
 # PART II — LEGITIMATE ECONOMY
 ═══════════════════════════════════════════════════════════════════════
 
-*(household-econ-2026-07 edits L-2, L-3, L-4, L-5, L-8, L-9 and L-10
-below and adds L-4b; all other content is preserved from the previous
-revision.)*
+*(card-behavior-2026-07 edits L-1 and L-7 below; household-econ-2026-07
+edited L-2, L-3, L-4, L-4b, L-5, L-8, L-9, L-10; all other content is
+preserved from the previous revision.)*
 
 ### L-1. Population & personas
 
@@ -542,16 +603,20 @@ Shares (CHOICE — verify demographic context): salaried .60, student
 
 | Persona | rate× | amt× | timing | init bal | cardP | ccShare | limit | weight | paySens |
 |---|---|---|---|---|---|---|---|---|---|
-| student | 0.7 | 0.7 | consumer | $200 | .65 | .55 | $800 | .18 | .67 |
-| retiree | 0.6 | 0.9 | consumerDay | $1,500 | .84 | .55 | $2,500 | .30 | .50 |
-| freelancer | 1.1 | 1.1 | consumer | $900 | .88 | .65 | $4,000 | .95 | .33 |
+| student | 0.7 | 0.7 | consumer | $200 | .60 | .55 | $800 | .18 | .67 |
+| retiree | 0.6 | 0.9 | consumerDay | $1,500 | .82 | .55 | $2,500 | .30 | .50 |
+| freelancer | 1.1 | 1.1 | consumer | $900 | .85 | .65 | $4,000 | .95 | .33 |
 | smallBusiness | 1.2 | 1.4 | business | $8,000 | .95 | .75 | $7,000 | 1.50 | .29 |
 | highNetWorth | 1.3 | 2.8 | consumer | $25,000 | .98 | .80 | $15,000 | 2.20 | .11 |
-| salaried | 1.0 | 1.0 | consumer | $1,200 | .88 | .70 | $3,000 | 1.00 | .40 |
+| salaried | 1.0 | 1.0 | consumer | $1,200 | .85 | .70 | $3,000 | 1.00 | .40 |
 
 `cardP` gates CREDIT-card issuance specifically (`synth/cards/
 issue.hpp` coins `persona.card.prob`); `ccShare` = credit share of
-spend; `limit` = credit limit (C0 code read, 2026-07-18).
+spend; `limit` = credit limit (C0 code read, 2026-07-18). cardP
+column trimmed by card-behavior-2026-07: weighted mean .855 → **.826**
+against S-DCPC credit adoption 82.3% (student .65→.60, retiree
+.84→.82, freelancer .88→.85, salaried .88→.85; smallBusiness/HNW
+unchanged).
 Paycheck-sensitivity Beta(α,β): student (4,2), retiree (3,3),
 freelancer (2,4), smallBusiness (2,5), HNW (1,8), salaried (2,3).
 Heterogeneity: medians jittered LN σ.15; probabilities Normal σ.08
@@ -577,6 +642,8 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
   CREDIT-card issuance, so the right comparator is credit adoption
   82.3%: PL's weighted ~.85 is slightly HIGH (a couple of points),
   near-CONFORMS; final call rides with C3 (card-behavior batch).
+  *(RESOLVED by card-behavior-2026-07: trimmed to weighted ≈ .826 —
+  CONFORMS on the strictly-credit comparator.)*
 
 ### L-2. Spending engine
 
@@ -987,11 +1054,12 @@ parenthetical is removed per Pass 2), CPI rent index.
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
-| Ownership / share / limits | per persona (L-1); cardP = strictly CREDIT-card issuance (C0) | MEASUREMENT | Fed SCF; CFPB CCM |
+| Ownership / share / limits | per persona (L-1); cardP = strictly CREDIT-card issuance, weighted ≈ .826 (card-behavior-2026-07) | MEASUREMENT | Fed SCF; CFPB CCM |
 | Grace period | 25 days | MEASUREMENT | CARD Act ≥21 d; issuer norms |
 | Minimum payment | max(2%, $25) | MEASUREMENT | issuer norms |
 | Late fee | $32 | MEASUREMENT | CFPB late-fee data (verify current rule status) |
-| Payment mixture | full .35 / partial .30 / minimum .25 / miss .10; partial fraction Beta(2,5) of statement | MEASUREMENT | CFPB CCM payment-behavior distributions (transactor/revolver) |
+| Autopay | full .40 / minimum .10 / manual .50 per card (`synth/cards/issue.hpp`) — autopay cards BYPASS the manual mixture below | MEASUREMENT-adjacent | issuer autopay adoption surveys |
+| Payment mixture (MANUAL payers only) | full .35 / partial .30 / minimum .25 / miss .10; partial fraction Beta(2,5) of statement. EFFECTIVE population shares (autopay + manual, card-behavior-2026-07 code read): **full .575 / minimum .225 / partial .15 / miss .05** — the .575 sits on the S-DCPC ~58% full-payment share: CONFORMS, no code change | MEASUREMENT | CFPB CCM payment-behavior distributions (transactor/revolver) |
 | Payment timing | late p .08, 1–20 d late | MEASUREMENT | issuer delinquency curves |
 | Disputes | refund p .006/purchase (1–14 d); chargeback p .001 (7–45 d) | CHOICE (re-classed per Pass 2) — e-comm dispute benchmark ~0.6% of txns; PL runs 0.1% blended all-channel by choice (the old "(~0.05–0.1%)" parenthetical misstated published benchmarks). Fraud-driven chargebacks are SEPARATE: reported card compromises reimburse via cc_chargeback rows (F-4 scam-fraud block) | Visa/Mastercard monitoring thresholds (VAMP 1.5% eff. Apr 2026; legacy 0.9%/0.65%) |
 | Cycle finalization | 32-day session lag (architecture) | CHOICE | — |
@@ -1026,6 +1094,9 @@ parenthetical is removed per Pass 2), CPI rent index.
   minimum ~ .17 / miss ~ .08 and recalibrate against CFPB CCM
   account-level revolver shares next pass (units differ: consumers
   vs. accounts).
+  *(REVERSED by the card-behavior-2026-07 code read below: the .35
+  is the MANUAL-payer mixture; the population share was already
+  ~.575. This verdict compared a conditional to a marginal.)*
 * Ownership / share / limits | Citation: same tables, Table 3. |
   Real-world value: credit card adoption 82.3% of consumers, debit
   90.3% (2024) [Certain]. | Status: partial CONFORMS: PL's weighted
@@ -1033,7 +1104,8 @@ parenthetical is removed per Pass 2), CPI rent index.
   cardP means "has any payment card", slightly high if strictly
   credit. Limits and balances remain UNCITED (SCF 2022, queued).
   *(C0 code read settled the definition: STRICTLY credit — see the
-  L-1 block. The "slightly high" branch applies.)*
+  L-1 block. The "slightly high" branch applies. RESOLVED by
+  card-behavior-2026-07: trimmed to weighted ≈ .826.)*
 * Disputes | Status: UNCITED, AT RISK both directions: the suggested
   source text "network chargeback rates (~0.05-0.1%)" needs a real
   citation; public benchmarks cluster nearer 0.1-0.2% of transactions
@@ -1068,6 +1140,30 @@ parenthetical is removed per Pass 2), CPI rent index.
   across ALL channels (not e-commerce return rates, which run ~15%+
   and measure a different, order-level concept). Row stays UNCITED
   with this definition in place.
+
+**C3 card-behavior-2026-07 (L-7) — the PAYMENT-MIXTURE AXIS FINDING
+(verdict reversed, no code change):**
+* Code read (`session.cpp Session::draftPayment` +
+  `synth/cards/issue.hpp sampleAutopay`) | The mixture is drawn ONLY
+  for `Autopay::manual` cards. At issuance each card samples autopay:
+  full .40 / minimum .10 / manual .50. Autopay-full cards ALWAYS pay
+  the statement in full (on time, 12 h lag); autopay-minimum cards
+  always pay the minimum. The EFFECTIVE population composition is
+  therefore: full = .40 + .50×.35 = **.575**; minimum = .10 + .50×.25
+  = **.225**; partial = .50×.30 = **.15**; miss = .50×.10 = **.05**.
+* Verdict | The Pass 1 NONCONFORMING compared the MANUAL-payer
+  mixture (.35 full) to the POPULATION full-payment share (~.58,
+  S-DCPC Table 4) — a conditional-vs-marginal axis misread, the same
+  class as the C2 employment finding. On the correct axis PL's .575
+  sits on the measured ~.58: **CONFORMS, no ADJUST**. The row above
+  is rewritten with the decomposition; `payment.hpp` now carries the
+  same warning at the constants. Residuals: the autopay split
+  {.40/.10/.50} itself is UNCITED (issuer autopay-enrollment surveys
+  run ~40–50% of accounts on autopay [Guessing — verify]); the
+  effective miss share .05 vs card delinquency benchmarks (~3–4% of
+  accounts 30+ dpd) is borderline-high but defensible as
+  per-statement rather than per-account — both logged in REMAINING
+  OPEN ITEMS.
 
 ### L-8. Credit & obligation products (adoption by persona: student/retiree/freelancer/smallBiz/HNW/salaried)
 
@@ -1483,7 +1579,7 @@ and flag-0 chargeback rows enter the corpus ⇒ ALL THREE baselines
 re-pin (#11 — commit #10 FIRST if it has not landed, one named commit
 per model version). Sources & tags in the F-4 scam-fraud block.
 
-### household-econ-2026-07 (THIS ROUND — C2 household economics, re-pin #12)
+### household-econ-2026-07 (SHIPPED, re-pin #12 — C2 household economics)
 
 The C2 conformance batch: eleven rows shipped in one version, plus
 two code findings and one ledger-coverage fix. Value-only changes —
@@ -1536,6 +1632,43 @@ Files: `math/amounts.hpp`, `math/seasonal.hpp`,
 GOLDEN EFFECT: ALL THREE baselines re-pin (#12 — commit #11 FIRST if
 it has not landed). Measure list in F-7.
 
+### card-behavior-2026-07 (THIS ROUND — C3 card behavior, re-pin #13)
+
+The C3 batch: two code changes, one verdict REVERSAL, one re-class,
+one design write-up. Value-only; invariance gates stay green; ALL
+THREE goldens re-pin.
+* PAYMENT-MIXTURE AXIS FINDING (doc-only, verdict reversed) | The
+  mixture {full .35 / partial .30 / min .25 / miss .10} applies only
+  to MANUAL payers (~50% of cards); autopay-full (.40) always pays
+  in full, autopay-min (.10) always pays the minimum
+  (`Session::draftPayment`). EFFECTIVE population shares: full .575 /
+  min .225 / partial .15 / miss .05 — the .575 sits on the S-DCPC
+  ~.58: **CONFORMS, the Pass 1 NONCONFORMING is withdrawn.** No code
+  change; `payment.hpp` now documents the decomposition at the
+  constants (L-7 C3 block).
+* cardP TRIM (`taxonomies/personas/archetypes.hpp`) | student .65 →
+  **.60**, retiree .84 → **.82**, freelancer .88 → **.85**, salaried
+  .88 → **.85** (smallBusiness .95 / HNW .98 unchanged) ⇒ weighted
+  mean .855 → **.826** on the strictly-credit comparator 82.3%
+  (S-DCPC Table 3). Closes the L-1/L-7 near-CONFORMS flag.
+* ATO PER-CASE ADJUST (`injector.cpp`) | non-card targetEvents
+  U{2..5} → **U{3..8}** (mean 5.5) ⇒ per-case drain ≈ $3.0k vs UK
+  remote-banking ~$3.5k/case — CONFORMS as a band. Drain sampler
+  untouched (its $180 median is the cited per-victim anchor).
+* CARD-RAIL PER-CASE → CHOICE | targetEvents stays U{5..14};
+  documented label-density deviation (~8× UK per-case) in F-4.
+* REG E DESIGN (written, owner-gated) | Bank-funded provisional
+  credits for reported ATO cases (p ≈ .90, lag 2–10 business days,
+  12 CFR 1005.6/1005.11); prerequisites: a bank-remediation
+  counterparty and a NEW credit channel (cc_chargeback is
+  merchant-funded — wrong semantics). Ships as its own version when
+  the owner approves the entity + channel.
+Files: `taxonomies/personas/archetypes.hpp`,
+`src/transfers/fraud/injector.cpp`,
+`transfers/channels/credit_cards/payment.hpp` (comment only).
+GOLDEN EFFECT: ALL THREE baselines re-pin (#13 — land #12 FIRST if
+pending). Measure list in F-7.
+
 ## Findings log
 
 | Date | Item | Verdict | Action |
@@ -1571,21 +1704,23 @@ it has not landed). Measure list in F-7.
 | 2026-07-18 | RENTER-SHARE finding (C2 code read, closes the queued residual) | rent paidFraction .80 ⇒ ~4 in 5 people paid a full household rent (~2.3× ACS ~.34–.36); no homeowner exclusion wired | FIXED by household-econ-2026-07: .80 → .35; homeowner overlap logged as known simplification |
 | 2026-07-18 | GOVERNMENT-BENEFITS coverage gap | SSA retirement (.87, LN($2,071,.30)) and SSDI (.04, LN($1,630,.25)) streams existed in code with NO ledger rows | L-4b added, UNCITED with recalled anchors; owner verifies SSA snapshot |
 | 2026-07-18 | household-econ-2026-07 (C2) | rent $1,500 mean + renter share .35 + tenure 3–8y + employment semantics + student .40 (+cash .16) + allowances $8/1.8 + fuel $32 + seasonality damped + P2P $55 + home premium $200 + home severity $12.5k/.80 + tax refund $2,500 | re-pin #12; measure list in F-7; owner verifies ACS/CPS/NCES/Greenlight/III/IRS/SSA anchors |
+| 2026-07-18 | PAYMENT-MIXTURE AXIS finding (C3 code read) | the mixture is MANUAL-payers-only; autopay-full .40 bypasses it ⇒ effective full-payment share .575 vs measured ~.58 — the Pass 1 NONCONFORMING compared a conditional to a marginal | verdict REVERSED to CONFORMS; L-7 row rewritten; no code change |
+| 2026-07-18 | card-behavior-2026-07 (C3) | cardP weighted .855 → .826 (82.3% comparator); ATO targetEvents U{2..5} → U{3..8} (per-case ≈ $3.0k vs UK ~$3.5k); card-rail per-case re-classed CHOICE (label density); Reg E design written, owner-gated | re-pin #13; owner verifies S-DCPC T3/T4, UK Finance per-case averages, autopay-adoption source |
 
-## REMAINING OPEN ITEMS (after Pass 2 + C0/C1 + cash + scam + C2 rounds)
+## REMAINING OPEN ITEMS (after Pass 2 + C0/C1 + cash + scam + C2 + C3 rounds)
 
-Everything below is either a code-reading task, a definition task, or
-a thin-tail row with no strong published comparator. Nothing here is
-a known numeric contradiction; all known contradictions are already
-logged as NONCONFORMING above.
+Everything below is either a definition task, a thin-tail row with no
+strong published comparator, or an owner-gated design. Nothing here
+is a known numeric contradiction; all known contradictions have been
+resolved by shipped ADJUSTs or documented CHOICEs.
 
-1. Code reads: DONE — the renter-selection share (the last one) was
-   read and ADJUSTed by household-econ-2026-07 (L-3 C2 block).
-2. Definition writes still open: spousal-separate definition; tuition
-   COA-vs-net definition; subscription comparator source (name one —
-   PL sits closest to Bango 2025); repeat-victimization window (usual
-   definition: same fraud type within 12 months); accounts-per-person
-   scope (checking-only vs checking+savings).
+1. Code reads: DONE (renter share closed by C2; payment-mixture
+   semantics closed by C3).
+2. Definition writes still open (C4): spousal-separate definition;
+   tuition COA-vs-net definition; subscription comparator source
+   (name one — PL sits closest to Bango 2025); repeat-victimization
+   window (usual definition: same fraud type within 12 months);
+   accounts-per-person scope (checking-only vs checking+savings).
 3. Citations to pull verbatim at the verify pass: eCFR section text
    snapshots; FATF Professional ML (2018) page cites; a named Visa
    card-testing advisory; FinCEN structuring guidance and FFIEC
@@ -1612,6 +1747,12 @@ logged as NONCONFORMING above.
    (Philadelphia Fed); III/ISO home severity $17–18k; IRS 2025
    average refund ~$3,167; SSA Monthly Statistical Snapshot (retired-
    worker average benefit; SSDI average + beneficiary count).
+   **C3 verify list:** S-DCPC Table 3 (credit adoption 82.3%) and
+   Table 4 (~58% full payment); UK Finance 2026 per-case averages
+   (remote purchase ~$167; remote banking ~$3.5k); an issuer
+   autopay-enrollment source (the {.40/.10/.50} split is UNCITED);
+   12 CFR 1005.6/1005.11 (Reg E liability tiers + provisional
+   credit) for the design block.
 4. Thin tail, expect CHOICE outcomes: L-9 parental/sibling/
    grandparent/gift/inheritance distributions (SHED gives incidence
    only); L-10 freelancer/small-business revenue profiles (platform
@@ -1621,12 +1762,11 @@ logged as NONCONFORMING above.
    against the FinCEN FY2024 anchors (4.7M SARs, 20.5M CTRs, fraud
    52%) as sanity bands under deliberate oversampling. CTR liveness
    measured at 117 (re-pin #9); re-measure at each re-pin.
-6. Owner calls riding with C3 (card behavior): payment mixture (L-7);
-   cardP slightly-high (L-1); card-rail per-case spend axis and ATO
-   per-case level (F-4 C0 block); ATO Reg E reimbursement design.
-7. NEW residuals from C2: (a) employed students draw the full
-   LN($4,500,.55) salary model — a part-time wage tier is a candidate
-   future ADJUST; (b) homeowner/renter overlap (the `isHomeowner`
-   hook is unwired — ~16% of people can hold both a mortgage and a
-   lease); (c) L-4b government-benefit rows are UNCITED — verify the
-   SSA anchors and set statuses.
+6. Owner-gated designs: ATO Reg E remediation (design in the F-4 C3
+   block — needs a bank-remediation counterparty + a new credit
+   channel); homeowner/renter overlap (wire `isHomeowner` into
+   `RentRoll`); student part-time wage tier; monolithic-engine
+   retirement.
+7. New C3 residuals: autopay split {.40/.10/.50} UNCITED; effective
+   miss share .05 vs account-level delinquency benchmarks (~3–4%
+   30+ dpd) — axis mapping needed before any verdict.

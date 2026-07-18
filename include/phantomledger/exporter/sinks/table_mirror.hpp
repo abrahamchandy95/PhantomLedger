@@ -16,6 +16,14 @@
 // COPY at a time, and streamed tables (e.g. mule-ml's transfer table)
 // stay open across the whole fold.
 //
+// THE DIRECT-TABLE REGISTRY (CSV retirement step 5a): every mirrored
+// table also registers itself in public.pl_direct_tables
+// (schema_name, table_name). The first mirror a process opens for a
+// schema rewrites that schema's slate, so the registry always lists
+// exactly the tables the LAST run wrote — the table-digest golden
+// discovers a run's tables from here instead of from written CSV
+// stems, which removes the goldens' final file dependency.
+//
 
 #include "phantomledger/primitives/postgres/connection.hpp"
 
@@ -38,7 +46,8 @@ struct PgMirror {
 class TableMirror {
 public:
   // Creates <schema>.<tablePrefix><tableStem> (DROP+CREATE, UNLOGGED,
-  // all-text columns from `header`) and opens the COPY.
+  // all-text columns from `header`), records it in the direct-table
+  // registry, and opens the COPY.
   TableMirror(const PgMirror &target, std::string_view tableStem,
               std::span<const std::string_view> header);
 

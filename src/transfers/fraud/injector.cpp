@@ -379,12 +379,18 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
                           ? Rail::card
                           : (railDraw < 0.72 ? Rail::giftCardScam : Rail::ato);
 
+    // Events per case: card U{5..14} is a documented CHOICE (dense
+    // compromises for label density — per-case spend runs ~8x the UK
+    // per-case average; F-4); ato U{3..8} is calibrated so per-case
+    // drain ~= $3.0k against the UK remote-banking ~$3.5k/case
+    // (card-behavior-2026-07); scam U{2..6} tracks the FTC coached
+    // multi-card burst.
     const std::int64_t targetSpan =
         rail == Rail::card
             ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
             : rail == Rail::giftCardScam
                   ? 2 + static_cast<std::int64_t>(rng.choiceIndex(5))
-                  : 2 + static_cast<std::int64_t>(rng.choiceIndex(4));
+                  : 3 + static_cast<std::int64_t>(rng.choiceIndex(6));
 
     const auto target =
         static_cast<std::int32_t>(std::min<std::int64_t>(remaining, targetSpan));
