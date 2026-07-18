@@ -157,6 +157,18 @@ density; F-4). The ATO **Reg E remediation design** is now written
 (F-4 C3 block) but stays unimplemented pending the owner's
 entity/channel decision.
 
+### c4-definitions-2026-07 (2026-07-18 — C4 definition writes, doc-only)
+
+The C4 batch closes the definition tasks: seven rows gained the
+operational definition that makes them falsifiable — spousal-separate,
+tuition COA, subscription comparator (Bango 2025), repeat-victimization
+window, accounts-per-person scope, autopay-split comparator, and the
+miss-share axis mapping. Each definition was verified against code
+before writing (file references in the affected rows). No code
+changed; no golden moved. With C4 the conformance program's WRITE
+side is COMPLETE: everything remaining is the owner's retrieval/
+verify pass and the owner-gated designs in REMAINING OPEN ITEMS.
+
 ═══════════════════════════════════════════════════════════════════════
 # PART I — FRAUD / AML MODEL
 ═══════════════════════════════════════════════════════════════════════
@@ -202,7 +214,7 @@ entity/channel decision.
 | Mule fraction of ring | Beta(2,4) → [0.10,0.70], mean ≈ 0.30 | TYPOLOGY | Europol EMMA |
 | Mule multi-ring reuse | p 0.06 | TYPOLOGY | Europol EMMA (recurring mules) |
 | Victims per ring | lognormal μ3.0 σ0.8, clamp [3,500], mean ≈ 27.7 | TYPOLOGY | IC3 / FTC |
-| Repeat victimization | p 0.10 | MEASUREMENT | FTC Sentinel; revictimization literature |
+| Repeat victimization | p 0.10 — DEFINITION (C4, code: `synth/people/fraud.hpp Victims::repeatP`, applied in `people/make.hpp`): per victim slot of each ring, p .10 that the slot is filled by a victim of an EARLIER ring (cross-ring reuse) instead of a fresh person; window = the whole simulated period (≤12 months at standard configs), so the usual 12-month revictimization definition applies naturally | MEASUREMENT | FTC Sentinel; revictimization literature — comparator: same person defrauded again within 12 months |
 
 **Pass 2 results (F-2):**
 * Ring size / Mule fraction / Mule reuse | Citation: Europol EMMA
@@ -223,6 +235,14 @@ entity/channel decision.
   fraud type within 12 months is the usual one) before citing. PL's
   .10 will land inside almost any band, so this is a definition task,
   not a number risk.
+* Repeat victimization DEFINITION WRITTEN (C4, 2026-07-18) | Code
+  read: PL's p .10 is cross-ring victim REUSE at world build — a
+  ring's victim slot re-targets a prior ring's victim with p .10
+  (`people/make.hpp`), i.e. organized-fraud repeat targeting within
+  the simulated period (≤12 months at standard configs). The
+  definition task is closed; the number awaits the owner's citation
+  (any value in the 10–45% literature band lands, per the note
+  above).
 
 ### F-3. Playbook mix (17 playbooks, weights sum 1.00)
 
@@ -1026,7 +1046,7 @@ parenthetical is removed per Pass 2), CPI rent index.
 
 | Routine | PL value | Class | Suggested source |
 |---|---|---|---|
-| Subscriptions | 4–8 candidates/person, 55% become debits; 18-point pool $6.99–$99.99 (6.99, 7.99, 9.99, 10.99, 11.99, 12.99, 14.99, 15.49, 15.99, 17.99, 22.99, 24.99, 29.99, 34.99, 39.99, 49.99, 59.99, 99.99); day U[1,28] | MEASUREMENT | consumer subscription surveys |
+| Subscriptions | 4–8 candidates/person, 55% become debits; 18-point pool $6.99–$99.99 (6.99, 7.99, 9.99, 10.99, 11.99, 12.99, 14.99, 15.49, 15.99, 17.99, 22.99, 24.99, 29.99, 34.99, 39.99, 49.99, 59.99, 99.99); day U[1,28] | MEASUREMENT | NAMED COMPARATOR (C4): Bango 2025 (5.2 active, $69/mo) — PL's 2.2–4.4 active at ~$27 pool mean ⇒ $60–119/person-month brackets it; CONFORMS per the Pass 2 conditional |
 | ATM | 88% users; 1–6/mo; LN($80,.30) floor $20 | MEASUREMENT | Fed Diary |
 | Internal transfers | 55% active; 1–3/mo; LN($120,.75) floor $10; 25% round from pool {25, 50×2, 100×3, 150, 200×2, 250, 300, 500×2, 750, 1000×2, 1500, 2000} | CHOICE | — |
 
@@ -1040,6 +1060,10 @@ parenthetical is removed per Pass 2), CPI rent index.
   band and closest to Bango. | Status: CONFORMS conditional on
   naming the comparator source in the row; without a named source
   the row is unfalsifiable.
+* Subscriptions COMPARATOR NAMED (C4, 2026-07-18) | Bango 2025 (5.2
+  active, $69/mo) is the row's named comparator — of the three
+  surveyed bands it is the one PL's derived $60–119/person-month
+  brackets. Status: CONFORMS (the Pass 2 conditional is satisfied).
 * ATM | Citation: S-DCPC Table 5 (82.6% of consumers used cash in
   the last 30 days, 2024). | Status: PL's "88% ATM users" runs a few
   points above the cash-user share, borderline; the withdrawal
@@ -1058,7 +1082,7 @@ parenthetical is removed per Pass 2), CPI rent index.
 | Grace period | 25 days | MEASUREMENT | CARD Act ≥21 d; issuer norms |
 | Minimum payment | max(2%, $25) | MEASUREMENT | issuer norms |
 | Late fee | $32 | MEASUREMENT | CFPB late-fee data (verify current rule status) |
-| Autopay | full .40 / minimum .10 / manual .50 per card (`synth/cards/issue.hpp`) — autopay cards BYPASS the manual mixture below | MEASUREMENT-adjacent | issuer autopay adoption surveys |
+| Autopay | full .40 / minimum .10 / manual .50 per card (`synth/cards/issue.hpp`) — autopay cards BYPASS the manual mixture below. COMPARATOR (C4): share of card ACCOUNTS enrolled in any autopay — issuer/industry surveys run ~.40–.50 [Guessing — owner verifies]; PL's total .50 sits at the band top; the .40/.10 full-vs-minimum composition WITHIN autopay is CHOICE (no published split) | MEASUREMENT-adjacent | issuer autopay adoption surveys |
 | Payment mixture (MANUAL payers only) | full .35 / partial .30 / minimum .25 / miss .10; partial fraction Beta(2,5) of statement. EFFECTIVE population shares (autopay + manual, card-behavior-2026-07 code read): **full .575 / minimum .225 / partial .15 / miss .05** — the .575 sits on the S-DCPC ~58% full-payment share: CONFORMS, no code change | MEASUREMENT | CFPB CCM payment-behavior distributions (transactor/revolver) |
 | Payment timing | late p .08, 1–20 d late | MEASUREMENT | issuer delinquency curves |
 | Disputes | refund p .006/purchase (1–14 d); chargeback p .001 (7–45 d) | CHOICE (re-classed per Pass 2) — e-comm dispute benchmark ~0.6% of txns; PL runs 0.1% blended all-channel by choice (the old "(~0.05–0.1%)" parenthetical misstated published benchmarks). Fraud-driven chargebacks are SEPARATE: reported card compromises reimburse via cc_chargeback rows (F-4 scam-fraud block) | Visa/Mastercard monitoring thresholds (VAMP 1.5% eff. Apr 2026; legacy 0.9%/0.65%) |
@@ -1164,6 +1188,21 @@ parenthetical is removed per Pass 2), CPI rent index.
   accounts 30+ dpd) is borderline-high but defensible as
   per-statement rather than per-account — both logged in REMAINING
   OPEN ITEMS.
+
+**C4 definitions (L-7, 2026-07-18):**
+* Autopay split | The citable comparator is the share of card
+  accounts enrolled in ANY autopay (~.40–.50 in issuer/industry
+  surveys [Guessing — owner verifies]); PL's .50 total sits at the
+  top of that band, and the 80/20 full-vs-minimum composition within
+  autopay is CHOICE. The row stays UNCITED but is now falsifiable.
+* Miss-share AXIS MAPPING | PL's effective .05 is a PER-STATEMENT
+  miss FLOW — P(no payment this cycle), all cards; the delinquency
+  benchmark ~3–4% is a POINT-IN-TIME STOCK (share of accounts 30+
+  dpd). With approximately one-cycle cure the flow and the stock
+  coincide numerically, so PL ≈ 5% vs ~3–4%: borderline-high, same
+  axis and order — CONFORMS-adjacent as a band. Any future verdict
+  must compare stock to stock (map PL's per-statement misses through
+  cure duration first); never compare the manual-only .10 to either.
 
 ### L-8. Credit & obligation products (adoption by persona: student/retiree/freelancer/smallBiz/HNW/salaried)
 
@@ -1275,13 +1314,13 @@ IRS SOI (refund shares & averages).
 
 | Flow | PL value | Suggested source |
 |---|---|---|
-| Spousal | 60% separate accounts; 2–6 txns/mo; breadwinner-directional 65%; LN($85, .90) | Fed SHED |
+| Spousal | 60% separate accounts — DEFINITION (C4, code: `family/spouse.cpp separateAccountsP`): the share of couples that ACTIVELY ROUTE inter-spouse transfers between individually-owned accounts (PL models no joint accounts; every account has one owner), i.e. "at least some money kept separate" — NOT fully-separate finances; 2–6 txns/mo; breadwinner-directional 65%; LN($85, .90) | Fed SHED — Bankrate 2026: 62% keep at least some money separate ⇒ CONFORMS under the written definition |
 | Parental support | 35% of eligible; Pareto(xm=$25, α=2.4)/txn | Fed SHED; AARP |
 | Allowances | weekly 70% (else monthly); Pareto($8, 1.8) (household-econ-2026-07 — was Pareto($35, 2.2)) | T. Rowe Price kids-and-money surveys |
 | Sibling transfers | 15% pairs active; 18%/mo; LN($120, .90) | — |
 | Grandparent gifts | 8%; LN($150, .70) | — |
 | Parent gifts | 12%; Pareto($75, 1.6) | — |
-| Tuition | 65% of students; 4–5 installments; LN(e^8.95 ≈ $7,712, .35) each | College Board Trends in Pricing |
+| Tuition | 65% of students; 4–5 installments; LN(e^8.95 ≈ $7,712, .35) each — DEFINITION (C4): the stream funds the student's FULL annual cost of attendance at PUBLISHED prices (COA: tuition + fees + living), paid parent→STUDENT account (`family/tuition.cpp` pays the student's own account, not a university merchant); ≈$31–39k/yr vs public in-state COA $30,990 ⇒ CONFORMS as a family-funded COA stream | College Board Trends in Pricing |
 | Inheritance | event p .0015; LN($25,000, 1.0) | estate-transfer literature; Fed SCF |
 | External recipients | 18% of family transfers leave the bank | CHOICE |
 
@@ -1296,6 +1335,13 @@ IRS SOI (refund shares & averages).
   vs 60% PL). If the code means fully separate finances, real is
   23-26% and the row is NONCONFORMING. Write the definition into the
   row; the number is fine under the first reading.
+* Spousal DEFINITION WRITTEN (C4, 2026-07-18) | Code read
+  (`family/spouse.cpp`): `separateAccountsP` .60 is a per-couple
+  gate on whether inter-spouse transfers flow at all, between the
+  spouses' individually-owned accounts — PL has no joint-account
+  concept, so the row means "at least one separate account exists
+  to route transfers": the FIRST reading above. Comparator:
+  Bankrate 62% (at least some money separate). Status: CONFORMS.
 * Allowances | Citation: Greenlight platform data (avg weekly
   allowance $14.72 in 2023, $13.15 in 2025, ages 5-19); Till
   Financial 2025-26 (avg $17/wk, median $10/wk); AICPA 2019 survey
@@ -1320,6 +1366,14 @@ IRS SOI (refund shares & averages).
   Write into the row what the transfer funds (COA vs tuition, sticker
   vs net); as a family-funded COA stream it CONFORMS to the public
   COA anchor.
+* Tuition DEFINITION WRITTEN (C4, 2026-07-18) | The transfer funds
+  the student's full annual COST OF ATTENDANCE at published
+  (sticker) prices, not net-after-aid tuition; it lands in the
+  STUDENT'S account (`tuition.cpp pickPayer` draws a parent, the
+  payee is the student), so it is family COA funding, not a
+  university payment. 4–5 × $7,712 ≈ $31–39k/yr vs public in-state
+  COA $30,990: CONFORMS under the written definition (the
+  private-COA tail lives inside the lognormal spread).
 * Parental support, sibling, grandparent, parent gifts, inheritance,
   external recipients | UNCITED; see REMAINING OPEN ITEMS. Fed SHED
   has qualitative family-support incidence; no clean per-transfer
@@ -1427,7 +1481,11 @@ tag, awaiting the owner's retrieval pass per the standing protocol:**
 ### L-11. Population scaffolding
 
 Accounts per person: 1 + Binomial(2, .25) — mean 1.5, max 3
-(MEASUREMENT — Fed SCF accounts-per-household). Merchants: core
+(MEASUREMENT — Fed SCF accounts-per-household; SCOPE per C4:
+checking-like transaction accounts ONLY — PL models no
+savings/account-type distinction (`synth/accounts/counts.hpp`,
+homogeneous one-owner deposit accounts), so the checking-only
+comparator applies and the row CONFORMS per the Pass 2 conditional). Merchants: core
 120/10k + tail 400/10k. Landlords: 12/10k. Counterparties per 10k
 (floor): platforms 2 (2), processors 1 (2), owner businesses 200 (25),
 brokerages 40 (5), plus employers 25 (floor 5, 4% internal-bank) and
@@ -1447,6 +1505,10 @@ no public per-10k-customer source exists).
   [Derived]. | Status: PL's 1 + Binomial(2,.25), mean 1.5 max 3, is
   consistent-to-slightly-low if savings accounts are in scope, fine
   if PL models checking only. Define scope in the row; then CONFORMS.
+* Accounts-per-person SCOPE WRITTEN (C4, 2026-07-18) |
+  Checking-only: every PL deposit account is an undifferentiated
+  one-owner transaction account (spend/deposit-capable; no savings
+  type exists in `entity::account`). Status: CONFORMS.
 * Merchant/landlord/counterparty densities | UNCITED, and likely
   permanently CHOICE: no public per-10k-customer density source
   exists. Recommend re-classing these rows CHOICE now rather than
@@ -1706,6 +1768,7 @@ pending). Measure list in F-7.
 | 2026-07-18 | household-econ-2026-07 (C2) | rent $1,500 mean + renter share .35 + tenure 3–8y + employment semantics + student .40 (+cash .16) + allowances $8/1.8 + fuel $32 + seasonality damped + P2P $55 + home premium $200 + home severity $12.5k/.80 + tax refund $2,500 | re-pin #12; measure list in F-7; owner verifies ACS/CPS/NCES/Greenlight/III/IRS/SSA anchors |
 | 2026-07-18 | PAYMENT-MIXTURE AXIS finding (C3 code read) | the mixture is MANUAL-payers-only; autopay-full .40 bypasses it ⇒ effective full-payment share .575 vs measured ~.58 — the Pass 1 NONCONFORMING compared a conditional to a marginal | verdict REVERSED to CONFORMS; L-7 row rewritten; no code change |
 | 2026-07-18 | card-behavior-2026-07 (C3) | cardP weighted .855 → .826 (82.3% comparator); ATO targetEvents U{2..5} → U{3..8} (per-case ≈ $3.0k vs UK ~$3.5k); card-rail per-case re-classed CHOICE (label density); Reg E design written, owner-gated | re-pin #13; owner verifies S-DCPC T3/T4, UK Finance per-case averages, autopay-adoption source |
+| 2026-07-18 | c4-definitions-2026-07 (C4, doc-only) | seven definitions written and code-verified: spousal = some-money-separate (CONFORMS, Bankrate 62%); tuition = family-funded sticker COA to the student's account (CONFORMS, $30,990 anchor); subscriptions comparator = Bango 2025 (CONFORMS); repeat victimization = cross-ring reuse, ≤12-mo window; accounts-per-person = checking-only (CONFORMS); autopay comparator = accounts-on-autopay ~.40–.50; miss share = per-statement FLOW vs 30+dpd STOCK (CONFORMS-adjacent band) | no code, no re-pin; conformance write-side COMPLETE |
 
 ## REMAINING OPEN ITEMS (after Pass 2 + C0/C1 + cash + scam + C2 + C3 rounds)
 
@@ -1716,11 +1779,11 @@ resolved by shipped ADJUSTs or documented CHOICEs.
 
 1. Code reads: DONE (renter share closed by C2; payment-mixture
    semantics closed by C3).
-2. Definition writes still open (C4): spousal-separate definition;
-   tuition COA-vs-net definition; subscription comparator source
-   (name one — PL sits closest to Bango 2025); repeat-victimization
-   window (usual definition: same fraud type within 12 months);
-   accounts-per-person scope (checking-only vs checking+savings).
+2. Definition writes: DONE (c4-definitions-2026-07) — spousal-
+   separate, tuition COA, subscription comparator (Bango 2025),
+   repeat-victimization window, accounts-per-person scope, autopay
+   comparator and the miss-share axis mapping are written into
+   their rows; every one is now falsifiable at the owner's pass.
 3. Citations to pull verbatim at the verify pass: eCFR section text
    snapshots; FATF Professional ML (2018) page cites; a named Visa
    card-testing advisory; FinCEN structuring guidance and FFIEC
@@ -1765,8 +1828,9 @@ resolved by shipped ADJUSTs or documented CHOICEs.
 6. Owner-gated designs: ATO Reg E remediation (design in the F-4 C3
    block — needs a bank-remediation counterparty + a new credit
    channel); homeowner/renter overlap (wire `isHomeowner` into
-   `RentRoll`); student part-time wage tier; monolithic-engine
-   retirement.
-7. New C3 residuals: autopay split {.40/.10/.50} UNCITED; effective
-   miss share .05 vs account-level delinquency benchmarks (~3–4%
-   30+ dpd) — axis mapping needed before any verdict.
+   `RentRoll`); student part-time wage tier. (Monolithic-engine
+   retirement SHIPPED 2026-07-18: one engine in the binary; the
+   retained-corpus reference survives as the library test oracle.)
+7. C3 residuals: CLOSED by C4 — the autopay comparator and the
+   miss-share axis mapping are written into L-7; both rows stay
+   UNCITED pending the owner's pass, but are now falsifiable.
