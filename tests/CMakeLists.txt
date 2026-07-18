@@ -110,6 +110,19 @@ set_tests_properties(test_resume PROPERTIES
 # bytes; there is no second rendering to drift), and the table-digest
 # golden below pins the resulting table bytes. Invariants 16–19 retired
 # with them.
+#
+# RETIRED (monolithic-engine retirement): the two binary-level engine
+# parity gates — test_windowed_e2e and test_windowed_aml_txn_edges —
+# together with the PL_ENGINE override, the app::Engine concept and
+# main.cpp's retained-corpus branch. The binary has ONE engine now.
+# Engine parity survives at the LIBRARY level, where the retained-
+# corpus reference implementation lives on as the executable
+# specification: test_arch_equivalence (monolithic run() vs windowed),
+# test_production_windowed (runWindowed() reproduces run()), and the
+# corpus gates below that use run() as their oracle. Binary output is
+# pinned by test_run_golden (serverless stream digest) and
+# test_table_golden (live-PG content, both use cases the retired gates
+# covered).
 # ---------------------------------------------------------------------
 
 # ---------------------------------------------------------------------
@@ -143,25 +156,6 @@ target_compile_definitions(test_table_golden PRIVATE
     PL_TABLE_BASELINE_AML="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables_aml.md5")
 add_dependencies(test_table_golden phantomledger)
 set_tests_properties(test_table_golden PROPERTIES
-    SKIP_RETURN_CODE 77
-    TIMEOUT 600)
-
-# ---------------------------------------------------------------------
-# Integration: aml-txn-edges ENGINE parity (binary runs against a LIVE
-# server — the windowed leg's derived analytics read the streamed
-# corpus back from PostgreSQL). Reference engine (PL_ENGINE=monolithic,
-# test-only env override) vs the DEFAULT selection — which this gate
-# thereby pins as auto -> windowed for aml-txn-edges: same stream
-# digest, digest-identical PostgreSQL content (every registered
-# aml_txn_edges table + the corpus in row_seq order, per leg). Skips
-# with 77; honors PL_TEST_PG.
-# ---------------------------------------------------------------------
-
-pl_add_test(test_windowed_aml_txn_edges)
-target_compile_definitions(test_windowed_aml_txn_edges PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_windowed_aml_txn_edges phantomledger)
-set_tests_properties(test_windowed_aml_txn_edges PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 600)
 
@@ -208,7 +202,8 @@ pl_add_test(test_unauthorized_keyed)
 
 # ---------------------------------------------------------------------
 # Full-pipeline chunk-strategy invariance: byte-identical corpus at any
-# chunk size, with fraud engaged
+# chunk size, with fraud engaged (oracle: the retained-corpus reference
+# SimulationPipeline::run())
 # ---------------------------------------------------------------------
 
 pl_add_test(test_chunk_invariance)
@@ -236,9 +231,12 @@ pl_add_test(test_order_ties)
 set_tests_properties(test_order_ties PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
-# Monolithic vs windowed architecture equivalence (step 12), and its
-# decomposition: Session vs Simulator raw spending output.
-# HARD-ENFORCED.
+# ARCHITECTURE EQUIVALENCE — the executable specification. The
+# retained-corpus reference implementation (SimulationPipeline::run())
+# vs the windowed engine, at the library level; plus its decomposition,
+# Session vs Simulator raw spending output. With the app-level
+# monolith retired, THIS is the gate that keeps the windowed engine
+# honest against the simplest-possible semantics. HARD-ENFORCED.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_arch_equivalence)
@@ -258,25 +256,11 @@ set_tests_properties(test_spool_equivalence PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
 # Production windowed mode: SimulationPipeline::runWindowed must
-# reproduce run() byte-for-byte. HARD-ENFORCED.
+# reproduce the reference run() byte-for-byte. HARD-ENFORCED.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_production_windowed)
 set_tests_properties(test_production_windowed PROPERTIES TIMEOUT 600)
-
-# ---------------------------------------------------------------------
-# Windowed CLI end-to-end: the DEFAULT engine (auto -> windowed) vs the
-# monolithic reference engine (PL_ENGINE=monolithic): same printed
-# stream digest per use case, default pinned via the Engine: log line
-# (serverless: PL_FILE_ONLY=1 + PL_PG pinned unreachable; no files
-# written). HARD-ENFORCED.
-# ---------------------------------------------------------------------
-
-pl_add_test(test_windowed_e2e)
-target_compile_definitions(test_windowed_e2e PRIVATE
-    PL_BIN_PATH="$<TARGET_FILE:phantomledger>")
-add_dependencies(test_windowed_e2e phantomledger)
-set_tests_properties(test_windowed_e2e PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
 # Scale soak (opt-in; SIZE TO MINUTES — soak policy). Skips with 77

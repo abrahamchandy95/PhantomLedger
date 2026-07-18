@@ -55,57 +55,11 @@ inline constexpr std::array<UseCase, 4> kAllUseCases{
     UseCase::amlTxnEdges,
 };
 
-enum class Engine : std::uint8_t {
-  automatic = 0,
-  windowed = 1,
-  monolithic = 2,
-};
-
-[[nodiscard]] constexpr std::string_view name(Engine engine) noexcept {
-  switch (engine) {
-  case Engine::automatic:
-    return "auto";
-  case Engine::windowed:
-    return "windowed";
-  case Engine::monolithic:
-    return "monolithic";
-  }
-  return "<unknown>";
-}
-
-[[nodiscard]] constexpr std::optional<Engine>
-parseEngine(std::string_view s) noexcept {
-  if (s == "auto") {
-    return Engine::automatic;
-  }
-  if (s == "windowed") {
-    return Engine::windowed;
-  }
-  if (s == "monolithic") {
-    return Engine::monolithic;
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] constexpr bool supportsWindowed(UseCase /*uc*/) noexcept {
-  return true;
-}
-
-[[nodiscard]] constexpr Engine resolveEngine(Engine requested,
-                                             UseCase uc) noexcept {
-  if (requested != Engine::automatic) {
-    return requested;
-  }
-  return supportsWindowed(uc) ? Engine::windowed : Engine::monolithic;
-}
-
 struct RunOptions {
   UseCase usecase = UseCase::standard;
   std::int64_t days = 365;
   std::int32_t population = 70'000;
   std::uint64_t seed = 0xDEADBEEFULL;
-
-  Engine engine = Engine::automatic;
 
   std::string pgConninfo = "dbname=phantomledger";
   ::PhantomLedger::time::CalendarDate startDate{2025, 1, 1};

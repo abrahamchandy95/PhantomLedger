@@ -53,10 +53,7 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "  PL_FILE_ONLY=1                    Skip PostgreSQL (serverless\n"
       "                                    harness escape; produces only\n"
       "                                    the stream digest; aml-txn-\n"
-      "                                    edges cannot run this way)\n"
-      "  PL_ENGINE={windowed,monolithic}   Force the corpus engine (the\n"
-      "                                    monolithic reference engine\n"
-      "                                    backs the equivalence gates)\n",
+      "                                    edges cannot run this way)\n",
       prog);
 }
 
@@ -84,17 +81,6 @@ pl::app::RunOptions parse(int argc, char **argv) {
     }
     return argv[++i];
   };
-
-  // Engine selection is automatic; PL_ENGINE is the test-infrastructure
-  // override for the monolithic reference engine (never a CLI flag).
-  if (const char *env = std::getenv("PL_ENGINE")) {
-    if (const auto parsed = pl::app::parseEngine(env)) {
-      opts.engine = *parsed;
-    } else {
-      die("Unknown PL_ENGINE value: {} (expected windowed or monolithic)",
-          std::string_view{env});
-    }
-  }
 
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg{argv[i]};
@@ -168,17 +154,13 @@ pl::app::RunOptions parse(int argc, char **argv) {
           "SELECT * FROM transactions ORDER BY row_seq.");
     }
 
-    if (arg == "--engine") {
-      die("--engine has been removed: engine selection is automatic and "
-          "output bytes are engine-independent. The monolithic reference "
-          "engine is test infrastructure, reachable via "
-          "PL_ENGINE=monolithic.");
-    }
-
-    if (arg == "--windowed") {
-      die("--windowed has been removed: the windowed engine is the "
-          "default for every use case. The monolithic reference engine "
-          "is test infrastructure, reachable via PL_ENGINE=monolithic.");
+    if (arg == "--engine" || arg == "--windowed") {
+      die("{} has been removed: the windowed streaming engine is the "
+          "only engine. Its retained-corpus reference implementation "
+          "survives as library test infrastructure "
+          "(SimulationPipeline::run, pinned by test_arch_equivalence "
+          "and test_production_windowed).",
+          arg);
     }
 
     die("Unknown argument: {}", arg);

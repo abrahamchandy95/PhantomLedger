@@ -8,7 +8,6 @@
 #include "phantomledger/exporter/aml_txn_edges/export.hpp"
 #include "phantomledger/exporter/aml_txn_edges/readback.hpp"
 #include "phantomledger/exporter/aml_txn_edges/streaming.hpp"
-#include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/mule_ml/streaming.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
@@ -16,8 +15,6 @@
 #include "phantomledger/exporter/sinks/table_mirror.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
 #include "phantomledger/exporter/standard/streaming.hpp"
-#include "phantomledger/pipeline/chunk/flush.hpp"
-#include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/chunk/sink.hpp"
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
@@ -86,9 +83,9 @@ private:
 // derived analytics read the corpus back. Probe BEFORE any generation
 // and fail fast with an actionable error — the error message IS the
 // prompt (CI-safe, never interactive). PL_FILE_ONLY=1 is the harness
-// escape that keeps the golden and the serverless equivalence gates
-// independent of any server; under it a run persists nothing and
-// yields only the stream digest.
+// escape that keeps the serverless gates (the run golden) independent
+// of any server; under it a run persists nothing and yields only the
+// stream digest.
 
 struct BackendPolicy {
   std::string conninfo;
@@ -155,27 +152,6 @@ struct BackendPolicy {
 }
 
 // ------------------------------------------------------------- summaries
-
-void printGenericSummary(const pl::pipeline::SimulationResult &result) {
-  const auto &postedTxns = result.transfers.ledger.posted.txns;
-  const auto totalTxns = postedTxns.size();
-
-  std::size_t illicit = 0;
-  for (const auto &tx : postedTxns) {
-    if (tx.fraud.flag != 0) {
-      ++illicit;
-    }
-  }
-
-  const double ratio =
-      (totalTxns == 0) ? 0.0 : static_cast<double>(illicit) / totalTxns;
-
-  std::printf("People: %u  Accounts: %zu\n",
-              static_cast<unsigned>(result.people.roster.roster.count),
-              result.holdings.accounts.registry.records.size());
-  std::printf("Transactions: %zu  Illicit: %zu (%.4f%%)\n", totalTxns, illicit,
-              ratio * 100.0);
-}
 
 void printWindowedSummary(
     const pl::pipeline::SimulationResult &world,
@@ -249,19 +225,24 @@ void printAmlTxnEdgesSummary(
               summary.flowAggEdgeCount, summary.linkCommEdgeCount);
 }
 
-// ------------------------------------------------------- windowed engine
+// --------------------------------------------------------------- engine
 //
-// Bounded-memory path and the production DEFAULT for every use case
-// (app::resolveEngine): the world is built first, then the transfer
-// fold streams settled transactions straight into Golden + PostgreSQL
-// + the use case's streaming exporter, whose tables write directly
-// into PostgreSQL (one csv::Writer rendering — the COPY payload). The
+// The windowed streaming engine is THE engine — bounded memory for
+// every use case: the world is built first, then the transfer fold
+// streams settled transactions straight into Golden + PostgreSQL + the
+// use case's streaming exporter, whose tables write directly into
+// PostgreSQL (one csv::Writer rendering — the COPY payload). The
 // posted corpus is never materialized; the candidate corpus lives in
 // the on-disk binary spool. aml-txn-edges additionally REQUIRES the
 // server — its derived analytics read the streamed corpus back
 // (readback::buildBundle) — which the backend policy guarantees; under
 // the PL_FILE_ONLY harness escape it fails with its own clear error.
-// Output is byte-identical to the monolithic reference engine.
+//
+// The retained-corpus reference implementation survives at the LIBRARY
+// level only (SimulationPipeline::run() + the corpus exportAll forms),
+// as the executable specification this engine is verified against
+// (test_arch_equivalence, test_production_windowed, and the corpus
+// gates). It is not reachable from the binary.
 //
 // Checkpoint/resume (RunLedger + ResumableSpanSink, test_resume):
 // determinism is the checkpoint — regenerate, verify committed spans
@@ -290,9 +271,8 @@ int runWindowedStream(
         stderr,
         "fatal: --usecase aml-txn-edges requires PostgreSQL: the derived "
         "analytics (alerts, cases, 30/90-day aggregates) read the "
-        "streamed corpus back from the transactions table. PL_FILE_ONLY "
-        "cannot run it windowed — unset PL_FILE_ONLY, or force the "
-        "reference engine with PL_ENGINE=monolithic.\n");
+        "streamed corpus back from the transactions table. There is no "
+        "serverless mode for this use case — unset PL_FILE_ONLY.\n");
     return 1;
   }
 
@@ -603,18 +583,10 @@ int main(int argc, char **argv) {
 
     const auto opts = app::cli::parse(argc, argv);
 
-    // Engine selection is automatic (the windowed engine is the proven
-    // byte-identical production path for every use case); PL_ENGINE is
-    // the test-infrastructure override. The line below makes every run
-    // self-describing and lets the gates pin the default.
-    const auto engine = app::resolveEngine(opts.engine, opts.usecase);
-    std::printf("Engine: %s%s\n", std::string{app::name(engine)}.c_str(),
-                opts.engine == app::Engine::automatic ? " (auto)" : "");
-
     // Backend policy: PostgreSQL is required — probe BEFORE generation
     // and fail fast with the teaching error (resolveBackend exits).
-    // PL_FILE_ONLY is the harness escape that keeps the golden and the
-    // serverless gates independent of any server.
+    // PL_FILE_ONLY is the harness escape that keeps the run golden
+    // independent of any server.
     const auto backend = resolveBackend(opts);
     const bool pgUp = !backend.fileOnly;
 
@@ -628,150 +600,8 @@ int main(int argc, char **argv) {
     const auto entityConfig =
         app::setup::buildEntitySynthesis(opts, pools, mix, window.start);
 
-    if (engine == app::Engine::windowed) {
-      return runWindowedStream(opts, window, pools, entityConfig,
-                               backend.conninfo, pgUp);
-    }
-
-    auto rng = random::Rng::fromSeed(opts.seed);
-
-    PhaseMonitor mon;
-
-    pl::pipeline::SimulationResult result;
-    {
-      pg::Stage genStage("Generating (entities)", 4);
-      const auto onPhase = [&](std::string_view phase) {
-        mon.mark(phase);
-        genStage.tick();
-        genStage.setLabel("Generating (" + std::string{phase} + " done)");
-      };
-      result =
-          pipeline::simulate(rng, window, entityConfig, opts.seed, onPhase);
-    } // genStage destructor prints trailing newline here
-
-    long long manifestId = -1;
-
-    std::string streamDigest;
-    std::uint64_t streamRows = 0;
-    {
-      const auto &posted = result.transfers.ledger.posted.txns;
-
-      const auto schedule = pipeline::chunk::Schedule::partition(
-          window, pipeline::chunk::Strategy{});
-      exporter::sinks::Golden golden;
-
-      if (pgUp) {
-        pl::postgres::Connection conn{backend.conninfo};
-        pl::exporter::sinks::RunLedger ledger{conn};
-        ledger.ensureTables();
-        // The reference engine also rewrites the shared table (and its
-        // runs are never resumable — spans are recorded without
-        // digests): supersede any crashed run first.
-        ledger.supersedeRunning();
-        manifestId = ledger.beginRun(
-            pl::exporter::sinks::RunLedger::configHash(
-                "monolithic", opts.seed, opts.population, opts.days,
-                opts.startDate),
-            opts.seed, opts.population, opts.days, opts.startDate);
-
-        exporter::sinks::Postgres pgSink({.conninfo = backend.conninfo});
-        pipeline::chunk::Tee tee{golden, pgSink};
-        pipeline::chunk::flushPartitioned(
-            schedule,
-            std::span<const pl::transactions::Transaction>{posted.data(),
-                                                           posted.size()},
-            tee,
-            [&ledger, manifestId](const pipeline::chunk::Span &span,
-                                  std::uint64_t rowsInSpan) {
-              ledger.recordSpan(manifestId, span.index, rowsInSpan, "");
-            });
-        std::printf("PostgreSQL: %llu rows -> table 'transactions' "
-                    "(%zu spans)\n",
-                    static_cast<unsigned long long>(pgSink.rowsWritten()),
-                    schedule.size());
-      } else {
-        pipeline::chunk::flushPartitioned(
-            schedule,
-            std::span<const pl::transactions::Transaction>{posted.data(),
-                                                           posted.size()},
-            golden);
-      }
-      streamDigest = golden.digest();
-      streamRows = golden.rowsWritten();
-      std::printf("Stream digest: %s  rows: %llu\n", streamDigest.c_str(),
-                  static_cast<unsigned long long>(streamRows));
-      mon.mark("stream flush");
-    }
-
-    pg::status("Exporting...");
-    switch (opts.usecase) {
-    case app::UseCase::standard: {
-      exporter::standard::Options exportOpts;
-      exportOpts.piiPools = &pools;
-      exportOpts.window = window;
-      const pl::exporter::sinks::PgMirror stdMirror{
-          .conninfo = backend.conninfo, .schema = "", .tablePrefix = ""};
-      exportOpts.pgMirror = pgUp ? &stdMirror : nullptr;
-      exporter::standard::exportAll(result, exportOpts);
-      printGenericSummary(result);
-      break;
-    }
-
-    case app::UseCase::muleMl: {
-      exporter::mule_ml::Options exportOpts;
-      exportOpts.piiPools = &pools;
-      const pl::exporter::sinks::PgMirror mlMirror{
-          .conninfo = backend.conninfo,
-          .schema = "mule_ml",
-          .tablePrefix = "ml_ready_"};
-      exportOpts.pgMirror = pgUp ? &mlMirror : nullptr;
-      exporter::mule_ml::exportAll(result, exportOpts);
-      printGenericSummary(result);
-      break;
-    }
-
-    case app::UseCase::aml: {
-      exporter::aml::Options exportOpts;
-      exportOpts.piiPools = &pools;
-      const pl::exporter::sinks::PgMirror amlMirror{
-          .conninfo = backend.conninfo, .schema = "aml", .tablePrefix = "aml_"};
-      exportOpts.pgMirror = pgUp ? &amlMirror : nullptr;
-      const auto summary = exporter::aml::exportAll(result, exportOpts);
-      printAmlSummary(summary);
-      break;
-    }
-
-    case app::UseCase::amlTxnEdges: {
-      exporter::aml_txn_edges::Options exportOpts;
-      exportOpts.piiPools = &pools;
-      const pl::exporter::sinks::PgMirror amlTxnMirror{
-          .conninfo = backend.conninfo,
-          .schema = "aml_txn_edges",
-          .tablePrefix = "aml_txn_edges_"};
-      exportOpts.pgMirror = pgUp ? &amlTxnMirror : nullptr;
-      const auto summary =
-          exporter::aml_txn_edges::exportAll(result, exportOpts);
-      printAmlTxnEdgesSummary(summary);
-      break;
-    }
-    }
-
-    if (pgUp) {
-      std::printf("PostgreSQL: %s tables written directly during the run "
-                  "(%s)\n",
-                  std::string{app::name(opts.usecase)}.c_str(),
-                  directSchemaNote(opts.usecase));
-
-      pl::postgres::Connection conn{backend.conninfo};
-      pl::exporter::sinks::RunLedger endLedger{conn};
-      endLedger.finishRun(manifestId, streamRows, streamDigest);
-      mon.mark("pg direct tables");
-    }
-
-    mon.mark("export");
-
-    pg::status("Done.");
-    return 0;
+    return runWindowedStream(opts, window, pools, entityConfig,
+                             backend.conninfo, pgUp);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "fatal: %s\n", e.what());
     return 1;
