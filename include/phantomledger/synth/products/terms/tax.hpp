@@ -37,8 +37,12 @@ struct TaxFilingOutcome {
   double balanceDueP = 0.20;
 };
 
+// Implied mean ~$2,908 against the IRS 2025-season average refund
+// ~$3,167 (median unpublished; PL targets a median below the mean by
+// construction — household-econ-2026-07; docs/fraud_model_audit.md
+// L-8).
 struct TaxRefund {
-  double median = 1850.0;
+  double median = 2500.0;
   double sigma = 0.55;
   double floor = 100.0;
 };

@@ -124,6 +124,23 @@ are made whole by merchant chargeback credits (Reg Z zero-liability),
 while gift-card scams are never reimbursed. The authorized-vs-
 unauthorized contrast is the modelable "scandal" signature.
 
+### household-econ-2026-07 (2026-07-18 — C2 household economics)
+
+The C2 batch of the conformance program: every NONCONFORMING and
+owner-call row in the legitimate-economy tables shipped in ONE model
+version — rent level, renter share, lease tenure, student employment
+(+ the L-10 student cash-share recompute), allowances, fuel ticket,
+seasonality amplitude, P2P amount, home insurance premium, home claim
+severity, tax refund. TWO code findings landed with it (details in
+the L-3 and L-4 C2 blocks): (1) the salary selector's .95 fit target
+scale-clamped EFFECTIVE employment to ~100% for every persona except
+retirees — the L-4 table described base weights, not behavior; (2) no
+homeowner exclusion is wired into rent selection and the .80 fit
+target made ~4 in 5 people full-rent payers, ~2.3× the household
+renter share. Both fixed. A ledger COVERAGE GAP also closed: the
+government-benefits stream (SSA retirement + disability deposits) was
+never tabulated here — now at L-4b, UNCITED with recalled anchors.
+
 ═══════════════════════════════════════════════════════════════════════
 # PART I — FRAUD / AML MODEL
 ═══════════════════════════════════════════════════════════════════════
@@ -501,14 +518,22 @@ at the next probe. **At the scam-fraud re-pin, measure:** the
 fraud_type mix (scam_gift_card share ≈ .12 of unauthorized cases),
 the flag-0 chargeback count, and the per-case gift-card totals.
 
+**At the household-econ re-pin (#12), measure:** salary-credit count
+(expect roughly −30%: the fit target moved .95 → .65); rent rowcount
+(expect roughly −55% at ~1.76× the mean amount); CTR count (expect
+≈ unchanged, 110–125 — the business cash-deposit source is untouched
+by this round); total corpus size (expect a visible shift from the
+income/rent liquidity knock-ons: more bounced debits for the
+newly-unwaged personas, fewer rent debits overall); the posted
+structuring mix and the [$9,000, $10,000] band composition.
+
 ═══════════════════════════════════════════════════════════════════════
 # PART II — LEGITIMATE ECONOMY
 ═══════════════════════════════════════════════════════════════════════
 
-*(Part II sections L-1 through L-11, the Pass 1/Pass 2 blocks, the C0
-code reads, and the L-10 CASH-HANDLING SPLIT are UNCHANGED by
-scam-fraud-2026-07 — see the previous revision content preserved
-below.)*
+*(household-econ-2026-07 edits L-2, L-3, L-4, L-5, L-8, L-9 and L-10
+below and adds L-4b; all other content is preserved from the previous
+revision.)*
 
 ### L-1. Population & personas
 
@@ -562,7 +587,7 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
 | Slot mix | merchant .82 / bills .10 / p2p .08 around external .05 ⇒ effective 77.9/9.5/7.6/5.0 (matches run-log attempt shares) | MEASUREMENT | Fed Diary payment purposes |
 | Known-biller preference | .55; merchant retry limit 6; pick attempts 250 | CHOICE | — |
 | Exploration | base .02/txn; per-person propensity Beta(1.6, 9.5); burst p .08 for 3–9 d | CHOICE | — |
-| Seasonality (unit mean) | Jan .88, Feb .94, Mar 1.04, Apr 1.02, May 1.00, Jun .98, Jul .97, Aug 1.05, Sep 1.02, Oct .99, Nov 1.16, Dec 1.22 | MEASUREMENT | Census monthly retail sales |
+| Seasonality (unit mean) | Jan .94, Feb .96, Mar 1.02, Apr 1.01, May 1.00, Jun .99, Jul .98, Aug 1.03, Sep 1.01, Oct 1.00, Nov 1.05, Dec 1.15 — damped to the Census NSA Dec/Jan ratio ~1.22 (household-econ-2026-07) | MEASUREMENT | Census monthly retail sales |
 | Momentum | AR(1) φ .45, σ .15, clamp [.20, 3.00] | CHOICE | — |
 | Dormancy | enter .0012/day; 7–45 d at ×.05; wake 2–5 d | CHOICE | — |
 | Paycheck boost | ≤ +10% × sensitivity, 4-day decay | TYPOLOGY | payday-response literature (JPMC Institute) |
@@ -621,11 +646,17 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
   plus L-9 family transfers is roughly 2x the Diary's 3.7% count
   share; set DEVIATES-BY-CHOICE (P2P density feeds fraud typologies)
   or ADJUST the slot toward .04.
+  *(household-econ-2026-07: the COUNT share stays
+  DEVIATES-BY-CHOICE — P2P density feeds the fraud typologies; the
+  AMOUNT row shipped, next bullet.)*
 * P2P amount | Real-world value: Diary "A person" average $181/txn;
   mobile-app payment average $71.9/txn (Table 8) [Certain]. PL
   LN($45,.80) has mean $62, low against both. | Status: DEVIATES,
   owner call: raise median toward $55-70 (app-like) or document the
   small-social-payment choice.
+  *(RESOLVED by household-econ-2026-07: median $45 → $55, σ .80 —
+  implied mean ≈ $75.7 against the $71.9 mobile-app average; the
+  app-like reading is the documented comparator.)*
 * Merchant tickets vs Diary Table 13 per-txn averages [Derived,
   Certain inputs]: utilities $132.4 vs PL mean $130 CONFORMS;
   communications $78.7 vs $78.5 CONFORMS; education $250 vs $239
@@ -636,6 +667,8 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
   $47.8, ~ 46% high. Status: table CONFORMS overall; fuel
   NONCONFORMING -> ADJUST (drop fuel median toward $32-38; note gas
   prices move this row year to year).
+  *(RESOLVED by household-econ-2026-07: fuel median $45 → $32, σ
+  .35 — implied mean ≈ $34.0 vs the Diary $32.8.)*
 * Seasonality | Citation: Census MARTS not-seasonally-adjusted
   levels as analyzed in trade press (Dec 2025 NSA retail $817B; Jan
   2025 $668B). | Real-world value: Census NSA Dec-to-Jan ratio ~
@@ -646,14 +679,18 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
   is flatter than retail. Owner: either damp the tails (Dec ~ 1.15,
   Jan ~ 0.94, Nov ~ 1.02-1.05) or re-class CHOICE (amplified for
   signal).
+  *(RESOLVED by household-econ-2026-07: tails damped exactly as
+  proposed — Dec 1.15, Jan 0.94, Nov 1.05; Dec/Jan ratio now 1.22 on
+  the Census anchor; the consteval unit-mean normalization in
+  `math/seasonal.hpp` preserves ratios.)*
 
 ### L-3. Amount catalog (LN = lognormal(median, σ); Γ(shape, scale)+add)
 
 | Channel | PL model | Class | Suggested source |
 |---|---|---|---|
 | Salary (monthly) | LN($4,500, .55) floor $50, ×12 annual | MEASUREMENT | BLS OEWS median wages |
-| Rent | Γ(2, 400)+$50 (mean $850) | MEASUREMENT | Census/HUD median gross rent (model likely LOW — the pass decides) |
-| P2P | LN($45, .80) | MEASUREMENT | Fed Diary P2P |
+| Rent | Γ(2, 700)+$100 (mean $1,500; household-econ-2026-07 — was Γ(2,400)+$50, mean $850) | MEASUREMENT | Census/HUD median gross rent |
+| P2P | LN($55, .80) (household-econ-2026-07 — was LN($45,.80)) | MEASUREMENT | Fed Diary P2P |
 | Bill | Γ(2, 55)+$15 (mean $125) | MEASUREMENT | Fed Diary bills |
 | External unknown | LN($120, .95) floor $5 | CHOICE | — |
 | ATM | LN($80, .30) floor $20 | MEASUREMENT | Fed Diary cash |
@@ -666,11 +703,11 @@ clamp [.01,.99]. Class MEASUREMENT-adjacent. Sources: Fed SCF
 | Investment inflow | LN($5,000, 1.0) floor $100 | CHOICE | — |
 | Cash deposit (takings/tips) | per-persona split — see the L-10 cash block (LN, $10-rounded, floor $100) | MEASUREMENT-adjacent | FinCEN CTR volume; Fed Diary; Yale Budget Lab; IRS ATG |
 
-Merchant tickets LN(median, σ): grocery 50/.55, fuel 45/.35, restaurant
-28/.60, pharmacy 25/.65, ecommerce 85/.70, retailOther 45/.75,
-utilities 120/.40, telecom 75/.30, insurance 150/.35, education
-200/.60; default 45/.70. MEASUREMENT — Fed Diary / BLS CE per-category
-average tickets.
+Merchant tickets LN(median, σ): grocery 50/.55, fuel 32/.35
+(household-econ-2026-07 — was 45/.35), restaurant 28/.60, pharmacy
+25/.65, ecommerce 85/.70, retailOther 45/.75, utilities 120/.40,
+telecom 75/.30, insurance 150/.35, education 200/.60; default 45/.70.
+MEASUREMENT — Fed Diary / BLS CE per-category average tickets.
 
 **Pass 1 results (L-3):**
 * Salary (monthly) | Citation: BLS OEWS May 2024 (news release USDL
@@ -741,11 +778,42 @@ NONCONFORMING.**
 * Residual read at C2 time: the renter-selection share (who rents at
   all).
 
+**C2 household-econ-2026-07 (L-3 rent) — SHIPPED, plus the renter
+code-read result:**
+* Rent AMOUNT | `math::amounts::kRent` Γ(2,400)+$50 → **Γ(2,700) +
+  $100** — mean $1,500 (inside the queued $1,450–1,550 band), right
+  skew preserved (shape 2), CV ≈ .66 as before. All five Rent::*
+  channel variants share the model.
+* RENTER-SELECTION SHARE (the queued C0 residual — read, and it came
+  back NONCONFORMING) | The rent selector fits a scale so the MEAN
+  selection probability across candidates equals
+  `rent::Rules::paidFraction` = **.80**: four in five people paid a
+  FULL household rent every month. No homeowner exclusion is wired
+  in production (`RentRoll.isHomeowner` defaults to `noHomeowners`;
+  `passes.cpp buildRentRoll` never sets it), so mortgage payers
+  could simultaneously rent. Comparator on the household axis (each
+  PL renter = sole tenant paying one full household rent): ACS
+  renter share of households ~.34–.36 [Likely] — PL ran ~2.3× that.
+  **ADJUST shipped: paidFraction .80 → .35.** At the .35 target the
+  fitted scale ≈ .66 with NO clamping; effective persona renter
+  shares: student ≈ .33, retiree ≈ .12, freelancer ≈ .38,
+  smallBusiness ≈ .23, HNW ≈ .07, salaried ≈ .41. Aggregate
+  reconciliation [Derived]: PL per-capita rent outflow ≈ .35 ×
+  $1,500 = $525/person-month vs real ≈ .35 × $1,487 ≈ $520 — the
+  amount and share ADJUSTs reconcile the aggregate that either alone
+  would have broken (the old pair ran $680; amount-only would have
+  run $1,200).
+* KNOWN SIMPLIFICATION (logged): homeowner/renter overlap — the
+  `isHomeowner` hook exists but is unwired, so a mortgage payer can
+  also be selected as a renter (expected overlap ≈ .35 × mortgage
+  adoption ≈ 16% of people). Owner call whether to thread account
+  ownership into `RentRoll` in a later round.
+
 ### L-4. Income & employment
 
 | Parameter | PL value | Class | Suggested source |
 |---|---|---|---|
-| Employment probability | salaried .98, student .12, retiree .02, freelancer .08, smallBiz .04, HNW .12; overall fit .95 of eligible | MEASUREMENT | BLS employment-population ratios |
+| Employment probability | EFFECTIVE per-persona table (household-econ-2026-07): salaried .98, student .40, retiree .02, freelancer .08, smallBiz .04, HNW .12; fit target .65 = the table's weighted mean, so the fitted scale ≈ 1.0 and the table IS the effective rate (see the C2 block — the old .95 target clamped every persona except retirees to ~100%) | MEASUREMENT | BLS employment-population ratios |
 | Pay cadences | weekly .20 / biweekly .55 / semimonthly .15 / monthly .10 | DEVIATES-BY-CHOICE (re-classed from MEASUREMENT per Pass 1: BLS publishes establishment shares, PL needs worker-weighted shares) | BLS length-of-pay-period data |
 | Payday mechanics | Friday default (25% Thu↔Fri); semimonthly {15,31} (35% {1,15}); monthly ∈ {28,30,31}; roll to previous business day; posting lag 0–1 d; salary posts 06:00–12:00 same day | MEASUREMENT | payroll-industry conventions |
 | Job tenure | 1.5–4.0 y/job | MEASUREMENT | BLS median tenure |
@@ -784,6 +852,10 @@ NONCONFORMING.**
   CHOICE. As written, .12 is a third of the measured rate.
   (KNOCK-ON: the L-10 student cash-tips share is derived from this
   value — recompute it in the same C2 batch.)
+  *(RESOLVED by household-econ-2026-07 — but see the C2 block: the
+  base .12 was ALREADY clamped to ~1.0 at runtime, so the honest
+  ADJUST was the fit-semantics fix plus base .40, which LOWERED
+  effective student employment from ~100% to the cited ~40%.)*
 * Job tenure 1.5-4.0y | Real-world value: BLS median employee tenure
   3.9 years (2024 release) [Likely, verify exact figure at ADJUST
   time]. PL's per-job range tops out at the national median, so PL
@@ -799,15 +871,71 @@ NONCONFORMING.**
   UNCITED with note.
   row goes NONCONFORMING.
 
+**C2 household-econ-2026-07 (L-4) — the EFFECTIVE-EMPLOYMENT finding
+and the shipped ADJUST:**
+* FINDING (code read, `activity/income/salary.hpp` +
+  `income/selection.hpp`) | The salary selector does not apply the
+  persona table directly: `fitScale` solves for a scale s such that
+  the MEAN of clamp(base × s, 0, 1) across all candidates equals
+  `paidFraction`. At the old target .95 the solution was s ≈ 25,
+  which CLAMPED every persona except retirees to probability 1.0 —
+  effective employment was ~100% for students, freelancers,
+  small-business owners, HNW AND salaried, and ~50% for retirees.
+  The table this document printed (salaried .98, student .12, …) was
+  the base-weight vector, not behavior: freelancers all drew
+  paychecks on top of client revenue; half of retirees drew
+  paychecks on top of Social Security. Every prior verdict on this
+  row inherited that misread (the Pass 2 NONCONFORMING said student
+  employment was a third of the measured rate; it was actually 2.5×
+  the measured rate).
+* ADJUST (shipped) | `paidFraction` .95 → **.65** — the persona
+  table's weighted mean under the L-1 shares (Σ share × p = .6508),
+  so the fitted scale ≈ 1.0, nothing clamps, and the table becomes
+  the EFFECTIVE per-persona employment probability. Base table
+  change: student .12 → **.40** (NCES 40% of full-time
+  undergraduates employed; BLS student LFP 44.6% — the Pass 2
+  citations). Retiree stays .02: the persona is FULLY retired and
+  its income is the SSA benefits stream (L-4b), so the BLS 65+
+  employment-population ratio (~19%) lives implicitly in the
+  salaried persona, not here — definition written into the row.
+  Freelancer .08 / smallBusiness .04 / HNW .12 unchanged as bases
+  but now REAL: their income arrives through the L-10 revenue
+  profiles, and the accidental blanket paychecks are gone.
+* KNOCK-ONS (measure at re-pin #12) | Salary credits ≈ −30%;
+  student/freelancer/smallBusiness liquidity now rests on family
+  transfers and revenue profiles (expect more bounced debits — the
+  emergent F-7 pattern); retiree income now = SSA (L-4b) + L-10
+  draw/investment only. RESIDUAL: employed students draw the same
+  LN($4,500,.55) salary model as everyone else — a part-time wage
+  tier is a candidate future ADJUST, logged in REMAINING OPEN ITEMS.
+
+### L-4b. Government benefits (ADDED by household-econ-2026-07 — a
+ledger COVERAGE GAP: these streams existed in code but had no rows
+here. Values mirror code, UNCITED; recalled anchors noted for the
+owner's pass.)
+
+| Parameter | PL value | Class | Suggested source |
+|---|---|---|---|
+| SSA retirement | retirees only; eligibleP .87; LN($2,071, .30) floor $900/mo; paid on the 3 SSA Wednesday cohorts by synthetic birth-day (`transfers/channels/government/retirement.hpp`) | MEASUREMENT | SSA Monthly Statistical Snapshot |
+| SSDI disability | non-retiree/non-student personas; eligibleP .04; LN($1,630, .25) floor $500/mo (`government/disability.hpp`) | MEASUREMENT | SSA SSDI beneficiary statistics |
+
+Recalled anchors [Likely, owner verifies]: ~90% of 65+ receive Social
+Security (PL .87 of retirees CONFORMS-adjacent); average retired-
+worker benefit ≈ $1,907/mo (Dec 2024), ≈ $1,976 after the Jan 2025
+COLA — PL's LN median $2,071 implies mean ≈ $2,166, a few percent
+high; average disabled-worker benefit ≈ $1,540/mo — PL median $1,630
+implies mean ≈ $1,682, ~9% high; SSDI beneficiaries ≈ 7.2–7.4M ≈ 3–4%
+of the working-age population (PL .04 CONFORMS-adjacent).
+
 ### L-5. Housing
 
-Lease tenure 1–3 y; on move: new landlord, fresh base rent (jitter LN
-σ.05); growth 2.5% inflation + real N(2.0%, 1.5%) floor −1%/y (applied
-once per lease anniversary ≈ 4.5%/yr nominal — mechanics in the L-3 C0
-block). MEASUREMENT — CPS renter turnover ~15–22%/y (the overall CPS
-mover rate was 11.0% in 2017 and has run single-digit %/y in the
-2020s; the stale "~13%/y" parenthetical is removed per Pass 2), CPI
-rent index.
+Lease tenure 3–8 y (household-econ-2026-07 — was 1–3 y); on move: new
+landlord, fresh base rent (jitter LN σ.05); growth 2.5% inflation +
+real N(2.0%, 1.5%) floor −1%/y (applied once per lease anniversary ≈
+4.5%/yr nominal — mechanics in the L-3 C0 block). MEASUREMENT — CPS
+renter turnover ~15–22%/y (the overall CPS mover rate was 11.0% in
+2017 and has run single-digit %/y in the 2020s; the stale "~13%/y"
+parenthetical is removed per Pass 2), CPI rent index.
 
 **Pass 2 results (L-5):**
 * Lease tenure 1-3y | Citation: Census CPS ASEC mobility (renter
@@ -823,6 +951,9 @@ rent index.
   11.0% in 2017 and has run in the single digits in the 2020s
   [Likely]. Fix the parenthetical regardless of the tenure decision.
   *(C1 doc ride: parenthetical fixed in the header above.)*
+  *(RESOLVED by household-econ-2026-07: tenure 1–3y → 3–8y, mean
+  5.5y ⇒ ~18%/yr turnover, inside the cited band. Backdated initial
+  leases keep mid-tenancy starts working unchanged.)*
 
 ### L-6. Recurring debits
 
@@ -955,12 +1086,13 @@ cluster ×1.8, ≤4 cycles.
 **Insurance** — adoption auto .30/.85/.85/.90/.95/.92, home
 .05/.55/.30/.55/.70/.55, life .10/.55/.30/.45/.55/.55; mortgage⇒home
 .99, auto-loan⇒auto .997; monthly premiums LN: auto $225/.30 (floor
-25), home $163/.30 (25), life $28/.40 (5); claims: auto 4.2%/y →
-payout LN($4,700,.80) floor $500; home 5.5%/y → LN($15,750,.90) floor
-$1,000.
+25), home $200/.30 (25) (household-econ-2026-07 — was $163), life
+$28/.40 (5); claims: auto 4.2%/y → payout LN($4,700,.80) floor $500;
+home 5.5%/y → LN($12,500,.80) floor $1,000 (household-econ-2026-07 —
+was LN($15,750,.90)).
 **Tax** — adoption .05/.20/.65/.85/.50/.10; quarterly LN($1,250,.65)
-floor $100; filing: refund 65% LN($1,850,.55) / balance due 20%
-LN($1,100,.65).
+floor $100; filing: refund 65% LN($2,500,.55) (household-econ-2026-07
+— was LN($1,850,.55)) / balance due 20% LN($1,100,.65).
 Class MEASUREMENT. Sources: Freddie Mac PMMS/median P&I; Experian State
 of the Automotive Finance Market; College Board / FSA; MBA delinquency
 survey; NY Fed CCP; III/NAIC (premiums, claim frequency & severity);
@@ -1009,6 +1141,9 @@ IRS SOI (refund shares & averages).
   DEVIATES-LOW: PL implied ~ $2,047/yr sits at the very bottom of
   the band and ~ 20% under the 2023 national average, ADJUST median
   toward $190-210/mo or cite the low-end sample explicitly.
+  *(RESOLVED by household-econ-2026-07: home premium median $163 →
+  $200, σ .30 — implied mean ≈ $209/mo ≈ $2,510/yr on the ~$2,530
+  anchor.)*
 * Insurance claims | Citation: III/ISO: 5.3% of insured homes filed
   a claim (2023); average home claim severity $18,311 (2022), >$17k
   recent five-year [Certain]. | Status: home frequency CONFORMS (PL
@@ -1018,6 +1153,9 @@ IRS SOI (refund shares & averages).
   collision claim frequency ~ 5-6 per 100 car-years and severity ~
   $5.7-6.6k [Likely]; verify against ISS/III auto tables before
   flipping to CONFORMS.
+  *(RESOLVED by household-econ-2026-07: home severity LN($15,750,
+  .90) → LN($12,500, .80) — implied mean ≈ $17.2k inside the cited
+  $17-18k band.)*
 * Tax | Citation: IRS filing season statistics; Tax Foundation
   tracker. | Real-world value: 64.1% of 2024 returns and ~ 63% of
   2025 returns received refunds; average refund $3,167-3,170 (2025
@@ -1027,6 +1165,10 @@ IRS SOI (refund shares & averages).
   32% under the 2025 average; no official median exists, so either
   ADJUST the median toward ~ $2,300-2,600 or document that PL
   targets a median below the published mean by construction.
+  *(RESOLVED by household-econ-2026-07: refund median $1,850 →
+  $2,500, σ .55 — implied mean ≈ $2,908, ~8% under the 2025-season
+  average with the median-below-mean construction documented in the
+  code.)*
 * Mortgage/auto/student delinquency ladders | UNCITED still; the
   right comparators are MBA NDS (mortgage 30+ ~ 4% band), NY Fed CCP
   transition rates, and FSA delinquency stats; queued as a
@@ -1039,7 +1181,7 @@ IRS SOI (refund shares & averages).
 |---|---|---|
 | Spousal | 60% separate accounts; 2–6 txns/mo; breadwinner-directional 65%; LN($85, .90) | Fed SHED |
 | Parental support | 35% of eligible; Pareto(xm=$25, α=2.4)/txn | Fed SHED; AARP |
-| Allowances | weekly 70% (else monthly); Pareto($35, 2.2) | T. Rowe Price kids-and-money surveys |
+| Allowances | weekly 70% (else monthly); Pareto($8, 1.8) (household-econ-2026-07 — was Pareto($35, 2.2)) | T. Rowe Price kids-and-money surveys |
 | Sibling transfers | 15% pairs active; 18%/mo; LN($120, .90) | — |
 | Grandparent gifts | 8%; LN($150, .70) | — |
 | Parent gifts | 12%; Pareto($75, 1.6) | — |
@@ -1068,6 +1210,9 @@ IRS SOI (refund shares & averages).
   average including the generous self-report. Proposal: Pareto(xm
   $8, alpha 1.8) (mean ~ $18) or LN(median $12, sigma .7); re-pin
   goldens per template.
+  *(RESOLVED by household-econ-2026-07: Pareto($35, 2.2) →
+  Pareto($8, 1.8), mean ≈ $18/wk — the first proposed form, keeping
+  the distribution family and draw pattern.)*
 * Tuition | Citation: College Board, Trends in College Pricing 2025.
   | Real-world value (2025-26): published tuition+fees public 4yr
   in-state $11,950 / out-of-state $31,880 / private nonprofit
@@ -1102,8 +1247,9 @@ inflows .72, 1–3, LN($12,000, 1.0); quiet month .02.
 1–2, LN($400,.65); quiet month .05.
 **Salaried** — cash tips only: .03 active, 2–4/mo, LN($200,.55)
 $10-rounded, floor $100 (cash-split-2026-07).
-**Student** — cash tips only: .05 active, 1–3/mo, LN($140,.55)
-$10-rounded, floor $100 (cash-split-2026-07).
+**Student** — cash tips only: .16 active, 1–3/mo, LN($140,.55)
+$10-rounded, floor $100 (cash-split-2026-07; share recomputed by
+household-econ-2026-07 — see the split table).
 Class MEASUREMENT-adjacent. Sources: freelance-platform earning
 studies; SBA/Intuit small-business cash-flow data.
 
@@ -1116,7 +1262,7 @@ tag, awaiting the owner's retrieval pass per the standing protocol:**
 | smallBusiness (.06) | **.40** | 4–10/mo | LN($2,800,.72) | cash-intensive establishment tier (below) |
 | freelancer (.10) | **.25** | 1–4/mo | LN($450,.60) | offline informal work paid in cash (below) |
 | salaried (.60) | **.03** | 2–4/mo | LN($200,.55) | tipped workers ≈ 2.5% of employment (below) |
-| student (.12) | **.05** | 1–3/mo | LN($140,.55) | employed students × tipped-job share [Derived] |
+| student (.12) | **.16** | 1–3/mo | LN($140,.55) | employment .40 × ~.4 tipped-job share [Derived — recomputed by household-econ-2026-07] |
 | retiree (.10) | 0 | — | — | CHOICE: net cash SPENDERS, not depositors |
 | highNetWorth (.02) | 0 | — | — | CHOICE: no takings/tips channel |
 
@@ -1157,11 +1303,12 @@ tag, awaiting the owner's retrieval pass per the standing protocol:**
   (the general workforce). Amounts modest (LN($200,.55), 2–4
   deposits/mo ≈ $500–900 cash tips/mo) because card tipping now
   carries most tip volume [Likely].
-* STUDENT .05 | [Derived]: PL student employment .12 (L-4) × ~.4 of
-  student jobs in tipped food-service/hospitality (BLS student
-  employment industry mix [Likely]) ≈ .05. KNOCK-ON: L-4's student
-  employment is NONCONFORMING (real ~.40–.45); when C2 ADJUSTs it,
-  recompute this share (≈ .16 at .40 employment) in the same batch.
+* STUDENT .16 | [Derived]: PL student employment .40 (L-4,
+  household-econ-2026-07) × ~.4 of student jobs in tipped
+  food-service/hospitality (BLS student employment industry mix
+  [Likely]) ≈ .16. This is the recompute the cash-split round queued
+  (the original .05 was derived from the base-table .12 that the
+  C2 employment finding showed was never the effective rate).
 * RETIREE/HNW 0 | CHOICE, documented: Fed Diary age tables show 65+
   are the heaviest cash USERS for payments — they withdraw and spend
   cash, they do not deposit takings [Likely]. HNW have no
@@ -1175,10 +1322,11 @@ tag, awaiting the owner's retrieval pass per the standing protocol:**
   ANCHOR: FinCEN FY2024 20.5M CTRs/yr ÷ ~262M US adults ≈ 0.078
   CTRs/adult-yr ⇒ ≈ 128 expected at this config [Derived — Certain
   on the FinCEN numerator]. Salaried/student/freelancer deposits
-  stay far below threshold and add ~2,600 small rows of realism.
-  The CTR:SAR ratio runs far above the national ~4.4 because SARs
-  are ring-driven and deliberately sparse at pinned seeds; the F-6
-  funnel block treats that ratio as a sanity band, not a target.
+  stay far below threshold and add ~3,000 small rows of realism
+  (student tier tripled by the C2 recompute). The CTR:SAR ratio runs
+  far above the national ~4.4 because SARs are ring-driven and
+  deliberately sparse at pinned seeds; the F-6 funnel block treats
+  that ratio as a sanity band, not a target.
 
 ### L-11. Population scaffolding
 
@@ -1306,7 +1454,7 @@ CHOICE. Implementation: `catalog.hpp` only — salaried/student
 personas gain cash-only revenue profiles. GOLDEN EFFECT: ALL THREE
 baselines re-pin (#10). Record measured CTR count in F-7.
 
-### scam-fraud-2026-07 (THIS ROUND — victim scams + fraud reporting)
+### scam-fraud-2026-07 (re-pin #11 — victim scams + fraud reporting)
 
 Owner-requested: model reported transaction fraud and gift-card
 scams. (1) **Gift-card scam rail** in the unauthorized-fraud family
@@ -1334,6 +1482,59 @@ sampler. GOLDEN EFFECT: fraud rows re-roll (rail split + new draws)
 and flag-0 chargeback rows enter the corpus ⇒ ALL THREE baselines
 re-pin (#11 — commit #10 FIRST if it has not landed, one named commit
 per model version). Sources & tags in the F-4 scam-fraud block.
+
+### household-econ-2026-07 (THIS ROUND — C2 household economics, re-pin #12)
+
+The C2 conformance batch: eleven rows shipped in one version, plus
+two code findings and one ledger-coverage fix. Value-only changes —
+no draw pattern, stream identity, or ordering was touched, so the
+invariance gates must stay green while ALL THREE goldens re-pin.
+* Rent amount: `math::amounts::kRent` Γ(2,400)+$50 → **Γ(2,700)+
+  $100** (mean $850 → $1,500; ACS ~$1,487 anchor; L-3).
+* RENTER-SHARE FINDING + ADJUST: no homeowner exclusion is wired and
+  the .80 fit target made ~80% of people full-rent payers (~2.3× the
+  ACS household renter share) — `rent::Rules::paidFraction` .80 →
+  **.35**; effective persona shares in the L-3 C2 block; aggregate
+  rent per capita reconciles to ~$525 vs real ~$520/person-month.
+* Lease tenure 1–3y → **3–8y** (mean 5.5y ⇒ ~18%/yr turnover; L-5).
+* EFFECTIVE-EMPLOYMENT FINDING + ADJUST: the salary selector's .95
+  fit target scale-clamped every persona except retirees to ~100%
+  employment; `salary::Rules::paidFraction` .95 → **.65** (= the
+  persona table's weighted mean, fitted scale ≈ 1.0) and student
+  base .12 → **.40** (NCES/BLS) — the table now IS the effective
+  rate (L-4 C2 block).
+* Student cash-tips share .05 → **.16** (`catalog.hpp`; the L-10
+  recompute queued by cash-split-2026-07).
+* Allowances Pareto($35, 2.2) → **Pareto($8, 1.8)** (mean ≈ $18/wk;
+  L-9).
+* Fuel ticket LN($45,.35) → **LN($32,.35)** (mean ≈ $34.0 vs Diary
+  $32.8; L-2/L-3).
+* Seasonality tails damped: Jan .88→.94, Feb .94→.96, Mar 1.04→1.02,
+  Apr 1.02→1.01, Jun .98→.99, Jul .97→.98, Aug 1.05→1.03,
+  Sep 1.02→1.01, Oct .99→1.00, Nov 1.16→**1.05**, Dec 1.22→**1.15**
+  (Dec/Jan ratio 1.39 → 1.22 on the Census NSA anchor; consteval
+  unit-mean normalization preserves ratios; L-2).
+* P2P amount LN($45,.80) → **LN($55,.80)** (mean ≈ $75.7 vs the
+  Diary mobile-app $71.9; the COUNT share stays a documented CHOICE;
+  L-2/L-3).
+* Home insurance premium LN($163,.30) → **LN($200,.30)** (≈
+  $2,510/yr vs ~$2,530 anchor; L-8).
+* Home claim severity LN($15,750,.90) → **LN($12,500,.80)** (mean ≈
+  $17.2k vs III/ISO $17–18k; L-8).
+* Tax refund LN($1,850,.55) → **LN($2,500,.55)** (mean ≈ $2,908 vs
+  the ~$3,167 2025-season average; median-below-mean documented;
+  L-8).
+* COVERAGE FIX: new **L-4b** government-benefits table (SSA
+  retirement .87/LN($2,071,.30) floor $900; SSDI .04/LN($1,630,.25)
+  floor $500) — streams existed in code, absent from the ledger.
+Files: `math/amounts.hpp`, `math/seasonal.hpp`,
+`activity/recurring/lease.hpp`, `activity/income/salary.hpp`,
+`activity/income/rent.hpp`, `routines/family/allowances.hpp`,
+`synth/products/terms/insurance.hpp`,
+`transfers/channels/insurance/rates.hpp`,
+`synth/products/terms/tax.hpp`, `activity/income/revenue/catalog.hpp`.
+GOLDEN EFFECT: ALL THREE baselines re-pin (#12 — commit #11 FIRST if
+it has not landed). Measure list in F-7.
 
 ## Findings log
 
@@ -1366,16 +1567,20 @@ per model version). Sources & tags in the F-4 scam-fraud block.
 | 2026-07-18 | cash-deposits-2026-07 MEASURED (re-pin #9) | 117 CTRs (anchor ≈128, −9%); alerts 24,231; SARs 2; corpus −3.2% (liquidity knock-on: fewer OD fees/rejections) | figures recorded in F-7 |
 | 2026-07-18 | cash-split-2026-07 | persona cash split research-anchored: smallBusiness .40 (IRS ATG + Census mix + Square), freelancer .25 (SHED/EIWA), salaried .03 (Yale tipped 2.5%), student .05 [Derived], retiree/HNW 0 (CHOICE) | re-pin #10; owner verifies the five named sources |
 | 2026-07-18 | scam-fraud-2026-07 | gift-card scam rail (.12, victim-authorized, scam_gift_card label, never reimbursed) + card-fraud reporting p .85 with flag-0 chargeback reimbursements (Reg Z); ATO/Reg E remediation = known gap | re-pin #11; owner verifies FTC spotlights / §1643 / Security.org |
+| 2026-07-18 | EFFECTIVE-EMPLOYMENT finding (C2 code read) | salary fitScale at target .95 clamped every persona except retirees to ~100% employment — the L-4 table described base weights, not behavior; prior verdicts inherited the misread | FIXED by household-econ-2026-07: paidFraction .65 = table weighted mean, scale ≈ 1, table = effective rate |
+| 2026-07-18 | RENTER-SHARE finding (C2 code read, closes the queued residual) | rent paidFraction .80 ⇒ ~4 in 5 people paid a full household rent (~2.3× ACS ~.34–.36); no homeowner exclusion wired | FIXED by household-econ-2026-07: .80 → .35; homeowner overlap logged as known simplification |
+| 2026-07-18 | GOVERNMENT-BENEFITS coverage gap | SSA retirement (.87, LN($2,071,.30)) and SSDI (.04, LN($1,630,.25)) streams existed in code with NO ledger rows | L-4b added, UNCITED with recalled anchors; owner verifies SSA snapshot |
+| 2026-07-18 | household-econ-2026-07 (C2) | rent $1,500 mean + renter share .35 + tenure 3–8y + employment semantics + student .40 (+cash .16) + allowances $8/1.8 + fuel $32 + seasonality damped + P2P $55 + home premium $200 + home severity $12.5k/.80 + tax refund $2,500 | re-pin #12; measure list in F-7; owner verifies ACS/CPS/NCES/Greenlight/III/IRS/SSA anchors |
 
-## REMAINING OPEN ITEMS (after Pass 2 + C0/C1 + cash + scam rounds)
+## REMAINING OPEN ITEMS (after Pass 2 + C0/C1 + cash + scam + C2 rounds)
 
 Everything below is either a code-reading task, a definition task, or
 a thin-tail row with no strong published comparator. Nothing here is
 a known numeric contradiction; all known contradictions are already
 logged as NONCONFORMING above.
 
-1. Code reads: DONE except one — the renter-selection share (who
-   rents at all), queued with the C2 rent ADJUST.
+1. Code reads: DONE — the renter-selection share (the last one) was
+   read and ADJUSTed by household-econ-2026-07 (L-3 C2 block).
 2. Definition writes still open: spousal-separate definition; tuition
    COA-vs-net definition; subscription comparator source (name one —
    PL sits closest to Bango 2025); repeat-victimization window (usual
@@ -1398,7 +1603,15 @@ logged as NONCONFORMING above.
    payment-method report mix (the .60/.12/.28 rail split); retailer
    $500 per-card caps; Reg Z / 15 U.S.C. §1643 + network
    zero-liability; Security.org reimbursement share (the p .85);
-   Reg E (the documented ATO-remediation gap).
+   Reg E (the documented ATO-remediation gap). **C2 verify list:**
+   ACS B25064 median gross rent (~$1,487) + ACS/HVS renter share of
+   households (~.34–.36); CPS renter turnover (15–22%/yr); NCES/BLS
+   student employment (~.40–.45); Greenlight/Till allowance data
+   ($13–17/wk); Diary Table 13 gas $32.8; Census MARTS NSA Dec/Jan
+   ~1.22; Diary Table 8 mobile-app $71.9; home premium ~$2,530/yr
+   (Philadelphia Fed); III/ISO home severity $17–18k; IRS 2025
+   average refund ~$3,167; SSA Monthly Statistical Snapshot (retired-
+   worker average benefit; SSDI average + beneficiary count).
 4. Thin tail, expect CHOICE outcomes: L-9 parental/sibling/
    grandparent/gift/inheritance distributions (SHED gives incidence
    only); L-10 freelancer/small-business revenue profiles (platform
@@ -1411,5 +1624,9 @@ logged as NONCONFORMING above.
 6. Owner calls riding with C3 (card behavior): payment mixture (L-7);
    cardP slightly-high (L-1); card-rail per-case spend axis and ATO
    per-case level (F-4 C0 block); ATO Reg E reimbursement design.
-7. C2 knock-on: recompute the L-10 student cash-tips share when the
-   L-4 student-employment ADJUST lands (≈ .16 at .40 employment).
+7. NEW residuals from C2: (a) employed students draw the full
+   LN($4,500,.55) salary model — a part-time wage tier is a candidate
+   future ADJUST; (b) homeowner/renter overlap (the `isHomeowner`
+   hook is unwired — ~16% of people can hold both a mortgage and a
+   lease); (c) L-4b government-benefit rows are UNCITED — verify the
+   SSA anchors and set statuses.

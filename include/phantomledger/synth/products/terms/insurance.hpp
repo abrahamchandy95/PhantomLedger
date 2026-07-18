@@ -71,8 +71,11 @@ struct InsurancePremiums {
       .floor = 25.0,
   };
 
+  // Implied mean ~$209/mo ~= $2,510/yr against the ~$2,530 national
+  // average homeowner premium (household-econ-2026-07;
+  // docs/fraud_model_audit.md L-8).
   InsurancePremium homePolicy{
-      .median = 163.0,
+      .median = 200.0,
       .sigma = 0.30,
       .floor = 25.0,
   };

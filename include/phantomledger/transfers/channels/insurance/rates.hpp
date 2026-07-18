@@ -14,8 +14,11 @@ struct ClaimRates {
   double autoMedian = 4700.0;
   double autoSigma = 0.80;
   double autoFloor = 500.0;
-  double homeMedian = 15750.0;
-  double homeSigma = 0.90;
+  // Implied mean ~$17.2k against the III/ISO average home claim
+  // severity ~$17-18k — the old LN($15,750, .90) implied ~$23.6k
+  // (household-econ-2026-07; docs/fraud_model_audit.md L-8).
+  double homeMedian = 12500.0;
+  double homeSigma = 0.80;
   double homeFloor = 1000.0;
 
   [[nodiscard]] constexpr ClaimPayout autoPayout() const noexcept {

@@ -29,7 +29,15 @@ inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
 struct Rules {
   recurring::EmploymentRules employment{};
-  double paidFraction = 0.95;
+  // paidFraction is the fitScale TARGET for the mean selection
+  // probability across ALL candidates, not a per-persona rate. It must
+  // sit at the persona table's weighted mean (sum of L-1 share x p
+  // below ~= .651) so the fitted scale ~= 1.0 and the table below IS
+  // the effective per-persona employment probability. At the old .95
+  // the fitted scale (~25x) silently clamped every persona except
+  // retirees to ~100% employment (household-econ-2026-07 finding;
+  // docs/fraud_model_audit.md L-4).
+  double paidFraction = 0.65;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
@@ -59,9 +67,15 @@ struct PersonaProbability {
   double probability = 0.0;
 };
 
+// Effective employment probabilities (see the Rules::paidFraction
+// note): student .40 = NCES/BLS full-time-student employment;
+// retiree .02 = fully retired persona (Social Security income is the
+// separate government benefits stream, RetirementTerms); freelancer/
+// smallBusiness stay low because their income arrives through the
+// L-10 revenue profiles, not payroll.
 inline constexpr auto kPersonaProbabilities =
     std::to_array<PersonaProbability>({
-        {personas::Type::student, 0.12},
+        {personas::Type::student, 0.40},
         {personas::Type::retiree, 0.02},
         {personas::Type::freelancer, 0.08},
         {personas::Type::smallBusiness, 0.04},

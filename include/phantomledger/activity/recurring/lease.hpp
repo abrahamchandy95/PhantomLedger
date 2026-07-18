@@ -53,9 +53,12 @@ struct RentGrowthRules {
 
 /// Rules owned by lease generation and rent growth.
 struct LeaseRules {
+  // Mean stay ~5.5y implies ~18%/yr renter turnover, inside the CPS
+  // 15-22%/yr band (household-econ-2026-07; docs/fraud_model_audit.md
+  // L-5).
   growth::Range tenure{
-      .min = 1.0,
-      .max = 3.0,
+      .min = 3.0,
+      .max = 8.0,
   };
 
   RentGrowthRules growth{};

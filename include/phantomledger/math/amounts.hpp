@@ -64,9 +64,12 @@ struct AmountModel {
   }
 };
 
+// Every constant below is a research-sensitive model value with a row
+// in docs/fraud_model_audit.md (L-3 amount catalog / L-2 merchant
+// tickets); change them only through a named model version.
 inline constexpr auto kSalary = AmountModel::lognormal(4500.0, 0.55, 50.0);
-inline constexpr auto kRent = AmountModel::gamma(2.0, 400.0, 50.0, 1.0);
-inline constexpr auto kP2P = AmountModel::lognormal(45.0, 0.8, 1.0);
+inline constexpr auto kRent = AmountModel::gamma(2.0, 700.0, 100.0, 1.0);
+inline constexpr auto kP2P = AmountModel::lognormal(55.0, 0.8, 1.0);
 inline constexpr auto kBill = AmountModel::gamma(2.0, 55.0, 15.0, 1.0);
 inline constexpr auto kExternalUnknown =
     AmountModel::lognormal(120.0, 0.95, 5.0);
@@ -150,7 +153,7 @@ buildMerchantTable() {
   using C = merchants::Category;
 
   setMerchant(table, C::grocery, AmountModel::lognormal(50.0, 0.55, 1.0));
-  setMerchant(table, C::fuel, AmountModel::lognormal(45.0, 0.35, 1.0));
+  setMerchant(table, C::fuel, AmountModel::lognormal(32.0, 0.35, 1.0));
   setMerchant(table, C::restaurant, AmountModel::lognormal(28.0, 0.60, 1.0));
   setMerchant(table, C::pharmacy, AmountModel::lognormal(25.0, 0.65, 1.0));
   setMerchant(table, C::ecommerce, AmountModel::lognormal(85.0, 0.70, 1.0));

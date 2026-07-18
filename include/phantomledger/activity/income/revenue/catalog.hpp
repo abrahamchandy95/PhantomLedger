@@ -20,8 +20,9 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 // Businesses ATG sector list; Census establishment mix ~25-30% core);
 // freelancer .25 = offline informal work paid in cash (Fed SHED/EIWA);
 // salaried .03 = tipped workers ~2.5% of US employment (Yale Budget
-// Lab 2024); student .05 = employed students in tipped food-service
-// jobs [Derived — recompute at the C2 student-employment ADJUST].
+// Lab 2024); student .16 = employed students in tipped food-service
+// jobs [Derived: employment .40 x ~.4 tipped-job share — recomputed at
+// the household-econ-2026-07 student-employment ADJUST].
 // Retiree/HNW carry no cash profile BY CHOICE (net cash spenders).
 
 [[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
@@ -132,10 +133,10 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 }
 
 // Employed students in tipped food-service jobs [Derived: student
-// employment .12 x ~.4 tipped-job share; RECOMPUTE at the C2
-// student-employment ADJUST — .40 employment implies ~.16 here].
+// employment .40 (L-4, household-econ-2026-07) x ~.4 tipped-job share
+// = .16 — the L-10 knock-on recompute the cash-split round queued].
 [[nodiscard]] inline constexpr RevenuePersonaProfile studentProfile() {
-  return {.cashTakings = {.activeP = 0.05,
+  return {.cashTakings = {.activeP = 0.16,
                           .paymentsMin = 1,
                           .paymentsMax = 3,
                           .median = 140.0,

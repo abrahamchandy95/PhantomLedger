@@ -10,21 +10,24 @@ namespace PhantomLedger::math::seasonal {
 namespace detail {
 
 // Index 0 is unused so month numbers map directly: table[month] for
-// month in 1..12.
+// month in 1..12. Amplitude is anchored to the Census MARTS NSA
+// Dec-to-Jan ratio (~1.22 = 1.15/0.94); PL models TOTAL consumer
+// spending, which is flatter than retail, so the tails stay damped
+// (household-econ-2026-07; docs/fraud_model_audit.md L-2).
 inline constexpr std::array<double, 13> kMonthlyRaw{
     0.0,  // sentinel
-    0.88, // Jan: post-holiday trough, "dry January"
-    0.94, // Feb: tax refund wave starts late
-    1.04, // Mar: refund spending peak
-    1.02, // Apr: late refund + final tax season
+    0.94, // Jan: post-holiday trough, "dry January"
+    0.96, // Feb: tax refund wave starts late
+    1.02, // Mar: refund spending peak
+    1.01, // Apr: late refund + final tax season
     1.00, // May: Mother's Day offsets Memorial Day drag
-    0.98, // Jun: summer, Father's Day modest bump
-    0.97, // Jul: mid-summer, Independence Day
-    1.05, // Aug: back-to-school ramp-up
-    1.02, // Sep: tail of back-to-school
-    0.99, // Oct: Halloween + holiday pre-season
-    1.16, // Nov: Black Friday + early holiday
-    1.22, // Dec: peak holiday spending
+    0.99, // Jun: summer, Father's Day modest bump
+    0.98, // Jul: mid-summer, Independence Day
+    1.03, // Aug: back-to-school ramp-up
+    1.01, // Sep: tail of back-to-school
+    1.00, // Oct: Halloween + holiday pre-season
+    1.05, // Nov: Black Friday + early holiday
+    1.15, // Dec: peak holiday spending
 };
 
 [[nodiscard]] consteval std::array<double, 13> normalizeToUnitMean() {

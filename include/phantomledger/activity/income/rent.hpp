@@ -26,7 +26,12 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 struct Rules {
   recurring::LeaseRules lease{};
-  double paidFraction = 0.80;
+  // Fit target for the population renter share. Each PL renter is a
+  // SOLE TENANT paying one full household rent (L-3 C0 read), so the
+  // comparator is the ACS household renter share ~.34-.36 — the old
+  // .80 made four in five people full-rent payers, ~2.3x that share
+  // (household-econ-2026-07; docs/fraud_model_audit.md L-3/L-5).
+  double paidFraction = 0.35;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
@@ -61,6 +66,10 @@ struct PersonaProbability {
   double probability = 0.0;
 };
 
+// Relative renting propensities, scaled by the paidFraction fit
+// (scale ~= .66 at the .35 target, so effective shares run student
+// ~.33, retiree ~.12, freelancer ~.38, smallBusiness ~.23, HNW ~.07,
+// salaried ~.41 — renting skews young/mobile).
 inline constexpr auto kPersonaProbabilities =
     std::to_array<PersonaProbability>({
         {personas::Type::student, 0.50},
