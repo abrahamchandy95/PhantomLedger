@@ -2,7 +2,6 @@
 
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
-#include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/accounts.hpp"
 #include "phantomledger/exporter/standard/aggregates.hpp"
 #include "phantomledger/exporter/standard/counterparties.hpp"
@@ -10,6 +9,7 @@
 #include "phantomledger/exporter/standard/merchants.hpp"
 #include "phantomledger/exporter/standard/people.hpp"
 #include "phantomledger/exporter/standard/pii.hpp"
+#include "phantomledger/exporter/standard/schema.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/synth/pii/membership_filter.hpp"

@@ -20,7 +20,7 @@
 // Retained state is account/pair scale, never transaction scale. Every
 // accumulator is the SAME function the corpus path uses (canonical
 // CanonicalAccumulator, infra_edges detail accumulators, the shared
-// transfer-id writer), so the two engines cannot drift.
+// transfer-id writer), so the two paths cannot drift.
 //
 // Every table goes through common::Table: when Config::pgMirror is
 // armed the rendered bytes stream into PostgreSQL directly — the only
@@ -41,8 +41,8 @@
 #include "phantomledger/exporter/mule_ml/infra_edges.hpp"
 #include "phantomledger/exporter/mule_ml/party.hpp"
 #include "phantomledger/exporter/mule_ml/registry_maps.hpp"
+#include "phantomledger/exporter/mule_ml/schema.hpp"
 #include "phantomledger/exporter/mule_ml/transfer.hpp"
-#include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/synth/infra/devices_output.hpp"
 #include "phantomledger/synth/infra/ips_output.hpp"

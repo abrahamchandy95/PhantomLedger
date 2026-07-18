@@ -6,8 +6,8 @@
 #include "phantomledger/exporter/mule_ml/infra_edges.hpp"
 #include "phantomledger/exporter/mule_ml/party.hpp"
 #include "phantomledger/exporter/mule_ml/registry_maps.hpp"
+#include "phantomledger/exporter/mule_ml/schema.hpp"
 #include "phantomledger/exporter/mule_ml/transfer.hpp"
-#include "phantomledger/exporter/schema.hpp"
 
 namespace PhantomLedger::exporter::mule_ml {
 

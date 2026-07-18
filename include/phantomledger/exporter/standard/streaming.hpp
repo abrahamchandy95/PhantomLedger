@@ -19,7 +19,8 @@
 // account-pair scale, not transaction scale.
 //
 // Entity-scale tables come from exportEntities() after the fold; pairing
-// the two reproduces exportAll() completely (test_windowed_e2e).
+// the two reproduces exportAll() completely (test_windowed_e2e's
+// successor gates: arch equivalence + the table golden).
 //
 // Both tables go through common::Table: when Config::pgMirror is armed
 // the rendered bytes stream into PostgreSQL directly — the only
@@ -31,8 +32,8 @@
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/exporter/standard/aggregates.hpp"
+#include "phantomledger/exporter/standard/schema.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/time/window.hpp"
