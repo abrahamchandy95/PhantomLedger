@@ -279,10 +279,9 @@ runSpendingLeg(const pltest::pl::synth::pii::PoolSet &poolSet,
 
     const pl::transactions::Factory productTxf(rng, &productRouter,
                                                &infra.ringInfra);
-    const auto primaryByPerson = xfer::primaryAccounts(holdings);
     productSource = xfer::makeProductSource(
         window, seed, rngFactory, productTxf, holdings,
-        pl::transfers::insurance::ClaimRates{}, primaryByPerson);
+        pl::transfers::insurance::ClaimRates{});
 
     auto preBook =
         std::make_unique<pl::clearing::Ledger>(initialBook->clone());

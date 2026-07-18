@@ -96,12 +96,11 @@ void PrecomputedCursorSource::maybeCompact() {
 // ------------------------------------------------------------- builders
 
 std::unique_ptr<PrecomputedCursorSource>
-makeProductSource(time::Window window, std::uint64_t seed,
-                  const random::RngFactory &rngFactory,
-                  const transactions::Factory &txf,
-                  const pipeline::Holdings &holdings,
-                  ::PhantomLedger::transfers::insurance::ClaimRates claimRates,
-                  const PrimaryAccounts &primaryAccounts) {
+makeProductSource(
+    time::Window window, std::uint64_t seed,
+    const random::RngFactory &rngFactory, const transactions::Factory &txf,
+    const pipeline::Holdings &holdings,
+    ::PhantomLedger::transfers::insurance::ClaimRates claimRates) {
   // Dedicated lane: product precomputation must not consume the persistent
   // Session's sequential generation RNG.
   auto productRng = rngFactory.rng({"products", "full_schedule"});
@@ -109,6 +108,8 @@ makeProductSource(time::Window window, std::uint64_t seed,
   // Factory::make() also consumes RNG for device/IP routing, so it must use
   // the same isolated product lane.
   const auto productTxf = txf.rebound(productRng);
+
+  const auto primaryByPerson = primaryAccounts(holdings);
 
   ProductTxnEmitter emitter{
       window,
@@ -122,13 +123,14 @@ makeProductSource(time::Window window, std::uint64_t seed,
   // Match ProductReplay::merge exactly: each newly generated source is
   // sorted and merged through the existing replay-order helper.
   merged = legitLedger::mergeReplaySorted(
-      std::move(merged), emitter.premiums(holdings, primaryAccounts));
+      std::move(merged), emitter.premiums(holdings, primaryByPerson));
 
   merged = legitLedger::mergeReplaySorted(
-      std::move(merged), emitter.claims(claimRates, holdings, primaryAccounts));
+      std::move(merged),
+      emitter.claims(claimRates, holdings, primaryByPerson));
 
   merged = legitLedger::mergeReplaySorted(
-      std::move(merged), emitter.obligations(holdings, primaryAccounts));
+      std::move(merged), emitter.obligations(holdings, primaryByPerson));
 
   return std::make_unique<PrecomputedCursorSource>(std::move(merged));
 }

@@ -180,12 +180,11 @@ WindowedRunResult TransferStage::runWindowedErased(
   auto baseSource = std::make_unique<PrecomputedCursorSource>(
       prologue.streams.takeReplayReady());
 
-  const auto primaryByPerson = primaryAccounts(holdings);
   const transactions::Factory productTxf(rng, &productRouter,
                                          &infra.ringInfra);
-  auto productSource = makeProductSource(
-      scope.window, scope.seed, rngFactory, productTxf, holdings,
-      products_.insurancePrograms().claimRates, primaryByPerson);
+  auto productSource =
+      makeProductSource(scope.window, scope.seed, rngFactory, productTxf,
+                        holdings, products_.insurancePrograms().claimRates);
 
   auto familySource = std::make_unique<PrecomputedCursorSource>(
       legit_ledger::sortForReplay(

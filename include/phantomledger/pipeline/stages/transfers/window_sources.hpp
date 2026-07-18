@@ -88,14 +88,15 @@ private:
 
 // Generates the complete product schedule with a dedicated deterministic
 // product RNG lane. The supplied transaction factory is rebound to that
-// lane so device/IP routing draws are isolated as well.
+// lane so device/IP routing draws are isolated as well. The primary-account
+// index is derived internally from holdings (primaryAccounts() is pure and
+// RNG-free): callers pass the world, not its derivations.
 [[nodiscard]] std::unique_ptr<PrecomputedCursorSource>
 makeProductSource(time::Window window, std::uint64_t seed,
                   const random::RngFactory &rngFactory,
                   const transactions::Factory &txf,
                   const pipeline::Holdings &holdings,
-                  ::PhantomLedger::transfers::insurance::ClaimRates claimRates,
-                  const PrimaryAccounts &primaryAccounts);
+                  ::PhantomLedger::transfers::insurance::ClaimRates claimRates);
 
 // Must be called only after authoritative pre-fraud replay has completed.
 //

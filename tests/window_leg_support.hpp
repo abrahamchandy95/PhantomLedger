@@ -447,10 +447,9 @@ struct LegResult {
   if (opt.withProducts) {
     const pl::transactions::Factory productTxf(rng, &productRouter,
                                                &infra.ringInfra);
-    const auto primaryByPerson = xfer::primaryAccounts(holdings);
     productSource = xfer::makeProductSource(
         opt.window, opt.seed, rngFactory, productTxf, holdings,
-        pl::transfers::insurance::ClaimRates{}, primaryByPerson);
+        pl::transfers::insurance::ClaimRates{});
   }
 
   std::unique_ptr<xfer::PrecomputedCursorSource> familySource;
