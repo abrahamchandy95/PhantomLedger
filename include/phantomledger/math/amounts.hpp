@@ -87,8 +87,6 @@ inline constexpr auto kInvestmentInflow =
     AmountModel::lognormal(5000.0, 1.00, 100.0);
 inline constexpr auto kFraud = AmountModel::lognormal(900.0, 0.70, 50.0);
 inline constexpr auto kFraudCycle = AmountModel::lognormal(600.0, 0.25, 1.0);
-inline constexpr auto kFraudBoostCycle =
-    AmountModel::lognormal(500.0, 0.20, 1.0);
 
 namespace detail {
 

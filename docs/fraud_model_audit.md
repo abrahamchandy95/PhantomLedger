@@ -276,7 +276,7 @@ report at ADJUST time only.
 | Structuring profile mix | 60% threshold ($8.5k–$9.95k) / 25% medium ($3–7k) / 15% small ($300–1.5k) | CHOICE | FinCEN SAR narratives |
 | Splits per victim burst | 3–12; burst 3–8 d; sub-burst 1–2 d; 08–22 h; secondary target p .20 | CHOICE | — |
 | Classic-fraud amount | LN($900, .70) floor $50 | CHOICE (re-classed per Pass 2) — targets money-movement/bank-drain scams (phone-contact median $1,400 in 2022; APP per-case ~$2,950), deliberately above the all-fraud CSN median ~$497 | UK Finance APP losses; FTC medians |
-| Cycle / boost-cycle amounts | LN($600, .25) / LN($500, .20) | CHOICE | — |
+| Cycle amount | LN($600, .25). The boost-cycle companion LN($500, .20) was RETIRED (boost-cycle-retire-2026-07): the constant existed in code but was never wired — no Typology enumerator, no fraud channel, no playbook phase, no sampler consumed it | CHOICE | — |
 | Card-test charge | U[$0.50,$5.00], ~40% anchors {.50,1,2,5} (test-pinned) | MEASUREMENT | Nilson; issuer advisories |
 | Card fraud spend | median ≈ $79, mean ≈ $162, clamp [$1,$5k] (test-pinned; PER TRANSACTION). Per-CASE: targetEvents U{5..14} ⇒ ≈ $1.2–1.5k ≈ 8× the UK per-case average — CHOICE, re-classed by card-behavior-2026-07 (dense compromise events for label density; the per-txn distribution is the measured object) | MEASUREMENT (per-txn) / CHOICE (per-case) | Fed Payments Study; UK Finance |
 | ATO drain | median ≈ $180, mean ≈ $554, clamp [$10,$85k], ~0.4% ≥ $10k (test-pinned; PER DRAIN TRANSACTION). Per-CASE: targetEvents U{3..8} (card-behavior-2026-07 — was U{2..5}) ⇒ ≈ $3.0k vs UK remote-banking ~$3.5k/case — CONFORMS as a band | MEASUREMENT | FTC Sentinel; IC3; UK Finance |
