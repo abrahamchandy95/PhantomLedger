@@ -143,11 +143,14 @@ F3 = add filing probability. Implemented 2026-07-18.
 probe-verified fraud-dense config (pop 10000, 60 d, seed 7 — 5 rings,
 structuring spanning the F1 band, derived shell scores, SARs, alerts,
 CTRs, cases), baselined in `tests/golden_tables_aml.md5`. The gate
-HARD-REQUIRES ShellAccount / Sar / Alert / Ctr / InvestigationCase in
-the pin and also pins the fraud-dense corpus (row_seq). First `make
-test` captures the baseline (SKIP 77) — commit it in the capture round.
-This section's first intentional-model-change round is the table
-golden's REAL promotion trial.
+HARD-REQUIRES ShellAccount / SAR / Alert / CTR / InvestigationCase in
+the pin (stems verbatim from schema.hpp — SAR.csv and CTR.csv are
+uppercase; the first shipped revision guessed "Sar"/"Ctr" and failed
+its own guard, fixed same day) and also pins the fraud-dense corpus
+(row_seq). First `make test` captures the baseline (SKIP 77) — commit
+it in the capture round. This section's first intentional-model-change
+round is the table golden's REAL promotion trial. Measured cost of the
+whole two-section gate: ≈39 s.
 
 ### Live-binary evidence (probes, 2026-07-18, file-only)
 

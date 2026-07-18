@@ -20,7 +20,7 @@
 //   scores, SARs, alerts, CTRs, cases). This section exists because
 //   the standard-config goldens are structurally blind to fraud-LABEL
 //   tables (the fraud-audit-2026-07 coverage finding): ShellAccount,
-//   Sar and the SAR edges, Alert/Ctr/Disposition/InvestigationCase
+//   SAR and the SAR edges, Alert/CTR/Disposition/InvestigationCase
 //   exist only in the aml use cases. The gate HARD-REQUIRES those
 //   tables to be present in the pin, and also pins the fraud-dense
 //   corpus itself (the shared public.transactions stream, which this
@@ -262,11 +262,12 @@ int main() {
   std::sort(fraudTables.begin(), fraudTables.end());
 
   // The whole point of this section: the fraud-LABEL tables the
-  // standard config never produces MUST be under the pin.
+  // standard config never produces MUST be under the pin. Stems are
+  // VERBATIM from schema.hpp (SAR.csv / CTR.csv are uppercase).
   for (const char *required : {"aml_txn_edges_vertices_ShellAccount",
-                               "aml_txn_edges_vertices_Sar",
+                               "aml_txn_edges_vertices_SAR",
                                "aml_txn_edges_vertices_Alert",
-                               "aml_txn_edges_vertices_Ctr",
+                               "aml_txn_edges_vertices_CTR",
                                "aml_txn_edges_vertices_InvestigationCase"}) {
     if (std::find(fraudTables.begin(), fraudTables.end(),
                   std::string{required}) == fraudTables.end()) {

@@ -163,10 +163,11 @@ set_tests_properties(test_aml_txn_edges_direct PROPERTIES
 #             Baseline: tests/golden_tables.md5
 #   fraud     aml-txn-edges at the fraud-dense probe config (pop 10000,
 #             60d, seed 7): pins the fraud-label tables (ShellAccount,
-#             Sar + SAR edges, Alert/Ctr/Disposition/InvestigationCase
-#             — REQUIRED present) and the fraud-dense corpus, closing
-#             the fraud-audit-2026-07 coverage finding (the standard
-#             config is structurally blind to fraud labels).
+#             SAR + the SAR edges, Alert/CTR/Disposition/
+#             InvestigationCase — REQUIRED present; stems verbatim from
+#             schema.hpp) and the fraud-dense corpus, closing the
+#             fraud-audit-2026-07 coverage finding (the standard config
+#             is structurally blind to fraud labels).
 #             Baseline: tests/golden_tables_aml.md5
 #
 # The fraud section's first intentional-model-change round is the table
