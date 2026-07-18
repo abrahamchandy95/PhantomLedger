@@ -1,11 +1,12 @@
 # PhantomLedger Fraud-Model Research Audit
 
-Status: **STEP 4 SHIPPED (2026-07-18)** — the approved ADJUST batch
-("fraud-audit-2026-07") is implemented, verified live in the binary,
-and BOTH goldens are re-pinned. Remaining in this cycle: the named
-commit (owner runs git; command in the session log), the realized-F1
-fraction measurement at the pinned seed (one command, below), and the
-step-5 audit-closure items (source editions; SAR funnel calibration).
+Status: **STEP 4 SHIPPED + MEASURED (2026-07-18)** — the approved ADJUST
+batch ("fraud-audit-2026-07") is implemented, verified live in the
+binary (probe evidence below, including the realized F1 fraction), and
+both golden baselines were recaptured. Remaining in this cycle: the
+named commit (owner runs git). The table-golden PROMOTION TRIAL came
+back VACUOUS (the goldens are structurally blind to this batch — see
+the coverage finding); the fraud-visible pin is the promotion vehicle.
 
 ## Purpose and rules
 
@@ -18,24 +19,34 @@ primary sources BEFORE any of them may change:
 3. Labels are not interchangeable: `is_fraud`, SARs, alerts/CTRs,
    chain/shell labels are calibrated separately.
 4. Any change is a **model-version change** + deterministic re-pin
-   (BOTH goldens, one commit). This batch was the table-digest golden's
-   promotion trial (verdict below).
+   (BOTH goldens, one commit).
 
 ## SHIPPED ADJUST BATCH — model version "fraud-audit-2026-07"
 
 Owner decisions (2026-07-17): F1 = widen band; F2 = derive real score;
 F3 = add filing probability. Implemented 2026-07-18.
 
-### F1 — Structuring band widened (SHIPPED)
+### F1 — Structuring band widened (SHIPPED, MEASURED)
 
 * `typologies/structuring.hpp Rules`: `epsilonMax` **400 → 1500**
   (ε ∈ [50, 1500] ⇒ threshold-profile splits land $8,500–$9,950;
   threshold and splitsMin/Max 3–12 unchanged).
 * Effect: a documented fraction of structuring splits falls BELOW the
   [9,000, 10,000) alert band — the alert label becomes realistically
-  incomplete. With ε uniform, ≈ (1500−1000)/1450 ≈ 34.5% of
-  threshold-profile splits land under $9,000 (realized fraction: see
-  the pinned-seed measurement below).
+  incomplete. Analytic expectation ≈ (1500−1000)/1450 ≈ 34.5% of
+  threshold-profile splits under $9,000.
+* **Realized measurement (probe: aml, pop 10000, 60 d, seed 7; posted
+  corpus):** 53 structuring rows; 8 threshold-profile splits (≥ $8,500),
+  of which 3 below the alert band ⇒ realized share **0.375** (n=8;
+  consistent with 0.345). **Liveness proof:** 7 of the 8 sit below
+  $9,600 — the OLD band's floor (ε ≤ 400 ⇒ splits ≥ $9,600) — values
+  impossible pre-batch.
+* **Posted-mix observation (MEASUREMENT, logged):** posted profile mix
+  was 8 threshold / 17 medium / 28 small (15%/32%/53%) vs the sampler's
+  60/25/15 — clearing rejects unfunded victim debits and rejection
+  probability rises with amount, so the POSTED corpus under-represents
+  large splits. Emergent, realistic, not a defect; revisit only if a
+  future audit wants the posted mix calibrated directly.
 * Row-count neutrality BY CONSTRUCTION: every branch of
   `sampleSmurfAmount` consumes exactly two RNG draws, so ε changes
   values only — split counts, victim coins, timestamps, targets, chain
@@ -82,83 +93,76 @@ F3 = add filing probability. Implemented 2026-07-18.
   SUBJECT_OF_SAR, ESCALATED_TO, RESULTED_IN, summaries).
 * Calibration note: 0.70 is the initial CHOICE pending verification of
   current FinCEN SAR Stats against the simulated detection funnel
-  (audit-closure item). The probe below shows the JOINT gate (draw ×
-  floor) bites hard at small N — revisit only via a new model version.
+  (audit-closure item). The joint gate (draw × floor) bites hard at
+  small N — probes observed 2/9 groups filing (pop 10000) and 0/2 (pop
+  2000). Deterministic and content-keyed; revisit only via a new model
+  version.
 
-### Shipping procedure — EXECUTED (outcome per step)
+### Shipping procedure — EXECUTED (outcome per step, CORRECTED)
 
 1. Implemented in one round (structuring.hpp; labels.hpp/.cpp; both aml
-   streaming sinks + both exportFromArtifacts; sar.hpp/.cpp).
-   `make test`: the goldens failed as designed and everything else
-   stayed green. `test_fraud_amounts` was examined deliberately: it
-   pins the UNAUTHORIZED samplers (cardTestCharge / cardFraudSpend /
+   streaming sinks + both exportFromArtifacts; sar.hpp/.cpp). `make
+   test`: ALL GREEN — including both goldens, see step 2 for why.
+   `test_fraud_amounts` was examined deliberately: it pins the
+   UNAUTHORIZED samplers (cardTestCharge / cardFraudSpend /
    atoDrainAmount), not structuring — green through the batch, no
    update needed.
-2. TRIAL SCORING (recovered from git — the committed pre-batch baseline
-   was still live because every intervening round was output-neutral):
-   the CSV golden flagged EXACTLY {transactions.csv, HAS_PAID.csv,
-   ACCOUNT_FLOW_AGG.csv} — the F1 corpus fingerprint, matching the
-   blast-radius map, nothing else.
-   **COVERAGE FINDING (2026-07-18): both goldens pin a MULE_ML-ONLY
-   run** — F2's shell tables and F3's SAR tables are not under ANY
-   golden pin, so their blast radius was invisible to the trial.
-   Additionally the pre-batch `golden_tables.md5` had never been
-   committed (untracked), so the table golden's catch list is
-   established structurally (direct tables tee the SAME rendered bytes;
-   all four direct gates stayed green) rather than by an observed diff.
-   **PROMOTION: PASSED, with those two caveats.** Follow-ups recorded
-   in the systemprompt: (a) commit baselines at capture, (b) add a
-   FRAUD-VISIBLE golden pin (an aml section in the table golden) before
-   relying on goldens to catch label-model drift.
-3. Both baselines re-pinned (rm → `make test` twice → all 42 green).
-4. Commit: owner action, one commit named
-   "model: fraud-audit-2026-07 (F1 structuring band, F2 shell score,
-   F3 SAR filing) — golden re-pin #7" (also carries the uncommitted
-   pg-native arc; re-pin #7 in the commit-naming sequence — unrelated
-   to the CLOSED accrual candidate formerly tracked as #7).
+2. TRIAL SCORING — **VACUOUS (corrected 2026-07-18).** The pinned
+   config's corpus (mule_ml, pop 2000/60 d/seed 3405691582; 173,986
+   rows, reproduced by probe) contains ZERO structuring rows — its
+   single ring drew a non-structuring playbook (P ≈ 0.64 per ring) —
+   so F1 changed no pinned byte; and F2/F3 write tables that exist only
+   in the aml use cases, which NO golden pins (**COVERAGE FINDING:
+   both goldens pin a MULE_ML-ONLY run**). The batch was therefore
+   invisible to both goldens; they passed unchanged, correctly.
+   The 3-line `golden_run.b2sum` delta observed against the last
+   commit ({transactions, HAS_PAID, ACCOUNT_FLOW_AGG} — exactly the
+   corpus-order/amount-sensitive files) PREDATES the batch: it
+   accumulated from the earlier UNCOMMITTED session arc (most plausibly
+   the S10 ordering re-pin), and with no commits in between the exact
+   attribution is unrecoverable. An earlier revision of this document
+   wrongly attributed that delta to F1 — RETRACTED here.
+   **PROMOTION: NOT DECIDED by this batch.** The fraud-visible pin
+   (systemprompt roadmap item 2) is the promotion vehicle; CSV arc
+   step 5 stays gated behind it. Process lessons: commit baselines at
+   capture; commit every round.
+3. Both baselines recaptured (rm → `make test` twice → all 42 green).
+4. Commit: owner action, one commit for the model batch + the
+   uncommitted arc; body states the batch is golden-invisible and the
+   baseline delta comes from the earlier arc (exact command in the
+   session log).
 5. This document update; dataset parameter statements below.
 
-### Live-binary evidence (probe: aml, pop 10000, 60 d, seed 7, file-only)
+### Live-binary evidence (probes, 2026-07-18, file-only)
 
+Probe A — aml, pop 10000, 60 d, seed 7:
 * Invariant 5 intact: candidates L=909,116; fraud rows 1,769 (0.1944%).
+* **F1 live + measured:** see F1 section (share 0.375, 7/8 below the
+  old band's floor).
 * **F2 live:** ShellAccount scores are a derived spread
   {0.00 ×5, 0.04, 0.10, 0.21} — the constant-1.0 column is gone.
-* **F3 live:** 2 SARs filed of 9 fraud groups (5 rings + 4 solos); the
-  joint gate is doing real work (solo unauthorized totals often sit
-  under the $5,000 floor). Deterministic and content-keyed; funnel
-  calibration deferred to audit closure as specced.
-* **F1 at this seed:** zero structuring rows (≈11% likelihood — 5 rings
-  at 0.36 structuring-phase playbook mass), so the realized-fraction
-  measurement moves to the pinned seed, where the baseline diff proves
-  structuring rows exist.
+* **F3 live:** 2 SARs filed of 9 fraud groups (5 rings + 4 solos).
 
-### F1 realized-fraction measurement (pinned config — PENDING one run)
+Probe B — aml, pop 2000, 60 d, seed 3405691582 (the pinned corpus;
+use-case-independent, rowcount-matched 173,986):
+* Zero structuring rows (grep over the full ledger dump) — basis of the
+  trial-scoring correction above. 1 ring + 1 solo; SARs filed: 0
+  (joint F3 gate at N=2).
 
-The corpus is use-case-independent, so an aml run at the CSV golden's
-config reproduces the pinned corpus with the full ledger dump:
-
-```
-PL_FILE_ONLY=1 ./build/phantomledger --usecase aml --population 2000 \
-  --days 60 --seed 3405691582 --show-transactions --out /tmp/pl_f1_probe
-
-grep -c fraud_structuring /tmp/pl_f1_probe/transactions.csv
-
-awk -F, '$10=="fraud_structuring" && $3+0>=8500 {n++; if($3+0<9000)b++} \
-  END{printf "threshold splits=%d below-alert-band=%d share=%.3f\n", \
-  n, b, (n?b/n:0)}' /tmp/pl_f1_probe/transactions.csv
-```
-
-Record the share here (expected ≈ 0.345; pre-batch: exactly 0). If the
-grep is positive but the awk n=0, the column indexing is wrong — stop
-and re-derive from the header (amount=$3, channel=$10 per kLedgerHeader).
+**Probe pitfall (recorded):** ledger CSVs end rows with CRLF (RFC 4180,
+`csv.cpp endRow`). awk field equality on the LAST column silently fails
+unless the `\r` is stripped: use `sub(/\r$/,"",$10)` (or match with
+`index()`); grep is substring-based and unaffected. Two probe awk runs
+returned false zeroes this way before the CRLF was spotted.
 
 ### Dataset parameter statements (for user-facing dataset docs)
 
 * Structuring splits: 60% threshold profile at `threshold − ε`,
   ε ~ U[50, 1500] ⇒ $8,500–$9,950; ≈34.5% of threshold-profile splits
-  fall below the $9,000 alert band, so per-transaction alerts
-  under-cover structuring BY DESIGN. (25% medium [3k,7k); ~15% small
-  [300,1500).)
+  (realized 0.375 at probe scale) fall below the $9,000 alert band, so
+  per-transaction alerts under-cover structuring BY DESIGN. (25% medium
+  [3k,7k); ~15% small [300,1500); POSTED mix skews smaller because
+  unfunded victim debits bounce at clearing.)
 * `shell_score` = round2(passThrough × (1 − organicShare)) over each
   candidate account's full-history flows; near 1.0 ⇒ dormant pure
   pass-through; low ⇒ camouflaged/organic; 0 ⇒ no activity. Candidates
@@ -177,7 +181,8 @@ the values above). A.1 prevalence (6 rings/10k σ0.4; 4 solos/10k; caps
 σ0.8 [3,500], repeat 0.10); A.3 alerts (below-CTR [9000,10000) sev2;
 CTR ≥10000 sev3 — statutory CONFIRMED; velocity ≥5/day sev2; escalation
 ⅛; 30/90d windows); A.4 playbooks (17, weights sum 1.00; composites
-mirror placement→layering→integration); A.5 structure (layering 3–8
+mirror placement→layering→integration; structuring-phase mass 0.36 ⇒
+a ring lacks structuring with P ≈ 0.64); A.5 structure (layering 3–8
 hops; structuring ε [50,400] × 3–12 splits — F1 SHIPPED ε [50,1500]);
 A.6 camouflage (p2p 0.03/day, bill 0.35, salary 0.12); A.7 labels (SAR
 one-per-group — F3 SHIPPED filing gate; shellScore ≡ 1.0 — F2 SHIPPED
@@ -210,10 +215,11 @@ current editions before final calibration claims (statutes excepted).
 |---|---|---|---|---|
 | 2026-07-17 | CTR ≥ $10,000 | CONFIRMED (statutory) | 31 CFR §1010.311 | none |
 | 2026-07-17 | layering 3–8 hops | CONFIRMED (shape) | FATF Professional ML 2018 | none |
-| 2026-07-18 | F1 structuring band | **SHIPPED** (ε max 400→1500) | FinCEN/FFIEC; baseline diff = {transactions, HAS_PAID, ACCOUNT_FLOW_AGG} | measure realized fraction (pending) |
-| 2026-07-18 | F2 shell score | **SHIPPED** (derived score) | FATF shell typologies; probe spread {0…0.21} | none |
-| 2026-07-18 | F3 SAR filing | **SHIPPED** (p=0.70 + $5k floor) | FinCEN SAR Stats; 31 CFR §1020.320; probe 2/9 filed | funnel calibration at audit closure |
-| 2026-07-18 | golden coverage | **FINDING** | both goldens pin a mule_ml-only run; fraud-label tables unpinned | add fraud-visible pin (aml table-golden section) |
+| 2026-07-18 | F1 structuring band | **SHIPPED + MEASURED** (ε max 400→1500) | probe: share 0.375 below alert band; 7/8 splits below the old band's floor | none |
+| 2026-07-18 | F2 shell score | **SHIPPED** (derived score) | probe spread {0…0.21} | none |
+| 2026-07-18 | F3 SAR filing | **SHIPPED** (p=0.70 + $5k floor) | probes 2/9 and 0/2 filing | funnel calibration at audit closure |
+| 2026-07-18 | golden coverage | **FINDING** | both goldens pin a mule_ml-only, fraud-sparse run; batch was golden-invisible; promotion vacuous | fraud-visible pin (next round) |
+| 2026-07-18 | posted structuring mix | **MEASUREMENT (observation)** | posted 15/32/53 vs sampler 60/25/15 — unfunded rejections rise with amount | none (emergent realism; revisit only on demand) |
 | 2026-07-17 | budget p = 0.0012 | CHOICE-DOCUMENTED | Fed Payments Study [verify] | dataset docs |
 | 2026-07-17 | playbooks / camouflage | CHOICE-DOCUMENTED | — | dataset docs |
 | 2026-07-17 | ring size, reuse, repeat victimization | PLAUSIBLE | EMMA / FTC / IC3 [verify editions] | finalize after verification |
