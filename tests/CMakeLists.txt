@@ -152,22 +152,34 @@ set_tests_properties(test_aml_txn_edges_direct PROPERTIES
     TIMEOUT 600)
 
 # ---------------------------------------------------------------------
-# CSV retirement arc step 4: the TABLE-DIGEST GOLDEN. Runs the CSV
-# golden's exact config against a live server and pins the PostgreSQL
-# content itself: the transactions stream in row_seq order plus every
-# direct table (discovered from the run's own CSV stems), one md5 line
-# per table, baselined in tests/golden_tables.md5 (first run captures,
-# SKIP 77; the baseline belongs in git, per-server). PARALLEL-RUN
-# POLICY: the CSV golden stays authoritative until this baseline has
-# survived a full round of intentional model changes; re-pins must
-# update BOTH baselines in the same commit. Skips with 77 when no
-# server is reachable; honors PL_TEST_PG.
+# CSV retirement arc step 4 + the FRAUD-VISIBLE PIN: the TABLE-DIGEST
+# GOLDEN. Two sections, each with its own baseline (first live run
+# captures a missing one, SKIP 77; baselines belong in git IMMEDIATELY,
+# per-server):
+#
+#   standard  the CSV golden's exact config; corpus stream in row_seq
+#             order + every public-schema direct table (discovered from
+#             the run's own CSV stems).
+#             Baseline: tests/golden_tables.md5
+#   fraud     aml-txn-edges at the fraud-dense probe config (pop 10000,
+#             60d, seed 7): pins the fraud-label tables (ShellAccount,
+#             Sar + SAR edges, Alert/Ctr/Disposition/InvestigationCase
+#             — REQUIRED present) and the fraud-dense corpus, closing
+#             the fraud-audit-2026-07 coverage finding (the standard
+#             config is structurally blind to fraud labels).
+#             Baseline: tests/golden_tables_aml.md5
+#
+# The fraud section's first intentional-model-change round is the table
+# golden's promotion trial. Re-pins must update every touched baseline
+# in the same named commit. Skips with 77 when no server is reachable;
+# honors PL_TEST_PG.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_table_golden)
 target_compile_definitions(test_table_golden PRIVATE
     PL_BIN_PATH="$<TARGET_FILE:phantomledger>"
-    PL_TABLE_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables.md5")
+    PL_TABLE_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables.md5"
+    PL_TABLE_BASELINE_AML="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables_aml.md5")
 add_dependencies(test_table_golden phantomledger)
 set_tests_properties(test_table_golden PROPERTIES
     SKIP_RETURN_CODE 77

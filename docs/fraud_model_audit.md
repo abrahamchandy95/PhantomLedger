@@ -3,10 +3,13 @@
 Status: **STEP 4 SHIPPED + MEASURED (2026-07-18)** — the approved ADJUST
 batch ("fraud-audit-2026-07") is implemented, verified live in the
 binary (probe evidence below, including the realized F1 fraction), and
-both golden baselines were recaptured. Remaining in this cycle: the
-named commit (owner runs git). The table-golden PROMOTION TRIAL came
-back VACUOUS (the goldens are structurally blind to this batch — see
-the coverage finding); the fraud-visible pin is the promotion vehicle.
+both golden baselines were recaptured. The table-golden PROMOTION TRIAL
+came back VACUOUS (the goldens are structurally blind to this batch —
+see the coverage finding); the FRAUD-VISIBLE PIN closing that gap is
+DELIVERED (test_table_golden "fraud" section; baseline capture pending
+owner's next `make test`). Remaining in this cycle: the named commit,
+the pin's baseline capture + commit, and the step-5 audit-closure items
+(source editions; SAR funnel calibration).
 
 ## Purpose and rules
 
@@ -19,7 +22,7 @@ primary sources BEFORE any of them may change:
 3. Labels are not interchangeable: `is_fraud`, SARs, alerts/CTRs,
    chain/shell labels are calibrated separately.
 4. Any change is a **model-version change** + deterministic re-pin
-   (BOTH goldens, one commit).
+   (EVERY golden baseline the change touches, one commit).
 
 ## SHIPPED ADJUST BATCH — model version "fraud-audit-2026-07"
 
@@ -108,13 +111,14 @@ F3 = add filing probability. Implemented 2026-07-18.
    atoDrainAmount), not structuring — green through the batch, no
    update needed.
 2. TRIAL SCORING — **VACUOUS (corrected 2026-07-18).** The pinned
-   config's corpus (mule_ml, pop 2000/60 d/seed 3405691582; 173,986
-   rows, reproduced by probe) contains ZERO structuring rows — its
-   single ring drew a non-structuring playbook (P ≈ 0.64 per ring) —
-   so F1 changed no pinned byte; and F2/F3 write tables that exist only
-   in the aml use cases, which NO golden pins (**COVERAGE FINDING:
-   both goldens pin a MULE_ML-ONLY run**). The batch was therefore
-   invisible to both goldens; they passed unchanged, correctly.
+   config's corpus (STANDARD use case, pop 2000/60 d/seed 3405691582;
+   173,986 rows, reproduced by probe) contains ZERO structuring rows —
+   its single ring drew a non-structuring playbook (P ≈ 0.64 per ring)
+   — so F1 changed no pinned byte; and F2/F3 write tables that exist
+   only in the aml use cases, which NO golden pinned (**COVERAGE
+   FINDING: both goldens pin a STANDARD-use-case-only, fraud-sparse
+   run**). The batch was therefore invisible to both goldens; they
+   passed unchanged, correctly.
    The 3-line `golden_run.b2sum` delta observed against the last
    commit ({transactions, HAS_PAID, ACCOUNT_FLOW_AGG} — exactly the
    corpus-order/amount-sensitive files) PREDATES the batch: it
@@ -122,16 +126,28 @@ F3 = add filing probability. Implemented 2026-07-18.
    the S10 ordering re-pin), and with no commits in between the exact
    attribution is unrecoverable. An earlier revision of this document
    wrongly attributed that delta to F1 — RETRACTED here.
-   **PROMOTION: NOT DECIDED by this batch.** The fraud-visible pin
-   (systemprompt roadmap item 2) is the promotion vehicle; CSV arc
-   step 5 stays gated behind it. Process lessons: commit baselines at
-   capture; commit every round.
+   **PROMOTION: NOT DECIDED by this batch.** The fraud-visible pin is
+   the promotion vehicle (DELIVERED — see below); CSV arc step 5 stays
+   gated behind it. Process lessons: commit baselines at capture;
+   commit every round.
 3. Both baselines recaptured (rm → `make test` twice → all 42 green).
 4. Commit: owner action, one commit for the model batch + the
    uncommitted arc; body states the batch is golden-invisible and the
    baseline delta comes from the earlier arc (exact command in the
    session log).
 5. This document update; dataset parameter statements below.
+
+### FRAUD-VISIBLE PIN (delivered 2026-07-18; capture pending)
+
+`test_table_golden` gained a second section: aml-txn-edges at the
+probe-verified fraud-dense config (pop 10000, 60 d, seed 7 — 5 rings,
+structuring spanning the F1 band, derived shell scores, SARs, alerts,
+CTRs, cases), baselined in `tests/golden_tables_aml.md5`. The gate
+HARD-REQUIRES ShellAccount / Sar / Alert / Ctr / InvestigationCase in
+the pin and also pins the fraud-dense corpus (row_seq). First `make
+test` captures the baseline (SKIP 77) — commit it in the capture round.
+This section's first intentional-model-change round is the table
+golden's REAL promotion trial.
 
 ### Live-binary evidence (probes, 2026-07-18, file-only)
 
@@ -190,8 +206,9 @@ derived score).
 
 ## Evidence dossier (step 2, drafted 2026-07-17)
 
-PROVENANCE: knowledge-based citations of named public sources; verify
-current editions before final calibration claims (statutes excepted).
+PROVENANCE: knowledge-based citations of named public sources — NOT
+live web verification; verify current editions before final calibration
+claims (statutes excepted). Web verification is the audit-closure step.
 
 * F1: FinCEN structuring guidance / FFIEC BSA-AML material — real
   structuring spreads wider below the threshold; per-transaction
@@ -218,7 +235,7 @@ current editions before final calibration claims (statutes excepted).
 | 2026-07-18 | F1 structuring band | **SHIPPED + MEASURED** (ε max 400→1500) | probe: share 0.375 below alert band; 7/8 splits below the old band's floor | none |
 | 2026-07-18 | F2 shell score | **SHIPPED** (derived score) | probe spread {0…0.21} | none |
 | 2026-07-18 | F3 SAR filing | **SHIPPED** (p=0.70 + $5k floor) | probes 2/9 and 0/2 filing | funnel calibration at audit closure |
-| 2026-07-18 | golden coverage | **FINDING** | both goldens pin a mule_ml-only, fraud-sparse run; batch was golden-invisible; promotion vacuous | fraud-visible pin (next round) |
+| 2026-07-18 | golden coverage | **FINDING → FIX DELIVERED** | both goldens pinned a standard-only, fraud-sparse run; batch was golden-invisible; promotion vacuous | fraud pin delivered (test_table_golden fraud section); capture + commit pending |
 | 2026-07-18 | posted structuring mix | **MEASUREMENT (observation)** | posted 15/32/53 vs sampler 60/25/15 — unfunded rejections rise with amount | none (emergent realism; revisit only on demand) |
 | 2026-07-17 | budget p = 0.0012 | CHOICE-DOCUMENTED | Fed Payments Study [verify] | dataset docs |
 | 2026-07-17 | playbooks / camouflage | CHOICE-DOCUMENTED | — | dataset docs |
