@@ -46,12 +46,8 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
 
   const auto &ctx = artifacts.ctx;
 
-  const auto sarSubjects =
-      ::PhantomLedger::exporter::aml::sar::buildSarSubjectIndex(
-          people.roster.roster, people.roster.topology,
-          holdings.accounts.registry, holdings.accounts.ownership);
-  const auto sars = ::PhantomLedger::exporter::aml::sar::generateSars(
-      sarSubjects, artifacts.fraudGroups);
+  const auto sars =
+      sar::generateSars(people, holdings, artifacts.fraudGroups);
 
   const auto minhashSets = edges::collectMinhashVertexSets(people, ctx);
 

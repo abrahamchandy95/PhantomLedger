@@ -4,6 +4,7 @@
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/people.hpp"
+#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -119,5 +120,19 @@ generateSars(const SarSubjectIndex &subjects, const FraudTxnGroups &groups);
 [[nodiscard]] std::vector<SarRecord> generateSars(
     const SarSubjectIndex &subjects,
     std::span<const ::PhantomLedger::transactions::Transaction> finalTxns);
+
+/// World form — THE entry point for exporters and the app: builds the
+/// subject index from the world's people + holdings and delegates.
+/// Exists so the index+generate pair lives in exactly one place
+/// instead of being repeated at every call site.
+[[nodiscard]] inline std::vector<SarRecord>
+generateSars(const ::PhantomLedger::pipeline::People &people,
+             const ::PhantomLedger::pipeline::Holdings &holdings,
+             const FraudTxnGroups &groups) {
+  const auto subjects = buildSarSubjectIndex(
+      people.roster.roster, people.roster.topology, holdings.accounts.registry,
+      holdings.accounts.ownership);
+  return generateSars(subjects, groups);
+}
 
 } // namespace PhantomLedger::exporter::aml::sar

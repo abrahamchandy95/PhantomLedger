@@ -11,7 +11,7 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <span>
+#include <vector>
 
 namespace PhantomLedger::exporter::aml_txn_edges {
 
@@ -47,18 +47,33 @@ struct StreamedArtifacts {
   std::uint64_t illicitRows = 0;
 };
 
+// Everything generation produced for this use case — the ONE handoff
+// between the engine side (fold + post-fold derivation) and the table
+// writer. Both engine paths assemble it the same way: take the sink's
+// artifacts, generate SARs from the accumulated groups
+// (aml::sar::generateSars world form), build the bundle (readback for
+// the windowed engine, derived for the corpus reference). A NEW fold
+// or derivation output belongs IN here, never as a new
+// exportFromProducts parameter — that is the rule that keeps the
+// finisher's signature flat as the model grows.
+struct StreamProducts {
+  StreamedArtifacts artifacts;
+  derived::Bundle bundle;
+  std::vector<aml::sar::SarRecord> sars;
+};
+
 // Writes every table EXCEPT the two the sink streamed (TRANSACTED,
-// TRANSACTION_CHAIN_LABEL), from the world + posted book + artifacts +
-// the derived bundle + SARs. Shared by both engines.
-[[nodiscard]] Summary exportFromArtifacts(
-    const ::PhantomLedger::pipeline::SimulationResult &world,
-    const ::PhantomLedger::clearing::Ledger *postedBook, const Options &options,
-    StreamedArtifacts artifacts, const derived::Bundle &bundle,
-    std::span<const aml::sar::SarRecord> sars);
+// TRANSACTION_CHAIN_LABEL), from the world + posted book + the
+// assembled stream products. Shared by both engines.
+[[nodiscard]] Summary
+exportFromProducts(const ::PhantomLedger::pipeline::SimulationResult &world,
+                   const ::PhantomLedger::clearing::Ledger *postedBook,
+                   const Options &options, StreamProducts products);
 
 // One code path, two engines: runs the streaming sink over the retained
-// corpus as one batch, builds SARs from the accumulated groups and the
-// bundle from the corpus, then calls the same finisher.
+// corpus as one batch, assembles StreamProducts (SARs from the
+// accumulated groups, bundle from the corpus), then calls the same
+// finisher.
 [[nodiscard]] Summary
 exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
           const Options &options = {});

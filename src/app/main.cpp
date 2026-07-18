@@ -35,6 +35,7 @@
 #include <string>
 #include <string_view>
 #include <sys/resource.h>
+#include <utility>
 
 namespace {
 
@@ -537,18 +538,17 @@ int runWindowedStream(
 
   if (streamAmlTxn) {
     pg::status("Exporting AML txn-edges tables (PostgreSQL read-back)...");
+
+    // Assemble the fold's stream products: SARs from the accumulated
+    // groups, and the derived bundle read back from PostgreSQL (its
+    // sim-end windows need a second pass over the corpus, which lives
+    // there — row_seq order).
     auto artifacts = amlTxnStream->takeArtifacts();
+    auto sars = pl::exporter::aml::sar::generateSars(
+        world.people, world.holdings, artifacts.fraudGroups);
 
-    const auto sarSubjects = pl::exporter::aml::sar::buildSarSubjectIndex(
-        world.people.roster.roster, world.people.roster.topology,
-        world.holdings.accounts.registry, world.holdings.accounts.ownership);
-    const auto sars = pl::exporter::aml::sar::generateSars(
-        sarSubjects, artifacts.fraudGroups);
-
-    // The derived bundle needs a second pass over the corpus (sim-end
-    // windows); PostgreSQL holds it — read it back in row_seq order.
     pl::postgres::Connection conn{pgConninfo};
-    const auto bundle = pl::exporter::aml_txn_edges::readback::buildBundle(
+    auto bundle = pl::exporter::aml_txn_edges::readback::buildBundle(
         world.people, world.holdings,
         std::span<const pl::exporter::aml::sar::SarRecord>(sars), conn,
         "transactions");
@@ -556,9 +556,11 @@ int runWindowedStream(
     pl::exporter::aml_txn_edges::Options exportOpts;
     exportOpts.piiPools = &pools;
     exportOpts.pgMirror = pgUp ? &amlTxnMirror : nullptr;
-    const auto summary = pl::exporter::aml_txn_edges::exportFromArtifacts(
-        world, transfers.postedBook.get(), exportOpts, std::move(artifacts),
-        bundle, std::span<const pl::exporter::aml::sar::SarRecord>(sars));
+    const auto summary = pl::exporter::aml_txn_edges::exportFromProducts(
+        world, transfers.postedBook.get(), exportOpts,
+        {.artifacts = std::move(artifacts),
+         .bundle = std::move(bundle),
+         .sars = std::move(sars)});
     printAmlTxnEdgesSummary(summary);
     mon.mark("aml-txn-edges export");
   }

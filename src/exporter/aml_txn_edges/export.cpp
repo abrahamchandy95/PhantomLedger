@@ -31,12 +31,15 @@ using cmn::openTable;
 
 } // namespace
 
-Summary exportFromArtifacts(
-    const ::PhantomLedger::pipeline::SimulationResult &world,
-    const ::PhantomLedger::clearing::Ledger *postedBook, const Options &options,
-    StreamedArtifacts artifacts, const derived::Bundle &bundle,
-    std::span<const amlSar::SarRecord> sars) {
+Summary
+exportFromProducts(const ::PhantomLedger::pipeline::SimulationResult &world,
+                   const ::PhantomLedger::clearing::Ledger *postedBook,
+                   const Options &options, StreamProducts products) {
   (void)cmn::requirePools(options, "aml_txn_edges");
+
+  auto &artifacts = products.artifacts;
+  const auto &bundle = products.bundle;
+  const std::span<const amlSar::SarRecord> sars{products.sars};
 
   const auto &people = world.people;
   const auto &holdings = world.holdings;
@@ -343,21 +346,23 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   });
   sink.append(txns);
   sink.finish();
+
+  // Assemble the stream products: SARs from the accumulated groups,
+  // the corpus-side bundle (the windowed engine builds the identical
+  // bundle from PostgreSQL via readback::buildBundle —
+  // test_derived_readback pins the parity).
   auto artifacts = sink.takeArtifacts();
-
-  const auto sarSubjects = amlSar::buildSarSubjectIndex(
-      result.people.roster.roster, result.people.roster.topology,
-      result.holdings.accounts.registry, result.holdings.accounts.ownership);
-  const auto sars = amlSar::generateSars(sarSubjects, artifacts.fraudGroups);
-
-  // Corpus-side bundle; the windowed engine builds the identical bundle
-  // from PostgreSQL via readback::buildBundle (test_derived_readback).
-  const auto bundle =
+  auto sars =
+      amlSar::generateSars(result.people, result.holdings,
+                           artifacts.fraudGroups);
+  auto bundle =
       derived::buildBundle(result.people, result.holdings, txns,
                            std::span<const amlSar::SarRecord>(sars));
 
-  return exportFromArtifacts(result, postedBook, options, std::move(artifacts),
-                             bundle, std::span<const amlSar::SarRecord>(sars));
+  return exportFromProducts(result, postedBook, options,
+                            {.artifacts = std::move(artifacts),
+                             .bundle = std::move(bundle),
+                             .sars = std::move(sars)});
 }
 
 } // namespace PhantomLedger::exporter::aml_txn_edges
