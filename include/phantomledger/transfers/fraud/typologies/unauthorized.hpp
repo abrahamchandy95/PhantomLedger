@@ -12,12 +12,23 @@
 
 namespace PhantomLedger::transfers::fraud::typologies::unauthorized {
 
+// Victim-fraud rails (scam-fraud-2026-07). card and ato are
+// UNAUTHORIZED third-party fraud; giftCardScam is victim-AUTHORIZED
+// (impostor scams — the victim buys the cards themselves), which is
+// why it gets its own fraud_type label and, unlike the card rail,
+// never produces a reimbursement.
+enum class Rail : std::uint8_t {
+  card = 0,         // stolen-credential card compromise: tests + spends
+  ato = 1,          // bank-rail account takeover: p2p drains to a drop
+  giftCardScam = 2, // impostor scam: max-denomination gift-card burst
+};
+
 struct CompromisePlan {
   entity::Key victimAccount;
   entity::Key dropAccount;
   devices::Identity device;
   network::Ipv4 ip;
-  bool cardRail = true;
+  Rail rail = Rail::card;
   std::int64_t startTs = 0;
   std::int32_t spanSeconds = 0;
   std::int32_t targetEvents = 0;

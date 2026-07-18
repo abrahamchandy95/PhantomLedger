@@ -23,6 +23,11 @@ constexpr std::size_t kSamples = 20'000;
   return std::abs(scaled - std::round(scaled)) < 1e-6;
 }
 
+[[nodiscard]] bool isTens(double v) {
+  const double scaled = v / 10.0;
+  return std::abs(scaled - std::round(scaled)) < 1e-9;
+}
+
 template <class F> [[nodiscard]] std::vector<double> sample(F &&fn) {
   auto rng = random::Rng::fromSeed(kSeed);
   std::vector<double> out;
@@ -109,6 +114,38 @@ void testAtoDrain() {
               med, avg, fiveFigure, v.size());
 }
 
+void testGiftCardScamAmount() {
+  const auto v = sample(amounts::giftCardScamAmount);
+  std::size_t denomHits = 0;
+  std::size_t maxDenomHits = 0;
+  for (const double x : v) {
+    PL_CHECK(x >= 50.0 && x <= 500.0); // retail rack band
+    PL_CHECK(isTens(x));               // cards sell in $10 steps
+    if (x == 100.0 || x == 200.0 || x == 500.0) {
+      ++denomHits;
+    }
+    if (x == 500.0) {
+      ++maxDenomHits;
+    }
+  }
+  // 75% forced denomination mass ({100, 200, 500} with 500
+  // triple-weighted: "buy the biggest card they have") plus incidental
+  // continuous hits; generous bands per the house rule.
+  const double denomFrac =
+      static_cast<double>(denomHits) / static_cast<double>(v.size());
+  const double maxFrac =
+      static_cast<double>(maxDenomHits) / static_cast<double>(v.size());
+  PL_CHECK(denomFrac > 0.65 && denomFrac < 0.90);
+  PL_CHECK(maxFrac > 0.35 && maxFrac < 0.60); // .75 x .6 = .45 target
+  const double avg = mean(v);
+  const double med = median(v);
+  PL_CHECK(avg > 300.0 && avg < 380.0); // analytic mean ~$339
+  PL_CHECK(med > 250.0 && med <= 500.0);
+  std::printf("  PASS: gift-card band [$50,$500], $10 lattice, denom mass "
+              "%.3f (max-denom %.3f), median %.2f mean %.2f\n",
+              denomFrac, maxFrac, med, avg);
+}
+
 } // namespace
 
 int main() {
@@ -117,6 +154,7 @@ int main() {
   testCardTestCharge();
   testCardFraudSpend();
   testAtoDrain();
+  testGiftCardScamAmount();
   std::printf("OK\n");
   return 0;
 }

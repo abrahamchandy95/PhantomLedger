@@ -41,7 +41,7 @@ struct CounterpartyRevenueProfile {
 };
 
 /// Profile for a single-source revenue flow (settlements, draws,
-/// investments).
+/// investments, cash takings deposits).
 struct SingleSourceRevenueProfile {
   double activeP = 0.0;
   int paymentsMin = 0;
@@ -75,11 +75,13 @@ struct RevenuePersonaProfile {
   SingleSourceRevenueProfile settlement{};
   SingleSourceRevenueProfile ownerDraw{};
   SingleSourceRevenueProfile investment{};
+  SingleSourceRevenueProfile cashTakings{};
   QuietMonthProfile quietMonth{};
 
   [[nodiscard]] constexpr bool valid() const noexcept {
     return client.valid() && platform.valid() && settlement.valid() &&
-           ownerDraw.valid() && investment.valid() && quietMonth.valid();
+           ownerDraw.valid() && investment.valid() && cashTakings.valid() &&
+           quietMonth.valid();
   }
 };
 

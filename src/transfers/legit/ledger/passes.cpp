@@ -113,10 +113,17 @@ buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
 }
 
 [[nodiscard]] income::RevenueCounterparties
-buildRevenueCounterparties(const entity::counterparty::Directory *directory) {
-  return income::RevenueCounterparties{
-      .directory = directory,
-  };
+buildRevenueCounterparties(const blueprints::LegitBlueprint &plan,
+                           const entity::counterparty::Directory *directory) {
+  income::RevenueCounterparties out;
+  out.directory = directory;
+  // Cash takings deposits draw from the branch/ATM cash hub — the same
+  // infrastructure account ATM withdrawals pay into
+  // (cash-deposits-2026-07). Sentinel Key{} when no hub exists.
+  if (!plan.counterparties().hubAccounts.empty()) {
+    out.cashHubAccount = plan.counterparties().hubAccounts.front();
+  }
+  return out;
 }
 
 [[nodiscard]] income::salary::Payroll
@@ -165,7 +172,7 @@ buildRevenueBook(const blueprints::LegitBlueprint &plan,
       .entropy = buildEntropy(plan),
       .population =
           buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
-      .counterparties = buildRevenueCounterparties(directory),
+      .counterparties = buildRevenueCounterparties(plan, directory),
   };
 
   primitives::validate::require(book);

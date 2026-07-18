@@ -11,11 +11,12 @@
 namespace PhantomLedger::transfers::fraud::typologies::amounts {
 
 // Research-calibrated amount samplers for unauthorized (third-party)
-// transaction fraud. Shared by the card-compromise and account-takeover
-// rails today; the ring-run transaction-fraud step (txn_fraud_ring) is
-// expected to draw from the same functions.
+// transaction fraud and victim-authorized scams. Shared by the
+// card-compromise, account-takeover and gift-card-scam rails; the
+// ring-run transaction-fraud step (txn_fraud_ring) is expected to draw
+// from the same functions.
 //
-// Design rules (all three samplers):
+// Design rules (all samplers):
 //  * Draw ONLY from the caller's Rng. No hidden state, no globals.
 //  * Use the house Box-Muller lognormal (lognormalByMedian), never
 //    std::lognormal_distribution, so cross-toolchain digest drift stays
@@ -106,6 +107,43 @@ namespace detail {
   const double raw =
       probability::distributions::lognormalByMedian(rng, 180.0, 1.5);
   return detail::cents(std::clamp(raw, 10.0, 85000.0));
+}
+
+/// Gift-card purchase in a victim-AUTHORIZED impostor scam: the
+/// scammer keeps the victim on the phone and directs them to buy
+/// gift cards at retail, usually at the maximum denomination the rack
+/// allows. 75% of mass on retail denominations {$100, $200, $500}
+/// with $500 triple-weighted ("buy the biggest card they have");
+/// remainder uniform $50-$500 snapped to $10 steps (racks sell $10
+/// increments). Round amounts, one-or-two merchants, minutes apart —
+/// the reportable scam signature.
+///
+/// Sources (named 2026-07; RECALLED, not fetched — the owner's
+/// retrieval pass verifies, per docs/fraud_model_audit.md F-4):
+///  * FTC Data Spotlight, "Scammers prefer gift cards" family
+///    (2021-2023): gift cards the most-reported scam payment method
+///    for years; victims directed to buy multiple max-denomination
+///    cards; Target/Apple/Google Play the top-named brands; reported
+///    gift-card scam losses ~$217M in 2023; typical per-card demand
+///    $100-$500 [Likely on vintages].
+///  * Major retailer per-card caps commonly $500 (Target/Apple racks)
+///    [Likely].
+///  * Recovery is rare once codes are read out — modeled as NO
+///    reimbursement, in deliberate contrast to the unauthorized card
+///    rail (Reg Z zero-liability) which is mostly reimbursed.
+[[nodiscard]] inline double giftCardScamAmount(random::Rng &rng) {
+  static constexpr std::array<double, 5> kDenoms{100.0, 200.0, 500.0, 500.0,
+                                                 500.0};
+  // Fixed draw pattern: exactly 2 uniforms per call on both branches.
+  const bool onDenom = rng.coin(0.75);
+  const double u = rng.nextDouble();
+  if (onDenom) {
+    auto idx =
+        static_cast<std::size_t>(u * static_cast<double>(kDenoms.size()));
+    idx = std::min(idx, kDenoms.size() - 1);
+    return kDenoms[idx];
+  }
+  return std::round((50.0 + 450.0 * u) / 10.0) * 10.0;
 }
 
 } // namespace PhantomLedger::transfers::fraud::typologies::amounts

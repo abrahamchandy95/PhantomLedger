@@ -25,6 +25,8 @@ void testParseKnownChannels() {
               channels::tag(channels::Fraud::invoice));
   PL_CHECK_EQ(requireParsedTag("gov_disability"),
               channels::tag(channels::Government::disability));
+  PL_CHECK_EQ(requireParsedTag("cash_deposit"),
+              channels::tag(channels::Legit::cashDeposit));
 
   std::printf("  PASS: parse known channels\n");
 }
@@ -50,6 +52,8 @@ void testNameRoundTrip() {
 
   PL_CHECK_EQ(channels::name(channels::Legit::atm),
               std::string_view("atm_withdrawal"));
+  PL_CHECK_EQ(channels::name(channels::Legit::cashDeposit),
+              std::string_view("cash_deposit"));
   PL_CHECK_EQ(channels::name(channels::Credit::payment),
               std::string_view("cc_payment"));
   PL_CHECK_EQ(channels::name(channels::Product::mortgage),
@@ -82,6 +86,7 @@ void testPaydayInboundMembership() {
   PL_CHECK(channels::isPaydayInbound(requireParsedTag("platform_payout")));
   PL_CHECK(channels::isPaydayInbound(requireParsedTag("owner_draw")));
   PL_CHECK(channels::isPaydayInbound(requireParsedTag("investment_inflow")));
+  PL_CHECK(channels::isPaydayInbound(requireParsedTag("cash_deposit")));
 
   PL_CHECK(!channels::isPaydayInbound(requireParsedTag("rent")));
   PL_CHECK(!channels::isPaydayInbound(requireParsedTag("p2p")));
@@ -90,6 +95,27 @@ void testPaydayInboundMembership() {
   PL_CHECK(!channels::isPaydayInbound(channels::none));
 
   std::printf("  PASS: isPaydayInbound\n");
+}
+
+// 31 CFR 1010.311 scope pin (conformance-statutory + cash-deposits):
+// exactly three tags are currency; everything else — including
+// paper checks and every electronic rail — is out of CTR scope.
+void testCurrencyMembership() {
+  PL_CHECK(channels::isCurrency(requireParsedTag("atm_withdrawal")));
+  PL_CHECK(channels::isCurrency(requireParsedTag("cash_deposit")));
+  PL_CHECK(channels::isCurrency(requireParsedTag("fraud_structuring")));
+
+  PL_CHECK(!channels::isCurrency(requireParsedTag("salary")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("merchant")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("p2p")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("external_unknown")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("rent_check")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("inheritance")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("fraud_layering_in")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("fraud_funnel_in")));
+  PL_CHECK(!channels::isCurrency(channels::none));
+
+  std::printf("  PASS: isCurrency (31 CFR 1010.311 scope)\n");
 }
 
 void testFraudMembership() {
@@ -119,6 +145,7 @@ void testKnown() {
   PL_CHECK(channels::isKnown(requireParsedTag("salary")));
   PL_CHECK(channels::isKnown(requireParsedTag("rent")));
   PL_CHECK(channels::isKnown(requireParsedTag("fraud_classic")));
+  PL_CHECK(channels::isKnown(requireParsedTag("cash_deposit")));
   PL_CHECK(!channels::isKnown(channels::none));
 
   std::printf("  PASS: isKnown\n");
@@ -126,6 +153,8 @@ void testKnown() {
 
 void testByteLayout() {
   PL_CHECK_EQ(channels::tag(channels::Legit::salary).value, std::uint8_t{0x01});
+  PL_CHECK_EQ(channels::tag(channels::Legit::cashDeposit).value,
+              std::uint8_t{0x0F});
   PL_CHECK_EQ(channels::tag(channels::Rent::generic).value, std::uint8_t{0x10});
   PL_CHECK_EQ(channels::tag(channels::Family::allowance).value,
               std::uint8_t{0x20});
@@ -146,6 +175,7 @@ int main() {
   testNameRoundTrip();
   testRentMembership();
   testPaydayInboundMembership();
+  testCurrencyMembership();
   testFraudMembership();
   testKnown();
   testByteLayout();

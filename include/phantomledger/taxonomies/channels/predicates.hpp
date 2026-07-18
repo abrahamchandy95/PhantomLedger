@@ -83,14 +83,17 @@ template <ChannelEnum E>
 }
 
 // 31 CFR 1010.311 scope: CTRs cover transactions IN CURRENCY (physical
-// cash) only. Exactly two tags carry cash semantics in this taxonomy:
-// ATM withdrawals and the structuring typology (structured cash
-// deposits — structuring is definitionally a currency offense, 31 USC
-// 5324). Every other tag models an ACH/card/wire/check-like rail and is
-// out of statutory CTR scope. Widening this set is a model-version
-// decision (docs/fraud_model_audit.md F-6), never a local edit.
+// cash) only. Exactly three tags carry cash semantics in this taxonomy:
+// ATM withdrawals (cash out), cash takings deposits (cash in — the
+// legitimate business behavior behind real-world CTR volume), and the
+// structuring typology (structured cash deposits — structuring is
+// definitionally a currency offense, 31 USC 5324). Every other tag
+// models an ACH/card/wire/check-like rail and is out of statutory CTR
+// scope. Widening this set is a model-version decision
+// (docs/fraud_model_audit.md F-6), never a local edit.
 [[nodiscard]] constexpr bool isCurrency(Tag value) noexcept {
-  return is(value, Legit::atm) || is(value, Fraud::structuring);
+  return is(value, Legit::atm) || is(value, Legit::cashDeposit) ||
+         is(value, Fraud::structuring);
 }
 
 [[nodiscard]] constexpr bool isRetryable(Tag value) noexcept {

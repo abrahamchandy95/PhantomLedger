@@ -461,6 +461,7 @@ inline constexpr auto kPurposeEntries =
         {"peer_transfer", channels::tag(channels::Legit::p2p)},
         {"wire_transfer", channels::tag(channels::Legit::externalUnknown)},
         {"cash_withdrawal", channels::tag(channels::Legit::atm)},
+        {"cash_deposit", channels::tag(channels::Legit::cashDeposit)},
         {"internal_transfer", channels::tag(channels::Legit::selfTransfer)},
         {"subscription", channels::tag(channels::Legit::subscription)},
         {"business_income", channels::tag(channels::Legit::clientAchCredit)},

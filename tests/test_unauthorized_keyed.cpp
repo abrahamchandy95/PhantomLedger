@@ -37,10 +37,12 @@ void expect(bool cond, const char *what) {
                                            pl::entity::Bank::internal, 303);
   const auto victimD = pl::entity::makeKey(pl::entity::Role::account,
                                            pl::entity::Bank::internal, 404);
+  const auto victimE = pl::entity::makeKey(pl::entity::Role::account,
+                                           pl::entity::Bank::internal, 505);
   const auto drop = pl::entity::makeKey(pl::entity::Role::account,
                                         pl::entity::Bank::external, 999);
 
-  // Card-rail plan, multi-event (tests + spends).
+  // Card-rail plan, multi-event (tests + spends + reimbursements).
   plans.push_back(unauth::CompromisePlan{
       .victimAccount = victimA,
       .dropAccount = {},
@@ -48,7 +50,7 @@ void expect(bool cond, const char *what) {
                                       .ownerId = 0xACE00000ULL,
                                       .slot = 0},
       .ip = pl::network::Ipv4::pack(198, 51, 100, 1),
-      .cardRail = true,
+      .rail = unauth::Rail::card,
       .startTs = 1'000'000,
       .spanSeconds = 3600 * 24,
       .targetEvents = 6,
@@ -63,7 +65,7 @@ void expect(bool cond, const char *what) {
                                       .ownerId = 0xACE00001ULL,
                                       .slot = 0},
       .ip = pl::network::Ipv4::pack(198, 51, 100, 2),
-      .cardRail = false,
+      .rail = unauth::Rail::ato,
       .startTs = 2'000'000,
       .spanSeconds = 3600 * 8,
       .targetEvents = 3,
@@ -78,7 +80,7 @@ void expect(bool cond, const char *what) {
                                       .ownerId = 0xACE00002ULL,
                                       .slot = 0},
       .ip = pl::network::Ipv4::pack(198, 51, 100, 3),
-      .cardRail = true,
+      .rail = unauth::Rail::card,
       .startTs = 3'000'000,
       .spanSeconds = 3600 * 72,
       .targetEvents = 9,
@@ -93,11 +95,26 @@ void expect(bool cond, const char *what) {
                                       .ownerId = 0xACE00003ULL,
                                       .slot = 0},
       .ip = pl::network::Ipv4::pack(198, 51, 100, 4),
-      .cardRail = false,
+      .rail = unauth::Rail::ato,
       .startTs = 4'000'000,
       .spanSeconds = 3600 * 30,
       .targetEvents = 5,
       .seq = 3,
+  });
+
+  // Gift-card scam plan (victim-authorized burst, scam-fraud-2026-07).
+  plans.push_back(unauth::CompromisePlan{
+      .victimAccount = victimE,
+      .dropAccount = {},
+      .device = pl::devices::Identity{.ownerType = pl::devices::OwnerType::ring,
+                                      .ownerId = 0xACE00004ULL,
+                                      .slot = 0},
+      .ip = pl::network::Ipv4::pack(198, 51, 100, 5),
+      .rail = unauth::Rail::giftCardScam,
+      .startTs = 5'000'000,
+      .spanSeconds = 3600 * 3,
+      .targetEvents = 4,
+      .seq = 4,
   });
 
   return plans;
@@ -116,7 +133,7 @@ void expect(bool cond, const char *what) {
                            const pl::transactions::Transaction &b) {
   return a.source == b.source && a.target == b.target && a.amount == b.amount &&
          a.timestamp == b.timestamp && a.session.channel == b.session.channel &&
-         a.fraud.flag == b.fraud.flag &&
+         a.fraud.flag == b.fraud.flag && a.fraud.type == b.fraud.type &&
          a.session.deviceId == b.session.deviceId &&
          a.session.ipAddress == b.session.ipAddress;
 }
@@ -149,6 +166,30 @@ int main() {
       ctxA, std::span<const unauth::CompromisePlan>(plans.data(), plans.size()),
       kBudget);
   expect(!outA.empty(), "run A produced transactions");
+
+  // The gift-card scam rail must produce its own label class, and its
+  // rows must never be reimbursed (no flag-0 rows follow a scam plan).
+  {
+    std::size_t scamRows = 0;
+    std::size_t reimbursements = 0;
+    for (const auto &tx : outA) {
+      if (tx.fraud.type == pl::fraud::FraudType::scamGiftCard) {
+        ++scamRows;
+        expect(tx.fraud.flag == 1, "scam rows carry the fraud flag");
+        expect(tx.amount >= 50.0 && tx.amount <= 500.0,
+               "scam amounts inside the gift-card band");
+      }
+      if (tx.fraud.flag == 0) {
+        ++reimbursements;
+        expect(tx.session.channel ==
+                   pl::channels::tag(pl::channels::Credit::chargeback),
+               "flag-0 rows are chargeback reimbursements");
+      }
+    }
+    expect(scamRows == 4, "the scam plan emitted its 4 gift-card rows");
+    expect(reimbursements > 0,
+           "reported card compromises produced reimbursements");
+  }
 
   // ---- Run B: burned history, per-plan calls, reverse order ----
   pl::random::RngFactory factoryB{kFactorySeed};

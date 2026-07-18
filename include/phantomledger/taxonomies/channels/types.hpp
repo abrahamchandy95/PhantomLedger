@@ -33,6 +33,7 @@ enum class Legit : std::uint8_t {
   platformPayout = 0x0C,
   ownerDraw = 0x0D,
   investmentInflow = 0x0E,
+  cashDeposit = 0x0F,
 };
 
 enum class Rent : std::uint8_t {

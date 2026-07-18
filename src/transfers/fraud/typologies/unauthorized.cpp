@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
 
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/fraud/typologies/amounts.hpp"
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
@@ -17,9 +18,12 @@ namespace PhantomLedger::transfers::fraud::typologies::unauthorized {
 
 namespace {
 
+inline constexpr std::int64_t kSecondsPerDay = 86'400;
+
 struct Event {
   std::int64_t ts = 0;
   double amount = 0.0;
+  bool test = false;
 };
 
 [[nodiscard]] std::string_view renderUInt(std::array<char, 16> &buf,
@@ -50,7 +54,8 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
   if (budget <= 0 || plans.empty()) {
     return out;
   }
-  out.reserve(static_cast<std::size_t>(budget));
+  out.reserve(static_cast<std::size_t>(budget) +
+              static_cast<std::size_t>(budget) / 2);
 
   if (ctx.execution.factory == nullptr) {
     throw std::logic_error("unauthorized::generate requires the S9 "
@@ -58,6 +63,11 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
   }
   const auto &keyFactory = *ctx.execution.factory;
   std::array<char, 16> seqBuf{};
+
+  // Reimbursement rows are flag-0 remediation (like camouflage rows),
+  // so the fraud BUDGET bounds only flag-1 rows — never the
+  // chargeback credits that follow a reported compromise.
+  std::int32_t fraudEmitted = 0;
 
   std::vector<Event> events;
   std::vector<bool> isTest;
@@ -77,20 +87,33 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     events.clear();
     isTest.assign(static_cast<std::size_t>(target), false);
 
-    if (plan.cardRail) {
+    // Card compromises are mostly noticed and disputed (Reg Z /
+    // zero-liability: statement review catches the spends) — one
+    // per-case decision, drawn before the event draws so the event
+    // stream is unchanged for unreported cases. Gift-card scams and
+    // ATO drains produce no reimbursement here (scams: recovery is
+    // rare once codes are read out; ATO Reg E remediation is a
+    // documented gap in docs/fraud_model_audit.md F-4).
+    bool reported = false;
+
+    switch (plan.rail) {
+    case Rail::card: {
       // Phase boundaries (all offsets relative to plan.startTs).
       const std::int64_t tWindow =
           std::clamp<std::int64_t>(span / 6, 600, 3600);
       const std::int64_t spendStart =
           std::min(tWindow + std::max<std::int64_t>(3600, span / 6), span - 1);
 
-      // Test-candidate decisions first (slot order), then event draws.
+      // Test-candidate decisions first (slot order), then the report
+      // decision, then event draws.
       for (std::int32_t e = 0; e < target && e < 2; ++e) {
         isTest[static_cast<std::size_t>(e)] = rng.coin(0.7);
       }
+      reported = rng.coin(0.85);
       for (std::int32_t e = 0; e < target; ++e) {
         Event ev{};
-        if (isTest[static_cast<std::size_t>(e)]) {
+        ev.test = isTest[static_cast<std::size_t>(e)];
+        if (ev.test) {
           ev.ts = plan.startTs + offsetIn(rng, 0, tWindow);
           ev.amount = amounts::cardTestCharge(rng);
         } else {
@@ -99,13 +122,28 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         }
         events.push_back(ev);
       }
-    } else {
+      break;
+    }
+    case Rail::ato: {
       for (std::int32_t e = 0; e < target; ++e) {
         Event ev{};
         ev.ts = plan.startTs + offsetIn(rng, 0, span);
         ev.amount = amounts::atoDrainAmount(rng);
         events.push_back(ev);
       }
+      break;
+    }
+    case Rail::giftCardScam: {
+      // One coached burst: the scammer keeps the victim on the phone,
+      // cards bought minutes-to-hours apart at retail.
+      for (std::int32_t e = 0; e < target; ++e) {
+        Event ev{};
+        ev.ts = plan.startTs + offsetIn(rng, 0, span);
+        ev.amount = amounts::giftCardScamAmount(rng);
+        events.push_back(ev);
+      }
+      break;
+    }
     }
 
     std::stable_sort(
@@ -113,6 +151,10 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         [](const Event &a, const Event &b) { return a.ts < b.ts; });
 
     for (const Event &ev : events) {
+      if (fraudEmitted >= budget) {
+        return out;
+      }
+
       transactions::Draft draft{};
       draft.source = plan.victimAccount;
       draft.timestamp = ev.ts;
@@ -120,19 +162,45 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
       draft.isFraud = 1;
       draft.ringId = -1;
 
-      if (plan.cardRail) {
+      switch (plan.rail) {
+      case Rail::card:
+      case Rail::giftCardScam:
         draft.destination = pickOne(rng, ctx.billerAccounts);
         draft.channel = channels::tag(channels::Legit::cardPurchase);
-      } else {
+        break;
+      case Rail::ato:
         draft.destination = plan.dropAccount;
         draft.channel = channels::tag(channels::Legit::p2p);
+        break;
       }
 
-      if (!appendBoundedTxn(planTxf, out, budget, draft)) {
-        return out;
-      }
+      out.push_back(planTxf.make(draft));
+      ++fraudEmitted;
       out.back().session.deviceId = plan.device;
       out.back().session.ipAddress = plan.ip;
+      out.back().fraud.type = plan.rail == Rail::giftCardScam
+                                  ? ::PhantomLedger::fraud::FraudType::scamGiftCard
+                                  : ::PhantomLedger::fraud::FraudType::txnFraudSolo;
+
+      // Reported card compromise: each fraudulent SPEND (not the
+      // sub-$5 test charges, which typically go unnoticed) is made
+      // whole by a merchant chargeback credit 1-10 days later —
+      // flag-0, typed none, no attacker session, outside the fraud
+      // budget.
+      if (plan.rail == Rail::card && reported && !ev.test) {
+        const auto lag = offsetIn(rng, kSecondsPerDay, 10 * kSecondsPerDay);
+
+        transactions::Draft credit{};
+        credit.source = draft.destination;
+        credit.destination = plan.victimAccount;
+        credit.timestamp = ev.ts + lag;
+        credit.amount = ev.amount;
+        credit.isFraud = 0;
+        credit.ringId = -1;
+        credit.channel = channels::tag(channels::Credit::chargeback);
+
+        out.push_back(planTxf.make(credit));
+      }
     }
   }
   return out;

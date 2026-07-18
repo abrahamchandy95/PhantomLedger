@@ -39,6 +39,11 @@ enum class FraudType : std::uint8_t {
   launderSolo = 2,
   txnFraudSolo = 3,
   txnFraudRing = 4,
+  // Victim-AUTHORIZED impostor scam (the victim is manipulated into
+  // buying gift cards) — a different label class from unauthorized
+  // txn fraud: legit card rail, round denominations, near-zero
+  // recovery (scam-fraud-2026-07; docs/fraud_model_audit.md F-4).
+  scamGiftCard = 5,
 };
 
 [[nodiscard]] constexpr std::string_view fraudTypeName(FraudType t) noexcept {
@@ -53,6 +58,8 @@ enum class FraudType : std::uint8_t {
     return "txn_fraud_solo";
   case FraudType::txnFraudRing:
     return "txn_fraud_ring";
+  case FraudType::scamGiftCard:
+    return "scam_gift_card";
   }
   return {};
 }

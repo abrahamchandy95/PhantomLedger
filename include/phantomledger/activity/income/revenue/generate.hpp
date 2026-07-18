@@ -81,6 +81,10 @@ private:
                 plan.sources.drawSrc);
     cycle.investments(profile.investment, plan.accounts.personal,
                       plan.sources.investmentSrc);
+    // Last verb, so the month stream's draws for the flows above are
+    // unchanged by this source's addition (cash-deposits-2026-07).
+    cycle.cashTakings(profile.cashTakings, plan.accounts.revenueDst,
+                      plan.sources.cashSrc);
 
     std::move(cycle).drainInto(txns_);
   }

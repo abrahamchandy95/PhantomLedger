@@ -13,6 +13,17 @@ namespace detail {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
+// Cash-takings calibration (cash-split-2026-07): the persona cash
+// split is research-anchored — sources, derivations and confidence
+// tags live in docs/fraud_model_audit.md L-10. Summary: smallBusiness
+// .40 = the cash-intensive establishment tier (IRS Cash Intensive
+// Businesses ATG sector list; Census establishment mix ~25-30% core);
+// freelancer .25 = offline informal work paid in cash (Fed SHED/EIWA);
+// salaried .03 = tipped workers ~2.5% of US employment (Yale Budget
+// Lab 2024); student .05 = employed students in tipped food-service
+// jobs [Derived — recompute at the C2 student-employment ADJUST].
+// Retiree/HNW carry no cash profile BY CHOICE (net cash spenders).
+
 [[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
   return {.client = {.activeP = 0.88,
                      .counterpartiesMin = 2,
@@ -33,6 +44,14 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
                         .paymentsMax = 2,
                         .median = 1800.0,
                         .sigma = 0.75},
+          // Trades / markets / offline gigs paid in cash (SHED/EIWA);
+          // the lognormal tail stays far below the $10,000 CTR
+          // threshold.
+          .cashTakings = {.activeP = 0.25,
+                          .paymentsMin = 1,
+                          .paymentsMax = 4,
+                          .median = 450.0,
+                          .sigma = 0.60},
           .quietMonth = {.probability = 0.12}};
 }
 
@@ -61,6 +80,16 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
                         .paymentsMax = 2,
                         .median = 3400.0,
                         .sigma = 0.70},
+          // The cash-intensive tier (restaurants, stores, salons,
+          // laundromats, fuel — IRS ATG list) depositing takings at
+          // the branch. P(deposit > $10,000) ~ 3.9% at LN(2800, .72)
+          // — the legitimate source of CTR filings, calibrated to the
+          // FinCEN FY2024 per-adult anchor (L-10 block).
+          .cashTakings = {.activeP = 0.40,
+                          .paymentsMin = 4,
+                          .paymentsMax = 10,
+                          .median = 2800.0,
+                          .sigma = 0.72},
           .quietMonth = {.probability = 0.06}};
 }
 
@@ -92,6 +121,27 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
           .quietMonth = {.probability = 0.05}};
 }
 
+// Tipped workers (~2.5% of US employment, Yale Budget Lab 2024)
+// depositing cash tips — modest amounts, card tipping now dominates.
+[[nodiscard]] inline constexpr RevenuePersonaProfile salariedProfile() {
+  return {.cashTakings = {.activeP = 0.03,
+                          .paymentsMin = 2,
+                          .paymentsMax = 4,
+                          .median = 200.0,
+                          .sigma = 0.55}};
+}
+
+// Employed students in tipped food-service jobs [Derived: student
+// employment .12 x ~.4 tipped-job share; RECOMPUTE at the C2
+// student-employment ADJUST — .40 employment implies ~.16 here].
+[[nodiscard]] inline constexpr RevenuePersonaProfile studentProfile() {
+  return {.cashTakings = {.activeP = 0.05,
+                          .paymentsMin = 1,
+                          .paymentsMax = 3,
+                          .median = 140.0,
+                          .sigma = 0.55}};
+}
+
 [[nodiscard]] inline constexpr auto buildCatalog() {
   std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
       table{};
@@ -101,6 +151,8 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
   table[enumTax::toIndex(personas::Type::smallBusiness)] =
       smallBusinessProfile();
   table[enumTax::toIndex(personas::Type::highNetWorth)] = highNetWorthProfile();
+  table[enumTax::toIndex(personas::Type::salaried)] = salariedProfile();
+  table[enumTax::toIndex(personas::Type::student)] = studentProfile();
 
   return table;
 }

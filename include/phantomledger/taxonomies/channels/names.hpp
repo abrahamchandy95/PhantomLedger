@@ -25,6 +25,7 @@ inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
     {"platform_payout", tag(Legit::platformPayout)},
     {"owner_draw", tag(Legit::ownerDraw)},
     {"investment_inflow", tag(Legit::investmentInflow)},
+    {"cash_deposit", tag(Legit::cashDeposit)},
 
     {"rent", tag(Rent::generic)},
     {"rent_ach", tag(Rent::ach)},
@@ -103,6 +104,9 @@ inline constexpr auto kKnown =
   mark(tag(Legit::platformPayout));
   mark(tag(Legit::ownerDraw));
   mark(tag(Legit::investmentInflow));
+  // Cash takings deposits are revenue credits like the five above:
+  // they clear as external inflows and cure pending debits.
+  mark(tag(Legit::cashDeposit));
 
   mark(tag(Government::socialSecurity));
   mark(tag(Government::pension));

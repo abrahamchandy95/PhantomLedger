@@ -15,6 +15,7 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <optional>
 #include <span>
@@ -30,6 +31,11 @@ struct Rule {
   double floor = 0.0;
   BusinessDayWindow window{};
   channels::Tag channel = channels::none;
+  // Snap amounts to whole multiples (0 = none). Cash takings deposit
+  // in bills, so they land on a $10 lattice — which also makes exactly
+  // $10,000.00 reachable in production data, exercising the strict CTR
+  // boundary (31 CFR 1010.311: exactly $10,000 files nothing).
+  double roundTo = 0.0;
 };
 
 [[nodiscard]] inline double amount(random::Rng &rng, double median,
@@ -98,6 +104,21 @@ inline constexpr Rule kInvestments{
     .channel = channels::tag(channels::Legit::investmentInflow),
 };
 
+// Branch hours: cash is deposited over the counter, weekdays 9–17
+// (businessDayTs already rolls off weekends).
+inline constexpr Rule kCashTakings{
+    .floor = 100.0,
+    .window =
+        {
+            .earliestHour = 9,
+            .latestHour = 17,
+            .startDay = 0,
+            .endDayExclusive = 28,
+        },
+    .channel = channels::tag(channels::Legit::cashDeposit),
+    .roundTo = 10.0,
+};
+
 } // namespace detail
 
 // one month flow
@@ -133,6 +154,11 @@ public:
   void investments(const SingleSourceRevenueProfile &profile, const Key &dst,
                    std::optional<Key> src) {
     singleSource(profile, dst, src, detail::kInvestments);
+  }
+
+  void cashTakings(const SingleSourceRevenueProfile &profile, const Key &dst,
+                   std::optional<Key> src) {
+    singleSource(profile, dst, src, detail::kCashTakings);
   }
 
   /// Move all generated transactions into the caller's sink.
@@ -182,6 +208,10 @@ private:
 
   void append(const Key &src, const Key &dst, double amount,
               const detail::Rule &rule) {
+    if (rule.roundTo > 0.0) {
+      amount = std::max(rule.floor,
+                        std::round(amount / rule.roundTo) * rule.roundTo);
+    }
     if (amount <= 0.0) {
       return;
     }

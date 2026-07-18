@@ -280,9 +280,10 @@ assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
     txn.fraud.type = ::PhantomLedger::fraud::FraudType::launderRing;
   }
 
-  for (auto &txn : unauthorizedTxns) {
-    txn.fraud.type = ::PhantomLedger::fraud::FraudType::txnFraudSolo;
-  }
+  // unauthorized::generate types its own rows (txn_fraud_solo for the
+  // card/ato rails, scam_gift_card for the victim-authorized rail) and
+  // leaves its flag-0 reimbursement credits untyped — no blanket
+  // assignment here (scam-fraud-2026-07).
 
   auto injected = std::move(camoTxns);
 
@@ -307,6 +308,8 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
                      const entity::account::Registry &registry,
                      const entity::account::Ownership &ownership,
                      std::span<const Plan> ringPlans, std::int64_t budget) {
+  using typologies::unauthorized::Rail;
+
   std::vector<typologies::unauthorized::CompromisePlan> plans;
 
   if (budget <= 0) {
@@ -367,12 +370,24 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
   std::uint64_t seq = 0;
 
   while (remaining > 0) {
-    const bool cardRail = rng.coin(0.72);
+    // Rail mix (scam-fraud-2026-07): card .60 / gift-card scam .12 /
+    // ato .28 — the scam share carved from the card rail, anchored to
+    // the FTC CSN payment-method report mix (docs/fraud_model_audit.md
+    // F-4). One uniform, same draw count as the old coin.
+    const double railDraw = rng.nextDouble();
+    const Rail rail = railDraw < 0.60
+                          ? Rail::card
+                          : (railDraw < 0.72 ? Rail::giftCardScam : Rail::ato);
 
-    const auto target = static_cast<std::int32_t>(std::min<std::int64_t>(
-        remaining, cardRail
-                       ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
-                       : 2 + static_cast<std::int64_t>(rng.choiceIndex(4))));
+    const std::int64_t targetSpan =
+        rail == Rail::card
+            ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
+            : rail == Rail::giftCardScam
+                  ? 2 + static_cast<std::int64_t>(rng.choiceIndex(5))
+                  : 2 + static_cast<std::int64_t>(rng.choiceIndex(4));
+
+    const auto target =
+        static_cast<std::int32_t>(std::min<std::int64_t>(remaining, targetSpan));
 
     const auto victim = pickAccount(entity::Key{});
 
@@ -382,7 +397,7 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
 
     entity::Key drop{};
 
-    if (!cardRail) {
+    if (rail == Rail::ato) {
       drop = pickAccount(victim);
 
       if (drop == victim) {
@@ -396,8 +411,14 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
     const auto intraDay =
         3600 + static_cast<std::int64_t>(rng.nextDouble() * 72000.0);
 
+    // Card compromises play out over days; ATO drains over hours; a
+    // gift-card scam is ONE coached burst of 1-4 hours (the victim is
+    // on the phone with the scammer the whole time).
     const auto spanSeconds = static_cast<std::int32_t>(
-        3600 * (cardRail ? 6 + rng.choiceIndex(66) : 2 + rng.choiceIndex(30)));
+        3600 * (rail == Rail::card
+                    ? 6 + rng.choiceIndex(66)
+                    : rail == Rail::giftCardScam ? 1 + rng.choiceIndex(4)
+                                                 : 2 + rng.choiceIndex(30)));
 
     plans.push_back(typologies::unauthorized::CompromisePlan{
         .victimAccount = victim,
@@ -410,7 +431,7 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
             },
         .ip = network::Ipv4::pack(198, 51, 100,
                                   static_cast<std::uint8_t>(1 + seq % 250)),
-        .cardRail = cardRail,
+        .rail = rail,
         .startTs = windowStart + startDay * 86400 + intraDay,
         .spanSeconds = spanSeconds,
         .targetEvents = target,

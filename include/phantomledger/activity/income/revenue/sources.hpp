@@ -47,10 +47,12 @@ struct Sources {
   std::optional<Key> processor;
   std::optional<Key> drawSrc;
   std::optional<Key> investmentSrc;
+  std::optional<Key> cashSrc;
 
   [[nodiscard]] bool any() const noexcept {
     return !clients.empty() || !platforms.empty() || processor.has_value() ||
-           drawSrc.has_value() || investmentSrc.has_value();
+           drawSrc.has_value() || investmentSrc.has_value() ||
+           cashSrc.has_value();
   }
 
   void applyFallback(personas::Type persona, random::Rng &rng,
@@ -222,6 +224,17 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
                            : detail::source(rng, counterparties.brokerages(),
                                             profile->investment),
   };
+
+  // Cash-takings source draws LAST so its addition leaves every
+  // pre-existing per-person source draw unchanged (content-keyed
+  // stream, fixed draw order; cash-deposits-2026-07). The source
+  // entity is the branch/ATM cash hub — the same infrastructure
+  // account ATM withdrawals pay into.
+  if (const auto hub = counterparties.cashHub();
+      hub.has_value() && profile->cashTakings.activeP > 0.0 &&
+      rng.nextDouble() < profile->cashTakings.activeP) {
+    sources.cashSrc = hub;
+  }
 
   sources.applyFallback(persona, rng, counterparties, accounts);
 

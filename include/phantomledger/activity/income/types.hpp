@@ -193,7 +193,20 @@ class RevenueCounterparties {
 public:
   const entity::counterparty::Directory *directory = nullptr;
 
+  // The branch/ATM cash hub — the infrastructure account cash takings
+  // deposits are drawn FROM (the same hub ATM withdrawals pay into:
+  // cash out and cash in share one hub). Sentinel Key{} = absent
+  // (cash-deposits-2026-07).
+  Key cashHubAccount{};
+
   [[nodiscard]] bool available() const noexcept { return directory != nullptr; }
+
+  [[nodiscard]] std::optional<Key> cashHub() const noexcept {
+    if (cashHubAccount == Key{}) {
+      return std::nullopt;
+    }
+    return cashHubAccount;
+  }
 
   [[nodiscard]] std::span<const Key> clients() const noexcept {
     if (directory == nullptr) {

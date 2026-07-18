@@ -15,7 +15,15 @@
 //             in the sev-2 band instead (inclusive upper edge)
 //   scope     a NON-currency row above $10,000 (merchant channel) must
 //             file nothing — CTRs cover transactions in currency only
-//             (channels::isCurrency: atm_withdrawal, fraud_structuring)
+//             (channels::isCurrency: atm_withdrawal, cash_deposit,
+//             fraud_structuring)
+//
+// Since cash-deposits-2026-07 the sim world itself can file legitimate
+// CTRs (business cash takings on the cash_deposit channel occasionally
+// exceed $10,000), so CTR counts are pinned STRUCTURALLY, not exactly:
+// every CTR must sit strictly above $10,000, CTR records must pair 1:1
+// with CTR alerts, and the scope marker uses cents ($15,000.77) that
+// bill-rounded cash deposits can never produce.
 //
 // then constructs the derived Bundle twice:
 //
@@ -451,27 +459,30 @@ int main() {
               corpusBundle.linkComm.size());
   std::fflush(stdout);
 
-  // Every rule must actually fire, or the parity below is vacuous. The
-  // CTR counts are EXACT: only the two handcrafted atm rows above
-  // $10,000 can file — the sim world has no currency row over the
-  // threshold (legit ATM draws LN($80,.30); structuring tops out at
-  // $9,950 = threshold - epsilonMin), the exactly-$10,000.00 atm row is
-  // excluded by the strict statutory boundary, and the $15,000.77
-  // merchant row is excluded by the currency scope. A third CTR here
-  // means one of those pins broke.
+  // Every rule must actually fire, or the parity below is vacuous. CTR
+  // counts are pinned STRUCTURALLY (the world's own cash deposits may
+  // legitimately file since cash-deposits-2026-07): at least the two
+  // handcrafted currency rows file; every CTR sits strictly above
+  // $10,000 (the exactly-$10,000.00 atm row must not appear — strict
+  // statutory boundary); CTR records pair 1:1 with CTR alerts; and the
+  // $15,000.77 merchant marker never files (currency scope — its cents
+  // are unreachable by bill-rounded cash deposits).
   check(countRule(corpusBundle, derived::Rule::fraudMlFlag) > 0,
         "fraud-ml alerts present");
   check(countRule(corpusBundle, derived::Rule::highAmountBelowCtr) >= 2,
         "below-CTR alerts present (incl. the exactly-$10,000.00 edge)");
-  check(countRule(corpusBundle, derived::Rule::cashCtrThreshold) == 2,
-        "exactly the two currency rows above $10,000 raise CTR alerts");
+  check(countRule(corpusBundle, derived::Rule::cashCtrThreshold) >= 2,
+        "the two handcrafted currency rows above $10,000 raise CTR alerts");
+  check(corpusBundle.ctrs.size() ==
+            countRule(corpusBundle, derived::Rule::cashCtrThreshold),
+        "one CTR record per CTR alert");
   check(countRule(corpusBundle, derived::Rule::velocityBurst) >= 1,
         "velocity alerts present");
-  check(corpusBundle.ctrs.size() == 2,
-        "exactly two CTR records (strict boundary + currency scope)");
   for (const auto &c : corpusBundle.ctrs) {
     check(c.amount > 10000.0,
           "every CTR amount strictly above $10,000 (31 CFR 1010.311)");
+    check(bits(c.amount) != bits(15000.77),
+          "the $15,000.77 merchant row never files (currency scope)");
   }
   check(!corpusBundle.cases.empty(), "cases present");
   check(!corpusBundle.promotedTxns.empty(), "promoted fraud txns present");
