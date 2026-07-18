@@ -252,8 +252,11 @@ int runWindowedStream(
     const pl::app::RunOptions &opts, pl::time::Window window,
     const pl::synth::pii::PoolSet &pools,
     const pl::pipeline::stages::entities::EntitySynthesis &entityConfig,
-    const std::string &pgConninfo, bool pgUp) {
+    const BackendPolicy &backend) {
   namespace pg = pl::app::progress;
+
+  const std::string &pgConninfo = backend.conninfo;
+  const bool pgUp = !backend.fileOnly;
 
   auto rng = pl::random::Rng::fromSeed(opts.seed);
   pl::pipeline::SimulationPipeline pipeline{rng, window, entityConfig,
@@ -588,7 +591,6 @@ int main(int argc, char **argv) {
     // PL_FILE_ONLY is the harness escape that keeps the run golden
     // independent of any server.
     const auto backend = resolveBackend(opts);
-    const bool pgUp = !backend.fileOnly;
 
     time::Window window;
     window.start = time::makeTime(opts.startDate);
@@ -600,8 +602,7 @@ int main(int argc, char **argv) {
     const auto entityConfig =
         app::setup::buildEntitySynthesis(opts, pools, mix, window.start);
 
-    return runWindowedStream(opts, window, pools, entityConfig,
-                             backend.conninfo, pgUp);
+    return runWindowedStream(opts, window, pools, entityConfig, backend);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "fatal: %s\n", e.what());
     return 1;

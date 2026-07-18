@@ -2,8 +2,6 @@
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/people.hpp"
-#include "phantomledger/exporter/schema.hpp"
-#include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -16,7 +14,6 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
-#include <type_traits>
 
 namespace PhantomLedger::exporter::sinks {
 struct PgMirror;
@@ -106,26 +103,6 @@ countSoloFraud(const entity::person::Roster &roster) noexcept {
 countIllicitTxns(std::span<const transactions::Transaction> txns) noexcept {
   return static_cast<std::size_t>(std::ranges::count_if(
       txns, [](const auto &tx) { return tx.fraud.flag != 0; }));
-}
-
-template <class SummaryLike>
-inline void fillBaseCounts(SummaryLike &out, const pipeline::People &peopleData,
-                           const pipeline::Holdings &holdingsData,
-                           std::span<const transactions::Transaction> txns,
-                           std::size_t counterpartyCount,
-                           std::size_t sarsCount) noexcept {
-  static_assert(std::is_base_of_v<BaseSummary, SummaryLike>,
-                "fillBaseCounts: SummaryLike must inherit from BaseSummary");
-
-  out.customerCount = peopleData.roster.roster.count;
-  out.internalAccountCount =
-      countInternalAccounts(holdingsData.accounts.registry);
-  out.counterpartyCount = counterpartyCount;
-  out.totalTxnCount = txns.size();
-  out.illicitTxnCount = countIllicitTxns(txns);
-  out.fraudRingCount = peopleData.roster.topology.rings.size();
-  out.soloFraudCount = countSoloFraud(peopleData.roster.roster);
-  out.sarsFiledCount = sarsCount;
 }
 
 } // namespace PhantomLedger::exporter::common

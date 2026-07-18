@@ -38,7 +38,6 @@
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/schema.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
