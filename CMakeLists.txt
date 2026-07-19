@@ -255,6 +255,10 @@ set(PL_EXPORTER_AML_SOURCES
     src/exporter/aml_txn_edges/export.cpp
 )
 
+set(PL_EXPORTER_CARD_FRAUD_SOURCES
+    src/exporter/card_fraud/export.cpp
+)
+
 # ---------------------------------------------------------------------
 # 7. Application Entry
 # ---------------------------------------------------------------------
@@ -284,6 +288,7 @@ set(PL_ALL_SOURCES
     ${PL_EXPORTER_STANDARD_SOURCES}
     ${PL_EXPORTER_MULE_ML_SOURCES}
     ${PL_EXPORTER_AML_SOURCES}
+    ${PL_EXPORTER_CARD_FRAUD_SOURCES}
     ${PL_APP_SOURCES}
 )
 
@@ -390,6 +395,15 @@ if(PL_PROJECT_HEADERS)
     # Inherit phantomledger_core's include paths and compile features
     # so the entries match real build flags exactly.
     target_link_libraries(phantomledger_headers PRIVATE phantomledger_core)
+
+    # Each header IS the main file of its synthetic translation unit
+    # here, so clang's -Wpragma-once-outside-header fires on every
+    # project header when this target is built by hand for a
+    # whole-tree header typecheck. Silence it for this target only.
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        target_compile_options(phantomledger_headers PRIVATE
+            -Wno-pragma-once-outside-header)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------

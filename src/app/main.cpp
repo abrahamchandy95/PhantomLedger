@@ -8,6 +8,8 @@
 #include "phantomledger/exporter/aml_txn_edges/export.hpp"
 #include "phantomledger/exporter/aml_txn_edges/readback.hpp"
 #include "phantomledger/exporter/aml_txn_edges/streaming.hpp"
+#include "phantomledger/exporter/card_fraud/export.hpp"
+#include "phantomledger/exporter/card_fraud/streaming.hpp"
 #include "phantomledger/exporter/mule_ml/streaming.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
@@ -228,6 +230,27 @@ void printAmlTxnEdgesSummary(
               summary.flowAggEdgeCount, summary.linkCommEdgeCount);
 }
 
+void printCardFraudSummary(const pl::exporter::card_fraud::Summary &summary) {
+  const double ratio =
+      (summary.viewRows == 0)
+          ? 0.0
+          : static_cast<double>(summary.fraudViewRows) /
+                static_cast<double>(summary.viewRows);
+
+  std::printf("card-fraud export complete (TF_GNN_v3 loaded attributes)\n");
+  std::printf("  Payment txns:    %llu of %llu corpus rows  (fraud: %llu, "
+              "%.4f%%)\n",
+              static_cast<unsigned long long>(summary.viewRows),
+              static_cast<unsigned long long>(summary.totalRows),
+              static_cast<unsigned long long>(summary.fraudViewRows),
+              ratio * 100.0);
+  std::printf("  Cards:           %zu\n", summary.cardCount);
+  std::printf("  Merchants:       %zu\n", summary.merchantCount);
+  std::printf("  Parties:         %zu\n", summary.partyCount);
+  std::printf("  Geo:             %zu cities, %zu states, %zu zipcodes\n",
+              summary.cityCount, summary.stateCount, summary.zipcodeCount);
+}
+
 // --------------------------------------------------------------- engine
 //
 // The windowed streaming engine is THE engine — bounded memory for
@@ -271,17 +294,7 @@ int runWindowedStream(
   const bool streamMuleMl = opts.usecase == pl::app::UseCase::muleMl;
   const bool streamAml = opts.usecase == pl::app::UseCase::aml;
   const bool streamAmlTxn = opts.usecase == pl::app::UseCase::amlTxnEdges;
-
-  if (opts.usecase == pl::app::UseCase::cardFraud) {
-    std::fprintf(
-        stderr,
-        "fatal: --usecase card-fraud is scaffolded but not runnable yet: "
-        "the table contract landed first (exporter/card_fraud/schema.hpp, "
-        "shaped for TigerGraph TF_GNN_v3); the streaming exporter and the "
-        "vertex/edge finisher land in the next rounds of the card-fraud "
-        "arc.\n");
-    return 1;
-  }
+  const bool streamCardFraud = opts.usecase == pl::app::UseCase::cardFraud;
 
   if (streamAmlTxn && !pgUp) {
     std::fprintf(
@@ -323,6 +336,9 @@ int runWindowedStream(
       .conninfo = pgConninfo,
       .schema = "aml_txn_edges",
       .tablePrefix = "aml_txn_edges_"};
+  const pl::exporter::sinks::PgMirror cfMirror{.conninfo = pgConninfo,
+                                               .schema = "card_fraud",
+                                               .tablePrefix = "cf_"};
 
   std::optional<pl::exporter::standard::StreamingTransfersExport> stdStream;
   if (streamStandard) {
@@ -371,6 +387,16 @@ int runWindowedStream(
             .piiPools = &pools,
             .pgMirror = pgUp ? &amlTxnMirror : nullptr,
         });
+  }
+
+  std::optional<pl::exporter::card_fraud::StreamingCardFraudExport> cfStream;
+  if (streamCardFraud) {
+    cfStream.emplace(pl::exporter::card_fraud::StreamingCardFraudExport::Config{
+        .cards = &world.holdings.creditCards,
+        .merchants = &world.counterparties.merchants,
+        .window = window,
+        .pgMirror = pgUp ? &cfMirror : nullptr,
+    });
   }
 
   pl::exporter::sinks::Golden golden;
@@ -483,6 +509,18 @@ int runWindowedStream(
       transfers = runFold(sink);
       pgSpans = sink.spansWritten();
       pgSkipped = sink.spansSkipped();
+    } else if (cfStream.has_value()) {
+      pl::pipeline::chunk::Tee teeAll{teePg, *cfStream};
+      pl::exporter::sinks::ResumableSpanSink<decltype(teeAll)> sink{
+          {.inner = &teeAll,
+           .copyGate = &gatedPg.open,
+           .ledger = &ledger,
+           .manifestId = manifestId,
+           .plan = planPtr,
+           .conninfo = pgConninfo}};
+      transfers = runFold(sink);
+      pgSpans = sink.spansWritten();
+      pgSkipped = sink.spansSkipped();
     } else {
       pl::exporter::sinks::ResumableSpanSink<decltype(teePg)> sink{
           {.inner = &teePg,
@@ -515,6 +553,9 @@ int runWindowedStream(
     transfers = runFold(tee);
   } else if (amlStream.has_value()) {
     pl::pipeline::chunk::Tee tee{golden, *amlStream};
+    transfers = runFold(tee);
+  } else if (cfStream.has_value()) {
+    pl::pipeline::chunk::Tee tee{golden, *cfStream};
     transfers = runFold(tee);
   } else {
     // aml-txn-edges cannot land here: it is guarded to require pgUp.
@@ -576,6 +617,18 @@ int runWindowedStream(
          .sars = std::move(sars)});
     printAmlTxnEdgesSummary(summary);
     mon.mark("aml-txn-edges export");
+  }
+
+  if (streamCardFraud) {
+    pg::status("Exporting card-fraud tables (TF_GNN_v3)...");
+    pl::exporter::card_fraud::Options exportOpts;
+    exportOpts.piiPools = &pools;
+    exportOpts.window = window;
+    exportOpts.pgMirror = pgUp ? &cfMirror : nullptr;
+    const auto summary = pl::exporter::card_fraud::exportFromArtifacts(
+        world, exportOpts, cfStream->takeArtifacts());
+    printCardFraudSummary(summary);
+    mon.mark("card-fraud export");
   }
 
   if (pgUp) {

@@ -1855,3 +1855,23 @@ existing golden are unaffected.
 | train/val/test split | chronological .70/.15/.15 of window days (floored day boundaries); settlement-tail rows past the window end land in test | CHOICE | standard temporal GNN evaluation practice |
 | Category fallback | non-catalog view destinations (the unauthorized rail draws biller accounts) become Merchant vertices with a content-keyed uniform category over the 10-category taxonomy; keyed by destination so mer_cat and Merchant_Assigned agree by construction | CHOICE | — |
 | mer_cat granularity | the 10-category merchant taxonomy stands in for TabFormer's MCC codes | DEVIATES-BY-CHOICE (an MCC taxonomy would be its own model round) | — |
+
+
+### U-2. card-fraud finisher derivations (card-fraud-2026-07, continued)
+
+Vertex/edge-side derivations added with the T3 finisher
+(exporter/card_fraud/export.cpp). Same determinism contract as U-1:
+content-keyed FNV-1a lanes, zero effect on the corpus stream or any
+other use case's bytes.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| Merchant geography | each observed merchant draws ONE entry from the PII pools' US zip table (real, internally consistent city/state/zip triples), keyed by the merchant identity (geo lane) — Has_City/Has_State/Has_Zip and the Assigned_To/Located_In chain agree by construction; City id = "<city>_<state>" | CHOICE | zip table = the PII pools' US postal data (already cited at its source) |
+| City.population | content-keyed synthetic placeholder, uniform [10,000, 2,000,000) per City id — the zip table carries no population figures | CHOICE (synthetic placeholder; replace with census data if the demo needs real figures) | — |
+| Party.gender | content-keyed even F/M split per person — gender is NOT modeled anywhere in the world (names are pool indices without a gender attribute) | CHOICE | — |
+| Party.is_fraud | fraud ACTOR label: person carries the fraud, soloFraud or mule roster flag; victims stay 0 | CHOICE (label definition) | — |
+| Party.created_at | the standard exporter's Membership model (joinTs), identical to the public-schema customer table | CONFORMS (reuses the existing modeled value) | — |
+| Party identifiers | Party ids are the CANONICAL customer ids (common::renderCustomerId); Merchant ids the canonical counterparty rendering; Device/IP ids the canonical renderings from the transactions table — card-fraud tables JOIN against every other use case's tables and the raw ledger | CHOICE (identifier reuse) | — |
+| Is_Merchant | UNPOPULATED (header-only): the world has no modeled merchant-owning-party link (business owners own accounts, not catalog merchants); populating it is a model round of its own | DEVIATES-BY-CHOICE (documented gap) | — |
+| Device/IP is_blocked | the MODELED flags (devices.flagged / ips.blacklisted), not placeholders | CONFORMS (reuses existing modeled values) | — |
+| PII layer population | Address/Phone/Email/ID(ssn)/Full_Name/DOB vertices deduplicated over the person roster; edges per person; empty fields skipped — TF_GNN_v3 marks this layer DEMO ONLY and it is empty on real TabFormer; PhantomLedger fills it from its PII synthesis | CHOICE (the use case's differentiator) | — |

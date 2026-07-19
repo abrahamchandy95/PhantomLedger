@@ -4,10 +4,10 @@
 //
 // Content-keyed, export-time derivations for the card-fraud use case —
 // the attributes TF_GNN_v3 loads that the world model does not carry
-// (use_chip, error, split flags, identifier strings, the category
-// fallback for non-catalog destinations). Shared by the streaming leg
-// and the vertex/edge finisher so both derive IDENTICAL values for the
-// same entity or row.
+// (use_chip, error, split flags, identifier strings, gender, merchant
+// geography, City population, the category fallback for non-catalog
+// destinations). Shared by the streaming leg and the vertex/edge
+// finisher so both derive IDENTICAL values for the same entity or row.
 //
 // Determinism rules:
 //  * Every derivation hashes explicit fixed-width field bytes through
@@ -19,11 +19,20 @@
 //  * Byte-identical rows derive byte-identical attributes, which is
 //    consistent: such rows are interchangeable by the ordering re-pin.
 //
+// Identifier scheme: entity Keys render through the project's
+// canonical encoding::format, so card-fraud ids JOIN against every
+// other exporter's tables. Credit/debit cards carry a C/D prefix over
+// the canonical rendering (cards and accounts are distinct id spaces);
+// merchants are the canonical counterparty rendering unchanged;
+// parties are the canonical customer id (common::renderCustomerId at
+// the call sites); Payment_Transaction is T<row_seq>.
+//
 // Every distribution below is a model value with a classed row in
 // docs/fraud_model_audit.md (card-fraud-2026-07 block); change them
 // only through a named model version.
 //
 
+#include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/hashing/constants.hpp"
 #include "phantomledger/primitives/hashing/fnv.hpp"
@@ -33,6 +42,7 @@
 #include "phantomledger/transactions/record.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -65,6 +75,12 @@ inline constexpr std::uint64_t kErrorLane =
     ::PhantomLedger::hashing::fnv1a64("card_fraud/error");
 inline constexpr std::uint64_t kCategoryLane =
     ::PhantomLedger::hashing::fnv1a64("card_fraud/merchant_category");
+inline constexpr std::uint64_t kGeoLane =
+    ::PhantomLedger::hashing::fnv1a64("card_fraud/merchant_geo");
+inline constexpr std::uint64_t kGenderLane =
+    ::PhantomLedger::hashing::fnv1a64("card_fraud/party_gender");
+inline constexpr std::uint64_t kPopulationLane =
+    ::PhantomLedger::hashing::fnv1a64("card_fraud/city_population");
 
 // The row's content key: timestamp, endpoints, amount in cents.
 [[nodiscard]] inline std::uint64_t
@@ -77,29 +93,19 @@ rowHash(std::uint64_t lane, const transactions::Transaction &tx) noexcept {
 }
 
 // --------------------------------------------------------- identifiers
-//
-// Identifier scheme (CHOICE): collision-free renderings of the full
-// entity Key triple. C = credit card (the card Key), D = the account's
-// derived debit card (the account Key), M = merchant/destination,
-// P = party (person id), T = Payment_Transaction (corpus row_seq).
-
-[[nodiscard]] inline std::string keyDigits(const entity::Key &k) {
-  return std::to_string(static_cast<unsigned>(k.role)) + "." +
-         std::to_string(static_cast<unsigned>(k.bank)) + "." +
-         std::to_string(k.number);
-}
 
 [[nodiscard]] inline std::string cardId(const entity::Key &source,
                                         bool credit) {
-  return (credit ? "C" : "D") + keyDigits(source);
+  const auto rendered = ::PhantomLedger::encoding::format(source);
+  std::string out;
+  out.reserve(1 + rendered.view().size());
+  out.push_back(credit ? 'C' : 'D');
+  out.append(rendered.view());
+  return out;
 }
 
 [[nodiscard]] inline std::string merchantId(const entity::Key &destination) {
-  return "M" + keyDigits(destination);
-}
-
-[[nodiscard]] inline std::string partyId(entity::PersonId person) {
-  return "P" + std::to_string(person);
+  return std::string{::PhantomLedger::encoding::format(destination).view()};
 }
 
 [[nodiscard]] inline std::string txnId(std::uint64_t rowSeq) {
@@ -171,6 +177,42 @@ errorFor(const transactions::Transaction &tx) noexcept {
 fallbackCategory(const entity::Key &destination) noexcept {
   const auto h = mixKey(kCategoryLane, destination);
   return merchants::kCategories[h % merchants::kCategoryCount];
+}
+
+// ----------------------------------------------------- merchant geo
+//
+// The world model carries no merchant geography. Each observed
+// merchant draws one entry from the PII pools' US zip table (real,
+// internally consistent city/state/zip triples), keyed by the
+// merchant's identity — so Has_City/Has_State/Has_Zip and the
+// Assigned_To/Located_In chain agree by construction (CHOICE).
+
+[[nodiscard]] inline std::size_t
+geoIndexFor(const entity::Key &merchant, std::size_t tableSize) noexcept {
+  return tableSize == 0
+             ? 0
+             : static_cast<std::size_t>(mixKey(kGeoLane, merchant) %
+                                        tableSize);
+}
+
+// City.population: the zip table carries no population figures, so the
+// vertex attribute is a content-keyed synthetic placeholder, uniform
+// over [10'000, 2'000'000) per city id (CHOICE).
+[[nodiscard]] inline std::uint32_t populationFor(std::string_view cityId) {
+  const auto h =
+      mixField(kPopulationLane, ::PhantomLedger::hashing::fnv1a64(cityId));
+  return static_cast<std::uint32_t>(10'000U + (h % 1'990'000U));
+}
+
+// -------------------------------------------------------------- gender
+//
+// Gender is not modeled anywhere in the world (names are pool indices
+// with no gender attribute). Party.gender is a content-keyed even
+// F/M split per person (CHOICE; owner may replace with a modeled
+// attribute later).
+
+[[nodiscard]] inline std::string_view genderFor(entity::PersonId person) {
+  return (mixField(kGenderLane, person) % 2U) == 0U ? "F" : "M";
 }
 
 // ---------------------------------------------------------- splits
