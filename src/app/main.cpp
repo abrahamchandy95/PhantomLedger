@@ -148,6 +148,8 @@ struct BackendPolicy {
     return "schema aml";
   case pl::app::UseCase::amlTxnEdges:
     return "schema aml_txn_edges";
+  case pl::app::UseCase::cardFraud:
+    return "schema card_fraud";
   }
   return "";
 }
@@ -269,6 +271,17 @@ int runWindowedStream(
   const bool streamMuleMl = opts.usecase == pl::app::UseCase::muleMl;
   const bool streamAml = opts.usecase == pl::app::UseCase::aml;
   const bool streamAmlTxn = opts.usecase == pl::app::UseCase::amlTxnEdges;
+
+  if (opts.usecase == pl::app::UseCase::cardFraud) {
+    std::fprintf(
+        stderr,
+        "fatal: --usecase card-fraud is scaffolded but not runnable yet: "
+        "the table contract landed first (exporter/card_fraud/schema.hpp, "
+        "shaped for TigerGraph TF_GNN_v3); the streaming exporter and the "
+        "vertex/edge finisher land in the next rounds of the card-fraud "
+        "arc.\n");
+    return 1;
+  }
 
   if (streamAmlTxn && !pgUp) {
     std::fprintf(

@@ -15,6 +15,7 @@ enum class UseCase : std::uint8_t {
   muleMl = 1,
   aml = 2,
   amlTxnEdges = 3,
+  cardFraud = 4,
 };
 
 [[nodiscard]] constexpr std::string_view name(UseCase uc) noexcept {
@@ -27,6 +28,8 @@ enum class UseCase : std::uint8_t {
     return "aml";
   case UseCase::amlTxnEdges:
     return "aml-txn-edges";
+  case UseCase::cardFraud:
+    return "card-fraud";
   }
   return "<unknown>";
 }
@@ -45,14 +48,15 @@ parseUseCase(std::string_view s) noexcept {
   if (s == "aml-txn-edges") {
     return UseCase::amlTxnEdges;
   }
+  if (s == "card-fraud") {
+    return UseCase::cardFraud;
+  }
   return std::nullopt;
 }
 
-inline constexpr std::array<UseCase, 4> kAllUseCases{
-    UseCase::standard,
-    UseCase::muleMl,
-    UseCase::aml,
-    UseCase::amlTxnEdges,
+inline constexpr std::array<UseCase, 5> kAllUseCases{
+    UseCase::standard,     UseCase::muleMl,    UseCase::aml,
+    UseCase::amlTxnEdges,  UseCase::cardFraud,
 };
 
 struct RunOptions {
