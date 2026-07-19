@@ -7,11 +7,12 @@
 # time. The DAG below is the L1 job-library graph (root
 # CMakeLists.txt) plus the four header-only vocabulary trees.
 #
-# REPORT MODE FIRST (owner-gated flip): violations print as one
-# WARNING block per configure while PL_LAYER_LINT_FATAL is OFF. Once
-# the report is clean (edges fixed or the DAG deliberately amended in
-# a named commit), configure with -DPL_LAYER_LINT_FATAL=ON and then
-# flip the option default here.
+# FATAL BY DEFAULT (L2 close-out, 2026-07-19): the full-tree report
+# reached clean after untangling rounds A/B/C, so an illegal edge now
+# FAILS the configure — the layering is law. Configure with
+# -DPL_LAYER_LINT_FATAL=OFF as a temporary escape hatch on exploratory
+# refactor branches; never merge with it off. The DAG itself changes
+# only by deliberate amendment in a named commit.
 #
 # FINDINGS LEDGER (full-tree scan 2026-07-19, this DAG):
 #   AMENDED (legal by design):
@@ -66,18 +67,16 @@
 #                                legitWorldInputs(); the declared
 #                                pl_transfers -> pl_pipeline link cycle
 #                                is removed from the root CMakeLists
-#   OPEN: none — the report is clean as of round C-2 (2026-07-19).
-#   Flip protocol: the owner's next configure prints "include-layer
-#   lint: clean"; PL_LAYER_LINT_FATAL's default then flips ON in its
-#   own named commit, making the layering law.
+#   OPEN: none — the report reached clean at round C-2 and the
+#   PL_LAYER_LINT_FATAL default flipped ON in the L2 close-out commit.
 #
-# Two things are ALWAYS fatal, report mode or not, audit-style:
+# Two things are ALWAYS fatal, escape hatch or not, audit-style:
 #   * a file whose path maps to no known layer;
 #   * an include of an unknown "phantomledger/<component>".
 # The layer map must be complete, or the lint is theater.
 
 option(PL_LAYER_LINT_FATAL
-    "Treat include-layer violations as configure errors" OFF)
+    "Treat include-layer violations as configure errors" ON)
 
 # ------------------------------------------------------------- the DAG
 #
@@ -235,10 +234,9 @@ function(pl_run_include_layer_lint)
             "cmake/IncludeLayerLint.cmake (named commit).")
     else()
         message(WARNING
-            "include-layer lint (REPORT MODE): ${_violationCount} "
-            "illegal edge(s) across ${_fileCount} files "
-            "(${_edgeCount} edges checked):\n${_violationBlock}\n"
-            "The build continues. Once the report is clean, flip "
-            "PL_LAYER_LINT_FATAL to ON.")
+            "include-layer lint (ESCAPE HATCH — do not merge): "
+            "${_violationCount} illegal edge(s) across ${_fileCount} "
+            "files (${_edgeCount} edges checked):\n${_violationBlock}\n"
+            "The build continues because PL_LAYER_LINT_FATAL=OFF.")
     endif()
 endfunction()
