@@ -270,6 +270,11 @@ set(PL_APP_SOURCES
 
 # ---------------------------------------------------------------------
 # Source List Consolidation
+#
+# PL_ALL_SOURCES stays the AUDIT UNION: the source-list audit below
+# compares it against every src/*.cpp on disk, so a translation unit
+# that joins the tree without joining a job library is a hard
+# configure-time error, exactly as before the L1 split.
 # ---------------------------------------------------------------------
 set(PL_ALL_SOURCES
     ${PL_PRIMITIVES_SOURCES}
@@ -337,25 +342,144 @@ if(NOT PL_ALL_SOURCES STREQUAL PL_DISCOVERED_SOURCES_REL)
 endif()
 
 # ---------------------------------------------------------------------
-# Library target
+# Include-layer lint (L2)
+#
+# Every #include "phantomledger/..." edge in src/ and include/ is
+# checked against the L1 layering DAG at configure time. REPORT MODE
+# while PL_LAYER_LINT_FATAL is OFF: violations print as a WARNING
+# block and the build continues. See cmake/IncludeLayerLint.cmake for
+# the DAG and the flip protocol.
 # ---------------------------------------------------------------------
 
-add_library(phantomledger_core STATIC ${PL_ALL_SOURCES})
+include(cmake/IncludeLayerLint.cmake)
+pl_run_include_layer_lint(${PL_ALL_SOURCES} src/app/main.cpp)
 
-target_include_directories(phantomledger_core PUBLIC include)
-target_compile_features(phantomledger_core PUBLIC cxx_std_23)
-target_link_libraries(phantomledger_core PUBLIC faker-cxx)
-target_link_libraries(phantomledger_core PRIVATE PostgreSQL::PostgreSQL)
+# ---------------------------------------------------------------------
+# Shared build flags (L1)
+#
+# One INTERFACE target carries the warning/optimization flags every
+# PhantomLedger translation unit compiled with before the split, so
+# per-TU compile flags stay bit-identical across the 9 libraries.
+# Job libraries link it PRIVATE: the flags apply to their own sources
+# and never leak to consumers (tests own their flag set).
+# ---------------------------------------------------------------------
+
+add_library(pl_build_flags INTERFACE)
 
 if(MSVC)
-    target_compile_options(phantomledger_core PRIVATE /W4 /permissive-)
+    target_compile_options(pl_build_flags INTERFACE /W4 /permissive-)
 else()
-    target_compile_options(phantomledger_core PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(pl_build_flags INTERFACE -Wall -Wextra -Wpedantic)
 
     if(PL_ENABLE_NATIVE_OPTIMIZATION)
-        target_compile_options(phantomledger_core PRIVATE -march=native)
+        target_compile_options(pl_build_flags INTERFACE -march=native)
     endif()
 endif()
+
+# ---------------------------------------------------------------------
+# Job libraries (L1)
+#
+# The monolithic library is split into 9 STATIC libraries, one per
+# pipeline job, declared bottom-up in dependency order. NAMING LAW
+# (owner directive): no "core"/"base"/"utils" — every target name
+# states the job it is responsible for. The declared links form the
+# allowed layering DAG (single-responsibility per layer; the include-
+# layer lint above enforces it file-by-file, report-mode first).
+#
+# External dependencies are narrowed to the layer that actually uses
+# them (verified by grep, 2026-07-19):
+#   * libpq      -> pl_primitives PRIVATE (only src/primitives/postgres/
+#                   *.cpp include libpq-fe.h; the export sinks depend on
+#                   the primitives::postgres::Connection abstraction,
+#                   not on libpq — dependency inversion already holds,
+#                   so pl_export needs NO libpq link)
+#   * faker-cxx  -> pl_world PRIVATE (only src/synth/pii/pools.cpp
+#                   includes faker headers; the previous PUBLIC linkage
+#                   on the monolith was over-broad)
+# PRIVATE deps of a STATIC library still propagate to the final link
+# line, so executables and tests link cleanly without naming either.
+# ---------------------------------------------------------------------
+
+function(pl_add_job_library name)
+    add_library(${name} STATIC ${ARGN})
+    target_include_directories(${name} PUBLIC include)
+    target_compile_features(${name} PUBLIC cxx_std_23)
+    target_link_libraries(${name} PRIVATE pl_build_flags)
+endfunction()
+
+# Deterministic building blocks: time, hashing, RNG, PostgreSQL access.
+pl_add_job_library(pl_primitives ${PL_PRIMITIVES_SOURCES})
+target_link_libraries(pl_primitives PRIVATE PostgreSQL::PostgreSQL)
+
+# Run observability: logging and spending statistics.
+pl_add_job_library(pl_diagnostics ${PL_DIAGNOSTICS_SOURCES})
+target_link_libraries(pl_diagnostics PUBLIC pl_primitives)
+
+# The static universe: people/PII, products, devices/IPs/rings,
+# family and social graphs.
+pl_add_job_library(pl_world
+    ${PL_SYNTH_PII_SOURCES}
+    ${PL_SYNTH_PRODUCTS_SOURCES}
+    ${PL_SYNTH_INFRA_SOURCES}
+    ${PL_RELATIONSHIPS_SOURCES}
+)
+target_link_libraries(pl_world PUBLIC pl_primitives pl_diagnostics)
+target_link_libraries(pl_world PRIVATE faker-cxx)
+
+# Day-to-day discretionary spending simulation.
+pl_add_job_library(pl_activity ${PL_ACTIVITY_SPENDING_SOURCES})
+target_link_libraries(pl_activity PUBLIC pl_world)
+
+# Balance clearing: the authoritative ledger and LOC accrual.
+pl_add_job_library(pl_ledger ${PL_TRANSACTIONS_SOURCES})
+target_link_libraries(pl_ledger PUBLIC pl_primitives)
+
+# Transfer generation: legit flows, channels, fraud typologies.
+pl_add_job_library(pl_transfers
+    ${PL_TRANSFERS_CHANNELS_SOURCES}
+    ${PL_TRANSFERS_FRAUD_SOURCES}
+    ${PL_TRANSFERS_LEGIT_SOURCES}
+)
+target_link_libraries(pl_transfers PUBLIC pl_activity pl_ledger)
+
+# Orchestration: stages, chunking, the windowed streaming engine.
+pl_add_job_library(pl_pipeline ${PL_PIPELINE_SOURCES})
+target_link_libraries(pl_pipeline PUBLIC pl_transfers)
+
+# Corpus delivery: the four exporters, rendering, PostgreSQL sinks.
+pl_add_job_library(pl_export
+    ${PL_EXPORTER_CORE_SOURCES}
+    ${PL_EXPORTER_STANDARD_SOURCES}
+    ${PL_EXPORTER_MULE_ML_SOURCES}
+    ${PL_EXPORTER_AML_SOURCES}
+    ${PL_EXPORTER_CARD_FRAUD_SOURCES}
+)
+target_link_libraries(pl_export PUBLIC pl_pipeline)
+
+# Binary surface: CLI parsing, progress reporting, run setup.
+pl_add_job_library(pl_app ${PL_APP_SOURCES})
+target_link_libraries(pl_app PUBLIC pl_export)
+
+# ---------------------------------------------------------------------
+# pl_generator — the complete synthetic-ledger generator as ONE
+# linkable product (INTERFACE umbrella over the 9 job libraries).
+# This is what the binary and every test link; the name states the
+# job (PhantomLedger IS a synthetic bank transaction generator) per
+# the naming law — the retired name "phantomledger_core" said nothing.
+# ---------------------------------------------------------------------
+
+add_library(pl_generator INTERFACE)
+target_link_libraries(pl_generator INTERFACE
+    pl_app
+    pl_export
+    pl_pipeline
+    pl_transfers
+    pl_activity
+    pl_ledger
+    pl_world
+    pl_diagnostics
+    pl_primitives
+)
 
 # ---------------------------------------------------------------------
 # Header IDE target
@@ -392,9 +516,11 @@ if(PL_PROJECT_HEADERS)
     set_source_files_properties(${PL_PROJECT_HEADERS} PROPERTIES
         LANGUAGE CXX
     )
-    # Inherit phantomledger_core's include paths and compile features
-    # so the entries match real build flags exactly.
-    target_link_libraries(phantomledger_headers PRIVATE phantomledger_core)
+    # Inherit the generator's include paths and compile features so
+    # the entries match real build flags exactly. (No project header
+    # includes faker or libpq headers — verified — so the narrowed
+    # external deps cost this target nothing.)
+    target_link_libraries(phantomledger_headers PRIVATE pl_generator)
 
     # Each header IS the main file of its synthetic translation unit
     # here, so clang's -Wpragma-once-outside-header fires on every
@@ -411,17 +537,7 @@ endif()
 # ---------------------------------------------------------------------
 
 add_executable(phantomledger src/app/main.cpp)
-target_link_libraries(phantomledger PRIVATE phantomledger_core)
-
-if(MSVC)
-    target_compile_options(phantomledger PRIVATE /W4 /permissive-)
-else()
-    target_compile_options(phantomledger PRIVATE -Wall -Wextra -Wpedantic)
-
-    if(PL_ENABLE_NATIVE_OPTIMIZATION)
-        target_compile_options(phantomledger PRIVATE -march=native)
-    endif()
-endif()
+target_link_libraries(phantomledger PRIVATE pl_generator pl_build_flags)
 
 # ---------------------------------------------------------------------
 # Tests
@@ -442,7 +558,16 @@ install(TARGETS phantomledger
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
-install(TARGETS phantomledger_core
+install(TARGETS
+    pl_primitives
+    pl_diagnostics
+    pl_world
+    pl_activity
+    pl_ledger
+    pl_transfers
+    pl_pipeline
+    pl_export
+    pl_app
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 
