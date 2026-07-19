@@ -9,7 +9,7 @@
 // state made routing order-dependent, and the windowed composition routed
 // the product schedule BEFORE spending while the monolithic path routes it
 // AFTER. Products now route from a pristine router snapshot on both paths
-// (TransferStage::infra() / the harness), which this gate verifies:
+// (TransferStage::infra() / GateWorld), which this gate verifies:
 //
 //   leg 1  simulator            SpendingRoutine::run()
 //   leg 2  session/plain        advance(full) + finish(), nothing else
@@ -49,8 +49,8 @@ namespace {
 
 using pltest::Txn;
 
-// Mirrors the runLeg() world-construction prefix in window_leg_support.hpp;
-// keep the two in sync. Modes:
+// Runs one leg on the shared GateWorld prefix (gate_world.hpp) — the
+// exact world runLeg() builds in the equivalence configuration. Modes:
 //   useSession=false                  -> SpendingRoutine::run()
 //   useSession=true, preMoves=false   -> plain advance+finish
 //   useSession=true, preMoves=true    -> replicate runLeg()'s pre-advance
@@ -60,207 +60,40 @@ runSpendingLeg(const pltest::pl::synth::pii::PoolSet &poolSet,
                std::uint64_t seed, pltest::pl::time::Window window,
                bool useSession, bool preMoves) {
   namespace pl = pltest::pl;
-  namespace entityStage = pltest::entityStage;
-  namespace infraStage = pltest::infraStage;
-  namespace productStage = pltest::productStage;
   namespace xfer = pltest::xfer;
-  namespace legitBlueprints = pltest::legitBlueprints;
-  namespace legitLedger = pltest::legitLedger;
-  namespace legitPasses = pltest::legitPasses;
   namespace routineSpending = pltest::routineSpending;
   namespace fraud_ns = pltest::fraud_ns;
-  namespace cpKeys = pltest::cpKeys;
 
-  constexpr std::int32_t kPopulation = 300;
+  pltest::WorldSpec spec;
+  spec.seed = seed;
+  spec.window = window;
+  spec.population = 300;
+  spec.fraudProfile = pltest::scaledFraudProfile();
+  spec.withBaseRoutines = true;
+  // Products, infra, routing and income stay on (the spec defaults):
+  // this is the equivalence configuration.
 
-  auto rng = pl::random::Rng::fromSeed(seed);
-
-  const pl::synth::pii::IdentityContext identity{
-      .pools = &poolSet,
-      .simStart = window.start,
-      .localeMix = pl::synth::pii::LocaleMix::usOnly(),
-  };
-
-  const auto fraudProfile = pltest::scaledFraudProfile();
-
-  pl::pipeline::People people;
-  pl::pipeline::Holdings holdings;
-  pl::pipeline::Counterparties cps;
-
-  people.roster = entityStage::buildPeople(rng, kPopulation, fraudProfile);
-  holdings.accounts =
-      entityStage::buildAccounts(rng, people.roster, kPopulation);
-  people.personas = entityStage::buildPersonas(rng, people.roster);
-  people.pii = entityStage::buildPii(rng, people.personas, identity,
-                                     people.roster.topology,
-                                     pl::synth::pii::Sharing{});
-  cps.merchants = entityStage::buildMerchants(rng, kPopulation);
-  cps.landlords = entityStage::buildLandlords(rng, kPopulation);
-  cps.counterparties = entityStage::buildCounterparties(rng, kPopulation);
-  holdings.creditCards =
-      entityStage::issueCreditCards(people.personas, people.roster, seed);
-  entityStage::finalizeAccountRegistry(holdings, cps, people);
-  entityStage::synthesizeBusinessOwners(holdings, people, rng);
-
-  productStage::ObligationSynthesis{}.synthesize(people, holdings, window);
-
-  const auto infra =
-      infraStage::AccessInfraStage{}.build(rng, people, holdings, window);
-
-  // Pristine router snapshot for product routing (see the harness comment).
-  const pl::infra::Router productRouter = infra.router;
-
-  const legitBlueprints::LegitTimeframe timeframe{
-      .window = window,
-      .seed = seed,
-  };
-  const legitBlueprints::AccountCensus census{
-      .accounts = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-
-  auto plan = legitBlueprints::buildLegitBlueprint(timeframe, census);
-  plan.addCounterparties(
-          rng, census,
-          legitBlueprints::CounterpartyPools{
-              .directory = &cps.counterparties,
-              .landlords = &cps.landlords.roster,
-          },
-          legitBlueprints::HubSelectionRules{
-              .populationCount = people.roster.roster.count,
-              .fraction = 0.01,
-          })
-      .addPersonas(rng, timeframe,
-                   legitBlueprints::PersonaCatalog{.pack = &people.personas});
-
-  const legitLedger::OpeningBook openingBook{
-      rng,
-      legitLedger::OpeningBook::Accounts{
-          .registry = &holdings.accounts.registry,
-          .lookup = &holdings.accounts.lookup,
-          .ownership = &holdings.accounts.ownership,
-      },
-      legitLedger::OpeningBook::Protections{
-          .balanceRules = &pl::clearing::kDefaultBalanceRules,
-          .portfolios = &holdings.portfolios,
-          .creditCards = &holdings.creditCards,
-      },
-  };
-  const auto initialBook = openingBook.build(plan);
-  PL_CHECK(initialBook != nullptr);
-
-  legitLedger::ScreenBook screen{initialBook.get()};
-
-  const pl::transactions::Factory txf(rng, &infra.router);
-
-  const legitPasses::AccountAccess accountAccess{
-      .registry = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-
-  const pl::transfers::government::RetirementTerms retirement{};
-  const pl::transfers::government::DisabilityTerms disability{};
-
-  legitLedger::TxnStreams streams;
-  {
-    const legitPasses::IncomePass incomePass{
-        &rng,
-        accountAccess,
-        legitPasses::SalarySetup{
-            .revenueCounterparties = &cps.counterparties,
-            .rules = {},
-        },
-        legitPasses::GovernmentSetup{
-            .counterparties =
-                legitPasses::GovernmentCounterparties{
-                    .ssa = cpKeys::key(cpKeys::Government::ssa),
-                    .disability = cpKeys::key(cpKeys::Government::disability),
-                },
-            .retirement = &retirement,
-            .disability = &disability,
-        },
-    };
-    legitPasses::addIncome(incomePass, plan, txf, streams);
-  }
-
-  {
-    auto routinePass = legitPasses::RoutinePass{
-        &rng,
-        accountAccess,
-        legitPasses::RoutineResources{
-            .accountsLookup = &holdings.accounts.lookup,
-            .merchants = &cps.merchants,
-            .portfolios = &holdings.portfolios,
-            .creditCards = &holdings.creditCards,
-            .cardLifecycle = &pl::transfers::credit_cards::kDefaultLifecycleRules,
-        },
-    };
-    routinePass.txf(txf);
-    legitPasses::addRoutinesWithoutSpending(routinePass, plan, streams, screen);
-  }
-
-  const routineSpending::SpendingRoutine::CensusSource censusSource{
-      .blueprint = plan,
-      .accounts =
-          routineSpending::SpendingRoutine::AccountSource{
-              .lookup = holdings.accounts.lookup,
-              .registry = holdings.accounts.registry,
-          },
-  };
-
-  const std::span<const Txn> baseTxns(streams.screened());
-
-  const routineSpending::SpendingRoutine routineForPrep;
-  auto market = routineForPrep.prepareMarket(
-      censusSource,
-      routineSpending::SpendingRoutine::PayeeDirectory{
-          .merchants = &cps.merchants,
-          .creditCards = &holdings.creditCards,
-      },
-      baseTxns);
-
-  const auto obligations = routineSpending::SpendingRoutine::prepareObligations(
-      censusSource,
-      routineSpending::SpendingRoutine::ObligationSource{
-          .portfolios = &holdings.portfolios,
-      },
-      baseTxns,
-      /*baseTxnsSorted=*/true);
-
-  auto *screenBook = screen.fresh();
-  PL_CHECK(screenBook != nullptr);
-
-  // Mirrors passes.cpp's buildCardLifecycleConfig().
-  routineSpending::SpendingRoutine::CardLifecycleConfig cardCfg;
-  cardCfg.cards = &holdings.creditCards;
-  cardCfg.rules = &pl::transfers::credit_cards::kDefaultLifecycleRules;
-  cardCfg.issuerAccount = plan.counterparties().issuerAcct;
-  cardCfg.window = window;
-  cardCfg.seed = seed;
-  cardCfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());
-  for (const auto &kv : plan.primaryAcctRecordIx()) {
-    const auto &record = plan.allAccounts()->records[kv.second];
-    cardCfg.primaryAccounts.emplace(kv.first, record.id);
-  }
+  pltest::GateWorld world(poolSet, spec);
 
   if (!useSession) {
     routineSpending::SpendingRoutine routine;
-    routine.cardLifecycle(cardCfg);
+    routine.cardLifecycle(world.cardCfg);
     return routine.run(
         routineSpending::SpendingRoutine::Execution{
-            .rng = rng,
-            .txf = txf,
+            .rng = world.rng,
+            .txf = *world.txf,
             .seed = seed,
         },
-        market, obligations, screenBook);
+        world.market, world.obligations, world.screenBook);
   }
 
   routineSpending::SessionInputs inputs;
-  inputs.cardLifecycle = cardCfg;
+  inputs.cardLifecycle = world.cardCfg;
   // threadCount left unset: machine-resolved, matching SpendingRoutine::run.
 
   const auto bundle = routineSpending::SessionBundle::make(
-      seed, rng, txf, market, obligations, screenBook, std::move(inputs));
+      seed, world.rng, *world.txf, world.market, world.obligations,
+      world.screenBook, std::move(inputs));
 
   auto &session = bundle->session();
 
@@ -275,18 +108,18 @@ runSpendingLeg(const pltest::pl::synth::pii::PoolSet &poolSet,
     const pl::random::RngFactory rngFactory{seed};
 
     baseSource = std::make_unique<xfer::PrecomputedCursorSource>(
-        streams.takeReplayReady());
+        world.streams.takeReplayReady());
 
-    const pl::transactions::Factory productTxf(rng, &productRouter,
-                                               &infra.ringInfra);
+    const pl::transactions::Factory productTxf(world.rng, &world.productRouter,
+                                               &world.infra.ringInfra);
     productSource = xfer::makeProductSource(
-        window, seed, rngFactory, productTxf, holdings,
+        window, seed, rngFactory, productTxf, world.holdings,
         pl::transfers::insurance::ClaimRates{});
 
     auto preBook =
-        std::make_unique<pl::clearing::Ledger>(initialBook->clone());
+        std::make_unique<pl::clearing::Ledger>(world.initialBook->clone());
     auto postBook =
-        std::make_unique<pl::clearing::Ledger>(initialBook->clone());
+        std::make_unique<pl::clearing::Ledger>(world.initialBook->clone());
 
     xfer::WindowedConfig config;
     config.generation.monthsPerChunk = 1'200;
@@ -302,19 +135,19 @@ runSpendingLeg(const pltest::pl::synth::pii::PoolSet &poolSet,
 
     // Fraud boundary objects (constructed in runLeg before the run).
     xfer::FraudEmission fraudEmission;
-    fraudEmission.profile(&fraudProfile);
+    fraudEmission.profile(&world.fraudProfile);
     fraudEmission.behavior(&fraud_ns::kDefaultBehavior);
 
     const fraud_ns::Injector injector{
         fraud_ns::InjectorServices{
-            .rng = rng,
-            .router = &infra.router,
-            .ringInfra = &infra.ringInfra,
+            .rng = world.rng,
+            .router = &world.infra.router,
+            .ringInfra = &world.infra.ringInfra,
             .fraudSeed = seed ^ 0x9E3779B97F4A7C15ULL,
         },
-        fraudEmission.ringView(people.roster.topology),
-        xfer::FraudEmission::accountView(holdings.accounts.registry,
-                                         holdings.accounts.ownership),
+        fraudEmission.ringView(world.people.roster.topology),
+        xfer::FraudEmission::accountView(world.holdings.accounts.registry,
+                                         world.holdings.accounts.ownership),
         fraudEmission.resolvedBehavior(),
     };
     (void)injector;

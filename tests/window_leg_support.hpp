@@ -2,15 +2,16 @@
 //
 // tests/window_leg_support.hpp
 //
-// Shared world/leg harness for the windowed two-phase driver gates
+// Shared leg harness for the windowed two-phase driver gates
 // (test_window_invariance, test_window_bisect, test_thread_invariance,
 // test_order_ties, test_arch_equivalence, test_session_vs_simulator,
 // test_spool_equivalence).
 //
 // runLeg() builds ONE complete, fresh, deterministically seeded world —
-// entities, infra, blueprint, opening books, income, base routines,
-// market/obligations, persistent spending session with card lifecycle,
-// family, product and fraud sources — and folds it through
+// the shared GateWorld prefix (see gate_world.hpp): entities, infra,
+// blueprint, opening books, income, base routines, market/obligations —
+// then adds the persistent spending session with card lifecycle, the
+// family, product and fraud sources, and folds it all through
 // WindowedTransferDriver. Legs are compared with the acceptance
 // RunFingerprint. Every option in LegOptions is leg-constant by
 // construction; only generationMonths (window gates) or threadCount
@@ -31,70 +32,30 @@
 //                      through a file-backed binary spool instead of the
 //                      in-memory vector (byte-identical by the spool gate)
 //
-// ROUTER SNAPSHOTS: the Router carries mutable sticky per-person device/IP
-// state, so routing is order-dependent across generators. Products and
-// family each route from their own pristine copy taken immediately after
-// infra build (mirroring TransferStage::infra() and
-// LegitTransferBuilder::build()), so neither can perturb — or be
-// perturbed by — the sticky state the session shares with income and
-// routines.
-//
-// FRAUD PROFILE: the production default plans ~6 rings per 10,000 people
-// and the count ROUNDS, so a 300-person world plans zero fraud
-// participants and every fraud-boundary gate would be vacuous. runLeg()
-// therefore uses a test-scaled profile: the ring RATE is raised and its
-// sigma zeroed (deterministic count, no extra RNG draw), which guarantees
-// at least one ring at this population. The fraud BUDGET — targetTxnFraudP
-// and the realized-corpus ratio — is untouched. This is leg-constant test
-// configuration, not a model change. Raise LegOptions.population for soak
-// runs; the profile scales safely with it.
+// The ROUTER SNAPSHOTS and FRAUD PROFILE rationale lives with the world
+// construction in gate_world.hpp.
 //
 
-#include "phantomledger/entities/institutional_accounts.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/acceptance/fingerprint.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
-#include "phantomledger/pipeline/data.hpp"
-#include "phantomledger/pipeline/infra.hpp"
-#include "phantomledger/pipeline/stages/entities.hpp"
-#include "phantomledger/pipeline/stages/infra.hpp"
-#include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/pipeline/stages/transfers/binary_spool.hpp"
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
 #include "phantomledger/pipeline/stages/transfers/window_sources.hpp"
 #include "phantomledger/pipeline/stages/transfers/windowed_driver.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
-#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/relationships/family/links.hpp"
 #include "phantomledger/relationships/family/partition.hpp"
 #include "phantomledger/relationships/family/support.hpp"
-#include "phantomledger/synth/people/fraud.hpp"
-#include "phantomledger/synth/pii/pools.hpp"
-#include "phantomledger/synth/pii/samplers.hpp"
-#include "phantomledger/taxonomies/enums.hpp"
-#include "phantomledger/taxonomies/locale/types.hpp"
-#include "phantomledger/transactions/clearing/balance_book.hpp"
-#include "phantomledger/transactions/clearing/ledger.hpp"
-#include "phantomledger/transactions/factory.hpp"
-#include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
-#include "phantomledger/transfers/channels/government/disability.hpp"
-#include "phantomledger/transfers/channels/government/retirement.hpp"
 #include "phantomledger/transfers/channels/insurance/rates.hpp"
 #include "phantomledger/transfers/fraud/behavior.hpp"
 #include "phantomledger/transfers/fraud/injector.hpp"
-#include "phantomledger/transfers/legit/blueprints/plans.hpp"
-#include "phantomledger/transfers/legit/ledger/limits.hpp"
-#include "phantomledger/transfers/legit/ledger/passes.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
-#include "phantomledger/transfers/legit/ledger/screenbook.hpp"
-#include "phantomledger/transfers/legit/ledger/streams.hpp"
-#include "phantomledger/transfers/legit/routines/spending.hpp"
 #include "phantomledger/transfers/legit/routines/spending_session.hpp"
 
+#include "gate_world.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -109,20 +70,9 @@
 
 namespace pltest {
 
-namespace pl = ::PhantomLedger;
-namespace entityStage = pl::pipeline::stages::entities;
-namespace infraStage = pl::pipeline::stages::infra;
-namespace productStage = pl::pipeline::stages::products;
 namespace xfer = pl::pipeline::stages::transfers;
 namespace acceptance = pl::pipeline::acceptance;
-namespace legitBlueprints = pl::transfers::legit::blueprints;
-namespace legitLedger = pl::transfers::legit::ledger;
-namespace legitPasses = pl::transfers::legit::ledger::passes;
-namespace routineSpending = pl::transfers::legit::routines::spending;
 namespace fraud_ns = pl::transfers::fraud;
-namespace cpKeys = pl::counterparties;
-
-using Txn = pl::transactions::Transaction;
 
 // Golden digest plus retained rows so a digest mismatch can be localized
 // to the first differing transaction.
@@ -204,27 +154,6 @@ struct LegResult {
   std::uint64_t spoolBytes = 0;
 };
 
-[[nodiscard]] inline pl::synth::pii::PoolSet buildPoolSet(std::uint64_t seed) {
-  pl::synth::pii::PoolSet poolSet;
-  pl::synth::pii::PoolSizes sizes;
-  poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
-      pl::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
-                                      static_cast<std::uint32_t>(seed));
-  return poolSet;
-}
-
-// See FRAUD PROFILE in the file comment. With participation ceiling
-// 0.10 * population >= size.min, the first sampleRing() call cannot fail,
-// so at least one ring (with mules and victims) exists at any seed.
-[[nodiscard]] inline pl::synth::people::Fraud scaledFraudProfile() {
-  pl::synth::people::Fraud profile{};
-  profile.rings.perTenKMean = 200.0;
-  profile.rings.perTenKSigma = 0.0;
-  profile.solos.perTenK = 100.0;
-  profile.limits.maxParticipationP = 0.10;
-  return profile;
-}
-
 [[nodiscard]] inline LegResult runLeg(const pl::synth::pii::PoolSet &poolSet,
                                       const LegOptions &opt) {
   // The injector reads ring device/IP plans from infra.
@@ -232,204 +161,32 @@ struct LegResult {
   // Split deposits consume the payday-inbound stream that income emits.
   PL_CHECK(!opt.withBaseRoutines || opt.withIncome);
 
-  auto rng = pl::random::Rng::fromSeed(opt.seed);
+  // Infra is always built (the WorldSpec default) so shared-RNG
+  // consumption is identical across all option combinations of one gate;
+  // withInfraRouting only controls whether the row factory routes
+  // device/IP through it.
+  WorldSpec spec;
+  spec.seed = opt.seed;
+  spec.window = opt.window;
+  spec.population = opt.population;
+  spec.fraudProfile = scaledFraudProfile();
+  spec.withProducts = opt.withProducts;
+  spec.withInfraRouting = opt.withInfraRouting;
+  spec.withIncome = opt.withIncome;
+  spec.withBaseRoutines = opt.withBaseRoutines;
 
-  const pl::synth::pii::IdentityContext identity{
-      .pools = &poolSet,
-      .simStart = opt.window.start,
-      .localeMix = pl::synth::pii::LocaleMix::usOnly(),
-  };
+  GateWorld world(poolSet, spec);
+  auto &rng = world.rng;
 
-  const auto fraudProfile = scaledFraudProfile();
-
-  // Mirrors SimulationPipeline::buildEntities() with default plans.
-  pl::pipeline::People people;
-  pl::pipeline::Holdings holdings;
-  pl::pipeline::Counterparties cps;
-
-  people.roster = entityStage::buildPeople(rng, opt.population, fraudProfile);
-  holdings.accounts =
-      entityStage::buildAccounts(rng, people.roster, opt.population);
-  people.personas = entityStage::buildPersonas(rng, people.roster);
-  people.pii = entityStage::buildPii(rng, people.personas, identity,
-                                     people.roster.topology,
-                                     pl::synth::pii::Sharing{});
-  cps.merchants = entityStage::buildMerchants(rng, opt.population);
-  cps.landlords = entityStage::buildLandlords(rng, opt.population);
-  cps.counterparties = entityStage::buildCounterparties(rng, opt.population);
-  holdings.creditCards =
-      entityStage::issueCreditCards(people.personas, people.roster, opt.seed);
-  entityStage::finalizeAccountRegistry(holdings, cps, people);
-  entityStage::synthesizeBusinessOwners(holdings, people, rng);
-
-  if (opt.withProducts) {
-    // Products use their own content-keyed seed; window size cannot reach it.
-    productStage::ObligationSynthesis{}.synthesize(people, holdings,
-                                                   opt.window);
-  }
-
-  // Infra is always built so shared-RNG consumption is identical across all
-  // option combinations of one gate; withInfraRouting only controls whether
-  // the row factory routes device/IP through it.
-  const auto infra =
-      infraStage::AccessInfraStage{}.build(rng, people, holdings, opt.window);
-
-  // See ROUTER SNAPSHOTS in the file comment: taken here, before any income
-  // or routine emission touches the shared router's sticky state. Products
-  // and family each mutate their own copy, as in production.
-  const pl::infra::Router productRouter = infra.router;
-  const pl::infra::Router familyRouter = infra.router;
-
-  // Mirrors LegitTransferBuilder::build()'s blueprint construction.
-  const legitBlueprints::LegitTimeframe timeframe{
-      .window = opt.window,
-      .seed = opt.seed,
-  };
-  const legitBlueprints::AccountCensus census{
-      .accounts = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-
-  auto plan = legitBlueprints::buildLegitBlueprint(timeframe, census);
-  plan.addCounterparties(
-          rng, census,
-          legitBlueprints::CounterpartyPools{
-              .directory = &cps.counterparties,
-              .landlords = &cps.landlords.roster,
-          },
-          legitBlueprints::HubSelectionRules{
-              .populationCount = people.roster.roster.count,
-              .fraction = 0.01,
-          })
-      .addPersonas(rng, timeframe,
-                   legitBlueprints::PersonaCatalog{.pack = &people.personas});
-
-  const legitLedger::OpeningBook openingBook{
-      rng,
-      legitLedger::OpeningBook::Accounts{
-          .registry = &holdings.accounts.registry,
-          .lookup = &holdings.accounts.lookup,
-          .ownership = &holdings.accounts.ownership,
-      },
-      legitLedger::OpeningBook::Protections{
-          .balanceRules = &pl::clearing::kDefaultBalanceRules,
-          .portfolios = &holdings.portfolios,
-          .creditCards = &holdings.creditCards,
-      },
-  };
-  const auto initialBook = openingBook.build(plan);
-  PL_CHECK(initialBook != nullptr);
-
-  legitLedger::ScreenBook screen{initialBook.get()};
-
-  const pl::transactions::Factory txf(
-      rng, opt.withInfraRouting ? &infra.router : nullptr);
-
-  const legitPasses::AccountAccess accountAccess{
-      .registry = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-
-  // Income (salary, government benefits, revenue) mirrors passes::addIncome.
-  // Its payday inbounds are what future-inbound cure discovery finds.
-  const pl::transfers::government::RetirementTerms retirement{};
-  const pl::transfers::government::DisabilityTerms disability{};
-
-  legitLedger::TxnStreams streams;
-  if (opt.withIncome) {
-    const legitPasses::IncomePass incomePass{
-        &rng,
-        accountAccess,
-        legitPasses::SalarySetup{
-            .revenueCounterparties = &cps.counterparties,
-            .rules = {},
-        },
-        legitPasses::GovernmentSetup{
-            .counterparties =
-                legitPasses::GovernmentCounterparties{
-                    .ssa = cpKeys::key(cpKeys::Government::ssa),
-                    .disability = cpKeys::key(cpKeys::Government::disability),
-                },
-            .retirement = &retirement,
-            .disability = &disability,
-        },
-    };
-    legitPasses::addIncome(incomePass, plan, txf, streams);
-  }
-
-  if (opt.withBaseRoutines) {
-    // The exact monolithic base-stream generation, minus spending.
-    auto routinePass = legitPasses::RoutinePass{
-        &rng,
-        accountAccess,
-        legitPasses::RoutineResources{
-            .accountsLookup = &holdings.accounts.lookup,
-            .merchants = &cps.merchants,
-            .portfolios = &holdings.portfolios,
-            .creditCards = &holdings.creditCards,
-            .cardLifecycle = &pl::transfers::credit_cards::kDefaultLifecycleRules,
-        },
-    };
-    routinePass.txf(txf);
-    legitPasses::addRoutinesWithoutSpending(routinePass, plan, streams, screen);
-  }
-
-  // Market and obligations read the accumulated stream exactly as
-  // addSpending reads streams.screened() — family rows are deliberately
-  // NOT in it (the monolithic path generates family after spending). The
-  // screened view must stay untouched for the session's lifetime (the
-  // obligations snapshot holds a span into it).
-  const routineSpending::SpendingRoutine routine;
-  const routineSpending::SpendingRoutine::CensusSource censusSource{
-      .blueprint = plan,
-      .accounts =
-          routineSpending::SpendingRoutine::AccountSource{
-              .lookup = holdings.accounts.lookup,
-              .registry = holdings.accounts.registry,
-          },
-  };
-
-  const std::span<const Txn> baseTxns(streams.screened());
-
-  auto market = routine.prepareMarket(
-      censusSource,
-      routineSpending::SpendingRoutine::PayeeDirectory{
-          .merchants = &cps.merchants,
-          .creditCards = &holdings.creditCards,
-      },
-      baseTxns);
-
-  const auto obligations = routineSpending::SpendingRoutine::prepareObligations(
-      censusSource,
-      routineSpending::SpendingRoutine::ObligationSource{
-          .portfolios = &holdings.portfolios,
-      },
-      baseTxns,
-      /*baseTxnsSorted=*/true);
-
-  auto *screenBook = screen.fresh();
-  PL_CHECK(screenBook != nullptr);
-
-  // Mirrors passes.cpp's buildCardLifecycleConfig().
   routineSpending::SessionInputs inputs;
+  inputs.cardLifecycle = world.cardCfg;
   if (opt.threadCount != 0) {
     inputs.threadCount = opt.threadCount;
   }
 
-  auto &cardCfg = inputs.cardLifecycle;
-  cardCfg.cards = &holdings.creditCards;
-  cardCfg.rules = &pl::transfers::credit_cards::kDefaultLifecycleRules;
-  cardCfg.issuerAccount = plan.counterparties().issuerAcct;
-  cardCfg.window = opt.window;
-  cardCfg.seed = opt.seed;
-  cardCfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());
-  for (const auto &kv : plan.primaryAcctRecordIx()) {
-    const auto &record = plan.allAccounts()->records[kv.second];
-    cardCfg.primaryAccounts.emplace(kv.first, record.id);
-  }
-
   const auto bundle = routineSpending::SessionBundle::make(
-      opt.seed, rng, txf, market, obligations, screenBook, std::move(inputs));
+      opt.seed, rng, *world.txf, world.market, world.obligations,
+      world.screenBook, std::move(inputs));
 
   // Window-independent cursor sources, precomputed at this fixed sequence
   // point in every leg. Products and family draw only from their dedicated
@@ -440,15 +197,15 @@ struct LegResult {
   std::unique_ptr<xfer::PrecomputedCursorSource> baseSource;
   if (opt.withIncome) {
     baseSource = std::make_unique<xfer::PrecomputedCursorSource>(
-        streams.takeReplayReady());
+        world.streams.takeReplayReady());
   }
 
   std::unique_ptr<xfer::PrecomputedCursorSource> productSource;
   if (opt.withProducts) {
-    const pl::transactions::Factory productTxf(rng, &productRouter,
-                                               &infra.ringInfra);
+    const pl::transactions::Factory productTxf(rng, &world.productRouter,
+                                               &world.infra.ringInfra);
     productSource = xfer::makeProductSource(
-        opt.window, opt.seed, rngFactory, productTxf, holdings,
+        opt.window, opt.seed, rngFactory, productTxf, world.holdings,
         pl::transfers::insurance::ClaimRates{});
   }
 
@@ -467,26 +224,29 @@ struct LegResult {
         .transfers(relatives::kDefaultFamilyTransferModel);
 
     const relatives::FamilyLedgerSources sources{
-        .accounts = &holdings.accounts.registry,
-        .ownership = &holdings.accounts.ownership,
-        .educationMerchants = &cps.merchants,
+        .accounts = &world.holdings.accounts.registry,
+        .ownership = &world.holdings.accounts.ownership,
+        .educationMerchants = &world.cps.merchants,
     };
 
     const pl::random::RngFactory familyRngFactory{opt.seed};
     auto familyRoutingRng = familyRngFactory.rng({"family", "routing"});
-    const pl::transactions::Factory familyTxf(familyRoutingRng, &familyRouter);
+    const pl::transactions::Factory familyTxf(familyRoutingRng,
+                                              &world.familyRouter);
 
     familySource = std::make_unique<xfer::PrecomputedCursorSource>(
         legitLedger::sortForReplay(relatives::generateFamilyTxns(
-            plan, sources,
+            world.plan, sources,
             family_rt::TransferEmission{familyRngFactory, familyTxf},
             scenario)));
   }
 
   // Two fresh opening-book copies: pre-fraud replay and post-fraud replay
   // fold independently, exactly as in the monolithic path.
-  auto preBook = std::make_unique<pl::clearing::Ledger>(initialBook->clone());
-  auto postBook = std::make_unique<pl::clearing::Ledger>(initialBook->clone());
+  auto preBook =
+      std::make_unique<pl::clearing::Ledger>(world.initialBook->clone());
+  auto postBook =
+      std::make_unique<pl::clearing::Ledger>(world.initialBook->clone());
   auto *preBookPtr = preBook.get();
   auto *postBookPtr = postBook.get();
 
@@ -517,26 +277,26 @@ struct LegResult {
     // Fraud boundary inputs. Injector construction mirrors
     // TransferStage::makeFraudInjector, including the fraud seed derivation.
     xfer::FraudEmission fraudEmission;
-    fraudEmission.profile(&fraudProfile);
+    fraudEmission.profile(&world.fraudProfile);
     fraudEmission.behavior(&fraud_ns::kDefaultBehavior);
 
     const fraud_ns::Injector injector{
         fraud_ns::InjectorServices{
             .rng = rng,
-            .router = &infra.router,
-            .ringInfra = &infra.ringInfra,
+            .router = &world.infra.router,
+            .ringInfra = &world.infra.ringInfra,
             .fraudSeed = opt.seed ^ 0x9E3779B97F4A7C15ULL,
         },
-        fraudEmission.ringView(people.roster.topology),
-        xfer::FraudEmission::accountView(holdings.accounts.registry,
-                                         holdings.accounts.ownership),
+        fraudEmission.ringView(world.people.roster.topology),
+        xfer::FraudEmission::accountView(world.holdings.accounts.registry,
+                                         world.holdings.accounts.ownership),
         fraudEmission.resolvedBehavior(),
     };
 
     legitLedger::LegitCounterparties legitCps;
-    legitCps.hubAccounts = plan.counterparties().hubAccounts;
-    legitCps.billerAccounts = plan.counterparties().billerAccounts;
-    legitCps.employers = plan.counterparties().employers;
+    legitCps.hubAccounts = world.plan.counterparties().hubAccounts;
+    legitCps.billerAccounts = world.plan.counterparties().billerAccounts;
+    legitCps.employers = world.plan.counterparties().employers;
 
     const xfer::WindowedTransferDriver::FraudSourceFactory makeFraud =
         [&](std::uint64_t realizedCandidateCount)

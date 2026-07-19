@@ -4,12 +4,7 @@
 #include "phantomledger/activity/spending/market/cards.hpp"
 #include "phantomledger/activity/spending/market/commerce/network.hpp"
 #include "phantomledger/activity/spending/obligations/burden.hpp"
-#include "phantomledger/activity/spending/simulator/commerce_evolver.hpp"
-#include "phantomledger/activity/spending/simulator/day_driver.hpp"
-#include "phantomledger/activity/spending/simulator/day_source.hpp"
 #include "phantomledger/activity/spending/simulator/driver.hpp"
-#include "phantomledger/activity/spending/simulator/population_dynamics.hpp"
-#include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
@@ -17,6 +12,7 @@
 #include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
+#include "phantomledger/transfers/legit/routines/spending/simulator_wiring.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +28,6 @@ namespace plSpending = ::PhantomLedger::activity::spending;
 namespace plMarket = plSpending::market;
 namespace plPop = plMarket::population;
 namespace plObligations = plSpending::obligations;
-namespace plSimulator = plSpending::simulator;
 namespace plCredit = ::PhantomLedger::transfers::credit_cards;
 
 SpendingRoutine &SpendingRoutine::habits(SpendingHabits value) noexcept {
@@ -201,31 +196,6 @@ marketBehaviorFrom(const SpendingHabits &habits) {
   return plMarket::ShopperBehaviorRules{
       .burst = habits.burst,
       .exploration = habits.exploration,
-  };
-}
-
-[[nodiscard]] plSimulator::RunPlanner plannerFrom(const RunPlanning &planning) {
-  return plSimulator::RunPlanner{
-      planning.load,
-      planning.channels,
-      planning.paymentRules,
-  };
-}
-
-[[nodiscard]] plSimulator::DayDriver
-dayDriverFrom(const DayPattern &day, const DynamicsProfile &dynamics,
-              const EmissionProfile &emission) {
-  return plSimulator::DayDriver{
-      plSimulator::DaySource{day.variation, day.seasonal},
-      plSimulator::CommerceEvolver{dynamics.commerce},
-      plSimulator::PopulationDynamics{dynamics.population},
-      plSimulator::SpenderEmissionDriver{
-          plSimulator::SpenderEmissionDriver::Behavior{
-              .baseExploreP = emission.baseExploreP,
-              .exploration = emission.exploration,
-              .liquidity = emission.liquidity,
-              .rates = emission.rates,
-          }},
   };
 }
 

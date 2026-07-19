@@ -1,54 +1,13 @@
 #include "phantomledger/transfers/legit/routines/spending_session.hpp"
 
-#include "phantomledger/activity/spending/simulator/commerce_evolver.hpp"
-#include "phantomledger/activity/spending/simulator/day_driver.hpp"
-#include "phantomledger/activity/spending/simulator/day_source.hpp"
-#include "phantomledger/activity/spending/simulator/population_dynamics.hpp"
-#include "phantomledger/activity/spending/simulator/run_planner.hpp"
 #include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
+#include "phantomledger/transfers/legit/routines/spending/simulator_wiring.hpp"
 
 #include <stdexcept>
 #include <utility>
 
 namespace PhantomLedger::transfers::legit::routines::spending {
-
-namespace {
-
-[[nodiscard]] plSimulator::RunPlanner plannerFrom(const RunPlanning &planning) {
-  return plSimulator::RunPlanner{
-      planning.load,
-      planning.channels,
-      planning.paymentRules,
-  };
-}
-
-[[nodiscard]] plSimulator::DayDriver
-dayDriverFrom(const DayPattern &day, const DynamicsProfile &dynamics,
-              const EmissionProfile &emission) {
-  return plSimulator::DayDriver{
-      plSimulator::DaySource{
-          day.variation,
-          day.seasonal,
-      },
-      plSimulator::CommerceEvolver{
-          dynamics.commerce,
-      },
-      plSimulator::PopulationDynamics{
-          dynamics.population,
-      },
-      plSimulator::SpenderEmissionDriver{
-          plSimulator::SpenderEmissionDriver::Behavior{
-              .baseExploreP = emission.baseExploreP,
-              .exploration = emission.exploration,
-              .liquidity = emission.liquidity,
-              .rates = emission.rates,
-          },
-      },
-  };
-}
-
-} // namespace
 
 std::unique_ptr<SessionBundle> SessionBundle::make(
     std::uint64_t seed, random::Rng &rng, const transactions::Factory &txf,

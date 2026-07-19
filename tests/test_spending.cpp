@@ -6,25 +6,12 @@
 #include "phantomledger/activity/spending/spenders/targets.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
-#include "phantomledger/pipeline/data.hpp"
-#include "phantomledger/pipeline/stages/entities.hpp"
-#include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/synth/pii/pools.hpp"
-#include "phantomledger/synth/pii/samplers.hpp"
-#include "phantomledger/taxonomies/enums.hpp"
-#include "phantomledger/taxonomies/locale/types.hpp"
-#include "phantomledger/transactions/clearing/balance_book.hpp"
-#include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
-#include "phantomledger/transfers/legit/blueprints/plans.hpp"
-#include "phantomledger/transfers/legit/ledger/limits.hpp"
-#include "phantomledger/transfers/legit/ledger/screenbook.hpp"
-#include "phantomledger/transfers/legit/routines/spending.hpp"
 #include "phantomledger/transfers/legit/routines/spending_session.hpp"
 
+#include "gate_world.hpp"
 #include "test_support.hpp"
 
 #include <algorithm>
@@ -240,20 +227,17 @@ void testTotalTargetTxns() {
 // A generation-window boundary is an eviction boundary, not a semantic
 // boundary: advancing the persistent spending Session through any partition
 // of the run window must produce the byte-identical corpus. Each leg below
-// is built from a fresh, identically seeded world (Session and Market are
-// stateful and non-copyable, so reuse across legs would be invalid). The
-// legs differ ONLY in how Session::advance() slices the run window. All
-// comparisons are exact; no approximate equality.
+// is built from a fresh, identically seeded GateWorld (gate_world.hpp);
+// Session and Market are stateful and non-copyable, so reuse across legs
+// would be invalid. The legs differ ONLY in how Session::advance() slices
+// the run window. All comparisons are exact; no approximate equality.
 //
-// The leg deliberately runs without infra routing (Factory has no Router)
-// and with an empty base-transaction stream: both are constant across legs,
-// so they cannot mask a window-size dependence, and they keep the gate
-// focused on the Session itself.
+// The leg deliberately runs without products, infra routing (Factory has
+// no Router) and with an empty base-transaction stream: all are constant
+// across legs, so they cannot mask a window-size dependence, and they
+// keep the gate focused on the Session itself.
 
 namespace pl = ::PhantomLedger;
-namespace entityStage = pl::pipeline::stages::entities;
-namespace legitBlueprints = pl::transfers::legit::blueprints;
-namespace legitLedger = pl::transfers::legit::ledger;
 namespace routineSpending = pl::transfers::legit::routines::spending;
 namespace plSim = pl::activity::spending::simulator;
 
@@ -263,138 +247,33 @@ struct SessionLeg {
   std::uint64_t cardEvents = 0;
 };
 
-[[nodiscard]] pl::synth::pii::PoolSet buildPoolSet(std::uint64_t seed) {
-  pl::synth::pii::PoolSet poolSet;
-  pl::synth::pii::PoolSizes sizes;
-  poolSet.byCountry[pl::taxonomies::enums::toIndex(pl::locale::Country::us)] =
-      pl::synth::pii::buildLocalePool(pl::locale::Country::us, sizes,
-                                      static_cast<std::uint32_t>(seed));
-  return poolSet;
-}
-
 // One complete leg: fresh world, fresh session, one window partition.
 // monthsPerWindow == 0 selects the full-range leg (a single advance()).
 [[nodiscard]] SessionLeg runSessionLeg(const pl::synth::pii::PoolSet &poolSet,
                                        std::uint64_t seed,
                                        pl::time::Window window,
                                        int monthsPerWindow) {
-  constexpr std::int32_t kPopulation = 300;
+  pltest::WorldSpec spec;
+  spec.seed = seed;
+  spec.window = window;
+  spec.population = 300;
+  // Production-default fraud profile; no products, no infra, no base
+  // streams (see the section comment above).
+  spec.withProducts = false;
+  spec.withInfra = false;
+  spec.withInfraRouting = false;
+  spec.withIncome = false;
+  spec.withBaseRoutines = false;
 
-  auto rng = pl::random::Rng::fromSeed(seed);
+  pltest::GateWorld world(poolSet, spec);
 
-  const pl::synth::pii::IdentityContext identity{
-      .pools = &poolSet,
-      .simStart = window.start,
-      .localeMix = pl::synth::pii::LocaleMix::usOnly(),
-  };
-
-  // Mirrors SimulationPipeline::buildEntities() with default plans.
-  pl::pipeline::People people;
-  pl::pipeline::Holdings holdings;
-  pl::pipeline::Counterparties cps;
-
-  people.roster = entityStage::buildPeople(rng, kPopulation);
-  holdings.accounts =
-      entityStage::buildAccounts(rng, people.roster, kPopulation);
-  people.personas = entityStage::buildPersonas(rng, people.roster);
-  people.pii =
-      entityStage::buildPii(rng, people.personas, identity,
-                            people.roster.topology, pl::synth::pii::Sharing{});
-  cps.merchants = entityStage::buildMerchants(rng, kPopulation);
-  cps.landlords = entityStage::buildLandlords(rng, kPopulation);
-  cps.counterparties = entityStage::buildCounterparties(rng, kPopulation);
-  holdings.creditCards =
-      entityStage::issueCreditCards(people.personas, people.roster, seed);
-  entityStage::finalizeAccountRegistry(holdings, cps, people);
-  entityStage::synthesizeBusinessOwners(holdings, people, rng);
-
-  // Mirrors LegitTransferBuilder::build()'s blueprint construction.
-  const legitBlueprints::LegitTimeframe timeframe{
-      .window = window,
-      .seed = seed,
-  };
-  const legitBlueprints::AccountCensus census{
-      .accounts = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
-  };
-
-  auto plan = legitBlueprints::buildLegitBlueprint(timeframe, census);
-  plan.addCounterparties(rng, census,
-                         legitBlueprints::CounterpartyPools{
-                             .directory = &cps.counterparties,
-                             .landlords = &cps.landlords.roster,
-                         },
-                         legitBlueprints::HubSelectionRules{
-                             .populationCount = people.roster.roster.count,
-                             .fraction = 0.01,
-                         })
-      .addPersonas(rng, timeframe,
-                   legitBlueprints::PersonaCatalog{.pack = &people.personas});
-
-  const legitLedger::OpeningBook openingBook{
-      rng,
-      legitLedger::OpeningBook::Accounts{
-          .registry = &holdings.accounts.registry,
-          .lookup = &holdings.accounts.lookup,
-          .ownership = &holdings.accounts.ownership,
-      },
-      legitLedger::OpeningBook::Protections{
-          .balanceRules = &pl::clearing::kDefaultBalanceRules,
-          .portfolios = &holdings.portfolios,
-          .creditCards = &holdings.creditCards,
-      },
-  };
-  const auto initialBook = openingBook.build(plan);
-  legitLedger::ScreenBook screen{initialBook.get()};
-  auto *screenBook = screen.fresh();
-  PL_CHECK(screenBook != nullptr);
-
-  const routineSpending::SpendingRoutine routine;
-  const routineSpending::SpendingRoutine::CensusSource censusSource{
-      .blueprint = plan,
-      .accounts =
-          routineSpending::SpendingRoutine::AccountSource{
-              .lookup = holdings.accounts.lookup,
-              .registry = holdings.accounts.registry,
-          },
-  };
-
-  auto market =
-      routine.prepareMarket(censusSource,
-                            routineSpending::SpendingRoutine::PayeeDirectory{
-                                .merchants = &cps.merchants,
-                                .creditCards = &holdings.creditCards,
-                            },
-                            std::span<const pl::transactions::Transaction>{});
-
-  const auto obligations = routineSpending::SpendingRoutine::prepareObligations(
-      censusSource,
-      routineSpending::SpendingRoutine::ObligationSource{
-          .portfolios = &holdings.portfolios,
-      },
-      std::span<const pl::transactions::Transaction>{},
-      /*baseTxnsSorted=*/true);
-
-  // Mirrors passes.cpp's buildCardLifecycleConfig().
   routineSpending::SessionInputs inputs;
   inputs.threadCount = 1;
-
-  auto &cardCfg = inputs.cardLifecycle;
-  cardCfg.cards = &holdings.creditCards;
-  cardCfg.rules = &pl::transfers::credit_cards::kDefaultLifecycleRules;
-  cardCfg.issuerAccount = plan.counterparties().issuerAcct;
-  cardCfg.window = window;
-  cardCfg.seed = seed;
-  cardCfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());
-  for (const auto &kv : plan.primaryAcctRecordIx()) {
-    const auto &record = plan.allAccounts()->records[kv.second];
-    cardCfg.primaryAccounts.emplace(kv.first, record.id);
-  }
-
-  const pl::transactions::Factory txf(rng);
+  inputs.cardLifecycle = world.cardCfg;
 
   const auto bundle = routineSpending::SessionBundle::make(
-      seed, rng, txf, market, obligations, screenBook, std::move(inputs));
+      seed, world.rng, *world.txf, world.market, world.obligations,
+      world.screenBook, std::move(inputs));
 
   auto &session = bundle->session();
 
@@ -504,7 +383,7 @@ void testSessionWindowInvariance() {
   window.start = pl::time::makeTime({2015, 1, 1});
   window.days = 365 * 2; // several 12-month windows; many 1-month windows
 
-  const auto poolSet = buildPoolSet(seed);
+  const auto poolSet = pltest::buildPoolSet(seed);
 
   const auto reference = runSessionLeg(poolSet, seed, window, 0);
 
