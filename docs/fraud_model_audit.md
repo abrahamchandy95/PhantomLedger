@@ -1834,3 +1834,24 @@ resolved by shipped ADJUSTs or documented CHOICEs.
 7. C3 residuals: CLOSED by C4 — the autopay comparator and the
    miss-share axis mapping are written into L-7; both rows stay
    UNCITED pending the owner's pass, but are now falsifiable.
+
+
+### U-1. card-fraud use-case view derivations (card-fraud-2026-07)
+
+Export-time, content-keyed derivations for the `card-fraud` use case
+(TigerGraph TF_GNN_v3 target; exporter/card_fraud/). None of these
+touch the world model or any other use case's bytes: they are
+deterministic functions of row/entity content (FNV-1a over fixed-width
+fields, lane-salted; derive.hpp), so the corpus stream and every
+existing golden are unaffected.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| Card view | channels {card_purchase, merchant}; merchant-channel (account-paid POS) rows interpreted as DEBIT-card transactions; ATO (p2p rail) excluded | CHOICE | IBM TabFormer mixes credit/debit cards |
+| Card attribution | source Key in card registry -> that credit card (<=1 credit card/person); any other source -> the account's derived debit card; Card.is_fraud = card ever carried a flag-1 view row | CHOICE (label definition) | — |
+| Identifier scheme | C/D/M = prefixed role.bank.number of the entity Key; P<person>; T<row_seq> (Payment_Transaction ids cross-reference the transactions table 1:1) | CHOICE | — |
+| use_chip mix | Swipe .63 / Chip .26 / Online .11, content-keyed per row [Likely on the split — verify against the TabFormer "Use Chip" empirical mix at citation time] | CHOICE | IBM TabFormer (credit_card_transactions "Use Chip" column) |
+| error model | incidence 2.0% of view rows; mix Insufficient Balance .40 / Bad PIN .20 / Technical Glitch .20 / Bad Card Number .08 / Bad Expiration .05 / Bad CVV .05 / Bad Zipcode .02; error-free rows carry the empty string [Likely on incidence and mix — verify against the TabFormer "Errors?" column] | CHOICE | IBM TabFormer (credit_card_transactions "Errors?" column) |
+| train/val/test split | chronological .70/.15/.15 of window days (floored day boundaries); settlement-tail rows past the window end land in test | CHOICE | standard temporal GNN evaluation practice |
+| Category fallback | non-catalog view destinations (the unauthorized rail draws biller accounts) become Merchant vertices with a content-keyed uniform category over the 10-category taxonomy; keyed by destination so mer_cat and Merchant_Assigned agree by construction | CHOICE | — |
+| mer_cat granularity | the 10-category merchant taxonomy stands in for TabFormer's MCC codes | DEVIATES-BY-CHOICE (an MCC taxonomy would be its own model round) | — |
