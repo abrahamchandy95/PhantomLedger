@@ -113,9 +113,11 @@ Runtime diagnostics are **silent by default**; the `run-info` / `run-debug` / `r
 playbook: every topic and level, the golden-baseline triage protocol, and what to run for
 each class of problem.
 
-The CMake configure step audits the source list against `src/*.cpp` on every run;
-adding a translation unit without registering it in `CMakeLists.txt` is a hard
-configure-time error rather than a silent missing-symbol surprise at link.
+The repository is laid out module-per-layer: every layer is self-contained under
+`libs/<layer>/{include,src}`, so a module can be reviewed in isolation. The CMake configure
+step audits the source list against every `libs/*/src` translation unit on each run; adding
+one without registering it in `CMakeLists.txt` is a hard configure-time error rather than a
+silent missing-symbol surprise at link.
 
 ## Usage
 
