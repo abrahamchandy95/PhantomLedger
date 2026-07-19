@@ -76,9 +76,13 @@ The only external dependency, [`faker-cxx`](https://github.com/cieslarmichal/fak
 ```sh
 make build       # configure + build (Release by default)
 make test        # build + run the CTest suite
-make run         # build + run the binary
+make run         # build + run the binary (silent: warnings and errors only)
 make run-help    # build + print --help
 make run-fast    # incremental build, then run (skips reconfigure)
+make run-info    # run with progress-level diagnostics
+make run-debug   # run with per-day diagnostics; narrow with TOPICS=...
+make run-trace   # run with everything the logger can say
+make run-mem     # run with per-stage peak-RSS reporting only
 make rebuild     # clean + build
 make clean       # remove the build directory
 ```
@@ -94,6 +98,7 @@ All targets accept the following overrides:
 | `TESTS` | `ON` | `PL_BUILD_TESTS` — build the C++ test suite. |
 | `BIN` | `phantomledger` | Binary name (used by the `run` targets). |
 | `ARGS` | *(empty)* | Arguments forwarded to the binary by `make run` / `make run-fast`. |
+| `TOPICS` | `all` | Topic filter for the diagnostics run targets (comma-separated; see [docs/debugging.md](docs/debugging.md)). |
 
 Examples:
 
@@ -102,6 +107,11 @@ make build CONFIG=Debug
 make test BUILD_DIR=build-debug CONFIG=Debug
 make run ARGS="--usecase standard --days 120 --population 200000"
 ```
+
+Runtime diagnostics are **silent by default**; the `run-info` / `run-debug` / `run-trace` /
+`run-mem` targets switch them on. [docs/debugging.md](docs/debugging.md) is the debugging
+playbook: every topic and level, the golden-baseline triage protocol, and what to run for
+each class of problem.
 
 The CMake configure step audits the source list against `src/*.cpp` on every run;
 adding a translation unit without registering it in `CMakeLists.txt` is a hard
