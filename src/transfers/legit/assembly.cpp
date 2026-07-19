@@ -16,7 +16,6 @@ namespace {
 namespace legit_ledger = ::PhantomLedger::transfers::legit::ledger;
 namespace validate = ::PhantomLedger::primitives::validate;
 namespace income = ::PhantomLedger::activity::income;
-namespace pipe = ::PhantomLedger::pipeline;
 namespace counterparties = ::PhantomLedger::counterparties;
 
 [[nodiscard]] FamilyTransferScenario makeDefaultFamilyScenario() {
@@ -38,19 +37,20 @@ void validateHubFraction(double value) {
 }
 
 [[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
-    ::PhantomLedger::random::Rng &rng, const pipe::Holdings &holdings,
+    ::PhantomLedger::random::Rng &rng,
+    const LegitAssembly::WorldInputs &world,
     const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
   return legit_ledger::OpeningBook{
       rng,
       legit_ledger::OpeningBook::Accounts{
-          .registry = &holdings.accounts.registry,
-          .lookup = &holdings.accounts.lookup,
-          .ownership = &holdings.accounts.ownership,
+          .registry = &world.accounts->registry,
+          .lookup = &world.accounts->lookup,
+          .ownership = &world.accounts->ownership,
       },
       legit_ledger::OpeningBook::Protections{
           .balanceRules = balanceRules,
-          .portfolios = &holdings.portfolios,
-          .creditCards = &holdings.creditCards,
+          .portfolios = world.portfolios,
+          .creditCards = world.creditCards,
       },
   };
 }
@@ -169,8 +169,7 @@ void LegitAssembly::validate() const {
 }
 
 legit_ledger::LegitTransferBuilder LegitAssembly::builder(
-    ::PhantomLedger::random::Rng &rng, const pipe::People &people,
-    const pipe::Holdings &holdings, const pipe::Counterparties &cps) const {
+    ::PhantomLedger::random::Rng &rng, const WorldInputs &world) const {
   legit_ledger::LegitTransferBuilder out{
       rng,
       blueprints::LegitTimeframe{
@@ -178,33 +177,33 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
           .seed = run_.seed,
       },
       blueprints::AccountCensus{
-          .accounts = &holdings.accounts.registry,
-          .ownership = &holdings.accounts.ownership,
+          .accounts = &world.accounts->registry,
+          .ownership = &world.accounts->ownership,
       },
-      makeOpeningBook(rng, holdings, openingBalances_.balanceRules),
+      makeOpeningBook(rng, world, openingBalances_.balanceRules),
   };
 
   const legit_ledger::passes::AccountAccess accountAccess{
-      .registry = &holdings.accounts.registry,
-      .ownership = &holdings.accounts.ownership,
+      .registry = &world.accounts->registry,
+      .ownership = &world.accounts->ownership,
   };
 
   out.counterparties(blueprints::CounterpartyPools{
-                         .directory = &cps.counterparties,
-                         .landlords = &cps.landlords.roster,
+                         .directory = world.counterparties,
+                         .landlords = &world.landlords->roster,
                      })
       .personas(blueprints::PersonaCatalog{
-          .pack = &people.personas,
+          .pack = world.personas,
       })
       .hubSelection(blueprints::HubSelectionRules{
-          .populationCount = people.roster.roster.count,
+          .populationCount = world.populationCount,
           .fraction = hubSelection_.fraction,
       })
       .income(legit_ledger::passes::IncomePass{
           &rng,
           accountAccess,
           legit_ledger::passes::SalarySetup{
-              .revenueCounterparties = &cps.counterparties,
+              .revenueCounterparties = world.counterparties,
               .rules = income_.salary,
           },
           legit_ledger::passes::GovernmentSetup{
@@ -223,21 +222,21 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
           &rng,
           accountAccess,
           legit_ledger::passes::RoutineResources{
-              .accountsLookup = &holdings.accounts.lookup,
-              .merchants = &cps.merchants,
-              .portfolios = &holdings.portfolios,
-              .creditCards = &holdings.creditCards,
+              .accountsLookup = &world.accounts->lookup,
+              .merchants = world.merchants,
+              .portfolios = world.portfolios,
+              .creditCards = world.creditCards,
               .cardLifecycle = cardLifecycle_.lifecycleRules,
           },
           income_.rent,
       })
       .family(legit_ledger::passes::FamilyPass{
           accountAccess,
-          &cps.merchants,
+          world.merchants,
       })
       .credit(legit_ledger::passes::CreditLifecyclePass{
           &rng,
-          &holdings.creditCards,
+          world.creditCards,
           cardLifecycle_.lifecycleRules,
       })
       .familyScenario(familyTransfers_);

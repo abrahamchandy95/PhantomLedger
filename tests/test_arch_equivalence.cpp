@@ -78,8 +78,9 @@ runMonolithic(const pltest::pl::synth::pii::PoolSet &poolSet,
   auto scope = pipeline.transferStage().legit().runScope();
   scope.window = window;
   scope.seed = seed;
-  scope.chunkStrategy = pl::pipeline::chunk::Strategy{}; // 1 month / 6 days
   pipeline.transferStage().legit().runScope(scope);
+  pipeline.transferStage().settlementChunking(
+      pl::pipeline::chunk::Strategy{}); // 1 month / 6 days
 
   // Family runs with the production default scenario on this leg; the
   // windowed leg replicates it via LegOptions::withFamily.

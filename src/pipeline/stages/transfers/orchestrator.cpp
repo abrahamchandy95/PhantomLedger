@@ -40,6 +40,32 @@ TransferStage &TransferStage::infra(const pipeline::Infra &value) {
   return *this;
 }
 
+chunk::Strategy TransferStage::settlementChunking() const noexcept {
+  return settlementChunking_;
+}
+
+TransferStage &
+TransferStage::settlementChunking(chunk::Strategy value) noexcept {
+  settlementChunking_ = value;
+  return *this;
+}
+
+legit::LegitAssembly::WorldInputs
+legitWorldInputs(const pipeline::People &people,
+                 const pipeline::Holdings &holdings,
+                 const pipeline::Counterparties &cps) noexcept {
+  return legit::LegitAssembly::WorldInputs{
+      .personas = &people.personas,
+      .populationCount = people.roster.roster.count,
+      .accounts = &holdings.accounts,
+      .creditCards = &holdings.creditCards,
+      .portfolios = &holdings.portfolios,
+      .counterparties = &cps.counterparties,
+      .landlords = &cps.landlords,
+      .merchants = &cps.merchants,
+  };
+}
+
 namespace {
 
 [[nodiscard]] const pipeline::Infra &requireInfra(const pipeline::Infra *p) {
@@ -60,7 +86,7 @@ TransferStage::buildLegit(::PhantomLedger::random::Rng &rng,
                           const pipeline::Counterparties &cps) const {
   legit_.validate();
   const auto &infra = requireInfra(infra_);
-  auto builder = legit_.builder(rng, people, holdings, cps);
+  auto builder = legit_.builder(rng, legitWorldInputs(people, holdings, cps));
   builder.router(infra.router);
   auto result = builder.build();
   if (!result.openingBook.hasInitialBook()) {

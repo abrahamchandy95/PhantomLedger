@@ -87,8 +87,8 @@ digestForStrategy(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
   auto scope = pipeline.transferStage().legit().runScope();
   scope.window = window;
   scope.seed = seed;
-  scope.chunkStrategy = strategy;
   pipeline.transferStage().legit().runScope(scope);
+  pipeline.transferStage().settlementChunking(strategy);
   pipeline.transferStage()
       .legit()
       .openingBalanceRules(&balanceRules)

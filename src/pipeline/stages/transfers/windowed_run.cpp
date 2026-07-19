@@ -104,7 +104,7 @@ WindowedRunResult TransferStage::runWindowedErased(
   ::PhantomLedger::infra::Router familyRouter = productRouter_;
 
   // 1. Generation prologue on the shared sequential stream.
-  auto builder = legit_.builder(rng, people, holdings, cps);
+  auto builder = legit_.builder(rng, legitWorldInputs(people, holdings, cps));
   builder.router(infra.router);
   auto prologue = builder.buildWindowedPrologue();
 

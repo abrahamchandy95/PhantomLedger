@@ -386,6 +386,19 @@ endif()
 # allowed layering DAG (single-responsibility per layer; the include-
 # layer lint above enforces it file-by-file, report-mode first).
 #
+# Both 2026-07-19 reverse edges are CLOSED and the link graph is a
+# clean DAG:
+#   * pl_activity -> pl_transfers   closed by round C-1 (the simulator
+#                                   drives the activity-owned
+#                                   CardCycleBilling interface).
+#   * pl_transfers -> pl_pipeline   closed by round C-2 (settlement
+#                                   chunking policy moved to the
+#                                   pipeline's TransferStage; the
+#                                   legit builder consumes the
+#                                   transfers-owned WorldInputs view,
+#                                   adapted at legitWorldInputs()).
+# See the findings ledger in cmake/IncludeLayerLint.cmake.
+#
 # External dependencies are narrowed to the layers that actually use
 # them (verified by grep; txn_readback moved export-side in the
 # 2026-07-19 untangling round):
@@ -455,24 +468,6 @@ target_link_libraries(pl_transfers PUBLIC pl_activity pl_ledger)
 # Orchestration: stages, chunking, the windowed streaming engine.
 pl_add_job_library(pl_pipeline ${PL_PIPELINE_SOURCES})
 target_link_libraries(pl_pipeline PUBLIC pl_transfers)
-
-# ---------------------------------------------------------------------
-# KNOWN REVERSE EDGE (L2 findings, 2026-07-19 full-tree scan).
-# A REAL symbol-level dependency in today's code, so it is DECLARED
-# here: CMake emits a correct repeated link line for cyclic STATIC
-# libraries on every linker (ld64 never cared about order; GNU ld
-# does). It stays REPORTED by the include-layer lint until its
-# untangling round moves the shared piece to its true layer — do NOT
-# silently legalize it there:
-#   * pl_transfers -> pl_pipeline   legit/assembly consumes the chunk
-#                                   schedule/data plumbing
-# (pl_activity -> pl_transfers was closed in round C-1, 2026-07-19:
-# the simulator drives the activity-owned CardCycleBilling interface,
-# transfers' CardCycleDriver implements it, and the wiring sites are
-# transfers-side — so that pair is a straight downward edge again.)
-# ---------------------------------------------------------------------
-
-target_link_libraries(pl_transfers PUBLIC pl_pipeline)
 
 # Corpus delivery: the four exporters, rendering, PostgreSQL sinks and
 # the read-back scan.

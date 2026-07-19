@@ -66,8 +66,9 @@ runMonolithic(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
   auto scope = pipeline.transferStage().legit().runScope();
   scope.window = window;
   scope.seed = seed;
-  scope.chunkStrategy = pl::pipeline::chunk::Strategy{}; // 1 month / 6 days
   pipeline.transferStage().legit().runScope(scope);
+  pipeline.transferStage().settlementChunking(
+      pl::pipeline::chunk::Strategy{}); // 1 month / 6 days
 
   const auto result = pipeline.run();
 

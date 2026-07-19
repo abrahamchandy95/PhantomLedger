@@ -4,10 +4,15 @@
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
-#include "phantomledger/pipeline/chunk/schedule.hpp"
-#include "phantomledger/pipeline/data.hpp"
+#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/accounts/pack.hpp"
+#include "phantomledger/synth/landlords/pack.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/transfers/channels/government/disability.hpp"
 #include "phantomledger/transfers/channels/government/retirement.hpp"
 #include "phantomledger/transfers/legit/ledger/builder.hpp"
@@ -32,8 +37,6 @@ public:
   struct RunScope {
     time::Window window{};
     std::uint64_t seed = 0;
-
-    pipeline::chunk::Strategy chunkStrategy{};
   };
 
   struct IncomePrograms {
@@ -53,6 +56,26 @@ public:
 
   struct HubSelection {
     double fraction = 0.01;
+  };
+
+  // The synthesized world exactly as the legit assembly consumes it
+  // (round C-2 dependency inversion: the consumer names what it needs;
+  // the pipeline adapts its bundles at legitWorldInputs()). Every
+  // pointer is non-owning and must outlive the returned builder.
+  struct WorldInputs {
+    // Census
+    const synth::personas::Pack *personas = nullptr;
+    std::uint32_t populationCount = 0;
+
+    // Holdings
+    const synth::accounts::Pack *accounts = nullptr;
+    const entity::card::Registry *creditCards = nullptr;
+    const entity::product::PortfolioRegistry *portfolios = nullptr;
+
+    // Counterparty universe
+    const entity::counterparty::Directory *counterparties = nullptr;
+    const synth::landlords::Pack *landlords = nullptr;
+    const entity::merchant::Catalog *merchants = nullptr;
   };
 
   LegitAssembly();
@@ -96,9 +119,7 @@ public:
   void validate() const;
 
   [[nodiscard]] ledger::LegitTransferBuilder
-  builder(random::Rng &rng, const pipeline::People &people,
-          const pipeline::Holdings &holdings,
-          const pipeline::Counterparties &cps) const;
+  builder(random::Rng &rng, const WorldInputs &world) const;
 
 private:
   RunScope run_{};

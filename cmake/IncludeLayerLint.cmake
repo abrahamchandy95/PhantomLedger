@@ -55,12 +55,21 @@
 #                                arrow points down; the declared
 #                                pl_activity -> pl_transfers link cycle
 #                                is removed from the root CMakeLists
-#   OPEN (reported; the last untangling-round work item; the
-#   symbol-level cycle is DECLARED in the root CMakeLists so link
-#   order is correct on every linker in the meantime):
-#     transfers -> pipeline      legit/assembly consumes pipeline/
-#                                chunk schedule + data (symbol-level
-#                                CYCLE with pipeline -> transfers)
+#     transfers -> pipeline      round C-2: settlement chunking policy
+#                                moved to the pipeline's TransferStage
+#                                (settlementChunking — chunking is
+#                                orchestration policy; RunScope carried
+#                                it but assembly never read it), and
+#                                the legit builder now consumes the
+#                                transfers-owned WorldInputs view,
+#                                adapted from the pipeline bundles at
+#                                legitWorldInputs(); the declared
+#                                pl_transfers -> pl_pipeline link cycle
+#                                is removed from the root CMakeLists
+#   OPEN: none — the report is clean as of round C-2 (2026-07-19).
+#   Flip protocol: the owner's next configure prints "include-layer
+#   lint: clean"; PL_LAYER_LINT_FATAL's default then flips ON in its
+#   own named commit, making the layering law.
 #
 # Two things are ALWAYS fatal, report mode or not, audit-style:
 #   * a file whose path maps to no known layer;

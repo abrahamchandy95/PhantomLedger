@@ -81,6 +81,14 @@ public:
 
   TransferStage &infra(const pipeline::Infra &value);
 
+  // Chunking policy for the monolithic settlement replay (both folds in
+  // pipeline/simulate.cpp). Chunking is orchestration policy, so it
+  // lives pipeline-side (round C-2 — it previously rode along in the
+  // transfers-layer RunScope, which never read it). The windowed path
+  // carries its own strategies in WindowedRunOptions.
+  [[nodiscard]] chunk::Strategy settlementChunking() const noexcept;
+  TransferStage &settlementChunking(chunk::Strategy value) noexcept;
+
   [[nodiscard]] legit::ledger::LegitTransferResult
   buildLegit(random::Rng &rng, const pipeline::People &people,
              const pipeline::Holdings &holdings,
@@ -124,6 +132,7 @@ private:
   LedgerReplay ledger_{};
   FraudEmission fraud_{};
   const pipeline::Infra *infra_ = nullptr;
+  chunk::Strategy settlementChunking_{};
 
   // Pristine snapshot of the router, taken when infra() is set — before
   // any transfer routing. The Router carries mutable sticky per-person
@@ -135,5 +144,13 @@ private:
   // copies from this same snapshot.
   ::PhantomLedger::infra::Router productRouter_{};
 };
+
+// Adapts the pipeline's world bundles to the transfers-owned
+// LegitAssembly::WorldInputs view — the single adapter at the
+// pipeline -> transfers layer boundary (round C-2).
+[[nodiscard]] legit::LegitAssembly::WorldInputs
+legitWorldInputs(const pipeline::People &people,
+                 const pipeline::Holdings &holdings,
+                 const pipeline::Counterparties &cps) noexcept;
 
 } // namespace PhantomLedger::pipeline::stages::transfers
