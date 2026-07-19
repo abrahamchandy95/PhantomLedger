@@ -8,7 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 option(PL_BUILD_TESTS "Build C++ tests" ON)
-option(PL_BUILD_PYTHON "Build pybind11 Python module" OFF)
 option(PL_ENABLE_NATIVE_OPTIMIZATION "Enable -march=native on supported compilers" OFF)
 
 include(FetchContent)
@@ -345,10 +344,10 @@ endif()
 # Include-layer lint (L2)
 #
 # Every #include "phantomledger/..." edge in src/ and include/ is
-# checked against the L1 layering DAG at configure time. REPORT MODE
-# while PL_LAYER_LINT_FATAL is OFF: violations print as a WARNING
-# block and the build continues. See cmake/IncludeLayerLint.cmake for
-# the DAG, the findings ledger, and the flip protocol.
+# checked against the L1 layering DAG at configure time. FATAL BY
+# DEFAULT since the L2 close-out (2026-07-19): an illegal edge fails
+# the configure. See cmake/IncludeLayerLint.cmake for the DAG, the
+# findings ledger, and the escape hatch.
 # ---------------------------------------------------------------------
 
 include(cmake/IncludeLayerLint.cmake)
@@ -384,7 +383,7 @@ endif()
 # (owner directive): no "core"/"base"/"utils" — every target name
 # states the job it is responsible for. The declared links form the
 # allowed layering DAG (single-responsibility per layer; the include-
-# layer lint above enforces it file-by-file, report-mode first).
+# layer lint above enforces it file-by-file, fatal by default).
 #
 # Both 2026-07-19 reverse edges are CLOSED and the link graph is a
 # clean DAG:
@@ -425,7 +424,9 @@ target_link_libraries(pl_primitives PRIVATE PostgreSQL::PostgreSQL)
 
 # Run observability: the logger (spending-emission diagnostics moved
 # INTO pl_activity in the 2026-07-19 untangling round — observability
-# of a subsystem lives with the subsystem).
+# of a subsystem lives with the subsystem). SILENT BY DEFAULT (runtime
+# level warn); the Makefile's run-info/run-debug/run-trace/run-mem
+# targets switch diagnostics on.
 pl_add_job_library(pl_diagnostics ${PL_DIAGNOSTICS_SOURCES})
 target_link_libraries(pl_diagnostics PUBLIC pl_primitives)
 

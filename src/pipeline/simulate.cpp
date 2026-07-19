@@ -2,6 +2,7 @@
 
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 
+#include "phantomledger/diagnostics/logger.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
@@ -47,6 +48,15 @@ using SynthFraud = ::PhantomLedger::synth::people::Fraud;
 inline void logStageMem(
     const char *stage,
     std::initializer_list<std::pair<const char *, std::size_t>> liveStreams) {
+  // Owner directive (2026-07-19): the generator is silent by default.
+  // The per-stage RAM lines print only when the `mem` diagnostics topic
+  // is enabled (`make run-mem`, or PL_LOG_LEVEL=info PL_LOG_TOPICS=mem).
+  namespace logging = ::PhantomLedger::diagnostics;
+  if (!logging::Logger::instance().enabled(logging::Level::info,
+                                           logging::Topic::mem)) {
+    return;
+  }
+
   std::fprintf(stderr, "[mem] %-18s peakRSS=%9.1f MB  live:", stage,
                stagePeakRssMB());
   for (const auto &[name, rows] : liveStreams) {

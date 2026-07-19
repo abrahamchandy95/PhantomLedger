@@ -31,7 +31,8 @@ namespace {
     return Level::error;
   if (lower == "off" || lower == "none" || lower == "silent")
     return Level::off;
-  return Level::info;
+  // Unrecognized values keep the silent-by-default posture.
+  return Level::warn;
 }
 
 [[nodiscard]] bool parseTopicAndSet(std::string_view tok,
@@ -199,6 +200,8 @@ const char *Logger::topicName(Topic topic) noexcept {
     return "liquidity";
   case Topic::entities:
     return "entities";
+  case Topic::mem:
+    return "mem";
   case Topic::kCount:
     return "?";
   }

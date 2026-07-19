@@ -20,8 +20,12 @@
 //     a release if you want to remove DEBUG/TRACE call sites entirely.
 //
 //  2. Runtime level. Set via env var PL_LOG_LEVEL = trace | debug |
-//     info | warn | error | off (default: info). Lower-priority lines
-//     are silently dropped at runtime.
+//     info | warn | error | off. DEFAULT: warn — the generator is
+//     SILENT unless diagnostics are explicitly requested (owner
+//     directive, 2026-07-19); only warnings and errors surface on a
+//     plain run. The Makefile wraps the env vars so nobody has to
+//     remember them: `make run-info`, `make run-debug`, `make
+//     run-trace` (narrow with TOPICS=...), `make run-mem`.
 //
 //  3. Topic mask. Set via env var PL_LOG_TOPICS = comma-separated
 //     topic names (default: all topics enabled). Example:
@@ -61,8 +65,9 @@ enum class Topic : std::uint8_t {
   clearing = 3,
   liquidity = 4,
   entities = 5,
+  mem = 6,
   // Add new topics before kCount; update Logger::topicName accordingly.
-  kCount = 6,
+  kCount = 7,
 };
 
 inline constexpr Level kCompileMinLevel = Level::trace;
@@ -111,7 +116,7 @@ private:
 
   void configureFromEnv() noexcept;
 
-  std::atomic<Level> level_{Level::info};
+  std::atomic<Level> level_{Level::warn};
   std::atomic<std::uint32_t> topicMask_{
       (1U << static_cast<std::uint8_t>(Topic::kCount)) - 1U};
   std::FILE *stream_{nullptr};
