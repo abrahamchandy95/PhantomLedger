@@ -4,16 +4,45 @@
 # file is mapped to a layer by its path, every `#include
 # "phantomledger/..."` edge is checked against the allowed layering
 # DAG, and an edge that points the wrong way is reported at configure
-# time. The DAG below is EXACTLY the L1 job-library graph (root
+# time. The DAG below is the L1 job-library graph (root
 # CMakeLists.txt) plus the four header-only vocabulary trees.
 #
 # REPORT MODE FIRST (owner-gated flip): violations print as one
-# WARNING block per configure while PL_LAYER_LINT_FATAL is OFF — the
-# suspected activity<->transfers edge (legit census/blueprint) gets to
-# show itself before the gate can break the build. Once the report is
-# clean (edges fixed or the DAG deliberately amended in a named
-# commit), configure with -DPL_LAYER_LINT_FATAL=ON and then flip the
-# option default here.
+# WARNING block per configure while PL_LAYER_LINT_FATAL is OFF. Once
+# the report is clean (edges fixed or the DAG deliberately amended in
+# a named commit), configure with -DPL_LAYER_LINT_FATAL=ON and then
+# flip the option default here.
+#
+# FULL-TREE SCAN FINDINGS (2026-07-19, this DAG):
+#   AMENDED (legal now):
+#     activity -> transactions   ~40 edges: the spending simulator
+#                                consumes the transaction vocabulary
+#                                (record/draft/factory) and the
+#                                clearing book (soft screens, emission
+#                                gate) BY DESIGN — transactions sits
+#                                below activity; pl_activity links
+#                                pl_ledger.
+#   OPEN (reported; each is an untangling-round work item; the two
+#   symbol-level cycles are DECLARED in the root CMakeLists so link
+#   order is correct on every linker in the meantime):
+#     activity -> transfers      spending session/driver/day_driver
+#                                drive channels/credit_cards/
+#                                card_cycle_driver (symbol-level CYCLE
+#                                with transfers -> activity)
+#     transfers -> pipeline      legit/assembly consumes pipeline/
+#                                chunk schedule + data (symbol-level
+#                                CYCLE with pipeline -> transfers)
+#     primitives -> encoding     postgres/txn_readback decodes keys
+#                                via encoding/parse (header-only; the
+#                                readback's true home is a question
+#                                for the untangling round)
+#     synth -> transactions      pii/membership_filter uses record.hpp
+#     relationships -> activity  social/builder uses spending/market/
+#                                commerce/contacts.hpp
+#     diagnostics -> activity    spending_stats uses spending/routing/
+#                                channel.hpp
+#     taxonomies -> entities     counterparties/accounts.hpp uses
+#                                entities/identifiers.hpp
 #
 # Two things are ALWAYS fatal, report mode or not, audit-style:
 #   * a file whose path maps to no known layer;
@@ -38,8 +67,9 @@ option(PL_LAYER_LINT_FATAL
 #   synth        -> primitives, diagnostics, relationships  (pl_world)
 #   relationships-> primitives, diagnostics, synth          (pl_world)
 #   transactions -> primitives            (pl_ledger)
-#   activity     -> primitives, diagnostics, synth, relationships
-#   transfers    -> + transactions, activity
+#   activity     -> primitives, diagnostics, synth, relationships,
+#                   transactions          (amended 2026-07-19)
+#   transfers    -> + activity
 #   pipeline     -> + transfers
 #   exporter     -> + pipeline            (pl_export)
 #   app          -> + exporter
@@ -59,7 +89,8 @@ set(PL_LINT_ALLOWED_relationships
     primitives diagnostics synth ${PL_LINT_VOCAB})
 set(PL_LINT_ALLOWED_transactions primitives ${PL_LINT_VOCAB})
 set(PL_LINT_ALLOWED_activity
-    primitives diagnostics synth relationships ${PL_LINT_VOCAB})
+    primitives diagnostics synth relationships transactions
+    ${PL_LINT_VOCAB})
 set(PL_LINT_ALLOWED_transfers
     primitives diagnostics synth relationships transactions activity
     ${PL_LINT_VOCAB})
@@ -92,7 +123,7 @@ endfunction()
 # Call with the full list of repo-relative translation units (the
 # audit union plus src/app/main.cpp); project headers are discovered
 # here so the lint and the build can never disagree about the header
-# set.
+# set. Both quote and angle-bracket include forms are scanned.
 
 function(pl_run_include_layer_lint)
     file(GLOB_RECURSE _lintHeadersAbs CONFIGURE_DEPENDS
@@ -126,10 +157,10 @@ function(pl_run_include_layer_lint)
         math(EXPR _fileCount "${_fileCount} + 1")
 
         file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/${file}" _includeLines
-            REGEX "^[ \t]*#[ \t]*include[ \t]+\"phantomledger/")
+            REGEX "^[ \t]*#[ \t]*include[ \t]+[\"<]phantomledger/")
 
         foreach(line IN LISTS _includeLines)
-            string(REGEX MATCH "phantomledger/([a-zA-Z0-9_]+)([./])[^\"]*"
+            string(REGEX MATCH "phantomledger/([a-zA-Z0-9_]+)([./])[^\">]*"
                 _incPath "${line}")
             if(_incPath STREQUAL "")
                 continue()

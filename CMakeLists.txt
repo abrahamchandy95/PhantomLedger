@@ -348,7 +348,7 @@ endif()
 # checked against the L1 layering DAG at configure time. REPORT MODE
 # while PL_LAYER_LINT_FATAL is OFF: violations print as a WARNING
 # block and the build continues. See cmake/IncludeLayerLint.cmake for
-# the DAG and the flip protocol.
+# the DAG, the 2026-07-19 full-tree findings, and the flip protocol.
 # ---------------------------------------------------------------------
 
 include(cmake/IncludeLayerLint.cmake)
@@ -426,13 +426,16 @@ pl_add_job_library(pl_world
 target_link_libraries(pl_world PUBLIC pl_primitives pl_diagnostics)
 target_link_libraries(pl_world PRIVATE faker-cxx)
 
-# Day-to-day discretionary spending simulation.
-pl_add_job_library(pl_activity ${PL_ACTIVITY_SPENDING_SOURCES})
-target_link_libraries(pl_activity PUBLIC pl_world)
-
 # Balance clearing: the authoritative ledger and LOC accrual.
 pl_add_job_library(pl_ledger ${PL_TRANSACTIONS_SOURCES})
 target_link_libraries(pl_ledger PUBLIC pl_primitives)
+
+# Day-to-day discretionary spending simulation. Consumes the
+# transaction vocabulary (record/draft/factory) and the clearing book
+# (soft screens + emission gate) by design — the 2026-07-19 lint scan
+# amendment; see cmake/IncludeLayerLint.cmake.
+pl_add_job_library(pl_activity ${PL_ACTIVITY_SPENDING_SOURCES})
+target_link_libraries(pl_activity PUBLIC pl_world pl_ledger)
 
 # Transfer generation: legit flows, channels, fraud typologies.
 pl_add_job_library(pl_transfers
@@ -445,6 +448,24 @@ target_link_libraries(pl_transfers PUBLIC pl_activity pl_ledger)
 # Orchestration: stages, chunking, the windowed streaming engine.
 pl_add_job_library(pl_pipeline ${PL_PIPELINE_SOURCES})
 target_link_libraries(pl_pipeline PUBLIC pl_transfers)
+
+# ---------------------------------------------------------------------
+# KNOWN REVERSE EDGES (L2 findings, 2026-07-19 full-tree scan).
+# Both are REAL symbol-level dependencies in today's code, so they are
+# DECLARED here: CMake emits a correct repeated link line for cyclic
+# STATIC libraries on every linker (ld64 never cared about order; GNU
+# ld does). Both stay REPORTED by the include-layer lint until their
+# untangling rounds move the shared piece to its true layer — do NOT
+# silently legalize them there:
+#   * pl_activity -> pl_transfers   the spending session/driver/
+#                                   day_driver drive channels/
+#                                   credit_cards/card_cycle_driver
+#   * pl_transfers -> pl_pipeline   legit/assembly consumes the chunk
+#                                   schedule/data plumbing
+# ---------------------------------------------------------------------
+
+target_link_libraries(pl_activity PUBLIC pl_transfers)
+target_link_libraries(pl_transfers PUBLIC pl_pipeline)
 
 # Corpus delivery: the four exporters, rendering, PostgreSQL sinks.
 pl_add_job_library(pl_export
