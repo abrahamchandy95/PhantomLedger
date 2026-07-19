@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 
-#include "phantomledger/entities/landlords.hpp"
+#include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/personas/make.hpp"

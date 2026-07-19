@@ -1,10 +1,10 @@
 #pragma once
 
 #include "phantomledger/encoding/render.hpp"
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/people.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/mule_ml/canonical.hpp"
 #include "phantomledger/exporter/mule_ml/identity.hpp"

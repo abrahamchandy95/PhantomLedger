@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/market/commerce/favorites.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/relationships/social/contacts.hpp"
 
 #include <cstdint>

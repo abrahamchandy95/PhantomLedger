@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/personas/kinds.hpp"
 #include "phantomledger/synth/personas/pack.hpp"

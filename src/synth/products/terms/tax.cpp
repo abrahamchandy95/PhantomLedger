@@ -1,7 +1,7 @@
 #include "phantomledger/synth/products/terms/tax.hpp"
 #include "phantomledger/entities/products/event.hpp"
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/synth/products/obligations.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"

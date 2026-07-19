@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/landlords.hpp"
+#include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"

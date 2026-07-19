@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
 #include "phantomledger/synth/accounts/pack.hpp"

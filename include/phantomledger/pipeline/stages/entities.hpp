@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/counterparties.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/directory.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

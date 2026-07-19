@@ -2,10 +2,10 @@
 
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"

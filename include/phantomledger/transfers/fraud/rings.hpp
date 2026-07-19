@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 
 #include <cstdint>
 #include <span>

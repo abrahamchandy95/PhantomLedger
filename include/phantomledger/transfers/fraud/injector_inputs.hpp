@@ -1,10 +1,10 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/router.hpp"
 #include "phantomledger/entities/infra/shared.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 

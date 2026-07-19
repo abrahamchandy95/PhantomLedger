@@ -1,6 +1,6 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"

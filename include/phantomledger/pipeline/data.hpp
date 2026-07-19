@@ -1,9 +1,9 @@
 #pragma once
 
-#include "phantomledger/entities/cards.hpp"
-#include "phantomledger/entities/counterparties.hpp"
-#include "phantomledger/entities/merchants.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
+#include "phantomledger/entities/counterparties/directory.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/synth/accounts/pack.hpp"
 #include "phantomledger/synth/landlords/pack.hpp"

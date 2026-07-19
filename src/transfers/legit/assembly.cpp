@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/legit/assembly.hpp"
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/links.hpp"
 #include "phantomledger/relationships/family/partition.hpp"

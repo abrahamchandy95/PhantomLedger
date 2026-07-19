@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/behaviors.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/pii/identity.hpp"

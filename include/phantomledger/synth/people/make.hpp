@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/synth/people/flags.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/synth/people/pack.hpp"

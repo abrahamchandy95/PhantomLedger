@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/behaviors.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
 
 namespace PhantomLedger::synth::personas {
 

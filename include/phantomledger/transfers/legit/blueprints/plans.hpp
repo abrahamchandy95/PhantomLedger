@@ -1,9 +1,9 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/counterparties.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/landlords.hpp"
+#include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"

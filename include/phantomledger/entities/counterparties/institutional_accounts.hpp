@@ -1,6 +1,6 @@
 #pragma once
 //
-// phantomledger/entities/institutional_accounts.hpp
+// phantomledger/entities/counterparties/institutional_accounts.hpp
 //
 // The institutional account catalog: fixed entity::Key constants for
 // the external counterparties every simulation shares — government

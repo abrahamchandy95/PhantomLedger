@@ -36,7 +36,7 @@
 // change.
 //
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"

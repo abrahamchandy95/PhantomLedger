@@ -2,7 +2,7 @@
 
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

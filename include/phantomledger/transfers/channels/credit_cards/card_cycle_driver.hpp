@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/simulator/card_cycle_billing.hpp"
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

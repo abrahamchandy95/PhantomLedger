@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 
 #include <string>

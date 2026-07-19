@@ -1,6 +1,6 @@
 #include "phantomledger/synth/products/terms/student_loan.hpp"
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"

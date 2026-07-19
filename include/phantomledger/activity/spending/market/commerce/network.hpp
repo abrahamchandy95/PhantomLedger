@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 
 #include <cstdint>
 

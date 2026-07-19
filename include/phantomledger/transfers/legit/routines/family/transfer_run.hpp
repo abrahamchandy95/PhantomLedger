@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

@@ -2,7 +2,7 @@
 
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
 

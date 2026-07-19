@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/behaviors.hpp"
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"

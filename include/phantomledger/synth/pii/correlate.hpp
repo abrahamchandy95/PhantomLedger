@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/people.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/pii/sharing.hpp"
 

@@ -7,7 +7,7 @@
 // derive party/ownership structure from one definition.
 //
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <unordered_map>

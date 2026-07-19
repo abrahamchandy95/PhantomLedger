@@ -28,7 +28,7 @@
 // 'transactions' corpus table itself, never a table here.
 //
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"

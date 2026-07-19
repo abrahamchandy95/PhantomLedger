@@ -1,6 +1,6 @@
 #include "phantomledger/synth/products/terms/auto_loan.hpp"
 
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"

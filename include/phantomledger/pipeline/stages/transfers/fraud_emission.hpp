@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/transfers/fraud/injector_inputs.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"

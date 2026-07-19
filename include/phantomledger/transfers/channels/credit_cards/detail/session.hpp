@@ -1,6 +1,6 @@
 #pragma once
 
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"

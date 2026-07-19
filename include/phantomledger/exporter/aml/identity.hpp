@@ -2,7 +2,7 @@
 
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"

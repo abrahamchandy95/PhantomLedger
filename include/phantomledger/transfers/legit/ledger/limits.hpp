@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"

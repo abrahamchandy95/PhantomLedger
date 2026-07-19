@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/landlords.hpp"
+#include "phantomledger/entities/counterparties/landlords.hpp"
 
 #include <vector>
 

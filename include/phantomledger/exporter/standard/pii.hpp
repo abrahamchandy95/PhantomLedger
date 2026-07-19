@@ -1,7 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/exporter/common/minhash.hpp"
 #include "phantomledger/exporter/common/pii_render.hpp"
 #include "phantomledger/exporter/common/render.hpp"

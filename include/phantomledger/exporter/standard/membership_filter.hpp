@@ -10,7 +10,7 @@
 // membership, it never reads the corpus.
 //
 
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/transactions/record.hpp"

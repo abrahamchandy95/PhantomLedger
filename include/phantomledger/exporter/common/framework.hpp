@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/transactions/record.hpp"

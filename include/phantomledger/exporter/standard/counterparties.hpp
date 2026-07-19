@@ -1,10 +1,10 @@
 #pragma once
 
 #include "phantomledger/encoding/render.hpp"
-#include "phantomledger/entities/accounts.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/landlords.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/landlords.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"

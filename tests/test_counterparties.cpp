@@ -1,6 +1,6 @@
 #include "phantomledger/encoding/external.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 
 #include "test_support.hpp"
 

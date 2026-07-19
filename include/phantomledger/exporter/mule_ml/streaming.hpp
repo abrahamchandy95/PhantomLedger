@@ -31,9 +31,9 @@
 // corpus raw); neither does this sink.
 //
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/people.hpp"
-#include "phantomledger/entities/pii.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/parties/people.hpp"
+#include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"

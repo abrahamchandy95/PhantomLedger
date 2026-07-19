@@ -35,9 +35,9 @@
 // own connection, open across the whole fold.
 //
 
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/exporter/common/framework.hpp"

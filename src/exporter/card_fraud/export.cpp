@@ -1,7 +1,7 @@
 #include "phantomledger/exporter/card_fraud/export.hpp"
 
 #include "phantomledger/entities/infra/format.hpp"
-#include "phantomledger/entities/people.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/exporter/common/render.hpp"

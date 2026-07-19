@@ -1,7 +1,7 @@
 #include "phantomledger/transfers/legit/ledger/limits.hpp"
 
-#include "phantomledger/entities/accounts.hpp"
-#include "phantomledger/entities/cards.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
