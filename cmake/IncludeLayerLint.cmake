@@ -13,15 +13,22 @@
 # a named commit), configure with -DPL_LAYER_LINT_FATAL=ON and then
 # flip the option default here.
 #
-# FULL-TREE SCAN FINDINGS (2026-07-19, this DAG):
-#   AMENDED (legal now):
+# FINDINGS LEDGER (full-tree scan 2026-07-19, this DAG):
+#   AMENDED (legal by design):
 #     activity -> transactions   ~40 edges: the spending simulator
 #                                consumes the transaction vocabulary
 #                                (record/draft/factory) and the
 #                                clearing book (soft screens, emission
-#                                gate) BY DESIGN — transactions sits
-#                                below activity; pl_activity links
-#                                pl_ledger.
+#                                gate) — transactions sits below
+#                                activity; pl_activity links pl_ledger.
+#   CLOSED (untangling round, 2026-07-19 — colocate by consumer):
+#     primitives -> encoding     txn_readback moved to exporter/sinks/
+#     primitives -> entities     (both edges were txn_readback's; its
+#                                consumers were all export-side)
+#     synth -> transactions      membership_filter moved to exporter/
+#                                standard/ (filtering transactions is
+#                                an export view; synth never reads the
+#                                corpus)
 #   OPEN (reported; each is an untangling-round work item; the two
 #   symbol-level cycles are DECLARED in the root CMakeLists so link
 #   order is correct on every linker in the meantime):
@@ -32,17 +39,12 @@
 #     transfers -> pipeline      legit/assembly consumes pipeline/
 #                                chunk schedule + data (symbol-level
 #                                CYCLE with pipeline -> transfers)
-#     primitives -> encoding     postgres/txn_readback decodes keys
-#                                via encoding/parse (header-only; the
-#                                readback's true home is a question
-#                                for the untangling round)
-#     synth -> transactions      pii/membership_filter uses record.hpp
 #     relationships -> activity  social/builder uses spending/market/
-#                                commerce/contacts.hpp
+#                                commerce/contacts.hpp (header-only)
 #     diagnostics -> activity    spending_stats uses spending/routing/
-#                                channel.hpp
+#                                channel.hpp (header-only)
 #     taxonomies -> entities     counterparties/accounts.hpp uses
-#                                entities/identifiers.hpp
+#                                entities/identifiers.hpp (header-only)
 #
 # Two things are ALWAYS fatal, report mode or not, audit-style:
 #   * a file whose path maps to no known layer;

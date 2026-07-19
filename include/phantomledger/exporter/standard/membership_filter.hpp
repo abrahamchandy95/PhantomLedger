@@ -1,4 +1,14 @@
 #pragma once
+//
+// phantomledger/exporter/standard/membership_filter.hpp
+//
+// The standard exporter's membership view of the corpus: a settled row
+// is visible only while BOTH endpoint owners have joined (the same
+// activeAt predicate the streaming twin applies per row). Lives with
+// its only consumer (untangling round, 2026-07-19): filtering
+// TRANSACTIONS is an export-side concern — the synth layer models
+// membership, it never reads the corpus.
+//
 
 #include "phantomledger/entities/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -8,7 +18,7 @@
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::synth::pii {
+namespace PhantomLedger::exporter::standard {
 
 [[nodiscard]] inline entity::PersonId
 ownerOf(const entity::account::Registry &registry,
@@ -24,7 +34,7 @@ ownerOf(const entity::account::Registry &registry,
 filterByMembership(std::span<const transactions::Transaction> txns,
                    const entity::account::Registry &registry,
                    const entity::account::Lookup &lookup,
-                   const Membership &membership) {
+                   const synth::pii::Membership &membership) {
   std::vector<transactions::Transaction> out;
   out.reserve(txns.size());
   for (const auto &tx : txns) {
@@ -39,4 +49,4 @@ filterByMembership(std::span<const transactions::Transaction> txns,
   return out;
 }
 
-} // namespace PhantomLedger::synth::pii
+} // namespace PhantomLedger::exporter::standard

@@ -33,12 +33,12 @@
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/exporter/standard/aggregates.hpp"
+#include "phantomledger/exporter/standard/membership_filter.hpp"
 #include "phantomledger/exporter/standard/schema.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
-#include "phantomledger/synth/pii/membership_filter.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstdint>
@@ -82,10 +82,10 @@ public:
     for (const auto &tx : txns) {
       ++rows_;
 
-      const auto srcOwner = ::PhantomLedger::synth::pii::ownerOf(
-          *config_.registry, *config_.lookup, tx.source);
-      const auto dstOwner = ::PhantomLedger::synth::pii::ownerOf(
-          *config_.registry, *config_.lookup, tx.target);
+      const auto srcOwner =
+          ownerOf(*config_.registry, *config_.lookup, tx.source);
+      const auto dstOwner =
+          ownerOf(*config_.registry, *config_.lookup, tx.target);
       if (!config_.membership.activeAt(srcOwner, tx.timestamp) ||
           !config_.membership.activeAt(dstOwner, tx.timestamp)) {
         continue; // before a joiner endpoint existed

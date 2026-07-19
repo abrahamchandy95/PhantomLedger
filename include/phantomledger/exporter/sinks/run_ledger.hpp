@@ -69,12 +69,12 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/common/ledger.hpp"
 #include "phantomledger/exporter/csv.hpp"
+#include "phantomledger/exporter/sinks/txn_readback.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/chunk/sink.hpp"
 #include "phantomledger/primitives/crypto/blake2b.hpp"
 #include "phantomledger/primitives/io/callback_streambuf.hpp"
 #include "phantomledger/primitives/postgres/connection.hpp"
-#include "phantomledger/primitives/postgres/txn_readback.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/transactions/record.hpp"
 

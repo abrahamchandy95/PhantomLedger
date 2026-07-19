@@ -44,9 +44,9 @@
 #include "phantomledger/encoding/render.hpp"
 #include "phantomledger/exporter/aml_txn_edges/derived.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
+#include "phantomledger/exporter/sinks/txn_readback.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/postgres/connection.hpp"
-#include "phantomledger/primitives/postgres/txn_readback.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 

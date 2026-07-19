@@ -2,15 +2,17 @@
 # silently compiles bare assert() out of every test binary — a gate that
 # runs its data flow but enforces nothing. -UNDEBUG comes after the
 # config flags on the compile line, so it wins and re-arms assert for
-# test translation units only (the core library keeps its Release
+# test translation units only (the job libraries keep their Release
 # flags). Corollary: never put side effects inside assert.
 set(PL_TEST_COMPILE_OPTIONS -Wall -Wextra -Wpedantic -O2 -UNDEBUG)
 
+# Every test links pl_generator — the complete synthetic-ledger
+# generator (the INTERFACE umbrella over the 9 job libraries; L1).
 # Extra arguments after the test name are linked as additional
 # libraries, e.g. pl_add_test(test_postgres PostgreSQL::PostgreSQL).
 function(pl_add_test name)
     add_executable(${name} ${name}.cpp)
-    target_link_libraries(${name} PRIVATE phantomledger_core ${ARGN})
+    target_link_libraries(${name} PRIVATE pl_generator ${ARGN})
     target_compile_options(${name} PRIVATE ${PL_TEST_COMPILE_OPTIONS})
     add_test(NAME ${name} COMMAND ${name})
 endfunction()

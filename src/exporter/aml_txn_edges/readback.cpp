@@ -1,6 +1,6 @@
 #include "phantomledger/exporter/aml_txn_edges/readback.hpp"
 
-#include "phantomledger/primitives/postgres/txn_readback.hpp"
+#include "phantomledger/exporter/sinks/txn_readback.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <cstddef>

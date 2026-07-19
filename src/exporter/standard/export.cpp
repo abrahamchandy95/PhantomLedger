@@ -6,13 +6,13 @@
 #include "phantomledger/exporter/standard/aggregates.hpp"
 #include "phantomledger/exporter/standard/counterparties.hpp"
 #include "phantomledger/exporter/standard/infra.hpp"
+#include "phantomledger/exporter/standard/membership_filter.hpp"
 #include "phantomledger/exporter/standard/merchants.hpp"
 #include "phantomledger/exporter/standard/people.hpp"
 #include "phantomledger/exporter/standard/pii.hpp"
 #include "phantomledger/exporter/standard/schema.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
-#include "phantomledger/synth/pii/membership_filter.hpp"
 
 #include <cstddef>
 
@@ -165,8 +165,8 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const pii::Membership membership(population, options.window, options.growth);
 
   const auto visibleTxns =
-      pii::filterByMembership(postedTxns, holdings.accounts.registry,
-                              holdings.accounts.lookup, membership);
+      filterByMembership(postedTxns, holdings.accounts.registry,
+                         holdings.accounts.lookup, membership);
 
   exportEntities(result, options);
 

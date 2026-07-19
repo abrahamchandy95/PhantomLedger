@@ -1,6 +1,6 @@
 #pragma once
 //
-// phantomledger/primitives/postgres/txn_readback.hpp
+// phantomledger/exporter/sinks/txn_readback.hpp
 //
 // Streaming, ordered read-back of the streamed `transactions` table —
 // the consuming half of the PostgreSQL stream-identity contract
@@ -8,6 +8,14 @@
 // corpus-store access path for derived analytics: PostgreSQL holds the
 // full posted stream that bounded-memory runs never retain, and a scan
 // in `ORDER BY row_seq` replays it in exact corpus order.
+//
+// Lives with the sinks (untangling round, 2026-07-19): every consumer
+// is export-side (run_ledger's lockstep resume verification, the
+// aml-txn-edges read-back bundle), and the decode leans on
+// encoding::parseKey — an edge the primitives layer must not carry.
+// The namespace stays PhantomLedger::postgres: this extends the same
+// postgres access surface as primitives' Connection, from the layer
+// that consumes it.
 //
 // DECODE FIDELITY (pinned by test_pg_readback):
 //   keys     src_acct/dst_acct parse back to the exact entity::Key via

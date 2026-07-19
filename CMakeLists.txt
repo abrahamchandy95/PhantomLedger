@@ -63,7 +63,6 @@ set(PL_PRIMITIVES_SOURCES
     src/primitives/time/calendar.cpp
     src/primitives/crypto/blake2b.cpp
     src/primitives/postgres/connection.cpp
-    src/primitives/postgres/txn_readback.cpp
     src/primitives/random/rng.cpp
 )
 
@@ -231,6 +230,7 @@ set(PL_EXPORTER_CORE_SOURCES
     src/exporter/sinks/postgres.cpp
     src/exporter/sinks/run_ledger.cpp
     src/exporter/sinks/table_mirror.cpp
+    src/exporter/sinks/txn_readback.cpp
 )
 
 set(PL_EXPORTER_STANDARD_SOURCES
@@ -348,7 +348,7 @@ endif()
 # checked against the L1 layering DAG at configure time. REPORT MODE
 # while PL_LAYER_LINT_FATAL is OFF: violations print as a WARNING
 # block and the build continues. See cmake/IncludeLayerLint.cmake for
-# the DAG, the 2026-07-19 full-tree findings, and the flip protocol.
+# the DAG, the findings ledger, and the flip protocol.
 # ---------------------------------------------------------------------
 
 include(cmake/IncludeLayerLint.cmake)
@@ -386,13 +386,12 @@ endif()
 # allowed layering DAG (single-responsibility per layer; the include-
 # layer lint above enforces it file-by-file, report-mode first).
 #
-# External dependencies are narrowed to the layer that actually uses
-# them (verified by grep, 2026-07-19):
-#   * libpq      -> pl_primitives PRIVATE (only src/primitives/postgres/
-#                   *.cpp include libpq-fe.h; the export sinks depend on
-#                   the primitives::postgres::Connection abstraction,
-#                   not on libpq — dependency inversion already holds,
-#                   so pl_export needs NO libpq link)
+# External dependencies are narrowed to the layers that actually use
+# them (verified by grep; txn_readback moved export-side in the
+# 2026-07-19 untangling round):
+#   * libpq      -> pl_primitives PRIVATE (postgres/connection.cpp) and
+#                   pl_export PRIVATE (sinks/txn_readback.cpp — the
+#                   read-back scan drives libpq cursors directly)
 #   * faker-cxx  -> pl_world PRIVATE (only src/synth/pii/pools.cpp
 #                   includes faker headers; the previous PUBLIC linkage
 #                   on the monolith was over-broad)
@@ -467,7 +466,8 @@ target_link_libraries(pl_pipeline PUBLIC pl_transfers)
 target_link_libraries(pl_activity PUBLIC pl_transfers)
 target_link_libraries(pl_transfers PUBLIC pl_pipeline)
 
-# Corpus delivery: the four exporters, rendering, PostgreSQL sinks.
+# Corpus delivery: the four exporters, rendering, PostgreSQL sinks and
+# the read-back scan.
 pl_add_job_library(pl_export
     ${PL_EXPORTER_CORE_SOURCES}
     ${PL_EXPORTER_STANDARD_SOURCES}
@@ -476,6 +476,7 @@ pl_add_job_library(pl_export
     ${PL_EXPORTER_CARD_FRAUD_SOURCES}
 )
 target_link_libraries(pl_export PUBLIC pl_pipeline)
+target_link_libraries(pl_export PRIVATE PostgreSQL::PostgreSQL)
 
 # Binary surface: CLI parsing, progress reporting, run setup.
 pl_add_job_library(pl_app ${PL_APP_SOURCES})
