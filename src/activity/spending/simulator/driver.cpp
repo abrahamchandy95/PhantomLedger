@@ -4,6 +4,7 @@
 #include "phantomledger/activity/spending/simulator/state.hpp"
 #include "phantomledger/activity/spending/simulator/warm_start.hpp"
 #include "phantomledger/diagnostics/logger.hpp"
+#include "phantomledger/diagnostics/memory.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -16,6 +17,14 @@ namespace PhantomLedger::activity::spending::simulator {
 namespace {
 
 constexpr double kTxnReserveSlack = 1.05;
+
+// Warn-only memory governor (owner directive: diagnostics, never new
+// knobs or refusals): a retained-corpus reserve above this share of
+// physical RAM risks swap thrashing, and the warning points at the
+// windowed engine — which is the binary's production path already; the
+// retained-corpus Simulator is the library-level reference the tests
+// use as their oracle.
+constexpr double kResidentBudgetShare = 0.70;
 
 void sortChronological(std::vector<transactions::Transaction> &txns) {
   std::sort(
@@ -90,14 +99,27 @@ std::vector<transactions::Transaction> Simulator::run() {
   const std::size_t reserveCapacity =
       static_cast<std::size_t>(run.budget().targetTotalTxns * kTxnReserveSlack);
 
+  const double reserveMB =
+      static_cast<double>(reserveCapacity) *
+      static_cast<double>(sizeof(transactions::Transaction)) /
+      (1024.0 * 1024.0);
+
   PL_LOG_INFO(mem,
               "pre-flight: retained-corpus reserve ~%.1f MB (%zu rows x "
               "%zu B/row, incl. 1.05 slack); the windowed engine bounds "
               "this instead of retaining it",
-              static_cast<double>(reserveCapacity) *
-                  static_cast<double>(sizeof(transactions::Transaction)) /
-                  (1024.0 * 1024.0),
-              reserveCapacity, sizeof(transactions::Transaction));
+              reserveMB, reserveCapacity, sizeof(transactions::Transaction));
+
+  const double physicalMB =
+      ::PhantomLedger::diagnostics::memory::physicalRamMB();
+  if (physicalMB > 0.0 && reserveMB > physicalMB * kResidentBudgetShare) {
+    PL_LOG_WARN(mem,
+                "retained-corpus reserve ~%.0f MB exceeds %.0f%% of physical "
+                "RAM (%.0f MB): this retained-corpus run risks swap "
+                "thrashing — use the windowed engine, which bounds staging "
+                "and streams the corpus instead of retaining it",
+                reserveMB, kResidentBudgetShare * 100.0, physicalMB);
+  }
 
   RunState state(market_.population().count(), reserveCapacity,
                  run.budget().totalPersonDays, run.budget().targetTotalTxns);
