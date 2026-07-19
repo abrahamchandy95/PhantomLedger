@@ -126,38 +126,51 @@ set_tests_properties(test_resume PROPERTIES
 # ---------------------------------------------------------------------
 
 # ---------------------------------------------------------------------
-# The TABLE-DIGEST GOLDEN (and the FRAUD-VISIBLE PIN). Two sections,
+# The TABLE-DIGEST GOLDEN (and the FRAUD-VISIBLE PIN). Three sections,
 # each with its own baseline (first live run captures a missing one,
 # SKIP 77; baselines belong in git IMMEDIATELY, per-server). Tables are
 # discovered from the run's own registrations in public.pl_direct_tables
 # — the binary runs with no file flags; PostgreSQL content IS the
 # output.
 #
-#   standard  the run golden's exact config; corpus stream in row_seq
-#             order + every public-schema direct table.
-#             Baseline: tests/golden_tables.md5
-#   fraud     aml-txn-edges at the fraud-dense probe config (pop 10000,
-#             60d, seed 7): pins the fraud-label tables (ShellAccount,
-#             SAR + the SAR edges, Alert/CTR/Disposition/
-#             InvestigationCase — REQUIRED present; stems verbatim from
-#             schema.hpp) and the fraud-dense corpus, closing the
-#             fraud-audit-2026-07 coverage finding (the standard config
-#             is structurally blind to fraud labels).
-#             Baseline: tests/golden_tables_aml.md5
+#   standard    the run golden's exact config; corpus stream in row_seq
+#               order + every public-schema direct table.
+#               Baseline: tests/golden_tables.md5
+#   fraud       aml-txn-edges at the fraud-dense probe config (pop
+#               10000, 60d, seed 7): pins the fraud-label tables
+#               (ShellAccount, SAR + the SAR edges, Alert/CTR/
+#               Disposition/InvestigationCase — REQUIRED present; stems
+#               verbatim from schema.hpp) and the fraud-dense corpus,
+#               closing the fraud-audit-2026-07 coverage finding (the
+#               standard config is structurally blind to fraud labels).
+#               Baseline: tests/golden_tables_aml.md5
+#   card_fraud  card-fraud at the SAME fraud-dense config (rings are
+#               probe-verified there; sampleRingCount has no floor, so
+#               a small-pop seed could draw zero rings and blind the
+#               card view): pins the full cf_* TF_GNN_v3 table set
+#               (34 tables; core tables REQUIRED present), hard-requires
+#               flag-1 rows in cf_Payment_Transaction (the unauthorized
+#               card rail rides card_purchase), and enforces that the
+#               corpus stream digest EQUALS the fraud section's (the
+#               corpus is use-case-invariant; exporters are export-side
+#               only). Baseline: tests/golden_tables_card_fraud.md5
 #
 # Re-pins must update every touched baseline in the same named commit.
 # Skips with 77 when no server is reachable; honors PL_TEST_PG.
+# Timeout raised 600 -> 900 with the third binary run (three runs +
+# three digest passes now share the budget).
 # ---------------------------------------------------------------------
 
 pl_add_test(test_table_golden)
 target_compile_definitions(test_table_golden PRIVATE
     PL_BIN_PATH="$<TARGET_FILE:phantomledger>"
     PL_TABLE_BASELINE="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables.md5"
-    PL_TABLE_BASELINE_AML="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables_aml.md5")
+    PL_TABLE_BASELINE_AML="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables_aml.md5"
+    PL_TABLE_BASELINE_CARD_FRAUD="${CMAKE_CURRENT_SOURCE_DIR}/golden_tables_card_fraud.md5")
 add_dependencies(test_table_golden phantomledger)
 set_tests_properties(test_table_golden PROPERTIES
     SKIP_RETURN_CODE 77
-    TIMEOUT 600)
+    TIMEOUT 900)
 
 # ---------------------------------------------------------------------
 # End-to-end corpus fingerprint: the binary's printed "Stream digest:

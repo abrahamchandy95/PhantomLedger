@@ -4,7 +4,7 @@
 // The TABLE-DIGEST GOLDEN + the FRAUD-VISIBLE PIN: falsifiability
 // carried by PostgreSQL content (skips with 77 when no server is
 // reachable; honors PL_TEST_PG). The binary runs with no file flags —
-// PhantomLedger writes no files. TWO sections, each with its own
+// PhantomLedger writes no files. THREE sections, each with its own
 // baseline file:
 //
 //   SECTION "standard" — the run golden's exact config (standard use
@@ -26,6 +26,27 @@
 //   corpus itself (the shared public.transactions stream, which this
 //   section's run overwrites — hence it runs AFTER the standard
 //   section is digested). Baseline: tests/golden_tables_aml.md5.
+//
+//   SECTION "card_fraud" — the SAME fraud-dense config as the fraud
+//   section, under --usecase card-fraud (card-fraud T4). The config is
+//   deliberately NOT the run golden's: sampleRingCount has no floor
+//   (rings.hpp: max(0, round(lognormal * pop/1e4))), so a pop-2000
+//   seed can deterministically draw ZERO rings — and with no rings
+//   there are no victims and no unauthorized card fraud. The
+//   fraud-dense config is probe-verified to carry rings, so the card
+//   view's fraud-visibility is a fact of the config, not a gamble on a
+//   seed. Pins every cf_* table the run registers in schema card_fraud
+//   (the full 34-table TF_GNN_v3 set), HARD-REQUIRES its core tables,
+//   and HARD-REQUIRES flag-1 rows in cf_Payment_Transaction (the
+//   unauthorized card rail — .60 of the unauthorized mix — and the
+//   gift-card scam ride the card_purchase channel). Because the config
+//   is IDENTICAL to the fraud section's and exporters are export-side
+//   only (main.cpp tees every use case's exporter alongside the same
+//   corpus sink), this section also enforces that its
+//   public.transactions digest line EQUALS the fraud section's — the
+//   corpus stream is use-case-invariant, and this is where that law is
+//   pinned. Runs strictly LAST (its run overwrites the shared stream
+//   table too). Baseline: tests/golden_tables_card_fraud.md5.
 //
 // TABLE DISCOVERY: each section's table list comes from the
 // DIRECT-TABLE REGISTRY (public.pl_direct_tables) that the run's own
@@ -70,6 +91,10 @@
 #endif
 #ifndef PL_TABLE_BASELINE_AML
 #error "PL_TABLE_BASELINE_AML must be defined (path to the fraud baseline)"
+#endif
+#ifndef PL_TABLE_BASELINE_CARD_FRAUD
+#error \
+    "PL_TABLE_BASELINE_CARD_FRAUD must be defined (path to the card baseline)"
 #endif
 
 namespace fs = std::filesystem;
@@ -129,7 +154,7 @@ registeredTables(Connection &conn, const std::string &schemaKey) {
 
 enum class Section : int { pass, captured, diverged };
 
-// Capture-if-missing / enforce-if-present, shared by both sections.
+// Capture-if-missing / enforce-if-present, shared by all sections.
 [[nodiscard]] Section applyBaseline(const fs::path &baseline,
                                     const std::vector<std::string> &lines,
                                     const char *name) {
@@ -292,21 +317,109 @@ int main() {
   }
 
   // ------------------------------------------------------------------
+  // SECTION "card_fraud": the SAME fraud-dense config as the fraud
+  // section, under --usecase card-fraud (rings probe-verified — see
+  // the header: a pop-2000 seed could deterministically draw zero
+  // rings and blind the card view). Runs strictly LAST — this run
+  // overwrites the shared public.transactions stream table too.
+  // ------------------------------------------------------------------
+  std::printf("  [card_fraud] running binary (card-fraud, pop 10000) ...\n");
+  std::fflush(stdout);
+  if (!runBinary("--usecase card-fraud --population 10000 --days 60"
+                 " --seed 7",
+                 tmp / "pl_table_golden_card_fraud.log", conninfo)) {
+    return 1;
+  }
+
+  // Registry discovery for the card_fraud schema; the mirror prefixes
+  // every stem with "cf_" (no subdirs; stems verbatim incl. case).
+  // The complete TF_GNN_v3 set is 34 tables.
+  const auto cardTables = registeredTables(*conn, "card_fraud");
+  assert(cardTables.size() >= 34);
+
+  // Core tables MUST be under the pin (the streamed vertex + edges,
+  // the card/party layer, and the documented header-only gap).
+  for (const char *required :
+       {"cf_Payment_Transaction", "cf_Card_Send_Transaction",
+        "cf_Merchant_Receive_Transaction", "cf_Card", "cf_Party",
+        "cf_Party_Has_Card", "cf_Merchant", "cf_Is_Merchant"}) {
+    if (std::find(cardTables.begin(), cardTables.end(),
+                  std::string{required}) == cardTables.end()) {
+      std::fprintf(stderr,
+                   "table-golden[card_fraud]: required table missing from "
+                   "the run's registry: %s\n",
+                   required);
+      return 1;
+    }
+  }
+
+  // FRAUD-VISIBLE: at the fraud-dense config the unauthorized card
+  // rail (.60 of the unauthorized mix) and the gift-card scam ride the
+  // card_purchase channel, so the view must carry flag-1 rows — a
+  // blind card view here means the view filter or the fraud
+  // attribution broke. Direct-table columns are text (mirror DDL):
+  // compare against the rendered '1'.
+  {
+    const auto qualified = conn->escapeIdentifier("card_fraud") + "." +
+                           conn->escapeIdentifier("cf_Payment_Transaction");
+    const auto fraudRows = conn->queryValue(
+        "SELECT count(*) FROM " + qualified + " WHERE is_fraud = '1'");
+    if (fraudRows.empty() || fraudRows == "0") {
+      std::fprintf(stderr,
+                   "table-golden[card_fraud]: cf_Payment_Transaction carries "
+                   "NO flag-1 rows at the fraud-dense config — the card view "
+                   "must be fraud-visible (unauthorized card rail + "
+                   "gift-card scam ride card_purchase)\n");
+      return 1;
+    }
+  }
+
+  std::vector<std::string> cardLines;
+  cardLines.reserve(cardTables.size() + 1);
+  cardLines.push_back(
+      digestLine(*conn, "", "transactions", /*orderByRowSeq=*/true));
+  for (const auto &table : cardTables) {
+    cardLines.push_back(
+        digestLine(*conn, "card_fraud", table, /*orderByRowSeq=*/false));
+  }
+
+  // USE-CASE INVARIANCE OF THE CORPUS: identical config to the fraud
+  // section, different --usecase — exporters are export-side only
+  // (main.cpp tees each use case's exporter alongside the SAME corpus
+  // sink), so the streamed corpus must be byte-identical. Enforced
+  // against the fraud section's own digest, not the baseline, so it
+  // holds even on capture runs.
+  if (cardLines.front() != fraudLines.front()) {
+    std::fprintf(stderr,
+                 "table-golden[card_fraud]: corpus stream DIVERGES between "
+                 "use cases at the same config —\n  aml-txn-edges: %s\n  "
+                 "card-fraud:    %s\nthe card view is export-side only and "
+                 "must never perturb the corpus\n",
+                 fraudLines.front().c_str(), cardLines.front().c_str());
+    return 1;
+  }
+
+  // ------------------------------------------------------------------
   // Baselines: capture-if-missing (SKIP), enforce-if-present.
   // ------------------------------------------------------------------
   const auto stdResult =
       applyBaseline(fs::path{PL_TABLE_BASELINE}, stdLines, "standard");
   const auto fraudResult =
       applyBaseline(fs::path{PL_TABLE_BASELINE_AML}, fraudLines, "fraud");
+  const auto cardResult = applyBaseline(
+      fs::path{PL_TABLE_BASELINE_CARD_FRAUD}, cardLines, "card_fraud");
 
-  if (stdResult == Section::diverged || fraudResult == Section::diverged) {
+  if (stdResult == Section::diverged || fraudResult == Section::diverged ||
+      cardResult == Section::diverged) {
     return 1;
   }
-  if (stdResult == Section::captured || fraudResult == Section::captured) {
+  if (stdResult == Section::captured || fraudResult == Section::captured ||
+      cardResult == Section::captured) {
     return 77;
   }
-  std::printf("table-golden: both sections pinned (corpus via row_seq; "
-              "fraud labels via the aml section; discovery via the "
-              "direct-table registry)\n");
+  std::printf("table-golden: all three sections pinned (corpus via row_seq; "
+              "fraud labels via the aml section; the card view + corpus "
+              "use-case invariance via the card_fraud section; discovery "
+              "via the direct-table registry)\n");
   return 0;
 }

@@ -1875,3 +1875,24 @@ other use case's bytes.
 | Is_Merchant | UNPOPULATED (header-only): the world has no modeled merchant-owning-party link (business owners own accounts, not catalog merchants); populating it is a model round of its own | DEVIATES-BY-CHOICE (documented gap) | — |
 | Device/IP is_blocked | the MODELED flags (devices.flagged / ips.blacklisted), not placeholders | CONFORMS (reuses existing modeled values) | — |
 | PII layer population | Address/Phone/Email/ID(ssn)/Full_Name/DOB vertices deduplicated over the person roster; edges per person; empty fields skipped — TF_GNN_v3 marks this layer DEMO ONLY and it is empty on real TabFormer; PhantomLedger fills it from its PII synthesis | CHOICE (the use case's differentiator) | — |
+
+
+### U-3. card-fraud Payment_Transaction fraud rate at TabFormer scale (card-fraud-2026-07, measurement)
+
+Recorded 2026-07-19 by the T4 measurement merge script, LIVE from
+card_fraud."cf_Payment_Transaction" after the owner's TabFormer-scale
+smoke (`--usecase card-fraud --population 20000 --days 730`, default
+seed/start). THE AXIS: share of CARD-VIEW rows (channels card_purchase
++ merchant) carrying fraud flag 1 — NOT the corpus-wide illicit ratio
+(targetIllicitP applies to ALL rows across every rail) and NOT an
+event count.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| Payment_Transaction fraud rate | measured 0.1347% (12997 of 9645706 view rows at pop 20000 / 730d / default seed) vs the TabFormer anchor ~0.1% | MEASUREMENT | IBM TabFormer (credit_card_transactions "Is Fraud?" share over its ~24M rows) [Likely on the exact anchor figure — verify at citation time] |
+
+If the measured rate deviates materially from the cited anchor,
+closing the gap is a FRAUD-BUDGET change (targetEvents, the
+unauthorized rail mix, and every fraud denominator are
+model-versioned): owner-gated ADJUST round with golden re-pins, never
+a silent edit.

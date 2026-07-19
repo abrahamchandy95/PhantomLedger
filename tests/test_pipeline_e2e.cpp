@@ -1,21 +1,23 @@
 //
 // tests/test_pipeline_e2e.cpp
 //
-// Serverless smoke gate for the three corpus exporters: run a small
-// simulation, then require each exporter to render its complete table
-// set with real content. PhantomLedger writes no files, so the
-// observation seam is common::TableCapture (table.hpp) — the exact
-// bytes each table's csv::Writer renders, keyed by stem, which is also
-// exactly what the PostgreSQL COPY receives on a live run. Schema
-// placement (mule_ml / aml schemas, vertices_/edges_ prefixes) is a
-// mirror concern pinned by the live-PG table golden, not here.
+// Serverless smoke gate for the corpus exporters (standard, mule-ml,
+// aml, card-fraud): run a small simulation, then require each exporter
+// to render its complete table set with real content. PhantomLedger
+// writes no files, so the observation seam is common::TableCapture
+// (table.hpp) — the exact bytes each table's csv::Writer renders,
+// keyed by stem, which is also exactly what the PostgreSQL COPY
+// receives on a live run. Schema placement (mule_ml / aml / card_fraud
+// schemas, table prefixes) is a mirror concern pinned by the live-PG
+// table golden, not here.
 //
-// The standard exporter must NEVER render a table with stem
-// "transactions": that is the streamed corpus table's name, and the
-// canonical stream must never be overwritten by a rendered twin.
+// No exporter may EVER render a table with stem "transactions": that
+// is the streamed corpus table's name, and the canonical stream must
+// never be overwritten by a rendered twin.
 //
 
 #include "phantomledger/exporter/aml/export.hpp"
+#include "phantomledger/exporter/card_fraud/export.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
@@ -246,6 +248,90 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
             std::to_string(summary.customerCount));
 }
 
+// The card-fraud exporter's complete 34-table TF_GNN_v3 set, via the
+// one-code-path exportAll (the SAME streaming sink the windowed engine
+// uses, run over the retained corpus, then the shared finisher).
+void testCardFraudExport(const pl::pipeline::SimulationResult &result,
+                         const pl::synth::pii::PoolSet &poolSet) {
+  Capture capture;
+  pl::exporter::card_fraud::Options opts{};
+  opts.piiPools = &poolSet;
+  opts.window = smallWindow();
+  opts.capture = &capture;
+
+  const auto summary = pl::exporter::card_fraud::exportAll(result, opts);
+
+  // Streamed by StreamingCardFraudExport during the fold.
+  for (const auto *stem : {
+           "Payment_Transaction",
+           "Card_Send_Transaction",
+           "Merchant_Receive_Transaction",
+       }) {
+    expectTable(capture, stem);
+  }
+
+  // Finisher: cards, merchants + the geo chain, categories, parties.
+  // Is_Merchant ships header-only (no modeled merchant-owning-party
+  // link) — expectTable's header requirement is exactly its contract.
+  for (const auto *stem : {
+           "Card",
+           "Party_Has_Card",
+           "Merchant",
+           "Merchant_Assigned",
+           "Merchant_Category",
+           "Has_State",
+           "Has_City",
+           "Has_Zip",
+           "City",
+           "State",
+           "Zipcode",
+           "Assigned_To",
+           "Located_In",
+           "Party",
+           "Is_Merchant",
+       }) {
+    expectTable(capture, stem);
+  }
+
+  // The PII investigative layer (DEMO ONLY in TF_GNN_v3; PhantomLedger
+  // populates it from its PII synthesis).
+  for (const auto *stem : {
+           "Address",
+           "Phone",
+           "Email",
+           "IP",
+           "Device",
+           "ID",
+           "Full_Name",
+           "DOB",
+           "Has_Address",
+           "Has_Phone",
+           "Has_Email",
+           "Has_ID",
+           "Has_IP",
+           "Has_Device",
+           "Has_DOB",
+           "Has_Full_Name",
+       }) {
+    expectTable(capture, stem);
+  }
+
+  check(!capture.has("transactions"),
+        "the 'transactions' stem is the streamed corpus table and must "
+        "never be rendered by the card-fraud exporter");
+
+  check(summary.partyCount == 100,
+        "card-fraud summary partyCount == 100, got " +
+            std::to_string(summary.partyCount));
+  check(summary.totalRows == result.transfers.ledger.posted.txns.size(),
+        "card-fraud totalRows must count every settled row (the "
+        "T<row_seq> identity domain), got " +
+            std::to_string(summary.totalRows));
+  check(summary.viewRows > 0,
+        "card-fraud view (card_purchase + merchant channels) must be "
+        "non-empty at pop 100 x 7 days");
+}
+
 } // namespace
 
 int main() {
@@ -259,6 +345,7 @@ int main() {
     testStandardExport(result);
     testMuleMlExport(result, poolSet);
     testAmlExport(result, poolSet);
+    testCardFraudExport(result, poolSet);
   } catch (const std::exception &e) {
     std::fprintf(stderr, "FAIL: exception: %s\n", e.what());
     return 2;

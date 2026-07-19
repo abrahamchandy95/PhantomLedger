@@ -47,9 +47,10 @@ self-transfers, credit card lifecycle events, government benefits, insurance pre
 loan payments, tax payments, family transfers (allowance, tuition, support, spouse, parent gifts,
 sibling transfers, grandparent gifts, inheritance), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
 
-Output formats include a standard transaction graph (including vertices + edges in CSVs), an ML-ready schema for mule detection,
-a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, and a transaction-edges variant of the
-AML schema with derived graph features.
+Output formats include a standard transaction graph (vertices + edges), an ML-ready schema for mule detection,
+a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, a transaction-edges variant of the
+AML schema with derived graph features, and a TabFormer-scale card-fraud corpus shaped for TigerGraph's TF_GNN_v3
+schema. Every table lands directly in PostgreSQL during the run — PhantomLedger writes no files.
 
 ### Design Principles
 
@@ -112,24 +113,33 @@ configure-time error rather than a silent missing-symbol surprise at link.
 phantomledger [options]
 ```
 
+All output lands in PostgreSQL: the corpus streams into the `transactions` table during settlement
+and every exporter writes its tables directly during the run. No files are written; reruns with the
+same seed and config rewrite byte-identical content.
+
 | Option | Default | Description |
 |---|---|---|
-| `--usecase {standard,mule-ml,aml,aml-txn-edges}` | `standard` | Exporter to run. |
+| `--usecase {standard,mule-ml,aml,aml-txn-edges,card-fraud}` | `standard` | Exporter to run. |
 | `--days N` | `365` | Simulation length in days. |
 | `--population N` | `70000` | Total population. |
 | `--seed N` | `0xDEADBEEF` | Top-level RNG seed. |
 | `--start YYYY-MM-DD` | `2025-01-01` | Simulation start date. |
-| `--out PATH` | `out_bank_data` | Output directory. |
-| `--show-transactions` | off | Also emit the raw `transactions.csv` next to the aggregated edges. |
 | `--help`, `-h` | — | Print the usage message. |
 
-Each `--usecase` writes into its own subdirectory layout, so two runs with the same `--seed` and `--out`
-produce a coherent multi-format dataset without colliding:
+Environment: `PL_PG='host=... port=... dbname=...'` selects the PostgreSQL server (default
+`dbname=phantomledger`). A reachable server is required — the run fails fast before any generation
+when none answers. (`PL_FILE_ONLY=1` is test infrastructure only: a serverless escape that produces
+just the corpus stream digest; `aml-txn-edges` cannot run this way.)
 
-- `standard` → `<out>/*.csv`
-- `mule-ml` → `<out>/ml_ready/*.csv`
-- `aml` → `<out>/aml/{vertices,edges}/*.csv`
-- `aml-txn-edges` → `<out>/aml_txn_edges/{vertices,edges}/*.csv`
+Each `--usecase` writes into its own schema, so runs with the same `--seed` against the same
+database compose into a coherent multi-format dataset without colliding (identifiers are canonical
+across use cases):
+
+- `standard` → `public` (unprefixed tables, next to the shared `transactions` stream)
+- `mule-ml` → `mule_ml.ml_ready_*`
+- `aml` → `aml.aml_*`
+- `aml-txn-edges` → `aml_txn_edges.aml_txn_edges_*`
+- `card-fraud` → `card_fraud.cf_*`
 
 ## Pipeline
 
@@ -802,17 +812,18 @@ Upstream **soft screens** in individual generators (ATM, subscriptions, self-tra
 
 ### Standard
 
-Vertex CSVs: `person.csv`, `accountnumber.csv`, `phone.csv`, `email.csv`, `device.csv`, `ipaddress.csv`, `merchants.csv`, `external_accounts.csv`.
+Vertex tables: `person`, `accountnumber`, `phone`, `email`, `device`, `ipaddress`, `merchants`, `external_accounts`.
 
-Edge CSVs: `HAS_ACCOUNT`, `HAS_PHONE`, `HAS_EMAIL`, `HAS_USED`, `HAS_IP`, `HAS_PAID` (aggregated), optional raw `transactions.csv` (via `--show-transactions`).
+Edge tables: `HAS_ACCOUNT`, `HAS_PHONE`, `HAS_EMAIL`, `HAS_USED`, `HAS_IP`, `HAS_PAID` (aggregated). The raw ledger is
+the streamed `transactions` table, shared by every use case (`SELECT * FROM transactions ORDER BY row_seq`).
 
 ### Mule-ML
 
 Optimized schema for GraphSAGE / node-level mule detection:
 
-- `Party.csv` — one row per account with fraud label, phone, email, full deterministic identity (name, SSN, DOB, address, geo, country, canonical IP, canonical device).
-- `Transfer_Transaction.csv` — raw ledger.
-- `Account_Device.csv`, `Account_IP.csv` — aggregated account-infra edges with counts and first/last seen.
+- `Party` — one row per account with fraud label, phone, email, full deterministic identity (name, SSN, DOB, address, geo, country, canonical IP, canonical device).
+- `Transfer_Transaction` — raw ledger.
+- `Account_Device`, `Account_IP` — aggregated account-infra edges with counts and first/last seen.
 
 Ages are drawn from persona-specific band distributions (e.g. retired: Beta-weighted across 65–99; student: 16–34). Addresses use `faker-cxx` together with deterministic zip-code lookups so addresses resolve to real US cities, with a fallback list.
 
@@ -831,9 +842,40 @@ Full graph export with:
 
 A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for a transaction-edge view and adds graph-derived account features (PageRank score, Louvain community ID, weakly-connected-component ID and component size, shortest path to mule, IP/device collision counts, in/out mule-ratio, multi-hop mule count, betweenness, in/out degree, clustering coefficient). Intended as input to graph-feature-aware AML models that consume both the ledger and the precomputed topology signals.
 
+### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer scale)
+
+A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema (the graph used for IBM
+TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix `cf_`):
+
+- **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
+  purchases, including the unauthorized-card and gift-card-scam fraud rows attributed to the
+  victim's card) and `merchant` rows (account-paid POS, interpreted as debit-card transactions).
+  11 loaded columns: `id` (`T<row_seq>`, cross-referencing the streamed `transactions` table 1:1),
+  timestamp, amount, `is_fraud`, unix time, merchant category, `use_chip`, `error`, and the
+  chronological 70/15/15 `is_train`/`is_val`/`is_test` split flags. Streamed at row scale during
+  settlement together with the `Card_Send_Transaction` / `Merchant_Receive_Transaction` edges.
+- **Cards and parties** — `Card` (credit cards resolve through the card registry, ≤1 per person;
+  every other view source becomes the account's derived debit card; `is_fraud` marks cards that
+  ever carried a flagged view row), `Party` (canonical customer ids; `is_fraud` labels fraud
+  actors — ring members, solo fraudsters, mules — never victims), and `Party_Has_Card`.
+  `Is_Merchant` ships header-only: the world has no modeled merchant-owning-party link yet.
+- **Merchants and geography** — `Merchant`, `Merchant_Category`, `Merchant_Assigned`, and a
+  consistent `City`/`State`/`Zipcode` chain (`Has_City`/`Has_State`/`Has_Zip`, `Assigned_To`,
+  `Located_In`) content-keyed onto real US city/state/zip triples.
+- **PII investigative layer** — `Address`/`Phone`/`Email`/`IP`/`Device`/`ID`/`Full_Name`/`DOB`
+  vertices plus `Has_*` edges from the PII synthesis; devices and IPs carry their modeled
+  flagged/blacklisted state as `is_blocked`. (Marked demo-only in TF_GNN_v3 and empty on real
+  TabFormer; PhantomLedger populates it.)
+
+The generator emits **loaded attributes only**: the pagerank/community slots, the engineered
+Payment_Transaction features, and TF_GNN_v3's interaction/co-occurrence/community edges are
+in-graph TigerGraph query work. Column order matches the TF_GNN_v3 loaded-attribute order so
+loading jobs map positionally; to hand a table to TigerGraph as CSV:
+`\copy card_fraud."cf_Payment_Transaction" TO 'Payment_Transaction.csv' WITH (FORMAT csv, HEADER true)`.
+
 ## Configuration
 
-The CLI exposes a small set of top-level knobs (`--days`, `--population`, `--seed`, `--start`, `--usecase`, `--out`, `--show-transactions`). Everything beneath that — persona shares, channel medians, fraud weights, family probabilities — is declared in code as constants or as `Rules` / `Flow` / `Profile` structs that travel with the subsystem that consumes them.
+The CLI exposes a small set of top-level knobs (`--days`, `--population`, `--seed`, `--start`, `--usecase`). Everything beneath that — persona shares, channel medians, fraud weights, family probabilities — is declared in code as constants or as `Rules` / `Flow` / `Profile` structs that travel with the subsystem that consumes them.
 
 All configuration structs participate in a uniform validation pass: each carries a `void validate(validate::Report&) const` method that posts named, source-located checks. The orchestrator collects a single `Report` and throws a `validate::Error` if any check fails, so misconfigured rules surface at construction time rather than as silent zeros mid-simulation.
 
@@ -929,6 +971,7 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Merseyside OCG study — 63% of organized criminal groups cooperate with ≥1 other group.
 - Unit21 2026 — legitimate reactivation transactions average 17× rule thresholds but ramp gradually.
 - FATF 2020 — AML Red Flag Indicators.
+- IBM TabFormer — synthetic credit-card transaction dataset (`credit_card_transactions`); the scale/shape anchor for the card-fraud use case (fraud share, Use Chip mix, Errors? values).
 
 **Small Business Banking**
 - Bluevine 2025 — 39% of SMBs have < 1 month of operating expenses; healthy ones hold 2–3 months.
