@@ -64,7 +64,7 @@ full-scale soak for ordering/tie audits.
 | `make run-info` | info | run lifecycle: plan budgets, run totals, end-of-run stats dumps |
 | `make run-debug` | debug | per-day detail: day timing, window advances, warm-start |
 | `make run-trace` | trace | everything the logger can say |
-| `make run-mem` | info, `mem` only | RAM reporting (pre-flight estimates + per-stage peak RSS), nothing else |
+| `make run-mem` | info, `mem` only | RAM reporting (pre-flight estimates, world footprint, per-stage peak RSS), nothing else |
 
 All accept `ARGS="..."` (forwarded to the binary) and, except `run-mem`,
 `TOPICS=...` — a comma-separated topic filter (default `all`):
@@ -88,7 +88,7 @@ on stderr.
 | `clearing` | ledger screening: balance-gated rejections and their reasons | rejection spikes, overdraft storms, cure/retry behavior |
 | `liquidity` | liquidity-multiplier inputs and outputs | spending looks suppressed or inflated around paydays |
 | `entities` | world synthesis | population, registry, or counterparty-pool issues |
-| `mem` | RAM observability: the planner's **pre-flight** reserve estimate (retained corpus in monolithic mode, bounded staging in windowed mode), plus `[mem]` peak-RSS lines across the world build (worldEntities/worldProducts/worldInfra), the batch settlement stages (buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle), and the windowed phases (windowedPrologue/phaseA/phaseB) | RAM planning; deciding whether a config needs the windowed streaming path; leak hunting |
+| `mem` | RAM observability: the planner's **pre-flight** reserve estimate (retained corpus in monolithic mode, bounded staging in windowed mode), the one-shot **world footprint** report after the world build (per-pack resident bytes — the RAM R2 measurement, see `docs/ram_derive_dont_store.md`), plus `[mem]` peak-RSS lines across the world build (worldEntities/worldProducts/worldInfra), the batch settlement stages (buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle), and the windowed phases (windowedPrologue/phaseA/phaseB) | RAM planning; deciding whether a config needs the windowed streaming path; leak hunting |
 
 ### Raw environment variables
 
@@ -140,10 +140,14 @@ affected.
 
 **"How much RAM will this config take?"**
 `make run-mem` — the pre-flight line predicts the corpus reserve before
-anything allocates; each stage line then reports measured peak RSS and
-the live transaction rows it holds. If peak RSS is dominated by the
-posted corpus, the windowed streaming path (bounded staging +
-file-backed spool) is the mitigation, not a smaller model.
+anything allocates; the **world footprint** block then shows which
+world packs hold the resident bytes (per pack, MB, and B/person); each
+stage line reports measured peak RSS and the live transaction rows it
+holds. If peak RSS is dominated by the posted corpus, the windowed
+streaming path (bounded staging + file-backed spool) is the mitigation;
+if it is dominated by world packs, that is the RAM R2 program —
+`docs/ram_derive_dont_store.md` maps each pack to its consumers and its
+derive-don't-store stage.
 
 **"A golden diverged after my change."**
 Section 1 above. Refactor ⇒ fix the refactor; model change ⇒ recapture

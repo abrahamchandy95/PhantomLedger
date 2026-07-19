@@ -4,6 +4,7 @@
 
 #include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
+#include "phantomledger/pipeline/world_footprint.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
@@ -201,6 +202,11 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
   out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
   notify("infra");
   diagnostics::logStageMem("worldInfra", {});
+
+  // RAM R2 measurement: which packs hold the world's resident bytes
+  // (docs/ram_derive_dont_store.md). Prints only under the mem topic.
+  diagnostics::logWorldFootprint(out.people, out.holdings, out.counterparties,
+                                 out.infra);
 
   return out;
 }
