@@ -2,6 +2,7 @@
 
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
+#include "phantomledger/activity/spending/simulator/card_cycle_billing.hpp"
 #include "phantomledger/activity/spending/simulator/day_driver.hpp"
 #include "phantomledger/activity/spending/simulator/prepared_run.hpp"
 #include "phantomledger/activity/spending/simulator/run_planner.hpp"
@@ -12,7 +13,6 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -49,9 +49,7 @@ public:
   Session &planner(RunPlanner planner) noexcept;
   Session &dayDriver(DayDriver dayDriver) noexcept;
   Session &emissionThreads(SpenderEmissionDriver::Threads threads) noexcept;
-  Session &
-  cardCycleDriver(::PhantomLedger::transfers::credit_cards::CardCycleDriver
-                      *cards) noexcept;
+  Session &cardCycleBilling(CardCycleBilling *cards) noexcept;
 
   [[nodiscard]] WindowOutput advance(time::Window window);
 
@@ -93,7 +91,7 @@ private:
 
   clearing::Ledger *ledger_ = nullptr;
   SpenderEmissionDriver::Threads emissionThreads_{};
-  ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards_ = nullptr;
+  CardCycleBilling *cards_ = nullptr;
 
   RunPlanner planner_{};
   DayDriver dayDriver_{};

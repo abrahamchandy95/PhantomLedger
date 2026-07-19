@@ -101,7 +101,7 @@ std::unique_ptr<SessionBundle> SessionBundle::make(
       .dayDriver(dayDriverFrom(bundle->inputs_.day, bundle->inputs_.dynamics,
                                bundle->inputs_.emission))
       .emissionThreads(threads)
-      .cardCycleDriver(
+      .cardCycleBilling(
           bundle->cardDriver_ != nullptr ? bundle->cardDriver_.get() : nullptr);
 
   return bundle;

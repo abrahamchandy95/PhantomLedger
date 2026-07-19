@@ -38,8 +38,7 @@ void DayDriver::bindFactory(const transactions::Factory &value) noexcept {
   rebindEmitter();
 }
 
-void DayDriver::bindCardCycleDriver(
-    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards) noexcept {
+void DayDriver::bindCardCycleBilling(CardCycleBilling *cards) noexcept {
   cards_ = cards;
 }
 
@@ -112,9 +111,8 @@ void DayDriver::runDay(const PreparedRun &run, RunState &state,
   }
 }
 
-void DayDriver::ingestEmittedTo(
-    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards,
-    const RunState &state) {
+void DayDriver::ingestEmittedTo(CardCycleBilling *cards,
+                                const RunState &state) {
   const auto &txns = state.txns();
 
   if (cardIngestCursor_ > txns.size()) {

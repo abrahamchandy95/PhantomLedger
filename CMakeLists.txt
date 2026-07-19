@@ -435,11 +435,16 @@ target_link_libraries(pl_ledger PUBLIC pl_primitives)
 # spending-emission diagnostics). Consumes the transaction vocabulary
 # (record/draft/factory) and the clearing book (soft screens + emission
 # gate) by design — the 2026-07-19 lint scan amendment; see
-# cmake/IncludeLayerLint.cmake.
+# cmake/IncludeLayerLint.cmake. Card-cycle billing is consumed through
+# the activity-owned CardCycleBilling interface (round C-1), so no
+# transfers symbol is referenced here.
 pl_add_job_library(pl_activity ${PL_ACTIVITY_SPENDING_SOURCES})
 target_link_libraries(pl_activity PUBLIC pl_world pl_ledger)
 
 # Transfer generation: legit flows, channels, fraud typologies.
+# Implements the spending simulator's CardCycleBilling seam
+# (channels/credit_cards/card_cycle_driver) — that is part of the
+# legal pl_transfers -> pl_activity direction.
 pl_add_job_library(pl_transfers
     ${PL_TRANSFERS_CHANNELS_SOURCES}
     ${PL_TRANSFERS_FRAUD_SOURCES}
@@ -452,21 +457,21 @@ pl_add_job_library(pl_pipeline ${PL_PIPELINE_SOURCES})
 target_link_libraries(pl_pipeline PUBLIC pl_transfers)
 
 # ---------------------------------------------------------------------
-# KNOWN REVERSE EDGES (L2 findings, 2026-07-19 full-tree scan).
-# Both are REAL symbol-level dependencies in today's code, so they are
-# DECLARED here: CMake emits a correct repeated link line for cyclic
-# STATIC libraries on every linker (ld64 never cared about order; GNU
-# ld does). Both stay REPORTED by the include-layer lint until their
-# untangling rounds move the shared piece to its true layer — do NOT
-# silently legalize them there:
-#   * pl_activity -> pl_transfers   the spending session/driver/
-#                                   day_driver drive channels/
-#                                   credit_cards/card_cycle_driver
+# KNOWN REVERSE EDGE (L2 findings, 2026-07-19 full-tree scan).
+# A REAL symbol-level dependency in today's code, so it is DECLARED
+# here: CMake emits a correct repeated link line for cyclic STATIC
+# libraries on every linker (ld64 never cared about order; GNU ld
+# does). It stays REPORTED by the include-layer lint until its
+# untangling round moves the shared piece to its true layer — do NOT
+# silently legalize it there:
 #   * pl_transfers -> pl_pipeline   legit/assembly consumes the chunk
 #                                   schedule/data plumbing
+# (pl_activity -> pl_transfers was closed in round C-1, 2026-07-19:
+# the simulator drives the activity-owned CardCycleBilling interface,
+# transfers' CardCycleDriver implements it, and the wiring sites are
+# transfers-side — so that pair is a straight downward edge again.)
 # ---------------------------------------------------------------------
 
-target_link_libraries(pl_activity PUBLIC pl_transfers)
 target_link_libraries(pl_transfers PUBLIC pl_pipeline)
 
 # Corpus delivery: the four exporters, rendering, PostgreSQL sinks and

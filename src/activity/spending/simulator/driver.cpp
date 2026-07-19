@@ -52,9 +52,8 @@ Simulator::emissionThreads(SpenderEmissionDriver::Threads threads) noexcept {
   return *this;
 }
 
-Simulator &Simulator::cardCycleDriver(
-    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards) noexcept {
-  cardCycleDriver_ = cards;
+Simulator &Simulator::cardCycleBilling(CardCycleBilling *cards) noexcept {
+  cards_ = cards;
   return *this;
 }
 
@@ -72,7 +71,7 @@ std::vector<transactions::Transaction> Simulator::run() {
   dayDriver_.bindRng(rng_);
   dayDriver_.bindLedger(ledger_);
   dayDriver_.bindFactory(factory_);
-  dayDriver_.bindCardCycleDriver(cardCycleDriver_);
+  dayDriver_.bindCardCycleBilling(cards_);
   dayDriver_.emissionThreads(emissionThreads_);
   dayDriver_.prepareEmission(planner_.txnsPerMonth());
 

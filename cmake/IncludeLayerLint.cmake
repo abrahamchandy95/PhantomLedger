@@ -21,8 +21,8 @@
 #                                clearing book (soft screens, emission
 #                                gate) — transactions sits below
 #                                activity; pl_activity links pl_ledger.
-#   CLOSED (untangling rounds A/B, 2026-07-19 — colocate by consumer /
-#   producer):
+#   CLOSED (untangling rounds A/B/C, 2026-07-19 — colocate by consumer /
+#   producer; invert driven seams):
 #     primitives -> encoding     txn_readback moved to exporter/sinks/
 #     primitives -> entities     (both edges were txn_readback's; its
 #                                consumers were all export-side)
@@ -45,13 +45,19 @@
 #                                diagnostics.{hpp,cpp} (namespace
 #                                activity::spending::diagnostics);
 #                                pl_diagnostics keeps the logger only
-#   OPEN (reported; both are untangling-round work items; both
-#   symbol-level cycles are DECLARED in the root CMakeLists so link
+#     activity -> transfers      round C-1 DEPENDENCY INVERSION: the
+#                                simulator drives the activity-owned
+#                                CardCycleBilling interface (simulator/
+#                                card_cycle_billing.hpp); transfers'
+#                                CardCycleDriver implements it and the
+#                                wiring sites are transfers-side
+#                                (legit/routines/spending*.cpp), so the
+#                                arrow points down; the declared
+#                                pl_activity -> pl_transfers link cycle
+#                                is removed from the root CMakeLists
+#   OPEN (reported; the last untangling-round work item; the
+#   symbol-level cycle is DECLARED in the root CMakeLists so link
 #   order is correct on every linker in the meantime):
-#     activity -> transfers      spending session/driver/day_driver
-#                                drive channels/credit_cards/
-#                                card_cycle_driver (symbol-level CYCLE
-#                                with transfers -> activity)
 #     transfers -> pipeline      legit/assembly consumes pipeline/
 #                                chunk schedule + data (symbol-level
 #                                CYCLE with pipeline -> transfers)

@@ -65,8 +65,7 @@ Session::emissionThreads(SpenderEmissionDriver::Threads threads) noexcept {
   return *this;
 }
 
-Session &Session::cardCycleDriver(
-    ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards) noexcept {
+Session &Session::cardCycleBilling(CardCycleBilling *cards) noexcept {
   cards_ = cards;
   return *this;
 }
@@ -88,7 +87,7 @@ void Session::prepareOnce() {
   dayDriver_.bindRng(rng_);
   dayDriver_.bindLedger(ledger_);
   dayDriver_.bindFactory(factory_);
-  dayDriver_.bindCardCycleDriver(cards_);
+  dayDriver_.bindCardCycleBilling(cards_);
   dayDriver_.emissionThreads(emissionThreads_);
   dayDriver_.prepareEmission(planner_.txnsPerMonth());
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/activity/spending/simulator/card_cycle_billing.hpp"
 #include "phantomledger/entities/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
@@ -28,7 +29,13 @@ struct DriverInputs {
   time::Window window{};
 };
 
-class CardCycleDriver {
+// The concrete implementation of the spending simulator's
+// CardCycleBilling seam (activity/spending/simulator/card_cycle_billing
+// .hpp): the simulator feeds purchases and day ticks through that
+// interface; this driver turns them into statement closes, payments,
+// interest and disputes.
+class CardCycleDriver
+    : public ::PhantomLedger::activity::spending::simulator::CardCycleBilling {
 public:
   CardCycleDriver() = default;
 
@@ -42,18 +49,19 @@ public:
   CardCycleDriver(CardCycleDriver &&) noexcept = default;
   CardCycleDriver &operator=(CardCycleDriver &&) noexcept = default;
 
-  void ingestPurchases(std::span<const transactions::Transaction> txns);
+  void
+  ingestPurchases(std::span<const transactions::Transaction> txns) override;
 
-  void tickDay(std::uint32_t dayIndex, time::TimePoint dayStart);
+  void tickDay(std::uint32_t dayIndex, time::TimePoint dayStart) override;
 
-  void drainResidual();
+  void drainResidual() override;
 
   [[nodiscard]] std::vector<transactions::Transaction>
   takeEmittedBefore(std::int64_t boundExcl);
 
-  [[nodiscard]] std::vector<transactions::Transaction> takeEmitted();
+  [[nodiscard]] std::vector<transactions::Transaction> takeEmitted() override;
 
-  [[nodiscard]] bool active() const noexcept { return active_; }
+  [[nodiscard]] bool active() const noexcept override { return active_; }
 
 private:
   struct PerCard {

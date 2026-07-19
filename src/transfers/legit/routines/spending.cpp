@@ -298,7 +298,7 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
       .planner(plannerFrom(planning_))
       .dayDriver(dayDriverFrom(day_, dynamics_, emission_))
       .emissionThreads(emissionThreads)
-      .cardCycleDriver(cardDriver ? &*cardDriver : nullptr);
+      .cardCycleBilling(cardDriver ? &*cardDriver : nullptr);
 
   return simulator.run();
 }

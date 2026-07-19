@@ -2,6 +2,7 @@
 
 #include "phantomledger/activity/spending/actors/day.hpp"
 #include "phantomledger/activity/spending/market/market.hpp"
+#include "phantomledger/activity/spending/simulator/card_cycle_billing.hpp"
 #include "phantomledger/activity/spending/simulator/commerce_evolver.hpp"
 #include "phantomledger/activity/spending/simulator/day_source.hpp"
 #include "phantomledger/activity/spending/simulator/population_dynamics.hpp"
@@ -12,7 +13,6 @@
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
-#include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -46,9 +46,7 @@ public:
   void bindEmission(const PreparedRun::Budget &budget,
                     const PreparedRun::Routing &routing) noexcept;
 
-  void
-  bindCardCycleDriver(::PhantomLedger::transfers::credit_cards::CardCycleDriver
-                          *cards) noexcept;
+  void bindCardCycleBilling(CardCycleBilling *cards) noexcept;
 
   void runDay(const PreparedRun &run, RunState &state, std::uint32_t dayIndex);
 
@@ -74,9 +72,7 @@ private:
   updatePaydayState(const PreparedRun::Paydays &paydays, RunState &state,
                     std::uint32_t dayIndex) const;
 
-  void ingestEmittedTo(
-      ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards,
-      const RunState &state);
+  void ingestEmittedTo(CardCycleBilling *cards, const RunState &state);
 
   DaySource days_{};
   CommerceEvolver commerce_{};
@@ -87,7 +83,7 @@ private:
   random::Rng *rng_ = nullptr;
   const transactions::Factory *factory_ = nullptr;
   clearing::Ledger *ledger_ = nullptr;
-  ::PhantomLedger::transfers::credit_cards::CardCycleDriver *cards_ = nullptr;
+  CardCycleBilling *cards_ = nullptr;
   std::size_t cardIngestCursor_ = 0;
 };
 
