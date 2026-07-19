@@ -19,7 +19,7 @@ Standing constraints (owner directives):
 - **No new surface.** No CLI args, no knobs, no refusals. Purely
   internal restructure plus `mem`-topic diagnostics.
 
-## Measurement first
+## Measurement first (R2.0 — delivered)
 
 `pipeline::diagnostics::logWorldFootprint` (world_footprint.hpp) prints
 a per-pack estimate once, right after the world build:
@@ -80,8 +80,8 @@ two-phase settlement.
 | router + ringInfra | every routed row | — | — |
 | merchants | spending payees | card-fraud | standard, card-fraud |
 | landlords, directory | blueprint construction only | — | standard, aml family |
-| **people.pii** | **never** | mule-ml | standard, aml family, card-fraud |
-| **devices/ips records+usages** | **never** (router holds its own copies) | mule-ml | standard, mule-ml finish |
+| **people.pii** | **never** | mule-ml (at stream finish) | standard, aml family, card-fraud |
+| **devices/ips records+usages** | **never** (router holds its own copies) | mule-ml (at stream finish) | standard, aml family, card-fraud |
 | ringPlans | injector inputs at fraud boundary | — | — |
 
 ## The cut line
@@ -89,26 +89,65 @@ two-phase settlement.
 - **Spine (stays resident):** accounts pack, creditCards, personas,
   portfolio terms, router + ringInfra, blueprint counterparty access.
   Compact, keyed, consumed every settlement day. ~350–400 B/person.
-- **Cold (retained today, needed only at export):** pii roster,
-  device/IP records + usages, landlord/directory detail. Never read by
-  the fold. ~450–500 B/person retained for nothing during the hours the
-  fold runs.
+- **Cold (export-only):** pii roster, device/IP records + usages,
+  landlord/directory detail. Never read by the fold.
 - **Window-scaled cache (the standout):** the obligation stream is a
   whole-window precompute consumed strictly via
   `between(start, endExcl)` — already window-shaped, retained anyway.
 
-## Staged plan (each stage its own byte-identity round)
+## R2.1 — release + seed-replay rebuild (DELIVERED, awaiting gates)
 
-1. **R2.1 — drop-and-rebuild the cold packs.** Entity-stage draws are a
-   *prefix* of the run's shared RNG sequence, so replaying
-   `buildEntities` from `Rng::fromSeed(seed)` reproduces the cold packs
-   bit-for-bit. Release pii/devices/ips after the fold binds what it
-   needs; rebuild them in the finisher right before vertex export.
-   Wins are use-case-dependent: full for standard/card-fraud/aml
-   (finisher-only consumers), none yet for mule-ml (its *streaming*
-   exporter reads pii per row — that consumption moves in R2.3).
-   Cost: one extra entity-stage replay (seconds; the `[phase]` lines
-   already measure it).
+Mechanics (`pipeline/simulate.hpp`):
+
+- `releaseExportOnlyPacks(world)` swaps empty packs into
+  `people.pii`, `infra.devices`, `infra.ips`, freeing their storage.
+  Verified safe: the fold's only consumers of person infra are the
+  Router's private copies, and grep confirms the three packs are read
+  exclusively by `src/exporter/*`.
+- `SimulationPipeline::rebuildWorldForExport()` replays
+  `buildWorldWith()` from a FRESH `Rng::fromSeed(seed)`. World-build
+  draws are a *prefix* of the run's shared sequential stream (the
+  stream starts at the seed and `buildWorld()` is its first consumer),
+  so the replay is byte-identical no matter how far the fold advanced
+  the shared RNG. One code path (`buildWorldWith`) serves both the run
+  build and the replay, so they cannot drift.
+
+`main.cpp` epoch flow (release after the streaming exporters bind,
+rebuild only when a finisher needs the world; the two worlds never
+coexist — the fold's world is freed before the replay):
+
+| use case | packs released for the fold | rebuild before finisher |
+|---|---|---|
+| plain (no use-case exporter) | yes | no (summary uses counts captured at build) |
+| standard | yes | yes (`exportEntities` reads pii/devices/ips) |
+| card-fraud | yes | yes (geo/PII layer reads pii; device/IP tables) |
+| mule-ml | **no** | n/a (world retained) |
+| aml, aml-txn-edges | **no** | n/a (world retained) |
+
+Why the two deferrals (both move to R2.3):
+
+- **mule-ml** dereferences the packs at *stream finish*:
+  `addDeviceUsageRanges` / `addIpUsageRanges` fold entity-scale usage
+  ranges into the edge tables, and `writePartyRows` reads the pii
+  roster — all inside the fold's `sink.finish()`.
+- **aml family** builds its streaming `SharedContext` from
+  `people`/`holdings` at bind time; whether that context copies or
+  aliases the packs needs its own audit before any release.
+
+Safety audit done for the swapped cases: `StreamingCardFraudExport`
+and `StreamingTransfersExport` dereference their Config pointers only
+in the constructor and `append()`/`finish()` — all before the epoch
+swap; `takeArtifacts()` moves accumulated state only. The summary
+line's People/Accounts counts are captured immediately after the build.
+
+Residency effect at fold time (standard/card-fraud/plain): pii +
+device/IP inventories (~430 B/person, ~40% of the non-obligation
+world) are absent for the entire fold — the run's longest phase. Cost:
+one extra world build before vertex export (the `[phase] rebuild *`
+lines measure it).
+
+## Remaining stages
+
 2. **R2.2 — windowed obligation derivation.** Generate the obligation
    schedule per generation chunk instead of precomputing the whole
    window (the product source already consumes it windowed). Removes
@@ -116,10 +155,11 @@ two-phase settlement.
    must not change event content or order — chunk-invariance and arch
    gates judge.
 3. **R2.3 — per-shard attribute access for streaming exporters.** Give
-   mule-ml's streaming exporter (and R3's shards) a regenerable
-   attribute view instead of a retained-pack pointer. This is the seam
-   R3's population sharding plugs into: a shard = a contiguous PersonId
-   range whose cold attributes are rebuilt on demand.
+   mule-ml's stream-finish reads and the aml family's SharedContext a
+   regenerable attribute view instead of retained-pack pointers. This
+   is the seam R3's population sharding plugs into: a shard = a
+   contiguous PersonId range whose cold attributes are rebuilt on
+   demand.
 
 After R2, resident world ≈ spine only (~400 B/person): 1B people ≈
 400 GB — still too big for one box, which is exactly what R3's
@@ -137,5 +177,5 @@ population sharding addresses; R2 is its prerequisite.
 ## Measured baselines (owner-run, paste blocks here)
 
 *(none recorded yet — first capture should be
-`make run-mem ARGS="--population 200000 --days 730"` before R2.1
+`make run-mem ARGS="--population 200000 --days 730"` before R2.2
 lands)*

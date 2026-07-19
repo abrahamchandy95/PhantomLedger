@@ -150,7 +150,8 @@ SimulationPipeline::transferStage() const noexcept {
   return transfers_;
 }
 
-void SimulationPipeline::buildEntities(SimulationResult &result) const {
+void SimulationPipeline::buildEntities(SimulationResult &result,
+                                       random::Rng &rng) const {
   const auto &cfg = entities_;
   const auto identity = entityStage::defaultStart(cfg.identity, window_.start);
 
@@ -158,31 +159,32 @@ void SimulationPipeline::buildEntities(SimulationResult &result) const {
   auto &holdings = result.holdings;
   auto &cps = result.counterparties;
 
-  people.roster = entityStage::buildPeople(*rng_, cfg.population, cfg.fraud);
+  people.roster = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
   holdings.accounts = entityStage::buildAccounts(
-      *rng_, people.roster, cfg.population, cfg.accountsSizing);
+      rng, people.roster, cfg.population, cfg.accountsSizing);
   people.personas =
-      entityStage::buildPersonas(*rng_, people.roster, cfg.personaMix);
-  people.pii = entityStage::buildPii(*rng_, people.personas, identity,
+      entityStage::buildPersonas(rng, people.roster, cfg.personaMix);
+  people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology, cfg.piiSharing);
 
   cps.merchants =
-      entityStage::buildMerchants(*rng_, cfg.population, cfg.merchants);
+      entityStage::buildMerchants(rng, cfg.population, cfg.merchants);
   cps.landlords =
-      entityStage::buildLandlords(*rng_, cfg.population, cfg.landlords);
+      entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(
-      *rng_, cfg.population, cfg.counterpartyTargets);
+      rng, cfg.population, cfg.counterpartyTargets);
 
   holdings.creditCards = entityStage::issueCreditCards(
       people.personas, people.roster, seed_, cfg.cards);
 
   entityStage::finalizeAccountRegistry(holdings, cps, people);
-  entityStage::synthesizeBusinessOwners(holdings, people, *rng_,
+  entityStage::synthesizeBusinessOwners(holdings, people, rng,
                                         cfg.businessOwners);
 }
 
 SimulationResult
-SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
+SimulationPipeline::buildWorldWith(random::Rng &rng,
+                                   const PhaseObserver &onPhase) const {
   SimulationResult out;
 
   const auto notify = [&](std::string_view phase) {
@@ -191,7 +193,7 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
     }
   };
 
-  buildEntities(out);
+  buildEntities(out, rng);
   notify("entities");
   diagnostics::logStageMem("worldEntities", {});
 
@@ -199,7 +201,7 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
   notify("products");
   diagnostics::logStageMem("worldProducts", {});
 
-  out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
+  out.infra = infra_.build(rng, out.people, out.holdings, window_);
   notify("infra");
   diagnostics::logStageMem("worldInfra", {});
 
@@ -209,6 +211,31 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
                                  out.infra);
 
   return out;
+}
+
+SimulationResult
+SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
+  return buildWorldWith(*rng_, onPhase);
+}
+
+SimulationResult
+SimulationPipeline::rebuildWorldForExport(const PhaseObserver &onPhase) const {
+  // Fresh generator at the run seed: world-build draws are a prefix of
+  // the shared sequential stream, so this replay is byte-identical to
+  // the original buildWorld() (the shared RNG's later position — after
+  // the transfer fold — is irrelevant here and stays untouched).
+  auto replayRng = random::Rng::fromSeed(seed_);
+  return buildWorldWith(replayRng, onPhase);
+}
+
+void releaseExportOnlyPacks(SimulationResult &world) noexcept {
+  // Move-assign empty packs: releases the old storage now. The Router
+  // keeps its own copies of the per-person device/IP pools, so routing
+  // is unaffected; the fold reads none of these (their only consumers
+  // are the vertex exporters).
+  world.people.pii = entity::pii::Roster{};
+  world.infra.devices = synth::infra::devices::Output{};
+  world.infra.ips = synth::infra::ips::Output{};
 }
 
 SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {

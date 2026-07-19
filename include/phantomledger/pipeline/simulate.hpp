@@ -65,6 +65,19 @@ public:
   [[nodiscard]] SimulationResult
   buildWorld(const PhaseObserver &onPhase = {}) const;
 
+  // RAM R2.1 (derive-don't-store, docs/ram_derive_dont_store.md):
+  // rebuild the world by replaying the identical construction from a
+  // FRESH generator seeded with the run seed. World-build draws are a
+  // prefix of the run's shared sequential stream — the stream starts at
+  // Rng::fromSeed(seed) and buildWorld() is its first consumer — so the
+  // replay is byte-identical to the original buildWorld() result no
+  // matter how far the transfer fold has advanced the shared RNG since.
+  // Pairs with releaseExportOnlyPacks(): release the export-only packs
+  // for the duration of the fold, rebuild the full world for the vertex
+  // exporters afterwards.
+  [[nodiscard]] SimulationResult
+  rebuildWorldForExport(const PhaseObserver &onPhase = {}) const;
+
   // Windowed transfer fold over a world previously built by buildWorld()
   // on the SAME pipeline (the shared RNG has advanced accordingly). Rows
   // stream to `sink`.
@@ -102,7 +115,15 @@ public:
       const WindowedRunOptions &options, const PhaseObserver &onPhase) const;
 
 private:
-  void buildEntities(SimulationResult &result) const;
+  void buildEntities(SimulationResult &result,
+                     ::PhantomLedger::random::Rng &rng) const;
+
+  // The one world-build sequence, parameterized on the generator so the
+  // run path (shared stream) and the export replay (fresh stream from
+  // the run seed) cannot drift.
+  [[nodiscard]] SimulationResult
+  buildWorldWith(::PhantomLedger::random::Rng &rng,
+                 const PhaseObserver &onPhase) const;
 
   ::PhantomLedger::random::Rng *rng_ = nullptr;
   ::PhantomLedger::time::Window window_{};
@@ -114,6 +135,14 @@ private:
   InfraStage infra_{};
   TransferStage transfers_{};
 };
+
+// RAM R2.1: release the packs NO part of the transfer fold reads —
+// the PII roster and the device/IP inventories (verified: their only
+// consumers are the vertex exporters; the Router carries its own
+// routing copies of the per-person pools). Frees the storage by
+// swapping in empty packs. Callers whose finisher needs the world
+// rebuild it afterwards via rebuildWorldForExport().
+void releaseExportOnlyPacks(SimulationResult &world) noexcept;
 
 [[nodiscard]] SimulationResult
 simulate(::PhantomLedger::random::Rng &rng,
