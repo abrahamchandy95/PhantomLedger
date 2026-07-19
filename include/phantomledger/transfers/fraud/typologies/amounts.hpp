@@ -2,6 +2,7 @@
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
 
 #include <algorithm>
 #include <array>
@@ -26,15 +27,7 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 //    fixed draw pattern (exactly 2 uniforms), which keeps output
 //    independent of thread/chunk scheduling once fraud is re-keyed
 //    through RngFactory (S9).
-//  * Round to cents.
-
-namespace detail {
-
-[[nodiscard]] inline double cents(double v) noexcept {
-  return std::round(v * 100.0) / 100.0;
-}
-
-} // namespace detail
+//  * Round to cents (primitives::utils::roundMoney).
 
 /// Card-testing micro-charge: $0.50-$5.00, ~40% of mass on "round"
 /// anchor amounts {$0.50, $1, $1, $2, $5} ($1 double-weighted).
@@ -65,7 +58,7 @@ namespace detail {
     idx = std::min(idx, kAnchors.size() - 1);
     return kAnchors[idx];
   }
-  return detail::cents(0.50 + 4.50 * u);
+  return primitives::utils::roundMoney(0.50 + 4.50 * u);
 }
 
 /// Post-validation fraudulent card spend at ordinary billers.
@@ -83,7 +76,7 @@ namespace detail {
 [[nodiscard]] inline double cardFraudSpend(random::Rng &rng) {
   const double raw =
       probability::distributions::lognormalByMedian(rng, 79.0, 1.2);
-  return detail::cents(std::clamp(raw, 1.0, 5000.0));
+  return primitives::utils::roundMoney(std::clamp(raw, 1.0, 5000.0));
 }
 
 /// Account-takeover drain over bank rails (p2p to a drop account).
@@ -106,7 +99,7 @@ namespace detail {
 [[nodiscard]] inline double atoDrainAmount(random::Rng &rng) {
   const double raw =
       probability::distributions::lognormalByMedian(rng, 180.0, 1.5);
-  return detail::cents(std::clamp(raw, 10.0, 85000.0));
+  return primitives::utils::roundMoney(std::clamp(raw, 10.0, 85000.0));
 }
 
 /// Gift-card purchase in a victim-AUTHORIZED impostor scam: the

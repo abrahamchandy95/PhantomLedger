@@ -8,7 +8,6 @@
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -48,12 +47,12 @@ struct AmountModel {
     case Kind::logNormal: {
       const double raw =
           probability::distributions::lognormalByMedian(rng, p0, p1);
-      return primitives::utils::roundMoney(std::max(floor, raw));
+      return primitives::utils::floorAndRound(raw, floor);
     }
 
     case Kind::gamma: {
       const double raw = probability::distributions::gamma(rng, p0, p1) + p2;
-      return primitives::utils::roundMoney(std::max(floor, raw));
+      return primitives::utils::floorAndRound(raw, floor);
     }
 
     case Kind::invalid:
