@@ -8,7 +8,7 @@ never requires remembering environment variables.
 There are three debugging surfaces, from coarsest to finest:
 
 1. the **determinism harness** — `make test` and the golden baselines;
-2. **runtime diagnostics** — the topic/level logger and the RAM probe;
+2. **runtime diagnostics** — the topic/level logger and the RAM probes;
 3. **corpus probes** — SQL against the PostgreSQL output.
 
 ---
@@ -64,7 +64,7 @@ full-scale soak for ordering/tie audits.
 | `make run-info` | info | run lifecycle: plan budgets, run totals, end-of-run stats dumps |
 | `make run-debug` | debug | per-day detail: day timing, window advances, warm-start |
 | `make run-trace` | trace | everything the logger can say |
-| `make run-mem` | info, `mem` only | per-stage peak-RSS lines, nothing else |
+| `make run-mem` | info, `mem` only | RAM reporting (pre-flight estimates + per-stage peak RSS), nothing else |
 
 All accept `ARGS="..."` (forwarded to the binary) and, except `run-mem`,
 `TOPICS=...` — a comma-separated topic filter (default `all`):
@@ -88,7 +88,7 @@ on stderr.
 | `clearing` | ledger screening: balance-gated rejections and their reasons | rejection spikes, overdraft storms, cure/retry behavior |
 | `liquidity` | liquidity-multiplier inputs and outputs | spending looks suppressed or inflated around paydays |
 | `entities` | world synthesis | population, registry, or counterparty-pool issues |
-| `mem` | per-stage peak RSS plus live row counts (`[mem] <stage> peakRSS=… live: …`) across buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle | RAM planning; deciding whether a config needs the windowed streaming path |
+| `mem` | RAM observability: the planner's **pre-flight** reserve estimate (retained corpus in monolithic mode, bounded staging in windowed mode), plus `[mem]` peak-RSS lines across the world build (worldEntities/worldProducts/worldInfra), the batch settlement stages (buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle), and the windowed phases (windowedPrologue/phaseA/phaseB) | RAM planning; deciding whether a config needs the windowed streaming path; leak hunting |
 
 ### Raw environment variables
 
@@ -139,11 +139,11 @@ the clearing book; the spending dump shows which personas/channels are
 affected.
 
 **"How much RAM will this config take?"**
-`make run-mem` — each stage line reports peak RSS and the live
-transaction rows it holds (with their approximate in-memory size). If
-peak RSS is dominated by the posted corpus, the windowed streaming path
-(bounded staging + file-backed spool) is the mitigation, not a smaller
-model.
+`make run-mem` — the pre-flight line predicts the corpus reserve before
+anything allocates; each stage line then reports measured peak RSS and
+the live transaction rows it holds. If peak RSS is dominated by the
+posted corpus, the windowed streaming path (bounded staging +
+file-backed spool) is the mitigation, not a smaller model.
 
 **"A golden diverged after my change."**
 Section 1 above. Refactor ⇒ fix the refactor; model change ⇒ recapture

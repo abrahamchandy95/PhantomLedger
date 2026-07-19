@@ -30,6 +30,7 @@
 #include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
 
 #include "phantomledger/pipeline/acceptance/fingerprint.hpp"
+#include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/pipeline/stages/transfers/binary_spool.hpp"
 #include "phantomledger/pipeline/stages/transfers/window_sources.hpp"
@@ -39,6 +40,7 @@
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 #include "phantomledger/transfers/legit/routines/spending_session.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -117,6 +119,10 @@ WindowedRunResult TransferStage::runWindowedErased(
                              "windowed run requires a full account census "
                              "(base routines did not run)");
   }
+
+  pipeline::diagnostics::logStageMem(
+      "windowedPrologue",
+      {{"screened", prologue.streams.screened().size()}});
 
   // 2. Persistent spending session over the screened base stream. Mirrors
   // passes::addSpending's preparation; the card-lifecycle config is the
@@ -241,6 +247,11 @@ WindowedRunResult TransferStage::runWindowedErased(
     BinaryCandidateSpool spool;
     out.summary.phaseA = driver.runPhaseA(scope.window, spool);
 
+    pipeline::diagnostics::logStageMem(
+        "phaseA",
+        {{"candidate",
+          static_cast<std::size_t>(out.summary.phaseA.candidateRows)}});
+
     const auto fraudSource = makeFraud(out.summary.phaseA.candidateRows);
 
     const auto candidates = spool.openCursor();
@@ -249,8 +260,16 @@ WindowedRunResult TransferStage::runWindowedErased(
 
     out.spoolRows = spool.rowsWritten();
     out.spoolBytes = spool.bytesSpooled();
+
+    pipeline::diagnostics::logStageMem(
+        "phaseB",
+        {{"posted", static_cast<std::size_t>(validating.rowsWritten())}});
   } else {
     out.summary = driver.runTwoPhase(scope.window, makeFraud, validating);
+
+    pipeline::diagnostics::logStageMem(
+        "twoPhase",
+        {{"posted", static_cast<std::size_t>(validating.rowsWritten())}});
   }
 
   out.postedBookHash = acceptance::hashBook(*postBookPtr);

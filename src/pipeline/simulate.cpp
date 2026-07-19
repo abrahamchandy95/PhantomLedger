@@ -2,7 +2,7 @@
 
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 
-#include "phantomledger/diagnostics/logger.hpp"
+#include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
@@ -11,10 +11,7 @@
 #include "phantomledger/transfers/legit/assembly.hpp"
 
 #include <cstdint>
-#include <cstdio>
-#include <initializer_list>
 #include <span>
-#include <sys/resource.h>
 #include <utility>
 
 namespace PhantomLedger::pipeline {
@@ -29,41 +26,6 @@ namespace clearing = ::PhantomLedger::clearing;
 namespace tx_ns = ::PhantomLedger::transactions;
 
 using SynthFraud = ::PhantomLedger::synth::people::Fraud;
-
-[[nodiscard]] double stagePeakRssMB() noexcept {
-  struct rusage ru{};
-  getrusage(RUSAGE_SELF, &ru);
-#if defined(__APPLE__)
-  return static_cast<double>(ru.ru_maxrss) / (1024.0 * 1024.0);
-#else
-  return static_cast<double>(ru.ru_maxrss) / 1024.0;
-#endif
-}
-
-[[nodiscard]] constexpr double rowsMB(std::size_t rows) noexcept {
-  return static_cast<double>(rows) *
-         static_cast<double>(sizeof(tx_ns::Transaction)) / (1024.0 * 1024.0);
-}
-
-inline void logStageMem(
-    const char *stage,
-    std::initializer_list<std::pair<const char *, std::size_t>> liveStreams) {
-  // Owner directive (2026-07-19): the generator is silent by default.
-  // The per-stage RAM lines print only when the `mem` diagnostics topic
-  // is enabled (`make run-mem`, or PL_LOG_LEVEL=info PL_LOG_TOPICS=mem).
-  namespace logging = ::PhantomLedger::diagnostics;
-  if (!logging::Logger::instance().enabled(logging::Level::info,
-                                           logging::Topic::mem)) {
-    return;
-  }
-
-  std::fprintf(stderr, "[mem] %-18s peakRSS=%9.1f MB  live:", stage,
-               stagePeakRssMB());
-  for (const auto &[name, rows] : liveStreams) {
-    std::fprintf(stderr, "  %s=%zu (~%.0f MB)", name, rows, rowsMB(rows));
-  }
-  std::fprintf(stderr, "\n");
-}
 
 [[nodiscard]] auto resolveRunScope(legit::LegitAssembly::RunScope scope,
                                    time::Window fallbackWindow,
@@ -108,18 +70,21 @@ void runTransferStage(SimulationResult &result,
   auto postSettleRng = laneFactory.rng({"settlement", "post_fraud"});
 
   auto legitPayload = stage.buildLegit(rng, people, holdings, cps);
-  logStageMem("buildLegit",
-              {{"replaySorted", legitPayload.txns.replaySortedTxns.size()}});
+  diagnostics::logStageMem(
+      "buildLegit",
+      {{"replaySorted", legitPayload.txns.replaySortedTxns.size()}});
 
   const auto replaySchedule = pipeline::chunk::Schedule::partition(
       stage.legit().runScope().window, stage.settlementChunking());
   auto productStream =
       stage.mergeProducts(productRng, holdings, std::move(legitPayload.txns));
-  logStageMem("mergeProducts", {{"productStream", productStream.size()}});
+  diagnostics::logStageMem("mergeProducts",
+                           {{"productStream", productStream.size()}});
   auto candidate = stage.ledger().preFraudChunked(
       *legitPayload.openingBook.initialBook, preSettleRng,
       std::move(productStream), replaySchedule);
-  logStageMem("preFraudSettle", {{"candidate", candidate.txns.size()}});
+  diagnostics::logStageMem("preFraudSettle",
+                           {{"candidate", candidate.txns.size()}});
 
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
@@ -130,12 +95,13 @@ void runTransferStage(SimulationResult &result,
                           legitPayload.counterparties));
 
   const auto injectedCount = fraudOut.injected.size();
-  logStageMem("fraudInject", {{"candidate", candidate.txns.size()},
-                              {"fraud", fraudOut.injected.size()}});
+  diagnostics::logStageMem("fraudInject",
+                           {{"candidate", candidate.txns.size()},
+                            {"fraud", fraudOut.injected.size()}});
   auto posted = stage.ledger().postFraudChunkedMerged(
       postSettleRng, *legitPayload.openingBook.initialBook,
       std::move(candidate.txns), std::move(fraudOut.injected), replaySchedule);
-  logStageMem("postFraudSettle", {{"posted", posted.txns.size()}});
+  diagnostics::logStageMem("postFraudSettle", {{"posted", posted.txns.size()}});
 
   validateTransactionAccounts(holdings.accounts.lookup, posted.txns);
 
@@ -226,12 +192,15 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
 
   buildEntities(out);
   notify("entities");
+  diagnostics::logStageMem("worldEntities", {});
 
   products_.synthesize(out.people, out.holdings, window_);
   notify("products");
+  diagnostics::logStageMem("worldProducts", {});
 
   out.infra = infra_.build(*rng_, out.people, out.holdings, window_);
   notify("infra");
+  diagnostics::logStageMem("worldInfra", {});
 
   return out;
 }

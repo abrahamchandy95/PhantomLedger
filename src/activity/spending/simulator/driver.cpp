@@ -90,6 +90,15 @@ std::vector<transactions::Transaction> Simulator::run() {
   const std::size_t reserveCapacity =
       static_cast<std::size_t>(run.budget().targetTotalTxns * kTxnReserveSlack);
 
+  PL_LOG_INFO(mem,
+              "pre-flight: retained-corpus reserve ~%.1f MB (%zu rows x "
+              "%zu B/row, incl. 1.05 slack); the windowed engine bounds "
+              "this instead of retaining it",
+              static_cast<double>(reserveCapacity) *
+                  static_cast<double>(sizeof(transactions::Transaction)) /
+                  (1024.0 * 1024.0),
+              reserveCapacity, sizeof(transactions::Transaction));
+
   RunState state(market_.population().count(), reserveCapacity,
                  run.budget().totalPersonDays, run.budget().targetTotalTxns);
 

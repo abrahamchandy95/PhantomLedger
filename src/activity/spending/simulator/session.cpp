@@ -109,8 +109,18 @@ void Session::prepareOnce() {
   reservePerDay_ =
       prepared_->budget().targetTotalTxns * kTxnReserveSlack / totalDays;
 
-  state_.emplace(market_.population().count(),
-                 static_cast<std::size_t>(reservePerDay_ * 31.0),
+  const auto stagingRows = static_cast<std::size_t>(reservePerDay_ * 31.0);
+
+  PL_LOG_INFO(mem,
+              "pre-flight: windowed staging reserve ~%.1f MB (%zu rows x "
+              "%zu B/row); the corpus streams out behind the finalization "
+              "watermark and is never retained",
+              static_cast<double>(stagingRows) *
+                  static_cast<double>(sizeof(transactions::Transaction)) /
+                  (1024.0 * 1024.0),
+              stagingRows, sizeof(transactions::Transaction));
+
+  state_.emplace(market_.population().count(), stagingRows,
                  prepared_->budget().totalPersonDays,
                  prepared_->budget().targetTotalTxns);
 
