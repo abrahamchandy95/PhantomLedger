@@ -68,7 +68,6 @@ set(PL_PRIMITIVES_SOURCES
 
 set(PL_DIAGNOSTICS_SOURCES
     src/diagnostics/logger.cpp
-    src/diagnostics/spending_stats.cpp
 )
 
 # ---------------------------------------------------------------------
@@ -113,6 +112,7 @@ set(PL_RELATIONSHIPS_SOURCES
 
 set(PL_ACTIVITY_SPENDING_SOURCES
     src/activity/spending/actors/day.cpp
+    src/activity/spending/diagnostics.cpp
     src/activity/spending/dynamics/monthly/evolution.cpp
     src/activity/spending/market/bootstrap.cpp
     src/activity/spending/routing/payments.cpp
@@ -410,7 +410,9 @@ endfunction()
 pl_add_job_library(pl_primitives ${PL_PRIMITIVES_SOURCES})
 target_link_libraries(pl_primitives PRIVATE PostgreSQL::PostgreSQL)
 
-# Run observability: logging and spending statistics.
+# Run observability: the logger (spending-emission diagnostics moved
+# INTO pl_activity in the 2026-07-19 untangling round — observability
+# of a subsystem lives with the subsystem).
 pl_add_job_library(pl_diagnostics ${PL_DIAGNOSTICS_SOURCES})
 target_link_libraries(pl_diagnostics PUBLIC pl_primitives)
 
@@ -429,10 +431,11 @@ target_link_libraries(pl_world PRIVATE faker-cxx)
 pl_add_job_library(pl_ledger ${PL_TRANSACTIONS_SOURCES})
 target_link_libraries(pl_ledger PUBLIC pl_primitives)
 
-# Day-to-day discretionary spending simulation. Consumes the
-# transaction vocabulary (record/draft/factory) and the clearing book
-# (soft screens + emission gate) by design — the 2026-07-19 lint scan
-# amendment; see cmake/IncludeLayerLint.cmake.
+# Day-to-day discretionary spending simulation (incl. its own
+# spending-emission diagnostics). Consumes the transaction vocabulary
+# (record/draft/factory) and the clearing book (soft screens + emission
+# gate) by design — the 2026-07-19 lint scan amendment; see
+# cmake/IncludeLayerLint.cmake.
 pl_add_job_library(pl_activity ${PL_ACTIVITY_SPENDING_SOURCES})
 target_link_libraries(pl_activity PUBLIC pl_world pl_ledger)
 

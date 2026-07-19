@@ -3,12 +3,12 @@
 #include "phantomledger/activity/spending/actors/counts.hpp"
 #include "phantomledger/activity/spending/actors/event.hpp"
 #include "phantomledger/activity/spending/actors/explore.hpp"
+#include "phantomledger/activity/spending/diagnostics.hpp"
 #include "phantomledger/activity/spending/liquidity/factor.hpp"
 #include "phantomledger/activity/spending/liquidity/multiplier.hpp"
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/router.hpp"
-#include "phantomledger/diagnostics/spending_stats.hpp"
 #include "phantomledger/math/timing.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 
@@ -19,8 +19,6 @@
 namespace PhantomLedger::activity::spending::simulator {
 
 namespace {
-
-namespace diag = ::PhantomLedger::diagnostics;
 
 using Ledger = ::PhantomLedger::clearing::Ledger;
 
@@ -102,7 +100,7 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
   };
 
   const auto mult = liquidity::multiplier(rules_.liquidity, snapshot);
-  diag::spending::Stats::instance().recordLiquidityMultiplier(mult);
+  diagnostics::Stats::instance().recordLiquidityMultiplier(mult);
 
   lastLiquidityMult_ = mult;
   lastAvailableToSpend_ = snapshot.availableToSpend;
@@ -137,7 +135,7 @@ std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
                                      },
                                      budget_.personLimit, rules_.rates);
 
-  diag::spending::Stats::instance().recordCountSampled(cnt);
+  diagnostics::Stats::instance().recordCountSampled(cnt);
   return cnt;
 }
 
@@ -190,7 +188,7 @@ void SpenderEmissionLoop::PaymentEmitter::bindRateSampler(
 std::optional<SpenderEmissionLoop::PaymentEmitter::Emitted>
 SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                                              const actors::Event &event) {
-  auto &stats = diag::spending::Stats::instance();
+  auto &stats = diagnostics::Stats::instance();
 
   const auto slot = routing::pickSlot(routing_.channelCdf, rng.nextDouble());
   const auto personaBucket = personaBucketOf(*event.spender);

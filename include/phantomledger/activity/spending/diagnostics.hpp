@@ -1,4 +1,16 @@
 #pragma once
+//
+// phantomledger/activity/spending/diagnostics.hpp
+//
+// Spending-emission diagnostics: the hot-path counters, histograms and
+// failure samples the spending simulator records per attempt/day, and
+// the structured end-of-run dump (logger-gated, spending topic). Lives
+// WITH the spending simulator (untangling round B3, 2026-07-19): its
+// only producers and consumers are the simulator TUs, and its former
+// home under diagnostics/ made the observability layer depend on
+// activity above it. pl_diagnostics keeps the logger — the one
+// cross-cutting observability primitive.
+//
 
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/taxonomies/clearing/types.hpp"
@@ -10,7 +22,7 @@
 #include <mutex>
 #include <vector>
 
-namespace PhantomLedger::diagnostics::spending {
+namespace PhantomLedger::activity::spending::diagnostics {
 
 namespace routing = ::PhantomLedger::activity::spending::routing;
 namespace clearing = ::PhantomLedger::clearing;
@@ -142,4 +154,4 @@ private:
                          const SampleFailure &sample) noexcept;
 };
 
-} // namespace PhantomLedger::diagnostics::spending
+} // namespace PhantomLedger::activity::spending::diagnostics

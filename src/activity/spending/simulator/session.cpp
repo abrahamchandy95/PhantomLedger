@@ -1,8 +1,8 @@
 #include "phantomledger/activity/spending/simulator/session.hpp"
 
+#include "phantomledger/activity/spending/diagnostics.hpp"
 #include "phantomledger/activity/spending/simulator/warm_start.hpp"
 #include "phantomledger/diagnostics/logger.hpp"
-#include "phantomledger/diagnostics/spending_stats.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 
 #include <algorithm>
@@ -15,8 +15,6 @@
 namespace PhantomLedger::activity::spending::simulator {
 
 namespace {
-
-namespace diag = ::PhantomLedger::diagnostics;
 
 constexpr double kTxnReserveSlack = 1.05;
 
@@ -119,7 +117,7 @@ void Session::prepareOnce() {
 
   applyWarmStartDaysSincePayday(*state_, prepared_->population().spenders);
 
-  diag::spending::Stats::instance().reset();
+  diagnostics::Stats::instance().reset();
   preparedOnce_ = true;
 }
 
@@ -268,7 +266,7 @@ WindowOutput Session::advance(time::Window window) {
 
   for (std::uint32_t dayIndex = beginIdx; dayIndex < endIdx; ++dayIndex) {
     dayDriver_.runDay(*prepared_, *state_, dayIndex);
-    diag::spending::Stats::instance().recordDaySnapshot(dayIndex);
+    diagnostics::Stats::instance().recordDaySnapshot(dayIndex);
   }
 
   nextDayIndex_ = endIdx;
@@ -317,7 +315,7 @@ WindowOutput Session::finish() {
   cardEventCount_ += cardResidual.size();
   collectNewRows(std::move(cardResidual));
 
-  diag::spending::Stats::instance().dump();
+  diagnostics::Stats::instance().dump();
   finished_ = true;
 
   return drainFinalized(time::Window{.start = marketEnd, .days = 0}, marketEnd);

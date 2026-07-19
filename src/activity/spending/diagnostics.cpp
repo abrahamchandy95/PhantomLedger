@@ -1,4 +1,5 @@
-#include "phantomledger/diagnostics/spending_stats.hpp"
+#include "phantomledger/activity/spending/diagnostics.hpp"
+
 #include "phantomledger/diagnostics/logger.hpp"
 
 #include <algorithm>
@@ -6,9 +7,14 @@
 #include <cstdio>
 #include <cstring>
 
-namespace PhantomLedger::diagnostics::spending {
+namespace PhantomLedger::activity::spending::diagnostics {
 
 namespace {
+
+// The logger layer (the observability primitive this dump renders
+// through). Named explicitly: inside this namespace, an unqualified
+// `diagnostics::` would resolve to ourselves.
+namespace logging = ::PhantomLedger::diagnostics;
 
 [[nodiscard]] const char *slotName(routing::Slot slot) noexcept {
   switch (slot) {
@@ -291,7 +297,8 @@ void Stats::recordDaySnapshot(std::uint32_t dayIndex) noexcept {
 }
 
 void Stats::dump() const noexcept {
-  if (!Logger::instance().enabled(Level::info, Topic::spending)) {
+  if (!logging::Logger::instance().enabled(logging::Level::info,
+                                           logging::Topic::spending)) {
     return;
   }
 
@@ -428,4 +435,4 @@ void Stats::dump() const noexcept {
   PL_LOG_INFO(spending, "===== End diagnostics =====");
 }
 
-} // namespace PhantomLedger::diagnostics::spending
+} // namespace PhantomLedger::activity::spending::diagnostics

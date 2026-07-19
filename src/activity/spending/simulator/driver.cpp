@@ -1,9 +1,9 @@
 #include "phantomledger/activity/spending/simulator/driver.hpp"
 
+#include "phantomledger/activity/spending/diagnostics.hpp"
 #include "phantomledger/activity/spending/simulator/state.hpp"
 #include "phantomledger/activity/spending/simulator/warm_start.hpp"
 #include "phantomledger/diagnostics/logger.hpp"
-#include "phantomledger/diagnostics/spending_stats.hpp"
 #include "phantomledger/transactions/record.hpp"
 
 #include <algorithm>
@@ -14,8 +14,6 @@
 
 namespace PhantomLedger::activity::spending::simulator {
 namespace {
-
-namespace diag = ::PhantomLedger::diagnostics;
 
 constexpr double kTxnReserveSlack = 1.05;
 
@@ -100,7 +98,7 @@ std::vector<transactions::Transaction> Simulator::run() {
   PL_LOG_DEBUG(sim, "warm-start applied for %zu spenders",
                run.population().spenders.size());
 
-  auto &stats = diag::spending::Stats::instance();
+  auto &stats = diagnostics::Stats::instance();
   stats.reset();
 
   const auto runStartTs = std::chrono::steady_clock::now();

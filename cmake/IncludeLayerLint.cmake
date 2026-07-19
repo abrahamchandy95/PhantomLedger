@@ -40,7 +40,12 @@
 #                                (namespace relationships::social; the
 #                                commerce view now names the true
 #                                origin)
-#   OPEN (reported; each is an untangling-round work item; the two
+#     diagnostics -> activity    spending-emission Stats moved INTO the
+#                                spending layer: activity/spending/
+#                                diagnostics.{hpp,cpp} (namespace
+#                                activity::spending::diagnostics);
+#                                pl_diagnostics keeps the logger only
+#   OPEN (reported; both are untangling-round work items; both
 #   symbol-level cycles are DECLARED in the root CMakeLists so link
 #   order is correct on every linker in the meantime):
 #     activity -> transfers      spending session/driver/day_driver
@@ -50,10 +55,6 @@
 #     transfers -> pipeline      legit/assembly consumes pipeline/
 #                                chunk schedule + data (symbol-level
 #                                CYCLE with pipeline -> transfers)
-#     diagnostics -> activity    spending_stats uses spending/routing/
-#                                channel.hpp (header-only; fix: move
-#                                spending_stats UP into activity — its
-#                                only consumers are the simulator TUs)
 #
 # Two things are ALWAYS fatal, report mode or not, audit-style:
 #   * a file whose path maps to no known layer;
