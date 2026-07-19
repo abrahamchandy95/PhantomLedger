@@ -21,7 +21,7 @@
 #                                clearing book (soft screens, emission
 #                                gate) — transactions sits below
 #                                activity; pl_activity links pl_ledger.
-#   CLOSED (untangling round, 2026-07-19 — colocate by consumer):
+#   CLOSED (untangling rounds A/B, 2026-07-19 — colocate by consumer):
 #     primitives -> encoding     txn_readback moved to exporter/sinks/
 #     primitives -> entities     (both edges were txn_readback's; its
 #                                consumers were all export-side)
@@ -29,6 +29,11 @@
 #                                standard/ (filtering transactions is
 #                                an export view; synth never reads the
 #                                corpus)
+#     taxonomies -> entities     the institutional account catalog
+#                                moved to entities/
+#                                institutional_accounts.hpp (it IS
+#                                entity-key vocabulary; namespace
+#                                counterparties unchanged)
 #   OPEN (reported; each is an untangling-round work item; the two
 #   symbol-level cycles are DECLARED in the root CMakeLists so link
 #   order is correct on every linker in the meantime):
@@ -40,11 +45,13 @@
 #                                chunk schedule + data (symbol-level
 #                                CYCLE with pipeline -> transfers)
 #     relationships -> activity  social/builder uses spending/market/
-#                                commerce/contacts.hpp (header-only)
+#                                commerce/contacts.hpp (header-only;
+#                                fix: move Contacts to its producer,
+#                                relationships/social/)
 #     diagnostics -> activity    spending_stats uses spending/routing/
-#                                channel.hpp (header-only)
-#     taxonomies -> entities     counterparties/accounts.hpp uses
-#                                entities/identifiers.hpp (header-only)
+#                                channel.hpp (header-only; fix: move
+#                                spending_stats UP into activity — its
+#                                only consumers are the simulator TUs)
 #
 # Two things are ALWAYS fatal, report mode or not, audit-style:
 #   * a file whose path maps to no known layer;

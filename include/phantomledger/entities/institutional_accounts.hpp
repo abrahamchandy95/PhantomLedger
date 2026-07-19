@@ -1,4 +1,15 @@
 #pragma once
+//
+// phantomledger/entities/institutional_accounts.hpp
+//
+// The institutional account catalog: fixed entity::Key constants for
+// the external counterparties every simulation shares — government
+// benefit payers (SSA/disability), insurance carriers, lenders and the
+// IRS — with enum-keyed constexpr lookup. Lives in entities because it
+// IS entity-key vocabulary (untangling round, 2026-07-19: the former
+// home under taxonomies/ made the lowest vocabulary layer depend on
+// entities above it).
+//
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/counterparties/types.hpp"

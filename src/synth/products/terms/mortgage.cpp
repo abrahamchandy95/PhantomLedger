@@ -1,8 +1,8 @@
 #include "phantomledger/synth/products/terms/mortgage.hpp"
 
+#include "phantomledger/entities/institutional_accounts.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
-#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -68,6 +68,11 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
 
   constexpr std::int32_t kMortgageTermMonths = 360;
 
+  // SUSPECTED DEFECT (flagged 2026-07-19, owner-gated): mortgage
+  // payments route to Lending::studentServicer, not Lending::mortgage.
+  // Correcting it changes corpus bytes (counterparty key on every
+  // mortgage row), so it is a model round with golden re-pins — kept
+  // verbatim here; test_counterparties pins the key table itself.
   addInstallmentProduct(loans, obligations, window_,
                         InstallmentIssue{
                             .person = person,

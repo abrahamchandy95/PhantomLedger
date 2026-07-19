@@ -50,6 +50,7 @@
 // runs; the profile scales safely with it.
 //
 
+#include "phantomledger/entities/institutional_accounts.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/acceptance/fingerprint.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
@@ -73,7 +74,6 @@
 #include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
-#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"

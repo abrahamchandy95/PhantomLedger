@@ -1,5 +1,6 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
+#include "phantomledger/entities/institutional_accounts.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
@@ -15,7 +16,6 @@
 #include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
-#include "phantomledger/taxonomies/counterparties/accounts.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
