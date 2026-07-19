@@ -20,7 +20,6 @@ namespace {
 
 namespace cdf = ::PhantomLedger::probability::distributions;
 namespace probdist = ::PhantomLedger::probability::distributions;
-namespace commerce = ::PhantomLedger::activity::spending::market::commerce;
 
 [[nodiscard]] std::vector<double>
 buildAttractiveness(random::Rng &rng, std::uint32_t personCount,
@@ -114,7 +113,7 @@ private:
 
 } // namespace
 
-commerce::Contacts build(const Social &cfg, const BuildInputs &inputs) {
+Contacts build(const Social &cfg, const BuildInputs &inputs) {
   if (inputs.personCount == 0) {
     return {};
   }
@@ -135,8 +134,7 @@ commerce::Contacts build(const Social &cfg, const BuildInputs &inputs) {
                                cfg.crossProb());
 
   auto contactsRng = factory.rng({"social", "contacts"});
-  commerce::Contacts contacts(inputs.personCount,
-                              static_cast<std::uint16_t>(degree));
+  Contacts contacts(inputs.personCount, static_cast<std::uint16_t>(degree));
 
   ContactRowBuilder rows{sampler, cfg.tieStrengthShape, contactsRng,
                          static_cast<std::uint32_t>(degree)};

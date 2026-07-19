@@ -1,11 +1,21 @@
 #pragma once
+//
+// phantomledger/relationships/social/contacts.hpp
+//
+// The contact matrix: each person's fixed-width row of weighted P2P
+// contacts, flat-packed. PRODUCED by the social graph builder
+// (relationships/social/builder) and consumed by the spending market's
+// commerce view — it lives with its producer (untangling round B2,
+// 2026-07-19: the former home under activity/spending/market/commerce/
+// made the world layer depend on activity above it).
+//
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <vector>
 
-namespace PhantomLedger::activity::spending::market::commerce {
+namespace PhantomLedger::relationships::social {
 
 class Contacts {
 public:
@@ -38,4 +48,4 @@ private:
   std::vector<std::uint32_t> flat_;
 };
 
-} // namespace PhantomLedger::activity::spending::market::commerce
+} // namespace PhantomLedger::relationships::social

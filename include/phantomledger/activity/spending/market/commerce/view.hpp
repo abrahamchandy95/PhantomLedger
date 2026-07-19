@@ -1,8 +1,8 @@
 #pragma once
 
-#include "phantomledger/activity/spending/market/commerce/contacts.hpp"
 #include "phantomledger/activity/spending/market/commerce/favorites.hpp"
 #include "phantomledger/entities/merchants.hpp"
+#include "phantomledger/relationships/social/contacts.hpp"
 
 #include <cstdint>
 #include <limits>
@@ -100,7 +100,8 @@ public:
   View() = default;
 
   View(MerchantSelection selection, AssignedPayees payees,
-       ShopperActivity activity, Contacts contacts) noexcept
+       ShopperActivity activity,
+       relationships::social::Contacts contacts) noexcept
       : selection_(std::move(selection)), payees_(std::move(payees)),
         activity_(std::move(activity)), contacts_(std::move(contacts)) {}
 
@@ -142,9 +143,14 @@ public:
     return activity_.burstLen(personIndex);
   }
 
-  [[nodiscard]] const Contacts &contacts() const noexcept { return contacts_; }
+  [[nodiscard]] const relationships::social::Contacts &
+  contacts() const noexcept {
+    return contacts_;
+  }
 
-  [[nodiscard]] Contacts &contactsMutable() noexcept { return contacts_; }
+  [[nodiscard]] relationships::social::Contacts &contactsMutable() noexcept {
+    return contacts_;
+  }
 
   // Mutator used during month-boundary evolution. Marked clearly.
   [[nodiscard]] std::vector<double> &merchCdf() noexcept {
@@ -155,7 +161,7 @@ private:
   MerchantSelection selection_;
   AssignedPayees payees_;
   ShopperActivity activity_;
-  Contacts contacts_;
+  relationships::social::Contacts contacts_;
 };
 
 } // namespace PhantomLedger::activity::spending::market::commerce

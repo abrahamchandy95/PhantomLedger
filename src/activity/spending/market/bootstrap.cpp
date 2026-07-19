@@ -144,8 +144,8 @@ private:
   return cards;
 }
 
-[[nodiscard]] commerce::Contacts buildSocialContacts(std::uint32_t personCount,
-                                                     std::uint64_t baseSeed) {
+[[nodiscard]] social::Contacts buildSocialContacts(std::uint32_t personCount,
+                                                   std::uint64_t baseSeed) {
   return social::build(social::kDefaultSocial, social::BuildInputs{
                                                    .personCount = personCount,
                                                    .hubFlags = {},
@@ -235,7 +235,7 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
   commerce::ShopperActivity activity{
       std::move(exploreProp), std::move(burstStart), std::move(burstLen)};
 
-  commerce::Contacts contacts =
+  social::Contacts contacts =
       buildSocialContacts(sources.census.count, sources.baseSeed);
 
   commerce::View commerceView(std::move(selection), std::move(assignedPayees),

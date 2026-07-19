@@ -21,7 +21,8 @@
 #                                clearing book (soft screens, emission
 #                                gate) — transactions sits below
 #                                activity; pl_activity links pl_ledger.
-#   CLOSED (untangling rounds A/B, 2026-07-19 — colocate by consumer):
+#   CLOSED (untangling rounds A/B, 2026-07-19 — colocate by consumer /
+#   producer):
 #     primitives -> encoding     txn_readback moved to exporter/sinks/
 #     primitives -> entities     (both edges were txn_readback's; its
 #                                consumers were all export-side)
@@ -34,6 +35,11 @@
 #                                institutional_accounts.hpp (it IS
 #                                entity-key vocabulary; namespace
 #                                counterparties unchanged)
+#     relationships -> activity  Contacts moved to its PRODUCER:
+#                                relationships/social/contacts.hpp
+#                                (namespace relationships::social; the
+#                                commerce view now names the true
+#                                origin)
 #   OPEN (reported; each is an untangling-round work item; the two
 #   symbol-level cycles are DECLARED in the root CMakeLists so link
 #   order is correct on every linker in the meantime):
@@ -44,10 +50,6 @@
 #     transfers -> pipeline      legit/assembly consumes pipeline/
 #                                chunk schedule + data (symbol-level
 #                                CYCLE with pipeline -> transfers)
-#     relationships -> activity  social/builder uses spending/market/
-#                                commerce/contacts.hpp (header-only;
-#                                fix: move Contacts to its producer,
-#                                relationships/social/)
 #     diagnostics -> activity    spending_stats uses spending/routing/
 #                                channel.hpp (header-only; fix: move
 #                                spending_stats UP into activity — its

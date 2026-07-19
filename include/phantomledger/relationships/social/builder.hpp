@@ -1,7 +1,7 @@
 #pragma once
 
-#include "phantomledger/activity/spending/market/commerce/contacts.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/relationships/social/contacts.hpp"
 
 #include <algorithm>
 #include <cstdint>
@@ -54,7 +54,6 @@ struct BuildInputs {
   std::uint64_t baseSeed = 0;
 };
 
-[[nodiscard]] activity::spending::market::commerce::Contacts
-build(const Social &social, const BuildInputs &inputs);
+[[nodiscard]] Contacts build(const Social &social, const BuildInputs &inputs);
 
 } // namespace PhantomLedger::relationships::social
