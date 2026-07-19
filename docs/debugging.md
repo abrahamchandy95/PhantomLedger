@@ -110,15 +110,15 @@ infrastructure only (serverless corpus-digest escape).
 
 `PL_LOG_EVERY_N(level, topic, n, ...)` exists in code for rate-limited
 hot-path sites; and `kCompileMinLevel` in
-`libs/diagnostics/include/phantomledger/diagnostics/logger.hpp` is the
-compile-time floor — tighten it to strip DEBUG/TRACE call sites from a
-release binary entirely.
+`include/phantomledger/diagnostics/logger.hpp` is the compile-time
+floor — tighten it to strip DEBUG/TRACE call sites from a release
+binary entirely.
 
 ### Adding a topic
 
 1. Add the enumerator before `kCount` in `diagnostics::Topic`
-   (`libs/diagnostics/include/phantomledger/diagnostics/logger.hpp`).
-2. Name it in `Logger::topicName` (`libs/diagnostics/src/logger.cpp`).
+   (`include/phantomledger/diagnostics/logger.hpp`).
+2. Name it in `Logger::topicName` (`src/diagnostics/logger.cpp`).
 3. Document it in the topics table above.
 
 ---

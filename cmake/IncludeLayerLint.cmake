@@ -14,11 +14,12 @@
 # refactor branches; never merge with it off. The DAG itself changes
 # only by deliberate amendment in a named commit.
 #
-# L3 PHYSICAL LAYOUT (2026-07-19): one module directory per layer —
-# libs/<layer>/{include/phantomledger/<layer>/..., src/...}. The path
-# mapper derives the layer from the module directory and, for headers,
-# FATALs when the module and the include-path layer disagree, so a
-# header can never be filed under the wrong module.
+# TWO-TREE LAYOUT (owner directive, 2026-07-19): headers and sources
+# are separate, mirrored layer-by-layer in the LLVM style —
+# include/phantomledger/<layer>/... beside src/<layer>/... — with the
+# project prefix appearing exactly once. The path mapper derives the
+# layer from the first directory under src/ or include/phantomledger/.
+# This lint is the DAG's enforcement.
 #
 # FINDINGS LEDGER (full-tree scan 2026-07-19, this DAG):
 #   AMENDED (legal by design):
@@ -76,9 +77,8 @@
 #   OPEN: none — the report reached clean at round C-2 and the
 #   PL_LAYER_LINT_FATAL default flipped ON in the L2 close-out commit.
 #
-# Three things are ALWAYS fatal, escape hatch or not, audit-style:
+# Two things are ALWAYS fatal, escape hatch or not, audit-style:
 #   * a file whose path maps to no known layer;
-#   * a header whose module directory and include-path layer disagree;
 #   * an include of an unknown "phantomledger/<component>".
 # The layer map must be complete, or the lint is theater.
 
@@ -87,8 +87,8 @@ option(PL_LAYER_LINT_FATAL
 
 # ------------------------------------------------------------- the DAG
 #
-# Vocabulary trees (header-only INTERFACE targets, the shared language —
-# any job layer may include them; they themselves may only look down):
+# Vocabulary trees (header-only, the shared language — any job layer
+# may include them; they themselves may only look down):
 #   taxonomies   enum/type vocabulary            -> (nothing)
 #   entities     keys, records, registries       -> primitives, taxonomies
 #   encoding     ID rendering/parsing layouts    -> + entities
@@ -139,22 +139,12 @@ set(PL_LINT_ALLOWED_app
 
 # ------------------------------------------------------------- helpers
 
-# Layer of a repo-relative path (L3 layout):
-#   libs/<layer>/src/...                              -> <layer>
-#   libs/<layer>/include/phantomledger/<layer>/...    -> <layer>
-# A header whose module and include-path layer disagree is FATAL;
-# anything else unmapped -> "".
+# Layer of a repo-relative path: src/<layer>/... or
+# include/phantomledger/<layer>/... . Unmapped -> "".
 function(pl_lint_layer_of path out)
-    if(path MATCHES "^libs/([a-zA-Z0-9_]+)/src/")
+    if(path MATCHES "^src/([a-zA-Z0-9_]+)/")
         set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
-    elseif(path MATCHES
-           "^libs/([a-zA-Z0-9_]+)/include/phantomledger/([a-zA-Z0-9_]+)/")
-        if(NOT CMAKE_MATCH_1 STREQUAL CMAKE_MATCH_2)
-            message(FATAL_ERROR
-                "include-layer lint: '${path}' lives in module "
-                "'${CMAKE_MATCH_1}' but its include path claims layer "
-                "'${CMAKE_MATCH_2}' — module and layer must agree")
-        endif()
+    elseif(path MATCHES "^include/phantomledger/([a-zA-Z0-9_]+)/")
         set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
     else()
         set(${out} "" PARENT_SCOPE)
@@ -164,21 +154,14 @@ endfunction()
 # ------------------------------------------------------------ the lint
 #
 # Call with the full list of repo-relative translation units (the
-# audit union plus libs/app/src/main.cpp); project headers are
-# discovered from every module's include tree so the lint and the
-# build can never disagree about the header set. Both quote and
-# angle-bracket include forms are scanned.
+# audit union plus src/app/main.cpp); project headers are discovered
+# here so the lint and the build can never disagree about the header
+# set. Both quote and angle-bracket include forms are scanned.
 
 function(pl_run_include_layer_lint)
-    file(GLOB _lintModuleIncludeDirs CONFIGURE_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/libs/*/include")
-
-    set(_lintHeadersAbs)
-    foreach(dir IN LISTS _lintModuleIncludeDirs)
-        file(GLOB_RECURSE _dirHeaders CONFIGURE_DEPENDS
-            "${dir}/phantomledger/*.hpp")
-        list(APPEND _lintHeadersAbs ${_dirHeaders})
-    endforeach()
+    file(GLOB_RECURSE _lintHeadersAbs CONFIGURE_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/phantomledger/*.hpp"
+    )
 
     set(_lintFiles ${ARGN})
     foreach(hdr IN LISTS _lintHeadersAbs)
