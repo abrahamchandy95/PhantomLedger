@@ -18,14 +18,20 @@ explicit spool files, never OS paging.
 |---|---|---|---|
 | pre-releases (200k) | 14.6 GB | — | worldTotal 538 MB |
 | post R2.1→R2.4a | 4653 MB | 5488 MB | fold adds +835 over prologue |
-| post R2.4b-2 | 4654 MB | **5219 MB** | fold adds +565; **digest, row count and book hash identical to the resident-span run** — spool byte-identity proven end-to-end; spooling cost ~2 s in 751 s |
+| post R2.4b-2 | 4654 MB | 5219 MB | digest, row count and book hash identical to the resident-span run — spool byte-identity proven end-to-end; spooling cost ~2 s in 751 s |
+| post R2.4b-3 | **2839 MB** | **5130 MB** | `replayReady=0` on every prologue line; output identical again; **the peak moved INTO the phase-A fold** (`screenedSpooled` 3680 → `phaseA` 5130) |
 
-**Peak anatomy:** the prologue peak is set by TRANSIENTS — vector
-reallocation doubling in `TxnStreams::add`'s two `addSortedView` paths
-(old+new buffers coexist during growth; +988 MB ≈ 2 x 4.85M x 100 B at
-`internal`) stacked on ~1 GB of steady-state streams (two 481 MB
-views). `SeededScreen::sorted` is a view (no copy). After b-2 the
-prologue is the run's RAM floor.
+**Peak anatomy (post b-3):** the prologue now carries one view
+(`screened`, 481 MB steady, plus its reallocation-doubling transients in
+`TxnStreams::add` ⇒ the 2839 MB floor). The run peak accrues INSIDE the
+phase-A fold: +1449 MB above the spooled baseline, in buffers the design
+says are bounded (`preStage_` compacts per settled span; the
+accumulator's pending queue drains per chunk; phase B's stages erase
+consumed prefixes). Unmeasured suspects: the 3-month generation chunks
+(~2.3M rows staged per `Session::advance` at this scale), `mergeSorted`'s
+old+new coexistence in `stagePreRows`, the pending queue's 136-B
+`QueuedItem`s, and settled batches awaiting `takeSettledBefore`.
+R2.4c.0 instruments exactly these.
 
 ## Delivered
 
@@ -48,31 +54,37 @@ prologue is the run's RAM floor.
   `BaseReplaySpool` (5-field records, exact `advanceBookThrough`
   mirror), `replayReady` via `BinaryCandidateSpool`/`BinarySpoolCursor`
   (bit-identical records, audit-order verified). Fold-resident base
-  stream → two bounded buffers + temp files. Measured above.
+  stream → two bounded buffers + temp files.
+- **R2.4b-3** — prologue single-view build:
+  `TxnStreams::deferReplayView()` (windowed composition only; the
+  monolithic oracle keeps both views); replay order derived ONCE at
+  spool time via `sortForReplay` — equal to the retired incremental
+  merge because `fundsLess` (auditKey) is total for every
+  output-affecting purpose (rows comparing equal are byte-identical,
+  the S10 re-pin). Measured: prologue 4654 → 2839 MB, run peak
+  5219 → 5130 MB, output identical.
 
-## R2.4b-3 — prologue single-view build (NEXT)
+## R2.4c — fold residency (CURRENT)
 
-The prologue is now the floor (4.65 GB at 20k ⇒ ~46 GB at 200k). The
-chosen mechanism, from the measured anatomy:
+The run peak now accrues inside the phase-A fold, not the prologue.
 
-1. **Stop maintaining `replayReady` during accumulation.** Both views
-   end on disk anyway (b-2); only `screened` is consumed DURING the
-   prologue (SeededScreens, spending prep). `TxnStreams::add` keeps
-   merging the timestamp view only; at spool time the replay-ready
-   order is derived ONCE — copy `screened`, `sortForReplay`, spool,
-   free. Halves the steady stream cost and removes half the doubling
-   transients; the one-shot sort transient replaces a prologue-long
-   resident vector. BYTE-IDENTITY WATCH: today `replayReady` is built
-   by incremental stable merges of per-batch `fundsLess`-sorted adds;
-   a one-shot `sortForReplay` over the same rows yields the same order
-   ONLY because `fundsLess` (auditKey) is total for every
-   output-affecting purpose (rows comparing equal are byte-identical —
-   the S10 re-pin). State this in the round and let
-   production_windowed + goldens judge.
-2. Measure; if the remaining view's doubling transients still bound
-   the peak, follow with an exact reserve or batch-to-disk merge.
+1. **R2.4c.0 — inventory (this round).** Per-generation-span
+   `phaseA:gen` probe in the windowed driver (`preStage` /
+   `prePending` / `preSettled` rows via
+   `ChronoReplayAccumulator::{pendingRows,settledRows}`), plus
+   `sessionPrepared` / `baseSpooled` timeline probes in windowed_run so
+   session construction and the one-shot replay sort are separable from
+   the fold's own growth. Diagnostic-only, `mem`-gated.
+2. Measurement decides the lever. Candidates, all residency-only with
+   zero CLI surface: a smaller default generation chunk (the
+   window-invariance gates prove output does not depend on chunking —
+   the RNG-lane design exists precisely so window boundaries cannot
+   move draws); exact reserves or bounded batch merges in
+   `stagePreRows`; tighter settled-batch draining if `preSettled`
+   dominates.
 
-The monolithic oracle keeps both views (library-level; untouched).
+The monolithic oracle keeps both views and full spans (library-level;
+untouched).
 
 ## Remaining after R2.4
 

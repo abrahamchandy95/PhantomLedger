@@ -181,6 +181,12 @@ WindowedRunResult TransferStage::runWindowedErased(
       prologue.plan.seed(), rng, *prologue.txf, market, obligations, screenBook,
       std::move(inputs));
 
+  // RAM R2.4c.0: timeline probes — separate session construction and the
+  // one-shot replay sort from the fold's own growth (the run peak now
+  // accrues inside Phase A; windowed_driver.cpp carries the per-span
+  // probe).
+  pipeline::diagnostics::logStageMem("sessionPrepared", {});
+
   // 3. Window-independent cursor sources, precomputed at this fixed
   // sequence point. Products and family draw only from their dedicated
   // lanes and route from their pristine snapshots, so their generation
@@ -205,6 +211,8 @@ WindowedRunResult TransferStage::runWindowedErased(
     baseSpool.finish();
   } // replayRows freed here
   auto baseSource = baseSpool.openCursor();
+
+  pipeline::diagnostics::logStageMem("baseSpooled", {});
 
   const transactions::Factory productTxf(rng, &productRouter,
                                          &infra.ringInfra);

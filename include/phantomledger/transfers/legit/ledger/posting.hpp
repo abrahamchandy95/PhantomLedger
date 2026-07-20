@@ -159,6 +159,19 @@ public:
   [[nodiscard]] std::vector<transactions::Transaction>
   takeSettledBefore(std::int64_t boundExcl);
 
+  // RAM R2.4c.0 diagnostics ([mem] fold-residency probes): rows the fold
+  // retains right now. Settled rows await takeSettledBefore(); pending
+  // rows are queued in-flight (future timestamps, retries) at ~136 B
+  // each (QueuedItem), so the probe's txn-sized ~MB label understates
+  // them by roughly a third.
+  [[nodiscard]] std::size_t settledRows() const noexcept {
+    return txns_.size();
+  }
+
+  [[nodiscard]] std::size_t pendingRows() const noexcept {
+    return pending_.size();
+  }
+
   [[nodiscard]] const std::vector<transactions::Transaction> &
   txns() const noexcept {
     return txns_;

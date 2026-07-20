@@ -1,6 +1,7 @@
 #include "phantomledger/pipeline/stages/transfers/windowed_driver.hpp"
 
 #include "phantomledger/diagnostics/logger.hpp"
+#include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/stages/transfers/window_sources.hpp"
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
@@ -144,6 +145,16 @@ PhaseAResult WindowedTransferDriver::runPhaseAErased(time::Window full,
         }
 
         settlePreSpans(finished, sink, summary);
+
+        // RAM R2.4c.0: fold-residency probe. The run peak now accrues
+        // inside Phase A, whose buffers are all bounded by design
+        // (preStage_ compacts per settled span; the pending queue drains
+        // per chunk). One line per generation span shows which retention
+        // actually carries the growth.
+        pipeline::diagnostics::logStageMem(
+            "phaseA:gen", {{"preStage", preStage_.size()},
+                           {"prePending", preAcc_->pendingRows()},
+                           {"preSettled", preAcc_->settledRows()}});
       };
 
   for (const auto &span : generationSchedule) {
