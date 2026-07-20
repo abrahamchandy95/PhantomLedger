@@ -67,7 +67,10 @@ buildBudget(const RunPlanner::TransactionLoad &load,
 
 [[nodiscard]] PreparedRun::LedgerReplay
 ledgerReplayFrom(const obligations::Snapshot &obligations) noexcept {
-  return PreparedRun::LedgerReplay{.txns = obligations.baseTxns};
+  return PreparedRun::LedgerReplay{
+      .span = SpanReplaySource{obligations.baseTxns},
+      .source = obligations.baseReplayOverride,
+  };
 }
 
 [[nodiscard]] PreparedRun::Paydays

@@ -153,8 +153,11 @@ std::vector<transactions::Transaction> DayDriver::takeEmitted(RunState &state) {
 void DayDriver::advanceLedgerToDay(const PreparedRun::LedgerReplay &replay,
                                    RunState &state,
                                    const actors::DayFrame &frame) const {
-  const auto newBaseIdx = clearing::advanceBookThrough(
-      ledger_, replay.txns, state.baseIdx(),
+  // RAM R2.4b-1: the replay feed is a seam (replay_source.hpp); the
+  // resident-span adapter makes the exact advanceBookThrough call this
+  // site always made. The cursor position stays caller-owned.
+  const auto newBaseIdx = replay.resolved().postThrough(
+      ledger_, state.baseIdx(),
       clearing::TimeBound{.until = time::toEpochSeconds(frame.day.start),
                           .inclusive = false});
 

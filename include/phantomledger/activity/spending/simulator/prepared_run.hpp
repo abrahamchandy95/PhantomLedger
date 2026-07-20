@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/activity/spending/replay_source.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/emission_result.hpp"
 #include "phantomledger/activity/spending/simulator/payday_index.hpp"
@@ -31,8 +32,18 @@ public:
     std::optional<std::uint32_t> personLimit;
   };
 
+  // The base-stream replay feed (RAM R2.4b-1, replay_source.hpp). The
+  // span adapter over the resident vector is the default; `source`
+  // overrides it when the caller supplies a non-resident feed (the
+  // R2.4b-2 disk spool). resolved() picks at use so the struct stays
+  // copy/move-safe (no self-referential pointer at rest).
   struct LedgerReplay {
-    std::span<const transactions::Transaction> txns;
+    SpanReplaySource span{};
+    const BaseReplaySource *source = nullptr;
+
+    [[nodiscard]] const BaseReplaySource &resolved() const noexcept {
+      return source != nullptr ? *source : span;
+    }
   };
 
   struct Paydays {
