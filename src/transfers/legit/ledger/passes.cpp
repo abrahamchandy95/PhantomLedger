@@ -440,6 +440,14 @@ void addRoutinesWithoutSpending(const RoutinePass &pass,
 
   addSplitDeposits(pass, plan, streams);
   memlog::log("routines:splitters", streams);
+
+  // RAM R2.4a: split deposits were the payday-inbound view's only
+  // consumer, and only income rows match its channel filter — nothing
+  // added below contributes to it. Release it now (and stop
+  // collecting); at 200k/730d this frees ~1.4 GB for the rest of the
+  // prologue and the whole fold. Output is unaffected.
+  streams.releasePaydayInbound();
+
   addRent(pass, plan, streams);
   memlog::log("routines:rent", streams);
   addSubscriptions(pass, plan, streams, screen);

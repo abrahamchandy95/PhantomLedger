@@ -15,91 +15,84 @@ diagnostics only.
 ## Measured baseline (owner-run, 2026-07-20, 200k people / 730 days)
 
 ```
-[mem]   people.roster            0.23 MB      [mem]   cps.merchants     0.40 MB
-[mem]   people.pii              14.50 MB      [mem]   cps.landlords     0.01 MB
-[mem]   people.personas         13.92 MB      [mem]   cps.directory     0.33 MB
-[mem]   holdings.accounts       39.03 MB      [mem]   infra.devices    53.67 MB
-[mem]   holdings.creditCards    16.66 MB      [mem]   infra.ips        21.79 MB
-[mem]   portfolios.terms        55.93 MB      [mem]   infra.ringPlans   0.03 MB
-[mem]   portfolios.obligations 265.17 MB      [mem]   infra.router~    56.79 MB
 [mem]   worldTotal             538.46 MB  (~2823 B/person)
-[mem] obligation stream: 5792713 events in window,
-      5792041 equal-timestamp adjacencies
-[mem:b] routines:done          peakRSS= 14638.4 MB  screened=48.4M (~4800 MB)
-                                                    replayReady=48.4M (~4800 MB)
-                                                    paydayInbound=14.6M (~1448 MB)
+        of which portfolios.obligations 265.17, portfolios.terms 55.93,
+        infra.router~ 56.79, infra.devices 53.67, holdings.accounts 39.03
+[mem] obligation stream: 5792713 events, 5792041 equal-timestamp adjacencies
+[mem:b] routines:done  peakRSS= 14638.4 MB   screened=48.4M (~4800 MB)
+                                             replayReady=48.4M (~4800 MB)
+                                             paydayInbound=14.6M (~1448 MB)
 ```
 
 Readings: (1) the prologue base stream (14.6 GB) dwarfs the world
-(538 MB) — the #1 wall (R2.4); (2) obligation ties are pervasive —
-day-granular timestamps — so the order had to be pinned before any
-windowed derivation; (3) world estimates held up.
+(538 MB); (2) obligation ties are pervasive — the order had to be
+pinned before windowed derivation; (3) world estimates held up.
 
 ## Delivered
 
 - **R2.0** — `logWorldFootprint` + this doc (measurement first).
-- **R2.1 + R2.3a — release + seed-replay rebuild.**
-  `releaseExportOnlyPacks(world)` frees pii + device/IP inventories for
-  the whole fold; `rebuildWorldForExport()` replays `buildWorldWith()`
-  from a fresh `Rng::fromSeed(seed)` (world-build draws are a prefix of
-  the shared stream ⇒ byte-identical); main.cpp frees the fold's world
-  before the replay. Released for plain/standard/card-fraud/aml/
-  aml-txn-edges (audited copy-at-bind); NOT for mule-ml (stream finish
-  reads devices/ips/pii → R2.3b).
-- **R2.2.0 — tie audit** (`logObligationTieAudit`): ties pervasive.
+- **R2.1 + R2.3a — release + seed-replay rebuild.** pii + device/IP
+  inventories freed for the whole fold; `rebuildWorldForExport()`
+  replays from a fresh `Rng::fromSeed(seed)` (world-build draws are a
+  prefix of the shared stream ⇒ byte-identical). Released for
+  plain/standard/card-fraud/aml/aml-txn-edges (audited copy-at-bind);
+  NOT mule-ml (stream finish reads the packs → R2.3b).
+- **R2.2.0 — tie audit**: ties pervasive (day-granular due dates).
 - **MODEL: obligation order pin** (owner-approved, goldens recaptured):
-  `ObligationStream::sort()` = `std::stable_sort` ⇒ pinned total order
-  (timestamp, then generation order). No model numbers changed; tie
-  order only. Prerequisite for everything below.
-- **R2.2.1a — windowed generator machinery** (zero behavior change):
-  `ObligationStream::restrictTo(start, endExcl)` (chunk-sized scratch
-  at append); `synthesize()` split into shared per-person `emitPerson()`
-  (construction/emit order verbatim — draw-order-defining);
-  `ObligationSynthesis::generateWindow(people, runWindow, start,
-  endExcl)` replays the core with scratch terms ledgers. Content-keyed
-  `personRng(seed, person)` + global append order + stable-sort tie
-  independence ⇒ the result equals the materialized stream's
-  `between()` slice byte-for-byte, from the same code path.
-- **R2.2.1b — fold-time release** (zero output change): in the windowed
-  path the stream's last consumers both run at fold start —
-  `makeProductSource` drafts the whole window's product transactions in
-  ONE pass over the events, and burden prep consumed its 3-month slice
-  during session preparation. `runWindowedErased` therefore releases
-  `portfolios.obligations()` immediately after the product source is
-  built (`[mem] obligationsReleased` marks it): the 265 MB
-  population x window-months pack is gone for the run's longest phase,
-  every use case. Holdings became mutable through the stage's windowed
-  entry points for exactly this one release (documented at the
-  signature); the finisher-time world rebuild re-materializes the
-  stream transiently where a use case takes the world back.
+  `stable_sort` ⇒ pinned total order (timestamp, then generation
+  order). Tie order only; no model numbers.
+- **R2.2.1a — windowed generator machinery**: `restrictTo` +
+  per-person `emitPerson()` core + `generateWindow()` — equals the
+  materialized `between()` slice byte-for-byte (content-keyed
+  `personRng`, global append order, stable-sort tie independence).
+- **R2.2.1b — fold-time obligation release**: both consumers finish at
+  fold start (burden prep's 3-month slice; `makeProductSource`'s
+  one-pass drafting), so `runWindowedErased` frees
+  `portfolios.obligations()` right after the product source is built
+  (`[mem] obligationsReleased`) — 265 MB gone for the fold, all use
+  cases. Stage windowed entry points take mutable Holdings for exactly
+  this release.
+- **R2.4a — payday-inbound release** (zero output change): verified
+  single consumer — `addSplitDeposits`, immediately after income; only
+  income rows match the channel filter, so nothing later contributes.
+  `TxnStreams::releasePaydayInbound()` (frees + stops collecting) is
+  called right after the splitters run, in BOTH engines (shared
+  passes). ~1.4 GB at 200k/730d, freed for the rest of the prologue and
+  the whole fold. The memlog lines after `routines:splitters` now show
+  paydayInbound=0 — that is the release, visible in the log timeline.
 
-## R2.2.1c — retire the materialization (NEXT in the R2.2 line)
+## R2.4b — the screened stream (NEXT design decision)
 
-What remains for "never materialized at all": `synthesize()` still
-builds the full stream at world build, because three consumers read it
-before the release point — burden prep (first 3 months only,
-order-insensitive), the windowed product source (one pass), and the
-monolithic oracle's `ProductTxnEmitter::obligations`. Scope: shrink
-`synthesize()`'s materialization to the 3-month burden slice (window-
-independent — kills the window-months term at build time too, and in
-the transient finisher rebuild); switch the windowed product source and
-the oracle emitter to `generateWindow` (plumbing: TransferStage needs
-the `ObligationSynthesis` config from `SimulationPipeline::products_`
-plus People through `makeProductSource`/`mergeProducts`; the gate
-harness passes the default-constructed synthesis it already mirrors).
-Layering note: burdens stay untouched precisely because the 3-month
-slice remains materialized — the transfers layer never needs the
-pipeline-layer generator.
+Verification results for the remaining two prologue copies:
 
-## Remaining after R2.2
+- **`screened` CANNOT simply be released**: its consumers are
+  `prepareMarket` (one aggregation pass → per-person payday sets),
+  `prepareObligations` (Snapshot spans it), and — the binding one —
+  `DayDriver::advanceLedgerToDay(PreparedRun::LedgerReplay …)`, which
+  walks the span EVERY DAY across the whole run to advance the screen
+  ledger. The consumption is **monotone forward** (day by day), so the
+  resident span can become a forward cursor over a sequentially spooled
+  stream (the BinaryCandidateSpool pattern — explicit files, never OS
+  paging): write `screened` to disk at prologue time in timestamp
+  order, stream it back per day. API change in the activity layer
+  (LedgerReplay span → cursor seam) + the Snapshot's span consumers
+  move to the prep aggregates they already produce. ~4.8 GB at
+  200k/730d.
+- **`replayReady`** already self-compacts: `PrecomputedCursorSource`
+  erases consumed prefixes during the fold. Front-loaded ~4.8 GB at
+  fold start; the same disk-spool seam removes it (write replay-sorted
+  rows to disk, cursor them back), reusing R2.4b's machinery.
 
-- **R2.4 — prologue windowing** (the measured #1, 14.6 GB): aggregate
-  consumers (payday sets, burdens) reduce to compact per-person
-  structures; the replay consumer needs rows in window order (windowed
-  generation or sequential disk spool). Verify first: post-bind reads
-  of the obligations Snapshot's baseTxns span; paydayInbound consumers;
-  income/routine generators' RNG regime (they share the sequential
-  stream — the R2.2 ordering lesson applies).
+Order of work: cursor seam design (activity layer) → spooled screened
+stream → spooled replay source. Gates: session/window/thread/arch
+equivalence + all goldens; `[mem:b]` lines bounded by cursor buffers.
+
+## Remaining after R2.4
+
+- **R2.2.1c** — retire the obligation materialization entirely (shrink
+  `synthesize()` to the window-independent 3-month burden slice; switch
+  both product emitters to `generateWindow`; plumbing via
+  `SimulationPipeline::products_`).
 - **R2.3b** — regenerable attribute view for mule-ml's stream-finish
   reads (the seam R3's shards plug into).
 - **R3** — population sharding (design doc first).

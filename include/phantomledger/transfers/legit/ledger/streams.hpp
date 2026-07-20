@@ -97,14 +97,25 @@ public:
     return std::move(replayReady_);
   }
 
+  // RAM R2.4a: the payday-inbound view has exactly one consumer — the
+  // split-deposit routine, immediately after income lands. Only income
+  // rows match the channel filter, so once split deposits have run the
+  // view is dead weight; releasing it also stops further collection.
+  void releasePaydayInbound() noexcept {
+    paydayInbound_ = {};
+    collectPaydayInbound_ = false;
+  }
+
   void add(std::vector<transactions::Transaction> items) {
     if (items.empty()) {
       return;
     }
 
-    for (const auto &txn : items) {
-      if (channels::isPaydayInbound(txn.session.channel)) {
-        paydayInbound_.push_back(txn);
+    if (collectPaydayInbound_) {
+      for (const auto &txn : items) {
+        if (channels::isPaydayInbound(txn.session.channel)) {
+          paydayInbound_.push_back(txn);
+        }
       }
     }
 
@@ -160,6 +171,7 @@ private:
   std::vector<transactions::Transaction> screened_;
   std::vector<transactions::Transaction> replayReady_;
   std::vector<transactions::Transaction> paydayInbound_;
+  bool collectPaydayInbound_ = true;
 };
 
 } // namespace PhantomLedger::transfers::legit::ledger
