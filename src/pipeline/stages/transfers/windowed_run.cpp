@@ -96,6 +96,13 @@ WindowedRunResult TransferStage::runWindowedErased(
     throw std::runtime_error("transfers::TransferStage::runWindowed: infra "
                              "not set; call .infra(out.infra) first");
   }
+  if (obligationSynthesis_ == nullptr) {
+    throw std::runtime_error(
+        "transfers::TransferStage::runWindowed: obligation synthesis not "
+        "set; call .obligationSynthesis(pipeline products) first (RAM "
+        "R2.2.1c: the product source replays it for the whole-window "
+        "obligation stream)");
+  }
   const auto &infra = *infra_;
   const auto scope = legit_.runScope();
 
@@ -216,19 +223,18 @@ WindowedRunResult TransferStage::runWindowedErased(
 
   const transactions::Factory productTxf(rng, &productRouter,
                                          &infra.ringInfra);
-  auto productSource =
-      makeProductSource(scope.window, scope.seed, rngFactory, productTxf,
-                        holdings, products_.insurancePrograms().claimRates);
+  auto productSource = makeProductSource(
+      scope.window, scope.seed, rngFactory, productTxf, people, holdings,
+      *obligationSynthesis_, products_.insurancePrograms().claimRates);
 
-  // RAM R2.2.1b: the product source above consumed the whole-window
-  // obligation stream in ONE pass (its drafts are precomputed), and the
-  // burden prep consumed its 3-month slice during session preparation.
-  // Nothing later in the fold reads the events, so release them now —
-  // for the run's longest phase the population x window-months pack is
-  // gone. ObligationSynthesis::generateWindow() regenerates any slice
-  // byte-identically on demand, and the finisher-time world rebuild
-  // re-materializes the stream transiently where a use case needs the
-  // world back. Output is unaffected.
+  // RAM R2.2.1b/c: the world's obligation pack — since R2.2.1c just the
+  // burden slice — was consumed by the burden prep during session
+  // preparation, and the product source above derived its own transient
+  // whole-window stream. Nothing later in the fold reads the pack, so
+  // release it now. ObligationSynthesis::generateWindow() regenerates
+  // any slice byte-identically on demand, and the finisher-time world
+  // rebuild re-materializes the slice where a use case needs the world
+  // back. Output is unaffected.
   holdings.portfolios.obligations() =
       ::PhantomLedger::entity::product::ObligationStream{};
   pipeline::diagnostics::logStageMem("obligationsReleased", {});

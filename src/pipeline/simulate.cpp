@@ -77,8 +77,8 @@ void runTransferStage(SimulationResult &result,
 
   const auto replaySchedule = pipeline::chunk::Schedule::partition(
       stage.legit().runScope().window, stage.settlementChunking());
-  auto productStream =
-      stage.mergeProducts(productRng, holdings, std::move(legitPayload.txns));
+  auto productStream = stage.mergeProducts(productRng, people, holdings,
+                                           std::move(legitPayload.txns));
   diagnostics::logStageMem("mergeProducts",
                            {{"productStream", productStream.size()}});
   auto candidate = stage.ledger().preFraudChunked(
@@ -206,8 +206,7 @@ SimulationPipeline::buildWorldWith(random::Rng &rng,
   diagnostics::logStageMem("worldInfra", {});
 
   // RAM R2 measurement: which packs hold the world's resident bytes,
-  // and whether the obligation stream's (timestamp) order is unique —
-  // the precondition for R2.2's windowed derivation
+  // plus the obligation burden slice's pinned-order audit
   // (docs/ram_derive_dont_store.md). Prints only under the mem topic.
   diagnostics::logWorldFootprint(out.people, out.holdings, out.counterparties,
                                  out.infra);
@@ -247,6 +246,10 @@ SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
   stage.infra(out.infra);
+  // RAM R2.2.1c: the product emitters replay THIS synthesis (the exact
+  // config that built the world's portfolio terms) for the transient
+  // whole-window obligation stream.
+  stage.obligationSynthesis(products_);
 
   runTransferStage(out, stage, *rng_);
   if (onPhase) {
@@ -263,6 +266,7 @@ SimulationPipeline::runWindowedTransfersErased(
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
   stage.infra(world.infra);
+  stage.obligationSynthesis(products_);
 
   auto out = stage.runWindowedErased(*rng_, world.people, world.holdings,
                                      world.counterparties, sink, options);

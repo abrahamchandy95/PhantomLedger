@@ -204,8 +204,12 @@ struct LegResult {
   if (opt.withProducts) {
     const pl::transactions::Factory productTxf(rng, &world.productRouter,
                                                &world.infra.ringInfra);
+    // The default-constructed synthesis is EXACTLY what built the gate
+    // world's portfolios (gate_world.hpp) — the emitter replays it for
+    // the transient whole-window obligation stream (RAM R2.2.1c).
     productSource = xfer::makeProductSource(
-        opt.window, opt.seed, rngFactory, productTxf, world.holdings,
+        opt.window, opt.seed, rngFactory, productTxf, world.people,
+        world.holdings, pl::pipeline::stages::products::ObligationSynthesis{},
         pl::transfers::insurance::ClaimRates{});
   }
 

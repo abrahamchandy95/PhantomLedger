@@ -1,5 +1,7 @@
 #include "phantomledger/pipeline/stages/products.hpp"
 
+#include "phantomledger/transfers/legit/ledger/burdens.hpp"
+
 namespace PhantomLedger::pipeline::stages::products {
 
 namespace productSynth = ::PhantomLedger::synth::products;
@@ -85,14 +87,28 @@ void ObligationSynthesis::synthesize(
   const auto population = static_cast<::PhantomLedger::entity::PersonId>(
       assignment.byPerson.size());
 
+  // RAM R2.2.1c: retain only the burden slice. buildMonthlyBurdens is
+  // the stream's sole resident reader, and both of its call sites (the
+  // opening-book burden buffer, the spending prep) query exactly
+  // [window.start, window.start + kBurdenWindowMonths x 30 days) — the
+  // same arithmetic as its addMonths helper. The full window is derived
+  // on demand by generateWindow(). Emission (and therefore every draw)
+  // is unchanged; out-of-slice events are dropped at append.
+  auto &obligations = holdings.portfolios.obligations();
+  obligations.restrictTo(
+      window.start,
+      time::addDays(window.start,
+                    30 * ::PhantomLedger::transfers::legit::ledger::
+                             kBurdenWindowMonths));
+
   for (::PhantomLedger::entity::PersonId person = 1; person <= population;
        ++person) {
     emitPerson(person, assignment.byPerson[person - 1], window,
                holdings.portfolios.loans(), holdings.portfolios.insurance(),
-               holdings.portfolios.obligations());
+               obligations);
   }
 
-  holdings.portfolios.obligations().sort();
+  obligations.sort();
 }
 
 ::PhantomLedger::entity::product::ObligationStream

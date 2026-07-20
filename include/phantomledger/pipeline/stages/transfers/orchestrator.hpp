@@ -81,6 +81,15 @@ public:
 
   TransferStage &infra(const pipeline::Infra &value);
 
+  // RAM R2.2.1c: the product emitters derive the whole-window obligation
+  // stream by replaying the world's product synthesis (the world retains
+  // only the burden slice). The pipeline wires its OWN synthesis config
+  // here — the exact object that built the world's portfolio terms —
+  // before mergeProducts() or runWindowed(). Required; both paths throw
+  // without it.
+  TransferStage &obligationSynthesis(
+      const stages::products::ObligationSynthesis &value) noexcept;
+
   // Chunking policy for the monolithic settlement replay (both folds in
   // pipeline/simulate.cpp). Chunking is orchestration policy, so it
   // lives pipeline-side (round C-2 — it previously rode along in the
@@ -95,7 +104,8 @@ public:
              const pipeline::Counterparties &cps) const;
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  mergeProducts(random::Rng &rng, const pipeline::Holdings &holdings,
+  mergeProducts(random::Rng &rng, const pipeline::People &people,
+                const pipeline::Holdings &holdings,
                 legit::ledger::LegitTxnStreams streams) const;
 
   [[nodiscard]] fraud_ns::Injector
@@ -111,10 +121,11 @@ public:
   // as they stream through, matching the monolithic posted-corpus
   // validation.
   //
-  // Holdings is mutable for exactly one reason (RAM R2.2.1b): the
-  // whole-window obligation stream is consumed ONCE, when the product
-  // source precomputes its drafts, and is released immediately after —
-  // nothing later in the fold reads it, and
+  // Holdings is mutable for exactly one reason (RAM R2.2.1b/c): the
+  // world's obligation pack — now just the burden slice — is consumed
+  // during session preparation and read by nothing later in the fold
+  // (the product source derives its own transient whole-window stream),
+  // so it is released at fold start.
   // ObligationSynthesis::generateWindow() regenerates any slice
   // byte-identically on demand. Output is unaffected.
   template <class S>
@@ -138,6 +149,7 @@ private:
   LedgerReplay ledger_{};
   FraudEmission fraud_{};
   const pipeline::Infra *infra_ = nullptr;
+  const stages::products::ObligationSynthesis *obligationSynthesis_ = nullptr;
   chunk::Strategy settlementChunking_{};
 
   // Pristine snapshot of the router, taken when infra() is set — before

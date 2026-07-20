@@ -22,7 +22,10 @@
 //
 //   premiums -> claims -> obligations
 //
-// and uses the same mergeReplaySorted() operation as ProductReplay.
+// and uses the same mergeReplaySorted() operation as ProductReplay. The
+// obligation events feeding the scheduler are derived transiently from the
+// supplied ObligationSynthesis (RAM R2.2.1c) — the world retains only the
+// burden slice.
 //
 // FRAUD
 // Fraud retains the legacy budget meaning. realizedBaseCount must be the
@@ -90,13 +93,17 @@ private:
 // product RNG lane. The supplied transaction factory is rebound to that
 // lane so device/IP routing draws are isolated as well. The primary-account
 // index is derived internally from holdings (primaryAccounts() is pure and
-// RNG-free): callers pass the world, not its derivations.
+// RNG-free): callers pass the world, not its derivations. The
+// obligationSynthesis must be the same configuration that built the world's
+// portfolio terms — the emitter replays it for the transient whole-window
+// obligation stream (RAM R2.2.1c); it is only read during this call.
 [[nodiscard]] std::unique_ptr<PrecomputedCursorSource>
-makeProductSource(time::Window window, std::uint64_t seed,
-                  const random::RngFactory &rngFactory,
-                  const transactions::Factory &txf,
-                  const pipeline::Holdings &holdings,
-                  ::PhantomLedger::transfers::insurance::ClaimRates claimRates);
+makeProductSource(
+    time::Window window, std::uint64_t seed,
+    const random::RngFactory &rngFactory, const transactions::Factory &txf,
+    const pipeline::People &people, const pipeline::Holdings &holdings,
+    const stages::products::ObligationSynthesis &obligationSynthesis,
+    ::PhantomLedger::transfers::insurance::ClaimRates claimRates);
 
 // Must be called only after authoritative pre-fraud replay has completed.
 //

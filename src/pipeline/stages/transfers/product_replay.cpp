@@ -21,8 +21,11 @@ namespace obligations = ::PhantomLedger::transfers::obligations;
 ProductTxnEmitter::ProductTxnEmitter(
     ::PhantomLedger::time::Window window, std::uint64_t seed,
     ::PhantomLedger::random::Rng &rng,
-    const ::PhantomLedger::transactions::Factory &txf) noexcept
-    : window_(window), seed_(seed), rng_(rng), txf_(txf) {}
+    const ::PhantomLedger::transactions::Factory &txf,
+    const ::PhantomLedger::pipeline::People &people,
+    const stages::products::ObligationSynthesis &obligationSynthesis) noexcept
+    : window_(window), seed_(seed), rng_(rng), txf_(txf), people_(&people),
+      obligationSynthesis_(&obligationSynthesis) {}
 
 std::vector<ProductTxnEmitter::Transaction>
 ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Holdings &holdings,
@@ -49,8 +52,18 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
     const PrimaryAccounts &primaryAccounts) {
   obligations::Population population{.primaryAccounts = &primaryAccounts};
   obligations::Scheduler scheduler{rng_, txf_};
-  return scheduler.generate(holdings.portfolios.loans(),
-                            holdings.portfolios.obligations(),
+
+  // RAM R2.2.1c (derive, don't store): the whole-window stream is
+  // replayed transiently — same content-keyed draws, same pinned total
+  // order, byte-identical to the between() slice of a materialized
+  // stream — consumed by the scheduler in this one pass and freed on
+  // return. The world retains only the burden slice
+  // (ObligationSynthesis::synthesize). The scheduler reads the REAL
+  // loan terms from holdings; only the event stream is derived.
+  const auto events = obligationSynthesis_->generateWindow(
+      *people_, window_, window_.start, window_.endExcl());
+
+  return scheduler.generate(holdings.portfolios.loans(), events,
                             ::PhantomLedger::time::HalfOpenInterval{
                                 .start = window_.start,
                                 .endExcl = window_.endExcl(),

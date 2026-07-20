@@ -47,6 +47,15 @@ public:
     return insurance_;
   }
 
+  // Materializes the portfolio terms (loans, insurance) for the whole
+  // window and — RAM R2.2.1c — retains obligation EVENTS only for the
+  // burden slice [window.start, window.start + kBurdenWindowMonths
+  // months), the stream's sole remaining resident reader
+  // (buildMonthlyBurdens: the opening-book burden buffer and the
+  // spending prep, both keyed to the window start). Both product
+  // emitters derive the full window transiently via generateWindow().
+  // The restriction drops at append, AFTER the draw, so the draw
+  // sequence is untouched.
   void synthesize(const People &people, Holdings &holdings,
                   time::Window window) const;
 
@@ -56,9 +65,9 @@ public:
   // in scratch ledgers and are discarded. Under the stream's pinned
   // total order (timestamp, then append order; stable sort) every
   // timestamp's tie group is independent, so the result is
-  // byte-identical to the corresponding between() slice of the
-  // synthesize()-materialized stream. `window` must be the FULL run
-  // window (emission draws depend on it), never the chunk.
+  // byte-identical to the corresponding between() slice of a
+  // fully-materialized stream. `window` must be the FULL run window
+  // (emission draws depend on it), never the chunk.
   [[nodiscard]] ::PhantomLedger::entity::product::ObligationStream
   generateWindow(const People &people, time::Window window,
                  time::TimePoint start, time::TimePoint endExcl) const;

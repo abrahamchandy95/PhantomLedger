@@ -19,19 +19,23 @@ explicit spool files, never OS paging.
 | pre-releases (200k) | 14.6 GB | — | worldTotal 538 MB |
 | post R2.1→R2.4a | 4653 MB | 5488 MB | fold adds +835 over prologue |
 | post R2.4b-2 | 4654 MB | 5219 MB | digest, row count and book hash identical to the resident-span run — spool byte-identity proven end-to-end; spooling cost ~2 s in 751 s |
-| post R2.4b-3 | **2839 MB** | **5130 MB** | `replayReady=0` on every prologue line; output identical again; **the peak moved INTO the phase-A fold** (`screenedSpooled` 3680 → `phaseA` 5130) |
+| post R2.4b-3 | **2839 MB** | 5130 MB | `replayReady=0` on every prologue line; output identical; the peak moved INTO the phase-A fold |
+| post R2.4c.0 | 2841 MB | **4494 MB** | probe verdict below; the −636 MB peak delta vs the previous (code-identical) run is allocator/OS variance — peaks are transient-set, not retention-set |
 
-**Peak anatomy (post b-3):** the prologue now carries one view
-(`screened`, 481 MB steady, plus its reallocation-doubling transients in
-`TxnStreams::add` ⇒ the 2839 MB floor). The run peak accrues INSIDE the
-phase-A fold: +1449 MB above the spooled baseline, in buffers the design
-says are bounded (`preStage_` compacts per settled span; the
-accumulator's pending queue drains per chunk; phase B's stages erase
-consumed prefixes). Unmeasured suspects: the 3-month generation chunks
-(~2.3M rows staged per `Session::advance` at this scale), `mergeSorted`'s
-old+new coexistence in `stagePreRows`, the pending queue's 136-B
-`QueuedItem`s, and settled batches awaiting `takeSettledBefore`.
-R2.4c.0 instruments exactly these.
+**R2.4c.0 probe verdict:** none of the fold's designed buffers carries
+the growth — `preStage` tops out ~100 MB (per-span compaction works),
+`prePending` stays under ~2k rows, `preSettled` always drains to the
+spool. Phase-A growth (+~700 MB over the spooled baseline) accrues in
+the first three generation spans and then goes FLAT: transient
+high-water (session per-window output, `stagePreRows` merge
+coexistence, allocator retention), not accumulation. There is no
+retention lever left in the fold worth a round — **R2.4 is banked.**
+
+**Peak anatomy (current):** the prologue carries one stream view
+(`screened`, 481 MB steady at 20k/730d, plus `TxnStreams::add`'s
+reallocation-doubling transients ⇒ the 2.8 GB floor); the fold adds
+bounded staging plus flat transients. Both parts scale with
+population × days (rows), not with population alone.
 
 ## Delivered
 
@@ -50,48 +54,44 @@ R2.4c.0 instruments exactly these.
 - **R2.4b-1** — base-stream replay seam (`BaseReplaySource` +
   `SpanReplaySource`; `Snapshot.baseReplayOverride` plug-in point;
   caller keeps `RunState::baseIdx`).
-- **R2.4b-2** — both fold copies on disk: `screened` via
-  `BaseReplaySpool` (5-field records, exact `advanceBookThrough`
-  mirror), `replayReady` via `BinaryCandidateSpool`/`BinarySpoolCursor`
-  (bit-identical records, audit-order verified). Fold-resident base
-  stream → two bounded buffers + temp files.
-- **R2.4b-3** — prologue single-view build:
-  `TxnStreams::deferReplayView()` (windowed composition only; the
-  monolithic oracle keeps both views); replay order derived ONCE at
-  spool time via `sortForReplay` — equal to the retired incremental
-  merge because `fundsLess` (auditKey) is total for every
-  output-affecting purpose (rows comparing equal are byte-identical,
-  the S10 re-pin). Measured: prologue 4654 → 2839 MB, run peak
-  5219 → 5130 MB, output identical.
+- **R2.4b-2** — both fold copies on disk (`BaseReplaySpool` 5-field
+  records mirroring `advanceBookThrough`; `BinaryCandidateSpool` reuse
+  for the base cursor).
+- **R2.4b-3** — prologue single-view build (`deferReplayView`; replay
+  order derived once at spool time — equal by fundsLess totality, S10).
+  Measured: prologue 4654 → 2839 MB, run peak 5219 → 5130 MB.
+- **R2.4c.0** — fold-residency inventory (`phaseA:gen` per-span probe,
+  `sessionPrepared`/`baseSpooled` timeline probes,
+  `ChronoReplayAccumulator::{pendingRows,settledRows}`). Verdict above;
+  probes stay as permanent instrumentation.
+- **R2.2.1c** — obligation materialization retired: `synthesize()`
+  retains ONLY the burden slice [window.start, +kBurdenWindowMonths x
+  30 days) — `buildMonthlyBurdens` (both call sites keyed to the window
+  start) is the stream's sole resident reader, and the obligation
+  `Scheduler` consumes strictly `between(window)`. Both product
+  emitters (`ProductTxnEmitter::obligations` — shared by the oracle's
+  `ProductReplay::merge` and the windowed `makeProductSource`) now
+  derive the whole-window stream transiently via `generateWindow`
+  (byte-identical: pinned total order ⇒ independent tie groups ⇒ the
+  restricted replay equals the materialized `between()` slice; the
+  scheduler's draws follow the events). Plumbing:
+  `TransferStage::obligationSynthesis(...)` wires the pipeline's OWN
+  synthesis config (the object that built the world's terms) into both
+  engines; `mergeProducts`/`makeProductSource` take People. The
+  population x window-months precompute is gone from the world — at
+  29-year windows this pack alone would have been ~390 MB at 20k.
 
-## R2.4c — fold residency (CURRENT)
+## Remaining
 
-The run peak now accrues inside the phase-A fold, not the prologue.
-
-1. **R2.4c.0 — inventory (this round).** Per-generation-span
-   `phaseA:gen` probe in the windowed driver (`preStage` /
-   `prePending` / `preSettled` rows via
-   `ChronoReplayAccumulator::{pendingRows,settledRows}`), plus
-   `sessionPrepared` / `baseSpooled` timeline probes in windowed_run so
-   session construction and the one-shot replay sort are separable from
-   the fold's own growth. Diagnostic-only, `mem`-gated.
-2. Measurement decides the lever. Candidates, all residency-only with
-   zero CLI surface: a smaller default generation chunk (the
-   window-invariance gates prove output does not depend on chunking —
-   the RNG-lane design exists precisely so window boundaries cannot
-   move draws); exact reserves or bounded batch merges in
-   `stagePreRows`; tighter settled-batch draining if `preSettled`
-   dominates.
-
-The monolithic oracle keeps both views and full spans (library-level;
-untouched).
-
-## Remaining after R2.4
-
-- **R2.2.1c** — retire the obligation materialization (3-month burden
-  slice at build; both product emitters on `generateWindow`).
 - **R2.3b** — regenerable attribute view for mule-ml's stream-finish
   reads (the seam R3's shards plug into).
+- **R2.5 — prologue windowing (design round FIRST).** The prologue's
+  resident `screened` stream scales with person-days: measured ~0.55 KB
+  per row at peak (steady + merge transients). The owner's
+  TabFormer-timeframe target (1991–2019, 10,592 days) puts the prologue
+  at ~38 GB for 20k people and ~95 GB for 50k — windowing the prologue
+  (generation AND its whole-stream aggregations: market paydays,
+  burdens, SeededScreens) is the prerequisite for that run at scale.
 - **R3** — population sharding (design doc first; post-R2 spine ≈
   400 B/person ⇒ 1B ≈ 400 GB on one box — sharding is the answer).
 

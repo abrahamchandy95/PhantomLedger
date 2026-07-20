@@ -94,8 +94,11 @@ portfolioTermsBytes(const entity::product::PortfolioRegistry &reg) noexcept {
          hashMapBytesFromSize(reg.loans().size(), sizeof(LoanEntry));
 }
 
-// The whole-window obligation schedule (retained at world build; the
-// windowed fold releases it after one-pass consumption — R2.2.1b).
+// The retained obligation events. Since RAM R2.2.1c this is only the
+// burden slice (the first kBurdenWindowMonths of the window); the full
+// window is derived on demand by ObligationSynthesis::generateWindow()
+// and the windowed fold releases even the slice at fold start
+// (R2.2.1b).
 [[nodiscard]] inline std::size_t
 obligationStreamBytes(const entity::product::PortfolioRegistry &reg) noexcept {
   return reg.obligations().size() * sizeof(entity::product::ObligationEvent);
@@ -228,12 +231,14 @@ inline void logWorldFootprint(const People &people, const Holdings &holdings,
 }
 
 // RAM R2.2 tie audit. HISTORY: this probe measured pervasive
-// equal-timestamp adjacencies (day-granular due dates), which gated the
-// owner-approved model round pinning the stream to a total order
-// (timestamp, then generation order — stable sort). The order is now
-// pinned; the count remains reported because it documents WHY windowed
-// regeneration is well-defined (tie groups are append-ordered, not
-// sort-arbitrary). Silent unless the mem topic is enabled.
+// equal-timestamp adjacencies (day-granular due dates) over the full
+// window, which gated the owner-approved model round pinning the stream
+// to a total order (timestamp, then generation order — stable sort).
+// The order is now pinned, and since R2.2.1c the world retains only the
+// burden slice — so the count below covers the RESIDENT slice; the full
+// window derives on demand. The report remains because it documents WHY
+// windowed regeneration is well-defined (tie groups are append-ordered,
+// not sort-arbitrary). Silent unless the mem topic is enabled.
 inline void logObligationTieAudit(
     const entity::product::PortfolioRegistry &portfolios,
     ::PhantomLedger::time::Window window) {
@@ -254,9 +259,9 @@ inline void logObligationTieAudit(
   }
 
   std::fprintf(stderr,
-               "[mem] obligation stream: %zu events in window, %zu "
-               "equal-timestamp adjacencies (order pinned: timestamp, "
-               "then generation order)\n",
+               "[mem] obligation burden slice: %zu events resident, %zu "
+               "equal-timestamp adjacencies (full window derives on "
+               "demand; order pinned: timestamp, then generation order)\n",
                events.size(), tieAdjacencies);
 }
 

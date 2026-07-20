@@ -40,6 +40,12 @@ TransferStage &TransferStage::infra(const pipeline::Infra &value) {
   return *this;
 }
 
+TransferStage &TransferStage::obligationSynthesis(
+    const stages::products::ObligationSynthesis &value) noexcept {
+  obligationSynthesis_ = &value;
+  return *this;
+}
+
 chunk::Strategy TransferStage::settlementChunking() const noexcept {
   return settlementChunking_;
 }
@@ -77,6 +83,18 @@ namespace {
   return *p;
 }
 
+[[nodiscard]] const stages::products::ObligationSynthesis &
+requireObligationSynthesis(const stages::products::ObligationSynthesis *p) {
+  if (p == nullptr) {
+    throw std::runtime_error(
+        "transfers::TransferStage: obligation synthesis not set; call "
+        ".obligationSynthesis(pipeline products) before generating product "
+        "rows (RAM R2.2.1c: the emitters replay it for the whole-window "
+        "obligation stream)");
+  }
+  return *p;
+}
+
 } // namespace
 
 legit::ledger::LegitTransferResult
@@ -101,9 +119,11 @@ TransferStage::buildLegit(::PhantomLedger::random::Rng &rng,
 
 std::vector<Transaction>
 TransferStage::mergeProducts(::PhantomLedger::random::Rng &rng,
+                             const pipeline::People &people,
                              const pipeline::Holdings &holdings,
                              legit::ledger::LegitTxnStreams streams) const {
   const auto &infra = requireInfra(infra_);
+  const auto &synthesis = requireObligationSynthesis(obligationSynthesis_);
   const auto scope = legit_.runScope();
   const auto primaryAccountsByPerson = primaryAccounts(holdings);
 
@@ -111,7 +131,8 @@ TransferStage::mergeProducts(::PhantomLedger::random::Rng &rng,
   // see the productRouter_ member comment in orchestrator.hpp.
   ::PhantomLedger::transactions::Factory productTxf{rng, &productRouter_,
                                                     &infra.ringInfra};
-  ProductTxnEmitter productEmitter{scope.window, scope.seed, rng, productTxf};
+  ProductTxnEmitter productEmitter{scope.window, scope.seed, rng,
+                                   productTxf,   people,     synthesis};
 
   return products_.merge(productEmitter, holdings, primaryAccountsByPerson,
                          streams);

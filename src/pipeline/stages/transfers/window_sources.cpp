@@ -99,7 +99,8 @@ std::unique_ptr<PrecomputedCursorSource>
 makeProductSource(
     time::Window window, std::uint64_t seed,
     const random::RngFactory &rngFactory, const transactions::Factory &txf,
-    const pipeline::Holdings &holdings,
+    const pipeline::People &people, const pipeline::Holdings &holdings,
+    const stages::products::ObligationSynthesis &obligationSynthesis,
     ::PhantomLedger::transfers::insurance::ClaimRates claimRates) {
   // Dedicated lane: product precomputation must not consume the persistent
   // Session's sequential generation RNG.
@@ -112,10 +113,7 @@ makeProductSource(
   const auto primaryByPerson = primaryAccounts(holdings);
 
   ProductTxnEmitter emitter{
-      window,
-      seed,
-      productRng,
-      productTxf,
+      window, seed, productRng, productTxf, people, obligationSynthesis,
   };
 
   std::vector<transactions::Transaction> merged;

@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/pipeline/data.hpp"
+#include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -21,8 +22,15 @@ class ProductTxnEmitter {
 public:
   using Transaction = transactions::Transaction;
 
-  ProductTxnEmitter(time::Window window, std::uint64_t seed, random::Rng &rng,
-                    const transactions::Factory &txf) noexcept;
+  // RAM R2.2.1c: the emitter derives the whole-window obligation stream
+  // transiently through `obligationSynthesis.generateWindow(people, ...)`
+  // — the world no longer retains it (synthesize keeps only the burden
+  // slice). The synthesis MUST be the same configuration that built the
+  // world's portfolio terms, or the replay is not a replay.
+  ProductTxnEmitter(
+      time::Window window, std::uint64_t seed, random::Rng &rng,
+      const transactions::Factory &txf, const pipeline::People &people,
+      const stages::products::ObligationSynthesis &obligationSynthesis) noexcept;
 
   [[nodiscard]] std::vector<Transaction>
   premiums(const pipeline::Holdings &holdings,
@@ -42,6 +50,8 @@ private:
   std::uint64_t seed_ = 0;
   random::Rng &rng_;
   const transactions::Factory &txf_;
+  const pipeline::People *people_ = nullptr;
+  const stages::products::ObligationSynthesis *obligationSynthesis_ = nullptr;
 };
 
 class ProductReplay {

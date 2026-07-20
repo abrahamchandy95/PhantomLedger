@@ -112,8 +112,12 @@ runSpendingLeg(const pltest::pl::synth::pii::PoolSet &poolSet,
 
     const pl::transactions::Factory productTxf(world.rng, &world.productRouter,
                                                &world.infra.ringInfra);
+    // Default synthesis == the gate world's build (gate_world.hpp); the
+    // emitter replays it for the transient whole-window obligation
+    // stream (RAM R2.2.1c).
     productSource = xfer::makeProductSource(
-        window, seed, rngFactory, productTxf, world.holdings,
+        window, seed, rngFactory, productTxf, world.people, world.holdings,
+        pl::pipeline::stages::products::ObligationSynthesis{},
         pl::transfers::insurance::ClaimRates{});
 
     auto preBook =
