@@ -187,15 +187,19 @@ WindowedRunResult TransferStage::runWindowedErased(
   // point cannot affect the session.
   const random::RngFactory rngFactory{scope.seed};
 
-  // RAM R2.4b-2 (base cursor): the replay-ready copy feeds the fold
-  // from disk through the candidate-spool machinery — full-fidelity
-  // records (bit-identical round trip, test_spool_equivalence), and
-  // replayReady's audit-order sort satisfies the cursor's row-by-row
-  // replay-order verification. The resident vector is freed as soon as
-  // the rows are on disk; the cursor reads one bounded buffer.
+  // RAM R2.4b-2/3 (base cursor): the prologue built only the screened
+  // view (deferReplayView); the replay order is derived ONCE here —
+  // fundsLess (auditKey) is total for every output-affecting purpose
+  // (S10: rows comparing equal are byte-identical), so this one-shot
+  // sort equals the retired incremental merge. The sorted rows go
+  // straight to disk through the candidate-spool machinery
+  // (bit-identical records, audit-order verified by the cursor) and
+  // the transient vector is freed; the fold reads one bounded buffer.
   BinaryCandidateSpool baseSpool;
   {
-    auto replayRows = prologue.streams.takeReplayReady();
+    auto replayRows = legit_ledger::sortForReplay(
+        std::vector<Txn>(prologue.streams.screened().begin(),
+                         prologue.streams.screened().end()));
     baseSpool.append(
         std::span<const Txn>(replayRows.data(), replayRows.size()));
     baseSpool.finish();

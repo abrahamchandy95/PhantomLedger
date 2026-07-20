@@ -223,6 +223,13 @@ WindowedPrologue LegitTransferBuilder::buildWindowedPrologue() const {
 
   WindowedPrologue out;
 
+  // RAM R2.4b-3: the windowed composition consumes only the screened
+  // view during the prologue; the replay order is derived ONCE at spool
+  // time (windowed_run.cpp). Skipping the second view halves the
+  // resident stream and its merge transients. The monolithic build()
+  // above keeps both views.
+  out.streams.deferReplayView();
+
   auto plan = blueprints::buildLegitBlueprint(timeframe_, census_);
   plan.addCounterparties(*rng_, census_, counterparties_, hubSelection_)
       .addPersonas(*rng_, timeframe_, personas_);

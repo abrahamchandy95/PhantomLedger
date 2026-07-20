@@ -112,6 +112,14 @@ public:
   // dead weight for the rest of the run.
   void releaseScreened() noexcept { screened_ = {}; }
 
+  // RAM R2.4b-3: the windowed prologue consumes only the screened view
+  // during generation and derives the replay order ONCE at spool time
+  // (windowed_run.cpp) — fundsLess is total for every output-affecting
+  // purpose (S10), so the one-shot sort equals the incremental merge
+  // this skips. Call before the first add(); the monolithic build
+  // keeps both views.
+  void deferReplayView() noexcept { maintainReplayView_ = false; }
+
   void add(std::vector<transactions::Transaction> items) {
     if (items.empty()) {
       return;
@@ -127,7 +135,9 @@ public:
 
     addSortedView(screened_, std::span<const transactions::Transaction>(items),
                   detail::timestampLess);
-    addSortedView(replayReady_, std::move(items), detail::fundsLess);
+    if (maintainReplayView_) {
+      addSortedView(replayReady_, std::move(items), detail::fundsLess);
+    }
   }
 
 private:
@@ -178,6 +188,7 @@ private:
   std::vector<transactions::Transaction> replayReady_;
   std::vector<transactions::Transaction> paydayInbound_;
   bool collectPaydayInbound_ = true;
+  bool maintainReplayView_ = true;
 };
 
 } // namespace PhantomLedger::transfers::legit::ledger
