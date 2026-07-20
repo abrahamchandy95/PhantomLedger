@@ -106,6 +106,12 @@ public:
     collectPaydayInbound_ = false;
   }
 
+  // RAM R2.4b-2: once the spending prep has aggregated the screened
+  // view (market paydays, burdens) and the windowed run has spooled it
+  // to disk for the day driver's ledger replay, the resident vector is
+  // dead weight for the rest of the run.
+  void releaseScreened() noexcept { screened_ = {}; }
+
   void add(std::vector<transactions::Transaction> items) {
     if (items.empty()) {
       return;

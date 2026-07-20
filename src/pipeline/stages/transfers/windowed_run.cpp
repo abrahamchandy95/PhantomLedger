@@ -22,9 +22,10 @@
 //                            -> fraud source -> Phase B -> sink
 //
 // Rows stream to the caller's sink; nothing transaction-scale is retained
-// here beyond the driver's bounded staging and (optionally) the on-disk
-// candidate spool. The final posted book is handed off in the result for
-// the AML exporters' account vertices.
+// here beyond the driver's bounded staging and the on-disk spools (the
+// Phase A/B candidate spool and the base-stream replay spool). The final
+// posted book is handed off in the result for the AML exporters' account
+// vertices.
 //
 
 #include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
@@ -33,6 +34,7 @@
 #include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
 #include "phantomledger/pipeline/stages/transfers/binary_spool.hpp"
+#include "phantomledger/pipeline/stages/transfers/replay_spool.hpp"
 #include "phantomledger/pipeline/stages/transfers/window_sources.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -157,7 +159,9 @@ WindowedRunResult TransferStage::runWindowedErased(
   const std::span<const Txn> baseTxns(prologue.streams.screened());
 
   auto market = routine.prepareMarket(census, payees, baseTxns);
-  const auto obligations = routineSpending::SpendingRoutine::prepareObligations(
+  // Mutable: the R2.4b-2 spool below rewires its replay feed BEFORE the
+  // session's first advance (the planner reads the snapshot then).
+  auto obligations = routineSpending::SpendingRoutine::prepareObligations(
       census, obligationSource, baseTxns, /*baseTxnsSorted=*/true);
 
   auto *screenBook = prologue.screen.fresh();
@@ -204,6 +208,20 @@ WindowedRunResult TransferStage::runWindowedErased(
   holdings.portfolios.obligations() =
       ::PhantomLedger::entity::product::ObligationStream{};
   pipeline::diagnostics::logStageMem("obligationsReleased", {});
+
+  // RAM R2.4b-2: the spending prep has aggregated everything it needs
+  // from the screened view (market paydays, burdens), and its only
+  // remaining consumer is the day driver's ledger replay — which now
+  // feeds from a sequential disk spool through the replay seam
+  // (replay_source.hpp). Same rows, same order, one bounded read
+  // buffer; the resident whole-window vector is freed here.
+  BaseReplaySpool replaySpool;
+  replaySpool.spool(std::span<const Txn>(prologue.streams.screened()));
+  replaySpool.seal();
+  obligations.baseReplayOverride = &replaySpool;
+  obligations.baseTxns = {};
+  prologue.streams.releaseScreened();
+  pipeline::diagnostics::logStageMem("screenedSpooled", {});
 
   auto familySource = std::make_unique<PrecomputedCursorSource>(
       legit_ledger::sortForReplay(
