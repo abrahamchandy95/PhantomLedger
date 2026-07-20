@@ -158,7 +158,7 @@ struct BackendPolicy {
 
 // ------------------------------------------------------------- summaries
 
-// Takes the world-scale counts by value: with the RAM R2.1 release/
+// Takes the world-scale counts by value: with the RAM R2 release/
 // rebuild flow the world object may be empty or rebuilt by the time the
 // summary prints, so the counts are captured right after the build.
 void printWindowedSummary(
@@ -266,16 +266,18 @@ void printCardFraudSummary(const pl::exporter::card_fraud::Summary &summary) {
 // (readback::buildBundle) — which the backend policy guarantees; under
 // the PL_FILE_ONLY harness escape it fails with its own clear error.
 //
-// RAM R2.1 (docs/ram_derive_dont_store.md): the transfer fold never
-// reads the PII roster or the device/IP inventories, so use cases
-// whose streaming exporter does not bind them either (standard,
-// card-fraud, plain) release those packs for the whole fold and — when
-// a finisher needs the world — rebuild it afterwards by replaying the
-// construction from the run seed (byte-identical: world-build draws
-// are a prefix of the shared sequential stream). mule-ml reads the
-// packs at stream finish and the aml family binds its streaming
-// context to the world, so both keep the world resident until R2.3's
-// regenerable attribute view.
+// RAM R2.1 + R2.3a (docs/ram_derive_dont_store.md): the transfer fold
+// never reads the PII roster or the device/IP inventories, and every
+// streaming exporter except mule-ml either never binds them (standard,
+// card-fraud) or COPIES what it needs at bind time (the aml family's
+// SharedContext and ShellStats own their data; their append paths read
+// only the transaction batch). Those use cases therefore release the
+// packs for the whole fold and — when a finisher needs the world —
+// rebuild it afterwards by replaying the construction from the run
+// seed (byte-identical: world-build draws are a prefix of the shared
+// sequential stream). mule-ml dereferences the packs at stream finish
+// (addDeviceUsageRanges / addIpUsageRanges / writePartyRows), so it
+// keeps the world resident until R2.3's regenerable attribute view.
 //
 // The retained-corpus reference implementation survives at the LIBRARY
 // level only (SimulationPipeline::run() + the corpus exportAll forms),
@@ -332,7 +334,7 @@ int runWindowedStream(
     world = pipeline.buildWorld(onPhase);
   } // genStage destructor prints trailing newline here
 
-  // Captured now: with the R2.1 release/rebuild flow the world object
+  // Captured now: with the R2 release/rebuild flow the world object
   // is not guaranteed to be populated when the summary prints.
   const auto worldPeopleCount = world.people.roster.roster.count;
   const auto worldAccountCount = world.holdings.accounts.registry.records.size();
@@ -417,12 +419,10 @@ int runWindowedStream(
     });
   }
 
-  // RAM R2.1: see the engine comment. Standard binds registry/lookup/
-  // membership, card-fraud binds cards/merchants, the plain run binds
-  // nothing — none of them reads the released packs again before the
-  // rebuild below.
-  const bool exportPacksReleased =
-      !(streamMuleMl || streamAml || streamAmlTxn);
+  // RAM R2.1 + R2.3a: see the engine comment. Every sink above except
+  // mule-ml has now copied (or never bound) what it needs from the
+  // released packs; nothing reads them again before the rebuild below.
+  const bool exportPacksReleased = !streamMuleMl;
   if (exportPacksReleased) {
     pl::pipeline::releaseExportOnlyPacks(world);
     mon.mark("export-only packs freed");
@@ -595,12 +595,13 @@ int runWindowedStream(
               static_cast<unsigned long long>(golden.rowsWritten()));
   mon.mark("stream flush");
 
-  // RAM R2.1: the vertex finishers below need the full world back. Free
-  // the fold's (partially released) world FIRST so two worlds never
-  // coexist, then replay the identical construction from the run seed.
-  // Plain runs skip the rebuild — nothing after this point reads the
-  // world (the summary uses the captured counts).
-  if (exportPacksReleased && (streamStandard || streamCardFraud)) {
+  // RAM R2.1 + R2.3a: the vertex finishers below need the full world
+  // back. Free the fold's (partially released) world FIRST so two
+  // worlds never coexist, then replay the identical construction from
+  // the run seed. Plain runs skip the rebuild — nothing after this
+  // point reads the world (the summary uses the captured counts).
+  if (exportPacksReleased &&
+      (streamStandard || streamCardFraud || streamAml || streamAmlTxn)) {
     world = pl::pipeline::SimulationResult{};
     pg::Stage rebuildStage("Rebuilding world (vertex export)", 3);
     const auto onRebuildPhase = [&](std::string_view phase) {
