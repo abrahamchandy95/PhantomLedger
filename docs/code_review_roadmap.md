@@ -1,9 +1,7 @@
 # PhantomLedger — manual file-by-file review roadmap
 
 A dependency-ordered reading plan for reviewing the whole codebase by
-hand: ~405 headers under `include/phantomledger/`, ~138 translation
-units under `src/`, ~37 test programs under `tests/`. Reviewed
-bottom-up, every file is read AFTER everything it depends on, so
+hand. Reviewed bottom-up, every file is read AFTER everything it depends on, so
 nothing is mysterious when you reach it.
 
 ## Method

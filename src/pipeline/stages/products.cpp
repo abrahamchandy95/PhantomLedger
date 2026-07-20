@@ -38,6 +38,44 @@ ObligationSynthesis::insurance(InsuranceTerms value) noexcept {
   return *this;
 }
 
+void ObligationSynthesis::emitPerson(
+    ::PhantomLedger::entity::PersonId person,
+    ::PhantomLedger::personas::Type persona,
+    ::PhantomLedger::time::Window window,
+    ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+    ::PhantomLedger::entity::product::InsuranceLedger &insurance,
+    ::PhantomLedger::entity::product::ObligationStream &obligations) const {
+  // Content-keyed per person: this sequence is replayable in isolation.
+  // Emitter construction and emit order are draw-order-defining — any
+  // change here is a model change.
+  auto local = productSynth::personRng(seed_, person);
+
+  productSynth::MortgageEmitter mortgageEmitter{local, window, mortgage_};
+  productSynth::AutoLoanEmitter autoLoanEmitter{local, window, autoLoan_};
+  productSynth::StudentLoanEmitter studentLoanEmitter{local, window,
+                                                      studentLoan_};
+  productSynth::TaxEmitter taxEmitter{local, obligations, window, tax_};
+  productSynth::InsuranceEmitter insuranceEmitter{local, insurance,
+                                                  insurance_};
+
+  const bool hasMortgage =
+      mortgageEmitter.emit(person, persona, loans, obligations);
+  const bool hasAutoLoan =
+      autoLoanEmitter.emit(person, persona, loans, obligations);
+
+  (void)studentLoanEmitter.emit(person, persona, loans, obligations);
+  (void)taxEmitter.emit(person, persona);
+
+  (void)insuranceEmitter.emit(
+      person, persona,
+      productSynth::LoanAnchors{
+          .hasMortgage = hasMortgage,
+          .hasAutoLoan = hasAutoLoan,
+          .mortgageP = mortgage_.adoption.probability(persona),
+          .autoLoanP = autoLoan_.adoption.probability(persona),
+      });
+}
+
 void ObligationSynthesis::synthesize(
     const ::PhantomLedger::pipeline::People &people,
     ::PhantomLedger::pipeline::Holdings &holdings,
@@ -49,39 +87,44 @@ void ObligationSynthesis::synthesize(
 
   for (::PhantomLedger::entity::PersonId person = 1; person <= population;
        ++person) {
-    auto local = productSynth::personRng(seed_, person);
-    const auto persona = assignment.byPerson[person - 1];
-
-    auto &loans = holdings.portfolios.loans();
-    auto &obligations = holdings.portfolios.obligations();
-
-    productSynth::MortgageEmitter mortgageEmitter{local, window, mortgage_};
-    productSynth::AutoLoanEmitter autoLoanEmitter{local, window, autoLoan_};
-    productSynth::StudentLoanEmitter studentLoanEmitter{local, window,
-                                                        studentLoan_};
-    productSynth::TaxEmitter taxEmitter{local, obligations, window, tax_};
-    productSynth::InsuranceEmitter insuranceEmitter{
-        local, holdings.portfolios.insurance(), insurance_};
-
-    const bool hasMortgage =
-        mortgageEmitter.emit(person, persona, loans, obligations);
-    const bool hasAutoLoan =
-        autoLoanEmitter.emit(person, persona, loans, obligations);
-
-    (void)studentLoanEmitter.emit(person, persona, loans, obligations);
-    (void)taxEmitter.emit(person, persona);
-
-    (void)insuranceEmitter.emit(
-        person, persona,
-        productSynth::LoanAnchors{
-            .hasMortgage = hasMortgage,
-            .hasAutoLoan = hasAutoLoan,
-            .mortgageP = mortgage_.adoption.probability(persona),
-            .autoLoanP = autoLoan_.adoption.probability(persona),
-        });
+    emitPerson(person, assignment.byPerson[person - 1], window,
+               holdings.portfolios.loans(), holdings.portfolios.insurance(),
+               holdings.portfolios.obligations());
   }
 
   holdings.portfolios.obligations().sort();
+}
+
+::PhantomLedger::entity::product::ObligationStream
+ObligationSynthesis::generateWindow(
+    const ::PhantomLedger::pipeline::People &people,
+    ::PhantomLedger::time::Window window, ::PhantomLedger::time::TimePoint start,
+    ::PhantomLedger::time::TimePoint endExcl) const {
+
+  const auto &assignment = people.personas.assignment;
+  const auto population = static_cast<::PhantomLedger::entity::PersonId>(
+      assignment.byPerson.size());
+
+  // The draws interleave terms and events per person, so the replay must
+  // run the full emitters; the terms land in scratch ledgers and only
+  // the in-range events survive (chunk-sized, enforced at append).
+  ::PhantomLedger::entity::product::LoanTermsLedger scratchLoans;
+  ::PhantomLedger::entity::product::InsuranceLedger scratchInsurance;
+
+  ::PhantomLedger::entity::product::ObligationStream out;
+  out.restrictTo(start, endExcl);
+
+  for (::PhantomLedger::entity::PersonId person = 1; person <= population;
+       ++person) {
+    emitPerson(person, assignment.byPerson[person - 1], window, scratchLoans,
+               scratchInsurance, out);
+  }
+
+  // In-range events arrive in global append order, so the stable sort
+  // reproduces the materialized stream's between(start, endExcl) slice
+  // exactly.
+  out.sort();
+  return out;
 }
 
 } // namespace PhantomLedger::pipeline::stages::products

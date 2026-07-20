@@ -25,26 +25,15 @@ diagnostics only.
 [mem]   worldTotal             538.46 MB  (~2823 B/person)
 [mem] obligation stream: 5792713 events in window,
       5792041 equal-timestamp adjacencies
-[mem:b] income                 peakRSS= 10154.6 MB  screened=14.6M rows
 [mem:b] routines:done          peakRSS= 14638.4 MB  screened=48.4M (~4800 MB)
                                                     replayReady=48.4M (~4800 MB)
                                                     paydayInbound=14.6M (~1448 MB)
-[mem] windowedPrologue   peakRSS= 14638.4 MB
 ```
 
-Readings:
-
-1. **The prologue dwarfs everything.** The world is 538 MB; the base
-   stream (income + base routines, precomputed for the WHOLE window)
-   peaks at **14.6 GB** — 48.4M rows retained as `screened` PLUS a full
-   `replayReady` copy PLUS the payday-inbound view. Population x
-   window-scaled: ~73 GB/1M people at 730 days. This is the #1 wall.
-2. **Obligation ties are pervasive** (5.79M of 5.79M): timestamps are
-   day-granular, so the unstable sort's within-day order is
-   unspecified-but-pinned. Windowed obligation derivation CANNOT be a
-   zero-golden refactor.
-3. World-side estimates held up (obligations 265 MB as predicted;
-   ~2.8 KB/person total at 2 years).
+Readings: (1) the prologue base stream (14.6 GB) dwarfs the world
+(538 MB) — the #1 wall (R2.4); (2) obligation ties are pervasive —
+day-granular timestamps — so the order had to be pinned before any
+windowed derivation; (3) world estimates held up.
 
 ## Delivered
 
@@ -54,69 +43,63 @@ Readings:
   the whole fold; `rebuildWorldForExport()` replays `buildWorldWith()`
   from a fresh `Rng::fromSeed(seed)` (world-build draws are a prefix of
   the shared stream ⇒ byte-identical); main.cpp frees the fold's world
-  before the replay so two worlds never coexist. Released for: plain,
-  standard, card-fraud, aml, aml-txn-edges (audits: standard/cf bind no
-  cold packs; aml family's SharedContext and ShellStats OWN their data —
-  sets/vectors/maps copied at bind; append paths read only the batch).
-  NOT released for mule-ml: its stream finish() reads devices/ips/pii
-  (`addDeviceUsageRanges`/`addIpUsageRanges`/`writePartyRows`) → R2.3b.
-- **R2.2.0 — obligation tie audit** (`logObligationTieAudit`): verdict
-  above.
+  before the replay. Released for plain/standard/card-fraud/aml/
+  aml-txn-edges (audited copy-at-bind); NOT for mule-ml (stream finish
+  reads devices/ips/pii → R2.3b).
+- **R2.2.0 — tie audit** (`logObligationTieAudit`): ties pervasive.
+- **MODEL: obligation order pin** (owner-approved, goldens recaptured):
+  `ObligationStream::sort()` = `std::stable_sort` ⇒ pinned total order
+  (timestamp, then generation order). No model numbers changed; tie
+  order only. Prerequisite for everything below.
+- **R2.2.1a — windowed generator machinery** (zero behavior change):
+  `ObligationStream::restrictTo(start, endExcl)` drops out-of-range
+  events at append (chunk-sized scratch, never window-sized);
+  `ObligationSynthesis::synthesize()` split into a shared per-person
+  `emitPerson()` core (construction/emit order verbatim — draw-order-
+  defining); new `ObligationSynthesis::generateWindow(people, runWindow,
+  start, endExcl)` replays the core with scratch terms ledgers.
+  Identity argument: content-keyed `personRng(seed, person)` makes each
+  person independently replayable; in-range events arrive in global
+  append order; the stable sort's tie groups are timestamp-independent
+  ⇒ the result equals the materialized stream's `between()` slice
+  byte-for-byte. No consumers rewired yet — nothing observable changes.
 
-## R2.4 — prologue windowing (NEXT: design-first, the measured #1)
+## R2.2.1b — consumer rewire + release (NEXT)
 
-Problem: `TxnStreams` retains the whole-window base stream three ways —
-`screened` (the session/market view), `replayReady` (the driver's
-cursor source), `paydayInbound` (cure discovery) — because downstream
-consumers were written against full-window views:
+Wiring facts (verified): `Scheduler::generate` (schedule.cpp) drafts
+per event in stream order from the product lane — chunk-walking the
+pinned order feeds it identical draws. `buildMonthlyBurdens`
+(burdens.cpp) reads only the FIRST 3 months (`kBurdenWindowMonths`),
+order-insensitively. `makeProductSource` (window_sources.cpp) currently
+drafts the ENTIRE window's product transactions into a
+`PrecomputedCursorSource` at fold start (premiums + claims +
+obligations merged; the source self-compacts as consumed) — the
+obligation stream's last windowed-path consumer runs ONCE, at fold
+start.
 
-- `prepareMarket` → `buildPaydaysByPerson(baseTxns, …)` — aggregates
-  the stream ONCE into per-person payday-day lists (compact).
-- `prepareObligations` → Snapshot **spans** `streams.screened()` for
-  the session's lifetime.
-- The windowed driver's base cursor consumes `takeReplayReady()` —
-  already a forward, window-ordered walk.
-- Future-inbound cure discovery reads the payday-inbound view.
+Scope for b: (1) `makeProductSource` obligations input switches to
+`generateWindow` (full-range first, chunked cursoring after — premiums/
+claims draw in per-person order, so their windowing is its own step);
+(2) burden prep generates its 3-month slice; (3) `synthesize()` stops
+materializing the stream once no consumer reads it — the 265 MB leaves
+the world; the oracle path (ProductTxnEmitter::obligations) switches to
+the same generator. Plumbing: the stage needs the ObligationSynthesis
+config (SimulationPipeline::products_) and People — both flow through
+existing seams. Gates: chunk-invariance, arch equivalence, all table
+goldens — zero movement vs the recaptured baselines.
 
-Design direction (to verify, then implement in stages): the stream's
-*aggregate* consumers already reduce to compact per-person structures
-(payday sets, burdens) — derive those in a single generation pass and
-DROP the rows; the *replay* consumer needs rows only in window order —
-generate income/routine rows per generation chunk (their generators are
-calendar-driven), or spool them to disk sequentially (the
-BinaryCandidateSpool pattern: explicit files, never OS paging) if
-cross-window state makes windowed generation order-fragile. The open
-question to settle first: what the session actually reads through the
-obligations Snapshot's `baseTxns` span DURING the fold (if prep-only,
-the span can point at a dropped-after-prep buffer; if per-day, that
-access needs a compact replacement).
+## Remaining after R2.2
 
-Verification checklist before any code: (1) every read of
-`Snapshot.baseTxns` after `SessionBundle::make`; (2) every consumer of
-`streams.paydayInbound`; (3) whether income/routine generators can
-emit a chunk `[start,end)` with identical draws (they share the
-sequential RNG stream with the blueprint — the R2.2 ordering lesson
-applies in full). Acceptance: all goldens byte-identical; window/
-thread/session-equivalence and arch gates green; `[mem:b]` prologue
-lines bounded by chunk, not window.
-
-## PARKED (owner-gated): obligation order pin + R2.2.1
-
-Pinning the stream to a total order (timestamp, then generation order
-via `std::stable_sort`) makes it deterministic AND chunk-reproducible;
-then R2.2.1 replaces the 265 MB whole-window precompute with a windowed
-generator as a pure refactor. Because ties are pervasive, the pin
-REORDERS same-day events ⇒ RNG draw order shifts in product-row
-generation ⇒ bytes move: a MODEL-VERSION round (all four goldens
-recaptured in one named commit). Parked until the owner explicitly
-green-lights it. No model numbers change — only tie order.
-
-## Remaining after R2.4
-
+- **R2.4 — prologue windowing** (the measured #1, 14.6 GB): design in
+  place — aggregate consumers (payday sets, burdens) reduce to compact
+  per-person structures; the replay consumer needs rows in window order
+  (windowed generation or sequential disk spool). Verification
+  checklist: post-bind reads of the obligations Snapshot's baseTxns
+  span; paydayInbound consumers; income/routine generators' RNG regime
+  (they share the sequential stream — the R2.2 ordering lesson applies).
 - **R2.3b** — regenerable attribute view for mule-ml's stream-finish
   reads (the seam R3's shards plug into).
-- **R3** — population sharding (design doc first; post-R2 spine ≈
-  400 B/person ⇒ 1B ≈ 400 GB on one box; sharding is the answer).
+- **R3** — population sharding (design doc first).
 
 ## Acceptance, every round
 

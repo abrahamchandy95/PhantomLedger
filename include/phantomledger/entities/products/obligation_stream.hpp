@@ -14,7 +14,21 @@ class ObligationStream {
 public:
   ObligationStream() = default;
 
+  // RAM R2.2.1: windowed regeneration arms a keep-range so a chunk's
+  // scratch stream stays chunk-sized at append time, never
+  // window-sized. Unarmed by default — the world-build stream that
+  // ObligationSynthesis::synthesize() materializes is unrestricted.
+  void restrictTo(time::TimePoint start, time::TimePoint endExcl) noexcept {
+    restrictStart_ = start;
+    restrictEndExcl_ = endExcl;
+    restricted_ = true;
+  }
+
   void append(ObligationEvent event) {
+    if (restricted_ && (event.timestamp < restrictStart_ ||
+                        !(event.timestamp < restrictEndExcl_))) {
+      return;
+    }
     sorted_ = false;
     events_.push_back(std::move(event));
   }
@@ -64,6 +78,10 @@ public:
 private:
   std::vector<ObligationEvent> events_;
   bool sorted_ = true; ///< trivially sorted when empty
+
+  time::TimePoint restrictStart_{};
+  time::TimePoint restrictEndExcl_{};
+  bool restricted_ = false;
 };
 
 } // namespace PhantomLedger::entity::product
