@@ -110,19 +110,25 @@ public:
   // corpus lives on disk. Rows are validated against the account registry
   // as they stream through, matching the monolithic posted-corpus
   // validation.
+  //
+  // Holdings is mutable for exactly one reason (RAM R2.2.1b): the
+  // whole-window obligation stream is consumed ONCE, when the product
+  // source precomputes its drafts, and is released immediately after —
+  // nothing later in the fold reads it, and
+  // ObligationSynthesis::generateWindow() regenerates any slice
+  // byte-identically on demand. Output is unaffected.
   template <class S>
   [[nodiscard]] WindowedRunResult
   runWindowed(random::Rng &rng, const pipeline::People &people,
-              const pipeline::Holdings &holdings,
-              const pipeline::Counterparties &cps, S &sink,
-              const WindowedRunOptions &options = {}) const {
+              pipeline::Holdings &holdings, const pipeline::Counterparties &cps,
+              S &sink, const WindowedRunOptions &options = {}) const {
     SinkRef ref(sink);
     return runWindowedErased(rng, people, holdings, cps, ref, options);
   }
 
   [[nodiscard]] WindowedRunResult
   runWindowedErased(random::Rng &rng, const pipeline::People &people,
-                    const pipeline::Holdings &holdings,
+                    pipeline::Holdings &holdings,
                     const pipeline::Counterparties &cps, SinkRef sink,
                     const WindowedRunOptions &options) const;
 

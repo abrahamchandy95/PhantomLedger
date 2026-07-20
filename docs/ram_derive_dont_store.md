@@ -52,51 +52,54 @@ windowed derivation; (3) world estimates held up.
   (timestamp, then generation order). No model numbers changed; tie
   order only. Prerequisite for everything below.
 - **R2.2.1a — windowed generator machinery** (zero behavior change):
-  `ObligationStream::restrictTo(start, endExcl)` drops out-of-range
-  events at append (chunk-sized scratch, never window-sized);
-  `ObligationSynthesis::synthesize()` split into a shared per-person
-  `emitPerson()` core (construction/emit order verbatim — draw-order-
-  defining); new `ObligationSynthesis::generateWindow(people, runWindow,
-  start, endExcl)` replays the core with scratch terms ledgers.
-  Identity argument: content-keyed `personRng(seed, person)` makes each
-  person independently replayable; in-range events arrive in global
-  append order; the stable sort's tie groups are timestamp-independent
-  ⇒ the result equals the materialized stream's `between()` slice
-  byte-for-byte. No consumers rewired yet — nothing observable changes.
+  `ObligationStream::restrictTo(start, endExcl)` (chunk-sized scratch
+  at append); `synthesize()` split into shared per-person `emitPerson()`
+  (construction/emit order verbatim — draw-order-defining);
+  `ObligationSynthesis::generateWindow(people, runWindow, start,
+  endExcl)` replays the core with scratch terms ledgers. Content-keyed
+  `personRng(seed, person)` + global append order + stable-sort tie
+  independence ⇒ the result equals the materialized stream's
+  `between()` slice byte-for-byte, from the same code path.
+- **R2.2.1b — fold-time release** (zero output change): in the windowed
+  path the stream's last consumers both run at fold start —
+  `makeProductSource` drafts the whole window's product transactions in
+  ONE pass over the events, and burden prep consumed its 3-month slice
+  during session preparation. `runWindowedErased` therefore releases
+  `portfolios.obligations()` immediately after the product source is
+  built (`[mem] obligationsReleased` marks it): the 265 MB
+  population x window-months pack is gone for the run's longest phase,
+  every use case. Holdings became mutable through the stage's windowed
+  entry points for exactly this one release (documented at the
+  signature); the finisher-time world rebuild re-materializes the
+  stream transiently where a use case takes the world back.
 
-## R2.2.1b — consumer rewire + release (NEXT)
+## R2.2.1c — retire the materialization (NEXT in the R2.2 line)
 
-Wiring facts (verified): `Scheduler::generate` (schedule.cpp) drafts
-per event in stream order from the product lane — chunk-walking the
-pinned order feeds it identical draws. `buildMonthlyBurdens`
-(burdens.cpp) reads only the FIRST 3 months (`kBurdenWindowMonths`),
-order-insensitively. `makeProductSource` (window_sources.cpp) currently
-drafts the ENTIRE window's product transactions into a
-`PrecomputedCursorSource` at fold start (premiums + claims +
-obligations merged; the source self-compacts as consumed) — the
-obligation stream's last windowed-path consumer runs ONCE, at fold
-start.
-
-Scope for b: (1) `makeProductSource` obligations input switches to
-`generateWindow` (full-range first, chunked cursoring after — premiums/
-claims draw in per-person order, so their windowing is its own step);
-(2) burden prep generates its 3-month slice; (3) `synthesize()` stops
-materializing the stream once no consumer reads it — the 265 MB leaves
-the world; the oracle path (ProductTxnEmitter::obligations) switches to
-the same generator. Plumbing: the stage needs the ObligationSynthesis
-config (SimulationPipeline::products_) and People — both flow through
-existing seams. Gates: chunk-invariance, arch equivalence, all table
-goldens — zero movement vs the recaptured baselines.
+What remains for "never materialized at all": `synthesize()` still
+builds the full stream at world build, because three consumers read it
+before the release point — burden prep (first 3 months only,
+order-insensitive), the windowed product source (one pass), and the
+monolithic oracle's `ProductTxnEmitter::obligations`. Scope: shrink
+`synthesize()`'s materialization to the 3-month burden slice (window-
+independent — kills the window-months term at build time too, and in
+the transient finisher rebuild); switch the windowed product source and
+the oracle emitter to `generateWindow` (plumbing: TransferStage needs
+the `ObligationSynthesis` config from `SimulationPipeline::products_`
+plus People through `makeProductSource`/`mergeProducts`; the gate
+harness passes the default-constructed synthesis it already mirrors).
+Layering note: burdens stay untouched precisely because the 3-month
+slice remains materialized — the transfers layer never needs the
+pipeline-layer generator.
 
 ## Remaining after R2.2
 
-- **R2.4 — prologue windowing** (the measured #1, 14.6 GB): design in
-  place — aggregate consumers (payday sets, burdens) reduce to compact
-  per-person structures; the replay consumer needs rows in window order
-  (windowed generation or sequential disk spool). Verification
-  checklist: post-bind reads of the obligations Snapshot's baseTxns
-  span; paydayInbound consumers; income/routine generators' RNG regime
-  (they share the sequential stream — the R2.2 ordering lesson applies).
+- **R2.4 — prologue windowing** (the measured #1, 14.6 GB): aggregate
+  consumers (payday sets, burdens) reduce to compact per-person
+  structures; the replay consumer needs rows in window order (windowed
+  generation or sequential disk spool). Verify first: post-bind reads
+  of the obligations Snapshot's baseTxns span; paydayInbound consumers;
+  income/routine generators' RNG regime (they share the sequential
+  stream — the R2.2 ordering lesson applies).
 - **R2.3b** — regenerable attribute view for mule-ml's stream-finish
   reads (the seam R3's shards plug into).
 - **R3** — population sharding (design doc first).

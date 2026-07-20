@@ -86,7 +86,7 @@ struct ValidatingSink {
 
 WindowedRunResult TransferStage::runWindowedErased(
     ::PhantomLedger::random::Rng &rng, const pipeline::People &people,
-    const pipeline::Holdings &holdings, const pipeline::Counterparties &cps,
+    pipeline::Holdings &holdings, const pipeline::Counterparties &cps,
     SinkRef sink, const WindowedRunOptions &options) const {
   legit_.validate();
 
@@ -191,6 +191,19 @@ WindowedRunResult TransferStage::runWindowedErased(
   auto productSource =
       makeProductSource(scope.window, scope.seed, rngFactory, productTxf,
                         holdings, products_.insurancePrograms().claimRates);
+
+  // RAM R2.2.1b: the product source above consumed the whole-window
+  // obligation stream in ONE pass (its drafts are precomputed), and the
+  // burden prep consumed its 3-month slice during session preparation.
+  // Nothing later in the fold reads the events, so release them now —
+  // for the run's longest phase the population x window-months pack is
+  // gone. ObligationSynthesis::generateWindow() regenerates any slice
+  // byte-identically on demand, and the finisher-time world rebuild
+  // re-materializes the stream transiently where a use case needs the
+  // world back. Output is unaffected.
+  holdings.portfolios.obligations() =
+      ::PhantomLedger::entity::product::ObligationStream{};
+  pipeline::diagnostics::logStageMem("obligationsReleased", {});
 
   auto familySource = std::make_unique<PrecomputedCursorSource>(
       legit_ledger::sortForReplay(
