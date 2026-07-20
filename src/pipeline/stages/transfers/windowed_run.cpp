@@ -14,18 +14,18 @@
 //                            routines (shared stream, live router)
 //   2. spending session      market + obligations over the screened base
 //                            stream, persistent Session with card driver
-//   3. cursor sources        base (income+routines), products
-//                            (products/full_schedule lane, pristine
-//                            router copy), family (family lanes,
-//                            pristine router copy)
+//   3. cursor sources        base (income+routines, disk-spooled),
+//                            products (products/full_schedule lane,
+//                            pristine router copy), family (family
+//                            lanes, pristine router copy)
 //   4. two-phase fold        Phase A -> candidate spool -> exact count L
 //                            -> fraud source -> Phase B -> sink
 //
 // Rows stream to the caller's sink; nothing transaction-scale is retained
 // here beyond the driver's bounded staging and the on-disk spools (the
-// Phase A/B candidate spool and the base-stream replay spool). The final
-// posted book is handed off in the result for the AML exporters' account
-// vertices.
+// Phase A/B candidate spool, the base-stream replay spool, and the base
+// cursor spool). The final posted book is handed off in the result for
+// the AML exporters' account vertices.
 //
 
 #include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
@@ -187,8 +187,20 @@ WindowedRunResult TransferStage::runWindowedErased(
   // point cannot affect the session.
   const random::RngFactory rngFactory{scope.seed};
 
-  auto baseSource = std::make_unique<PrecomputedCursorSource>(
-      prologue.streams.takeReplayReady());
+  // RAM R2.4b-2 (base cursor): the replay-ready copy feeds the fold
+  // from disk through the candidate-spool machinery — full-fidelity
+  // records (bit-identical round trip, test_spool_equivalence), and
+  // replayReady's audit-order sort satisfies the cursor's row-by-row
+  // replay-order verification. The resident vector is freed as soon as
+  // the rows are on disk; the cursor reads one bounded buffer.
+  BinaryCandidateSpool baseSpool;
+  {
+    auto replayRows = prologue.streams.takeReplayReady();
+    baseSpool.append(
+        std::span<const Txn>(replayRows.data(), replayRows.size()));
+    baseSpool.finish();
+  } // replayRows freed here
+  auto baseSource = baseSpool.openCursor();
 
   const transactions::Factory productTxf(rng, &productRouter,
                                          &infra.ringInfra);
@@ -209,12 +221,13 @@ WindowedRunResult TransferStage::runWindowedErased(
       ::PhantomLedger::entity::product::ObligationStream{};
   pipeline::diagnostics::logStageMem("obligationsReleased", {});
 
-  // RAM R2.4b-2: the spending prep has aggregated everything it needs
-  // from the screened view (market paydays, burdens), and its only
-  // remaining consumer is the day driver's ledger replay — which now
-  // feeds from a sequential disk spool through the replay seam
-  // (replay_source.hpp). Same rows, same order, one bounded read
-  // buffer; the resident whole-window vector is freed here.
+  // RAM R2.4b-2 (ledger replay): the spending prep has aggregated
+  // everything it needs from the screened view (market paydays,
+  // burdens), and its only remaining consumer is the day driver's
+  // ledger replay — which now feeds from a sequential disk spool
+  // through the replay seam (replay_source.hpp). Same rows, same
+  // order, one bounded read buffer; the resident whole-window vector
+  // is freed here.
   BaseReplaySpool replaySpool;
   replaySpool.spool(std::span<const Txn>(prologue.streams.screened()));
   replaySpool.seal();
