@@ -23,10 +23,19 @@ public:
     if (sorted_) {
       return;
     }
-    std::sort(events_.begin(), events_.end(),
-              [](const ObligationEvent &a, const ObligationEvent &b) {
-                return a.timestamp < b.timestamp;
-              });
+    // Pinned total order: timestamp, then generation (append) order —
+    // stable_sort preserves append order within equal timestamps. Due
+    // dates are day-granular, so ties are pervasive (measured: 5.79M of
+    // 5.79M events at 200k/730d) and this order is load-bearing twice
+    // over: it decides which RNG draw each product row receives, and it
+    // is what makes windowed regeneration reproducible — under a stable
+    // sort every timestamp's tie group is independent, so a
+    // window-restricted regeneration equals the global stream's slice.
+    // An unstable sort here is a model change.
+    std::stable_sort(events_.begin(), events_.end(),
+                     [](const ObligationEvent &a, const ObligationEvent &b) {
+                       return a.timestamp < b.timestamp;
+                     });
     sorted_ = true;
   }
 
