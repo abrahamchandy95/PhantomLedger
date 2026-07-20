@@ -94,8 +94,8 @@ portfolioTermsBytes(const entity::product::PortfolioRegistry &reg) noexcept {
          hashMapBytesFromSize(reg.loans().size(), sizeof(LoanEntry));
 }
 
-// The precomputed whole-window obligation schedule: the one pack that
-// scales with population x window months, not population alone.
+// The whole-window obligation schedule (retained at world build; the
+// windowed fold releases it after one-pass consumption — R2.2.1b).
 [[nodiscard]] inline std::size_t
 obligationStreamBytes(const entity::product::PortfolioRegistry &reg) noexcept {
   return reg.obligations().size() * sizeof(entity::product::ObligationEvent);
@@ -227,12 +227,13 @@ inline void logWorldFootprint(const People &people, const Holdings &holdings,
                personCount);
 }
 
-// RAM R2.2 tie audit: the obligation stream is ordered by an UNSTABLE
-// sort on timestamp alone (products.cpp), so equal-timestamp events
-// have implementation-pinned, not specified, relative order. Windowed
-// per-chunk derivation can only promise byte-identical replay when the
-// (timestamp) key is already unique — this counts the collisions that
-// would make it ambiguous. Silent unless the mem topic is enabled.
+// RAM R2.2 tie audit. HISTORY: this probe measured pervasive
+// equal-timestamp adjacencies (day-granular due dates), which gated the
+// owner-approved model round pinning the stream to a total order
+// (timestamp, then generation order — stable sort). The order is now
+// pinned; the count remains reported because it documents WHY windowed
+// regeneration is well-defined (tie groups are append-ordered, not
+// sort-arbitrary). Silent unless the mem topic is enabled.
 inline void logObligationTieAudit(
     const entity::product::PortfolioRegistry &portfolios,
     ::PhantomLedger::time::Window window) {
@@ -254,10 +255,9 @@ inline void logObligationTieAudit(
 
   std::fprintf(stderr,
                "[mem] obligation stream: %zu events in window, %zu "
-               "equal-timestamp adjacencies (%s windowed derivation)\n",
-               events.size(), tieAdjacencies,
-               tieAdjacencies == 0 ? "order is unambiguous for"
-                                   : "tie order must be pinned before");
+               "equal-timestamp adjacencies (order pinned: timestamp, "
+               "then generation order)\n",
+               events.size(), tieAdjacencies);
 }
 
 } // namespace PhantomLedger::pipeline::diagnostics
