@@ -12,66 +12,67 @@ Standing constraints (owner directives): byte identity per refactor
 round; no new CLI args/knobs/refusals; `mem`-topic diagnostics only;
 explicit spool files, never OS paging.
 
-## Measured baselines (owner-run)
+## Measured baselines (owner-run, 20k/730d standard unless noted)
 
-**200k/730d (pre-releases):** worldTotal 538 MB; prologue peak 14.6 GB.
-**20k/730d full run (post R2.1→R2.4a):** worldTotal 54 MB; prologue
-peak 4.65 GB (transients — see anatomy); fold peak 5.49 GB; candidate
-spool 1143 MiB on disk; rebuild-for-export footprint byte-identical to
-the original build (replay identity proven in production).
+| milestone | prologue peak | run peak | notes |
+|---|---|---|---|
+| pre-releases (200k) | 14.6 GB | — | worldTotal 538 MB |
+| post R2.1→R2.4a | 4653 MB | 5488 MB | fold adds +835 over prologue |
+| post R2.4b-2 | 4654 MB | **5219 MB** | fold adds +565; **digest, row count and book hash identical to the resident-span run** — spool byte-identity proven end-to-end; spooling cost ~2 s in 751 s |
 
 **Peak anatomy:** the prologue peak is set by TRANSIENTS — vector
 reallocation doubling in `TxnStreams::add`'s two `addSortedView` paths
 (old+new buffers coexist during growth; +988 MB ≈ 2 x 4.85M x 100 B at
-`internal`). `SeededScreen::sorted` is a view (no copy). Steady-state
-streams at 20k are ~1 GB.
+`internal`) stacked on ~1 GB of steady-state streams (two 481 MB
+views). `SeededScreen::sorted` is a view (no copy). After b-2 the
+prologue is the run's RAM floor.
 
 ## Delivered
 
 - **R2.0** — `logWorldFootprint` + this doc (measurement first).
 - **R2.1 + R2.3a** — cold-pack release + seed-replay world rebuild
-  (pii + device/IP inventories; all use cases except mule-ml).
+  (pii + device/IP inventories; all use cases except mule-ml); replay
+  identity verified in production output.
 - **R2.2.0** — obligation tie audit (ties pervasive, day-granular).
 - **MODEL: obligation order pin** (owner-approved, goldens recaptured):
   stable_sort ⇒ (timestamp, then generation order).
 - **R2.2.1a** — windowed obligation generator (`restrictTo`,
   `emitPerson` core, `generateWindow` — equals the materialized slice).
 - **R2.2.1b** — fold-time obligation release (both consumers finish at
-  fold start; the population x window-months pack gone for the fold).
+  fold start).
 - **R2.4a** — payday-inbound release (single consumer; both engines).
-- **R2.4b-1** — base-stream replay seam: activity-owned
-  `BaseReplaySource` (stateless `postThrough` mirroring
-  `advanceBookThrough`; caller keeps `RunState::baseIdx`) +
-  `SpanReplaySource` adapter; `Snapshot.baseReplayOverride` is the
-  plug-in point.
-- **R2.4b-2 — both fold copies on disk:**
-  - *ledger replay*: `BaseReplaySpool` (replay_spool.hpp, pipeline) —
-    5-field records (source/target key, amount bits, channel,
-    timestamp: exactly what `advanceBookThrough` uses), std::tmpfile,
-    bounded read buffer; postThrough mirrors the original call for
-    call (null-book no-consume, held-back row, fromIdx handshake).
-    The windowed run spools `screened` after spending prep (its last
-    RAM consumer), sets the override, frees the vector
-    (`[mem] screenedSpooled`).
-  - *base cursor*: `replayReady` rides the existing
-    `BinaryCandidateSpool`/`BinarySpoolCursor` machinery — records are
-    bit-identical round trips (test_spool_equivalence) and audit-order
-    sorting satisfies the cursor's replay-order verification. Spooled
-    and freed at source construction.
-  Fold-resident base stream: ~1 GB at 20k / ~9.6 GB at 200k → two
-  bounded read buffers + temp files. Judged by
-  test_production_windowed (spooled pipeline vs resident-span oracle)
-  + all goldens + session/window/thread gates.
+- **R2.4b-1** — base-stream replay seam (`BaseReplaySource` +
+  `SpanReplaySource`; `Snapshot.baseReplayOverride` plug-in point;
+  caller keeps `RunState::baseIdx`).
+- **R2.4b-2** — both fold copies on disk: `screened` via
+  `BaseReplaySpool` (5-field records, exact `advanceBookThrough`
+  mirror), `replayReady` via `BinaryCandidateSpool`/`BinarySpoolCursor`
+  (bit-identical records, audit-order verified). Fold-resident base
+  stream → two bounded buffers + temp files. Measured above.
 
-## R2.4b-3 — prologue build transients (NEXT)
+## R2.4b-3 — prologue single-view build (NEXT)
 
-The remaining prologue wall is the BUILD itself: doubling reallocations
-and dual sorted views while income/routines accumulate. Options, to be
-decided on measurement after b-2 lands (`[mem:b]` lines): exact
-pre-reserve from a prologue row estimate; build ONE view and derive the
-other at spool time; or merge batches directly to disk. This is what
-bounds the prologue at 100k+ populations (the standing "prologue
-windowing ≥100k" item).
+The prologue is now the floor (4.65 GB at 20k ⇒ ~46 GB at 200k). The
+chosen mechanism, from the measured anatomy:
+
+1. **Stop maintaining `replayReady` during accumulation.** Both views
+   end on disk anyway (b-2); only `screened` is consumed DURING the
+   prologue (SeededScreens, spending prep). `TxnStreams::add` keeps
+   merging the timestamp view only; at spool time the replay-ready
+   order is derived ONCE — copy `screened`, `sortForReplay`, spool,
+   free. Halves the steady stream cost and removes half the doubling
+   transients; the one-shot sort transient replaces a prologue-long
+   resident vector. BYTE-IDENTITY WATCH: today `replayReady` is built
+   by incremental stable merges of per-batch `fundsLess`-sorted adds;
+   a one-shot `sortForReplay` over the same rows yields the same order
+   ONLY because `fundsLess` (auditKey) is total for every
+   output-affecting purpose (rows comparing equal are byte-identical —
+   the S10 re-pin). State this in the round and let
+   production_windowed + goldens judge.
+2. Measure; if the remaining view's doubling transients still bound
+   the peak, follow with an exact reserve or batch-to-disk merge.
+
+The monolithic oracle keeps both views (library-level; untouched).
 
 ## Remaining after R2.4
 
