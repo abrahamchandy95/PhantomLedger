@@ -3,6 +3,7 @@
 #include "phantomledger/diagnostics/logger.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/pipeline/infra.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 
 #include <cstddef>
 #include <cstdio>
@@ -224,6 +225,39 @@ inline void logWorldFootprint(const People &people, const Holdings &holdings,
                    : static_cast<double>(total) /
                          static_cast<double>(personCount),
                personCount);
+}
+
+// RAM R2.2 tie audit: the obligation stream is ordered by an UNSTABLE
+// sort on timestamp alone (products.cpp), so equal-timestamp events
+// have implementation-pinned, not specified, relative order. Windowed
+// per-chunk derivation can only promise byte-identical replay when the
+// (timestamp) key is already unique — this counts the collisions that
+// would make it ambiguous. Silent unless the mem topic is enabled.
+inline void logObligationTieAudit(
+    const entity::product::PortfolioRegistry &portfolios,
+    ::PhantomLedger::time::Window window) {
+  namespace logging = ::PhantomLedger::diagnostics;
+  if (!logging::Logger::instance().enabled(logging::Level::info,
+                                           logging::Topic::mem)) {
+    return;
+  }
+
+  const auto events =
+      portfolios.obligations().between(window.start, window.endExcl());
+
+  std::size_t tieAdjacencies = 0;
+  for (std::size_t i = 1; i < events.size(); ++i) {
+    if (events[i].timestamp == events[i - 1].timestamp) {
+      ++tieAdjacencies;
+    }
+  }
+
+  std::fprintf(stderr,
+               "[mem] obligation stream: %zu events in window, %zu "
+               "equal-timestamp adjacencies (%s windowed derivation)\n",
+               events.size(), tieAdjacencies,
+               tieAdjacencies == 0 ? "order is unambiguous for"
+                                   : "tie order must be pinned before");
 }
 
 } // namespace PhantomLedger::pipeline::diagnostics

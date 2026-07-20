@@ -28,28 +28,17 @@ a per-pack estimate once, right after the world build:
 make run-mem ARGS="--population 200000 --days 730"
 ```
 
-```
-[mem] world footprint (estimated resident bytes; ...):
-[mem]   people.pii            ...
-[mem]   portfolios.obligations ...
-[mem]   worldTotal            ...  (~B/person at N people)
-```
-
 Vector storage is exact (capacity x element size); hash-map overheads
-are approximated (16 B node overhead + one bucket pointer per entry);
-the Router line (`infra.router~`) is derived from its build inputs
-because its state is private. Decisions below should be re-checked
-against measured output at a representative population before each
-implementation round.
+are approximated; the Router line (`infra.router~`) is derived from its
+build inputs because its state is private.
 
 ### Compile-time budget (structs as of this writing, 64-bit)
 
-Per person unless noted. These are sizeof-derived approximations — the
-probe is the authority.
+Per person unless noted; the probe is the authority.
 
 | pack | layout | ~bytes/person |
 |---|---|---|
-| people.pii | `pii::Record` ≈ 80 B POD (index-based names, fixed-width phone/email/SSN — already compacted; no heap strings) | 80 |
+| people.pii | `pii::Record` ≈ 80 B POD (index-based names, fixed-width fields; no heap strings) | 80 |
 | people.personas | `behavior::Persona` 72 B + 1 B assignment | 73 |
 | people.roster | 1 B flags + ring topology (fraud participants only) | ~2 |
 | holdings.accounts | 24 B record + ~56 B lookup node + 12 B ownership, x ~1.5 accounts/person | ~140 |
@@ -62,13 +51,10 @@ probe is the authority.
 
 Ballpark: **~1.1 KB/person + ~1.2 KB/person/window-year**. At 150M
 people over 2 years that is ~500 GB resident; at 1B it is impossible.
-This is the wall R2 removes.
 
 ## Who consumes what, when
 
-From `src/app/main.cpp` and the fold composition
-(`windowed_run.cpp`); "fold" = generation prologue + spending session +
-two-phase settlement.
+"fold" = generation prologue + spending session + two-phase settlement.
 
 | pack | fold | streaming exporter (during fold) | finisher (after fold) |
 |---|---|---|---|
@@ -76,106 +62,108 @@ two-phase settlement.
 | creditCards | card lifecycle | card-fraud | all |
 | personas | spending market spans the table daily | — | aml family |
 | portfolios terms | obligations burden | — | aml family |
-| portfolios obligation stream | product schedule source | — | — |
+| portfolios obligation stream | product schedule + burden prep (below) | — | — |
 | router + ringInfra | every routed row | — | — |
 | merchants | spending payees | card-fraud | standard, card-fraud |
 | landlords, directory | blueprint construction only | — | standard, aml family |
 | **people.pii** | **never** | mule-ml (at stream finish) | standard, aml family, card-fraud |
 | **devices/ips records+usages** | **never** (router holds its own copies) | mule-ml (at stream finish) | standard, aml family, card-fraud |
-| ringPlans | injector inputs at fraud boundary | — | — |
 
 ## The cut line
 
 - **Spine (stays resident):** accounts pack, creditCards, personas,
   portfolio terms, router + ringInfra, blueprint counterparty access.
-  Compact, keyed, consumed every settlement day. ~350–400 B/person.
+  ~350–400 B/person.
 - **Cold (export-only):** pii roster, device/IP records + usages,
-  landlord/directory detail. Never read by the fold.
-- **Window-scaled cache (the standout):** the obligation stream is a
-  whole-window precompute consumed strictly via
-  `between(start, endExcl)` — already window-shaped, retained anyway.
+  landlord/directory detail.
+- **Window-scaled cache:** the obligation stream.
 
-## R2.1 — release + seed-replay rebuild (DELIVERED, awaiting gates)
+## R2.1 — release + seed-replay rebuild (delivered)
 
-Mechanics (`pipeline/simulate.hpp`):
+Mechanics (`pipeline/simulate.hpp`): `releaseExportOnlyPacks(world)`
+frees `people.pii`, `infra.devices`, `infra.ips` (grep-verified: their
+only consumers are `src/exporter/*`; the Router owns its routing
+copies). `SimulationPipeline::rebuildWorldForExport()` replays
+`buildWorldWith()` from a FRESH `Rng::fromSeed(seed)` — world-build
+draws are a *prefix* of the run's shared sequential stream, so the
+replay is byte-identical however far the fold advanced the shared RNG.
+One code path serves the run build and the replay, so they cannot
+drift.
 
-- `releaseExportOnlyPacks(world)` swaps empty packs into
-  `people.pii`, `infra.devices`, `infra.ips`, freeing their storage.
-  Verified safe: the fold's only consumers of person infra are the
-  Router's private copies, and grep confirms the three packs are read
-  exclusively by `src/exporter/*`.
-- `SimulationPipeline::rebuildWorldForExport()` replays
-  `buildWorldWith()` from a FRESH `Rng::fromSeed(seed)`. World-build
-  draws are a *prefix* of the run's shared sequential stream (the
-  stream starts at the seed and `buildWorld()` is its first consumer),
-  so the replay is byte-identical no matter how far the fold advanced
-  the shared RNG. One code path (`buildWorldWith`) serves both the run
-  build and the replay, so they cannot drift.
-
-`main.cpp` epoch flow (release after the streaming exporters bind,
-rebuild only when a finisher needs the world; the two worlds never
-coexist — the fold's world is freed before the replay):
+`main.cpp` epoch flow: release after the streaming exporters bind;
+fold; free the fold's world BEFORE the replay (two worlds never
+coexist); rebuild only when a finisher needs the world.
 
 | use case | packs released for the fold | rebuild before finisher |
 |---|---|---|
-| plain (no use-case exporter) | yes | no (summary uses counts captured at build) |
-| standard | yes | yes (`exportEntities` reads pii/devices/ips) |
-| card-fraud | yes | yes (geo/PII layer reads pii; device/IP tables) |
-| mule-ml | **no** | n/a (world retained) |
-| aml, aml-txn-edges | **no** | n/a (world retained) |
+| plain | yes | no (summary uses counts captured at build) |
+| standard | yes | yes |
+| card-fraud | yes | yes |
+| mule-ml | **no** — its stream finish() reads devices/ips/pii (`addDeviceUsageRanges`/`addIpUsageRanges`/`writePartyRows`) | n/a |
+| aml, aml-txn-edges | **no** — streaming `SharedContext` built from people/holdings at bind; copy-vs-alias audit pending | n/a |
 
-Why the two deferrals (both move to R2.3):
+Both deferrals move to R2.3. Safety audit done for the swapped cases:
+`StreamingCardFraudExport` / `StreamingTransfersExport` dereference
+Config pointers only in ctor/append/finish (all pre-swap);
+`takeArtifacts()` moves accumulated state only.
 
-- **mule-ml** dereferences the packs at *stream finish*:
-  `addDeviceUsageRanges` / `addIpUsageRanges` fold entity-scale usage
-  ranges into the edge tables, and `writePartyRows` reads the pii
-  roster — all inside the fold's `sink.finish()`.
-- **aml family** builds its streaming `SharedContext` from
-  `people`/`holdings` at bind time; whether that context copies or
-  aliases the packs needs its own audit before any release.
+## R2.2 — windowed obligation derivation
 
-Safety audit done for the swapped cases: `StreamingCardFraudExport`
-and `StreamingTransfersExport` dereference their Config pointers only
-in the constructor and `append()`/`finish()` — all before the epoch
-swap; `takeArtifacts()` moves accumulated state only. The summary
-line's People/Accounts counts are captured immediately after the build.
+**R2.2.0 tie audit (delivered).** The stream's two consumers are
+already window-shaped or fold-once:
 
-Residency effect at fold time (standard/card-fraud/plain): pii +
-device/IP inventories (~430 B/person, ~40% of the non-obligation
-world) are absent for the entire fold — the run's longest phase. Cost:
-one extra world build before vertex export (the `[phase] rebuild *`
-lines measure it).
+- `transfers/channels/obligations/schedule.cpp` walks
+  `between(active.start, active.endExcl)` per replay window — the
+  product schedule source;
+- `transfers/legit/ledger/burdens.cpp` aggregates
+  `between(windowStart, windowEndExcl)` ONCE at spending prep into
+  per-person monthly burden doubles.
 
-## Remaining stages
+So per-chunk derivation fits both — **but** `products.cpp` orders the
+stream with `std::sort` on **timestamp alone**, and `std::sort` is
+unstable: equal-timestamp events sit in implementation-pinned, not
+specified, relative order. Sorting per-chunk subsequences is NOT
+guaranteed to reproduce the full sort's tie order, so windowed
+derivation is a safe refactor **only if the (timestamp) key is unique
+in practice**. `pipeline::diagnostics::logObligationTieAudit`
+(world_footprint.hpp, printed with the footprint under `make run-mem`)
+counts equal-timestamp adjacencies in the built stream.
 
-2. **R2.2 — windowed obligation derivation.** Generate the obligation
-   schedule per generation chunk instead of precomputing the whole
-   window (the product source already consumes it windowed). Removes
-   the population x window-months term entirely. The chunk boundary
-   must not change event content or order — chunk-invariance and arch
-   gates judge.
-3. **R2.3 — per-shard attribute access for streaming exporters.** Give
-   mule-ml's stream-finish reads and the aml family's SharedContext a
-   regenerable attribute view instead of retained-pack pointers. This
-   is the seam R3's population sharding plugs into: a shard = a
-   contiguous PersonId range whose cold attributes are rebuilt on
-   demand.
+Decision tree, on measured output:
+
+- **ties = 0** (expected if event timestamps carry per-person jitter):
+  R2.2.1 replaces the retained stream with an on-demand generator that
+  emits `[start, endExcl)` events in timestamp order — same values,
+  same order, chunk-invariance + arch gates judge; the
+  population x window-months pack disappears.
+- **ties > 0**: the order must first be pinned to a total key
+  (timestamp, then a content key). If the pinned order differs from
+  today's unstable-sort order, that is a MODEL-VERSION change (goldens
+  recaptured in a named commit, owner-gated) and R2.2.1 lands after it.
+
+Owner: run `make run-mem ARGS="--population 200000 --days 730"` and
+paste the footprint + tie-audit lines under Measured baselines.
+
+## R2.3 — regenerable attribute view for streaming exporters
+
+Give mule-ml's stream-finish reads and the aml family's SharedContext
+a regenerable view instead of retained-pack pointers. This is the seam
+R3's population sharding plugs into: a shard = a contiguous PersonId
+range whose cold attributes are rebuilt on demand.
 
 After R2, resident world ≈ spine only (~400 B/person): 1B people ≈
-400 GB — still too big for one box, which is exactly what R3's
-population sharding addresses; R2 is its prerequisite.
+400 GB — still too big for one box; that is R3's population sharding,
+and R2 is its prerequisite.
 
 ## Acceptance, every round
 
-- `make test` green; NO golden file moves (run, tables, aml,
-  card-fraud).
+- `make test` green; NO golden file moves.
 - `make run-mem` footprint before vs after shows the targeted pack gone
-  from residency at the targeted phase, with `worldTotal` and phase
-  peak-RSS lines down accordingly.
+  from residency at the targeted phase.
 - No CLI surface change; `--help` byte-identical.
 
 ## Measured baselines (owner-run, paste blocks here)
 
-*(none recorded yet — first capture should be
-`make run-mem ARGS="--population 200000 --days 730"` before R2.2
-lands)*
+*(none recorded yet — first capture:
+`make run-mem ARGS="--population 200000 --days 730"`; include the
+world-footprint block AND the obligation tie-audit line)*

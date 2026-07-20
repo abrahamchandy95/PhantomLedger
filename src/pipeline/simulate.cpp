@@ -205,10 +205,13 @@ SimulationPipeline::buildWorldWith(random::Rng &rng,
   notify("infra");
   diagnostics::logStageMem("worldInfra", {});
 
-  // RAM R2 measurement: which packs hold the world's resident bytes
+  // RAM R2 measurement: which packs hold the world's resident bytes,
+  // and whether the obligation stream's (timestamp) order is unique —
+  // the precondition for R2.2's windowed derivation
   // (docs/ram_derive_dont_store.md). Prints only under the mem topic.
   diagnostics::logWorldFootprint(out.people, out.holdings, out.counterparties,
                                  out.infra);
+  diagnostics::logObligationTieAudit(out.holdings.portfolios, window_);
 
   return out;
 }
