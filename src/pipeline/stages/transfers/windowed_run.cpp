@@ -152,6 +152,10 @@ WindowedRunResult TransferStage::runWindowedErased(
               .lookup = *resources.accountsLookup,
               .registry = *routineAccess.registry,
           },
+      // geo-causal-v1 (G2a): the production windowed path carries the
+      // real per-person home area for card-present distance-decay
+      // selection (unread until step-2).
+      .homeAreas = people.homeAreas,
   };
 
   const routineSpending::SpendingRoutine::PayeeDirectory payees{

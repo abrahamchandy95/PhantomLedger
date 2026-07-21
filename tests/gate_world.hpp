@@ -336,6 +336,9 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
               .lookup = holdings.accounts.lookup,
               .registry = holdings.accounts.registry,
           },
+      // geo-causal-v1 (G2a): the test world carries the real per-person
+      // home area (like the production windowed path).
+      .homeAreas = people.homeAreas,
   };
 
   const std::span<const Txn> baseTxns(streams.screened());

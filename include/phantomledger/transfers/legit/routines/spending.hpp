@@ -2,6 +2,7 @@
 
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -42,6 +43,13 @@ public:
   struct CensusSource {
     const blueprints::LegitBlueprint &blueprint;
     AccountSource accounts;
+
+    // geo-causal-v1 (G2a): per-person home area (PersonId-1), from
+    // People::homeAreas. EMPTY on the monolith reference oracle (no People
+    // in addSpending's scope); the production windowed path and the test
+    // world set it. Flows to population::View for card-present
+    // distance-decay selection (unread until G2a step-2).
+    std::span<const entity::geography::GeoAreaId> homeAreas{};
   };
 
   struct PayeeDirectory {

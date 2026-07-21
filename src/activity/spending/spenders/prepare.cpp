@@ -53,6 +53,12 @@ actors::Spender buildSpender(const market::Market &market,
   s.burstStart = commerce.burstStartDay(personIndex);
   s.burstLen = commerce.burstLen(personIndex);
 
+  // geo-causal-v1 (G2a): the customer's home area for card-present
+  // distance-decay selection. invalidGeoArea when no carrier is bound
+  // (the monolith reference oracle) — step-2 selection then treats it as
+  // "no local anchor". UNREAD until step-2, so this moves no golden.
+  s.homeArea = pop.homeArea(person);
+
   return s;
 }
 

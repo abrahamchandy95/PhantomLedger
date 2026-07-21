@@ -31,6 +31,12 @@ population::View buildPopulationView(const population::Census &census) {
   std::vector<entity::behavior::Persona> objects(census.personaObjects.begin(),
                                                  census.personaObjects.end());
 
+  // geo-causal-v1 (G2a): the per-person home area (empty on the monolith
+  // oracle → View::homeArea() then reports invalidGeoArea, i.e. no local
+  // anchor). The windowed + test paths carry the real areas.
+  std::vector<entity::geography::GeoAreaId> homeAreas(census.homeAreas.begin(),
+                                                      census.homeAreas.end());
+
   std::vector<std::uint32_t> offsets;
   offsets.reserve(census.count + 1);
 
@@ -50,7 +56,8 @@ population::View buildPopulationView(const population::Census &census) {
   population::Paydays paydays(std::move(offsets), std::move(flat));
 
   return population::View(std::move(primary), std::move(kinds),
-                          std::move(objects), std::move(paydays));
+                          std::move(objects), std::move(paydays),
+                          std::move(homeAreas));
 }
 
 std::vector<double> buildMerchCdf(const entity::merchant::Catalog &catalog) {

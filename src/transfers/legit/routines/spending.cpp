@@ -146,10 +146,10 @@ buildSpendingCards(const entity::card::Registry *creditCards,
   return cards;
 }
 
-[[nodiscard]] plMarket::MarketSources
-assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
-                      const blueprints::LegitBlueprint &plan,
-                      const CensusScratch &scratch) {
+[[nodiscard]] plMarket::MarketSources assembleMarketSources(
+    const SpendingRoutine::PayeeDirectory &payees,
+    const blueprints::LegitBlueprint &plan, const CensusScratch &scratch,
+    std::span<const ::PhantomLedger::entity::geography::GeoAreaId> homeAreas) {
   if (plan.days() < 0) {
     throw std::invalid_argument("spending routine requires non-negative days");
   }
@@ -175,6 +175,11 @@ assembleMarketSources(const SpendingRoutine::PayeeDirectory &payees,
 
   sources.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
+
+  // geo-causal-v1 (G2a): carry the per-person home area to the market's
+  // population View. Empty on the monolith oracle (no People threaded);
+  // the windowed + test paths supply it.
+  sources.census.homeAreas = homeAreas;
 
   sources.network.catalog = payees.merchants;
   sources.network.social = nullptr;
@@ -210,7 +215,8 @@ plMarket::Market SpendingRoutine::prepareMarket(
   const auto scratch =
       buildCensusScratch(plan, census.accounts.lookup, registry, baseTxns);
 
-  auto sources = assembleMarketSources(payees, plan, scratch);
+  auto sources =
+      assembleMarketSources(payees, plan, scratch, census.homeAreas);
   const auto payeeRules = marketPayeesFrom(habits_);
   const auto behavior = marketBehaviorFrom(habits_);
 
