@@ -1,11 +1,13 @@
 #include "phantomledger/exporter/card_fraud/export.hpp"
 
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/mule_ml/identity.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
@@ -27,6 +29,7 @@ namespace {
 namespace cmn = ::PhantomLedger::exporter::common;
 namespace sch = ::PhantomLedger::exporter::schema::card_fraud;
 namespace ent = ::PhantomLedger::entity;
+namespace geo = ::PhantomLedger::synth::geo;
 namespace time_ns = ::PhantomLedger::time;
 
 using ::PhantomLedger::entity::person::Flag;
@@ -47,7 +50,7 @@ Summary exportFromArtifacts(
   if (options.piiPools == nullptr) {
     throw std::invalid_argument(
         "card_fraud::exportFromArtifacts requires Options.piiPools "
-        "(identity rendering and the merchant-geo zip table read it)");
+        "(party identity rendering reads the PII pools)");
   }
   const auto &pools = *options.piiPools;
 
@@ -96,23 +99,25 @@ Summary exportFromArtifacts(
   }
 
   // ------------------- Merchant, Merchant_Assigned, the geo chain
-  std::unordered_map<ent::Key, merchants::Category> categoryByKey;
-  categoryByKey.reserve(world.counterparties.merchants.records.size());
+  //
+  // geo-causal-v1: a merchant's outlet geography is the WORLD-modeled
+  // `entity::merchant::Record.location` (assigned in G1c, population-
+  // weighted), resolved through the pinned catalogue — NO longer hashed
+  // at export. An `online` merchant (Footprint::online → invalidGeoArea)
+  // is geography-free: it gets Merchant + Merchant_Assigned but NO
+  // Has_City/Has_State/Has_Zip, exactly like TabFormer's Online rows
+  // (which carry no merchant geography). Non-catalog destinations (fraud
+  // rail billers) likewise have no modeled location and stay geo-free.
+  std::unordered_map<ent::Key, const ent::merchant::Record *> merchantByKey;
+  merchantByKey.reserve(world.counterparties.merchants.records.size());
   for (const auto &record : world.counterparties.merchants.records) {
-    categoryByKey.emplace(record.counterpartyId, record.category);
-  }
-
-  const auto &pool = pools.forCountry(locale::kDefaultCountry);
-  const auto &zipTable = pool.zipTable;
-  if (zipTable.empty()) {
-    throw std::runtime_error("card_fraud::exportFromArtifacts: the PII "
-                             "pool's zip table is empty; merchant geography "
-                             "derives from it");
+    merchantByKey.emplace(record.counterpartyId, &record);
   }
 
   struct CityInfo {
     std::string name;
     std::string state;
+    std::uint32_t population = 0;
   };
   std::map<std::string, CityInfo> cities;
   std::set<std::string> states;
@@ -129,24 +134,29 @@ Summary exportFromArtifacts(
       const auto id = derive::merchantId(key);
       merchant.writer().writeRow(id);
 
-      const auto catIt = categoryByKey.find(key);
-      const auto category = catIt != categoryByKey.end()
-                                ? catIt->second
+      const auto mit = merchantByKey.find(key);
+      const auto category = mit != merchantByKey.end()
+                                ? mit->second->category
                                 : derive::fallbackCategory(key);
       assigned.writer().writeRow(id, merchants::name(category));
 
-      const auto &zip =
-          zipTable[derive::geoIndexFor(key, zipTable.size())];
-      const std::string state{zip.adminCode};
-      const std::string cityName{zip.city};
-      const std::string zipcode{zip.postalCode};
+      // Only a physical outlet with a modeled catalogue area gets a
+      // location; online merchants and non-catalog billers are geo-free.
+      if (mit == merchantByKey.end() ||
+          !geo::geography().contains(mit->second->location)) {
+        continue;
+      }
+      const auto &area = geo::geography().at(mit->second->location);
+      const std::string state{area.stateCode};
+      const std::string cityName{area.city};
+      const std::string zipcode{area.postalAreaCode};
       const std::string cityId = cityName + "_" + state;
 
       hasState.writer().writeRow(id, state);
       hasCity.writer().writeRow(id, cityId);
       hasZip.writer().writeRow(id, zipcode);
 
-      cities.emplace(cityId, CityInfo{cityName, state});
+      cities.emplace(cityId, CityInfo{cityName, state, area.population});
       states.insert(state);
       zipToCity.emplace(zipcode, cityId);
     }
@@ -157,8 +167,7 @@ Summary exportFromArtifacts(
     auto city = cmn::openTable(target, sch::kCity);
     auto locatedIn = cmn::openTable(target, sch::kLocatedIn);
     for (const auto &[cityId, info] : cities) {
-      city.writer().writeRow(cityId, info.name,
-                             derive::populationFor(cityId));
+      city.writer().writeRow(cityId, info.name, info.population);
       locatedIn.writer().writeRow(cityId, info.state);
     }
     out.cityCount = cities.size();

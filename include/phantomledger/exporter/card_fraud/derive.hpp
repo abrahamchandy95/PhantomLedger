@@ -4,9 +4,11 @@
 //
 // Content-keyed, export-time derivations for the card-fraud use case —
 // the attributes TF_GNN_v3 loads that the world model does not carry
-// (use_chip, error, identifier strings, gender, merchant
-// geography, City population, the category fallback for non-catalog
-// destinations).
+// (use_chip, error, identifier strings, gender, and the category
+// fallback for non-catalog destinations). Merchant outlet geography and
+// City population are NO LONGER derived here (geo-causal-v1): they are
+// world-modeled (`entity::merchant::Record.location`, assigned in G1c)
+// and resolved through `synth::geo::geography()` at export.
 //
 // Determinism rules:
 //  * Every derivation hashes explicit fixed-width field bytes through
@@ -72,12 +74,8 @@ inline constexpr std::uint64_t kErrorLane =
     ::PhantomLedger::hashing::fnv1a64("card_fraud/error");
 inline constexpr std::uint64_t kCategoryLane =
     ::PhantomLedger::hashing::fnv1a64("card_fraud/merchant_category");
-inline constexpr std::uint64_t kGeoLane =
-    ::PhantomLedger::hashing::fnv1a64("card_fraud/merchant_geo");
 inline constexpr std::uint64_t kGenderLane =
     ::PhantomLedger::hashing::fnv1a64("card_fraud/party_gender");
-inline constexpr std::uint64_t kPopulationLane =
-    ::PhantomLedger::hashing::fnv1a64("card_fraud/city_population");
 
 // The row's content key: timestamp, endpoints, amount in cents.
 [[nodiscard]] inline std::uint64_t
@@ -174,27 +172,6 @@ errorFor(const transactions::Transaction &tx) noexcept {
 fallbackCategory(const entity::Key &destination) noexcept {
   const auto h = mixKey(kCategoryLane, destination);
   return merchants::kCategories[h % merchants::kCategoryCount];
-}
-
-// ----------------------------------------------------- merchant geo
-//
-// The world model carries no merchant geography. Each observed
-// merchant draws one entry from the PII pools' US zip table (real,
-// internally consistent city/state/zip triples), keyed by the
-// merchant's identity — so Has_City/Has_State/Has_Zip and the
-// Assigned_To/Located_In chain agree by construction (CHOICE).
-
-[[nodiscard]] inline std::size_t geoIndexFor(const entity::Key &merchant,
-                                             std::size_t tableSize) noexcept {
-  return tableSize == 0
-             ? 0
-             : static_cast<std::size_t>(mixKey(kGeoLane, merchant) % tableSize);
-}
-
-[[nodiscard]] inline std::uint32_t populationFor(std::string_view cityId) {
-  const auto h =
-      mixField(kPopulationLane, ::PhantomLedger::hashing::fnv1a64(cityId));
-  return static_cast<std::uint32_t>(10'000U + (h % 1'990'000U));
 }
 
 // -------------------------------------------------------------- gender

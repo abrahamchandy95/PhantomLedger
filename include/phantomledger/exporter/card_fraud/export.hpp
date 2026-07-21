@@ -28,8 +28,10 @@
 namespace PhantomLedger::exporter::card_fraud {
 
 struct Options {
-  // Required: names/dob/address rendering and the merchant-geo zip
-  // table both read the PII pools.
+  // Required: party identity rendering (names / dob / street) reads the
+  // PII pools. Merchant + home geography is world-modeled (geo-causal-v1)
+  // and resolved through synth::geo::geography() — it no longer reads the
+  // pools' zip table.
   const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
   // The simulation window: Party.created_at derives from the same

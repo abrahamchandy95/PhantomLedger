@@ -12,12 +12,14 @@
 // international commerce appears only as travel / cross-border fraud
 // EVENTS in G2.
 //
-// The assignment is WRITTEN here but UNREAD by exporters until the
-// merchant exporter round (which deletes the acausal geoIndexFor /
-// populationFor and reads Record.location) — so this round moves no
-// golden. Placement is population-weighted only; category demand-density
-// and urbanicity refinements await land-area / commercial data (owner's
-// calibration pass) and are deliberately NOT fabricated here.
+// The assignment is consumed by the card-fraud merchant exporter, which
+// resolves Record.location through synth::geo::geography() (the acausal
+// derive::geoIndexFor/populationFor are deleted). G1c itself moved no
+// golden — placement rides isolated lanes off the shared stream, so the
+// corpus was byte-identical the round it landed. Placement is
+// population-weighted only; category demand-density and urbanicity
+// refinements await land-area / commercial data (owner's calibration
+// pass) and are deliberately NOT fabricated here.
 //
 
 #include "phantomledger/entities/counterparties/merchants.hpp"

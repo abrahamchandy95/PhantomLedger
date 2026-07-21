@@ -41,8 +41,9 @@ struct Record {
   // placeGeography) from the pinned geo catalogue on dedicated per-merchant
   // RNG lanes — a physical outlet gets a population-weighted US area, an
   // `online` outlet keeps `location == invalidGeoArea` (no physical
-  // geography — reachable from anywhere). Still UNREAD by exporters until
-  // the merchant exporter round replaces the acausal geoIndexFor.
+  // geography — reachable from anywhere). READ by the card-fraud merchant
+  // exporter, which resolves `location` through `synth::geo::geography()`
+  // (the acausal geoIndexFor is gone).
   entity::geography::GeoAreaId location = entity::geography::invalidGeoArea;
   Footprint footprint = Footprint::localOutlet;
 };
