@@ -77,8 +77,11 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
          const entity::person::Topology &topology,
          const sy::pii::Sharing &sharing);
 
+// geoSeed seeds the isolated merchant footprint/location lanes (G1c);
+// it never touches `rng` (the shared entity stream). Pass the run seed.
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
+               std::uint64_t geoSeed,
                const sy::merchants::GenerationPlan &plan = {});
 
 [[nodiscard]] sy::landlords::Pack

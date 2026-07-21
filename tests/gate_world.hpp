@@ -203,7 +203,7 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology,
                                      pl::synth::pii::Sharing{});
-  cps.merchants = entityStage::buildMerchants(rng, spec.population);
+  cps.merchants = entityStage::buildMerchants(rng, spec.population, spec.seed);
   cps.landlords = entityStage::buildLandlords(rng, spec.population);
   cps.counterparties = entityStage::buildCounterparties(rng, spec.population);
   holdings.creditCards =

@@ -167,8 +167,11 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology, cfg.piiSharing);
 
+  // seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
+  // which are isolated from `rng`; the merchant catalogue's economic draws
+  // still come off the shared stream, so the corpus is byte-identical.
   cps.merchants =
-      entityStage::buildMerchants(rng, cfg.population, cfg.merchants);
+      entityStage::buildMerchants(rng, cfg.population, seed_, cfg.merchants);
   cps.landlords =
       entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(

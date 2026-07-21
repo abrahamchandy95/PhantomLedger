@@ -37,10 +37,12 @@ struct Record {
   double weight = 0.0;
 
   // geo-causal-v1: the outlet's canonical location and reach. Both are
-  // assigned during merchant synthesis from the embedded geo catalogue
-  // on dedicated RNG lanes (G1c); an `online` outlet keeps `location ==
-  // invalidGeoArea` (no physical geography — reachable from anywhere).
-  // Default-initialized and unread until that round wires assignment.
+  // ASSIGNED during merchant synthesis (G1c, synth::merchants::
+  // placeGeography) from the pinned geo catalogue on dedicated per-merchant
+  // RNG lanes — a physical outlet gets a population-weighted US area, an
+  // `online` outlet keeps `location == invalidGeoArea` (no physical
+  // geography — reachable from anywhere). Still UNREAD by exporters until
+  // the merchant exporter round replaces the acausal geoIndexFor.
   entity::geography::GeoAreaId location = entity::geography::invalidGeoArea;
   Footprint footprint = Footprint::localOutlet;
 };

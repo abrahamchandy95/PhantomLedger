@@ -12,6 +12,7 @@
 #include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/merchants/place.hpp"
 #include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/synth/pii/correlate.hpp"
@@ -74,10 +75,15 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
 
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
+               std::uint64_t geoSeed,
                const sy::merchants::GenerationPlan &plan) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
-  return sy::merchants::makeCatalog(rng, population, plan);
+  auto catalog = sy::merchants::makeCatalog(rng, population, plan);
+  // Geography rides an isolated per-merchant lane (geoSeed), never the
+  // shared entity stream `rng`, so the corpus is byte-identical.
+  sy::merchants::placeGeography(catalog, geoSeed);
+  return catalog;
 }
 
 [[nodiscard]] sy::landlords::Pack
