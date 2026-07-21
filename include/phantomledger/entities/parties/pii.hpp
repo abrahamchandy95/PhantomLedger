@@ -77,16 +77,22 @@ struct Dob {
 struct Address {
   std::uint32_t streetIdx = 0;
 
-  // Legacy uniform pool index (pre-geo-causal-v1). Still drawn from the
-  // shared entity stream so the corpus digest is unperturbed; superseded
-  // as the home-geography source by `geoArea` and slated for removal
-  // once every consumer reads `geoArea` (exporter switch round).
+  // Legacy uniform pool index (pre-geo-causal-v1). Superseded as the
+  // home-geography source by `geoArea`: every exporter now renders
+  // city/state/postal from the catalogue (see exporter/common
+  // pii_render::homeGeo). Still DRAWN from the shared entity stream
+  // (synth::pii::sampleAddress) so the corpus RNG sequence — and thus
+  // every downstream value — is unperturbed, and still consulted as the
+  // render fallback for a country with no residential area in the
+  // catalogue (unreachable for the shipped locale mix, which the
+  // catalogue fully covers). Retiring the draw is a corpus-moving change
+  // deferred past the geo-causal-v1 re-pin.
   std::uint32_t zipTableIdx = 0;
 
   // geo-causal-v1: the household's canonical home area in the pinned geo
   // catalogue (population-weighted; assigned on an isolated RNG lane).
   // invalidGeoArea when no catalogue is bound or the person's country
-  // has no residential area in it.
+  // has no residential area in it. The authoritative home geography.
   entity::geography::GeoAreaId geoArea = entity::geography::invalidGeoArea;
 };
 

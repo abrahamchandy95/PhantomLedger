@@ -88,8 +88,9 @@ set(PL_SYNTH_PII_SOURCES
 )
 
 # Canonical geographic catalogue (geo-causal-v1). Loader for the pinned
-# artifact + population-weighted home placement over it. Consumed by PII
-# synthesis (homes), merchant synthesis (outlets), and the exporters.
+# data file (data/geo/us_cities.csv) + population-weighted home
+# placement over it. Consumed by PII synthesis (homes), merchant
+# synthesis (outlets), and the exporters.
 set(PL_SYNTH_GEO_SOURCES
     src/synth/geo/catalog.cpp
     src/synth/geo/residence.cpp
@@ -461,6 +462,12 @@ pl_add_job_library(pl_world
 )
 target_link_libraries(pl_world PUBLIC pl_primitives pl_diagnostics)
 target_link_libraries(pl_world PRIVATE faker-cxx)
+
+# geo-causal-v1: the geography catalogue lives in a pinned DATA FILE;
+# its path is fixed at BUILD TIME (compile definition, NOT a CLI flag).
+# synth::geo::geography() (src/synth/geo/catalog.cpp) loads it once.
+target_compile_definitions(pl_world PRIVATE
+    PL_GEO_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data/geo/us_cities.csv")
 
 # Balance clearing: the authoritative ledger and LOC accrual.
 pl_add_job_library(pl_ledger ${PL_TRANSACTIONS_SOURCES})

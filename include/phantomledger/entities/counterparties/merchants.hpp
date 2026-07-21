@@ -26,7 +26,8 @@ enum class Footprint : std::uint8_t {
   localOutlet,     // reached mostly by nearby residents (grocery, fuel, …)
   regionalOutlet,  // metro/region reach (larger retail, some healthcare)
   nationalService, // service billed nationwide (telecom, insurance)
-  online,          // card-not-present; distance does not apply
+  online,          // online card use — the card IS used, just remotely
+                   // (the "Online" use_chip value); distance does not apply
 };
 
 struct Record {
@@ -36,10 +37,10 @@ struct Record {
   double weight = 0.0;
 
   // geo-causal-v1: the outlet's canonical location and reach. Both are
-  // assigned during merchant synthesis from the pinned geo catalogue on
-  // dedicated RNG lanes (G1); an `online` outlet keeps `location ==
-  // invalidGeoArea` (no physical geography). Default-initialized and
-  // unread until that round wires assignment.
+  // assigned during merchant synthesis from the embedded geo catalogue
+  // on dedicated RNG lanes (G1c); an `online` outlet keeps `location ==
+  // invalidGeoArea` (no physical geography — reachable from anywhere).
+  // Default-initialized and unread until that round wires assignment.
   entity::geography::GeoAreaId location = entity::geography::invalidGeoArea;
   Footprint footprint = Footprint::localOutlet;
 };

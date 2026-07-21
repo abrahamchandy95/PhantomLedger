@@ -1,14 +1,17 @@
 #pragma once
 
 #include "phantomledger/entities/parties/pii.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 
 #include <string>
+#include <string_view>
 
 namespace PhantomLedger::exporter::common::pii_render {
 
 namespace pii = ::PhantomLedger::entity::pii;
 namespace synthpii = ::PhantomLedger::synth::pii;
+namespace geo = ::PhantomLedger::synth::geo;
 
 [[nodiscard]] inline std::string name(const synthpii::LocalePool &pool,
                                       pii::Name n) {
@@ -58,28 +61,49 @@ namespace synthpii = ::PhantomLedger::synth::pii;
   return {};
 }
 
-[[nodiscard]] inline std::string city(const synthpii::LocalePool &pool,
-                                      pii::Address addr) {
+// geo-causal-v1: a home's (city, state, postal) as ONE coherent tuple
+// from the pinned catalogue — the single point where every exporter
+// resolves home geography, so the person, their household, and the
+// downstream vertices all report the same rows. The catalogue is the
+// authority; the legacy per-country zip pool is consulted ONLY when the
+// household has no modeled area (a country with no residential row in
+// the catalogue — unreachable for the shipped locale mix, which the
+// catalogue fully covers). Both branches return views into
+// process-lifetime storage (the immutable static catalogue or the run's
+// locale pools), so callers may hold them for the export.
+struct HomeGeo {
+  std::string_view city;
+  std::string_view state;
+  std::string_view postcode;
+};
+
+[[nodiscard]] inline HomeGeo homeGeo(const synthpii::LocalePool &pool,
+                                     pii::Address addr) {
+  const auto &catalogue = geo::geography();
+  if (catalogue.contains(addr.geoArea)) {
+    const auto &a = catalogue.at(addr.geoArea);
+    return {a.city, a.stateCode, a.postalAreaCode};
+  }
   if (addr.zipTableIdx < pool.zipTable.size()) {
-    return pool.zipTable[addr.zipTableIdx].city;
+    const auto &zip = pool.zipTable[addr.zipTableIdx];
+    return {zip.city, zip.adminCode, zip.postalCode};
   }
   return {};
+}
+
+[[nodiscard]] inline std::string city(const synthpii::LocalePool &pool,
+                                      pii::Address addr) {
+  return std::string{homeGeo(pool, addr).city};
 }
 
 [[nodiscard]] inline std::string state(const synthpii::LocalePool &pool,
                                        pii::Address addr) {
-  if (addr.zipTableIdx < pool.zipTable.size()) {
-    return pool.zipTable[addr.zipTableIdx].adminCode;
-  }
-  return {};
+  return std::string{homeGeo(pool, addr).state};
 }
 
 [[nodiscard]] inline std::string postcode(const synthpii::LocalePool &pool,
                                           pii::Address addr) {
-  if (addr.zipTableIdx < pool.zipTable.size()) {
-    return pool.zipTable[addr.zipTableIdx].postalCode;
-  }
-  return {};
+  return std::string{homeGeo(pool, addr).postcode};
 }
 
 [[nodiscard]] inline std::string name(const synthpii::PoolSet &pools,

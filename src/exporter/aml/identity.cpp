@@ -1,6 +1,7 @@
 #include "phantomledger/exporter/aml/identity.hpp"
 
 #include "phantomledger/exporter/aml/shared.hpp"
+#include "phantomledger/exporter/common/pii_render.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 #include "phantomledger/taxonomies/locale/us_banks.hpp"
 
@@ -16,6 +17,7 @@ namespace PhantomLedger::exporter::aml::identity {
 namespace {
 
 namespace pii_ns = ::PhantomLedger::synth::pii;
+namespace pii_render = ::PhantomLedger::exporter::common::pii_render;
 
 template <std::size_t N>
 void appendBytes(StackString<N> &out, std::string_view bytes) noexcept {
@@ -173,6 +175,10 @@ void fillStreetLine2(StackString<24> &out, std::uint64_t seedHash) noexcept {
               std::string_view{tmp, static_cast<std::size_t>(r.ptr - tmp)});
 }
 
+// Commercial addresses (counterparties, banks) are NOT residences: they
+// have no household home, so their geography stays a stable hash draw
+// over the US pool. Person residences resolve through the geo catalogue
+// (see addressForPerson); merchant outlet geography is a later round.
 [[nodiscard]] AddressRecord
 buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
                      std::string_view addressType,
@@ -381,12 +387,17 @@ AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
   if (rec.address.streetIdx < pool.streets.size()) {
     out.streetLine1 = pool.streets[rec.address.streetIdx];
   }
-  if (rec.address.zipTableIdx < pool.zipTable.size()) {
-    const auto &zip = pool.zipTable[rec.address.zipTableIdx];
-    out.city = zip.city;
-    out.state = zip.adminCode;
-    out.postalCode = zip.postalCode;
-  }
+
+  // geo-causal-v1: city/state/zip are the household's modeled home area
+  // from the pinned catalogue (population-weighted, coherent with the
+  // person's home), resolved through the shared exporter resolver — not
+  // an independent per-person zip draw. Views point into the immutable
+  // static catalogue (or the run's pools on the legacy fallback), both
+  // of which outlive this record's use.
+  const auto home = pii_render::homeGeo(pool, rec.address);
+  out.city = home.city;
+  out.state = home.state;
+  out.postalCode = home.postcode;
 
   const auto seed = personSeed(personId);
   const auto hash = stableU64({seed.view(), "address_apt"});

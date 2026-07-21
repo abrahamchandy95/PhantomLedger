@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/parties/pii.hpp"
+#include "phantomledger/exporter/common/pii_render.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/taxonomies/locale/names.hpp"
 
@@ -91,12 +92,15 @@ renderIdentity(const ::PhantomLedger::entity::pii::Record &record,
   if (record.address.streetIdx < pool.streets.size()) {
     out.address = pool.streets[record.address.streetIdx];
   }
-  if (record.address.zipTableIdx < pool.zipTable.size()) {
-    const auto &zip = pool.zipTable[record.address.zipTableIdx];
-    out.city = zip.city;
-    out.state = zip.adminCode;
-    out.zipcode = zip.postalCode;
-  }
+
+  // geo-causal-v1: city/state/zip are the household's modeled home area
+  // (population-weighted, coherent with the person's home), resolved
+  // through the shared exporter resolver — not an independent zip draw.
+  const auto home = common::pii_render::homeGeo(pool, record.address);
+  out.city = std::string{home.city};
+  out.state = std::string{home.state};
+  out.zipcode = std::string{home.postcode};
+
   return out;
 }
 
