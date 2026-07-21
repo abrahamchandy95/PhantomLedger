@@ -172,8 +172,8 @@ void printWindowedSummary(
           ? 0.0
           : static_cast<double>(summary.phaseB.fraudRows) / streamRows;
 
-  std::printf("People: %u  Accounts: %zu\n",
-              static_cast<unsigned>(peopleCount), accountCount);
+  std::printf("People: %u  Accounts: %zu\n", static_cast<unsigned>(peopleCount),
+              accountCount);
   std::printf("Transactions: %llu  Fraud rows: %llu (%.4f%%)  candidates "
               "L=%llu  card events=%llu\n",
               static_cast<unsigned long long>(streamRows),
@@ -185,8 +185,7 @@ void printWindowedSummary(
               static_cast<unsigned long long>(transfers.spoolRows),
               static_cast<double>(transfers.spoolBytes) / (1024.0 * 1024.0));
   std::printf("Posted book hash: 0x%llx\n",
-              static_cast<unsigned long long>(
-                  transfers.postedBookHash));
+              static_cast<unsigned long long>(transfers.postedBookHash));
 }
 
 void printAmlSummary(const pl::exporter::aml::Summary &summary) {
@@ -233,11 +232,10 @@ void printAmlTxnEdgesSummary(
 }
 
 void printCardFraudSummary(const pl::exporter::card_fraud::Summary &summary) {
-  const double ratio =
-      (summary.viewRows == 0)
-          ? 0.0
-          : static_cast<double>(summary.fraudViewRows) /
-                static_cast<double>(summary.viewRows);
+  const double ratio = (summary.viewRows == 0)
+                           ? 0.0
+                           : static_cast<double>(summary.fraudViewRows) /
+                                 static_cast<double>(summary.viewRows);
 
   std::printf("card-fraud export complete (TF_GNN_v3 loaded attributes)\n");
   std::printf("  Payment txns:    %llu of %llu corpus rows  (fraud: %llu, "
@@ -337,28 +335,25 @@ int runWindowedStream(
   // Captured now: with the R2 release/rebuild flow the world object
   // is not guaranteed to be populated when the summary prints.
   const auto worldPeopleCount = world.people.roster.roster.count;
-  const auto worldAccountCount = world.holdings.accounts.registry.records.size();
+  const auto worldAccountCount =
+      world.holdings.accounts.registry.records.size();
 
   // With the server up, EVERY use case's tables are written directly
   // into PostgreSQL as the bytes the csv::Writer renders (standard
   // lands unprefixed in the public schema; the aml exporters derive
   // their vertices_/edges_ prefixes internally).
-  const pl::exporter::sinks::PgMirror stdMirror{.conninfo = pgConninfo,
-                                                .schema = "",
-                                                .tablePrefix = ""};
-  const pl::exporter::sinks::PgMirror mlMirror{.conninfo = pgConninfo,
-                                               .schema = "mule_ml",
-                                               .tablePrefix = "ml_ready_"};
-  const pl::exporter::sinks::PgMirror amlMirror{.conninfo = pgConninfo,
-                                                .schema = "aml",
-                                                .tablePrefix = "aml_"};
-  const pl::exporter::sinks::PgMirror amlTxnMirror{
-      .conninfo = pgConninfo,
-      .schema = "aml_txn_edges",
-      .tablePrefix = "aml_txn_edges_"};
-  const pl::exporter::sinks::PgMirror cfMirror{.conninfo = pgConninfo,
-                                               .schema = "card_fraud",
-                                               .tablePrefix = "cf_"};
+  const pl::exporter::sinks::PgMirror stdMirror{
+      .conninfo = pgConninfo, .schema = "", .tablePrefix = ""};
+  const pl::exporter::sinks::PgMirror mlMirror{
+      .conninfo = pgConninfo, .schema = "mule_ml", .tablePrefix = "ml_ready_"};
+  const pl::exporter::sinks::PgMirror amlMirror{
+      .conninfo = pgConninfo, .schema = "aml", .tablePrefix = "aml_"};
+  const pl::exporter::sinks::PgMirror amlTxnMirror{.conninfo = pgConninfo,
+                                                   .schema = "aml_txn_edges",
+                                                   .tablePrefix =
+                                                       "aml_txn_edges_"};
+  const pl::exporter::sinks::PgMirror cfMirror{
+      .conninfo = pgConninfo, .schema = "card_fraud", .tablePrefix = "cf_"};
 
   std::optional<pl::exporter::standard::StreamingTransfersExport> stdStream;
   if (streamStandard) {
@@ -414,14 +409,10 @@ int runWindowedStream(
     cfStream.emplace(pl::exporter::card_fraud::StreamingCardFraudExport::Config{
         .cards = &world.holdings.creditCards,
         .merchants = &world.counterparties.merchants,
-        .window = window,
         .pgMirror = pgUp ? &cfMirror : nullptr,
     });
   }
 
-  // RAM R2.1 + R2.3a: see the engine comment. Every sink above except
-  // mule-ml has now copied (or never bound) what it needs from the
-  // released packs; nothing reads them again before the rebuild below.
   const bool exportPacksReleased = !streamMuleMl;
   if (exportPacksReleased) {
     pl::pipeline::releaseExportOnlyPacks(world);

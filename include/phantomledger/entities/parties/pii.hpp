@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -75,7 +76,18 @@ struct Dob {
 
 struct Address {
   std::uint32_t streetIdx = 0;
+
+  // Legacy uniform pool index (pre-geo-causal-v1). Still drawn from the
+  // shared entity stream so the corpus digest is unperturbed; superseded
+  // as the home-geography source by `geoArea` and slated for removal
+  // once every consumer reads `geoArea` (exporter switch round).
   std::uint32_t zipTableIdx = 0;
+
+  // geo-causal-v1: the household's canonical home area in the pinned geo
+  // catalogue (population-weighted; assigned on an isolated RNG lane).
+  // invalidGeoArea when no catalogue is bound or the person's country
+  // has no residential area in it.
+  entity::geography::GeoAreaId geoArea = entity::geography::invalidGeoArea;
 };
 
 // --- Record / Roster ---------------------------------------------

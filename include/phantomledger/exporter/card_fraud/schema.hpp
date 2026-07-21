@@ -7,8 +7,8 @@
 // TF_GNN_v3 schema. The generator emits LOADED attributes only; every
 // computed slot in TF_GNN_v3 (pagerank/community/c_id/c_size, the 25
 // engineered Payment_Transaction features, prev_state_differs, and the
-// train/val/test interaction, co-occurrence and community edges) is
-// in-graph TigerGraph query work, not ours.
+// interaction, co-occurrence and community edges) is in-graph
+// TigerGraph query work, not ours.
 //
 // THE CARD VIEW (which corpus rows become Payment_Transaction):
 //   channel == Legit::cardPurchase  credit-card purchases; row.source
@@ -42,8 +42,7 @@
 // with the content-keyed category fallback (derive.hpp). Merchant
 // geography does not exist in the world model: city/state/zip are
 // content-keyed derivations from the merchant identity (doc-anchored
-// CHOICE rows), as are City.population, use_chip, error, and the
-// chronological is_train/is_val/is_test split.
+// CHOICE rows), as are City.population, use_chip, and error.
 //
 // The PII investigative layer (Address/Phone/Email/IP/Device/ID/
 // Full_Name/DOB + Has_* edges) is DEMO ONLY in TF_GNN_v3 and empty on
@@ -85,15 +84,10 @@ inline constexpr Table kState = detail::make("State.csv", kStateCols);
 inline constexpr std::array<std::string_view, 1> kZipcodeCols{"id"};
 inline constexpr Table kZipcode = detail::make("Zipcode.csv", kZipcodeCols);
 
-// The streamed transaction vertex: 8 loaded attributes + the 3
-// chronological split flags. Everything else on the TF_GNN_v3 vertex
-// is computed in-graph. `id` carries the corpus row_seq (T<row_seq>),
-// so every Payment_Transaction cross-references the streamed
-// 'transactions' table directly.
-inline constexpr std::array<std::string_view, 11> kPaymentTransactionCols{
+// The streamed transaction vertex
+inline constexpr std::array<std::string_view, 8> kPaymentTransactionCols{
     "id",        "transaction_time", "amount",   "is_fraud",
-    "unix_time", "mer_cat",          "use_chip", "error",
-    "is_train",  "is_val",           "is_test"};
+    "unix_time", "mer_cat",          "use_chip", "error"};
 inline constexpr Table kPaymentTransaction =
     detail::make("Payment_Transaction.csv", kPaymentTransactionCols);
 
@@ -123,15 +117,14 @@ inline constexpr std::array<std::string_view, 2> kPartyHasCardCols{
 inline constexpr Table kPartyHasCard =
     detail::make("Party_Has_Card.csv", kPartyHasCardCols);
 
-inline constexpr std::array<std::string_view, 2> kIsMerchantCols{
-    "merchant_id", "party_id"};
+inline constexpr std::array<std::string_view, 2> kIsMerchantCols{"merchant_id",
+                                                                 "party_id"};
 inline constexpr Table kIsMerchant =
     detail::make("Is_Merchant.csv", kIsMerchantCols);
 
 inline constexpr std::array<std::string_view, 2> kHasStateCols{"merchant_id",
                                                                "state_id"};
-inline constexpr Table kHasState =
-    detail::make("Has_State.csv", kHasStateCols);
+inline constexpr Table kHasState = detail::make("Has_State.csv", kHasStateCols);
 
 inline constexpr std::array<std::string_view, 2> kHasCityCols{"merchant_id",
                                                               "city_id"};
@@ -175,8 +168,7 @@ inline constexpr std::array<std::string_view, 2> kIdCols{"id", "id_type"};
 inline constexpr Table kId = detail::make("ID.csv", kIdCols);
 
 inline constexpr std::array<std::string_view, 1> kFullNameCols{"name"};
-inline constexpr Table kFullName =
-    detail::make("Full_Name.csv", kFullNameCols);
+inline constexpr Table kFullName = detail::make("Full_Name.csv", kFullNameCols);
 
 inline constexpr std::array<std::string_view, 1> kDobCols{"dob"};
 inline constexpr Table kDob = detail::make("DOB.csv", kDobCols);
@@ -189,15 +181,13 @@ inline constexpr std::array<std::string_view, 2> kHasAddressCols{"address",
 inline constexpr Table kHasAddress =
     detail::make("Has_Address.csv", kHasAddressCols);
 
-inline constexpr std::array<std::string_view, 2> kHasPhoneCols{
-    "party_id", "phone_number"};
-inline constexpr Table kHasPhone =
-    detail::make("Has_Phone.csv", kHasPhoneCols);
+inline constexpr std::array<std::string_view, 2> kHasPhoneCols{"party_id",
+                                                               "phone_number"};
+inline constexpr Table kHasPhone = detail::make("Has_Phone.csv", kHasPhoneCols);
 
 inline constexpr std::array<std::string_view, 2> kHasEmailCols{"party_id",
                                                                "email"};
-inline constexpr Table kHasEmail =
-    detail::make("Has_Email.csv", kHasEmailCols);
+inline constexpr Table kHasEmail = detail::make("Has_Email.csv", kHasEmailCols);
 
 inline constexpr std::array<std::string_view, 2> kHasIdCols{"party_id", "id"};
 inline constexpr Table kHasId = detail::make("Has_ID.csv", kHasIdCols);
@@ -211,8 +201,7 @@ inline constexpr std::array<std::string_view, 2> kHasDeviceCols{"party_id",
 inline constexpr Table kHasDevice =
     detail::make("Has_Device.csv", kHasDeviceCols);
 
-inline constexpr std::array<std::string_view, 2> kHasDobCols{"party_id",
-                                                             "dob"};
+inline constexpr std::array<std::string_view, 2> kHasDobCols{"party_id", "dob"};
 inline constexpr Table kHasDob = detail::make("Has_DOB.csv", kHasDobCols);
 
 inline constexpr std::array<std::string_view, 2> kHasFullNameCols{"party_id",

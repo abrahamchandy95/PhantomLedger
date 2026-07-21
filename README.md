@@ -864,10 +864,10 @@ TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix 
 - **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
   purchases, including the unauthorized-card and gift-card-scam fraud rows attributed to the
   victim's card) and `merchant` rows (account-paid POS, interpreted as debit-card transactions).
-  11 loaded columns: `id` (`T<row_seq>`, cross-referencing the streamed `transactions` table 1:1),
-  timestamp, amount, `is_fraud`, unix time, merchant category, `use_chip`, `error`, and the
-  chronological 70/15/15 `is_train`/`is_val`/`is_test` split flags. Streamed at row scale during
-  settlement together with the `Card_Send_Transaction` / `Merchant_Receive_Transaction` edges.
+  8 loaded columns: `id` (`T<row_seq>`, cross-referencing the streamed `transactions` table 1:1),
+  timestamp, amount, `is_fraud`, unix time, merchant category, `use_chip`, and `error`. Streamed
+  at row scale during settlement together with the `Card_Send_Transaction` /
+  `Merchant_Receive_Transaction` edges.
 - **Cards and parties** — `Card` (credit cards resolve through the card registry, ≤1 per person;
   every other view source becomes the account's derived debit card; `is_fraud` marks cards that
   ever carried a flagged view row), `Party` (canonical customer ids; `is_fraud` labels fraud

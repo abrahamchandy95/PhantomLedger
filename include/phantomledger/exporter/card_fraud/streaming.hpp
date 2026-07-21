@@ -7,8 +7,7 @@
 // (schema.hpp: channels cardPurchase + merchant), and
 //
 //   STREAMS (row-scale, never retained):
-//     Payment_Transaction vertices    id T<row_seq>; 8 loaded attrs +
-//                                     the 3 chronological split flags
+//     Payment_Transaction vertices    id T<row_seq>; the 8 loaded attrs
 //     Card_Send_Transaction edges     txn -> card, edge_unix_time
 //     Merchant_Receive_Transaction    txn -> merchant, edge_unix_time
 //
@@ -24,7 +23,7 @@
 // so T<row_seq> ids cross-reference the streamed 'transactions' table
 // 1:1 — the same identity test_postgres pins for the corpus.
 //
-// use_chip / error / splits / category fallback are the content-keyed
+// use_chip / error / category fallback are the content-keyed
 // derivations in derive.hpp (doc-anchored card-fraud-2026-07 block);
 // catalog destinations resolve their real category through the
 // merchant catalog index built at construction.
@@ -35,9 +34,9 @@
 // own connection, open across the whole fold.
 //
 
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
@@ -45,7 +44,6 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
@@ -56,7 +54,6 @@
 #include <optional>
 #include <set>
 #include <span>
-#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -67,16 +64,13 @@ struct CardSeen {
   bool fraud = false;
 };
 
-// Everything the fold accumulates for the finisher. Per the
-// stage-product rule a NEW fold output belongs IN here, never as a new
-// finisher parameter.
 struct StreamedArtifacts {
   std::map<entity::Key, CardSeen> cards;
   std::set<entity::Key> merchants;
 
   std::int64_t firstTs = common::kFallbackEpoch;
-  std::uint64_t rows = 0;      // every settled row (row_seq domain)
-  std::uint64_t viewRows = 0;  // rows in the card view
+  std::uint64_t rows = 0;     // every settled row (row_seq domain)
+  std::uint64_t viewRows = 0; // rows in the card view
   std::uint64_t fraudViewRows = 0;
 };
 
@@ -90,9 +84,6 @@ public:
     // destinations use derive::fallbackCategory.
     const entity::merchant::Catalog *merchants = nullptr;
 
-    // Split boundaries derive from the simulation window.
-    ::PhantomLedger::time::Window window{};
-
     // When set, the streamed tables are written directly into
     // PostgreSQL as the bytes the csv::Writer renders — the only
     // production destination.
@@ -103,8 +94,7 @@ public:
   };
 
   explicit StreamingCardFraudExport(Config config)
-      : config_(std::move(config)),
-        bounds_(derive::splitBounds(config_.window)) {
+      : config_(std::move(config)) {
     if (config_.merchants != nullptr) {
       categoryByKey_.reserve(config_.merchants->records.size());
       for (const auto &record : config_.merchants->records) {
@@ -117,8 +107,7 @@ public:
     namespace sch = ::PhantomLedger::exporter::schema::card_fraud;
     paymentW_.emplace(common::openTable(target, sch::kPaymentTransaction));
     cardSendW_.emplace(common::openTable(target, sch::kCardSend));
-    merchantReceiveW_.emplace(
-        common::openTable(target, sch::kMerchantReceive));
+    merchantReceiveW_.emplace(common::openTable(target, sch::kMerchantReceive));
   }
 
   void beginSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
@@ -171,14 +160,11 @@ public:
                                 ? catIt->second
                                 : derive::fallbackCategory(tx.target);
 
-      const auto split = derive::splitFor(tx.timestamp, bounds_);
-
       paymentW_->writer().writeRow(
-          id,
-          time::formatTimestamp(time::fromEpochSeconds(tx.timestamp)),
+          id, time::formatTimestamp(time::fromEpochSeconds(tx.timestamp)),
           tx.amount, static_cast<std::int32_t>(fraud ? 1 : 0), unixTime,
           merchants::name(category), derive::useChipFor(tx),
-          derive::errorFor(tx), split.train, split.val, split.test);
+          derive::errorFor(tx));
 
       cardSendW_->writer().writeRow(id, cardNumber, unixTime);
       merchantReceiveW_->writer().writeRow(id, merchant, unixTime);
@@ -205,7 +191,6 @@ public:
 private:
   Config config_;
 
-  derive::SplitBounds bounds_;
   std::unordered_map<entity::Key, merchants::Category> categoryByKey_;
 
   StreamedArtifacts artifacts_;

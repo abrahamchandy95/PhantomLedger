@@ -4,10 +4,9 @@
 //
 // Content-keyed, export-time derivations for the card-fraud use case —
 // the attributes TF_GNN_v3 loads that the world model does not carry
-// (use_chip, error, split flags, identifier strings, gender, merchant
+// (use_chip, error, identifier strings, gender, merchant
 // geography, City population, the category fallback for non-catalog
-// destinations). Shared by the streaming leg and the vertex/edge
-// finisher so both derive IDENTICAL values for the same entity or row.
+// destinations).
 //
 // Determinism rules:
 //  * Every derivation hashes explicit fixed-width field bytes through
@@ -36,8 +35,6 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/hashing/constants.hpp"
 #include "phantomledger/primitives/hashing/fnv.hpp"
-#include "phantomledger/primitives/time/calendar.hpp"
-#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -88,8 +85,8 @@ rowHash(std::uint64_t lane, const transactions::Transaction &tx) noexcept {
   auto h = mixField(lane, static_cast<std::uint64_t>(tx.timestamp));
   h = mixKey(h, tx.source);
   h = mixKey(h, tx.target);
-  return mixField(
-      h, static_cast<std::uint64_t>(std::llround(tx.amount * 100.0)));
+  return mixField(h,
+                  static_cast<std::uint64_t>(std::llround(tx.amount * 100.0)));
 }
 
 // --------------------------------------------------------- identifiers
@@ -187,17 +184,13 @@ fallbackCategory(const entity::Key &destination) noexcept {
 // merchant's identity — so Has_City/Has_State/Has_Zip and the
 // Assigned_To/Located_In chain agree by construction (CHOICE).
 
-[[nodiscard]] inline std::size_t
-geoIndexFor(const entity::Key &merchant, std::size_t tableSize) noexcept {
+[[nodiscard]] inline std::size_t geoIndexFor(const entity::Key &merchant,
+                                             std::size_t tableSize) noexcept {
   return tableSize == 0
              ? 0
-             : static_cast<std::size_t>(mixKey(kGeoLane, merchant) %
-                                        tableSize);
+             : static_cast<std::size_t>(mixKey(kGeoLane, merchant) % tableSize);
 }
 
-// City.population: the zip table carries no population figures, so the
-// vertex attribute is a content-keyed synthetic placeholder, uniform
-// over [10'000, 2'000'000) per city id (CHOICE).
 [[nodiscard]] inline std::uint32_t populationFor(std::string_view cityId) {
   const auto h =
       mixField(kPopulationLane, ::PhantomLedger::hashing::fnv1a64(cityId));
@@ -213,45 +206,6 @@ geoIndexFor(const entity::Key &merchant, std::size_t tableSize) noexcept {
 
 [[nodiscard]] inline std::string_view genderFor(entity::PersonId person) {
   return (mixField(kGenderLane, person) % 2U) == 0U ? "F" : "M";
-}
-
-// ---------------------------------------------------------- splits
-//
-// Chronological train/val/test at .70/.15/.15 of the window's days
-// (floored day boundaries; CHOICE). Settlement-tail rows past the
-// window end land in test by construction.
-
-struct SplitBounds {
-  std::int64_t trainEndExcl = 0;
-  std::int64_t valEndExcl = 0;
-};
-
-[[nodiscard]] inline SplitBounds splitBounds(time::Window window) noexcept {
-  const auto days = static_cast<std::int64_t>(window.days);
-  const auto trainDays = static_cast<int>((days * 70) / 100);
-  const auto valDays = static_cast<int>((days * 85) / 100);
-  return SplitBounds{
-      .trainEndExcl =
-          time::toEpochSeconds(time::addDays(window.start, trainDays)),
-      .valEndExcl = time::toEpochSeconds(time::addDays(window.start, valDays)),
-  };
-}
-
-struct SplitFlags {
-  int train = 0;
-  int val = 0;
-  int test = 0;
-};
-
-[[nodiscard]] constexpr SplitFlags splitFor(std::int64_t ts,
-                                            const SplitBounds &b) noexcept {
-  if (ts < b.trainEndExcl) {
-    return {.train = 1, .val = 0, .test = 0};
-  }
-  if (ts < b.valEndExcl) {
-    return {.train = 0, .val = 1, .test = 0};
-  }
-  return {.train = 0, .val = 0, .test = 1};
 }
 
 } // namespace PhantomLedger::exporter::card_fraud::derive

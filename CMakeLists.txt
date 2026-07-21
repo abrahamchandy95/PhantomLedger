@@ -87,6 +87,14 @@ set(PL_SYNTH_PII_SOURCES
     src/synth/pii/correlate.cpp
 )
 
+# Canonical geographic catalogue (geo-causal-v1). Loader for the pinned
+# artifact + population-weighted home placement over it. Consumed by PII
+# synthesis (homes), merchant synthesis (outlets), and the exporters.
+set(PL_SYNTH_GEO_SOURCES
+    src/synth/geo/catalog.cpp
+    src/synth/geo/residence.cpp
+)
+
 set(PL_SYNTH_PRODUCTS_SOURCES
     src/synth/products/sampling/amounts.cpp
     src/synth/products/sampling/dates.cpp
@@ -288,6 +296,7 @@ set(PL_ALL_SOURCES
     ${PL_PRIMITIVES_SOURCES}
     ${PL_DIAGNOSTICS_SOURCES}
     ${PL_SYNTH_PII_SOURCES}
+    ${PL_SYNTH_GEO_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
@@ -439,11 +448,13 @@ target_link_libraries(pl_primitives PRIVATE PostgreSQL::PostgreSQL)
 pl_add_job_library(pl_diagnostics ${PL_DIAGNOSTICS_SOURCES})
 target_link_libraries(pl_diagnostics PUBLIC pl_primitives)
 
-# The static universe: people/PII, products, devices/IPs/rings,
-# family and social graphs. One library, two layer trees (synth and
-# relationships are mutually-dependent halves of world synthesis).
+# The static universe: people/PII, canonical geography, products,
+# devices/IPs/rings, family and social graphs. One library, several
+# layer trees (synth and relationships are mutually-dependent halves of
+# world synthesis).
 pl_add_job_library(pl_world
     ${PL_SYNTH_PII_SOURCES}
+    ${PL_SYNTH_GEO_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}

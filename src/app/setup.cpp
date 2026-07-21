@@ -42,6 +42,13 @@ poolSizeForFraction(double fraction, std::int32_t population) noexcept {
       (static_cast<std::uint64_t>(countryIdx) * kCountryMixer));
 }
 
+// Seed for the isolated {"home-geo", …} lane (geo-causal-v1). Distinct
+// from the shared entity stream so home placement never perturbs it.
+[[nodiscard]] std::uint64_t deriveGeoSeed(std::uint64_t topLevelSeed) noexcept {
+  constexpr std::uint64_t kGeoSeedDomain = 0x6765'6F5F'686F'6D65ULL; // "geo_home"
+  return topLevelSeed ^ kGeoSeedDomain;
+}
+
 [[nodiscard]] pii::LocalePool generateLocalePool(pl::locale::Country country,
                                                  double fraction,
                                                  std::int32_t population,
@@ -97,6 +104,7 @@ buildEntitySynthesis(const RunOptions &opts, const pii::PoolSet &pools,
               .pools = &pools,
               .simStart = simStart,
               .localeMix = mix,
+              .geoSeed = deriveGeoSeed(opts.seed),
           },
   };
 }

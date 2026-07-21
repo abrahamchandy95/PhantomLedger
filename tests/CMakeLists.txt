@@ -49,6 +49,14 @@ pl_add_test(test_fingerprint)
 pl_add_test(test_spending)
 pl_add_test(test_minhash_parity)
 
+# geo-causal-v1: the EMBEDDED world geography (no external file/CLI).
+# test_geo_catalog pins the compiled-in catalogue (state coverage,
+# coherence, distance); test_residence_geography pins population-
+# weighted home placement (weighting, zero-residential exclusion,
+# per-country, determinism).
+pl_add_test(test_geo_catalog)
+pl_add_test(test_residence_geography)
+
 pl_add_test(test_pipeline_e2e)
 set_tests_properties(test_pipeline_e2e PROPERTIES TIMEOUT 60)
 

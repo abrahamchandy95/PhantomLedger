@@ -344,7 +344,6 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   StreamingCardFraudExport sink({
       .cards = &result.holdings.creditCards,
       .merchants = &result.counterparties.merchants,
-      .window = options.window,
       .pgMirror = options.pgMirror,
       .capture = options.capture,
   });
