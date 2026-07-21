@@ -57,6 +57,13 @@ pl_add_test(test_minhash_parity)
 pl_add_test(test_geo_catalog)
 pl_add_test(test_residence_geography)
 
+# geo-causal-v1 (G2a step-2): MODEL acceptance gates for causal card-present
+# merchant selection — distance decay, location-varying decay scale, online
+# exclusion, and emergent big-city volume. Serverless + deterministic
+# (even-u sampling of the geo pools; no PG, no rng-stream dependency). The
+# golden digests pin the bytes; these gates pin the MEANING.
+pl_add_test(test_geo_selection)
+
 pl_add_test(test_pipeline_e2e)
 set_tests_properties(test_pipeline_e2e PROPERTIES TIMEOUT 60)
 
