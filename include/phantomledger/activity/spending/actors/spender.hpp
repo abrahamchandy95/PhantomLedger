@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/market/commerce/view.hpp"
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
@@ -45,6 +46,12 @@ struct Spender {
   float exploreProp = 0.0f;
   std::uint32_t burstStart = market::commerce::kNoBurstDay;
   std::uint16_t burstLen = 0;
+
+  // geo-causal-v1 (G2a): the customer's home area, for card-present
+  // distance-decay selection. Sourced from the compact People::homeAreas
+  // carrier via the population View. invalidGeoArea until the carrier is
+  // threaded to buildSpender (step-1 remainder); UNREAD until step-2.
+  entity::geography::GeoAreaId homeArea = entity::geography::invalidGeoArea;
 };
 
 } // namespace PhantomLedger::activity::spending::actors

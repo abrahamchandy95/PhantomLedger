@@ -167,6 +167,11 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology, cfg.piiSharing);
 
+  // geo-causal-v1 (G2a): snapshot the compact home-area carrier NOW, while
+  // PII is alive — releaseExportOnlyPacks() nulls people.pii before the
+  // transfer fold, and causal card-present selection needs the home area.
+  people.homeAreas = homeAreasOf(people.pii);
+
   // seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
   // which are isolated from `rng`; the merchant catalogue's economic draws
   // still come off the shared stream, so the corpus is byte-identical.
@@ -237,7 +242,9 @@ void releaseExportOnlyPacks(SimulationResult &world) noexcept {
   // Move-assign empty packs: releases the old storage now. The Router
   // keeps its own copies of the per-person device/IP pools, so routing
   // is unaffected; the fold reads none of these (their only consumers
-  // are the vertex exporters).
+  // are the vertex exporters). NOTE: people.homeAreas is a SEPARATE
+  // compact carrier that must OUTLIVE this release (the fold's causal
+  // selection reads it), so it is deliberately NOT cleared here.
   world.people.pii = entity::pii::Roster{};
   world.infra.devices = synth::infra::devices::Output{};
   world.infra.ips = synth::infra::ips::Output{};
