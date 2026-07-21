@@ -69,6 +69,11 @@ legitWorldInputs(const pipeline::People &people,
       .counterparties = &cps.counterparties,
       .landlords = &cps.landlords,
       .merchants = &cps.merchants,
+      // geo-causal-v1 (G2a): the compact per-person home carrier (a span
+      // into People::homeAreas, which outlives the builder). Reaches the
+      // spending market via RoutineResources → CensusSource so BOTH the
+      // windowed and monolith engines select from the same home areas.
+      .homeAreas = people.homeAreas,
   };
 }
 

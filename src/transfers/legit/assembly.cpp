@@ -227,6 +227,10 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
               .portfolios = world.portfolios,
               .creditCards = world.creditCards,
               .cardLifecycle = cardLifecycle_.lifecycleRules,
+              // geo-causal-v1 (G2a step-2): carry the per-person home areas
+              // into the monolith spending pass so the reference oracle
+              // selects from the SAME homes as the windowed path.
+              .homeAreas = world.homeAreas,
           },
           income_.rent,
       })

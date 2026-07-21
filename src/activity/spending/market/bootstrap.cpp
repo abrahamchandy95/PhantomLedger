@@ -6,6 +6,7 @@
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/relationships/social/builder.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
 
 #include <algorithm>
 #include <array>
@@ -22,6 +23,13 @@ namespace PhantomLedger::activity::spending::market {
 namespace {
 
 namespace social = ::PhantomLedger::relationships::social;
+namespace synthgeo = ::PhantomLedger::synth::geo;
+
+// geo-causal-v1 (G2a step-2): exponential distance-decay scale (MILES) for
+// card-present merchant selection — an everyday "local shopping" radius.
+// PROVISIONAL, pending a calibration run (see the DISTANCE UNITS / decay-scale
+// entry in the systemprompt geo debt). Distances are in miles (US convention).
+inline constexpr double kCardPresentDecayScaleMiles = 30.0;
 
 population::View buildPopulationView(const population::Census &census) {
   std::vector<entity::Key> primary(census.primaryAccounts.begin(),
@@ -245,8 +253,21 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
   social::Contacts contacts =
       buildSocialContacts(sources.census.count, sources.baseSeed);
 
+  // geo-causal-v1 (G2a step-2): the per-home-area distance-decay pools over
+  // physical merchants. Pure data derived from the catalogue + geography (no
+  // RNG), so it moves no golden; UNREAD until the selection change reads it.
+  // Empty when there is no catalogue or no home areas (monolith oracle before
+  // the wiring) → card-present selection falls back to the national CDF.
+  commerce::GeographicMerchantPools geoPools =
+      catalog != nullptr
+          ? commerce::GeographicMerchantPools::build(
+                *catalog, synthgeo::geography(), sources.census.homeAreas,
+                kCardPresentDecayScaleMiles)
+          : commerce::GeographicMerchantPools{};
+
   commerce::View commerceView(std::move(selection), std::move(assignedPayees),
-                              std::move(activity), std::move(contacts));
+                              std::move(activity), std::move(contacts),
+                              std::move(geoPools));
 
   Cards cards = normalizeCards(std::move(sources.cards), sources.census.count);
 

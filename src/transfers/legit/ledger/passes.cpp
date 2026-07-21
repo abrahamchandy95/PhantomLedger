@@ -357,6 +357,12 @@ void addSpending(const RoutinePass &pass,
               .lookup = *resources.accountsLookup,
               .registry = *accounts.registry,
           },
+      // geo-causal-v1 (G2a step-2): the monolith reference oracle now carries
+      // the same per-person home areas as the production windowed path (via
+      // RoutineResources.homeAreas). Card-present distance-decay selection
+      // reads them through the population View, so both engines stay
+      // byte-identical. Empty ⇒ no local anchor (invalidGeoArea).
+      .homeAreas = resources.homeAreas,
   };
 
   const routineSpending::SpendingRoutine::PayeeDirectory payees{

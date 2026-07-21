@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/spending/market/commerce/favorites.hpp"
+#include "phantomledger/activity/spending/market/commerce/geo_pools.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/relationships/social/contacts.hpp"
 
@@ -99,11 +100,16 @@ class View {
 public:
   View() = default;
 
+  // geo-causal-v1 (G2a step-2): `geoPools` is the per-home-area distance-decay
+  // pool over physical merchants. Defaulted (empty) so callers that predate
+  // the geo model still construct a View; when empty, card-present selection
+  // falls back to the national CDF. UNREAD until the selection change lands.
   View(MerchantSelection selection, AssignedPayees payees,
-       ShopperActivity activity,
-       relationships::social::Contacts contacts) noexcept
+       ShopperActivity activity, relationships::social::Contacts contacts,
+       GeographicMerchantPools geoPools = {}) noexcept
       : selection_(std::move(selection)), payees_(std::move(payees)),
-        activity_(std::move(activity)), contacts_(std::move(contacts)) {}
+        activity_(std::move(activity)), contacts_(std::move(contacts)),
+        geoPools_(std::move(geoPools)) {}
 
   [[nodiscard]] const entity::merchant::Catalog *catalog() const noexcept {
     return selection_.catalog();
@@ -152,6 +158,12 @@ public:
     return contacts_;
   }
 
+  // Per-home-area distance-decay merchant pools (G2a step-2). Empty ⇒ no
+  // local anchor; the card-present branch falls back to the national CDF.
+  [[nodiscard]] const GeographicMerchantPools &geoPools() const noexcept {
+    return geoPools_;
+  }
+
   // Mutator used during month-boundary evolution. Marked clearly.
   [[nodiscard]] std::vector<double> &merchCdf() noexcept {
     return selection_.merchCdf();
@@ -162,6 +174,7 @@ private:
   AssignedPayees payees_;
   ShopperActivity activity_;
   relationships::social::Contacts contacts_;
+  GeographicMerchantPools geoPools_;
 };
 
 } // namespace PhantomLedger::activity::spending::market::commerce

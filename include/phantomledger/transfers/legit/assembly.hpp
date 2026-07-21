@@ -4,9 +4,10 @@
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
-#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -19,6 +20,7 @@
 #include "phantomledger/transfers/legit/routines/relatives.hpp"
 
 #include <cstdint>
+#include <span>
 
 namespace PhantomLedger::clearing {
 struct BalanceRules;
@@ -76,6 +78,14 @@ public:
     const entity::counterparty::Directory *counterparties = nullptr;
     const synth::landlords::Pack *landlords = nullptr;
     const entity::merchant::Catalog *merchants = nullptr;
+
+    // geo-causal-v1 (G2a): per-person home area (PersonId-1), the compact
+    // People::homeAreas carrier. Non-owning; must outlive the builder.
+    // Empty ⇒ the spending market's population View reports invalidGeoArea
+    // (no local anchor) — the monolith reference oracle carried empty
+    // until this was wired so windowed==monolith under card-present
+    // distance-decay selection.
+    std::span<const entity::geography::GeoAreaId> homeAreas;
   };
 
   LegitAssembly();

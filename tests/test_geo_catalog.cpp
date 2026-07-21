@@ -7,7 +7,7 @@
 //   * 1-based dense ids; bounds-checked lookup;
 //   * every US state + DC is represented (home placement covers the map);
 //   * international destinations exist (travel / cross-border fraud);
-//   * a real great-circle distance between two known cities.
+//   * a real great-circle distance between two known cities (in MILES).
 //
 
 #include "phantomledger/entities/geography/area.hpp"
@@ -92,9 +92,11 @@ int main() {
   check(la != nullptr && la->stateCode == "CA", "Los Angeles row is coherent");
 
   if (ny != nullptr && la != nullptr) {
-    const double d = geo::distanceKm(*ny, *la);
-    check(d > 3800.0 && d < 4100.0,
-          "NYC->LA distance ~3.9k km, got " + std::to_string(d));
+    // Distances are in MILES (US convention). NYC->LA great-circle is
+    // ~2.45k miles (≈3.9k km); this pins both the value and the unit.
+    const double d = geo::distanceMiles(*ny, *la);
+    check(d > 2350.0 && d < 2550.0,
+          "NYC->LA distance ~2.45k miles, got " + std::to_string(d));
   }
 
   // International destination present (e.g. London, GB).

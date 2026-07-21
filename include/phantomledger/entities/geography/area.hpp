@@ -27,6 +27,12 @@
 // ~0.1 m — far finer than any distance decay needs. Never introduce
 // double coordinates into the world model.
 //
+// DISTANCE UNITS: MILES. PhantomLedger models US retail banking, where
+// distance is reasoned in statute miles, not kilometres (owner directive
+// 2026-07-21). The land-area column is still stored in km^2 (raw Census)
+// and is currently unused — see the DISTANCE UNITS geo debt for the
+// provisional decay scale and the land-area unit follow-up.
+//
 
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -66,17 +72,20 @@ struct GeoArea {
   std::uint32_t landAreaKm2 = 0;  // Census land area (km^2)
 };
 
-// Great-circle distance in kilometres between two microdegree points.
-// Pure and deterministic — the distance-decay selection score (G2) and
-// the acceptance-gate distance reports build on this.
-[[nodiscard]] inline double haversineKm(std::int32_t latE6A,
-                                        std::int32_t lonE6A,
-                                        std::int32_t latE6B,
-                                        std::int32_t lonE6B) noexcept {
+// Great-circle distance in MILES between two microdegree points.
+// PhantomLedger reasons about distance in statute miles (US retail-banking
+// convention — see the DISTANCE UNITS note above). Pure and deterministic —
+// the distance-decay selection score (G2a) and the acceptance-gate distance
+// reports build on this.
+[[nodiscard]] inline double haversineMiles(std::int32_t latE6A,
+                                           std::int32_t lonE6A,
+                                           std::int32_t latE6B,
+                                           std::int32_t lonE6B) noexcept {
   constexpr double kE6 = 1'000'000.0;
   constexpr double kPi = 3.14159265358979323846;
   constexpr double kDegToRad = kPi / 180.0;
-  constexpr double kEarthRadiusKm = 6371.0088;
+  // Mean Earth radius 6371.0088 km expressed in statute miles.
+  constexpr double kEarthRadiusMiles = 3958.7559;
 
   const double lat1 = (static_cast<double>(latE6A) / kE6) * kDegToRad;
   const double lat2 = (static_cast<double>(latE6B) / kE6) * kDegToRad;
@@ -89,12 +98,13 @@ struct GeoArea {
   const double sinLon = std::sin(dLon * 0.5);
   const double a =
       sinLat * sinLat + std::cos(lat1) * std::cos(lat2) * sinLon * sinLon;
-  return 2.0 * kEarthRadiusKm * std::asin(std::sqrt(std::min(1.0, a)));
+  return 2.0 * kEarthRadiusMiles * std::asin(std::sqrt(std::min(1.0, a)));
 }
 
-[[nodiscard]] inline double distanceKm(const GeoArea &a,
-                                       const GeoArea &b) noexcept {
-  return haversineKm(a.latitudeE6, a.longitudeE6, b.latitudeE6, b.longitudeE6);
+[[nodiscard]] inline double distanceMiles(const GeoArea &a,
+                                          const GeoArea &b) noexcept {
+  return haversineMiles(a.latitudeE6, a.longitudeE6, b.latitudeE6,
+                        b.longitudeE6);
 }
 
 // The loaded catalogue. Row order defines the 1-based ids; `at(id)`
