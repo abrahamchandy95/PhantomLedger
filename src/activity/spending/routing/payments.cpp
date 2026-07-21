@@ -28,6 +28,14 @@ inline constexpr channels::Tag kCardChannel =
 inline constexpr double kCashCushionMultiple = 1.5;
 inline constexpr double kAmountFloor = 1.0;
 
+// geo-causal-v1 (G2a step-2): share of NON-FAVORITE merchant picks that are
+// CARD-PRESENT (in-person, LOCAL to the customer's home area) rather than
+// online (geography-free). PROVISIONAL — aligns with the card-fraud exporter's
+// use_chip online share (~.11); it SHOULD become TIME-VARYING across the
+// modeled decades (e-commerce grows) — see the CARD-PRESENT/ONLINE SHARE debt
+// in systemprompt.md.
+inline constexpr double kCardPresentShare = 0.89;
+
 struct PaymentRoute {
   entity::Key srcKey{};
   clearing::Ledger::Index srcIdx = clearing::Ledger::invalid;
@@ -184,9 +192,28 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
     return favRow[slot];
   }
 
-  const auto &cdf = commerce.merchCdf();
-  std::uint32_t pick = static_cast<std::uint32_t>(
-      probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
+  // Non-favorite (popularity/geography) pick. geo-causal-v1 (G2a step-2): roll
+  // the transaction MODE. Card-present everyday spend is LOCAL to the
+  // customer's home area — sample the home-area distance-decay pool; online
+  // spend is geography-free — sample the national popularity CDF. When the
+  // home area has no pool (no local anchor), card-present falls back to the
+  // national CDF. Favorites (returned above) stay global-random regardless of
+  // mode (axiom #8). The mode roll is a NEW rng draw — it is what shifts the
+  // corpus in this round. Selection reads ONLY geography/popularity, never
+  // isFraud/ringId/label.
+  const auto &geoPools = commerce.geoPools();
+  const bool cardPresent = rng_.coin(kCardPresentShare);
+  const bool local = cardPresent && geoPools.has(spender.homeArea);
+
+  const auto drawPick = [&]() -> std::uint32_t {
+    if (local) {
+      return geoPools.sample(spender.homeArea, rng_.nextDouble());
+    }
+    return static_cast<std::uint32_t>(probability::distributions::sampleIndex(
+        commerce.merchCdf(), rng_.nextDouble()));
+  };
+
+  std::uint32_t pick = drawPick();
 
   if (favRow.empty()) {
     return pick;
@@ -199,8 +226,7 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
     if (!isFav) {
       return pick;
     }
-    pick = static_cast<std::uint32_t>(
-        probability::distributions::sampleIndex(cdf, rng_.nextDouble()));
+    pick = drawPick();
   }
   return pick;
 }

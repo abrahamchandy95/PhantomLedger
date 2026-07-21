@@ -7,24 +7,32 @@
 // a customer is far likelier to pay at an outlet near home — so for each home
 // area we precompute a CDF over the physical outlets, weighted by
 //
-//     popularity(record.weight) * exp(-distanceMiles / scaleMiles)
+//     popularity(record.weight) * exp(-distanceMiles / scaleMiles(homeArea))
 //
 // Distance is in MILES (US retail-banking convention; see
 // entities/geography/area.hpp). Online / non-physical merchants
 // (location == invalidGeoArea) are NOT in any pool — they are reached through
 // the geography-free national CDF (the online branch of merchant selection).
 //
+// LOCATION-VARYING DECAY (owner 2026-07-21): the decay scale is a FUNCTION OF
+// THE CUSTOMER'S HOME AREA, not a global constant. A New Yorker's everyday
+// card-present radius is a few miles (merchants are dense, nobody drives far);
+// a small-town / rural resident routinely travels tens of miles. Urbanicity is
+// proxied here by the area's POPULATION — the only signal in the catalogue
+// today (no land area yet) — log-interpolated between a dense-urban and a
+// small-town scale. PROVISIONAL: the endpoints, the curve, and the switch to
+// true density (population / land_area) are calibration debt (see systemprompt
+// DISTANCE UNITS + DECAY SCALE).
+//
 // Popularity stays LOCATION-INDEPENDENT: the same record.weight feeds both the
 // national CDF and every area pool, so a big-city merchant earns higher
 // realized volume purely by having more nearby customers, never by a wired
 // coupling (axiom 7). The structure is PURE data built from the catalogue +
-// geography — no RNG is consumed here, so building it moves no golden. It is
-// UNREAD until the selection change (payments.cpp) lands.
+// geography — no RNG is consumed here, so building it moves no golden.
 //
-// scaleMiles is a PROVISIONAL assumption pending calibration — see the
-// DISTANCE UNITS / decay-scale entry in the systemprompt geo debt. Memory is
-// O(occupiedAreas x physicalMerchants); fine at the placeholder catalogue
-// (~71 areas), a scaling item for the catalogue-expansion debt.
+// Memory is O(occupiedAreas x physicalMerchants); fine at the placeholder
+// catalogue (~71 areas), a scaling item folded into the catalogue-expansion
+// debt.
 //
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
@@ -38,24 +46,46 @@
 
 namespace PhantomLedger::activity::spending::market::commerce {
 
+// The card-present distance-decay scale (MILES) for a customer whose home is
+// `homeArea`. Denser/larger places decay FAST; smaller/rural places decay
+// SLOWLY. PROVISIONAL population-proxy curve (see the file header + debt).
+[[nodiscard]] inline double
+cardPresentDecayScaleMiles(const entity::geography::GeoArea &homeArea) noexcept {
+  constexpr double kUrbanScaleMiles = 4.0;      // mega-city everyday radius
+  constexpr double kSmallTownScaleMiles = 50.0; // small/rural everyday radius
+  constexpr double kPopUrban = 5'000'000.0;     // >= this -> kUrbanScaleMiles
+  constexpr double kPopSmallTown = 50'000.0;    // <= this -> kSmallTownScaleMiles
+
+  const double p = static_cast<double>(homeArea.population);
+  if (!(p > kPopSmallTown)) {
+    return kSmallTownScaleMiles;
+  }
+  if (p >= kPopUrban) {
+    return kUrbanScaleMiles;
+  }
+
+  // Log-linear between the two anchors: larger population -> shorter scale.
+  const double t = (std::log(p) - std::log(kPopSmallTown)) /
+                   (std::log(kPopUrban) - std::log(kPopSmallTown));
+  return kSmallTownScaleMiles + t * (kUrbanScaleMiles - kSmallTownScaleMiles);
+}
+
 class GeographicMerchantPools {
 public:
   GeographicMerchantPools() = default;
 
-  // Build a distance-decay pool for each DISTINCT home area in `homeAreas`.
-  // Returns an empty (has()==false everywhere) instance when there is nothing
-  // to build — no catalogue, no geography, no home areas, no physical
-  // merchants, or a non-positive scale — so callers fall back to the national
-  // CDF safely.
+  // Build a distance-decay pool for each DISTINCT home area in `homeAreas`,
+  // using a per-home-area decay scale (cardPresentDecayScaleMiles). Returns an
+  // empty (has()==false everywhere) instance when there is nothing to build —
+  // no catalogue, no geography, no home areas, or no physical merchants — so
+  // callers fall back to the national CDF safely.
   [[nodiscard]] static GeographicMerchantPools
   build(const entity::merchant::Catalog &catalog,
         const entity::geography::GeoCatalog &geo,
-        std::span<const entity::geography::GeoAreaId> homeAreas,
-        double scaleMiles) {
+        std::span<const entity::geography::GeoAreaId> homeAreas) {
     GeographicMerchantPools pools;
 
-    if (catalog.records.empty() || geo.empty() || homeAreas.empty() ||
-        !(scaleMiles > 0.0)) {
+    if (catalog.records.empty() || geo.empty() || homeAreas.empty()) {
       return pools;
     }
 
@@ -79,7 +109,7 @@ public:
         continue; // out of range, or already built for this area
       }
 
-      auto cdf = pools.buildAreaCdf(catalog, geo, home, scaleMiles);
+      auto cdf = pools.buildAreaCdf(catalog, geo, home);
       if (cdf.empty()) {
         continue; // degenerate (all-zero) weights — leave to national CDF
       }
@@ -115,8 +145,9 @@ private:
   [[nodiscard]] std::vector<double>
   buildAreaCdf(const entity::merchant::Catalog &catalog,
                const entity::geography::GeoCatalog &geo,
-               entity::geography::GeoAreaId home, double scaleMiles) const {
+               entity::geography::GeoAreaId home) const {
     const auto &homeArea = geo.at(home);
+    const double scaleMiles = cardPresentDecayScaleMiles(homeArea);
 
     std::vector<double> weights;
     weights.reserve(physical_.size());
