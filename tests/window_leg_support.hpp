@@ -307,10 +307,18 @@ struct LegResult {
     const xfer::WindowedTransferDriver::FraudSourceFactory makeFraud =
         [&](std::uint64_t realizedCandidateCount)
         -> std::unique_ptr<xfer::ScheduleCursorSource> {
+      // card-fraud-realism-v2 step b: the merchant acceptance catalogue
+      // and the home-area axis, EXACTLY as both production engines pass
+      // them (simulate.cpp, windowed_run.cpp). The gate harness must
+      // carry them too — every v2 acceptance gate runs on this world, so
+      // an unfilled harness would let the step b-2 gates pass against a
+      // carrier-free world that can never exhibit the behavior they
+      // claim to measure. UNREAD until b-2.
       return xfer::makeFraudSource(
           injector, opt.window,
           static_cast<std::size_t>(realizedCandidateCount),
-          xfer::FraudEmission::legitCounterparties(legitCps));
+          xfer::FraudEmission::legitCounterparties(
+              legitCps, &world.cps.merchants, world.people.homeAreas));
     };
 
     xfer::RunSummary summary;

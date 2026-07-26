@@ -33,20 +33,50 @@
 //   card (at most one credit card per person). Any other source Key ->
 //   the account's derived DEBIT card: a stable identifier derived from
 //   the account Key (derive.hpp), so every account owns exactly one
-//   debit-card identity across the whole run. Fraud rows therefore
-//   label the victim account's derived debit card (Card.is_fraud = card
-//   ever carried a flag-1 view row). That full-window attribute leaks future
-//   fraud if used as a predictive input; it is a label/analysis attribute only
-//   until a point-in-time feature contract is implemented.
+//   debit-card identity across the whole run.
+//
+// ============================================================ LABELS
+// THE ONE SUPERVISED TARGET IS `Payment_Transaction.is_fraud`
+// (card-fraud-realism-v2, gate 1 of docs/card_fraud_online_gnn.md).
+//
+// Four columns below are FULL-WINDOW entity labels by construction —
+// "this card ever carried a flag-1 row", "this party is a fraud actor",
+// "this device/IP is flagged". Read as features they answer the
+// training question before the model sees a single transaction: a GNN
+// given Card.is_fraud scores ~100% and learns nothing about behavior.
+// Schema conformance is not a shield — a leaking column is a leaking
+// column whether or not TF_GNN_v3 declares it.
+//
+//   kCardCols[1]    "is_fraud"    always 0
+//   kPartyCols[1]   "is_fraud"    always 0
+//   kIpCols[1]      "is_blocked"  always 0
+//   kDeviceCols[1]  "is_blocked"  always 0
+//
+// They are RETAINED (not dropped) so the owner's TigerGraph loading
+// jobs keep mapping positionally, and WRITTEN AS 0 so no leak reaches
+// the feature graph. Their investigative content moves to
+// kGroundTruthLabel below — one table, outside the vertex/edge graph,
+// which nothing in TF_GNN_v3 loads and no edge points at. Evaluate
+// entity-level detection against THAT; train against the streamed
+// transaction target.
+//
+// The remaining exported attributes are point-in-time honest: Party
+// created_at is the membership joinTs (H3), and every transaction
+// attribute is observable at its own timestamp.
+// ===================================================================
 //
 // MERCHANT SET: the union of destination Keys observed in the view.
-// Catalog merchants carry their category; fraud destinations are drawn
-// from the blueprint's biller accounts (unauthorized.cpp) and may lie
-// outside the merchant catalog — they still become Merchant vertices,
-// with the content-keyed category fallback (derive.hpp). Merchant geography
-// comes from entity::merchant::Record.location and the world geography
-// catalogue. Online merchants and non-catalog fraud billers are geography-
-// free. `use_chip` and `error` remain export-time derivations and tracked
+// Catalog merchants carry their category; card-rail fraud destinations
+// are drawn from the SAME merchant acceptance catalogue as legitimate
+// spend, modality-conditioned through the same distance-decay kernel
+// (card-fraud-realism-v2 step b-2, unauthorized.cpp), degrading to the
+// blueprint's biller accounts only when no eligible merchant exists —
+// those degenerate destinations may lie outside the catalog, still
+// become Merchant vertices, and take the content-keyed category
+// fallback (derive.hpp). Merchant geography comes from
+// entity::merchant::Record.location and the world geography catalogue.
+// Online merchants and non-catalog fraud billers are geography-free.
+// `use_chip` and `error` remain export-time derivations and tracked
 // realism debt; City.population is the catalogue value.
 //
 // The PII investigative layer (Address/Phone/Email/IP/Device/ID/
@@ -63,6 +93,7 @@ namespace PhantomLedger::exporter::schema::card_fraud {
 
 // ------------------------------------------------------------ vertices
 
+// is_fraud: RETAINED FOR POSITIONAL LOADING, ALWAYS 0 (see LABELS).
 inline constexpr std::array<std::string_view, 2> kCardCols{"card_number",
                                                            "is_fraud"};
 inline constexpr Table kCard = detail::make("Card.csv", kCardCols);
@@ -75,6 +106,7 @@ inline constexpr std::array<std::string_view, 1> kMerchantCategoryCols{
 inline constexpr Table kMerchantCategory =
     detail::make("Merchant_Category.csv", kMerchantCategoryCols);
 
+// is_fraud: RETAINED FOR POSITIONAL LOADING, ALWAYS 0 (see LABELS).
 inline constexpr std::array<std::string_view, 7> kPartyCols{
     "id", "is_fraud", "gender", "dob", "party_type", "name", "created_at"};
 inline constexpr Table kParty = detail::make("Party.csv", kPartyCols);
@@ -89,7 +121,9 @@ inline constexpr Table kState = detail::make("State.csv", kStateCols);
 inline constexpr std::array<std::string_view, 1> kZipcodeCols{"id"};
 inline constexpr Table kZipcode = detail::make("Zipcode.csv", kZipcodeCols);
 
-// The streamed transaction vertex
+// The streamed transaction vertex. `is_fraud` HERE is the one
+// supervised target: a per-row label observable at that row's own
+// timestamp, not an entity summary.
 inline constexpr std::array<std::string_view, 8> kPaymentTransactionCols{
     "id",        "transaction_time", "amount",   "is_fraud",
     "unix_time", "mer_cat",          "use_chip", "error"};
@@ -162,9 +196,11 @@ inline constexpr Table kPhone = detail::make("Phone.csv", kPhoneCols);
 inline constexpr std::array<std::string_view, 1> kEmailCols{"email"};
 inline constexpr Table kEmail = detail::make("Email.csv", kEmailCols);
 
+// is_blocked: RETAINED FOR POSITIONAL LOADING, ALWAYS 0 (see LABELS).
 inline constexpr std::array<std::string_view, 2> kIpCols{"id", "is_blocked"};
 inline constexpr Table kIp = detail::make("IP.csv", kIpCols);
 
+// is_blocked: RETAINED FOR POSITIONAL LOADING, ALWAYS 0 (see LABELS).
 inline constexpr std::array<std::string_view, 2> kDeviceCols{"id",
                                                              "is_blocked"};
 inline constexpr Table kDevice = detail::make("Device.csv", kDeviceCols);
@@ -213,5 +249,34 @@ inline constexpr std::array<std::string_view, 2> kHasFullNameCols{"party_id",
                                                                   "name"};
 inline constexpr Table kHasFullName =
     detail::make("Has_Full_Name.csv", kHasFullNameCols);
+
+// ------------------------------------------ INVESTIGATIVE GROUND TRUTH
+//
+// Deliberately NOT a graph vertex and NOT a graph edge: no TF_GNN_v3
+// loading job reads this table, and nothing in the schema points at it.
+// It is where the four zeroed entity labels went (see LABELS above), so
+// the investigative view survives for EVALUATION while the feature
+// graph stays free of full-window leakage.
+//
+//   entity_type  card | party | device | ip
+//   entity_id    the same identifier the corresponding vertex table
+//                writes (derive::cardId, renderCustomerId,
+//                renderDeviceId, network::format), so it joins 1:1
+//   label        ever_fraud   card carried >= 1 flag-1 view row
+//                fraud_actor  party is a ring member, solo fraudster
+//                             or mule (VICTIMS ARE NOT LABELLED —
+//                             card-fraud-2026-07 label definition)
+//                flagged      device carries the modelled flag
+//                blacklisted  IP carries the modelled blacklist
+//
+// POSITIVES ONLY: an entity absent from this table has label 0. The
+// entity universe is the vertex tables; this is the label overlay.
+// Every one of these is a WHOLE-WINDOW fact — using any of them as a
+// model input reintroduces exactly the leak this table exists to
+// quarantine.
+inline constexpr std::array<std::string_view, 3> kGroundTruthLabelCols{
+    "entity_type", "entity_id", "label"};
+inline constexpr Table kGroundTruthLabel =
+    detail::make("Ground_Truth_Label.csv", kGroundTruthLabelCols);
 
 } // namespace PhantomLedger::exporter::schema::card_fraud

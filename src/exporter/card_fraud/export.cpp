@@ -20,8 +20,10 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace PhantomLedger::exporter::card_fraud {
 
@@ -35,13 +37,36 @@ namespace time_ns = ::PhantomLedger::time;
 
 using ::PhantomLedger::entity::person::Flag;
 
-// Party.is_fraud labels fraud ACTORS (ring member, solo fraudster or
-// mule) — victims stay 0 (label definition, card-fraud-2026-07).
+// Party ground truth labels fraud ACTORS (ring member, solo fraudster or
+// mule) — victims stay unlabelled (label definition, card-fraud-2026-07).
 [[nodiscard]] bool isFraudActor(const ent::person::Roster &roster,
                                 ent::PersonId p) {
   return roster.has(p, Flag::fraud) || roster.has(p, Flag::soloFraud) ||
          roster.has(p, Flag::mule);
 }
+
+// ------------------------------------------- THE ZEROED LABEL COLUMNS
+//
+// card-fraud-realism-v2 (gate 1 of docs/card_fraud_online_gnn.md).
+// Card.is_fraud, Party.is_fraud, Device.is_blocked and IP.is_blocked are
+// FULL-WINDOW entity verdicts: "this card ever carried a flag-1 row".
+// Exported as features they answer the training question before the
+// model sees a transaction. The columns stay (TF_GNN_v3 loading jobs map
+// positionally) and carry this value; the investigative content moves to
+// the quarantined kGroundTruthLabel table below.
+inline constexpr std::int32_t kLabelWithheld = 0;
+
+// The label overlay: POSITIVES ONLY, joinable 1:1 to the vertex tables
+// by (entity_type, entity_id). Bounded by the number of fraud-touched
+// entities, which is a small fraction of the roster — accumulated here
+// so the single table writer runs once, after every labelled source has
+// been walked in its own deterministic order (cards by Key, parties by
+// PersonId, devices then IPs in record order).
+struct GroundTruthRow {
+  std::string_view entityType;
+  std::string entityId;
+  std::string_view label;
+};
 
 } // namespace
 
@@ -63,6 +88,8 @@ Summary exportFromArtifacts(
   out.viewRows = artifacts.viewRows;
   out.fraudViewRows = artifacts.fraudViewRows;
 
+  std::vector<GroundTruthRow> groundTruth;
+
   // ------------------------------------------- Card + Party_Has_Card
   // Credit cards resolve their owner through the card registry; the
   // derived debit cards through the account registry. Ownerless
@@ -80,8 +107,10 @@ Summary exportFromArtifacts(
 
     for (const auto &[key, seen] : artifacts.cards) {
       const auto id = derive::cardId(key, seen.credit);
-      card.writer().writeRow(id,
-                             static_cast<std::int32_t>(seen.fraud ? 1 : 0));
+      card.writer().writeRow(id, kLabelWithheld);
+      if (seen.fraud) {
+        groundTruth.push_back({"card", id, "ever_fraud"});
+      }
 
       ent::PersonId owner = ent::invalidPerson;
       if (seen.credit) {
@@ -109,8 +138,9 @@ Summary exportFromArtifacts(
   // at export. An `online` merchant (Footprint::online → invalidGeoArea)
   // is geography-free: it gets Merchant + Merchant_Assigned but NO
   // Has_City/Has_State/Has_Zip, exactly like TabFormer's Online rows
-  // (which carry no merchant geography). Non-catalog destinations (fraud
-  // rail billers) likewise have no modeled location and stay geo-free.
+  // (which carry no merchant geography). Non-catalog destinations (the
+  // fraud rail's biller fallback) likewise have no modeled location and
+  // stay geo-free.
   std::unordered_map<ent::Key, const ent::merchant::Record *> merchantByKey;
   merchantByKey.reserve(world.counterparties.merchants.records.size());
   for (const auto &record : world.counterparties.merchants.records) {
@@ -214,6 +244,9 @@ Summary exportFromArtifacts(
   // H3 part 3c-ii: THE one membership construction path — the Party
   // created_at reports the same [joinTs, ...) axis the standard
   // exporter's customer.csv does (the retired flat-Growth view gone).
+  // It is also the reason Party carries no other point-in-time debt:
+  // created_at is when the customer relationship began, not a
+  // window-wide constant.
   const ::PhantomLedger::synth::pii::Membership membership =
       ::PhantomLedger::synth::personas::join_cohort::membershipOf(
           world.people.personas, options.window);
@@ -226,10 +259,14 @@ Summary exportFromArtifacts(
               ? mule_ml::renderIdentity(pii.records[p - 1], pools)
               : mule_ml::blankIdentity();
       party.writer().writeRow(
-          cmn::renderCustomerId(p).view(),
-          static_cast<std::int32_t>(isFraudActor(roster, p) ? 1 : 0),
-          derive::genderFor(p), identity.dob, "person", identity.name,
+          cmn::renderCustomerId(p).view(), kLabelWithheld, derive::genderFor(p),
+          identity.dob, "person", identity.name,
           time_ns::formatTimestamp(membership.joinTs(p)));
+      if (isFraudActor(roster, p)) {
+        groundTruth.push_back({"party",
+                               std::string{cmn::renderCustomerId(p).view()},
+                               "fraud_actor"});
+      }
     }
     out.partyCount = roster.count;
     party.close();
@@ -330,14 +367,17 @@ Summary exportFromArtifacts(
     dob.close();
   }
 
-  // Devices and IPs carry their modeled flags (flagged / blacklisted)
-  // as is_blocked.
+  // Devices and IPs. The modelled flag / blacklist verdicts are
+  // whole-window investigative facts, so is_blocked is withheld here and
+  // the verdicts go to the ground-truth overlay.
   {
     auto device = cmn::openTable(target, sch::kDevice);
     for (const auto &record : world.infra.devices.records) {
-      device.writer().writeRow(
-          cmn::renderDeviceId(record.identity).view(),
-          static_cast<std::int32_t>(record.flagged ? 1 : 0));
+      const auto id = cmn::renderDeviceId(record.identity);
+      device.writer().writeRow(id.view(), kLabelWithheld);
+      if (record.flagged) {
+        groundTruth.push_back({"device", std::string{id.view()}, "flagged"});
+      }
     }
     auto hasDevice = cmn::openTable(target, sch::kHasDevice);
     for (ent::PersonId p = 1; p <= roster.count; ++p) {
@@ -353,9 +393,11 @@ Summary exportFromArtifacts(
 
     auto ip = cmn::openTable(target, sch::kIp);
     for (const auto &record : world.infra.ips.records) {
-      ip.writer().writeRow(
-          network::format(record.address).view(),
-          static_cast<std::int32_t>(record.blacklisted ? 1 : 0));
+      const auto id = network::format(record.address);
+      ip.writer().writeRow(id.view(), kLabelWithheld);
+      if (record.blacklisted) {
+        groundTruth.push_back({"ip", std::string{id.view()}, "blacklisted"});
+      }
     }
     auto hasIp = cmn::openTable(target, sch::kHasIp);
     for (ent::PersonId p = 1; p <= roster.count; ++p) {
@@ -372,6 +414,19 @@ Summary exportFromArtifacts(
     hasDevice.close();
     ip.close();
     hasIp.close();
+  }
+
+  // ------------------------------------------ investigative ground truth
+  // Outside the feature graph by construction: no TF_GNN_v3 loading job
+  // reads this table and no edge points at it. Every row is a
+  // whole-window fact, which is exactly why it may not be joined back
+  // into a model's inputs.
+  {
+    auto labels = cmn::openTable(target, sch::kGroundTruthLabel);
+    for (const auto &row : groundTruth) {
+      labels.writer().writeRow(row.entityType, row.entityId, row.label);
+    }
+    labels.close();
   }
 
   return out;

@@ -22,6 +22,10 @@
 --   make run ARGS="--start 1991-01-01 --days 10592 --population 10000 --usecase card-fraud"
 -- Usage:
 --   psql "dbname=phantomledger" -f docs/card_fraud_postgres_acceptance.sql
+--
+-- 35 tables since card-fraud-realism-v2: the 34 TF_GNN_v3 graph tables
+-- plus cf_Ground_Truth_Label, the quarantined investigative overlay that
+-- holds the four full-window entity verdicts the graph no longer carries.
 
 BEGIN TRANSACTION READ ONLY;
 
@@ -48,8 +52,8 @@ BEGIN
     INTO registered_count
     FROM public.pl_direct_tables
    WHERE schema_name = 'card_fraud';
-  IF registered_count <> 34 THEN
-    RAISE EXCEPTION 'expected 34 registered card_fraud tables, found %',
+  IF registered_count <> 35 THEN
+    RAISE EXCEPTION 'expected 35 registered card_fraud tables, found %',
       registered_count;
   END IF;
 
@@ -59,8 +63,8 @@ BEGIN
    WHERE table_schema = 'card_fraud'
      AND table_type = 'BASE TABLE'
      AND table_name LIKE 'cf\_%' ESCAPE '\';
-  IF physical_count <> 34 THEN
-    RAISE EXCEPTION 'expected 34 physical card_fraud tables, found %',
+  IF physical_count <> 35 THEN
+    RAISE EXCEPTION 'expected 35 physical card_fraud tables, found %',
       physical_count;
   END IF;
 
@@ -196,6 +200,69 @@ BEGIN
     RAISE EXCEPTION 'card-fraud corpus contains no positive transaction labels';
   END IF;
 
+  -- ------------------------------------------------ THE LABEL-LEAK GATE
+  -- card-fraud-realism-v2, gate 1 of docs/card_fraud_online_gnn.md.
+  -- Card.is_fraud, Party.is_fraud, Device.is_blocked and IP.is_blocked
+  -- are FULL-WINDOW entity verdicts. They keep their columns so
+  -- TF_GNN_v3 loading jobs map positionally, and they must be withheld
+  -- (0) so nothing in the feature graph answers the training question
+  -- before the model sees a transaction.
+  SELECT
+      (SELECT count(*) FROM card_fraud."cf_Card"
+        WHERE is_fraud::integer <> 0)
+    + (SELECT count(*) FROM card_fraud."cf_Party"
+        WHERE is_fraud::integer <> 0)
+    + (SELECT count(*) FROM card_fraud."cf_Device"
+        WHERE is_blocked::integer <> 0)
+    + (SELECT count(*) FROM card_fraud."cf_IP"
+        WHERE is_blocked::integer <> 0)
+    INTO problem_count;
+  IF problem_count <> 0 THEN
+    RAISE EXCEPTION
+      'entity label leak: % vertex rows carry a full-window verdict',
+      problem_count;
+  END IF;
+
+  -- Withholding is not deletion. The corpus has positive transaction
+  -- labels (checked above), so the quarantined overlay must carry the
+  -- cards they touched, and every overlay id must join its vertex.
+  SELECT count(*) INTO problem_count
+    FROM card_fraud."cf_Ground_Truth_Label"
+   WHERE entity_type = 'card' AND label = 'ever_fraud';
+  IF problem_count = 0 THEN
+    RAISE EXCEPTION
+      'ground-truth overlay carries no ever_fraud cards although the '
+      'corpus has positive transaction labels';
+  END IF;
+
+  SELECT count(*) INTO problem_count
+    FROM card_fraud."cf_Ground_Truth_Label" g
+    LEFT JOIN card_fraud."cf_Card" c ON c.card_number = g.entity_id
+   WHERE g.entity_type = 'card' AND c.card_number IS NULL;
+  IF problem_count <> 0 THEN
+    RAISE EXCEPTION 'ground-truth card ids joining no Card vertex: %',
+      problem_count;
+  END IF;
+
+  SELECT count(*) INTO problem_count
+    FROM card_fraud."cf_Ground_Truth_Label" g
+    LEFT JOIN card_fraud."cf_Party" p ON p.id = g.entity_id
+   WHERE g.entity_type = 'party' AND p.id IS NULL;
+  IF problem_count <> 0 THEN
+    RAISE EXCEPTION 'ground-truth party ids joining no Party vertex: %',
+      problem_count;
+  END IF;
+
+  SELECT count(*) INTO problem_count
+    FROM card_fraud."cf_Ground_Truth_Label"
+   WHERE entity_type NOT IN ('card', 'party', 'device', 'ip')
+      OR label NOT IN ('ever_fraud', 'fraud_actor', 'flagged',
+                       'blacklisted');
+  IF problem_count <> 0 THEN
+    RAISE EXCEPTION 'ground-truth rows outside the declared vocabulary: %',
+      problem_count;
+  END IF;
+
   SELECT count(*) INTO raw_count FROM public.transactions;
   SELECT status, txn_rows
     INTO manifest_status, manifest_rows
@@ -231,5 +298,12 @@ SELECT
   min(transaction_time::timestamp) AS first_payment,
   max(transaction_time::timestamp) AS last_payment
 FROM card_fraud."cf_Payment_Transaction";
+
+-- The investigative overlay, reported so the operator sees where the
+-- entity labels went. NOTHING here may be joined into model features.
+SELECT entity_type, label, count(*) AS entities
+FROM card_fraud."cf_Ground_Truth_Label"
+GROUP BY entity_type, label
+ORDER BY entity_type, label;
 
 COMMIT;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
@@ -42,11 +44,28 @@ public:
       const ::PhantomLedger::entity::account::Registry &registry,
       const ::PhantomLedger::entity::account::Ownership &ownership) noexcept;
 
+  // card-fraud-realism-v2 step b: `merchants` (the entity stage's
+  // acceptance catalogue) and `homeAreas` (People's compact per-person
+  // home carrier) are the inputs the card rails need in order to select
+  // their destination from the SAME population — on the SAME geographic
+  // axis — that legitimate card purchases use. See
+  // transfers/fraud/injector_inputs.hpp for the defect they close.
+  //
+  // BOTH DEFAULT TO ABSENT, and absent means "behave exactly as before".
+  // FOUR call sites exist — simulate.cpp (the monolith reference),
+  // windowed_run.cpp (production), window_leg_support.hpp (the gate
+  // harness) and test_membership.cpp — and the two ENGINES must pass
+  // IDENTICAL arguments or test_arch_equivalence / test_production_
+  // windowed will diverge the moment step b-2 reads them. The b-1b fill
+  // round updates all of them together for exactly that reason.
   [[nodiscard]] static ::PhantomLedger::transfers::fraud::
       InjectorLegitCounterparties
       legitCounterparties(
           const ::PhantomLedger::transfers::legit::ledger::LegitCounterparties
-              &counterparties) noexcept;
+              &counterparties,
+          const ::PhantomLedger::entity::merchant::Catalog *merchants = nullptr,
+          std::span<const ::PhantomLedger::entity::geography::GeoAreaId>
+              homeAreas = {}) noexcept;
 
 private:
   const ::PhantomLedger::synth::people::Fraud *profile_ = nullptr;

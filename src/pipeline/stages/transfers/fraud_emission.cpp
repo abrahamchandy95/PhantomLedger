@@ -43,10 +43,22 @@ fraud::InjectorAccountView FraudEmission::accountView(
 
 fraud::InjectorLegitCounterparties FraudEmission::legitCounterparties(
     const ::PhantomLedger::transfers::legit::ledger::LegitCounterparties
-        &counterparties) noexcept {
+        &counterparties,
+    const ::PhantomLedger::entity::merchant::Catalog *merchants,
+    std::span<const ::PhantomLedger::entity::geography::GeoAreaId>
+        homeAreas) noexcept {
+  // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
+  // the home-area axis ride alongside the existing legit pools. Both
+  // are borrowed, both default to absent, and NOTHING reads them until
+  // the b-2 selection round — so passing them here moves no golden byte
+  // and passing them at only SOME call sites cannot yet cause engine
+  // divergence (it would at b-2; the fill round updates all sites
+  // together).
   return fraud::InjectorLegitCounterparties{
       .billerAccounts = counterparties.billerView(),
       .employers = counterparties.employerView(),
+      .merchants = merchants,
+      .homeAreas = homeAreas,
   };
 }
 

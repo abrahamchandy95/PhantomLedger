@@ -1,7 +1,12 @@
 #include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
 
+#include "phantomledger/activity/spending/market/commerce/geo_pools.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/econ/nominal.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -11,6 +16,7 @@
 #include <algorithm>
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <cstdint>
 #include <stdexcept>
 #include <string_view>
@@ -21,6 +27,15 @@ namespace PhantomLedger::transfers::fraud::typologies::unauthorized {
 namespace {
 
 inline constexpr std::int64_t kSecondsPerDay = 86'400;
+
+// card-fraud-realism-v2 step b (contract docs/card_fraud_v2_roadmap.md,
+// gate 1 of docs/card_fraud_online_gnn.md). THE MODALITY SPLIT for the
+// stolen-card rail: card-not-present dominates real card fraud (remote
+// purchases are where stolen credentials monetize), so the majority of
+// compromises are CNP. DECLARED CHOICE — the DIRECTION is the anchored
+// claim (CNP-majority), the exact split is a modeling choice pending a
+// per-era card-fraud-modality series.
+inline constexpr double kCardNotPresentShare = 0.70;
 
 struct Event {
   std::int64_t ts = 0;
@@ -56,6 +71,97 @@ struct Event {
       ::PhantomLedger::time::toCalendarDate(
           ::PhantomLedger::time::fromEpochSeconds(epochSec))
           .year);
+}
+
+// THE P0 FIX (card-fraud-realism-v2 step b). Card-rail fraud settles
+// against the MERCHANT ACCEPTANCE POPULATION — the same catalogue
+// legitimate card purchases use — instead of the legit-TRANSFER
+// biller/hub pool. Two disjoint destination populations were the
+// merchant-identity shortcut: every fraud row landed on a merchant
+// with zero legitimate card rows, so merchant id alone classified the
+// corpus.
+//
+// Selection is MODALITY-CONDITIONED, which is what keeps the fix from
+// trading one shortcut for another:
+//
+//   card-present  weighted over PHYSICAL outlets by the SAME kernel the
+//                 spending session uses — popularity x exp(-miles /
+//                 cardPresentDecayScaleMiles(home)) — so a stolen card
+//                 is spent near where the cardholder lives, on the same
+//                 geographic axis legitimate activity follows. A flat
+//                 national draw here would have made "distance from
+//                 home" the new giveaway.
+//   card-not-present  weighted over the Footprint::online population by
+//                 popularity alone; distance does not apply, and this
+//                 is exactly the population legitimate online purchases
+//                 reach.
+//
+// Degradation is deliberate and matches the session's own fallback: no
+// catalogue (unit callers), no eligible merchant, or an unknown home
+// area falls back to the caller's pool / the national weighting rather
+// than inventing geography.
+[[nodiscard]] entity::Key
+pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
+                        entity::geography::GeoAreaId homeArea,
+                        bool cardPresent, entity::Key fallback) {
+  namespace geography = ::PhantomLedger::entity::geography;
+  namespace commerce = ::PhantomLedger::activity::spending::market::commerce;
+
+  if (ctx.merchants == nullptr || ctx.merchants->records.empty()) {
+    return fallback;
+  }
+
+  const auto &records = ctx.merchants->records;
+  const auto &geo = ::PhantomLedger::synth::geo::geography();
+
+  const bool localAnchor = cardPresent && geo.contains(homeArea);
+  const double scaleMiles =
+      localAnchor ? commerce::cardPresentDecayScaleMiles(geo.at(homeArea))
+                  : 0.0;
+
+  std::vector<double> weights;
+  std::vector<std::size_t> candidates;
+  weights.reserve(records.size());
+  candidates.reserve(records.size());
+
+  for (std::size_t i = 0; i < records.size(); ++i) {
+    const auto &rec = records[i];
+    const bool online =
+        rec.footprint == ::PhantomLedger::entity::merchant::Footprint::online;
+
+    if (cardPresent) {
+      if (online || !geo.contains(rec.location)) {
+        continue;
+      }
+      double w = rec.weight;
+      if (localAnchor && scaleMiles > 0.0) {
+        const double miles =
+            geography::distanceMiles(geo.at(homeArea), geo.at(rec.location));
+        w *= std::exp(-miles / scaleMiles);
+      }
+      if (w > 0.0) {
+        weights.push_back(w);
+        candidates.push_back(i);
+      }
+    } else {
+      if (!online || !(rec.weight > 0.0)) {
+        continue;
+      }
+      weights.push_back(rec.weight);
+      candidates.push_back(i);
+    }
+  }
+
+  if (weights.empty()) {
+    return fallback;
+  }
+
+  const auto cdf = probability::distributions::buildCdf(
+      std::span<const double>(weights.data(), weights.size()));
+  const auto pick =
+      probability::distributions::sampleIndex(cdf, rng.nextDouble());
+
+  return records[candidates[pick]].counterpartyId;
 }
 
 } // namespace
@@ -96,6 +202,21 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     auto rng = keyFactory.rng(
         {"fraud", "unauth", "plan", renderUInt(seqBuf, plan.seq)});
     const auto planTxf = ctx.execution.txf.rebound(rng);
+
+    // card-fraud-realism-v2 step b: merchant selection draws on its OWN
+    // named lane, so adding it cannot perturb the event/amount stream
+    // above (or any ring lane). One modality decision and one merchant
+    // draw per emitted card-rail row.
+    auto merchantRng = keyFactory.rng(
+        {"fraud", "unauth", "merchant", renderUInt(seqBuf, plan.seq)});
+
+    // MODALITY, one decision per compromise case (a case has a modus
+    // operandi). Gift-card scams are card-PRESENT by construction — the
+    // coached victim walks into a store and buys the cards.
+    const bool cardPresent =
+        plan.rail == Rail::giftCardScam
+            ? true
+            : !merchantRng.coin(kCardNotPresentShare);
 
     events.clear();
     isTest.assign(static_cast<std::size_t>(target), false);
@@ -178,7 +299,13 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
       switch (plan.rail) {
       case Rail::card:
       case Rail::giftCardScam:
-        draft.destination = pickOne(rng, ctx.billerAccounts);
+        // THE P0 FIX: the acceptance population, selected on the same
+        // geographic axis legitimate card activity uses. The biller
+        // pool survives only as the degraded fallback for callers that
+        // supply no catalogue.
+        draft.destination = pickMerchantDestination(
+            merchantRng, ctx, plan.homeArea, cardPresent,
+            pickOne(rng, ctx.billerAccounts));
         draft.channel = channels::tag(channels::Legit::cardPurchase);
         break;
       case Rail::ato:

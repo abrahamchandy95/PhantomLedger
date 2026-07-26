@@ -38,11 +38,14 @@
 //   re-verifies fraud visibility on every run, so the card view's
 //   fraud-visibility is a fact of the config, not a gamble on a
 //   seed. Pins every cf_* table the run registers in schema card_fraud
-//   (the full 34-table TF_GNN_v3 set), HARD-REQUIRES its core tables,
-//   and HARD-REQUIRES flag-1 rows in cf_Payment_Transaction (the
-//   unauthorized card rail — .60 of the unauthorized mix — and the
-//   gift-card scam ride the card_purchase channel). Because the config
-//   is IDENTICAL to the fraud section's and exporters are export-side
+//   (35 since card-fraud-realism-v2: the 34-table TF_GNN_v3 set plus
+//   the quarantined cf_Ground_Truth_Label overlay), HARD-REQUIRES its
+//   core tables, HARD-REQUIRES flag-1 rows in cf_Payment_Transaction
+//   (the unauthorized card rail — .60 of the unauthorized mix — and the
+//   gift-card scam ride the card_purchase channel), and HARD-REQUIRES
+//   that the four full-window entity label columns are WITHHELD while
+//   their verdicts survive in the overlay. Because the config is
+//   IDENTICAL to the fraud section's and exporters are export-side
 //   only (main.cpp tees every use case's exporter alongside the same
 //   corpus sink), this section also enforces that its
 //   public.transactions digest line EQUALS the fraud section's — the
@@ -365,16 +368,19 @@ int main() {
 
   // Registry discovery for the card_fraud schema; the mirror prefixes
   // every stem with "cf_" (no subdirs; stems verbatim incl. case).
-  // The complete TF_GNN_v3 set is 34 tables.
+  // 35 tables since card-fraud-realism-v2: the 34-table TF_GNN_v3 set
+  // plus cf_Ground_Truth_Label, the quarantined investigative overlay.
   const auto cardTables = registeredTables(*conn, "card_fraud");
-  assert(cardTables.size() >= 34);
+  assert(cardTables.size() >= 35);
 
   // Core tables MUST be under the pin (the streamed vertex + edges,
-  // the card/party layer, and the documented header-only gap).
+  // the card/party layer, the documented header-only gap, and the
+  // ground-truth overlay that now holds the withheld entity labels).
   for (const char *required :
        {"cf_Payment_Transaction", "cf_Card_Send_Transaction",
         "cf_Merchant_Receive_Transaction", "cf_Card", "cf_Party",
-        "cf_Party_Has_Card", "cf_Merchant", "cf_Is_Merchant"}) {
+        "cf_Party_Has_Card", "cf_Merchant", "cf_Is_Merchant",
+        "cf_Ground_Truth_Label"}) {
     if (std::find(cardTables.begin(), cardTables.end(),
                   std::string{required}) == cardTables.end()) {
       std::fprintf(stderr,
@@ -402,6 +408,55 @@ int main() {
                    "NO flag-1 rows at the fraud-dense config — the card view "
                    "must be fraud-visible (unauthorized card rail + "
                    "gift-card scam ride card_purchase)\n");
+      return 1;
+    }
+  }
+
+  // THE LABEL-LEAK GATE at production scale (card-fraud-realism-v2,
+  // gate 1 of docs/card_fraud_online_gnn.md). Card.is_fraud,
+  // Party.is_fraud, Device.is_blocked and IP.is_blocked are FULL-WINDOW
+  // entity verdicts; exported as features they answer the training
+  // question before a model sees a transaction. The columns stay (the
+  // owner's TF_GNN_v3 loading jobs map positionally) and must be 0
+  // everywhere. Mirror DDL is text: compare the rendered '0'.
+  {
+    struct LabelColumn {
+      const char *table;
+      const char *column;
+    };
+    for (const auto &probe : {LabelColumn{"cf_Card", "is_fraud"},
+                              LabelColumn{"cf_Party", "is_fraud"},
+                              LabelColumn{"cf_Device", "is_blocked"},
+                              LabelColumn{"cf_IP", "is_blocked"}}) {
+      const auto qualified = conn->escapeIdentifier("card_fraud") + "." +
+                             conn->escapeIdentifier(probe.table);
+      const auto leaked =
+          conn->queryValue("SELECT count(*) FROM " + qualified + " WHERE " +
+                           conn->escapeIdentifier(probe.column) + " <> '0'");
+      if (!leaked.empty() && leaked != "0") {
+        std::fprintf(stderr,
+                     "table-golden[card_fraud]: LABEL LEAK — %s.%s carries a "
+                     "full-window verdict on %s rows; it must be withheld (0) "
+                     "in the feature graph, with the verdict in "
+                     "cf_Ground_Truth_Label\n",
+                     probe.table, probe.column, leaked.c_str());
+        return 1;
+      }
+    }
+
+    // Withholding is not deletion. The card view carries flag-1 rows
+    // (asserted above), so the overlay must carry the cards they
+    // touched.
+    const auto overlay = conn->escapeIdentifier("card_fraud") + "." +
+                         conn->escapeIdentifier("cf_Ground_Truth_Label");
+    const auto everFraud = conn->queryValue(
+        "SELECT count(*) FROM " + overlay +
+        " WHERE entity_type = 'card' AND label = 'ever_fraud'");
+    if (everFraud.empty() || everFraud == "0") {
+      std::fprintf(stderr,
+                   "table-golden[card_fraud]: cf_Ground_Truth_Label carries no "
+                   "ever_fraud cards although the card view has flag-1 rows — "
+                   "the entity labels were DELETED, not quarantined\n");
       return 1;
     }
   }

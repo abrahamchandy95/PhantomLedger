@@ -15,6 +15,14 @@
 // is the streamed corpus table's name, and the canonical stream must
 // never be overwritten by a rendered twin.
 //
+// Since card-fraud-realism-v2 this file also carries THE LABEL-LEAK
+// GATE: the card-fraud exporter's four full-window entity labels must
+// render as 0 in the feature graph, and their investigative content
+// must appear in the quarantined ground-truth overlay instead. That is
+// a content assertion, which is why it lives here (the capture holds
+// the rendered bytes) rather than in the digest goldens, which would
+// only tell us the bytes CHANGED.
+//
 
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/card_fraud/export.hpp"
@@ -86,6 +94,94 @@ void expectTable(const Capture &capture, const std::string &stem) {
     std::fprintf(stderr, "FAIL: table empty: %s\n", stem.c_str());
     ++failures;
   }
+}
+
+// ------------------------------------------------- rendered-CSV probes
+//
+// Field extraction by comma index, valid ONLY for the columns probed
+// below: every field at or before those indices is an identifier, a
+// number or a formatted timestamp, so none of them can be quoted or
+// carry an embedded comma. (Party.name can — it sits at index 5, well
+// past the is_fraud column at index 1.)
+
+[[nodiscard]] std::string_view fieldAt(std::string_view line,
+                                       std::size_t index) {
+  std::size_t start = 0;
+  for (std::size_t i = 0; i < index; ++i) {
+    const auto comma = line.find(',', start);
+    if (comma == std::string_view::npos) {
+      return {};
+    }
+    start = comma + 1;
+  }
+  const auto comma = line.find(',', start);
+  auto field = line.substr(start, comma == std::string_view::npos
+                                      ? std::string_view::npos
+                                      : comma - start);
+  if (!field.empty() && field.back() == '\r') {
+    field.remove_suffix(1);
+  }
+  return field;
+}
+
+/// Count data rows (header skipped) whose column `index` equals `want`,
+/// and the data rows in total.
+struct ColumnCount {
+  std::size_t matching = 0;
+  std::size_t rows = 0;
+};
+
+[[nodiscard]] ColumnCount countColumn(const Capture &capture,
+                                      const std::string &stem,
+                                      std::size_t index,
+                                      std::string_view want) {
+  ColumnCount out;
+  const auto it = capture.tables().find(stem);
+  if (it == capture.tables().end()) {
+    return out;
+  }
+  std::string_view text{it->second};
+  bool header = true;
+  while (!text.empty()) {
+    const auto nl = text.find('\n');
+    const auto line = text.substr(0, nl);
+    text = nl == std::string_view::npos ? std::string_view{}
+                                        : text.substr(nl + 1);
+    if (line.empty() || (line.size() == 1 && line.front() == '\r')) {
+      continue;
+    }
+    if (header) {
+      header = false;
+      continue;
+    }
+    ++out.rows;
+    if (fieldAt(line, index) == want) {
+      ++out.matching;
+    }
+  }
+  return out;
+}
+
+/// THE LABEL-LEAK GATE. A full-window entity verdict rendered into the
+/// feature graph answers the training question before the model sees a
+/// transaction, so every cell of the column must be 0.
+void expectLabelWithheld(const Capture &capture, const std::string &stem,
+                         std::size_t index, const std::string &column) {
+  const auto counted = countColumn(capture, stem, index, "0");
+  check(counted.rows > 0,
+        "label-leak gate needs rows to check in " + stem);
+  check(counted.matching == counted.rows,
+        stem + "." + column +
+            " must be withheld (0) in the feature graph: " +
+            std::to_string(counted.rows - counted.matching) + " of " +
+            std::to_string(counted.rows) + " rows carry a label");
+}
+
+[[nodiscard]] std::size_t groundTruthRowsFor(const Capture &capture,
+                                             std::string_view entityType) {
+  const auto counted = countColumn(capture, "Ground_Truth_Label", 0,
+                                   entityType);
+  return counted.matching;
 }
 
 [[nodiscard]] pl::synth::pii::PoolSet buildPoolSet(std::uint64_t seed) {
@@ -248,9 +344,10 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
             std::to_string(summary.customerCount));
 }
 
-// The card-fraud exporter's complete 34-table TF_GNN_v3 set, via the
-// one-code-path exportAll (the SAME streaming sink the windowed engine
-// uses, run over the retained corpus, then the shared finisher).
+// The card-fraud exporter's complete 35-table TF_GNN_v3 set (34 graph
+// tables + the quarantined ground-truth overlay), via the one-code-path
+// exportAll (the SAME streaming sink the windowed engine uses, run over
+// the retained corpus, then the shared finisher).
 void testCardFraudExport(const pl::pipeline::SimulationResult &result,
                          const pl::synth::pii::PoolSet &poolSet) {
   Capture capture;
@@ -316,9 +413,44 @@ void testCardFraudExport(const pl::pipeline::SimulationResult &result,
     expectTable(capture, stem);
   }
 
+  // card-fraud-realism-v2: the investigative overlay. Rendered always,
+  // header included, even when the window produced no positives.
+  expectTable(capture, "Ground_Truth_Label");
+
   check(!capture.has("transactions"),
         "the 'transactions' stem is the streamed corpus table and must "
         "never be rendered by the card-fraud exporter");
+
+  // ------------------------------------------------ THE LABEL-LEAK GATE
+  //
+  // Four full-window entity verdicts used to ride the feature graph.
+  // They keep their columns (TF_GNN_v3 loads positionally) and must
+  // carry 0 in every row.
+  expectLabelWithheld(capture, "Card", 1, "is_fraud");
+  expectLabelWithheld(capture, "Party", 1, "is_fraud");
+  expectLabelWithheld(capture, "Device", 1, "is_blocked");
+  expectLabelWithheld(capture, "IP", 1, "is_blocked");
+
+  // ...and the supervised target must SURVIVE on the streamed
+  // transaction vertex. Withholding is not deletion: whenever the
+  // window produced flagged card rows, the entity verdicts they imply
+  // must appear in the overlay.
+  const auto payments =
+      countColumn(capture, "Payment_Transaction", 3, "1");
+  std::printf("  card view: %zu rows, %zu flagged; ground truth "
+              "card=%zu party=%zu device=%zu ip=%zu\n",
+              payments.rows, payments.matching,
+              groundTruthRowsFor(capture, "card"),
+              groundTruthRowsFor(capture, "party"),
+              groundTruthRowsFor(capture, "device"),
+              groundTruthRowsFor(capture, "ip"));
+
+  if (payments.matching > 0) {
+    check(groundTruthRowsFor(capture, "card") > 0,
+          "flagged card-view rows exist, so the ground-truth overlay "
+          "must carry the cards they touched (the label moved, it was "
+          "not deleted)");
+  }
 
   check(summary.partyCount == 100,
         "card-fraud summary partyCount == 100, got " +

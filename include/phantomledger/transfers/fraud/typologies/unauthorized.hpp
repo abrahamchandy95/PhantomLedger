@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
@@ -34,6 +35,17 @@ struct CompromisePlan {
   std::int32_t targetEvents = 0;
 
   std::uint32_t seq = 0;
+
+  // card-fraud-realism-v2 step b: the VICTIM'S HOME AREA — the anchor
+  // the card-present branch of merchant selection decays away from, so
+  // a stolen card is spent near where the cardholder lives rather than
+  // uniformly across the country. invalidGeoArea (the default) means
+  // "no local anchor": selection falls back to the geography-free
+  // national draw, exactly as the spending session does for a person
+  // with no home carrier.
+  //
+  // UNREAD BY GENERATION until the step b-2 selection round.
+  entity::geography::GeoAreaId homeArea = entity::geography::invalidGeoArea;
 };
 
 [[nodiscard]] std::vector<transactions::Transaction>

@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/entities/infra/random_ips.hpp"
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 #include "phantomledger/transfers/fraud/playbook.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
@@ -346,10 +347,12 @@ assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
 
 [[nodiscard]]
 std::vector<typologies::unauthorized::CompromisePlan>
-buildCompromisePlans(random::Rng &rng, time::Window window,
-                     const entity::account::Registry &registry,
-                     const entity::account::Ownership &ownership,
-                     std::span<const Plan> ringPlans, std::int64_t budget) {
+buildCompromisePlans(
+    random::Rng &rng, time::Window window,
+    const entity::account::Registry &registry,
+    const entity::account::Ownership &ownership,
+    std::span<const Plan> ringPlans, std::int64_t budget,
+    std::span<const entity::geography::GeoAreaId> homeAreas = {}) {
   using typologies::unauthorized::Rail;
 
   std::vector<typologies::unauthorized::CompromisePlan> plans;
@@ -384,7 +387,18 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
       ownership,
   };
 
-  const auto pickAccount = [&](entity::Key avoid) -> entity::Key {
+  // card-fraud-realism-v2 step b: the picker now yields the OWNER as
+  // well as the account key. The victim's person id is the only thing
+  // that maps to a home area, and it is already in hand at selection
+  // time — carrying it out is free and avoids a key->person reverse
+  // index that does not exist. Draw order and draw COUNT are
+  // unchanged by this, so the pick itself is stream-neutral.
+  struct PickedAccount {
+    entity::Key key{};
+    entity::PersonId person = 0;
+  };
+
+  const auto pickAccount = [&](entity::Key avoid) -> PickedAccount {
     for (int attempt = 0; attempt < 32; ++attempt) {
       const auto person =
           static_cast<entity::PersonId>(1 + rng.choiceIndex(personLimit));
@@ -397,11 +411,25 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
       const auto key = detail::primaryKey(view, person);
 
       if (key != avoid && !excluded.contains(key)) {
-        return key;
+        return PickedAccount{key, person};
       }
     }
 
-    return avoid;
+    return PickedAccount{avoid, 0};
+  };
+
+  // The victim's home area, or invalidGeoArea when the carrier is
+  // absent / the person is out of range. invalidGeoArea is exactly the
+  // "no local anchor" value the spending session already falls back on,
+  // so an unfilled carrier degrades to the pre-v2 national behavior
+  // rather than to something undefined.
+  const auto homeAreaOf =
+      [&](entity::PersonId person) -> entity::geography::GeoAreaId {
+    if (person == 0 || homeAreas.empty() ||
+        static_cast<std::size_t>(person) > homeAreas.size()) {
+      return entity::geography::invalidGeoArea;
+    }
+    return homeAreas[static_cast<std::size_t>(person) - 1];
   };
 
   const auto windowStart = window.start.time_since_epoch().count();
@@ -437,7 +465,8 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
     const auto target =
         static_cast<std::int32_t>(std::min<std::int64_t>(remaining, targetSpan));
 
-    const auto victim = pickAccount(entity::Key{});
+    const auto victimPick = pickAccount(entity::Key{});
+    const auto victim = victimPick.key;
 
     if (victim == entity::Key{}) {
       break;
@@ -446,7 +475,7 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
     entity::Key drop{};
 
     if (rail == Rail::ato) {
-      drop = pickAccount(victim);
+      drop = pickAccount(victim).key;
 
       if (drop == victim) {
         break;
@@ -468,6 +497,32 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
                     : rail == Rail::giftCardScam ? 1 + rng.choiceIndex(4)
                                                  : 2 + rng.choiceIndex(30)));
 
+    // SHORTCUT #2, CLOSED (card-fraud-realism-v2 step b).
+    //
+    // The attacker session's address used to be a hardcoded
+    // 198.51.100.x — TEST-NET-2, a RESERVED documentation range — while
+    // legitimate sessions draw `network::randomIpv4` over first octets
+    // 11-222 across the full 32-bit space. A legitimate address landing
+    // in that /24 has probability ~1 in 14 million, so an IP-prefix
+    // lookup labelled unauthorized fraud essentially perfectly: a model
+    // could score at ceiling while learning nothing about behavior.
+    // That is the same class of defect as the merchant-identity
+    // shortcut this arc exists to close, and the online-GNN audit
+    // flagged it.
+    //
+    // Attacker addresses now come from the SAME distribution as
+    // legitimate ones. The intended fraud signal is BEHAVIORAL and
+    // survives untouched: ring participants still share infrastructure
+    // through SharedInfra, and a compromise still concentrates its
+    // events on one address — what disappears is only the free lookup
+    // on the address itself.
+    //
+    // STILL OPEN: `.device.ownerId` below carries a magic 0xACE00000
+    // prefix with OwnerType::ring. Whether that leaks depends on what
+    // the exporters actually render (renderDeviceId may hash the key,
+    // in which case the prefix is invisible downstream) — that check is
+    // the remaining half of this finding, tracked in
+    // docs/card_fraud_v2_roadmap.md step d.
     plans.push_back(typologies::unauthorized::CompromisePlan{
         .victimAccount = victim,
         .dropAccount = drop,
@@ -477,13 +532,13 @@ buildCompromisePlans(random::Rng &rng, time::Window window,
                 .ownerId = 0xACE00000ULL + seq,
                 .slot = 0,
             },
-        .ip = network::Ipv4::pack(198, 51, 100,
-                                  static_cast<std::uint8_t>(1 + seq % 250)),
+        .ip = network::randomIpv4(rng),
         .rail = rail,
         .startTs = windowStart + startDay * 86400 + intraDay,
         .spanSeconds = spanSeconds,
         .targetEvents = target,
         .seq = static_cast<std::uint32_t>(seq),
+        .homeArea = homeAreaOf(victimPick.person),
     });
 
     remaining -= target;
@@ -541,6 +596,10 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
       .window = window,
       .billerAccounts = std::span<const entity::Key>(
           pools.billerAccounts.data(), pools.billerAccounts.size()),
+      // card-fraud-realism-v2 step b: the merchant acceptance catalogue
+      // and the home-area axis the card rails select on.
+      .merchants = counterparties.merchants,
+      .homeAreas = counterparties.homeAreas,
   };
 
   const auto ringPlans =
@@ -571,7 +630,8 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
 
   const auto compromisePlans = buildCompromisePlans(
       unauthorizedPlannerRng, window, *accounts_.registry, *accounts_.ownership,
-      std::span<const Plan>(ringPlans), txnFraudBudget);
+      std::span<const Plan>(ringPlans), txnFraudBudget,
+      counterparties.homeAreas);
 
   auto unauthorizedTxns = typologies::unauthorized::generate(
       illicitCtx,

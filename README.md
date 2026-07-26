@@ -125,7 +125,7 @@ No database environment variable is needed for the local default:
 `PL_PG` only to override that connection string for another server/database.
 
 `10592` covers the half-open interval `[1991-01-01, 2020-01-01)`. This writes
-the shared all-rails ledger to `public.transactions` and all 34 card-view/graph
+the shared all-rails ledger to `public.transactions` and all 35 card-view/graph
 tables to `card_fraud.cf_*`; the transaction-fraud training relation is
 `card_fraud."cf_Payment_Transaction"`. It does not write output files or enable
 hidden CLI options.
@@ -163,8 +163,9 @@ consumption level, which LOWERS them — a 1991-start window opens at
 share.)
 
 After the target run finishes, the read-only acceptance script checks the
-manifest, all 34 physical/registered tables, transaction-edge cardinality,
-raw-ledger joins, date bounds, and positive fraud labels:
+manifest, all 35 physical/registered tables, transaction-edge cardinality,
+raw-ledger joins, date bounds, positive transaction labels, and the withheld
+entity-label columns:
 
 ```sh
 psql "dbname=phantomledger" -f docs/card_fraud_postgres_acceptance.sql
@@ -1136,7 +1137,7 @@ A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for 
 ### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer-shaped)
 
 A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema (the graph used for IBM
-TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix `cf_`):
+TabFormer-style card-fraud GNNs). 35 tables land in schema `card_fraud` (prefix `cf_`):
 
 - **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
   purchases plus unauthorized-card and gift-card-scam fraud rows that currently source the
@@ -1147,10 +1148,9 @@ TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix 
   at row scale during settlement together with the `Card_Send_Transaction` /
   `Merchant_Receive_Transaction` edges.
 - **Cards and parties** — `Card` (credit cards resolve through the card registry, ≤1 per person;
-  every other view source becomes the account's derived debit card; `is_fraud` marks cards that
-  ever carried a flagged view row), `Party` (canonical customer ids; `is_fraud` labels fraud
-  actors — ring members, solo fraudsters, mules — never victims; `created_at` is the
-  membership joinTs), and `Party_Has_Card`.
+  every other view source becomes the account's derived debit card), `Party` (canonical
+  customer ids; `created_at` is the membership joinTs), and `Party_Has_Card`. Both carry an
+  `is_fraud` column that is always **0** — see the label note below.
   `Is_Merchant` ships header-only: the world has no modeled merchant-owning-party link yet.
 - **Merchants and geography** — `Merchant`, `Merchant_Category`, `Merchant_Assigned`, and a
   consistent `City`/`State`/`Zipcode` chain (`Has_City`/`Has_State`/`Has_Zip`, `Assigned_To`,
@@ -1158,21 +1158,38 @@ TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix 
   71-US-city catalogue is a runnable placeholder, not Census-complete ZCTA or
   establishment data.
 - **PII investigative layer** — `Address`/`Phone`/`Email`/`IP`/`Device`/`ID`/`Full_Name`/`DOB`
-  vertices plus `Has_*` edges from the PII synthesis; devices and IPs carry their modeled
-  flagged/blacklisted state as `is_blocked`. (Marked demo-only in TF_GNN_v3 and empty on real
+  vertices plus `Has_*` edges from the PII synthesis; the `IP`/`Device` `is_blocked` column is
+  always **0** — see the label note below. (Marked demo-only in TF_GNN_v3 and empty on real
   TabFormer; PhantomLedger populates it.)
+- **`Ground_Truth_Label`** — the investigative overlay: `(entity_type, entity_id, label)`,
+  positives only, joinable 1:1 to the vertex tables. No TF_GNN_v3 loading job reads it and
+  no edge points at it. This is the 35th table.
 
-`Card.is_fraud` means "ever fraudulent in this generated window"; Party actor
-labels and Device/IP blocked flags are likewise full-window state. Treat these
-as labels/investigative attributes, not point-in-time predictive inputs, until
-the feature contract excludes future information or versions them by time.
+**Labels (card-fraud-realism-v2).** `Card.is_fraud`, `Party.is_fraud`,
+`Device.is_blocked` and `IP.is_blocked` are full-window entity verdicts — "this
+card ever carried a flagged row". Exported as features they answer the training
+question before a model sees a transaction, so all four are **written as 0**.
+The columns are kept, not dropped, because TF_GNN_v3 loading jobs map
+positionally. The one supervised target in the graph is
+`Payment_Transaction.is_fraud`, which is observable at its own row's timestamp;
+the entity verdicts live in `cf_Ground_Truth_Label`, outside the graph, for
+evaluation only.
 
-A 10,000-person/60-day realism audit also found that every one of 748 fraud
-rows targeted a merchant with no legitimate card-view transaction. The current
-corpus is suitable for graph/loading and temporal-pipeline development, but a
-GNN can solve its positives through this synthetic merchant-identity shortcut.
-Do not publish it as an online fraud benchmark yet; follow the causal feature,
-split, metric, and minimum-realism gates in
+A 10,000-person/60-day realism audit found that every one of 748 fraud rows
+targeted a merchant with no legitimate card-view transaction, and that every
+unauthorized-fraud row carried a TEST-NET-2 attacker IP that no legitimate row
+could collide with. **Both shortcuts are now closed in generation**: fraud
+card-rail destinations are drawn from the same merchant acceptance catalogue as
+legitimate spend, modality-conditioned through the same distance-decay kernel,
+and attacker IPs come from the same sampler as everyone else's. A
+merchant-ID-only baseline is gated in the suite (`test_card_baselines`), which
+columns a model may read is a written and tested contract
+([docs/card_fraud_feature_contract.md](docs/card_fraud_feature_contract.md),
+pinned by a truncation experiment in `test_card_point_in_time`), and per-year
+prevalence, channel, typology, amount and episode bands are gated by
+`test_card_prevalence`. What remains before an online-benchmark claim is
+calibrating the fraud LEVEL against a named issuer-side series; follow the
+causal feature, split, metric, and minimum-realism gates in
 [docs/card_fraud_online_gnn.md](docs/card_fraud_online_gnn.md).
 
 The generator emits **loaded attributes only**: the pagerank/community slots, the engineered

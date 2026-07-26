@@ -293,12 +293,18 @@ set_tests_properties(test_resume PROPERTIES
 #               are probe-verified there; sampleRingCount has no floor,
 #               so a small-pop seed could draw zero rings and blind the
 #               card view): pins the full cf_* TF_GNN_v3 table set
-#               (34 tables; core tables REQUIRED present), hard-requires
-#               flag-1 rows in cf_Payment_Transaction (the unauthorized
-#               card rail rides card_purchase), and enforces that the
-#               corpus stream digest EQUALS the fraud section's (the
-#               corpus is use-case-invariant; exporters are export-side
-#               only). Baseline: tests/golden_tables_card_fraud.md5
+#               (35 tables since the v2 label-leak fix added
+#               cf_Ground_Truth_Label; core tables REQUIRED present),
+#               hard-requires flag-1 rows in cf_Payment_Transaction
+#               (the unauthorized card rail rides card_purchase, and
+#               since v2 that streamed column is the ONLY exported
+#               fraud target inside the feature graph), enforces that
+#               the four full-window entity label columns are WITHHELD
+#               while their verdicts survive in the overlay, and
+#               enforces that the corpus stream digest EQUALS the fraud
+#               section's (the corpus is use-case-invariant; exporters
+#               are export-side only).
+#               Baseline: tests/golden_tables_card_fraud.md5
 #
 # The H0.5 era tables land in their OWN schema (econ), so no section's
 # discovery changes; their content pin is the serverless
@@ -336,6 +342,11 @@ set_tests_properties(test_table_golden PROPERTIES
 # the measured era coverage, so it runs at the FROZEN 2024 activity
 # level — realPceLevel(2024) = 1.0915, i.e. ~9% ABOVE calibration. The
 # H4 re-pin moved it 184,988 -> 197,245 rows for exactly that reason.
+#
+# NOTE (card-fraud-realism-v2): this golden pins the CORPUS, so the
+# exporter-only label-leak fix must NOT move it. The b-2 merchant
+# selection and the attacker-IP de-shortcut DID (they are generation
+# changes).
 # ---------------------------------------------------------------------
 
 pl_add_test(test_run_golden)
@@ -353,6 +364,87 @@ set_tests_properties(test_run_golden PROPERTIES
 # ---------------------------------------------------------------------
 
 pl_add_test(test_fraud_amounts)
+
+# ---------------------------------------------------------------------
+# card-fraud-realism-v2 step b: THE MERCHANT-OVERLAP INSTRUMENT
+# (docs/card_fraud_v2_roadmap.md; gate 1 of card_fraud_online_gnn.md).
+# The online-GNN audit measured the blocking defect by hand in SQL
+# against a live build: every fraud row sat on a merchant with no
+# legitimate card row, so merchant identity alone classifies the
+# corpus. This is the same measurement, serverless, so the defect has
+# a number in the suite BEFORE the fix and after it (instrument
+# first). TODAY it pins only that the measurement is well-defined and
+# PRINTS the headline share — the b-2 selection round is what drives
+# that share to ~0 and tightens the assertion, so the fix never has to
+# fight its own gate. Registered AFTER the goldens to preserve their
+# historical test numbers.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_merchant_overlap)
+set_tests_properties(test_card_merchant_overlap PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# card-fraud-realism-v2 step c: THE MERCHANT-ID-ONLY BASELINE — gate 5
+# of docs/card_fraud_online_gnn.md ("a merchant-ID-only baseline must
+# not solve the task"). Overlap (above) is necessary but not
+# sufficient: fraud could share merchants and STILL concentrate hard
+# enough that a lookup table wins. This gate answers the modeller's
+# question — score every card-rail row by its merchant's empirical
+# fraud rate, sweep the threshold, and require that RECALL AT
+# PRECISION >= 0.90 stays below 0.25, plus that fraud does not sit on
+# merchants carrying zero legitimate rows. Some merchant signal is
+# expected and correct (fraud genuinely prefers categories); a
+# harvesting lookup is not. Serverless, and it is the gate that would
+# catch a REPLACEMENT shortcut if b-2's selection ever regressed.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_baselines)
+set_tests_properties(test_card_baselines PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# card-fraud-realism-v2 ROUND 2: THE POINT-IN-TIME FEATURE CONTRACT —
+# gate 4 of docs/card_fraud_online_gnn.md, contract
+# docs/card_fraud_feature_contract.md. A TRUNCATION EXPERIMENT: build
+# ONE world, export it twice through the production path — once over
+# every settled row, once over only the rows before a mid-window cutoff
+# T (exactly what a model scoring at T could have known) — and require
+# every feature-safe value that exists in the score-time export to be
+# BYTE-IDENTICAL in the full-window export. Streamed transaction tables
+# must be a byte-exact prefix; world-derived tables must be equal;
+# tables whose row SET grows (Card, Merchant, the geo chain) may gain
+# rows but never change one. cf_Ground_Truth_Label is EXCLUDED by
+# design and its future-dependence is printed as the standing reason.
+# This gate would have FAILED on the pre-v2 Card.is_fraud column, which
+# is what makes it a regression barrier rather than a tautology.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_point_in_time)
+set_tests_properties(test_card_point_in_time PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# card-fraud-realism-v2 ROUND 3: THE PREVALENCE SUITE — gate 3 of
+# docs/card_fraud_online_gnn.md. One aggregate fraud rate stopped
+# meaning anything when H4 made activity volume era-varying, so this
+# replaces it with a per-year / per-channel / per-typology / per-amount
+# / per-episode picture on the CARD VIEW over four whole calendar years
+# (1991-1994).
+#   GATED: the per-year RATE is era-stable (F = pL/(1-p) rides the
+#     realized candidate count, so a fan-out means a budget stopped
+#     riding L); per-year fraud amounts are flat in CALIBRATION dollars
+#     (the only gate proving U-6 class F scaling reaches the card fraud
+#     rail); fraud rides card_purchase and NOT merchant-POS; at least
+#     two typologies with the unauthorized family dominant; fraud
+#     tickets exceed legitimate ones; episode size bounded.
+#   PRINTED, NEVER GATED: per-year row COUNTS. H4's consumption ramp
+#     raises them while the documented small-N liquidity drain (U-9
+#     ADDENDUM) lowers them, and at N=300 the two are not separable —
+#     do not gate what the harness cannot resolve.
+# The aggregate rate carries IBM TabFormer's observed 0.11675% as a
+# NAMED COMPARATOR with a wide plausibility band, not a calibration pin.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_prevalence)
+set_tests_properties(test_card_prevalence PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
 # Ownership invariant: every roster person owns at least one account
@@ -405,7 +497,9 @@ set_tests_properties(test_order_ties PROPERTIES TIMEOUT 600)
 # monolith retired, THIS is the gate that keeps the windowed engine
 # honest against the simplest-possible semantics. HARD-ENFORCED.
 # (It is also why the H1/H4 era levels needed no separate parity gate:
-# both engines read them through the same RateSampler.)
+# both engines read them through the same RateSampler. The v2 card
+# carriers must be filled at BOTH engines' call sites for the same
+# reason.)
 # ---------------------------------------------------------------------
 
 pl_add_test(test_arch_equivalence)

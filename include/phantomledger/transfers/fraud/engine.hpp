@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
@@ -88,6 +90,19 @@ struct IllicitContext {
   Execution execution;
   time::Window window;
   std::span<const entity::Key> billerAccounts{};
+
+  // card-fraud-realism-v2 step b: the MERCHANT ACCEPTANCE catalogue and
+  // the geographic axis, forwarded verbatim from
+  // InjectorLegitCounterparties (see that header for the defect they
+  // close and why the catalogue itself is the right carrier — each
+  // Record already has counterpartyId, location, footprint and weight,
+  // and the modality split needs all four).
+  //
+  // UNREAD BY GENERATION until the step b-2 selection round — a null
+  // catalogue and an empty span keep every existing draw and every
+  // golden byte in place.
+  const entity::merchant::Catalog *merchants = nullptr;
+  std::span<const entity::geography::GeoAreaId> homeAreas{};
 
   std::uint32_t nextChainId = 1;
 

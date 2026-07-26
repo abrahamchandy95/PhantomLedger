@@ -90,10 +90,17 @@ void runTransferStage(SimulationResult &result,
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
       candidate.txns.data(), candidate.txns.size()};
+  // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
+  // the home-area axis ride along with the legit pools. THE WINDOWED
+  // ENGINE (windowed_run.cpp) MUST PASS THE SAME TWO — this is the
+  // reference oracle test_arch_equivalence compares against, so any
+  // asymmetry here becomes an engine divergence the moment step b-2
+  // reads them. Both are UNREAD today.
   auto fraudOut =
       injector.inject(stage.legit().runScope().window, candidateView,
                       stages::transfers::FraudEmission::legitCounterparties(
-                          legitPayload.counterparties));
+                          legitPayload.counterparties, &cps.merchants,
+                          people.homeAreas));
 
   const auto injectedCount = fraudOut.injected.size();
   diagnostics::logStageMem("fraudInject",
@@ -179,6 +186,9 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   // geo-causal-v1 (G2a): snapshot the compact home-area carrier NOW, while
   // PII is alive — releaseExportOnlyPacks() nulls people.pii before the
   // transfer fold, and causal card-present selection needs the home area.
+  // card-fraud-realism-v2 step b: the fraud injector reads the SAME
+  // carrier, so fraud and legitimate card activity share one geographic
+  // axis.
   people.homeAreas = homeAreasOf(people.pii);
 
   // seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
@@ -256,8 +266,9 @@ void releaseExportOnlyPacks(SimulationResult &world) noexcept {
   // is unaffected; the fold reads none of these (their only consumers
   // are the vertex exporters). NOTE: people.homeAreas is a SEPARATE
   // compact carrier that must OUTLIVE this release (the fold's causal
-  // selection reads it), so it is deliberately NOT cleared here. The
-  // personas pack (with its H2 birth-date carrier) also survives — the
+  // selection reads it, and since v2 step b so does the fraud
+  // injector), so it is deliberately NOT cleared here. The personas
+  // pack (with its H2 birth-date carrier) also survives — the
   // blueprint and the government pass read it inside the fold.
   world.people.pii = entity::pii::Roster{};
   world.infra.devices = synth::infra::devices::Output{};

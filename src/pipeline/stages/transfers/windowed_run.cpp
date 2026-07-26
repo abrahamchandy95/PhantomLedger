@@ -280,9 +280,16 @@ WindowedRunResult TransferStage::runWindowedErased(
   const WindowedTransferDriver::FraudSourceFactory makeFraud =
       [&](std::uint64_t realizedCandidateCount)
       -> std::unique_ptr<ScheduleCursorSource> {
+    // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
+    // the home-area axis. These MUST match what the monolithic path
+    // passes at simulate.cpp — this is the production engine and
+    // test_arch_equivalence / test_production_windowed compare the two
+    // byte-for-byte, so any asymmetry becomes an engine divergence the
+    // moment step b-2 reads them. Both are UNREAD today.
     return makeFraudSource(injector, scope.window,
                            static_cast<std::size_t>(realizedCandidateCount),
-                           FraudEmission::legitCounterparties(legitCps));
+                           FraudEmission::legitCounterparties(
+                               legitCps, &cps.merchants, people.homeAreas));
   };
 
   ValidatingSink validating{sink, &holdings.accounts.lookup};
