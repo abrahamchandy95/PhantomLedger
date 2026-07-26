@@ -1839,19 +1839,21 @@ resolved by shipped ADJUSTs or documented CHOICEs.
 
 ### U-1. card-fraud use-case view derivations (card-fraud-2026-07)
 
-Export-time, content-keyed derivations for the `card-fraud` use case
-(TigerGraph TF_GNN_v3 target; exporter/card_fraud/). None of these
-touch the world model or any other use case's bytes: they are
-deterministic functions of row/entity content (FNV-1a over fixed-width
-fields, lane-salted; derive.hpp), so the corpus stream and every
-existing golden are unaffected.
+View definitions and exporter-side presentation derivations for the
+`card-fraud` use case (TigerGraph TF_GNN_v3 target;
+exporter/card_fraud/). Card-view membership, identifier rendering,
+category fallback, `use_chip`, and `error` do not alter the settled
+corpus. The current `use_chip` and `error` fields are legacy
+content-keyed presentation values; they do NOT report persisted
+transaction mode, authentication, or authorization-attempt state.
+World-modeled merchant geography is governed separately by U-2.
 
 | Item | PL value | Class | Suggested source |
 |---|---|---|---|
 | Card view | channels {card_purchase, merchant}; merchant-channel (account-paid POS) rows interpreted as DEBIT-card transactions; ATO (p2p rail) excluded | CHOICE | IBM TabFormer mixes credit/debit cards |
 | Card attribution | source Key in card registry -> that credit card (<=1 credit card/person); any other source -> the account's derived debit card; Card.is_fraud = card ever carried a flag-1 view row | CHOICE (label definition) | — |
 | Identifier scheme | C/D/M = prefixed role.bank.number of the entity Key; P<person>; T<row_seq> (Payment_Transaction ids cross-reference the transactions table 1:1) | CHOICE | — |
-| use_chip mix | Swipe .63 / Chip .26 / Online .11, content-keyed per row [Likely on the split — verify against the TabFormer "Use Chip" empirical mix at citation time] | CHOICE | IBM TabFormer (credit_card_transactions "Use Chip" column) |
+| use_chip presentation mix | Swipe .63 / Chip .26 / Online .11, content-keyed per settled card-view row. These are PL presentation proportions over the TabFormer-shaped value set, NOT a measured in-person/remote purchase-mode share and NOT authentication state; Transaction currently persists neither axis | CHOICE (presentation compatibility; explicitly not a mode measurement) | IBM TabFormer (credit_card_transactions "Use Chip" field supplies the presentation vocabulary; no empirical proportion is claimed here) |
 | error model | incidence 2.0% of view rows; mix Insufficient Balance .40 / Bad PIN .20 / Technical Glitch .20 / Bad Card Number .08 / Bad Expiration .05 / Bad CVV .05 / Bad Zipcode .02; error-free rows carry the empty string [Likely on incidence and mix — verify against the TabFormer "Errors?" column] | CHOICE | IBM TabFormer (credit_card_transactions "Errors?" column) |
 | Category fallback | non-catalog view destinations (the unauthorized rail draws biller accounts) become Merchant vertices with a content-keyed uniform category over the 10-category taxonomy; keyed by destination so mer_cat and Merchant_Assigned agree by construction | CHOICE | — |
 | mer_cat granularity | the 10-category merchant taxonomy stands in for TabFormer's MCC codes | DEVIATES-BY-CHOICE (an MCC taxonomy would be its own model round) | — |
@@ -1859,15 +1861,17 @@ existing golden are unaffected.
 
 ### U-2. card-fraud finisher derivations (card-fraud-2026-07, continued)
 
-Vertex/edge-side derivations added with the T3 finisher
-(exporter/card_fraud/export.cpp). Same determinism contract as U-1:
-content-keyed FNV-1a lanes, zero effect on the corpus stream or any
-other use case's bytes.
+Vertex/edge-side reporting added with the T3 finisher
+(exporter/card_fraud/export.cpp). Identifier-only presentation fields may
+remain content-keyed, but merchant geography and City.population are NOT
+exporter derivations: the finisher reports causal world state already set
+before spending. Reporting remains deterministic and has zero effect on
+the settled corpus stream or any other use case's bytes.
 
 | Item | PL value | Class | Suggested source |
 |---|---|---|---|
-| Merchant geography | each observed merchant draws ONE entry from the PII pools' US zip table (real, internally consistent city/state/zip triples), keyed by the merchant identity (geo lane) — Has_City/Has_State/Has_Zip and the Assigned_To/Located_In chain agree by construction; City id = "<city>_<state>" | CHOICE | zip table = the PII pools' US postal data (already cited at its source) |
-| City.population | content-keyed synthetic placeholder, uniform [10,000, 2,000,000) per City id — the zip table carries no population figures | CHOICE (synthetic placeholder; replace with census data if the demo needs real figures) | — |
+| Merchant geography | the exporter resolves each observed catalog merchant's world-modeled `Record.location` through the build-fixed geography catalogue. A physical record with a valid area emits one internally consistent Has_City/Has_State/Has_Zip plus Assigned_To/Located_In chain; `online` records and non-catalog destinations remain geography-free. City id = "<city>_<state>". No exporter geo hash or PII zip-table draw remains | CHOICE (world-state reporting contract; merchant placement calibration remains provisional) | current input: `data/geo/us_cities.csv` placeholder; target provenance: Census Gazetteer/ACS |
+| City.population | copied from the resolved world's `GeoArea.population`, so every merchant geo edge and City row reports the same catalogue record. The current build-fixed file is only a runnable 71-US-city-core + 15-international-place placeholder; it is not Census-complete, row order still defines `GeoAreaId`, and land area is not loaded. No exporter-side synthetic population hash remains | CHOICE (placeholder input; provenance/data expansion pending) | Census Gazetteer + ACS population/land-area target; current `data/geo/us_cities.csv` is not yet that artifact |
 | Party.gender | content-keyed even F/M split per person — gender is NOT modeled anywhere in the world (names are pool indices without a gender attribute) | CHOICE | — |
 | Party.is_fraud | fraud ACTOR label: person carries the fraud, soloFraud or mule roster flag; victims stay 0 | CHOICE (label definition) | — |
 | Party.created_at | the standard exporter's Membership model (joinTs), identical to the public-schema customer table | CONFORMS (reuses the existing modeled value) | — |
@@ -1896,3 +1900,258 @@ closing the gap is a FRAUD-BUDGET change (targetEvents, the
 unauthorized rail mix, and every fraud denominator are
 model-versioned): owner-gated ADJUST round with golden re-pins, never
 a silent edit.
+### U-4. macro-history-v1 H0 era reference series (macro-history-2026-07)
+
+Recorded 2026-07-24 by the H0 merge. The 1990-2020 era series live in
+pinned data files (`data/econ/us_macro_annual.csv`,
+`data/econ/us_mortality.csv`) at build-fixed paths (`PL_ECON_DATA`,
+`PL_ECON_MORTALITY`) and are loaded + validated by
+`synth::econ::macroSeries()` / `mortality()` and pinned by
+`test_econ_catalog`. **H0 CONTRACT: the series are UNREAD by
+generation.** No model constant changes in this round; every H1+
+consumer lands in its own named model-moving round citing these rows.
+Column encodings, precision, and per-column verification status:
+`data/econ/README.md`. THE AXIS: unemployment is the ANNUAL AVERAGE
+(not the monthly peak); `recession_months` counts months strictly
+after the NBER peak month through the trough month; the canonical run
+window `[1991-01-01, 2020-01-01)` ends BEFORE the COVID recession, so
+the 2020 row is data, not required behavior.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| CPI-U annual averages 1990-2020 (`cpi_u_e3`) | 1990 130.7 -> 2019 255.657 -> 2020 258.811; 2019/1991 ~ 1.877; 2009 is the era's only annual deflation (-0.4%) | MEASUREMENT | BLS CPI-U, series CUUR0000SA0 [Likely - transcribed from the published series; verify at citation time] |
+| SSA national Average Wage Index 1990-2020 (`awi_cents`) | 1991 $21,811.60 -> 2019 $54,099.99 (~2.48x); 2009 dips below 2008 | MEASUREMENT | SSA AWI series, ssa.gov/oact/cola/AWI.html [Likely - transcribed; verify] |
+| Nominal per-capita PCE 1990-2020 (`pce_per_capita_dollars`) | ~$15,300 (1990) -> ~$44,000 (2019) (~2.9x), rounded to $100 | MEASUREMENT | BEA NIPA (FRED A794RC0A052NBEA) [PROVISIONAL - DERIVED from NIPA PCE / mid-year population, not transcribed from BEA's per-capita table; owner MUST verify before H1 wiring] |
+| U-3 unemployment annual averages (`unemployment_rate_bp`) | 5.6% (1990), 7.5% (1992), 9.3%/9.6% (2009/2010), 3.7% (2019), 8.1% (2020); monthly peaks are HIGHER (7.8% 1992-06, 6.3% 2003-06, 10.0% 2009-10, 14.7% 2020-04) and need a monthly series in the H4 round | MEASUREMENT | BLS series LNS14000000 [Likely - transcribed; verify] |
+| NBER recession months per year (`recession_months`) | 1990:5, 1991:3, 2001:8, 2008:12, 2009:6, 2020:2 (sums = published durations 8/8/18/2) | MEASUREMENT | NBER business-cycle dating [Certain on the dates; the per-year counting convention is documented in data/econ/README.md] |
+| US resident population (`population_thousands`) | 249.6M (1990) -> 328.2M (2019) -> 331.5M (2020), rounded to 100k; strictly increasing every year | MEASUREMENT | Census intercensal/postcensal estimates [Likely - transcribed + rounded; verify vintage] |
+| Mortality qx pivot table (`us_mortality.csv`, 24 pivot ages 0-110, qx_e6 male/female, log-linear interpolation) | e.g. male qx ~ .0019 (30), .0049 (50), .0163 (65), .0609 (80); implies survival 22->51 > 90% and 65->94 < 20% | CHOICE (PROVISIONAL) | SSA 2019 PERIOD life table (Actuarial Table 4C6) - the pivots APPROXIMATE it at 2-3 significant figures and were NOT transcribed from the primary source; the H3 authority round MUST replace them with exact single-age Table 4C6 values (one named table year) before any mortality behavior is wired |
+| Funeral cost anchors (NOT yet in a data file) | NFDA median adult funeral (viewing+burial): 1991 ~ $3,742 -> 2019 $7,640 (2021 $7,848; cremation $6,970); H3 wires reference-year median x price index, payer = surviving kin | MEASUREMENT | NFDA General Price List surveys [Likely - verify at H3 citation time] |
+| Conditional inheritance size/incidence | current `InheritanceEvent{eventP=.0015, LN median $25k, sigma 1.0}` is an UNANCHORED CHOICE and an UNCAUSED hazard; H3 retires the hazard in favor of death-caused estate transfer and re-anchors size/incidence | CHOICE (open) | Fed Survey of Consumer Finances intergenerational-transfer tables |
+| Reference year for nominal dollar constants | PROPOSED 2019 (most audit anchors are 2015-2022 measurements); H1 scales event-year draws by series ratio from this base | CHOICE (PROPOSED - OWNER APPROVAL REQUIRED before H1 wiring) | - |
+| H0 wiring status | data loaded + validated + meaning-gated by test_econ_catalog; UNREAD by generation; zero golden movement | MEASUREMENT (code fact) | this repository |
+
+Deviation rule for this section: H1+ rounds that wire any of these
+series into behavior are MODEL-MOVING (named round, meaning gates, one
+internal re-pin); replacing the PROVISIONAL mortality pivots or the
+DERIVED PCE column with exact primary-source values while the series
+remain UNREAD is a data/doc correction, not a model change, and moves
+zero goldens.
+**U-4 VERIFICATION AMENDMENT (macro-history-2026-07b, primary-source
+audit 2026-07-24):** the owner granted read-only in-app browser access
+and the H0 series were audited against live primary sources (no
+downloads; FRED's fredgraph.csv download endpoint is blocked by
+policy, so the HTML /data views were used). Results, superseding the
+corresponding rows/statuses above:
+
+* **Mortality table — PROVISIONAL CLOSED, re-classed MEASUREMENT.**
+  `data/econ/us_mortality.csv` is now an EXACT full transcription of
+  the SSA PERIOD LIFE TABLE FOR 2023, as used in the 2026 Trustees
+  Report (Actuarial Life Table 4C6, ssa.gov/oact/STATS/table4c6.html,
+  read 2026-07-24): single ages 0-119, male/female qx to six decimals
+  = exact qx_e6 integers. The named-table-year requirement is
+  satisfied (2023 / 2026 TR); the 24-pivot approximation is RETIRED.
+  Male and female qx are equal from age 109 up (source values). The
+  arc's cohort claims cross-check against the source lives column:
+  survival 65->94 = 8,320/79,084 ~ 10.5%; survival 22->51 =
+  90,659/98,458 ~ 92.1%.
+* **AWI — VERIFIED EXACT.** All 31 values 1990-2020 in `awi_cents`
+  matched ssa.gov/oact/cola/awiseries.html (read 2026-07-24),
+  including the 2009 dip (-1.51%).
+* **Per-capita PCE — PROVISIONAL-DERIVED CLOSED, re-classed
+  MEASUREMENT (exact).** `pce_per_capita_dollars` now carries the
+  exact BEA values from FRED series A794RC0A052NBEA (HTML data view,
+  vintage "Last Updated 2026-04-09"): $15,225 (1990) -> $43,682
+  (2019) -> $42,886 (2020); 2019/1990 ~ 2.87.
+* **Population — SOURCE CHANGED to exact.** `population_thousands` now
+  carries the exact BEA NIPA MIDPERIOD population from FRED series
+  B230RC0A052NBEA (vintage "Last Updated 2026-02-20"): 250,181 (1990)
+  -> 330,513 (2019) -> 331,840 (2020). AXIS: this is the per-capita
+  PCE denominator, NOT the Census July-1 resident estimate (<0.3%
+  apart); the U-4 row's Census framing is superseded.
+* **CPI-U and unemployment — UNCHANGED, still transcription
+  [Likely].** bls.gov timed out and no alternate origin was approved
+  during the audit session; owner-verify at citation time or approve
+  an origin for a follow-up read. Values remain the standard published
+  BLS annual averages.
+
+The series remain UNREAD by generation, so every correction above
+moved ZERO goldens; test_econ_catalog re-ran green on the exact
+values (its bands were chosen as direction bands and required no
+edits). Remaining open items in this section: owner approval of the
+PROPOSED 2019 reference year (blocking H1), the NFDA/SCF anchors
+(H3-time), and the monthly unemployment path (H4-time).
+### U-5. macro-history-v1 H1 opening: calibration year + coverage extension (macro-history-2026-07c)
+
+Recorded 2026-07-24 by the H1 opening merge. STORAGE NOTE superseding
+U-4's file paths: the era data now lives EMBEDDED in
+`include/phantomledger/synth/econ/era_data.hpp` (constexpr tables; the
+`data/econ/` files and their build-fixed paths are retired per the
+owner's minimize-repo-data-files directive #4); the provenance/refresh
+contract moved to `docs/era_data_provenance.md`. The series remain
+UNREAD by generation — every change in this round moved ZERO goldens.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| CALIBRATION YEAR for nominal dollar constants | 2019 (`kCalibrationYear`, era_data.hpp; `MacroSeries::calibrationYear()`, builder-validated inside coverage; exact denominators pinned: CPI 255.657, AWI $54,099.99). The U-4 "reference year PROPOSED 2019" row is RESOLVED: OWNER-APPROVED 2026-07-24 under the owner's durability criterion — the year is a PROVENANCE FACT of the calibration data (constants measured ~2015-2024 declared 2019-denominated: the last full canonical-window year and last pre-COVID year), never "the present"/coverage-tail/wall-clock/run-start. It changes only with the constants it denominates. | CHOICE (OWNER-APPROVED) | Rejected alternatives recorded in docs/era_data_provenance.md; per-constant measurement vintages = registered upgrade path |
+| Macro coverage extension 2021-2024 | `kMacroAnnual` now 1990-2024 (35 rows), every cell fully MEASURED: CPI 270.970/292.655/304.702/313.689; AWI $60,575.07/$63,795.13/$66,621.80/$69,846.57; per-capita PCE $48,480/$52,909/$55,870/$58,501; U-3 5.3/3.6/3.6/4.0; recession months 0; population 332,503/334,350/337,087/340,095 (thousands). 2025 is IMPOSSIBLE to pin as of 2026-07: AWI 2025 publishes ~2026-10, and the October 2025 CPI release and CPS survey were cancelled (federal shutdown) — no official 2025 annual averages exist. | MEASUREMENT | ssa.gov AWI page; FRED CPIAUCNS / A794RC0A052NBEA / UNRATENSA / B230RC0A052NBEA HTML data views, all read 2026-07-24 |
+| CPI-U precision correction 1990-2006 | tenths-rounded transcriptions replaced by EXACT annual averages (e.g. 1990 130.7 -> 130.658; 1991 136.2 -> 136.192; 2006 201.6 -> 201.592); 2007-2020 already exact. Method: the official BLS annual average IS the mean of the 12 NSA monthly indexes; recomputed from the FRED CPIAUCNS data view for every covered year and matched to the third decimal. U-4's CPI status [Likely - transcribed] is SUPERSEDED: VERIFIED EXACT. | MEASUREMENT | FRED CPIAUCNS (BLS CUUR0000SA0 mirror), read 2026-07-24 |
+| Unemployment verification narrowing | official BLS annual averages retained; FRED UNRATENSA monthly means reproduce every covered value within 0.1pp (the official statistic is a ratio of annual averages, not a mean of monthly rates — last-digit differences in e.g. 2011, 2021). Status: transcribed + cross-checked. | MEASUREMENT | FRED UNRATENSA, read 2026-07-24; BLS LNS14000000 remains the canonical citation |
+| H0.6 lock consequence | the card-fraud era lock reads coverage bounds, so the runnable window widened to 1990-2024 with NO engine change; the default 2025-01-01 start REMAINS rejected (2025 unmeasured) — a DELIBERATE TRIPWIRE assertion in test_app_options flips when the 2025 row lands. Windows crossing 2020-04 now get correct nominal LEVELS; COVID/EIP BEHAVIOR stays P2 (the same unmodeled-modulation status every pre-2020 recession has until H4). | MEASUREMENT (code fact) | this repository |
+| H1 wiring status | NOT YET WIRED: generation still reads nothing from the series. The wiring round (H1 step 2) is MODEL-MOVING: AWI drives incomes (replacing the flat .025 compounding), CPI drives price-level amounts, both as index(year)/index(2019); beyond-coverage years FREEZE at the last measured scale with a printed declared notice (adopted policy: freeze-and-declare, never silent extrapolation, never a new CLI arg); one named re-pin. | MEASUREMENT (code fact) | this repository |
+
+Deviation rule for this section: appending fully published years is a
+data+authority refresh (zero goldens until H1 wiring lands, MODEL-
+MOVING after); changing `kCalibrationYear` is a re-calibration round
+touching every dollar constant's denomination — never bundle it with a
+coverage refresh.
+
+### U-6. macro-history-v1 H1 step 2b: nominal-scale wiring classes (macro-history-2026-07d)
+
+Recorded 2026-07-25 by the H1 step-2b wiring merge. This section is
+the authority for the MODEL-MOVING wiring of `synth/econ/nominal.hpp`
+(priceScale/wageScale, level-anchored at kCalibrationYear 2019,
+freeze-and-declare outside 1990-2024 coverage) into every
+dollar-realization surface, per the contract
+docs/h1_nominal_scale_wiring.md. Wiring shape everywhere:
+draw -> x scale -> (denomination re-snap if any) -> roundMoney ->
+spool/emit. RNG streams, lanes and entity ordering are byte-identical
+to the pre-wiring engine; ONLY amounts (and amount-derived screens)
+move. ONE named re-pin of all four goldens lands with this round.
+U-5's "H1 wiring status: NOT YET WIRED" row is SUPERSEDED: wired.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| Class W (wage-indexed) | salaries (SalaryCalculator at pay date), freelancer/business revenue (revenue Cycle at month), SSA retirement + disability benefit deposits (at deposit date) scale by wageScale(realization year) = AWI(year)/AWI(2019). Deviation stated: real SSA wage-indexes at award then CPI-COLAs per cohort; ONE index era-wide is the H1 simplification until personas retire in-model (H2/H3). | CHOICE | SSA AWI series (ssa.gov); docs/h1_nominal_scale_wiring.md |
+| Class P (price-indexed) | rent (calculateRent at pay date), spending-session tickets (payment router at event day), subscriptions (kPricePool price at DEBIT date — subscription prices track the era level; per-contract frozen pricing REJECTED: would hold 1991 prices for decades), insurance premiums (at billing date) + claims (at claim date), family routines incl. interim inheritance (at event ts), ATM and internal self-transfers (see denomination row), card late fee + minimum-payment dollar floor (at cycle date) scale by priceScale(realization year) = CPI-U(year)/CPI-U(2019). | CHOICE | FRED CPIAUCNS; docs/h1_nominal_scale_wiring.md |
+| Class P stocks (window-start anchor) | account opening balances, overdraft fees, protection buffers, LOC limits (OpeningBalanceSeeder) and card credit limits (synth::cards::issue) scale ONCE by priceScale(window-start year); they then evolve through scaled flows. Persona initialBalance/baselineCash references scale identically so liquidity/utilization RATIOS stay coherent. DECLARED APPROXIMATION: the stock anchor is fixed at window start while flow scale drifts across a decades window — nominal balance levels lag late-window flows until H4 macro coupling; ratios remain order-correct. | CHOICE | docs/h1_nominal_scale_wiring.md |
+| Class D (origination-anchored debt) | mortgage/auto/student monthly payments scale by priceScale(ORIGINATION year) at issue and stay FIXED NOMINAL after (real loans are nominal contracts). Backdated originations before 1990 clamp to 1990 (freeze-and-declare = scaleYear's coverage clamp — declared, deterministic). Tax quarterlies/filings scale by priceScale(due year) instead: IRL brackets index annually. | CHOICE | docs/h1_nominal_scale_wiring.md |
+| Class S (statutory fixed-nominal) | BSA/CTR $10,000 threshold + the structuring typology's threshold band (<= $9,950) + amounts UNCHANGED; ATM $20-note and cash-deposit $10-bill lattices UNCHANGED as lattices (amounts scale then RE-SNAP: a 1991 withdrawal is fewer $20s, not scaled $20s); $0.01 billable-interest de-minimis and $1 de-minimis amount floors UNCHANGED. | MEASUREMENT | 31 CFR 1010.311 — the CTR threshold has been UNINDEXED since the 1970s; holding it fixed while everything else scales is HISTORICALLY CORRECT (in 1991 it bit at roughly 2x today's real value) |
+| Class F (fraud) | continuous fraud amount draws scale by priceScale(event year): kFraud ($900 median) / kFraudCycle ($600) rails (classic, cycle, mule, invoice, layering, scatter-gather, bipartite, funnel), cardFraudSpend ($79 median, clamps [$1,$5k] x scale), atoDrainAmount ($180 median, clamps [$10,$85k] x scale). Structuring EXCLUDED (class S). The 0.11675% calibration target is a COUNT rate — unaffected by amount scaling; funnel dollar floors scale with their amounts so funnel geometry is scale-invariant. | CHOICE | Security.org card-fraud + ATO reports (F-4 lineage); docs/h1_nominal_scale_wiring.md |
+| Denomination-lattice fraud amounts | cardTestCharge anchors ($0.50/$1/$2/$5) and giftCardScamAmount rack denominations ($100/$200/$500 + $10-step rack range) stay FIXED-NOMINAL (owner-approved 2026-07-25): the round-amount signature IS the typology, and denominations are physical/rack artifacts like the $20 note. Deviation from the literal "every typology except structuring scales" contract row is DECLARED here. Era-availability of these rails (gift cards, card-testing) is the H5 instrument-history debt, unchanged by this round. | CHOICE (OWNER-APPROVED) | FTC gift-card Data Spotlight family; Chargeflow card-testing (F-4 lineage) |
+| Camouflage mimicry index | fraud camouflage traffic scales with the index of the flow it MIMICS: bill/p2p cover draws x priceScale(event year); the salary-mimic (kSalary x 12) x wageScale. A camouflage row that scaled differently from its cover class would be a detectable artifact. | CHOICE | docs/h1_nominal_scale_wiring.md |
+| Dollar-literal screens (invariant-4 sweep) | BEHAVIORAL screens scale with the index of the amounts they screen: paycheck $50 minimum (wageScale), revenue rule floors $20-$250 (wageScale), ATM affordability reserve clamp $40-$120 (priceScale), liquidity kCashRefFloor $75 (priceScale at event day), card minPaymentDollars $25 + lateFee $32 (priceScale at cycle), funnel floors $50/$5 and fraud clamps (priceScale). STATUTORY/DE-MINIMIS screens stay fixed: CTR $10k, structuring band, $0.01 interest, $1 amount floors. | CHOICE | docs/h1_nominal_scale_wiring.md invariant 4 |
+| Retirement of the .025 annualInflation constants | employment.hpp SalaryGrowthRules and lease.hpp RentGrowthRules no longer carry `annualInflation = 0.025`; the field is REMOVED from growth::CompoundRules (the AWI/CPI index IS the economy-wide nominal path — start-anchored geometric 2.5% was the stationary placeholder). The seeded `salary_real_raise` / `rent_real_raise` idiosyncratic lanes SURVIVE as career/lease progression ON TOP of the index: population mean drifts (1+mu)^tenure above the pure index (mu = .015 salary / .020 rent) — the aggregate acceptance bands allow this declared drift. | CHOICE | docs/h1_nominal_scale_wiring.md; L-3 amount catalog rows unchanged (draws stay calibration-year dollars) |
+| Frozen-era declared notice | runs whose window touches years outside 1990-2024 coverage print ONE stderr notice (app layer, options.hpp helper + main.cpp; pinned by test_app_options) declaring the freeze at the nearest covered year's level. Never extrapolated, never wall-clock, no new CLI. | MEASUREMENT (code fact) | this repository |
+| Acceptance gates | serverless test_econ_wiring (GateWorld legs): 2019/1991 salary ratio inside an AWI band (~2.48x +/- idiosyncratic-drift allowance); ticket ratio inside a CPI band (~1.88x); calibration-year magnitudes ~= catalog; structuring band intact at 1991 while classic-fraud amounts scale; deflated per-active spend ~flat across a multi-year leg (macro modulation is H4). | MEASUREMENT (code fact) | this repository |
+
+Deviation rule for this section: every future era-data refresh is
+MODEL-MOVING (the series are now READ by generation); re-indexing any
+class or scaling a class-S constant is a re-calibration decision, not
+a refresh. The mortgage counterparty defect (mortgage.cpp ->
+studentServicer) was EXPLICITLY NOT bundled into this round
+(owner decision 2026-07-25): the step-2b diff moves amounts only.
+
+### U-7. macro-history-v1 H2 step 1: persona timeline classes (macro-history-2026-07e)
+
+Recorded 2026-07-25 by the H2 step-1 merge. This section is the
+authority for the persona TIMELINE: the pure primitive
+`synth/personas/timeline.hpp` (persona-AT-DATE derived once per person
+on the isolated {"persona-era", personId} lane from the seed
+assignment + birth date; contract docs/h2_persona_timeline.md). STEP 1
+lands the primitive UNWIRED — zero golden movement, meaning gates in
+tests/test_persona_timeline.cpp. STEP 2 (the wiring: salary spans,
+SSA onset, the age carrier, the AML customer export, the retirement
+spending step) is the next MODEL-MOVING round with ONE named re-pin.
+Owner decisions 2026-07-25: staged delivery; single age axis via an
+isolated {"dob", personId} lane + compact carrier at the wiring round;
+AML Customer reports the END-OF-WINDOW persona; the wiring includes
+the retirement spending step.
+
+| Item | PL value | Class | Suggested source |
+|---|---|---|---|
+| Full retirement age schedule | timeline::fraMonths(birthYear): 65y through 1937 cohorts; +2 months per birth year 1938-1942; 66y for 1943-1954; +2 months per birth year 1955-1959; 67y from 1960. Cohort-varying by statute; pinned test-exact. SSA's "born January 1 counts as the previous year" quirk is a declared simplification away. | MEASUREMENT | Social Security Amendments of 1983; ssa.gov retirement-age chart |
+| Claiming-age mixture | .30 mass at exactly 62; .10 uniform over [63y, FRA); .45 at FRA; .05 uniform over (FRA, 70y); .10 at exactly 70; plus 0-60 day birthday-relative jitter. ONE distribution era-wide — era variation enters through the statutory FRA. Deviation stated: claiming at 62 was substantially more common in the early 1990s than in recent cohorts; per-cohort claiming shares are a REGISTERED UPGRADE (same pattern as the single mortality-table year, U-4). | CHOICE | SSA Annual Statistical Supplement, OASI claiming-age tables (ssa.gov/policy/docs/statcomps/supplement/) |
+| Student work-start | age drawn over 19-28 with mass at 22-26 (weights .05/.05/.08/.20/.20/.15/.10/.07/.05/.05 from age 19), anchored to the BIRTH date; destination salaried .85 / freelancer .15. Non-completers enter early; graduate tail to 28. | CHOICE | NCES completion-age statistics; BLS CPS student employment (the L-4 student .40 employment row is the DURING-study probability; the timeline sets when study ends) |
+| Small-business churn | residual business lifetime = memoryless exponential with median 5 years, clamped [30 days, 40 years] (constant hazard: backdating-invariant); destination after close: salaried .70 / freelancer .30; retirement DOMINATES (a business surviving to the claiming date closes there). One business per seed owner at H2 (repeat founders = registered upgrade). | TYPOLOGY (hazard shape) on a MEASUREMENT anchor (~50% five-year establishment survival) | BLS Business Employment Dynamics, establishment age/survival (bls.gov/bdm) |
+| Seed-consistency clamps | personaAt(timeline, simStart) == seed type is a PINNED invariant. Drawn dates already in the past SETTLE forward: seed students past the drawn work-start age finish in U[90,540] days; seed workers past the drawn claim work another U[180,1825] days; seed retirees' claims clamp to sim start. In-window drawn dates stand exactly as drawn (clamps bind ONLY on past dates). | CHOICE | docs/h2_persona_timeline.md (the seed assignment is by definition the state at sim start) |
+| highNetWorth exemption | NO timeline transitions at H2 — a retired-HNW spending profile is CEX/H3 work; forcing the plain retiree archetype onto HNW would distort more than it fixes. Declared, revisited at the CEX age-profile round. | CHOICE | docs/h2_persona_timeline.md |
+| Single age axis (wiring step) | the DOB draw moves from the shared sequential PII stream to the isolated {"dob", personId} lane feeding a compact carrier; PII renders FROM the carrier; the SSA deposit cohort derives from the REAL birth day-of-month (1-10 / 11-20 / 21-31 -> cohorts 0/1/2 per the SSA payment schedule), RETIRING cohort::syntheticBirthDay (the existing DOB/cohort inconsistency is a declared defect fixed at the wiring). PII bytes move; the step-2 re-pin absorbs them. | MEASUREMENT (the SSA payment-day scheme) + CHOICE (single axis) | ssa.gov payment schedule; docs/h2_persona_timeline.md |
+| AML Customer persona semantics (wiring step) | the Customer vertex reports personaAt(window END) — KYC/CDD current-state extraction semantics (a dataset extracted today carries today's customer type over full-history transactions). customerType / networthCode / incomeCode / occupation follow the end-of-window persona. | CHOICE (OWNER-APPROVED 2026-07-25) | docs/h2_persona_timeline.md |
+| Retirement spending step (wiring step) | at the claiming date, consumption applies a declared level factor ~-12% (band 10-15%) through the H1 day-frame seam; payday sensitivity re-anchors to the SSA deposit days. The full CEX age-profile re-anchor (rate/amount archetype swap) is explicitly NOT at H2. | CHOICE anchored to MEASUREMENT (retirement consumption drop) | Aguiar-Hurst (JPE 2005) retirement-consumption literature; BLS CEX age profiles |
+| Salary/benefit selection becomes timeline-consequent (wiring step) | the L-4 per-persona employment probabilities apply to the persona-AT-DATE; Paymaster employment spans truncate at retirement; seed-student spans start at workStart; SSA recipients = retired-at-date with deposits from the claim date. The paidFraction .65 fit target is re-derived at the wiring read (the weighted mean moves with the era mix) — declared there, gated as a band. | CHOICE | salary.hpp L-4 lineage; docs/h2_persona_timeline.md |
+
+Deviation rule for this section: the step-1 primitive is UNWIRED and
+zero-golden; the step-2 wiring is MODEL-MOVING (ONE named re-pin).
+Changing any distribution above (claim mixture, work-start weights,
+business hazard, spending step) after the wiring is a re-calibration
+decision on this lineage, never a silent edit.
+#### U-7 ADDENDUM (macro-history-2026-07f: H2 arc close)
+
+Code-facts and declarations recorded at the H2 arc close (steps 2b/2c
+executed; contract docs/h2_persona_timeline.md).
+
+| PL value | Class | Suggested source |
+|---|---|---|
+| Payroll era-axis defect FIX: `paydatesForProfile` weekly/biweekly lattices are era-agnostic — weekly pays on its weekday in every week; biweekly aligns the window's first on-weekday date to the 2025-01-01 anchor's FORTNIGHT PARITY (the anchor is a lattice PHASE, not a start bound). Pre-fix, every pre-2025 window emitted ZERO weekly/biweekly paydates (75% of the cadence mix silent; the 1991 smokes carried roughly half the 2025-start income at equal population). Windows at/after the anchor emit unchanged dates. Cadence mix and anchor constants UNCHANGED. | MEASUREMENT (correctness repair on the U-7 lineage; no model parameter moved) | code-fact, tests/test_persona_wiring.cpp |
+| Retirement spending step exemption: the ~-12% step (kRetiredSpendScale .88, from the claiming day, through the day-frame seam) applies ONLY to working-seed archetypes transitioning in-window; SEED RETIREES and highNetWorth carry no step — the retiree archetype already encodes retired-calibrated spending (rate x0.6 / amount x0.9), so stacking would double-count | CHOICE anchored to MEASUREMENT (Aguiar-Hurst JPE 2005; the U-7 step row) | BLS CEX age profiles; the audited persona table |
+| Payday re-anchor to SSA days: `buildPaydaysByPerson` screens the inbound stream by `isPaydayInbound`, which admits gov_social_security / gov_pension / gov_disability — a mid-window retiree's liquidity relief/stress cycle re-anchors from salary days to SSA deposit days AUTOMATICALLY once the 2b income switch moves their inbound stream (zero new code; pinned in test_persona_wiring) | MEASUREMENT (code-fact) | channel taxonomy, tests/test_channels.cpp |
+| AML Customer persona = END-OF-WINDOW state: both streaming sinks resolve `personaAt(lastTs)` in takeArtifacts(), where lastTs is the corpus maximum timestamp (derived from the replay-sorted stream exactly as simStart is from its first row); empty streams / carrier-less packs leave the seed assignment | CHOICE (owner decision 2026-07-25; U-7 row executed) | exporter/aml/vertices.hpp |
+### U-8. macro-history-v1 H3: mortality, estates, replenishment (macro-history-2026-07g)
+
+Steps verified through part 3b-i (contract docs/h3_mortality_estate.md;
+gates test_lifespan, test_persona_wiring H3 sections, test_estates).
+
+| PL value | Class | Suggested source |
+|---|---|---|
+| Death dates: annual hazard walk over the EMBEDDED SSA 2023 period life table (4.C6, sex-specific qx, log-linear age interpolation), inverted at one uniform per person on the isolated {"mortality", personId} lane; deaths anchor to BIRTH dates; residual mass beyond age 120 dies at the cap | MEASUREMENT (table) + CHOICE (inversion mechanics) | SSA Period Life Table 2023, table 4.C6 |
+| ALIVE-AT-START invariant: the hazard walk begins at the person's current fractional age — death is conditional on survival to sim start and lands strictly after it (the mortality analog of personaAt(simStart)==seed) | INVARIANT | model consistency |
+| Latent sex: Bernoulli 50/50 drawn on the mortality lane (the world models no sex; the table's ~2.7-year male/female gap is retained as real signal); surfacing sex to PII and a measured population ratio are REGISTERED UPGRADES | CHOICE | Census sex ratio (registered) |
+| One period table era-wide (2023); NO persona/SES-differential mortality; deaths uniform within the death year | CHOICE (three declared simplifications; historical-period tables and SES gradients registered) | SSA historical life tables (registered) |
+| Death stops — income: salary interval ends at min(retirement, death); SSA/disability deposits end at death (benefits die with the beneficiary; survivor benefits REGISTERED); revenue months stop at death including the otherwise-perpetual retiree/HNW plans | CHOICE anchored to program rules | SSA payment-after-death rules |
+| Death stops — behavior: the spending session skips a dead spender's person-days; ATM withdrawals and internal self-transfers stop (emission-side filters — rng streams byte-identical); rent stops (the lease dies with the tenant; a declared shared-stream shift); family gifts drop when either party is dead (external XF members' deaths unmodeled — declared) | CHOICE (mechanism); split deposits stop as a CODE-FACT (they consume the payday-inbound stream, which death-clipped income ends) | — |
+| THE BEHAVIORAL/CONTRACTUAL LINE: contractual flows (subscriptions, insurance premiums, loan/tax obligations, card cycles) keep posting against the estate until ACCOUNT CLOSURE (part 3c-ii membership close) — estates really do keep getting billed | CHOICE (declared, realism-defensible interim) | estate-administration practice |
+| DEATH-CAUSED ESTATES replace the uncaused hazard (0.15% of retirees per 180-day sweep — RETIRED): every in-window death with heirs distributes an estate at death+30-90 days (probate settle, declared); estate size keeps the interim lognormal($25,000, sigma 1.0) — an SCF-anchored re-derivation is REGISTERED; heirless estates unhandled until closure | TYPOLOGY (causation) + CHOICE (interim size) | SCF net-worth distributions (registered) |
+| FUNERAL: one bill-channel payment from the decedent's account at death+3-10 days to the external service-merchant hub (dedicated funeral counterparty/channel REGISTERED); lognormal median $6,300 CALIBRATION dollars = NFDA 2019 GPL blend (funeral with viewing+burial $7,640; cremation with viewing $5,150; ~55% 2019 cremation rate), sigma .40, floor $1,000, CPI-realized at the death year | MEASUREMENT (NFDA blend — OWNER SPOT-CHECK) + CHOICE (sigma/floor) | NFDA 2019 General Price List survey; NFDA/CANA cremation rate |
+| Fixed per-decedent draw order (funeral amount/day/hour/minute, estate total/day/hour/minute) on the isolated {"family","inheritance"} lane — emit decisions cannot move later decedents; the lane's stream changed wholesale with the hazard retirement (declared) | INVARIANT | draw discipline |
+| GATE AMENDMENT: test_econ_wiring's ring-rail fraud mean band widened (1.4, 2.4) -> (1.4, 2.6) — the sparse heavy-tailed mean recomposes whenever the candidate count L moves (F = pL/(1-p)); the band is DIRECTIONAL; the axis law stays pinned by test_econ_scale, test_fraud_amounts, and the class-S sub-gate | MEASUREMENT (statistical tolerance) | observed 2.418 post-H3-part-1 vs CPI 1.877 |
+#### U-8 ADDENDUM. membership, replenishment, closure (macro-history-2026-07h)
+
+Code-facts and declarations recorded at the H3 arc close (part 3c-ii
+executed; contract docs/h3_mortality_estate.md; gates
+tests/test_membership.cpp, serverless 44).
+
+| PL value | Class | Suggested source |
+|---|---|---|
+| MEMBERSHIP INTERVAL [joinTs, closeTs): joinTs = window start for the seed roster and a drawn join day for the join cohort; closeTs = death + 120-day settlement (`pii::kSettlementDays` — sized to strictly contain the funeral (death+3-11d) and the estate distribution (death+30-90d), so every estate row is corpus-visible before the accounts close); the STANDARD exporter's visible corpus filters every row on BOTH endpoint owners' intervals (the pre-existing join filter gained the close bound); the aml / aml_txn_edges / mule_ml / card_fraud corpora remain FULL-WORLD exports (declared) and reflect lifecycle through values: the AML Customer status cell flips active -> closed when the corpus end reaches closeTs, and standard customer.csv gains a closed_at column (empty while the account is still open at export) | CHOICE (owner directive: the population must both persist AND die) | estate-administration practice; deposit-account closure norms |
+| JOIN-COHORT REPLENISHMENT sizing: joinerCount = population x SUM over window days of r(year(day)) / 365.2425 (linear day-weighted, declared), where r(y) = pop(y+1)/pop(y) - 1 from the EMBEDDED BEA NIPA population series (era_data.hpp, U-4/U-5 lineage); RATE-CLAMPED at coverage edges — a frozen year reads the LAST MEASURED year-over-year rate, the rate-axis analog of the H1 level freeze (never extrapolated, never wall-clock); joiners are the LAST K person ids, so the seed roster's dob/timeline/mortality draws are byte-identical; the flat 2%/yr `pii::Growth` model is RETIRED | MEASUREMENT (series) + CHOICE (the bank's customer base tracks resident-population growth; per-bank customer-acquisition series would be a registered upgrade) | BEA NIPA population (embedded era series); U.S. Census population estimates |
+| JOIN-DAY distribution: exactly ONE draw per joiner on the isolated {"join-cohort", personId} lane — inverse-CDF over per-day weights proportional to r(year(day)), so high-growth years recruit proportionally more; entity N cannot move entity N+1; a second draw later is an explicit model change | INVARIANT (draw discipline) + CHOICE (growth-proportional placement) | — |
+| JOINER AGE AXIS ERROR closed: a joiner's dob, persona timeline, and lifespan now anchor at the JOIN DATE through the single-age carrier (a 2015 joiner draws 2015-appropriate ages; the seed-consistency clamps and the alive invariant bind at join — death lands strictly after joining); previously every joiner aged as of sim start | MEASUREMENT (axis repair on the U-7/U-8 lineage; no model parameter moved) | model consistency |
+| ACCOUNT CLOSURE ends the contractual line: subscription debits, insurance premiums, and loan/tax obligation events stop at closeTs via emission-side filters placed AFTER the sites' existing draws burn (shared rng streams byte-identical — only rows and their screen postings disappear); CARD servicing stops at the last statement close at least 50 days before closeTs (`kCardSettleTailDays` — covers grace 25d + late-payment tail 20d + the fee morning, so no session row posts at/after closure; per-card isolated rng lanes keep every other card byte-identical); insurance CLAIMS stop at DEATH, not closure (claim filing is behavioral) via the same post-draw filter | CHOICE (mechanism + declared guards) | card ToS billing-cycle norms; estate-administration practice |
+| H1 WIRING DEFECT FIX (subscriptions never scaled in production): the routines DebitEmitter — the ONLY production subscription path (passes::addSubscriptions) — drafted and screened the raw calibration-dollar sub.amount, while the U-6 CPI wiring had landed in the parallel channels emitter that production never calls; test_econ_wiring's calibration gate could not see it (it pins 2019 rows, where scale == 1.0 makes scaled and unscaled identical). FIXED: screen and draft both realize sub.amount x priceScale(debit month) — the U-6 row's stated behavior; pinned by the deflated pair-ratio gate in test_membership | MEASUREMENT (correctness repair on the U-6 lineage; no model parameter moved) | code-fact; tests/test_membership.cpp |
+| FRAUD-SCHEDULING INTERVALS (rings never recruit the dead): each ring plan carries the MINIMUM death epoch over its fraud + mule participants; the ring's typology bursts AND its camouflage window clamp to that alive horizon minus a 22-day schedule guard (`kRingScheduleGuardDays` — the invoice typology's weekly lattice can emit up to 21 days past its base range; every other typology's tail padding already contains its bursts); VICTIM accounts are exempt from the minimum (fraud against deceased persons' accounts is a real, documented typology) and the solo/unauthorized rail is exempt under the same declaration | TYPOLOGY (deceased-victim fraud) + CHOICE (guard) | ring-operation windows in AML case literature; deceased-identity fraud advisories |
+| AML onboarding date vs joinTs: the aml / aml_txn_edges Customer onboarding stays the synthetic backdated derivation (identity::onboardingDate) while standard customer.csv and the card_fraud Party table export the membership joinTs — a declared inconsistency; aligning AML onboarding to the membership axis is REGISTERED | MEASUREMENT (code-fact, declared) | — |
+### U-9. macro-history-v1 H4: macro modulation — the real consumption level (macro-history-2026-07i)
+
+Model choices adopted 2026-07-26 (contract docs/h4_macro_modulation.md;
+owner decisions 1-4). Recorded at H4 step 1 (the primitive lands,
+pinned by test_econ_scale, UNREAD by generation); the step-2 wiring
+round adds the consumers, the wiring gates, and the four-golden
+re-pin.
+
+| PL value | Class | Suggested source |
+|---|---|---|
+| THE REAL CONSUMPTION LEVEL: `pceScale(year)` = per-capita nominal PCE index over the calibration year; `realPceLevel(year)` = pceScale/priceScale — the measured REAL per-capita consumption path (~0.67 at 1991, exactly 1.0 at 2019), carrying the measured level dips (1991, 2008-09, the 2020 collapse + 2021 rebound; the 2001 recession slowed growth without a per-capita consumption dip — the series says so and the model inherits it) at annual resolution; level-anchored and freeze-and-declare exactly like the H1 scales (frozen years hold the last measured level; never extrapolated, never wall-clock) | MEASUREMENT (the embedded series) + CHOICE (level definition) | BEA A794RC per-capita PCE (embedded era series, U-4/U-5 lineage) |
+| THE CHANNEL (owner decision 1): real consumption modulates the discretionary session's transaction COUNT axis only; ticket AMOUNTS stay exactly as U-6 wired them (calibration draw x priceScale). The quantity axis carries the real growth (per-capita payment counts grew on this order over the era — Fed Payments Study lineage); the fraud budget F = pL/(1-p) rides the candidate count L, so fraud DENSITY stays proportional across eras with no fraud-side wiring; the CPI ticket band in test_econ_wiring stays correct as written and becomes the channel-separation pin. A mixed count/amount split is REGISTERED (no anchor for early-era ticket sizes exists in the catalog) | CHOICE (owner-adopted 2026-07-26) | Fed Payments Study per-capita noncash counts; U-6 denomination law |
+| BUDGET SEMANTICS: the session's window budget (targetTotalTxns) is denominated at the CALIBRATION LEVEL; realized per-year volume = target x realPceLevel(year) — a 2019 window reproduces today's volumes exactly, a 1991 window runs at ~0.67x. The factor is ONE pure lookup per day frame (the dayPriceScale_ pattern; both engines share the code, oracle parity automatic); NO draws, NO lanes, NO CLI | INVARIANT (level anchoring) + CHOICE | model consistency with the H1 scales |
+| SCOPE (owner decision 2): the discretionary spending session ONLY. Wages/revenue/benefits already ride AWI (the labor axis is measured once); rent/subscriptions/premiums/obligations/card terms are CONTRACTUAL (their era axis is the price level they already carry). ATM withdrawal cadence and the cash-vs-card mix are DECLARED era-flat (real cash usage declined over the era — a cash-share era model is REGISTERED); family gift cadences likewise declared era-flat | CHOICE (declared simplifications) | — |
+| UNEMPLOYMENT (owner decision 3): DECLARED, not modeled — the demand side already carries the downturns through the PCE series at the same annual resolution; a labor-market separation-spell model (recession job loss interrupting payroll) is REGISTERED, as is within-year NBER recession shading (the 8 peak/trough dates would be a small constexpr table with NBER provenance). The U-3 series stays embedded + exported | CHOICE (declared) | BLS U-3 (embedded); NBER business-cycle dating (registered) |
+| COVID/EIP (owner decision 4): the 2020 collapse and 2021 rebound ship FREE through realPceLevel (the COVID axis facts are pinned in test_econ_catalog); the three Economic Impact Payments (CARES Apr 2020 $1,200/adult; Dec 2020-Jan 2021 $600; ARPA Mar 2021 $1,400) are REGISTERED as a future class-S statutory table — the canonical card-fraud window ends 2020-01-01, so no current probe config reaches the EIP dates | CHOICE (owner-adopted; statutory amounts fixed-nominal when wired) | CARES Act / CAA 2021 / ARPA statutes (registered) |
+| HARNESS DRAIN (analysis): the ~27% deflated year-over-year drain in 300-person second-year gate legs is a SMALL-WORLD BUDGET ARTIFACT (income under-provision -> declining balances -> liquidity suppression), predating every macro-history round; production populations do not share the geometry. H4 gates are cross-era ratios of same-position years so the drain cancels; a gate-world income/spending budget calibration round is REGISTERED | MEASUREMENT (harness fact) | test_econ_wiring drift diagnostics |
+| GATE AMENDMENT (declared for the step-2 wiring): test_econ_wiring's DRIFT PARITY gate divides out realPceLevel (parity in calibration-level units) — under H4 the era-equal-real-growth assumption it encoded is intentionally false (1991->1992 real growth is positive, 2019->2020 negative). New wiring gates: volume band (1991/2019 per-capita session counts ~0.67 +-15%), ticket band UNCHANGED (channel separation), calibration identity, recession direction (2009 below 2008 in calibration-level units), fraud proportionality (fraud count ratio tracks L) | MEASUREMENT (statistical tolerance) + INVARIANT | — |
+
+#### U-9 ADDENDUM. H4 step 2 — the wiring as BUILT and MEASURED (macro-history-2026-07j)
+
+Recorded after the step-2 wiring round landed and the owner re-pinned
+all four goldens. Two rows amend the step-1 U-9 plan; the rest are the
+verification record.
+
+| PL value | Class | Suggested source |
+|---|---|---|
+| THE SEAM AS BUILT: `SpenderEmissionLoop::RateSampler` gains `dayRealLevel_` = realPceLevel(year of the day frame's start), computed ONCE per day frame in the constructor initializer list beside `dayPriceScale_`, and multiplied into `combinedMultiplierFor()` alongside `frame_.seasonalMult`. Two files (loop.hpp, loop.cpp); both engines share the sampler, so windowed==monolith oracle parity is automatic and needed no separate gate. NO draws moved, NO lanes, NO CLI. The calibration year is an IEEE x1.0 no-op, so 2019-start worlds sample BIT-IDENTICALLY to the unmodulated loop | MEASUREMENT (code fact) | this repository |
+| AMENDS the step-1 plan — RECESSION-DIRECTION GATE SUBSUMED, NOT BUILT: the planned "2009 below 2008 in calibration-level units" leg was dropped. At annual resolution the 2008-09 per-capita real consumption dip is 1-3%, while the harness's own second-year liquidity drain is ~27% at N=300 — the gate could not have distinguished signal from harness. The dip DIRECTION stays pinned at the primitive (test_econ_scale: realPceLevel(2009) < realPceLevel(2008)) and the count-axis TRANSMISSION is pinned by the 33% volume gate; their composition IS the recession behavior. Follows the standing lesson: do not gate what the harness cannot resolve | CHOICE (declared deviation) + MEASUREMENT (harness resolution) | test_econ_wiring drift diagnostics |
+| AMENDS the step-1 plan — VOLUME GATE FORM: realized as an ANCHOR-YEAR comparison (year 1 of each leg — 1991 vs 2019 legit session ticket COUNTS) rather than a window-integrated per-capita ratio. Same population and the same harness position on both sides, so the drain cancels cleanly. Band +-15% around realPceLevel(1991)/realPceLevel(2019) = 0.668. OBSERVED 0.7049: the realized ratio sits ~5% ABOVE the pure level because a quieter 1991 session drains its balances more slowly and the liquidity multiplier feeds back — a model property of the coupled system, not a wiring error, and the reason the band is sized at +-15% | MEASUREMENT (statistical tolerance) + INVARIANT | test_econ_wiring |
+| SUPERSEDES the U-6 acceptance row "deflated per-active spend ~flat across a multi-year leg (macro modulation is H4)": under H4 that flatness assumption is intentionally false, since era year-pairs have different measured real growth (1991->1992 positive, 2019->2020 negative through COVID). The gate now compares y/y spend in CALIBRATION-LEVEL units (nominal total / (priceScale x realPceLevel)) across eras. OBSERVED parity 0.927 inside the unchanged 0.80-1.25 band; the harness drain still cancels in the cross-era division | MEASUREMENT (code fact) | test_econ_wiring |
+| VERIFICATION RECORD (300-person 730-day legs at 1991 and 2019, all gates green): session volume ratio 0.7049 (vs R 0.668); ticket mean ratio 1.845 (vs CPI 1.877) and salary mean ratio 2.395 (vs AWI 2.480) — BOTH UNMOVED by the count modulation, which is the channel-separation evidence; fraud-rides-L parity 0.9504 (flagged-row count ratio over legit-row count ratio), confirming the injector's budgets chain off realizedBaseCount and not off population or window constants; calibration-level drift parity 0.927; ring-rail fraud mean ratio 2.012, which moved AWAY from the 2.6 band edge that H3 had approached at 2.418 | MEASUREMENT (observed) | test_econ_wiring |
+| FREEZE DIRECTION (declared, and it points UP): outside coverage the activity level freezes with the price scales, and realPceLevel(2024) = 1.0915 — a default 2025-start window runs ~9% ABOVE calibration volume, not below. Measured corpus effect: the standard golden (2025 start, 60d, pop 2000) grew 184,988 -> 197,245 rows (+6.63%), which +9.15% applied to the session-routed share of the stream reproduces. The app's existing frozen-era stderr notice already covers these windows | MEASUREMENT (observed) + INVARIANT (freeze-and-declare) | BEA A794RC / CPI-U embedded series |
+| RUN-PLANNING COROLLARY: any window STARTING before the calibration year now emits FEWER session rows than pre-H4 (the canonical 1991-start card-fraud run integrates realPceLevel ~0.67 -> 1.0 across its years; a short 1991 leg is ~33% lighter on the session rail). The fraud COUNT RATE is preserved by F = pL/(1-p) riding realized L. Restoring the IBM 24.4M-row comparison anchor exactly is therefore a RUN-TIME population/window decision, never a code change | MEASUREMENT (model consequence) | docs/h4_macro_modulation.md |

@@ -3,8 +3,12 @@
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/parties/people.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -18,6 +22,16 @@ struct Plan {
   std::vector<entity::Key> shellFraudAccounts;
   std::vector<entity::Key> muleAccounts;
   std::vector<entity::Key> victimAccounts;
+
+  // H3 part 3c-ii (authority U-8 addendum): the ring's ALIVE HORIZON —
+  // the minimum death epoch over its ACTIVE participants (fraud
+  // persons + mules; victims are exempt: fraud against deceased
+  // persons' accounts is a real typology). The injector clamps the
+  // ring's typology bursts and camouflage window to this horizon minus
+  // a schedule guard, so rings never recruit the dead. int64 max when
+  // no timeline carrier is available (the intervals stand down).
+  std::int64_t participantsAliveEndEpoch =
+      std::numeric_limits<std::int64_t>::max();
 
   [[nodiscard]] std::vector<entity::Key> participantAccounts() const {
     std::vector<entity::Key> out;
@@ -84,24 +98,52 @@ sliceView(const std::vector<entity::PersonId> &store,
                                            slice.size);
 }
 
+// The minimum death epoch across the ring's ACTIVE participants (see
+// Plan::participantsAliveEndEpoch). Persons outside the carrier keep
+// the max() sentinel.
+[[nodiscard]] inline std::int64_t participantsAliveEnd(
+    std::span<const synth::personas::timeline::Timeline> timelines,
+    std::span<const entity::PersonId> fraudPersons,
+    std::span<const entity::PersonId> mulePersons) noexcept {
+  auto horizon = std::numeric_limits<std::int64_t>::max();
+  if (timelines.empty()) {
+    return horizon;
+  }
+  const auto fold = [&](std::span<const entity::PersonId> persons) {
+    for (const auto p : persons) {
+      if (p == 0 || static_cast<std::size_t>(p) > timelines.size()) {
+        continue;
+      }
+      horizon = std::min(horizon,
+                         time::toEpochSeconds(timelines[p - 1].death));
+    }
+  };
+  fold(fraudPersons);
+  fold(mulePersons);
+  return horizon;
+}
+
 } // namespace detail
 
 [[nodiscard]] inline Plan
 buildPlan(const entity::person::Ring &ring,
           const entity::person::Topology &topology,
           const entity::account::Registry &registry,
-          const entity::account::Ownership &ownership) {
+          const entity::account::Ownership &ownership,
+          std::span<const synth::personas::timeline::Timeline> timelines = {}) {
   const detail::AccountView view{registry, ownership};
   const auto fraudPersons = detail::sliceView(topology.fraudStore, ring.frauds);
+  const auto mulePersons = detail::sliceView(topology.muleStore, ring.mules);
   return Plan{
       .ringId = ring.id,
       .fraudAccounts = detail::collectKeys(view, fraudPersons),
       .shellFraudAccounts = detail::collectKeysWithFlag(
           view, fraudPersons, entity::account::Flag::shell),
-      .muleAccounts = detail::collectKeys(
-          view, detail::sliceView(topology.muleStore, ring.mules)),
+      .muleAccounts = detail::collectKeys(view, mulePersons),
       .victimAccounts = detail::collectKeys(
           view, detail::sliceView(topology.victimStore, ring.victims)),
+      .participantsAliveEndEpoch =
+          detail::participantsAliveEnd(timelines, fraudPersons, mulePersons),
   };
 }
 

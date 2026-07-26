@@ -80,6 +80,9 @@ void swapMiddleForShells(std::vector<entity::Key> &chain,
 
 } // namespace
 
+// H1 step 2b (class F): principal, haircuts and floors run in
+// CALIBRATION dollars; each hop realizes at its emission date's CPI
+// level via typologies::nominalAt (authority U-6).
 std::vector<transactions::Transaction> generate(IllicitContext &ctx,
                                                 const Plan &plan,
                                                 std::int32_t budget,
@@ -150,7 +153,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
             transactions::Draft{
                 .source = victim,
                 .destination = entry,
-                .amount = primitives::utils::roundMoney(principal),
+                .amount = typologies::nominalAt(principal, currentTs),
                 .timestamp = time::toEpochSeconds(currentTs),
                 .isFraud = 1,
                 .ringId = static_cast<std::int32_t>(plan.ringId),
@@ -186,7 +189,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
               transactions::Draft{
                   .source = chain[i],
                   .destination = chain[i + 1],
-                  .amount = primitives::utils::roundMoney(current),
+                  .amount = typologies::nominalAt(current, currentTs),
                   .timestamp = time::toEpochSeconds(currentTs),
                   .isFraud = 1,
                   .ringId = static_cast<std::int32_t>(plan.ringId),
@@ -236,7 +239,7 @@ std::vector<transactions::Transaction> generate(IllicitContext &ctx,
         transactions::Draft{
             .source = exitAcct,
             .destination = cashout,
-            .amount = primitives::utils::roundMoney(current),
+            .amount = typologies::nominalAt(current, currentTs),
             .timestamp = time::toEpochSeconds(currentTs),
             .isFraud = 1,
             .ringId = static_cast<std::int32_t>(plan.ringId),

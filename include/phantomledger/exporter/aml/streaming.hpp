@@ -17,7 +17,8 @@
 //     chain groups                    fraud-scale copies (labels.hpp)
 //     shell flow aggregates           candidate-scale slots (labels.hpp)
 //     transaction-edge sets           distinct pairs / counterparty banks
-//     stream stats                    first timestamp, row + illicit counts
+//     stream stats                    first + last timestamps, row +
+//                                     illicit counts
 //
 // exportFromArtifacts (export.hpp) writes every remaining table from the
 // world, the final posted book, and these artifacts. The corpus-based
@@ -124,6 +125,9 @@ public:
       // timestamp — identical to deriveSimStart over the full corpus.
       artifacts_.firstTs = txnsBatch.front().timestamp;
     }
+    // ... and the last row of the last batch carries the maximum (H2
+    // step 2c: the end-of-window persona resolution anchor).
+    artifacts_.lastTs = txnsBatch.back().timestamp;
     artifacts_.rows += txnsBatch.size();
 
     vertices::writeTransactionRows(*txnW_, txnsBatch, txnIndex_);
@@ -162,8 +166,14 @@ public:
   }
 
   // Call after finish(); the classifier and writers are done with the
-  // context by then.
+  // context by then. H2 step 2c: the Customer persona resolves to the
+  // corpus-end state here — after the stream closed, before the
+  // finisher writes the entity tables — so both engines resolve from
+  // the identical (lastTs, rows) pair.
   [[nodiscard]] StreamedArtifacts takeArtifacts() noexcept {
+    vertices::resolveEndOfWindowPersonas(artifacts_.ctx,
+                                         config_.people->personas,
+                                         artifacts_.lastTs, artifacts_.rows);
     return std::move(artifacts_);
   }
 

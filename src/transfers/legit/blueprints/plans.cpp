@@ -3,7 +3,10 @@
 #include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/dob.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/personas/make.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/personas/names.hpp"
 
 #include <algorithm>
@@ -244,6 +247,20 @@ buildPersonaAccess(random::Rng &rng, LegitTimeframe timeframe,
   } else {
     const auto popSize = static_cast<std::uint32_t>(persons.size());
     plan.ownedPack = synth::personas::makePack(rng, popSize, timeframe.seed);
+    // H2 steps 2a/2b + H3 3c-ii: standalone blueprint packs carry the
+    // same join-cohort + single-age-axis + timeline carriers
+    // production fills at the entities stage — the {"join-cohort"/
+    // "dob"/"persona-era", personId} lanes off the run seed, anchored
+    // at the window start for seeds and at the JOIN date for the
+    // cohort (authority U-7/U-8 + addendum).
+    plan.ownedPack->joinDays = synth::personas::join_cohort::deriveJoinDays(
+        timeframe.seed, popSize, timeframe.window);
+    plan.ownedPack->birthDates = synth::personas::birthDates(
+        timeframe.seed, timeframe.window.start, plan.ownedPack->assignment,
+        plan.ownedPack->joinDays);
+    plan.ownedPack->timelines = synth::personas::timeline::deriveAll(
+        timeframe.seed, timeframe.window.start, plan.ownedPack->assignment,
+        plan.ownedPack->birthDates, plan.ownedPack->joinDays);
     plan.pack = &*plan.ownedPack;
   }
 

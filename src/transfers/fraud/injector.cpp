@@ -26,6 +26,33 @@ namespace PhantomLedger::transfers::fraud {
 
 namespace {
 
+// H3 part 3c-ii (authority U-8 addendum): rings never recruit the
+// dead. Each plan's typology bursts and camouflage window clamp to
+// the ring's alive horizon (min death over fraud + mule participants)
+// minus this guard — the invoice typology's weekly lattice can emit
+// up to 21 days past its base range (baseOffset < days-14 plus up to
+// five 7-day steps); every other typology's tail padding already
+// contains its bursts, and the chain typologies extend only by
+// minutes/hours. Victims and the solo/unauthorized rail are exempt
+// (deceased-account fraud is a real typology — declared).
+inline constexpr int kRingScheduleGuardDays = 22;
+
+[[nodiscard]] time::Window ringWindow(time::Window window,
+                                      std::int64_t aliveEndEpoch) noexcept {
+  const auto startEpoch = time::toEpochSeconds(window.start);
+  const auto endEpoch =
+      startEpoch + static_cast<std::int64_t>(window.days) * 86'400;
+  if (aliveEndEpoch >= endEpoch) {
+    return window; // every participant outlives the window
+  }
+  const auto aliveDays =
+      static_cast<int>(std::max<std::int64_t>(0, aliveEndEpoch - startEpoch) /
+                       86'400);
+  window.days =
+      std::max(1, std::min(window.days, aliveDays - kRingScheduleGuardDays));
+  return window;
+}
+
 [[nodiscard]] inline std::string ringStreamKey(std::uint32_t value) {
   char buf[16];
   auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
@@ -136,14 +163,16 @@ makeAccountPools(const entity::account::Registry &registry,
 }
 
 [[nodiscard]] std::vector<Plan>
-buildRingPlans(const entity::person::Topology &topology,
+buildRingPlans(const InjectorRingView &rings,
                const entity::account::Registry &registry,
                const entity::account::Ownership &ownership) {
   std::vector<Plan> plans;
-  plans.reserve(topology.rings.size());
+  plans.reserve(rings.topology->rings.size());
 
-  for (const auto &ring : topology.rings) {
-    plans.push_back(buildPlan(ring, topology, registry, ownership));
+  for (const auto &ring : rings.topology->rings) {
+    plans.push_back(
+        buildPlan(ring, *rings.topology, registry, ownership,
+                  rings.timelines));
   }
 
   return plans;
@@ -156,6 +185,7 @@ generateCamouflage(CamouflageContext &ctx, std::span<const Plan> plans,
 
   auto *savedRng = ctx.execution.rng;
   const auto *keyFactory = ctx.execution.factory;
+  const auto fullWindow = ctx.window;
 
   for (const auto &plan : plans) {
     auto camoRng =
@@ -164,12 +194,17 @@ generateCamouflage(CamouflageContext &ctx, std::span<const Plan> plans,
     ctx.execution.rng = &camoRng;
     ctx.execution.txf = ctx.execution.txf.rebound(camoRng);
 
+    // H3: cover flows stop with the ring's alive horizon — the camo
+    // lane is per-ring, so the clamp cannot move any other ring.
+    ctx.window = ringWindow(fullWindow, plan.participantsAliveEndEpoch);
+
     auto produced = camouflage::generate(ctx, plan, rates);
 
     out.insert(out.end(), std::make_move_iterator(produced.begin()),
                std::make_move_iterator(produced.end()));
   }
 
+  ctx.window = fullWindow;
   ctx.execution.rng = savedRng;
   ctx.execution.txf = ctx.execution.txf.rebound(*savedRng);
 
@@ -237,13 +272,15 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
 
   auto *savedRng = ctx.execution.rng;
   const auto *keyFactory = ctx.execution.factory;
+  const auto fullWindow = ctx.window;
 
   for (std::int64_t ringIdx = 0; ringIdx < totalRings; ++ringIdx) {
     if (remainingBudget <= 0) {
       break;
     }
 
-    const auto ringId = plans[static_cast<std::size_t>(ringIdx)].ringId;
+    const auto &plan = plans[static_cast<std::size_t>(ringIdx)];
+    const auto ringId = plan.ringId;
 
     auto ringRng = keyFactory->rng({"fraud", "ring", ringStreamKey(ringId)});
 
@@ -252,13 +289,17 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
 
     ctx.seedChainIds(ringId);
 
+    // H3: the ring's bursts land inside its alive horizon — every
+    // typology reads ctx.window exactly once (its burst sample), and
+    // the ring rng lane is isolated, so the clamp cannot move any
+    // other ring's stream.
+    ctx.window = ringWindow(fullWindow, plan.participantsAliveEndEpoch);
+
     const auto perRing = ringBudget(remainingBudget, totalRings - ringIdx);
 
     const auto &playbook = behavior.playbooks.choose(ringRng);
 
-    auto produced =
-        runRingPlaybook(dispatcher, plans[static_cast<std::size_t>(ringIdx)],
-                        perRing, playbook);
+    auto produced = runRingPlaybook(dispatcher, plan, perRing, playbook);
 
     remainingBudget -= static_cast<std::int64_t>(produced.size());
 
@@ -266,6 +307,7 @@ generateIllicit(IllicitContext &ctx, const Behavior &behavior,
                std::make_move_iterator(produced.end()));
   }
 
+  ctx.window = fullWindow;
   ctx.execution.rng = savedRng;
   ctx.execution.txf = ctx.execution.txf.rebound(*savedRng);
 
@@ -501,8 +543,8 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
           pools.billerAccounts.data(), pools.billerAccounts.size()),
   };
 
-  const auto ringPlans = buildRingPlans(*rings_.topology, *accounts_.registry,
-                                        *accounts_.ownership);
+  const auto ringPlans =
+      buildRingPlans(rings_, *accounts_.registry, *accounts_.ownership);
 
   auto camoTxns = generateCamouflage(
       camouflageCtx, std::span<const Plan>(ringPlans), behavior_.camouflage);

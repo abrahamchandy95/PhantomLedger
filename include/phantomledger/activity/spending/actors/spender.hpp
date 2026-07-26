@@ -11,11 +11,28 @@
 
 namespace PhantomLedger::activity::spending::actors {
 
+// H2 step 2c (macro-history-v1): the retirement consumption step —
+// ticket amounts scale by this level factor from the claiming day
+// onward. Aguiar-Hurst (JPE 2005) retirement-consumption drop, ~-12%
+// (declared band 10-15%, authority U-7). Applies only to spenders whose
+// SEED archetype is a working type: a seed retiree's archetype already
+// encodes retired-calibrated spending (rate x0.6 / amount x0.9 in the
+// audited persona table), so stacking the step would double-count.
+inline constexpr double kRetiredSpendScale = 0.88;
+
 /// Per-person data needed by the spending hot loop.
 
 struct Spender {
 
   static constexpr std::uint32_t kInvalidLedgerIndex =
+      std::numeric_limits<std::uint32_t>::max();
+
+  // "Never retires in this window" (mirrors population::kNoRetirementDay).
+  static constexpr std::uint32_t kNoRetireDay =
+      std::numeric_limits<std::uint32_t>::max();
+
+  // "Survives this window" (mirrors population::kNoDeathDay).
+  static constexpr std::uint32_t kNoDeathDay =
       std::numeric_limits<std::uint32_t>::max();
 
   // Identity
@@ -52,6 +69,16 @@ struct Spender {
   // carrier via the population View. invalidGeoArea until the carrier is
   // threaded to buildSpender (step-1 remainder); UNREAD until step-2.
   entity::geography::GeoAreaId homeArea = entity::geography::invalidGeoArea;
+
+  // H2 step 2c: the window day-index from which kRetiredSpendScale
+  // applies (kNoRetireDay = never in this window). From the
+  // persona-timeline carrier via the population View.
+  std::uint32_t retireDay = kNoRetireDay;
+
+  // H3: the window day-index of the person's death — the emission loop
+  // stops this spender's person-days there (kNoDeathDay = survives the
+  // window). Same carrier provenance as retireDay.
+  std::uint32_t deathDay = kNoDeathDay;
 };
 
 } // namespace PhantomLedger::activity::spending::actors

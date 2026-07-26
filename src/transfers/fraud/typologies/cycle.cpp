@@ -59,6 +59,9 @@ pickCycleNodes(random::Rng &rng, const std::vector<entity::Key> &pool) {
   return ts + time::Minutes{rng.uniformInt(lo, hi + 1)};
 }
 
+// H1 step 2b (class F): the cycle's principal, haircuts and floors run
+// in CALIBRATION dollars; each hop realizes at its emission date's CPI
+// level via typologies::nominalAt (authority U-6).
 bool runOnePass(IllicitContext &ctx,
                 std::vector<transactions::Transaction> &out,
                 std::int32_t budget, const std::vector<entity::Key> &nodes,
@@ -86,7 +89,7 @@ bool runOnePass(IllicitContext &ctx,
             transactions::Draft{
                 .source = src,
                 .destination = dst,
-                .amount = primitives::utils::roundMoney(principal),
+                .amount = typologies::nominalAt(principal, currentTs),
                 .timestamp = time::toEpochSeconds(currentTs),
                 .isFraud = 1,
                 .ringId = static_cast<std::int32_t>(ringId),

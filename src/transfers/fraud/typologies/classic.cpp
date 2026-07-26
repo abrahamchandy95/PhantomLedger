@@ -23,10 +23,12 @@ public:
                                          const entity::Key &destination,
                                          double amount,
                                          time::TimePoint ts) const {
+    // H1 step 2b (class F): calibration-year draw realized at the
+    // event date's CPI level (authority U-6).
     return transactions::Draft{
         .source = source,
         .destination = destination,
-        .amount = amount,
+        .amount = typologies::nominalAt(amount, ts),
         .timestamp = time::toEpochSeconds(ts),
         .isFraud = 1,
         .ringId = static_cast<std::int32_t>(ringId_),

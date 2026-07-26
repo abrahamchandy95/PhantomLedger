@@ -35,6 +35,13 @@
 // untouched. This is leg-constant test configuration, not a model
 // change.
 //
+// JOIN COHORT (H3 part 3c-ii): production always sizes the join cohort
+// against its window (simulate.cpp sets identity.windowDays). The
+// harness default keeps windowDays = 0 — NO joiners — so every
+// pre-existing gate world's dob/timeline/mortality draws stay
+// byte-identical; spec.withJoinCohort opts a gate into the production
+// shape (test_membership).
+//
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/pipeline/data.hpp"
@@ -43,6 +50,7 @@
 #include "phantomledger/pipeline/stages/infra.hpp"
 #include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
@@ -131,6 +139,11 @@ struct WorldSpec {
 
   bool withIncome = true;
   bool withBaseRoutines = false;
+
+  // See JOIN COHORT in the file comment: false (the default) keeps
+  // every pre-existing gate world byte-identical; true mirrors the
+  // production join-cohort sizing (identity.windowDays = window.days).
+  bool withJoinCohort = false;
 };
 
 // Members are public and appear in construction order; the gates read
@@ -193,13 +206,18 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
       .pools = &poolSet,
       .simStart = spec.window.start,
       .localeMix = pl::synth::pii::LocaleMix::usOnly(),
+      // H3 3c-ii: see JOIN COHORT in the file comment.
+      .windowDays = spec.withJoinCohort ? spec.window.days : 0,
   };
 
   // Mirrors SimulationPipeline::buildEntities() with default plans.
+  // H2 step 2a: the personas pack carries the single-age-axis birth
+  // dates (like production; identity.worldSeed stays the harness
+  // default 0 — the same convention the home-geo lanes use here).
   people.roster = entityStage::buildPeople(rng, spec.population, fraudProfile);
   holdings.accounts =
       entityStage::buildAccounts(rng, people.roster, spec.population);
-  people.personas = entityStage::buildPersonas(rng, people.roster);
+  people.personas = entityStage::buildPersonas(rng, people.roster, identity);
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology,
                                      pl::synth::pii::Sharing{});
@@ -207,8 +225,12 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   cps.merchants = entityStage::buildMerchants(rng, spec.population, spec.seed);
   cps.landlords = entityStage::buildLandlords(rng, spec.population);
   cps.counterparties = entityStage::buildCounterparties(rng, spec.population);
-  holdings.creditCards =
-      entityStage::issueCreditCards(people.personas, people.roster, spec.seed);
+  // H1 step 2b: like production (simulate.cpp), credit-limit stocks
+  // anchor at the WINDOW-START year — arch-equivalence compares this
+  // prefix against SimulationPipeline, so both must pass the year.
+  holdings.creditCards = entityStage::issueCreditCards(
+      people.personas, people.roster, spec.seed, {},
+      pl::time::toCalendarDate(spec.window.start).year);
   entityStage::finalizeAccountRegistry(holdings, cps, people);
   entityStage::synthesizeBusinessOwners(holdings, people, rng);
 
@@ -368,6 +390,8 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   cardCfg.issuerAccount = plan.counterparties().issuerAcct;
   cardCfg.window = spec.window;
   cardCfg.seed = spec.seed;
+  // H3 3c-ii: like production — card servicing stops at account closure.
+  cardCfg.timelines = people.personas.timelines;
   cardCfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());
   for (const auto &kv : plan.primaryAcctRecordIx()) {
     const auto &record = plan.allAccounts()->records[kv.second];

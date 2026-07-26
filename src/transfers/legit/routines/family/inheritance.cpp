@@ -3,7 +3,6 @@
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
-#include "phantomledger/relationships/family/predicates.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/legit/routines/family/helpers.hpp"
@@ -14,7 +13,6 @@
 
 namespace PhantomLedger::transfers::legit::routines::family::inheritance {
 
-namespace pred = ::PhantomLedger::relationships::family::predicates;
 namespace fhelp = ::PhantomLedger::transfers::legit::routines::family::helpers;
 namespace dist = ::PhantomLedger::probability::distributions;
 
@@ -23,105 +21,153 @@ namespace {
 inline constexpr double kTotalFloor = 1000.0;
 inline constexpr double kPerHeirAmountFloor = 1.0;
 
+// Funeral: paid from the decedent's account a few days after the
+// death; estates settle 30-90 days later (probate, declared).
+inline constexpr std::int64_t kFuneralDayMin = 3;
+inline constexpr std::int64_t kFuneralDayMaxExcl = 11;
+inline constexpr std::int64_t kEstateDayMin = 30;
+inline constexpr std::int64_t kEstateDayMaxExcl = 91;
+
 inline constexpr std::int64_t kPostingHourMin = 10;
 inline constexpr std::int64_t kPostingHourMaxExcl = 16;
 
+// The external service-merchant hub (the same destination the spending
+// router's external_unknown flow uses). A dedicated funeral-home
+// counterparty + channel is a registered upgrade; the funeral rides
+// the `bill` channel (a household service payment).
+[[nodiscard]] entity::Key funeralPayee() noexcept {
+  return entity::makeKey(entity::Role::merchant, entity::Bank::external, 1ULL);
+}
+
 [[nodiscard]] std::span<const entity::PersonId>
-resolveHeirs(entity::PersonId retiree, const TransferRun &run) {
-  const auto &direct = run.kinship().childrenOf(retiree);
+resolveHeirs(entity::PersonId decedent, const TransferRun &run) {
+  const auto &direct = run.kinship().childrenOf(decedent);
   if (!direct.empty()) {
     return std::span<const entity::PersonId>{direct};
   }
   return std::span<const entity::PersonId>{
-      run.kinship().supportingChildrenOf(retiree)};
+      run.kinship().supportingChildrenOf(decedent)};
 }
 
-class InheritanceEmitter {
+class EstateEmitter {
 public:
-  InheritanceEmitter(const TransferRun &run, const InheritanceEvent &cfg,
-                     random::Rng &rng,
-                     std::vector<transactions::Transaction> &out) noexcept
+  EstateEmitter(const TransferRun &run, const InheritanceEvent &cfg,
+                random::Rng &rng,
+                std::vector<transactions::Transaction> &out) noexcept
       : run_(run), cfg_(cfg), rng_(rng), out_(out),
+        windowStartEpochSec_(::PhantomLedger::time::toEpochSeconds(
+            run.posting().start())),
         windowEndEpochSec_(run.posting().endEpochSec()) {}
 
-  InheritanceEmitter(const InheritanceEmitter &) = delete;
-  InheritanceEmitter &operator=(const InheritanceEmitter &) = delete;
+  EstateEmitter(const EstateEmitter &) = delete;
+  EstateEmitter &operator=(const EstateEmitter &) = delete;
 
-  void processRetiree(entity::PersonId retiree) {
-    if (!rng_.coin(cfg_.eventP)) {
+  void processPerson(entity::PersonId person) {
+    const auto &tl = run_.kinship().timeline(person);
+    const auto deathEpoch = ::PhantomLedger::time::toEpochSeconds(tl.death);
+    if (deathEpoch < windowStartEpochSec_ ||
+        deathEpoch >= windowEndEpochSec_) {
       return;
     }
 
-    const auto heirs = resolveHeirs(retiree, run_);
-    if (heirs.empty()) {
+    // The per-decedent draws, unconditional, in this fixed order
+    // (contract): the emit decisions below cannot move a later
+    // decedent's stream.
+    const auto funeralRaw =
+        dist::lognormalByMedian(rng_, cfg_.funeralMedian, cfg_.funeralSigma);
+    const auto funeralTs = offsetTimestamp(deathEpoch, kFuneralDayMin,
+                                           kFuneralDayMaxExcl);
+    const auto estateRaw = dist::lognormalByMedian(rng_, cfg_.median,
+                                                   cfg_.sigma);
+    const auto estateTs =
+        offsetTimestamp(deathEpoch, kEstateDayMin, kEstateDayMaxExcl);
+
+    const auto decedentAcct = run_.accounts().localMemberAccount(person);
+    if (!decedentAcct.has_value()) {
       return;
     }
 
-    const auto retireeAcct = run_.accounts().localMemberAccount(retiree);
-    if (!retireeAcct.has_value()) {
-      return;
-    }
-
-    const auto perHeir = sampleEstateShare(heirs.size());
-    const auto ts = pickEventTimestamp();
-    if (ts >= windowEndEpochSec_) {
-      return;
-    }
-
-    for (const auto heir : heirs) {
-      emitToHeir(heir, *retireeAcct, perHeir, ts);
-    }
+    emitFuneral(*decedentAcct, funeralRaw, funeralTs);
+    emitEstate(person, *decedentAcct, estateRaw, estateTs);
   }
 
 private:
-  [[nodiscard]] double sampleEstateShare(std::size_t heirCount) {
-    const auto rawTotal =
-        dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
-    const auto total = std::max(kTotalFloor, rawTotal);
-    return primitives::utils::roundMoney(total /
-                                         static_cast<double>(heirCount));
-  }
-
-  [[nodiscard]] std::int64_t pickEventTimestamp() {
-    const auto windowDays = run_.posting().days();
-    const auto day = rng_.uniformInt(0, std::max<std::int64_t>(1, windowDays));
+  [[nodiscard]] std::int64_t offsetTimestamp(std::int64_t deathEpoch,
+                                             std::int64_t dayMin,
+                                             std::int64_t dayMaxExcl) {
+    const auto day = rng_.uniformInt(dayMin, dayMaxExcl);
     const auto hour = rng_.uniformInt(kPostingHourMin, kPostingHourMaxExcl);
     const auto minute = rng_.uniformInt(0, 60);
-
-    const auto base =
-        ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
-            run_.posting().start(), static_cast<int>(day)));
-    return base + ::PhantomLedger::time::secondsInDay(hour, minute);
+    return deathEpoch + day * 86'400 +
+           ::PhantomLedger::time::secondsInDay(hour, minute);
   }
 
-  void emitToHeir(entity::PersonId heir, entity::Key retireeAcct,
-                  double perHeirAmount, std::int64_t timestamp) {
-    const auto heirAcct = run_.accounts().routedMemberAccount(heir);
-    if (!heirAcct.has_value() || *heirAcct == retireeAcct) {
-      return;
+  void emitFuneral(entity::Key decedentAcct, double raw, std::int64_t ts) {
+    if (ts >= windowEndEpochSec_) {
+      return; // the window closed before the funeral posted (declared)
     }
 
-    const auto amount =
-        fhelp::sanitizeAmount(perHeirAmount, kPerHeirAmountFloor);
-    if (amount == 0.0) {
-      return;
-    }
+    const auto amount = std::max(cfg_.funeralFloor, raw);
 
+    // NFDA anchor is calibration dollars; realize at the death year's
+    // price level (class P), like every family amount.
     out_.push_back(run_.emission().make(transactions::Draft{
-        .source = retireeAcct,
-        .destination = *heirAcct,
-        .amount = amount,
-        .timestamp = timestamp,
+        .source = decedentAcct,
+        .destination = funeralPayee(),
+        .amount = fhelp::nominalAt(primitives::utils::roundMoney(amount), ts),
+        .timestamp = ts,
         .isFraud = 0,
         .ringId = -1,
-        .channel = channels::tag(channels::Family::inheritance),
+        .channel = channels::tag(channels::Legit::bill),
     }));
+  }
+
+  void emitEstate(entity::PersonId decedent, entity::Key decedentAcct,
+                  double rawTotal, std::int64_t ts) {
+    if (ts >= windowEndEpochSec_) {
+      return; // probate outlives the window (declared)
+    }
+
+    const auto heirs = resolveHeirs(decedent, run_);
+    if (heirs.empty()) {
+      return; // heirless estates are out of scope until part 3
+    }
+
+    const auto total = std::max(kTotalFloor, rawTotal);
+    const auto perHeir = primitives::utils::roundMoney(
+        total / static_cast<double>(heirs.size()));
+
+    for (const auto heir : heirs) {
+      const auto heirAcct = run_.accounts().routedMemberAccount(heir);
+      if (!heirAcct.has_value() || *heirAcct == decedentAcct) {
+        continue;
+      }
+
+      const auto amount =
+          fhelp::sanitizeAmount(perHeir, kPerHeirAmountFloor);
+      if (amount == 0.0) {
+        continue;
+      }
+
+      // Estate shares scale at the settle date's CPI level (class P;
+      // the SCF size re-derivation is the registered upgrade).
+      out_.push_back(run_.emission().make(transactions::Draft{
+          .source = decedentAcct,
+          .destination = *heirAcct,
+          .amount = fhelp::nominalAt(amount, ts),
+          .timestamp = ts,
+          .isFraud = 0,
+          .ringId = -1,
+          .channel = channels::tag(channels::Family::inheritance),
+      }));
+    }
   }
 
   const TransferRun &run_;
   const InheritanceEvent &cfg_;
   random::Rng &rng_;
   std::vector<transactions::Transaction> &out_;
+  std::int64_t windowStartEpochSec_;
   std::int64_t windowEndEpochSec_;
 };
 
@@ -134,6 +180,12 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
     return out;
   }
 
+  // Death-caused estates need the timeline lane; hand-built views
+  // without it emit nothing (the blueprint path always binds it).
+  if (!run.kinship().hasTimelines()) {
+    return out;
+  }
+
   const auto personCount = run.kinship().personCount();
   if (personCount == 0) {
     return out;
@@ -143,13 +195,10 @@ std::vector<transactions::Transaction> generate(const TransferRun &run,
 
   out.reserve(16);
 
-  InheritanceEmitter emitter{run, cfg, rng, out};
+  EstateEmitter emitter{run, cfg, rng, out};
 
-  for (entity::PersonId retiree = 1; retiree <= personCount; ++retiree) {
-    if (!pred::isRetired(run.kinship().persona(retiree))) {
-      continue;
-    }
-    emitter.processRetiree(retiree);
+  for (entity::PersonId person = 1; person <= personCount; ++person) {
+    emitter.processPerson(person);
   }
 
   return out;

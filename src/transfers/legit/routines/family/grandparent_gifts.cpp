@@ -64,10 +64,12 @@ private:
       return false;
     }
 
+    // H1 step 2b (class P): calibration-year draw realized at the
+    // event date's CPI level.
     out_.push_back(run_.emission().make(transactions::Draft{
         .source = gpAcct,
         .destination = gcAcct,
-        .amount = amount,
+        .amount = fhelp::nominalAt(amount, ts),
         .timestamp = ts,
         .isFraud = 0,
         .ringId = -1,

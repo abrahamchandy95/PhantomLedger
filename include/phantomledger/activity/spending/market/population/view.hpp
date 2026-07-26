@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/activity/spending/market/population/census.hpp"
 #include "phantomledger/activity/spending/market/population/paydays.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/parties/behaviors.hpp"
@@ -8,6 +9,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::activity::spending::market::population {
@@ -18,10 +20,14 @@ public:
 
   View(std::vector<entity::Key> primary, std::vector<personas::Type> kinds,
        std::vector<entity::behavior::Persona> objects, Paydays paydays,
-       std::vector<entity::geography::GeoAreaId> homeAreas = {})
+       std::vector<entity::geography::GeoAreaId> homeAreas = {},
+       std::vector<std::uint32_t> retirementDays = {},
+       std::vector<std::uint32_t> deathDays = {})
       : primary_(std::move(primary)), kinds_(std::move(kinds)),
         objects_(std::move(objects)), paydays_(std::move(paydays)),
-        homeAreas_(std::move(homeAreas)) {}
+        homeAreas_(std::move(homeAreas)),
+        retirementDays_(std::move(retirementDays)),
+        deathDays_(std::move(deathDays)) {}
 
   [[nodiscard]] std::uint32_t count() const noexcept {
     return static_cast<std::uint32_t>(primary_.size());
@@ -58,6 +64,22 @@ public:
                                  : entity::geography::invalidGeoArea;
   }
 
+  // H2 step 2c: the window day-index from which the retirement
+  // consumption step applies; kNoRetirementDay when the person never
+  // retires in-window (or no carrier is bound).
+  [[nodiscard]] std::uint32_t
+  retirementDay(entity::PersonId p) const noexcept {
+    const auto i = index(p);
+    return i < retirementDays_.size() ? retirementDays_[i] : kNoRetirementDay;
+  }
+
+  // H3: the window day-index of the person's death; kNoDeathDay when
+  // the person survives the window (or no carrier is bound).
+  [[nodiscard]] std::uint32_t deathDay(entity::PersonId p) const noexcept {
+    const auto i = index(p);
+    return i < deathDays_.size() ? deathDays_[i] : kNoDeathDay;
+  }
+
 private:
   [[nodiscard]] static std::size_t index(entity::PersonId p) noexcept {
     return static_cast<std::size_t>(p - 1);
@@ -68,6 +90,8 @@ private:
   std::vector<entity::behavior::Persona> objects_;
   Paydays paydays_;
   std::vector<entity::geography::GeoAreaId> homeAreas_;
+  std::vector<std::uint32_t> retirementDays_;
+  std::vector<std::uint32_t> deathDays_;
 };
 
 } // namespace PhantomLedger::activity::spending::market::population

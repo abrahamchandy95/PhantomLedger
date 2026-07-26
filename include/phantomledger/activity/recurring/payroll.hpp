@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <vector>
 
 namespace PhantomLedger::activity::recurring {
@@ -66,6 +67,9 @@ struct PayrollRules {
 
 struct PayrollSchedule {
   Cadence cadence = Cadence::biweekly;
+  // The anchor is a WEEKDAY + FORTNIGHT-PARITY REFERENCE for the
+  // weekly/biweekly lattices, NOT a start bound: pay lattices extend
+  // to every era on both sides of it (H2 step-2b defect fix below).
   time::TimePoint anchorDate{};
   int weekday = 4;
 
@@ -191,6 +195,19 @@ inline void appendIfInWindow(std::vector<time::TimePoint> &out,
 } // namespace detail
 
 /// Iterate all scheduled pay dates within [start, endExcl).
+///
+/// ERA-AXIS DEFECT FIXED (H2 step 2b, found by test_persona_wiring):
+/// the weekly branch used max(start, anchorDate) as its first pay date
+/// and the biweekly branch only stepped FORWARD from the anchor, so a
+/// window BEFORE the anchor year (the 2025 parity reference set in
+/// samplePayrollProfile) generated ZERO weekly/biweekly pay dates —
+/// 75% of employer profiles were silent in every pre-2025 era (the
+/// 1991 fraud-dense smokes carried roughly HALF the income of the
+/// 2025-start standard smoke at the same population). The lattices now
+/// extend to any era: weekly pays on its weekday in every week;
+/// biweekly aligns the window's first on-weekday date to the anchor's
+/// FORTNIGHT PARITY (backward-compatible: for windows at or after the
+/// anchor the emitted dates are unchanged).
 [[nodiscard]] inline std::vector<time::TimePoint>
 paydatesForProfile(const PayrollSchedule &profile, time::TimePoint start,
                    time::TimePoint endExcl) {
@@ -206,8 +223,7 @@ paydatesForProfile(const PayrollSchedule &profile, time::TimePoint start,
 
   switch (profile.cadence) {
   case Cadence::weekly: {
-    auto current = nextWeekdayOnOrAfter(std::max(start, profile.anchorDate),
-                                        profile.weekday);
+    auto current = nextWeekdayOnOrAfter(start, profile.weekday);
 
     while (current < endExcl) {
       detail::appendIfInWindow(out, finalizePayDate(current, profile), start,
@@ -219,10 +235,18 @@ paydatesForProfile(const PayrollSchedule &profile, time::TimePoint start,
   }
 
   case Cadence::biweekly: {
-    auto current = nextWeekdayOnOrAfter(profile.anchorDate, profile.weekday);
+    const auto anchor =
+        nextWeekdayOnOrAfter(profile.anchorDate, profile.weekday);
+    auto current = nextWeekdayOnOrAfter(start, profile.weekday);
 
-    while (current < start) {
-      current = time::addDays(current, 14);
+    // Align to the anchor's alternating-week parity. Both points are
+    // midnight on the same weekday, so the day gap is a multiple of 7;
+    // an odd week count means the off-parity alternate week.
+    const auto gapDays = (time::toEpochSeconds(current) -
+                          time::toEpochSeconds(anchor)) /
+                         86400;
+    if (((gapDays % 14) + 14) % 14 != 0) {
+      current = time::addDays(current, 7);
     }
 
     while (current < endExcl) {

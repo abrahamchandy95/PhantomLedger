@@ -1,5 +1,7 @@
 #include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
 
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/fraud/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -43,6 +45,17 @@ struct Event {
   const auto width = static_cast<double>(hi - lo);
   auto off = lo + static_cast<std::int64_t>(rng.nextDouble() * width);
   return std::min(off, hi - 1);
+}
+
+// H1 step 2b (class F): the event's CPI level for the continuous
+// samplers (cardFraudSpend, atoDrainAmount). The denomination
+// samplers (cardTestCharge, giftCardScamAmount) stay FIXED-NOMINAL —
+// owner-approved lattice CHOICE, authority U-6.
+[[nodiscard]] double eventPriceScale(std::int64_t epochSec) {
+  return ::PhantomLedger::synth::econ::priceScale(
+      ::PhantomLedger::time::toCalendarDate(
+          ::PhantomLedger::time::fromEpochSeconds(epochSec))
+          .year);
 }
 
 } // namespace
@@ -118,7 +131,7 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
           ev.amount = amounts::cardTestCharge(rng);
         } else {
           ev.ts = plan.startTs + offsetIn(rng, spendStart, span);
-          ev.amount = amounts::cardFraudSpend(rng);
+          ev.amount = amounts::cardFraudSpend(rng, eventPriceScale(ev.ts));
         }
         events.push_back(ev);
       }
@@ -128,7 +141,7 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
       for (std::int32_t e = 0; e < target; ++e) {
         Event ev{};
         ev.ts = plan.startTs + offsetIn(rng, 0, span);
-        ev.amount = amounts::atoDrainAmount(rng);
+        ev.amount = amounts::atoDrainAmount(rng, eventPriceScale(ev.ts));
         events.push_back(ev);
       }
       break;

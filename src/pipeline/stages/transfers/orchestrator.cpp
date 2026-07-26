@@ -155,7 +155,9 @@ TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
           .ringInfra = &infra.ringInfra,
           .fraudSeed = legit_.runScope().seed ^ 0x9E3779B97F4A7C15ULL,
       },
-      fraud_.ringView(people.roster.topology),
+      // H3 part 3c-ii: the timeline carrier gives each ring plan its
+      // alive horizon — ring scheduling never recruits the dead.
+      fraud_.ringView(people.roster.topology, people.personas.timelines),
       FraudEmission::accountView(holdings.accounts.registry,
                                  holdings.accounts.ownership),
       fraud_.resolvedBehavior(),

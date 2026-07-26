@@ -102,13 +102,17 @@ int main() {
     assert(Schedule::unpartitioned({at(2025, 1, 1), 0}).empty());
   }
 
-  // 6. Long horizon: 10227 days is exactly 28 years, 1991 -> 2019,
-  //    the TabFormer span; 336 monthly spans, no stub.
+  // 6. Requested card-fraud horizon: 10,592 days covers the complete
+  //    1991-through-2019 calendar interval [1991-01-01, 2020-01-01).
+  //    This is 348 monthly spans with no stub. It is intentionally not
+  //    described as IBM's exact released-artifact interval, whose observed
+  //    final transaction is 2020-02-28.
   {
-    time::Window run{at(1991, 1, 1), 10227};
+    time::Window run{at(1991, 1, 1), 10592};
     const auto s = Schedule::partition(run, {});
     expectPartition(s, run);
-    assert(s.size() == 336);
+    assert(run.endExcl() == at(2020, 1, 1));
+    assert(s.size() == 348);
   }
 
   // 7. Invalid strategy surfaces through the validate framework.

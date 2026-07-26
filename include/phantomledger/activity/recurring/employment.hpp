@@ -9,6 +9,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/recurring/types.hpp"
 
 #include <algorithm>
@@ -23,6 +24,10 @@
 namespace PhantomLedger::activity::recurring {
 
 /// Mutable employment state for one person.
+/// H1 step 2b: `annualSalary` is denominated in CALIBRATION-YEAR
+/// dollars (2019) and compounds only the seeded idiosyncratic raises;
+/// the era wage index (wageScale) multiplies at REALIZATION in
+/// SalaryCalculator — state stays real, paychecks are nominal.
 struct Employment {
   entity::Key employerAcct;
   PayrollSchedule payroll;
@@ -45,8 +50,11 @@ struct JobRules {
 };
 
 struct SalaryGrowthRules {
+  // H1 step 2b: the flat `.025` annualInflation constant is RETIRED
+  // (authority U-6) — economy-wide nominal growth is the AWI index at
+  // realization; only the idiosyncratic career-progression lanes
+  // remain here.
   growth::CompoundRules annual{
-      .annualInflation = 0.025,
       .annualRaise =
           growth::GrowthDist{
               .mu = 0.015,
@@ -324,8 +332,13 @@ public:
     const auto cal = time::toCalendarDate(payDate);
     const int periods = payPeriodsInYear(state.payroll, cal.year);
 
+    // H1 step 2b (class W): the pay-date year's wage index turns the
+    // calibration-year draw into era-correct nominal pay. Applied
+    // AFTER the $50 minimum so the behavioral screen scales with the
+    // amounts it screens (authority U-6), BEFORE roundMoney.
     return primitives::utils::roundMoney(
-        std::max(50.0, annual / static_cast<double>(periods)));
+        std::max(50.0, annual / static_cast<double>(periods)) *
+        synth::econ::wageScale(cal.year));
   }
 
 private:

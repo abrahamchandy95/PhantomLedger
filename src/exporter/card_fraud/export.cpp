@@ -8,6 +8,7 @@
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/mule_ml/identity.hpp"
 #include "phantomledger/synth/geo/catalog.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
@@ -96,6 +97,8 @@ Summary exportFromArtifacts(
       }
     }
     out.cardCount = artifacts.cards.size();
+    card.close();
+    hasCard.close();
   }
 
   // ------------------- Merchant, Merchant_Assigned, the geo chain
@@ -161,6 +164,11 @@ Summary exportFromArtifacts(
       zipToCity.emplace(zipcode, cityId);
     }
     out.merchantCount = artifacts.merchants.size();
+    merchant.close();
+    assigned.close();
+    hasState.close();
+    hasCity.close();
+    hasZip.close();
   }
 
   {
@@ -185,6 +193,11 @@ Summary exportFromArtifacts(
       assignedTo.writer().writeRow(zip, cityId);
     }
     out.zipcodeCount = zipToCity.size();
+    city.close();
+    locatedIn.close();
+    state.close();
+    zipcode.close();
+    assignedTo.close();
   }
 
   {
@@ -192,13 +205,18 @@ Summary exportFromArtifacts(
     for (const auto cat : merchants::kCategories) {
       category.writer().writeRow(merchants::name(cat));
     }
+    category.close();
   }
 
   // ----------------------------------------------------------- Party
   const auto &roster = world.people.roster.roster;
   const auto &pii = world.people.pii;
-  const ::PhantomLedger::synth::pii::Membership membership(
-      roster.count, options.window, ::PhantomLedger::synth::pii::Growth{});
+  // H3 part 3c-ii: THE one membership construction path — the Party
+  // created_at reports the same [joinTs, ...) axis the standard
+  // exporter's customer.csv does (the retired flat-Growth view gone).
+  const ::PhantomLedger::synth::pii::Membership membership =
+      ::PhantomLedger::synth::personas::join_cohort::membershipOf(
+          world.people.personas, options.window);
 
   {
     auto party = cmn::openTable(target, sch::kParty);
@@ -214,13 +232,14 @@ Summary exportFromArtifacts(
           time_ns::formatTimestamp(membership.joinTs(p)));
     }
     out.partyCount = roster.count;
+    party.close();
   }
 
   // Is_Merchant: header-only — no modeled merchant-owning-party link
   // (business owners own accounts, not catalog merchants).
   {
     auto isMerchant = cmn::openTable(target, sch::kIsMerchant);
-    (void)isMerchant;
+    isMerchant.close();
   }
 
   // ------------------------------------- PII / investigative layer
@@ -271,6 +290,12 @@ Summary exportFromArtifacts(
           hasFullName.writer().writeRow(partyStr.view(), identity.name);
         }
       }
+      hasAddress.close();
+      hasPhone.close();
+      hasEmail.close();
+      hasId.close();
+      hasDob.close();
+      hasFullName.close();
     }
 
     auto address = cmn::openTable(target, sch::kAddress);
@@ -297,6 +322,12 @@ Summary exportFromArtifacts(
     for (const auto &v : dobs) {
       dob.writer().writeRow(v);
     }
+    address.close();
+    phone.close();
+    email.close();
+    idTable.close();
+    fullName.close();
+    dob.close();
   }
 
   // Devices and IPs carry their modeled flags (flagged / blacklisted)
@@ -337,6 +368,10 @@ Summary exportFromArtifacts(
                                 network::format(addr).view());
       }
     }
+    device.close();
+    hasDevice.close();
+    ip.close();
+    hasIp.close();
   }
 
   return out;

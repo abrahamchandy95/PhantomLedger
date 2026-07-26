@@ -10,6 +10,7 @@
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/network.hpp"
 #include "phantomledger/synth/family/pick.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -42,9 +43,11 @@ public:
 
   KinshipView(const ::PhantomLedger::relationships::family::Graph &graph,
               std::span<const ::PhantomLedger::personas::Type> personas,
-              std::span<const double> amountMultipliers) noexcept
+              std::span<const double> amountMultipliers,
+              std::span<const ::PhantomLedger::synth::personas::timeline::
+                             Timeline> timelines = {}) noexcept
       : graph_(&graph), personas_(personas),
-        amountMultipliers_(amountMultipliers) {}
+        amountMultipliers_(amountMultipliers), timelines_(timelines) {}
 
   [[nodiscard]] bool ready() const noexcept {
     return graph_ != nullptr && !personas_.empty();
@@ -118,10 +121,26 @@ public:
     return amountMultipliers_;
   }
 
+  // H3 (macro-history-v1): the persona-timeline carrier — death-caused
+  // estates and funerals read tl.death through this, and the family
+  // pass drops gift rows whose parties are dead. Empty on hand-built
+  // views (the estate routine then emits nothing and the death filter
+  // stands down; the blueprint path always binds it).
+  [[nodiscard]] bool hasTimelines() const noexcept {
+    return !timelines_.empty() && timelines_.size() >= personCount();
+  }
+
+  [[nodiscard]] const ::PhantomLedger::synth::personas::timeline::Timeline &
+  timeline(entity::PersonId person) const noexcept {
+    return timelines_[person - 1];
+  }
+
 private:
   const ::PhantomLedger::relationships::family::Graph *graph_ = nullptr;
   std::span<const ::PhantomLedger::personas::Type> personas_;
   std::span<const double> amountMultipliers_;
+  std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
+      timelines_;
 };
 
 class FamilyAccountDirectory {
@@ -155,6 +174,13 @@ public:
 
   [[nodiscard]] CounterpartyRouting routing() const noexcept {
     return routing_;
+  }
+
+  // H3: the death filter builds its account->owner map from the
+  // registry records (nullptr on hand-built directories).
+  [[nodiscard]] const entity::account::Registry *
+  registryPtr() const noexcept {
+    return accounts_;
   }
 
 private:

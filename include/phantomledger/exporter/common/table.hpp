@@ -36,6 +36,7 @@
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -106,6 +107,10 @@ public:
     }
     guts_->closed = true;
     guts_->stream.flush();
+    if (!guts_->stream) {
+      throw std::runtime_error("exporter::Table: rendering failed for table " +
+                               guts_->stem);
+    }
     if (guts_->mirror.has_value()) {
       guts_->mirror->close();
     }
@@ -125,7 +130,13 @@ private:
               capture->put(stem, data, size);
             }
           }),
-          stream(&buf) {}
+          stream(&buf) {
+      // std::ostream otherwise converts callback/streambuf exceptions into a
+      // silent badbit. COPY and capture failures must reach explicit close()
+      // (and preferably the write that encountered them), or a run manifest
+      // could be marked complete after committing a truncated table.
+      stream.exceptions(std::ios::badbit | std::ios::failbit);
+    }
 
     std::string stem;
     TableCapture *capture;

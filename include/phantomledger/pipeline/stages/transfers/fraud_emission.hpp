@@ -3,8 +3,11 @@
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/transfers/fraud/injector_inputs.hpp"
 #include "phantomledger/transfers/legit/ledger/result.hpp"
+
+#include <span>
 
 namespace PhantomLedger::transfers::fraud {
 
@@ -26,8 +29,13 @@ public:
   [[nodiscard]] const ::PhantomLedger::transfers::fraud::Behavior &
   resolvedBehavior() const noexcept;
 
+  // H3 part 3c-ii: `timelines` (the personas pack's carrier) gives the
+  // injector each ring's alive horizon — ring scheduling never
+  // recruits the dead. Empty (the default) stands the intervals down.
   [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectorRingView ringView(
-      const ::PhantomLedger::entity::person::Topology &topology) const noexcept;
+      const ::PhantomLedger::entity::person::Topology &topology,
+      std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
+          timelines = {}) const noexcept;
 
   [[nodiscard]] static ::PhantomLedger::transfers::fraud::InjectorAccountView
   accountView(

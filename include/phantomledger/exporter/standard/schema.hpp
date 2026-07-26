@@ -82,8 +82,11 @@ inline constexpr Table kAccountFlowAggBin{"ACCOUNT_FLOW_AGG.csv",
 // Entity Resolution
 // ===========================================================================
 
-inline constexpr std::string_view kErCustomerHeader[]{"customer_id",
-                                                      "created_at"};
+// H3 part 3c-ii (authority U-8 addendum): closed_at reflects ACCOUNT
+// CLOSURE (death + settlement) when it lands inside the window; empty
+// while the customer is still open at export time.
+inline constexpr std::string_view kErCustomerHeader[]{
+    "customer_id", "created_at", "closed_at"};
 inline constexpr Table kErCustomer{"customer.csv", kErCustomerHeader};
 
 inline constexpr std::string_view kErAccountHeader[]{"account_id", "is_fraud"};

@@ -12,6 +12,10 @@ namespace PhantomLedger::activity::income::selection {
 
 using PersonId = entity::PersonId;
 
+// Draw discipline: `selected` draws EXACTLY ONE coin per CANDIDATE
+// person (non-candidates draw nothing), independent of the base
+// probability — so probability changes (H2: timeline-consequent
+// selection) alter OUTCOMES, never the per-person draw count.
 template <class CandidateFn, class BaseFn> class Selector {
 public:
   Selector(CandidateFn candidate, BaseFn baseProbability)

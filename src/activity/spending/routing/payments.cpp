@@ -93,7 +93,14 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
                           ? resolved_.merchantCounterpartyIdx[billerIdx]
                           : clearing::Ledger::invalid;
 
-  const double raw = math::amounts::kBill.sample(rng_) * event.amountFactor;
+  // H1 step 2b (class P): event.priceScale (the day's CPI level) turns
+  // the calibration-year draw into era-correct nominal dollars — after
+  // the draw, before floorAndRound ($1 floor = de-minimis, fixed).
+  // H2 step 2c: event.consumptionScale applies the retirement step on
+  // the same seam.
+  const double raw =
+      math::amounts::kBill.sample(rng_) * event.amountFactor *
+      event.priceScale * event.consumptionScale;
   const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
@@ -116,7 +123,8 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
   const double raw =
-      math::amounts::kExternalUnknown.sample(rng_) * event.amountFactor;
+      math::amounts::kExternalUnknown.sample(rng_) * event.amountFactor *
+      event.priceScale * event.consumptionScale;
   const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
@@ -159,7 +167,8 @@ PaymentRouter::emitP2p(const actors::Event &event) {
   }
 
   const double raw = math::amounts::kP2P.sample(rng_) *
-                     event.spender->amountMultiplier * event.amountFactor;
+                     event.spender->amountMultiplier * event.amountFactor *
+                     event.priceScale * event.consumptionScale;
   const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   const auto dstIdx = contactPersonIndex < resolved_.personPrimaryIdx.size()
@@ -247,7 +256,9 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   const auto category = record.category;
 
   const double rawAmount = math::amounts::merchantAmount(rng_, category) *
-                           event.spender->amountMultiplier * event.amountFactor;
+                           event.spender->amountMultiplier *
+                           event.amountFactor * event.priceScale *
+                           event.consumptionScale;
   const double amount =
       primitives::utils::floorAndRound(rawAmount, kAmountFloor);
 

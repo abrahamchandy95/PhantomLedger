@@ -19,14 +19,15 @@
 //     fraud rows by index             fraud-scale FULL copies — the
 //                                     promoted-txn writers need amount,
 //                                     timestamp and channel
-//     stream stats                    first timestamp, row + illicit counts
+//     stream stats                    first + last timestamps, row +
+//                                     illicit counts
 //
 // The DERIVED BUNDLE is deliberately NOT built here: its 30/90-day
 // sim-end-relative windows need the corpus end before the sweep, which a
 // single forward pass cannot know. The windowed caller builds it from
 // PostgreSQL (readback::buildBundle) after the fold; the corpus caller
 // builds it in memory (derived::buildBundle). Their parity is pinned by
-// test_derived_readback. exportFromArtifacts (export.hpp) then writes
+// test_derived_readback. exportFromProducts (export.hpp) then writes
 // every remaining table. The corpus-based exportAll() runs THIS SAME
 // SINK over the retained corpus and calls the same finisher — one code
 // path, two engines, byte-identical tables.
@@ -45,7 +46,6 @@
 #include "phantomledger/exporter/common/framework.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/csv.hpp"
-#include "phantomledger/exporter/labels.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
@@ -114,6 +114,9 @@ public:
       // timestamp — identical to deriveSimStart over the full corpus.
       artifacts_.firstTs = txnsBatch.front().timestamp;
     }
+    // ... and the last row of the last batch carries the maximum (H2
+    // step 2c: the end-of-window persona resolution anchor).
+    artifacts_.lastTs = txnsBatch.back().timestamp;
     artifacts_.rows += txnsBatch.size();
 
     edges::writeTransactedRows(*transactedW_, txnsBatch, transactedIndex_);
@@ -150,8 +153,14 @@ public:
     return artifacts_.rows;
   }
 
-  // Call after finish(); the writers are done by then.
+  // Call after finish(); the writers are done by then. H2 step 2c: the
+  // Customer persona resolves to the corpus-end state here — after the
+  // stream closed, before the finisher writes the entity tables — so
+  // both engines resolve from the identical (lastTs, rows) pair.
   [[nodiscard]] StreamedArtifacts takeArtifacts() noexcept {
+    ::PhantomLedger::exporter::aml::vertices::resolveEndOfWindowPersonas(
+        artifacts_.ctx, config_.people->personas, artifacts_.lastTs,
+        artifacts_.rows);
     return std::move(artifacts_);
   }
 

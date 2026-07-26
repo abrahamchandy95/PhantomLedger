@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/channels/credit_cards/detail/session.hpp"
 
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
@@ -55,10 +56,20 @@ void Session::run(CardPurchases purchases, Cycle cycle) {
     return;
   }
 
+  // H1 step 2b (class P): the $25 minimum-payment floor and the $32
+  // late fee are behavioral dollar constants realized at the cycle
+  // date's CPI level (authority U-6); percent terms are scale-free
+  // and the statement itself aggregates already-scaled purchases.
+  BillingTerms billing = env_.billing;
+  const double cycleScale = ::PhantomLedger::synth::econ::priceScale(
+      time::toCalendarDate(cycle.endExcl).year);
+  billing.minPaymentDollars *= cycleScale;
+  billing.lateFee *= cycleScale;
+
   const double minimumDueAmt =
-      primitives::utils::roundMoney(minimumDue(env_.billing, statementAbs));
+      primitives::utils::roundMoney(minimumDue(billing, statementAbs));
   const time::TimePoint due =
-      cycle.endExcl + time::Days{env_.billing.graceDays} + kDueDateHour;
+      cycle.endExcl + time::Days{billing.graceDays} + kDueDateHour;
 
   const PaymentIntent intent = draftPayment(statementAbs, minimumDueAmt, due);
 
@@ -69,8 +80,8 @@ void Session::run(CardPurchases purchases, Cycle cycle) {
 
   postPayment(intent, cycle.windowEndExcl);
 
-  if (!paidOnTime && env_.billing.lateFee > 0.0) {
-    postLateFee(due, cycle.windowEndExcl);
+  if (!paidOnTime && billing.lateFee > 0.0) {
+    postLateFee(due, cycle.windowEndExcl, billing.lateFee);
   }
 
   state_.inGrace = paidFullOnTime;
@@ -186,22 +197,23 @@ void Session::postPayment(const PaymentIntent &intent,
       +intent.amount);
 }
 
-void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl) {
+void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl,
+                          double fee) {
   const time::TimePoint fallback =
       resolveDueDate(due) + time::Days{1} + kLateFeeMorningHour;
   const time::TimePoint cap = windowEndExcl - time::Seconds{1};
   const time::TimePoint feeTs = std::min(fallback, cap);
-  const double fee = primitives::utils::roundMoney(env_.billing.lateFee);
+  const double roundedFee = primitives::utils::roundMoney(fee);
 
   book(
       transactions::Draft{
           .source = account_.card,
           .destination = env_.issuerAccount,
-          .amount = fee,
+          .amount = roundedFee,
           .timestamp = time::toEpochSeconds(feeTs),
           .channel = channels::tag(channels::Credit::lateFee),
       },
-      -fee);
+      -roundedFee);
 }
 
 void Session::book(const transactions::Draft &draft, double balanceDelta) {

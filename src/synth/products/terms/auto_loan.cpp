@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"
@@ -63,6 +64,12 @@ AutoLoanEmitter::AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
 
   const auto loanStart = window_.start - ::PhantomLedger::time::Days{ageDays};
 
+  // H1 step 2b (class D): payment anchors at the ORIGINATION year's
+  // price level, fixed nominal after (authority U-6).
+  const double nominalPayment =
+      payment * ::PhantomLedger::synth::econ::priceScale(
+                    ::PhantomLedger::time::toCalendarDate(loanStart).year);
+
   addInstallmentProduct(loans, obligations, window_,
                         InstallmentIssue{
                             .person = person,
@@ -72,7 +79,7 @@ AutoLoanEmitter::AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
                             .start = loanStart,
                             .termMonths = termMonths,
                             .paymentDay = samplePaymentDay(*rng_),
-                            .monthlyPayment = payment,
+                            .monthlyPayment = nominalPayment,
                             .terms = installmentTerms(terms_.delinquency),
                         });
 

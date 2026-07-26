@@ -14,9 +14,10 @@
 //   account_flow_agg    same, with fixed-width temporal bins
 //
 // The membership filter is applied per row (the same activeAt predicate
-// filterByMembership uses), so no visible-corpus copy is ever
-// materialized. Retained state is bounded by distinct account PAIRS —
-// account-pair scale, not transaction scale.
+// filterByMembership uses — the [joinTs, closeTs) interval since H3
+// part 3c-ii), so no visible-corpus copy is ever materialized. Retained
+// state is bounded by distinct account PAIRS — account-pair scale, not
+// transaction scale.
 //
 // Entity-scale tables come from exportEntities() after the fold; pairing
 // the two reproduces exportAll() completely (test_windowed_e2e's
@@ -53,8 +54,9 @@ public:
     const ::PhantomLedger::entity::account::Registry *registry = nullptr;
     const ::PhantomLedger::entity::account::Lookup *lookup = nullptr;
 
-    // Must be constructed exactly as exportAll does — (population,
-    // window, growth) — or the visible corpus diverges.
+    // Must be constructed exactly as exportAll does — through
+    // synth::personas::join_cohort::membershipOf(pack, window), the
+    // ONE construction path — or the visible corpus diverges.
     ::PhantomLedger::synth::pii::Membership membership;
 
     ::PhantomLedger::time::Window window{};
@@ -88,7 +90,7 @@ public:
           ownerOf(*config_.registry, *config_.lookup, tx.target);
       if (!config_.membership.activeAt(srcOwner, tx.timestamp) ||
           !config_.membership.activeAt(dstOwner, tx.timestamp)) {
-        continue; // before a joiner endpoint existed
+        continue; // outside an endpoint owner's [joinTs, closeTs)
       }
       ++visibleRows_;
 

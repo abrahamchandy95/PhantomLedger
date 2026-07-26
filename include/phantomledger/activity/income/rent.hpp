@@ -6,6 +6,7 @@
 #include "phantomledger/activity/recurring/lease.hpp"
 #include "phantomledger/activity/recurring/rent.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -211,6 +212,7 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
                  const transactions::Factory &txf,
                  const std::function<double()> &rentModel) {
   namespace recur = ::PhantomLedger::activity::recurring;
+  namespace tlx = ::PhantomLedger::synth::personas::timeline;
 
   if (rentRoll.counterparties.landlords.empty()) {
     return {};
@@ -262,6 +264,15 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
 
   for (const auto &monthStart : rentRoll.timeframe.monthStarts) {
     for (auto &ps : states) {
+      // H3: the lease dies with the tenant — no rent month posts at or
+      // after the death (the estate's lease wind-down is a declared
+      // simplification away). The skip removes this payer's shared-rng
+      // jitter/router draws for the month — a declared model-moving
+      // shift, absorbed by this round's re-pin.
+      if (!tlx::aliveAt(rentRoll.population.timeline(ps.person), monthStart)) {
+        continue;
+      }
+
       while (monthStart >= ps.lease.end) {
         auto advRng = rentRoll.entropy.factory.rng(
             {"lease_advance", ps.payerKey, std::to_string(ps.lease.moveIndex)});

@@ -117,7 +117,10 @@ private:
 
   void postPayment(const PaymentIntent &intent, time::TimePoint windowEndExcl);
 
-  void postLateFee(time::TimePoint due, time::TimePoint windowEndExcl);
+  // H1 step 2b: the fee arrives era-scaled from run()'s per-cycle
+  // effective billing terms (class P, authority U-6).
+  void postLateFee(time::TimePoint due, time::TimePoint windowEndExcl,
+                   double fee);
 
   void book(const transactions::Draft &draft, double balanceDelta);
 

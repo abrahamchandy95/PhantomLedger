@@ -1,10 +1,12 @@
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/chunk/flush.hpp"
 #include "phantomledger/pipeline/chunk/sink.hpp"
 
 #include <cassert>
 #include <cstdio>
+#include <stdexcept>
 #include <vector>
 
 using namespace PhantomLedger;
@@ -28,6 +30,12 @@ struct Recorder {
   void endSpan(const Span &s) { ended.push_back(s.index); }
   void finish() { finished = true; }
   [[nodiscard]] std::uint64_t rowsWritten() const noexcept { return rows; }
+};
+
+struct FailingTableCapture final : exporter::common::TableCapture {
+  void put(std::string_view, const char *, std::size_t) override {
+    throw std::runtime_error("injected table-capture failure");
+  }
 };
 
 static_assert(Sink<NullSink>);
@@ -174,6 +182,23 @@ int main() {
           sched, std::span<const Transaction>{shuffled.data(), shuffled.size()},
           r3);
     } catch (const std::logic_error &) {
+      threw = true;
+    }
+    assert(threw);
+  }
+
+  // Direct-table rendering must not let std::ostream hide a streambuf/COPY
+  // callback failure as badbit and then report a successful close.
+  {
+    FailingTableCapture capture;
+    exporter::common::Table table(
+        {.capture = &capture}, exporter::schema::kLedger);
+    table.writer().writeRow("source", "target", 1.0, "2025-01-01 00:00:00",
+                            0, "", "", "", "0.0.0.0", "merchant");
+    bool threw = false;
+    try {
+      table.close();
+    } catch (const std::runtime_error &) {
       threw = true;
     }
     assert(threw);

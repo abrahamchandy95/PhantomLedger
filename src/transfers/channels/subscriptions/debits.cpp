@@ -2,6 +2,8 @@
 
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/clearing/screening.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -35,12 +37,25 @@ struct PersonText {
   }
 };
 
-[[nodiscard]] transactions::Draft draftFrom(const Sub &sub,
+// H1 step 2b (class P): the kPricePool price is a CALIBRATION-YEAR
+// dollar; each debit realizes it at the DEBIT month's CPI level —
+// subscription prices track the era level (authority U-6; per-contract
+// frozen pricing would hold 1991 prices for decades). Screen and draft
+// share the same nominal amount.
+[[nodiscard]] double nominalAmount(const Sub &sub,
+                                   std::int64_t timestamp) noexcept {
+  const auto year =
+      time::toCalendarDate(time::fromEpochSeconds(timestamp)).year;
+  return primitives::utils::roundMoney(sub.amount *
+                                       synth::econ::priceScale(year));
+}
+
+[[nodiscard]] transactions::Draft draftFrom(const Sub &sub, double amount,
                                             std::int64_t timestamp) noexcept {
   return transactions::Draft{
       .source = sub.deposit,
       .destination = sub.biller,
-      .amount = sub.amount,
+      .amount = amount,
       .timestamp = timestamp,
       .channel = kChannel,
   };
@@ -169,7 +184,8 @@ void DebitEmitter::emitWithoutScreen(
     std::vector<transactions::Transaction> &out) const {
   for (const auto &candidate : sorted) {
     const auto &sub = subs[candidate.subIdx];
-    out.push_back(txf_->make(draftFrom(sub, candidate.ts)));
+    const double amount = nominalAmount(sub, candidate.ts);
+    out.push_back(txf_->make(draftFrom(sub, amount, candidate.ts)));
   }
 }
 
@@ -183,13 +199,14 @@ void DebitEmitter::emitWithScreen(std::span<const Candidate> sorted,
         clearing::TimeBound{.until = candidate.ts, .inclusive = true});
 
     const auto &sub = subs[candidate.subIdx];
-    const auto decision = screen_->ledger->transfer(sub.deposit, sub.biller,
-                                                    sub.amount, kChannel);
+    const double amount = nominalAmount(sub, candidate.ts);
+    const auto decision =
+        screen_->ledger->transfer(sub.deposit, sub.biller, amount, kChannel);
     if (decision.rejected()) {
       continue;
     }
 
-    out.push_back(txf_->make(draftFrom(sub, candidate.ts)));
+    out.push_back(txf_->make(draftFrom(sub, amount, candidate.ts)));
   }
 }
 

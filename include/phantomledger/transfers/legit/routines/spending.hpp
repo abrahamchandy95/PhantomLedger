@@ -9,6 +9,7 @@
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -75,6 +76,14 @@ public:
     std::unordered_map<entity::PersonId, entity::Key> primaryAccounts{};
     ::PhantomLedger::time::Window window{};
     std::uint64_t seed = 0;
+
+    // H3 part 3c-ii: the persona-timeline carrier (PersonId-1
+    // indexed) — the CardCycleDriver truncates each card's statement
+    // ladder at the owner's ACCOUNT CLOSURE minus the settlement-tail
+    // guard. Filled by buildCardLifecycleConfig (passes.cpp) for BOTH
+    // engines; empty stands the truncation down.
+    std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
+        timelines{};
 
     [[nodiscard]] bool active() const noexcept {
       return cards != nullptr && !cards->records.empty() && rules != nullptr &&

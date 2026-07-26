@@ -12,6 +12,7 @@
 #include "phantomledger/exporter/standard/pii.hpp"
 #include "phantomledger/exporter/standard/schema.hpp"
 #include "phantomledger/exporter/standard/transfers.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 
 #include <cstddef>
@@ -20,6 +21,7 @@ namespace PhantomLedger::exporter::standard {
 
 namespace schema = ::PhantomLedger::exporter::schema;
 namespace pii = ::PhantomLedger::synth::pii;
+namespace join_cohort = ::PhantomLedger::synth::personas::join_cohort;
 
 namespace {
 
@@ -44,7 +46,8 @@ void exportEntityResolution(const common::TableTarget &target,
   const auto &registry = holdings.accounts.registry;
   using W = ::PhantomLedger::exporter::csv::Writer;
 
-  // Core vertices. customer.csv created_at comes from Membership.
+  // Core vertices. customer.csv created_at/closed_at come from the
+  // Membership interval [joinTs, closeTs) — H3 part 3c-ii.
   emit(target, schema::kErCustomer,
        [&](W &w) { writeCustomerRows(w, roster, membership); });
   emit(target, schema::kErAccount,
@@ -116,8 +119,10 @@ void exportEntities(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto &infra = result.infra;
   using W = ::PhantomLedger::exporter::csv::Writer;
 
-  const auto population = static_cast<std::size_t>(people.roster.roster.count);
-  const pii::Membership membership(population, options.window, options.growth);
+  // H3 part 3c-ii: THE one membership construction path (the world's
+  // personas pack carries joinDays + death-bearing timelines).
+  const pii::Membership membership =
+      join_cohort::membershipOf(people.personas, options.window);
 
   emit(target, schema::kPerson,
        [&](W &w) { writePersonRows(w, people.roster.roster); });
@@ -161,8 +166,10 @@ void exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto &postedTxns = result.transfers.ledger.posted.txns;
   using W = ::PhantomLedger::exporter::csv::Writer;
 
-  const auto population = static_cast<std::size_t>(people.roster.roster.count);
-  const pii::Membership membership(population, options.window, options.growth);
+  // Must match exportEntities' construction exactly (one path:
+  // join_cohort::membershipOf) or the visible corpus diverges.
+  const pii::Membership membership =
+      join_cohort::membershipOf(people.personas, options.window);
 
   const auto visibleTxns =
       filterByMembership(postedTxns, holdings.accounts.registry,

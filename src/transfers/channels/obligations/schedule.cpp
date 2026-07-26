@@ -1,9 +1,12 @@
 #include "phantomledger/transfers/channels/obligations/schedule.hpp"
 
+#include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/transfers/channels/obligations/installments.hpp"
 #include "phantomledger/transfers/channels/obligations/plain.hpp"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <optional>
 
 namespace PhantomLedger::transfers::obligations {
@@ -18,10 +21,30 @@ primaryAccount(const Population &population, entity::PersonId person) {
   return acctIt->second;
 }
 
+// H3 part 3c-ii: loan/tax obligations are CONTRACTUAL — the estate
+// services them until ACCOUNT CLOSURE (death + settlement).
+[[nodiscard]] std::int64_t closeEpochOf(const Population &population,
+                                        entity::PersonId person) {
+  if (population.timelines.empty() || person == 0 ||
+      static_cast<std::size_t>(person) > population.timelines.size()) {
+    return std::numeric_limits<std::int64_t>::max();
+  }
+  return time::toEpochSeconds(population.timelines[person - 1].death) +
+         static_cast<std::int64_t>(synth::pii::kSettlementDays) * 86'400;
+}
+
 void appendDraft(std::vector<transactions::Transaction> &out,
                  const transactions::Factory &txf,
-                 const std::optional<transactions::Draft> &draft) {
+                 const std::optional<transactions::Draft> &draft,
+                 std::int64_t closeEpoch) {
   if (!draft.has_value()) {
+    return;
+  }
+
+  // The skip sits AFTER draftFor's internal draws burned, so the
+  // shared rng stream is byte-identical — only the post-closure rows
+  // (and their downstream screen postings) disappear.
+  if (draft->timestamp >= closeEpoch) {
     return;
   }
 
@@ -48,13 +71,17 @@ Scheduler::generate(const entity::product::LoanTermsLedger &loans,
       continue;
     }
 
+    const auto closeEpoch = closeEpochOf(population, event.personId);
+
     if (installments::tracks(loans, event)) {
       appendDraft(out, *txf_,
                   installmentEvents.draftFor(*rng_, event, *personAcct,
-                                             active.endExcl));
+                                             active.endExcl),
+                  closeEpoch);
     } else {
       appendDraft(out, *txf_,
-                  plain::draftFor(*rng_, event, *personAcct, active.endExcl));
+                  plain::draftFor(*rng_, event, *personAcct, active.endExcl),
+                  closeEpoch);
     }
   }
 

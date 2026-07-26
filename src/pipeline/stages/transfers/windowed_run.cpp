@@ -33,8 +33,8 @@
 #include "phantomledger/pipeline/acceptance/fingerprint.hpp"
 #include "phantomledger/pipeline/diagnostics.hpp"
 #include "phantomledger/pipeline/invariants.hpp"
+#include "phantomledger/pipeline/stages/transfers/base_run_set.hpp"
 #include "phantomledger/pipeline/stages/transfers/binary_spool.hpp"
-#include "phantomledger/pipeline/stages/transfers/replay_spool.hpp"
 #include "phantomledger/pipeline/stages/transfers/window_sources.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -204,26 +204,23 @@ WindowedRunResult TransferStage::runWindowedErased(
   // point cannot affect the session.
   const random::RngFactory rngFactory{scope.seed};
 
-  // RAM R2.4b-2/3 (base cursor): the prologue built only the screened
-  // view (deferReplayView); the replay order is derived ONCE here —
-  // fundsLess (auditKey) is total for every output-affecting purpose
-  // (S10: rows comparing equal are byte-identical), so this one-shot
-  // sort equals the retired incremental merge. The sorted rows go
-  // straight to disk through the candidate-spool machinery
-  // (bit-identical records, audit-order verified by the cursor) and
-  // the transient vector is freed; the fold reads one bounded buffer.
-  BinaryCandidateSpool baseSpool;
-  {
-    auto replayRows = legit_ledger::sortForReplay(
-        std::vector<Txn>(prologue.streams.screened().begin(),
-                         prologue.streams.screened().end()));
-    baseSpool.append(
-        std::span<const Txn>(replayRows.data(), replayRows.size()));
-    baseSpool.finish();
-  } // replayRows freed here
-  auto baseSource = baseSpool.openCursor();
+  // RAM R2.5a: construct both base views while the screened timestamp view
+  // is still resident. The full-audit view is sorted in bounded runs whose
+  // boundaries never split equal timestamps; timestamp is auditKey's first
+  // field, so concatenating those runs is byte-identical to the retired
+  // whole-vector sort. Rewire the day replay and release the resident view
+  // BEFORE product/family precomputation, avoiding both the whole-window
+  // replay copy and overlap between screened and product schedules.
+  BaseRunSet baseRuns(baseTxns);
+  auto baseSource = baseRuns.openAuditCursor();
+  obligations.baseReplayOverride = &baseRuns.timestampReplay();
+  obligations.baseTxns = {};
+  prologue.streams.releaseScreened();
 
-  pipeline::diagnostics::logStageMem("baseSpooled", {});
+  pipeline::diagnostics::logStageMem(
+      "baseRunSet",
+      {{"base", static_cast<std::size_t>(baseRuns.rows())},
+       {"auditRunPeak", baseRuns.peakAuditRunRows()}});
 
   const transactions::Factory productTxf(rng, &productRouter,
                                          &infra.ringInfra);
@@ -242,21 +239,6 @@ WindowedRunResult TransferStage::runWindowedErased(
   holdings.portfolios.obligations() =
       ::PhantomLedger::entity::product::ObligationStream{};
   pipeline::diagnostics::logStageMem("obligationsReleased", {});
-
-  // RAM R2.4b-2 (ledger replay): the spending prep has aggregated
-  // everything it needs from the screened view (market paydays,
-  // burdens), and its only remaining consumer is the day driver's
-  // ledger replay — which now feeds from a sequential disk spool
-  // through the replay seam (replay_source.hpp). Same rows, same
-  // order, one bounded read buffer; the resident whole-window vector
-  // is freed here.
-  BaseReplaySpool replaySpool;
-  replaySpool.spool(std::span<const Txn>(prologue.streams.screened()));
-  replaySpool.seal();
-  obligations.baseReplayOverride = &replaySpool;
-  obligations.baseTxns = {};
-  prologue.streams.releaseScreened();
-  pipeline::diagnostics::logStageMem("screenedSpooled", {});
 
   auto familySource = std::make_unique<PrecomputedCursorSource>(
       legit_ledger::sortForReplay(

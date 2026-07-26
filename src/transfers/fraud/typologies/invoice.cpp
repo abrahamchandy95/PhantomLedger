@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/fraud/typologies/invoice.hpp"
 
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/fraud/typologies/common.hpp"
@@ -49,7 +50,6 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     const auto &dst = typologies::pickOne(rng, ctx.billerAccounts);
 
     const double raw = probability::distributions::lognormal(rng, 8.0, 0.35);
-    const double amount = std::round(raw / 10.0) * 10.0;
 
     // Day-of-burst: rng.int(0, weeks) inclusive → [0, weeks + 1).
     const auto weekIdx = static_cast<std::int32_t>(
@@ -60,6 +60,13 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
     const auto ts = baseDate + time::Days{7 * weekIdx} + time::Hours{hour} +
                     time::Minutes{minute};
+
+    // H1 step 2b (class F): the calibration-year draw realizes at the
+    // event date's CPI level, then RE-SNAPS to the $10 invoice lattice
+    // so fake B2B invoices stay round in every era (authority U-6).
+    const double scaled =
+        raw * synth::econ::priceScale(time::toCalendarDate(ts).year);
+    const double amount = std::round(scaled / 10.0) * 10.0;
 
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,

@@ -67,8 +67,14 @@ buildPeople(pl::random::Rng &rng, std::int32_t population,
 buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
               std::int32_t population, const sy::accounts::Sizing &sizing = {});
 
+// H2 step 2a: the pack now carries the single-age-axis birth-date
+// carrier, drawn on the isolated {"dob", personId} lanes off
+// identity.worldSeed at identity.simStart (the persona age bands).
+// `identity` must be the defaultStart()-resolved context the PII
+// build receives, so the carrier and the rendered PII agree.
 [[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
+              const sy::pii::IdentityContext &identity,
               const sy::personas::Mix &mix = {});
 
 [[nodiscard]] entity::pii::Roster
@@ -88,10 +94,14 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
                const sy::landlords::GenerationPlan &plan = {});
 
+// H1 step 2b: `startYear` = the WINDOW-START year for the credit-limit
+// stock scale (synth::cards::issue); 0 = calibration-flat (legacy
+// call sites / direct tests).
 [[nodiscard]] entity::card::Registry
 issueCreditCards(const sy::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
-                 const sy::cards::IssuanceRules &issuance = {});
+                 const sy::cards::IssuanceRules &issuance = {},
+                 int startYear = 0);
 
 [[nodiscard]] entity::counterparty::Directory buildCounterparties(
     pl::random::Rng &rng, std::int32_t population,

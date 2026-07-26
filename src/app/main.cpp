@@ -10,6 +10,7 @@
 #include "phantomledger/exporter/aml_txn_edges/streaming.hpp"
 #include "phantomledger/exporter/card_fraud/export.hpp"
 #include "phantomledger/exporter/card_fraud/streaming.hpp"
+#include "phantomledger/exporter/econ/export.hpp"
 #include "phantomledger/exporter/mule_ml/streaming.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/exporter/sinks/postgres.hpp"
@@ -23,6 +24,8 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/econ/catalog.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
 
@@ -97,10 +100,8 @@ struct BackendPolicy {
 
 [[nodiscard]] BackendPolicy resolveBackend(const pl::app::RunOptions &opts) {
   BackendPolicy policy;
-  policy.conninfo = opts.pgConninfo;
-  if (const char *env = std::getenv("PL_PG")) {
-    policy.conninfo = env;
-  }
+  policy.conninfo =
+      pl::app::pgConninfoWithOverride(opts.pgConninfo, std::getenv("PL_PG"));
   if (const char *env = std::getenv("PL_FILE_ONLY")) {
     const std::string_view value{env};
     policy.fileOnly = !value.empty() && value != "0";
@@ -355,15 +356,35 @@ int runWindowedStream(
   const pl::exporter::sinks::PgMirror cfMirror{
       .conninfo = pgConninfo, .schema = "card_fraud", .tablePrefix = "cf_"};
 
+  // macro-history-v1 H0.5 (owner directive #2): the pinned era
+  // reference series land in PostgreSQL for EVERY use case — schema
+  // econ (its OWN schema, so the public-schema table golden does not
+  // move): econ.macro_annual, econ.mortality, econ.provenance — the
+  // exact rows of the EMBEDDED era data (synth/econ/era_data.hpp, the
+  // constexpr successor of the retired data/econ CSVs). Since H1 step
+  // 2b generation READS the series (the nominal scales); the tables
+  // remain a REPORT for downstream in-database modeling. Content is
+  // pinned serverlessly by test_econ_tables (TableCapture seam).
+  if (pgUp) {
+    const pl::exporter::sinks::PgMirror econMirror{
+        .conninfo = pgConninfo, .schema = "econ", .tablePrefix = ""};
+    pl::exporter::econ::writeEraTables(
+        {.pg = &econMirror, .capture = nullptr});
+    mon.mark("econ era tables");
+  }
+
   std::optional<pl::exporter::standard::StreamingTransfersExport> stdStream;
   if (streamStandard) {
-    const auto population =
-        static_cast<std::size_t>(world.people.roster.roster.count);
+    // H3 part 3c-ii: the membership view [joinTs, closeTs) — THE one
+    // construction path (join_cohort::membershipOf), the same call
+    // exportEntities/exportAll make, so the streamed and corpus-based
+    // visible corpora cannot diverge. The Membership OWNS its carrier
+    // copies, so the R2 pack release below cannot dangle it.
     stdStream.emplace(pl::exporter::standard::StreamingTransfersExport::Config{
         .registry = &world.holdings.accounts.registry,
         .lookup = &world.holdings.accounts.lookup,
-        .membership = pl::synth::pii::Membership(population, window,
-                                                 pl::synth::pii::Growth{}),
+        .membership = pl::synth::personas::join_cohort::membershipOf(
+            world.people.personas, window),
         .window = window,
         .pgMirror = pgUp ? &stdMirror : nullptr,
     });
@@ -434,6 +455,7 @@ int runWindowedStream(
   std::uint64_t pgRows = 0;
   unsigned pgSpans = 0;
   unsigned pgSkipped = 0;
+  long long pgManifestId = -1;
 
   if (pgUp) {
     pl::postgres::Connection conn{pgConninfo};
@@ -454,9 +476,8 @@ int runWindowedStream(
       plan.reset();
     }
 
-    long long manifestId = -1;
     if (plan.has_value()) {
-      manifestId = plan->manifestId;
+      pgManifestId = plan->manifestId;
       std::printf("Resuming run #%lld: %zu spans (%llu rows) already "
                   "durable — verifying by digest, skipping their COPYs\n",
                   plan->manifestId, plan->spans.size(),
@@ -465,8 +486,8 @@ int runWindowedStream(
       // A fresh run rewrites the shared table: no older crash record
       // may outlive its rows.
       ledger.supersedeRunning();
-      manifestId = ledger.beginRun(configHash, opts.seed, opts.population,
-                                   opts.days, opts.startDate);
+      pgManifestId = ledger.beginRun(configHash, opts.seed, opts.population,
+                                     opts.days, opts.startDate);
     }
 
     pl::exporter::sinks::Postgres pgSink(
@@ -487,7 +508,7 @@ int runWindowedStream(
           {.inner = &teeAll,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -499,7 +520,7 @@ int runWindowedStream(
           {.inner = &teeAll,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -511,7 +532,7 @@ int runWindowedStream(
           {.inner = &teeAll,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -523,7 +544,7 @@ int runWindowedStream(
           {.inner = &teeAll,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -535,7 +556,7 @@ int runWindowedStream(
           {.inner = &teeAll,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -546,7 +567,7 @@ int runWindowedStream(
           {.inner = &teePg,
            .copyGate = &gatedPg.open,
            .ledger = &ledger,
-           .manifestId = manifestId,
+           .manifestId = pgManifestId,
            .plan = planPtr,
            .conninfo = pgConninfo}};
       transfers = runFold(sink);
@@ -564,7 +585,6 @@ int runWindowedStream(
                   "streamed during settlement)\n",
                   static_cast<unsigned long long>(pgRows), pgSpans);
     }
-    ledger.finishRun(manifestId, golden.rowsWritten(), golden.digest());
   } else if (stdStream.has_value()) {
     pl::pipeline::chunk::Tee tee{golden, *stdStream};
     transfers = runFold(tee);
@@ -669,6 +689,16 @@ int runWindowedStream(
   }
 
   if (pgUp) {
+    // Completion belongs after the selected use case's finisher. Card-fraud
+    // explicitly closes all 34 COPY streams, so a late failure on that path
+    // leaves this manifest `running` and resumable instead of recording false
+    // success. Other exporters also benefit from the later ordering, but
+    // still need their own explicit-close audit before claiming that stronger
+    // invariant globally.
+    pl::postgres::Connection conn{pgConninfo};
+    pl::exporter::sinks::RunLedger ledger{conn};
+    ledger.finishRun(pgManifestId, golden.rowsWritten(), golden.digest());
+
     std::printf("PostgreSQL: %s tables written directly during the run "
                 "(%s)\n",
                 std::string{pl::app::name(opts.usecase)}.c_str(),
@@ -690,6 +720,20 @@ int main(int argc, char **argv) {
   try {
 
     const auto opts = app::cli::parse(argc, argv);
+
+    // macro-history-v1 H1 step 2b (freeze-and-declare): if the window
+    // touches years outside the measured era coverage, the nominal
+    // scales clamp at the nearest covered year's level — say so ONCE,
+    // out loud, before generation. Deterministic; stderr only; never
+    // part of the corpus stream.
+    {
+      const auto &era = synth::econ::macroSeries();
+      const auto notice =
+          app::frozenEraNotice(opts, era.firstYear(), era.lastYear());
+      if (notice.has_value()) {
+        std::fprintf(stderr, "%s\n", notice->c_str());
+      }
+    }
 
     // Backend policy: PostgreSQL is required — probe BEFORE generation
     // and fail fast with the teaching error (resolveBackend exits).

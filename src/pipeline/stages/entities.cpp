@@ -14,7 +14,10 @@
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
 #include "phantomledger/synth/people/make.hpp"
+#include "phantomledger/synth/personas/dob.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/personas/make.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
@@ -55,9 +58,40 @@ buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
 
 [[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
+              const sy::pii::IdentityContext &identity,
               const sy::personas::Mix &mix) {
   const std::uint64_t personasSeed = rng.nextU64();
-  return sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
+  auto pack = sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
+
+  // H3 part 3c-ii: the JOIN-COHORT carrier FIRST — BEA-sized joiner
+  // count, one isolated {"join-cohort", personId} draw per joiner
+  // (authority U-8 addendum). identity.windowDays == 0 (direct unit
+  // harnesses) leaves everyone a member from the start; the dob and
+  // timeline anchors below then reduce to the pre-3c-ii shape.
+  pack.joinDays = sy::personas::join_cohort::deriveJoinDays(
+      identity.worldSeed, people.roster.count,
+      pl::time::Window{.start = identity.simStart,
+                       .days = identity.windowDays});
+
+  // H2 step 2a: the single-age-axis carrier, drawn on the isolated
+  // {"dob", personId} lanes (worldSeed factory) — never the shared
+  // entity stream, so assignment and profiles above are untouched.
+  // PII rendering, SSA cohorts and the persona timeline all read it.
+  // H3 3c-ii: joiners anchor at their JOIN date (the axis repair).
+  pack.birthDates = sy::personas::birthDates(identity.worldSeed,
+                                             identity.simStart,
+                                             pack.assignment, pack.joinDays);
+
+  // H2 step 2b: the persona timeline per person, on the isolated
+  // {"persona-era", personId} lanes off the same factory. Salary
+  // selection/spans, SSA onset and revenue gating read personaAt.
+  // H3 3c-ii: the seed-state clamps and the lifespan's alive
+  // invariant bind at each person's own anchor (join date for the
+  // cohort), so a joiner dies strictly after joining.
+  pack.timelines = sy::personas::timeline::deriveAll(
+      identity.worldSeed, identity.simStart, pack.assignment,
+      pack.birthDates, pack.joinDays);
+  return pack;
 }
 
 [[nodiscard]] entity::pii::Roster
@@ -68,6 +102,9 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
   assert(identity.pools != nullptr &&
          "buildPii: IdentityContext::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
+  // H2 step 2a: the roster renders each Dob from the pack's carrier
+  // (single age axis) — the Generator draws no dob on the shared stream.
+  identity.birthDates = &personas.birthDates;
   auto pii = sy::pii::make(rng, personas.assignment, identity);
   sy::pii::correlateRingPii(rng, topology, sharing, pii);
   return pii;
@@ -97,9 +134,10 @@ buildLandlords(pl::random::Rng &rng, std::int32_t population,
 [[nodiscard]] entity::card::Registry
 issueCreditCards(const sy::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
-                 const sy::cards::IssuanceRules &issuance) {
+                 const sy::cards::IssuanceRules &issuance, int startYear) {
   return sy::cards::issue(sy::cards::deriveCardSeed(topLevelSeed),
-                          personas.table, people.roster.count, issuance);
+                          personas.table, people.roster.count, issuance,
+                          startYear);
 }
 
 [[nodiscard]] entity::counterparty::Directory

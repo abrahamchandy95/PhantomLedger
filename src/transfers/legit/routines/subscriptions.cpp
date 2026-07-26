@@ -1,12 +1,19 @@
 #include "phantomledger/transfers/legit/routines/subscriptions.hpp"
 
 #include "phantomledger/primitives/random/factory.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
+#include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/channels/subscriptions/debits.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -66,13 +73,58 @@ buildBundles(const blueprints::LegitBlueprint &plan,
       core::AccountExclusions{.hubAccounts = &plan.counterparties().hubSet});
 }
 
+// H3 part 3c-ii + H1 DEFECT FIX (authority U-8 addendum): the U-6 CPI
+// wiring for subscriptions had landed in the parallel channels emitter
+// (transfers/channels/subscriptions/debits.cpp) — which production
+// never calls — while THIS emitter (passes::addSubscriptions, the only
+// production path) drafted and screened the raw calibration-dollar
+// sub.amount. Same semantics as the channels emitter now: the kPricePool
+// price realizes at the DEBIT month's CPI level; screen and draft share
+// the nominal amount.
+[[nodiscard]] double nominalAmount(const core::Sub &sub,
+                                   std::int64_t timestamp) noexcept {
+  const auto year =
+      time::toCalendarDate(time::fromEpochSeconds(timestamp)).year;
+  return primitives::utils::roundMoney(
+      sub.amount * ::PhantomLedger::synth::econ::priceScale(year));
+}
+
+// H3 part 3c-ii: subscriptions are CONTRACTUAL — the estate keeps
+// paying them until ACCOUNT CLOSURE (death + settlement). Keyed by the
+// subscriber's primary deposit (the only account subs debit).
+[[nodiscard]] std::unordered_map<entity::Key, std::int64_t>
+closeEpochByAccount(const blueprints::LegitBlueprint &plan,
+                    const entity::account::Registry &registry) {
+  std::unordered_map<entity::Key, std::int64_t> out;
+
+  const auto *pack = plan.personas().pack;
+  if (pack == nullptr || pack->timelines.empty()) {
+    return out; // the filter stands down
+  }
+
+  out.reserve(plan.primaryAcctRecordIx().size());
+  for (const auto &[person, recordIx] : plan.primaryAcctRecordIx()) {
+    if (person == 0 || person > pack->timelines.size() ||
+        recordIx >= registry.records.size()) {
+      continue;
+    }
+    out.emplace(
+        registry.records[recordIx].id,
+        time::toEpochSeconds(pack->timelines[person - 1].death) +
+            static_cast<std::int64_t>(synth::pii::kSettlementDays) * 86'400);
+  }
+
+  return out;
+}
+
 [[nodiscard]] transactions::Draft draftFrom(const core::Sub &sub,
+                                            double amount,
                                             std::int64_t timestamp,
                                             channels::Tag channel) noexcept {
   return transactions::Draft{
       .source = sub.deposit,
       .destination = sub.biller,
-      .amount = sub.amount,
+      .amount = amount,
       .timestamp = timestamp,
       .isFraud = 0,
       .ringId = -1,
@@ -125,6 +177,8 @@ DebitEmitter::emitDebits(const blueprints::LegitBlueprint &plan,
     return out;
   }
 
+  const auto closures = closeEpochByAccount(plan, registry);
+
   const auto channel = channels::tag(channels::Legit::subscription);
   const core::ScheduleSampler schedule{
       std::span<const time::TimePoint>(plan.monthStarts().data(),
@@ -140,20 +194,30 @@ DebitEmitter::emitDebits(const blueprints::LegitBlueprint &plan,
     }
 
     for (const auto &candidate : month) {
+      const auto &sub = subs[candidate.subIdx];
+
+      // H3: skip closed accounts here — the month's cycle-timestamp
+      // draws already burned inside candidates(), and this loop draws
+      // nothing, so the shared rng stream is byte-identical.
+      if (const auto it = closures.find(sub.deposit);
+          it != closures.end() && candidate.ts >= it->second) {
+        continue;
+      }
+
       screen_.advanceThrough(candidate.ts, /*inclusive=*/true);
 
-      const auto &sub = subs[candidate.subIdx];
+      const double amount = nominalAmount(sub, candidate.ts);
       if (!screen_.acceptTransfer(ledger::KeyedTransfer{
               .source = sub.deposit,
               .destination = sub.biller,
-              .amount = sub.amount,
+              .amount = amount,
               .channel = channel,
               .timestamp = candidate.ts,
           })) {
         continue;
       }
 
-      out.push_back(txf_.make(draftFrom(sub, candidate.ts, channel)));
+      out.push_back(txf_.make(draftFrom(sub, amount, candidate.ts, channel)));
     }
   }
 

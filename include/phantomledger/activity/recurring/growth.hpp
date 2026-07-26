@@ -73,16 +73,15 @@ struct GrowthDist {
   }
 };
 
+// H1 step 2b (macro-history-v1): the flat `annualInflation` constant is
+// RETIRED — the economy-wide nominal path is now the measured AWI/CPI
+// index applied at each REALIZATION site (synth/econ/nominal.hpp), so
+// compound growth carries only the seeded IDIOSYNCRATIC real-raise
+// lanes (declared CHOICE, authority U-6).
 struct CompoundRules {
-  double annualInflation = 0.0;
   GrowthDist annualRaise{};
 
   void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-
-    r.check([&] { v::finite("annualInflation", annualInflation); });
-    r.check([&] { v::gt("annualInflation", annualInflation, -1.0); });
-
     annualRaise.validate(r);
   }
 };
@@ -277,7 +276,9 @@ inline void requireGrowthFactor(double factor, std::string_view field) {
   v::gt(field, factor, 0.0);
 }
 
-/// Compound inflation + real raises over elapsed full years.
+/// Compound the seeded idiosyncratic real raises over elapsed full
+/// years. Nominal (economy-wide) growth is NOT here: it is the H1
+/// era index applied at the realization site.
 [[nodiscard]] inline double compoundGrowth(const CompoundRules &rules,
                                            const AnnualRaiseSeries &raises,
                                            time::TimePoint start,
@@ -297,7 +298,7 @@ inline void requireGrowthFactor(double factor, std::string_view field) {
 
     const double realRaise = raises.forYear(rules.annualRaise, year);
 
-    const double factor = 1.0 + rules.annualInflation + realRaise;
+    const double factor = 1.0 + realRaise;
 
     primitives::validate::finite("realRaise", realRaise);
     requireGrowthFactor(factor, "growthFactor");

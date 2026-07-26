@@ -4,6 +4,8 @@
 #include "phantomledger/primitives/time/almanac.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -72,13 +74,29 @@ MonthlyDepositEmitter::emit(std::span<const Recipient> recipients,
   for (std::size_t m = 0; m < months; ++m) {
     for (const auto &r : recipients) {
       const auto ts = morningJitter(cohorts[r.ssaCohort][m]);
-      if (ts < window_.start || ts >= window_.endExcl()) {
+      // H2 step 2b: no deposit before the recipient's onset — the
+      // claiming date for timeline-selected retirement (mid-window
+      // retirees start receiving when they claim), the window start
+      // otherwise. H3: no deposit at or after the recipient's death
+      // (Recipient.end; sentinel TimePoint{} = unbounded, for
+      // hand-built test recipients).
+      if (ts < r.onset || ts < window_.start || ts >= window_.endExcl()) {
         continue;
       }
+      if (r.end != time::TimePoint{} && ts >= r.end) {
+        continue;
+      }
+      // H1 step 2b (class W): the recipient's amount is drawn ONCE in
+      // calibration-year dollars at selection; each deposit realizes
+      // it at the deposit month's wage index. One index era-wide is
+      // the declared H1 simplification (authority U-6; per-cohort
+      // award/COLA indexing is the H2/H3 refinement).
       out.push_back(txf_.make(transactions::Draft{
           .source = deposit.source,
           .destination = r.account,
-          .amount = r.amount,
+          .amount = primitives::utils::roundMoney(
+              r.amount *
+              synth::econ::wageScale(time::toCalendarDate(ts).year)),
           .timestamp = time::toEpochSeconds(ts),
           .channel = deposit.channel,
       }));

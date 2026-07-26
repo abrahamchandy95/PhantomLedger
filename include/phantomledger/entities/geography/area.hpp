@@ -16,11 +16,12 @@
 // and activity layers that consume it.
 //
 // SEMANTICS (honesty note): an area is a PostalArea / GeoArea, NOT a
-// literal USPS ZIP delivery route. The pinned production artifact is
+// literal USPS ZIP delivery route. The target production artifact is
 // built from Census ZCTA Gazetteer geometry + ACS population + GeoNames
-// postal names (see data/geo/README.md); ZCTAs are generalized areas
-// and not every ZIP has one. The TigerGraph vertex keeps the name
-// Zipcode for schema compatibility; its value is `postalAreaCode`.
+// postal names (current pinned rows + provenance: the embedded
+// synth/geo/geo_data.hpp); ZCTAs are generalized areas and not every
+// ZIP has one. The TigerGraph vertex keeps the name Zipcode for schema
+// compatibility; its value is `postalAreaCode`.
 //
 // Coordinates are stored as INTEGER MICRODEGREES (degrees x 1e6):
 // compact, stable to hash, deterministic to compare, and accurate to

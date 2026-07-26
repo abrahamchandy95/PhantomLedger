@@ -38,6 +38,22 @@ template <class F> [[nodiscard]] std::vector<double> sample(F &&fn) {
   return out;
 }
 
+// H1 step 2b: the continuous samplers take the event year's CPI level
+// multiplier (median AND clamps scale together); 1.0 is the
+// calibration-year identity. Default arguments don't travel through
+// function references, so the harness binds the scale explicitly.
+[[nodiscard]] auto atoAt(double scale) {
+  return [scale](random::Rng &rng) {
+    return amounts::atoDrainAmount(rng, scale);
+  };
+}
+
+[[nodiscard]] auto cardSpendAt(double scale) {
+  return [scale](random::Rng &rng) {
+    return amounts::cardFraudSpend(rng, scale);
+  };
+}
+
 [[nodiscard]] double median(std::vector<double> v) {
   std::sort(v.begin(), v.end());
   return v[v.size() / 2];
@@ -52,8 +68,8 @@ template <class F> [[nodiscard]] std::vector<double> sample(F &&fn) {
 }
 
 void testDeterminism() {
-  const auto a = sample(amounts::atoDrainAmount);
-  const auto b = sample(amounts::atoDrainAmount);
+  const auto a = sample(atoAt(1.0));
+  const auto b = sample(atoAt(1.0));
   PL_CHECK_EQ(a.size(), b.size());
   for (std::size_t i = 0; i < a.size(); ++i) {
     PL_CHECK_EQ(a[i], b[i]);
@@ -82,7 +98,7 @@ void testCardTestCharge() {
 }
 
 void testCardFraudSpend() {
-  const auto v = sample(amounts::cardFraudSpend);
+  const auto v = sample(cardSpendAt(1.0));
   for (const double x : v) {
     PL_CHECK(x >= 1.0 && x <= 5000.0);
     PL_CHECK(isCents(x));
@@ -95,7 +111,7 @@ void testCardFraudSpend() {
 }
 
 void testAtoDrain() {
-  const auto v = sample(amounts::atoDrainAmount);
+  const auto v = sample(atoAt(1.0));
   std::size_t fiveFigure = 0;
   for (const double x : v) {
     PL_CHECK(x >= 10.0 && x <= 85000.0);
@@ -112,6 +128,38 @@ void testAtoDrain() {
   PL_CHECK(fiveFigure >= 20 && fiveFigure <= 200);
   std::printf("  PASS: ATO median %.2f mean %.2f five-figure tail %zu/%zu\n",
               med, avg, fiveFigure, v.size());
+}
+
+// H1 step 2b (class F): a backward era scale moves the whole
+// distribution — median and BOTH clamps — proportionally, so the tail
+// shape is era-invariant. The denomination samplers (cardTestCharge,
+// giftCardScamAmount) take no scale by design (fixed-nominal
+// lattices, authority U-6) — their gates above already pin that.
+// Scaled clamp bounds land on sub-cent values and the sampler rounds
+// to CENTS, so a low-clamped draw can sit up to half a cent below
+// `bound × s` — the band checks carry a one-cent tolerance.
+void testEraScaling() {
+  const double s = 0.533; // ~priceScale(1991)
+
+  const auto card = sample(cardSpendAt(s));
+  for (const double x : card) {
+    PL_CHECK(x >= 1.0 * s - 0.01 && x <= 5000.0 * s + 0.01);
+    PL_CHECK(isCents(x));
+  }
+  const double cardMed = median(card);
+  PL_CHECK(cardMed > 67.0 * s && cardMed < 91.0 * s);
+
+  const auto ato = sample(atoAt(s));
+  for (const double x : ato) {
+    PL_CHECK(x >= 10.0 * s - 0.01 && x <= 85000.0 * s + 0.01);
+    PL_CHECK(isCents(x));
+  }
+  const double atoMed = median(ato);
+  PL_CHECK(atoMed > 153.0 * s && atoMed < 207.0 * s);
+
+  std::printf("  PASS: era scale %.3f moves medians/clamps together "
+              "(card med %.2f, ATO med %.2f)\n",
+              s, cardMed, atoMed);
 }
 
 void testGiftCardScamAmount() {
@@ -154,6 +202,7 @@ int main() {
   testCardTestCharge();
   testCardFraudSpend();
   testAtoDrain();
+  testEraScaling();
   testGiftCardScamAmount();
   std::printf("OK\n");
   return 0;

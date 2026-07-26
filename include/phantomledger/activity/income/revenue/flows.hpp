@@ -9,6 +9,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -126,8 +127,12 @@ class Cycle {
 public:
   Cycle(random::Rng &rng, time::Window window, time::TimePoint monthStart,
         const transactions::Factory &factory) noexcept
-      : rng_(rng), window_(window), monthStart_(monthStart), factory_(factory) {
-  }
+      : rng_(rng), window_(window), monthStart_(monthStart), factory_(factory),
+        // H1 step 2b (class W): freelancer/business revenue rides the
+        // labor-income axis; the month's wage index turns the
+        // calibration-year draws into era-correct nominal amounts.
+        wageScale_(synth::econ::wageScale(
+            time::toCalendarDate(monthStart).year)) {}
 
   // -------- public verbs (one per flow type) --------
 
@@ -208,8 +213,13 @@ private:
 
   void append(const Key &src, const Key &dst, double amount,
               const detail::Rule &rule) {
+    // H1 step 2b: scale AFTER the draw (the floored draw carries the
+    // behavioral floor, so the floor scales with the amount), BEFORE
+    // the bill lattice — the $10 denomination itself stays nominal
+    // (class S), so a 1991 deposit is fewer bills, not scaled bills.
+    amount *= wageScale_;
     if (rule.roundTo > 0.0) {
-      amount = std::max(rule.floor,
+      amount = std::max(rule.floor * wageScale_,
                         std::round(amount / rule.roundTo) * rule.roundTo);
     }
     if (amount <= 0.0) {
@@ -237,6 +247,7 @@ private:
   time::Window window_;
   time::TimePoint monthStart_;
   const transactions::Factory &factory_;
+  double wageScale_ = 1.0;
   std::vector<transactions::Transaction> txns_;
 };
 

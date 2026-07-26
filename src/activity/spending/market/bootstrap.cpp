@@ -39,6 +39,14 @@ population::View buildPopulationView(const population::Census &census) {
   std::vector<entity::geography::GeoAreaId> homeAreas(census.homeAreas.begin(),
                                                       census.homeAreas.end());
 
+  // H2 step 2c: the per-person retirement day-index; H3: the death
+  // day-index (both from the blueprint's persona-timeline lane — both
+  // engines supply them identically).
+  std::vector<std::uint32_t> retirementDays(census.retirementDays.begin(),
+                                            census.retirementDays.end());
+  std::vector<std::uint32_t> deathDays(census.deathDays.begin(),
+                                       census.deathDays.end());
+
   std::vector<std::uint32_t> offsets;
   offsets.reserve(census.count + 1);
 
@@ -59,7 +67,8 @@ population::View buildPopulationView(const population::Census &census) {
 
   return population::View(std::move(primary), std::move(kinds),
                           std::move(objects), std::move(paydays),
-                          std::move(homeAreas));
+                          std::move(homeAreas), std::move(retirementDays),
+                          std::move(deathDays));
 }
 
 std::vector<double> buildMerchCdf(const entity::merchant::Catalog &catalog) {

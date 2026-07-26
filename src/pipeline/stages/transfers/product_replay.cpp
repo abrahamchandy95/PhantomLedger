@@ -30,7 +30,13 @@ ProductTxnEmitter::ProductTxnEmitter(
 std::vector<ProductTxnEmitter::Transaction>
 ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Holdings &holdings,
                             const PrimaryAccounts &primaryAccounts) {
-  insurance::Population population{.primaryAccounts = &primaryAccounts};
+  // H3 part 3c-ii: the timeline carrier — premiums stop at ACCOUNT
+  // CLOSURE (both engines construct this emitter from the same
+  // People, so the stops are engine-identical).
+  insurance::Population population{
+      .primaryAccounts = &primaryAccounts,
+      .timelines = people_->personas.timelines,
+  };
   insurance::PremiumGenerator generator{rng_, txf_};
   return generator.generate(window_, holdings.portfolios.insurance(),
                             holdings.portfolios.loans(), population);
@@ -40,7 +46,11 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
     ::PhantomLedger::transfers::insurance::ClaimRates rates,
     const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
-  insurance::Population population{.primaryAccounts = &primaryAccounts};
+  // H3 part 3c-ii: claims stop at DEATH (behavioral filing).
+  insurance::Population population{
+      .primaryAccounts = &primaryAccounts,
+      .timelines = people_->personas.timelines,
+  };
   ::PhantomLedger::random::RngFactory claimsFactory{seed_};
   insurance::ClaimScheduler scheduler{rates, rng_, txf_, claimsFactory};
   return scheduler.generate(window_, holdings.portfolios.insurance(),
@@ -50,7 +60,11 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
     const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
-  obligations::Population population{.primaryAccounts = &primaryAccounts};
+  // H3 part 3c-ii: loan/tax obligation events stop at ACCOUNT CLOSURE.
+  obligations::Population population{
+      .primaryAccounts = &primaryAccounts,
+      .timelines = people_->personas.timelines,
+  };
   obligations::Scheduler scheduler{rng_, txf_};
 
   // RAM R2.2.1c (derive, don't store): the whole-window stream is

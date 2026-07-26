@@ -9,6 +9,7 @@
 #include "phantomledger/synth/pii/membership.hpp"
 
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace PhantomLedger::exporter::standard {
@@ -42,11 +43,21 @@ writeCustomerRows(::PhantomLedger::exporter::csv::Writer &w,
                   const ::PhantomLedger::synth::pii::Membership &membership) {
   namespace ent = ::PhantomLedger::entity;
   namespace common = ::PhantomLedger::exporter::common;
+  namespace time_ns = ::PhantomLedger::time;
   for (ent::PersonId p = 1; p <= roster.count; ++p) {
     const auto created = membership.joinTs(p);
-    const auto createdStr = ::PhantomLedger::time::formatTimestamp(created);
+    const auto createdStr = time_ns::formatTimestamp(created);
+
+    // H3 part 3c-ii: ACCOUNT CLOSURE (death + settlement) when it
+    // lands inside the window; empty while still open at export.
+    const auto closed = membership.closedAt(p);
+    std::string closedStr;
+    if (closed != time_ns::TimePoint{}) {
+      closedStr = time_ns::formatTimestamp(closed);
+    }
+
     w.writeRow(common::renderCustomerId(p).view(),
-               std::string_view{createdStr});
+               std::string_view{createdStr}, std::string_view{closedStr});
   }
 }
 

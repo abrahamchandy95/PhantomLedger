@@ -5,6 +5,7 @@
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/transactions/draft.hpp"
@@ -24,6 +25,7 @@ namespace PhantomLedger::activity::income {
 namespace salary {
 
 namespace enumTax = ::PhantomLedger::taxonomies::enums;
+namespace tlx = ::PhantomLedger::synth::personas::timeline;
 
 inline const channels::Tag channel = channels::tag(channels::Legit::salary);
 
@@ -31,13 +33,18 @@ struct Rules {
   recurring::EmploymentRules employment{};
   // paidFraction is the fitScale TARGET for the mean selection
   // probability across ALL candidates, not a per-persona rate. It must
-  // sit at the persona table's weighted mean (sum of L-1 share x p
-  // below ~= .651) so the fitted scale ~= 1.0 and the table below IS
-  // the effective per-persona employment probability. At the old .95
-  // the fitted scale (~25x) silently clamped every persona except
-  // retirees to ~100% employment (household-econ-2026-07 finding;
-  // docs/fraud_model_audit.md L-4).
-  double paidFraction = 0.65;
+  // sit at the persona table's weighted mean so the fitted scale ~= 1.0
+  // and the table below IS the effective per-persona employment
+  // probability (household-econ-2026-07 finding; L-4).
+  //
+  // H2 step 2b re-derivation (declared; authority U-7): selection now
+  // keys on the timeline's WORKING-LIFE type, so the weighted mean is
+  //   .60x.98 (salaried) + .12x(.85x.98+.15x.08) (student destinations)
+  //   + .10x.02 (retiree) + .10x.08 (freelancer)
+  //   + .06x(.70x.98+.30x.08) (post-business destinations)
+  //   + .02x.12 (HNW)  ~= .744.
+  // The old .65 sat at the SEED-persona mean.
+  double paidFraction = 0.74;
 
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
@@ -73,6 +80,17 @@ struct PersonaProbability {
 // separate government benefits stream, RetirementTerms); freelancer/
 // smallBusiness stay low because their income arrives through the
 // L-10 revenue profiles, not payroll.
+//
+// H2 step 2b: the row applied to a person is their timeline's
+// WORKING-LIFE type (tl.working), not the seed — a student's
+// destination (salaried .85 / freelancer .15), a small-business
+// owner's post-close type (.70/.30). Paydays then run ONLY inside
+// [payrollStart(tl), tl.retirement): the student .40 row therefore
+// applies to nobody (study-period jobs are out of scope at H2 —
+// family support carries students; the "student wage tier" remains
+// the registered owner-side gap), and the retiree .02 row selects
+// people whose payroll interval is empty (zero rows) — both declared
+// in docs/h2_persona_timeline.md.
 inline constexpr auto kPersonaProbabilities =
     std::to_array<PersonaProbability>({
         {personas::Type::student, 0.40},
@@ -170,7 +188,8 @@ struct NumText {
 
 [[nodiscard]] inline double baseProbability(const Population &population,
                                             PersonId person) {
-  return internal::probabilityFor(population.persona(person));
+  // H2 step 2b: the probability of the WORKING-LIFE type (timeline).
+  return internal::probabilityFor(population.timeline(person).working);
 }
 
 class Paymaster {
@@ -187,17 +206,34 @@ public:
         salaryCalc_(salaryGrowth_) {}
 
   void pay(PersonId person, std::vector<transactions::Transaction> &out) {
+    // H2 step 2b: paydays exist only inside the person's payroll-active
+    // life [payrollStart(tl), tl.retirement) intersected with the
+    // window. Retired-for-the-whole-window people (seed retirees)
+    // return BEFORE the salary-level draw, students anchor their first
+    // job at the study->work transition, small-business owners at the
+    // business close. H3: the interval additionally ends at DEATH —
+    // no paycheck posts after tl.death (the last employer pay period
+    // is simply cut; final-pay settlement is a declared
+    // simplification away).
+    const auto &tl = payroll_.population.timeline(person);
+    const auto activeStart =
+        std::max(payroll_.timeframe.startDate, tlx::payrollStart(tl));
+    const auto activeEnd = std::min(
+        {payroll_.timeframe.end(), tl.retirement, tl.death});
+    if (activeEnd <= activeStart) {
+      return;
+    }
+
     const auto dst = payroll_.population.primary(person);
     const NumText personId(static_cast<unsigned>(person));
     const auto personIdText = personId.str();
 
-    auto state = start(personIdText);
-    const auto windowEnd = payroll_.timeframe.end();
+    auto state = start(personIdText, activeStart);
 
     while (true) {
-      payJob(state, dst, personIdText, out);
+      payJob(state, dst, personIdText, activeStart, activeEnd, out);
 
-      if (state.end >= windowEnd) {
+      if (state.end >= activeEnd) {
         break;
       }
 
@@ -206,23 +242,30 @@ public:
   }
 
 private:
-  [[nodiscard]] recurring::Employment start(std::string_view personId) const {
+  // `anchor` = the payroll-active start: the backdated first-job
+  // interval samples around it (for a mid-window career start the
+  // "job" nominally began earlier; paydates are clipped to the active
+  // interval, and the slightly longer tenure only feeds the
+  // idiosyncratic raise compounding — declared).
+  [[nodiscard]] recurring::Employment start(std::string_view personId,
+                                            time::TimePoint anchor) const {
     recurring::SalarySource annualSalary = [this]() -> double {
       return salaryModel_() * 12.0;
     };
 
-    return init_(personId, payroll_.timeframe.startDate,
-                 payroll_.counterparties.employers, annualSalary);
+    return init_(personId, anchor, payroll_.counterparties.employers,
+                 annualSalary);
   }
 
   void payJob(const recurring::Employment &state, const Key &dst,
-              std::string_view personId,
+              std::string_view personId, time::TimePoint activeStart,
+              time::TimePoint activeEnd,
               std::vector<transactions::Transaction> &out) {
     const auto &timeframe = payroll_.timeframe;
-    const auto segmentEnd = std::min(state.end, timeframe.end());
+    const auto segmentEnd = std::min(state.end, activeEnd);
 
     for (const auto &payDate :
-         recurring::paydatesForWindow(state, timeframe.startDate, segmentEnd)) {
+         recurring::paydatesForWindow(state, activeStart, segmentEnd)) {
       const auto ts =
           timestamps::jittered(payDate, state.payroll.postingLagDays,
                                timestamps::kSalaryTimestampJitter, rng_);

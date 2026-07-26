@@ -1,6 +1,7 @@
 #include "phantomledger/synth/products/terms/student_loan.hpp"
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"
@@ -86,6 +87,14 @@ StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
   const auto repaymentStart =
       ::PhantomLedger::time::addMonths(window_.start, -repaymentAgeMonths);
 
+  // H1 step 2b (class D): payment anchors at the repayment-start
+  // (origination) year's price level, fixed nominal after; pre-1990
+  // starts clamp to coverage (authority U-6).
+  const double nominalPayment =
+      payment *
+      ::PhantomLedger::synth::econ::priceScale(
+          ::PhantomLedger::time::toCalendarDate(repaymentStart).year);
+
   addInstallmentProduct(
       loans, obligations, window_,
       InstallmentIssue{
@@ -95,7 +104,7 @@ StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
           .start = repaymentStart,
           .termMonths = termMonths,
           .paymentDay = samplePaymentDay(*rng_),
-          .monthlyPayment = payment,
+          .monthlyPayment = nominalPayment,
           .terms = installmentTerms(terms_.delinquency),
       });
 

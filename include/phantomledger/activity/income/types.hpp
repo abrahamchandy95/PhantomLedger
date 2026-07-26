@@ -8,6 +8,7 @@
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -16,6 +17,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -73,10 +75,12 @@ public:
   Population(const entity::account::Registry &accounts,
              const entity::account::Ownership &ownership,
              const entity::behavior::Assignment &personas,
-             HubAccounts hubs = {}) noexcept
+             HubAccounts hubs = {},
+             const std::vector<synth::personas::timeline::Timeline>
+                 *timelines = nullptr) noexcept
       : count_(static_cast<std::uint32_t>(personas.byPerson.size())),
         hubs_(std::move(hubs)), accounts_(accounts), ownership_(ownership),
-        personas_(personas) {}
+        personas_(personas), timelines_(timelines) {}
 
   [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
     return accounts_;
@@ -138,6 +142,24 @@ public:
     return personas_.byPerson[person - 1];
   }
 
+  // H2 step 2b: the persona timeline (Pack::timelines). Salary
+  // selection/spans and the revenue month gate read persona-AT-DATE
+  // through this; hard-required where the income switch runs.
+  [[nodiscard]] bool hasTimelines() const noexcept {
+    return timelines_ != nullptr && timelines_->size() >= count_;
+  }
+
+  [[nodiscard]] const synth::personas::timeline::Timeline &
+  timeline(PersonId person) const {
+    assert(exists(person));
+    if (!hasTimelines()) {
+      throw std::invalid_argument(
+          "income::Population requires the persona-timeline carrier "
+          "(Pack::timelines, H2 step 2b)");
+    }
+    return (*timelines_)[person - 1];
+  }
+
   [[nodiscard]] bool owns(PersonId person, const Key &id) const noexcept {
     for (const auto ix : accountIndices(person)) {
       assert(ix < accounts_.records.size());
@@ -156,6 +178,7 @@ private:
   const entity::account::Registry &accounts_;
   const entity::account::Ownership &ownership_;
   const entity::behavior::Assignment &personas_;
+  const std::vector<synth::personas::timeline::Timeline> *timelines_ = nullptr;
 };
 
 struct PayrollCounterparties {

@@ -68,6 +68,18 @@ resolvedPersona(const SharedContext &ctx, entity::PersonId p) noexcept {
   return ctx.personaByPerson[p - 1];
 }
 
+// H3 part 3c-ii: the Customer status cell — "closed" once the person's
+// ACCOUNT CLOSURE (death + settlement) has arrived by the corpus end
+// (resolveEndOfWindowPersonas fills closedByPerson; contexts that never
+// resolve report everyone active — the pre-3c-ii value).
+[[nodiscard]] std::string_view statusFor(const SharedContext &ctx,
+                                         entity::PersonId p) noexcept {
+  if (p == 0 || p > ctx.closedByPerson.size()) {
+    return "active";
+  }
+  return ctx.closedByPerson[p - 1] != 0 ? "closed" : "active";
+}
+
 [[nodiscard]] const synth::pii::PoolSet &
 poolsFor(const SharedContext &ctx) noexcept {
   assert(ctx.pools != nullptr &&
@@ -130,10 +142,11 @@ namespace {
 
 inline void writeCustomerIdCells(exporter::csv::Writer &w,
                                  const entity::Key &customerKey,
-                                 personas::Type persona) {
+                                 personas::Type persona,
+                                 std::string_view status) {
   w.cell(::PhantomLedger::encoding::format(customerKey).view())
       .cell(identity::customerType(persona))
-      .cell(std::string_view{"active"});
+      .cell(status);
 }
 
 inline void writeDemographicCells(exporter::csv::Writer &w, entity::PersonId p,
@@ -169,7 +182,7 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
 
     const auto originCountry = locale::code(people.pii.at(p).country);
 
-    writeCustomerIdCells(w, customerKey, persona);
+    writeCustomerIdCells(w, customerKey, persona, statusFor(ctx, p));
     writeDemographicCells(w, p, persona);
     writeRiskAndOriginCells(w, identity::riskRating(isFraud, isMule, isVictim),
                             originCountry,

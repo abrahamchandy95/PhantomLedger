@@ -21,6 +21,10 @@ struct BenefitProgram {
   PersonaPredicate eligible = nullptr;
   entity::Key source{};
   channels::Tag channel{};
+  // H2 step 2b: retirement selects by the persona TIMELINE (retired by
+  // window end; deposits from the claiming date) instead of the static
+  // seed-persona predicate. Disability stays static (declared).
+  bool retiredByTimeline = false;
 };
 
 class BenefitsEmitter {
@@ -49,7 +53,8 @@ BenefitsEmitter::emit(const Terms &terms, const BenefitProgram &program) {
     return {};
   }
 
-  auto recipients = select(population_, rng_, terms, program.eligible);
+  auto recipients = select(population_, rng_, terms, program.eligible, window_,
+                           program.retiredByTimeline);
 
   auto out = deposits.emit(
       std::span<const Recipient>{recipients},

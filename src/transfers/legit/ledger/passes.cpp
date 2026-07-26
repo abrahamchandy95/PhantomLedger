@@ -90,6 +90,9 @@ buildPopulation(const blueprints::LegitBlueprint &plan,
       ownership,
       plan.personas().pack->assignment,
       std::move(hubs),
+      // H2 step 2b: the persona-timeline carrier — salary selection/
+      // spans and the revenue month gate read persona-AT-DATE.
+      &plan.personas().pack->timelines,
   };
 }
 
@@ -188,6 +191,12 @@ buildGovernmentPopulation(const blueprints::LegitBlueprint &plan,
       .personas = &plan.personas().pack->assignment,
       .accounts = &registry,
       .ownership = &ownership,
+      // H2 step 2a: the single-age-axis carrier — SSA deposit cohorts
+      // derive from the REAL birth day-of-month (authority U-7).
+      .birthDates = &plan.personas().pack->birthDates,
+      // H2 step 2b: retirement recipients select by RETIRED-AT-DATE
+      // with claim-date deposit onset.
+      .timelines = &plan.personas().pack->timelines,
   };
 }
 
@@ -320,6 +329,13 @@ buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
   cfg.issuerAccount = plan.counterparties().issuerAcct;
   cfg.window = windowFromPlan(plan);
   cfg.seed = plan.seed();
+
+  // H3 part 3c-ii: the timeline carrier — the CardCycleDriver stops
+  // each card's servicing at its owner's ACCOUNT CLOSURE. Filled here
+  // for BOTH engines (this function is the shared config source).
+  if (plan.personas().pack != nullptr) {
+    cfg.timelines = plan.personas().pack->timelines;
+  }
 
   if (plan.allAccounts() != nullptr) {
     cfg.primaryAccounts.reserve(plan.primaryAcctRecordIx().size());

@@ -9,11 +9,13 @@
 #include "phantomledger/activity/spending/simulator/thread_runner.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 #include "phantomledger/transfers/legit/blueprints/paydays.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
 #include "phantomledger/transfers/legit/routines/spending/simulator_wiring.hpp"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -79,7 +81,75 @@ struct CensusScratch {
   std::vector<plPop::PaydaySet> paydaySets;
 
   std::vector<std::vector<std::uint32_t>> paydayStorage;
+
+  // H2 step 2c / H3: per-person retirement + death day-index storage
+  // (see buildEventDays).
+  std::vector<std::uint32_t> retirementDays;
+  std::vector<std::uint32_t> deathDays;
 };
+
+// H2 step 2c + H3 (macro-history-v1): the window day-indices of the
+// retirement consumption step and of DEATH, from the blueprint pack's
+// persona-timeline lane — BOTH engines ride the same blueprint, so the
+// oracle and the windowed path carry identical values (unlike the
+// homeAreas carrier there is no empty-on-oracle mode).
+//
+// Retirement sentinel (kNoRetirementDay) for: seed retirees and
+// highNetWorth (a seed retiree's archetype already encodes
+// retired-calibrated spending — the step models only the IN-WINDOW
+// transition), claims at/after the window end, and packs without a
+// timeline lane (defensive; the step then simply never binds).
+//
+// Death sentinel (kNoDeathDay) only for window survivors and
+// carrier-less packs — death has NO persona exemptions.
+struct EventDays {
+  std::vector<std::uint32_t> retirement;
+  std::vector<std::uint32_t> death;
+};
+
+[[nodiscard]] EventDays
+buildEventDays(const blueprints::LegitBlueprint &plan,
+               std::uint32_t personCount) {
+  EventDays out{
+      .retirement =
+          std::vector<std::uint32_t>(personCount, plPop::kNoRetirementDay),
+      .death = std::vector<std::uint32_t>(personCount, plPop::kNoDeathDay),
+  };
+
+  const auto *pack = plan.personas().pack;
+  if (pack == nullptr || pack->timelines.size() != personCount ||
+      plan.days() <= 0) {
+    return out;
+  }
+
+  const std::int64_t startEpoch = time::toEpochSeconds(plan.startDate());
+  const std::int64_t endEpochExcl =
+      startEpoch + static_cast<std::int64_t>(plan.days()) * 86'400;
+
+  const auto dayIndexOf = [&](std::int64_t epoch) {
+    return static_cast<std::uint32_t>(
+        std::max<std::int64_t>(0, (epoch - startEpoch) / 86'400));
+  };
+
+  for (std::uint32_t i = 0; i < personCount; ++i) {
+    const auto &tl = pack->timelines[i];
+
+    if (tl.seed != personas::Type::retiree &&
+        tl.seed != personas::Type::highNetWorth) {
+      const std::int64_t claim = time::toEpochSeconds(tl.retirement);
+      if (claim < endEpochExcl) {
+        out.retirement[i] = dayIndexOf(claim);
+      }
+    }
+
+    const std::int64_t death = time::toEpochSeconds(tl.death);
+    if (death < endEpochExcl) {
+      out.death[i] = dayIndexOf(death);
+    }
+  }
+
+  return out;
+}
 
 [[nodiscard]] CensusScratch
 buildCensusScratch(const blueprints::LegitBlueprint &plan,
@@ -118,6 +188,10 @@ buildCensusScratch(const blueprints::LegitBlueprint &plan,
         .days = std::span<const std::uint32_t>(days.data(), days.size()),
     });
   }
+
+  auto eventDays = buildEventDays(plan, out.personCount);
+  out.retirementDays = std::move(eventDays.retirement);
+  out.deathDays = std::move(eventDays.death);
 
   return out;
 }
@@ -180,6 +254,13 @@ buildSpendingCards(const entity::card::Registry *creditCards,
   // population View. Empty on the monolith oracle (no People threaded);
   // the windowed + test paths supply it.
   sources.census.homeAreas = homeAreas;
+
+  // H2 step 2c / H3: the retirement + death day-indices, from the
+  // blueprint pack's timeline lane (identical on both engines).
+  sources.census.retirementDays = std::span<const std::uint32_t>(
+      scratch.retirementDays.data(), scratch.retirementDays.size());
+  sources.census.deathDays = std::span<const std::uint32_t>(
+      scratch.deathDays.data(), scratch.deathDays.size());
 
   sources.network.catalog = payees.merchants;
   sources.network.social = nullptr;
@@ -260,6 +341,8 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
         .primaryAccounts = &cards_.primaryAccounts,
         .issuerAccount = cards_.issuerAccount,
         .window = cards_.window,
+        // H3 part 3c-ii: card servicing stops at account closure.
+        .timelines = cards_.timelines,
     };
     cardDriver.emplace(
         *cards_.rules, execution.txf,

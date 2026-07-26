@@ -2,6 +2,7 @@
 
 #include "phantomledger/app/options.hpp"
 #include "phantomledger/app/parsers.hpp"
+#include "phantomledger/synth/econ/catalog.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -41,11 +42,16 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "(default: 0xDEADBEEF)\n"
       "  --start YYYY-MM-DD                Simulation start date "
       "(default: 2025-01-01)\n"
+      "                                    card-fraud windows must lie "
+      "inside the\n"
+      "                                    pinned economic era "
+      "(docs/era_data_provenance.md;\n"
+      "                                    canonical --start 1991-01-01)\n"
       "  --help, -h                        Show this message\n"
       "\n"
       "Environment:\n"
       "  PL_PG='host=... port=... dbname=...'\n"
-      "      PostgreSQL conninfo (default: dbname=phantomledger). A\n"
+      "      PostgreSQL conninfo (default: %s). A\n"
       "      reachable server is REQUIRED; the run fails fast before any\n"
       "      generation when no server answers. Reruns with the same\n"
       "      seed and config rewrite byte-identical content.\n"
@@ -55,7 +61,7 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       "                                    harness escape; produces only\n"
       "                                    the stream digest; aml-txn-\n"
       "                                    edges cannot run this way)\n",
-      prog);
+      prog, pl::app::kDefaultPgConninfo);
 }
 
 } // namespace
@@ -165,6 +171,28 @@ pl::app::RunOptions parse(int argc, char **argv) {
     }
 
     die("Unknown argument: {}", arg);
+  }
+
+  // Era lock (macro-history-v1 H0.6, owner directive #3): card-fraud
+  // realism is anchored to the frozen economic era EMBEDDED in
+  // synth/econ/era_data.hpp, so an out-of-era window fails fast here
+  // instead of silently simulating years the model has no data for.
+  // The bounds come from the pinned series (appending fully published
+  // years to the embedded data widens the lock — no engine change);
+  // other use cases stay era-agnostic until macro-history H1 wiring.
+  if (opts.usecase == pl::app::UseCase::cardFraud) {
+    const auto &era = pl::synth::econ::macroSeries();
+    if (!pl::app::windowInsideEra(opts, era.firstYear(), era.lastYear())) {
+      const auto last = pl::app::lastSimulatedDay(opts);
+      die("--usecase card-fraud is time-locked to the pinned economic era "
+          "{}-{}: the requested window {:04}-{:02}-{:02} + {} days runs "
+          "through {:04}-{:02}-{:02}. Pick a start/days inside the era "
+          "(canonical: --start 1991-01-01) or extend the pinned series "
+          "(docs/era_data_provenance.md).",
+          era.firstYear(), era.lastYear(), opts.startDate.year,
+          opts.startDate.month, opts.startDate.day, opts.days, last.year,
+          last.month, last.day);
+    }
   }
 
   return opts;

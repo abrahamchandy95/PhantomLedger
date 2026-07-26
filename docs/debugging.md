@@ -104,8 +104,9 @@ PL_LOG_LEVEL=debug PL_LOG_TOPICS=spending,liquidity ./build/phantomledger ...
 - `PL_LOG_TOPICS` = comma-separated topic names, or `all`. When set,
   only the listed topics are enabled; unset means all topics.
 
-Two more env vars matter for runs generally: `PL_PG` selects the
-PostgreSQL server (see README Usage), and `PL_FILE_ONLY=1` is test
+Two more env vars matter for runs generally: `PL_PG` overrides the
+PostgreSQL connection (unset/empty uses the code default
+`dbname=phantomledger`; see README Usage), and `PL_FILE_ONLY=1` is test
 infrastructure only (serverless corpus-digest escape).
 
 `PL_LOG_EVERY_N(level, topic, n, ...)` exists in code for rate-limited

@@ -5,6 +5,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -17,6 +18,22 @@ namespace PhantomLedger::transfers::legit::routines::family::helpers {
                                            double floor) noexcept {
   const double rounded = primitives::utils::roundMoney(amount);
   return rounded >= floor ? rounded : 0.0;
+}
+
+/// H1 step 2b (class P): realize a calibration-year family amount at
+/// the event date's CPI level. Applied AFTER sanitizeAmount, so the
+/// behavioral floor scales with the amounts it screens (authority
+/// U-6) and a sanitized 0 stays 0.
+[[nodiscard]] inline double nominalAt(double amount,
+                                      std::int64_t epochSec) noexcept {
+  if (amount == 0.0) {
+    return 0.0;
+  }
+  const auto year = ::PhantomLedger::time::toCalendarDate(
+                        ::PhantomLedger::time::fromEpochSeconds(epochSec))
+                        .year;
+  return primitives::utils::roundMoney(
+      amount * ::PhantomLedger::synth::econ::priceScale(year));
 }
 
 [[nodiscard]] inline std::int64_t

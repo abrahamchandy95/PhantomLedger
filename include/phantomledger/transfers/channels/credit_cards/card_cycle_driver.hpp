@@ -6,6 +6,7 @@
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -21,12 +22,26 @@
 
 namespace PhantomLedger::transfers::credit_cards {
 
+// H3 part 3c-ii (authority U-8 addendum): card servicing stops at the
+// last statement close at least this many days before the owner's
+// ACCOUNT CLOSURE — the session's maximum post-close tail is grace
+// (25d) + late-payment lateDaysMax (20d) + the fee morning (~1d), so
+// no interest/payment/late-fee row can post at or after closure.
+inline constexpr int kCardSettleTailDays = 50;
+
 struct DriverInputs {
   const entity::card::Registry *cards = nullptr;
   const std::unordered_map<entity::PersonId, entity::Key> *primaryAccounts =
       nullptr;
   entity::Key issuerAccount{};
   time::Window window{};
+
+  // H3 part 3c-ii: the persona-timeline carrier (PersonId-1 indexed).
+  // Each card's statement-close ladder truncates at the OWNER's
+  // closure minus kCardSettleTailDays; the per-card rng lanes are
+  // isolated, so every other card's stream is byte-identical. Empty
+  // (the default) stands the truncation down.
+  std::span<const synth::personas::timeline::Timeline> timelines{};
 };
 
 // The concrete implementation of the spending simulator's

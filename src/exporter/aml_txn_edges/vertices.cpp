@@ -51,6 +51,17 @@ resolvedPersona(const aml::vertices::SharedContext &ctx,
   return ctx.personaByPerson[p - 1];
 }
 
+// H3 part 3c-ii: the shared context's closure resolution (see
+// aml/vertices.hpp resolveEndOfWindowPersonas) — "closed" once the
+// person's ACCOUNT CLOSURE has arrived by the corpus end.
+[[nodiscard]] std::string_view statusFor(const aml::vertices::SharedContext &ctx,
+                                         entity::PersonId p) noexcept {
+  if (p == 0 || p > ctx.closedByPerson.size()) {
+    return "active";
+  }
+  return ctx.closedByPerson[p - 1] != 0 ? "closed" : "active";
+}
+
 [[nodiscard]] double riskScoreFor(bool isFraud, bool isMule,
                                   bool isVictim) noexcept {
   if (isFraud) {
@@ -136,7 +147,7 @@ void writeCustomerRows(exporter::csv::Writer &w, const pipe::People &people,
         .cell(cid)
         .cell(exporter::aml::identity::customerType(persona))
         .cell(riskScoreFor(isFraud, isMule, isVictim))
-        .cell(std::string_view{"active"})
+        .cell(statusFor(ctx, p))
         .cell(time_ns::formatTimestamp(
             exporter::aml::identity::onboardingDate(p, simStart)))
         .cell(locale::code(people.pii.at(p).country));

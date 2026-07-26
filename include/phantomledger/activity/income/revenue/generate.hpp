@@ -5,6 +5,7 @@
 #include "phantomledger/activity/income/types.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 
@@ -55,7 +56,26 @@ private:
 
     const auto personKey = std::to_string(static_cast<unsigned>(person));
 
+    // H2 step 2b: revenue rides the persona-AT-DATE — a month emits
+    // only while the person still IS the seed persona the plan was
+    // assigned for. A freelancer's revenue stops at the claiming
+    // date, a small-business owner's at the business close (their
+    // post-close payroll starts there, salary.hpp), HNW investment
+    // income never stops (exempt seed). H3: no month emits at or
+    // after the person's death — including the retiree/HNW plans
+    // that are otherwise perpetual (estates handle what remains; the
+    // H3 wiring rounds). Each month has its own content-keyed lane,
+    // so skipped months perturb nothing.
+    namespace tlx = ::PhantomLedger::synth::personas::timeline;
+    const auto &tl = book_.population.timeline(person);
+
     for (const auto &monthStart : book_.timeframe.monthStarts) {
+      if (!tlx::aliveAt(tl, monthStart)) {
+        break;
+      }
+      if (tlx::personaAt(tl, monthStart) != plan->persona) {
+        continue;
+      }
       runMonth(*plan, personKey, monthStart);
     }
   }

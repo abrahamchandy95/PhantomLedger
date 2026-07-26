@@ -5,7 +5,9 @@
 
 #include <iterator>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace PhantomLedger::transfers::legit::routines::relatives {
 
@@ -28,6 +30,46 @@ void appendRoutineOutput(std::vector<transactions::Transaction> &&from,
   out.reserve(out.size() + from.size());
   out.insert(out.end(), std::make_move_iterator(from.begin()),
              std::make_move_iterator(from.end()));
+}
+
+// H3 (macro-history-v1): the dead neither give nor receive family
+// transfers. Applied to the GIFT routines' combined output BEFORE the
+// estate/funeral routine appends (whose rows are post-death BY
+// DESIGN). Attribution goes through the registry's account->owner
+// records; external XF family accounts carry no owner, so gifts to
+// relatives who bank elsewhere are untouched (external members'
+// deaths are unmodeled — declared). Stands down without the timeline
+// lane or a registry (hand-built runs).
+void dropDeadPartyRows(const family_rt::TransferRun &run,
+                       std::vector<transactions::Transaction> &rows) {
+  const auto &kin = run.kinship();
+  const auto *registry = run.accounts().registryPtr();
+  if (!kin.hasTimelines() || registry == nullptr || rows.empty()) {
+    return;
+  }
+
+  std::unordered_map<entity::Key, entity::PersonId, std::hash<entity::Key>>
+      ownerOf;
+  ownerOf.reserve(registry->records.size());
+  for (const auto &rec : registry->records) {
+    if (rec.owner != entity::invalidPerson && rec.owner >= 1 &&
+        rec.owner <= static_cast<entity::PersonId>(kin.personCount())) {
+      ownerOf.emplace(rec.id, rec.owner);
+    }
+  }
+
+  const auto deadAt = [&](const entity::Key &account, std::int64_t ts) {
+    const auto it = ownerOf.find(account);
+    if (it == ownerOf.end()) {
+      return false;
+    }
+    return ts >= ::PhantomLedger::time::toEpochSeconds(
+                     kin.timeline(it->second).death);
+  };
+
+  std::erase_if(rows, [&](const transactions::Transaction &t) {
+    return deadAt(t.source, t.timestamp) || deadAt(t.target, t.timestamp);
+  });
 }
 
 } // namespace
@@ -138,7 +180,14 @@ family_rt::KinshipView
 makeKinship(const blueprints::LegitBlueprint &plan,
             const family_relg::Graph &graph,
             std::span<const double> multipliers) noexcept {
-  return family_rt::KinshipView{graph, personasView(plan), multipliers};
+  // H3: the persona-timeline lane rides the kinship view — the
+  // death-caused estate/funeral routine and the dead-party filter
+  // read tl.death through it (personasView already guarantees the
+  // pack is non-null here).
+  return family_rt::KinshipView{
+      graph, personasView(plan), multipliers,
+      std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>{
+          plan.personas().pack->timelines}};
 }
 
 family_rt::FamilyAccountDirectory
@@ -246,6 +295,11 @@ generateFamilyTxns(const family_rt::TransferRun &run,
   appendRoutineOutput(family_rt::grandparent_gifts::generate(
                           run, transferModel.grandparentGifts),
                       out);
+
+  // H3: drop gift rows with a dead party BEFORE the estate/funeral
+  // routine appends its (deliberately post-death) rows. Each gift
+  // routine's rng lanes are untouched — only emitted rows disappear.
+  dropDeadPartyRows(run, out);
 
   appendRoutineOutput(
       family_rt::inheritance::generate(run, transferModel.inheritance), out);

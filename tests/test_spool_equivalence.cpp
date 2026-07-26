@@ -27,6 +27,9 @@
 
 #include "window_leg_support.hpp"
 
+#include "phantomledger/pipeline/stages/transfers/base_run_set.hpp"
+#include "phantomledger/transfers/legit/ledger/streams.hpp"
+
 #include <bit>
 #include <cstdint>
 #include <cstdio>
@@ -220,6 +223,55 @@ void codecAndCursorUnits() {
   std::fflush(stdout);
 }
 
+void baseRunSetUnits() {
+  std::printf("  unit: bounded base timestamp/audit run set ...\n");
+  std::fflush(stdout);
+
+  // Timestamp-sorted but deliberately reverse audit order inside the first
+  // tie. A target of two rows lands inside the three-row timestamp group;
+  // BaseRunSet must extend the run through the tie and still reproduce the
+  // whole-vector reference sort exactly.
+  const std::vector<Txn> timestampRows{
+      makeRow(100, 3, 9, 30.0), makeRow(100, 2, 9, 20.0),
+      makeRow(100, 1, 9, 10.0), makeRow(200, 7, 9, 70.0),
+      makeRow(300, 5, 9, 50.0), makeRow(300, 4, 9, 40.0),
+      makeRow(400, 8, 9, 80.0),
+  };
+  const auto expected =
+      pl::transfers::legit::ledger::sortForReplay(timestampRows);
+
+  xfer::BaseRunSet runs(timestampRows, /*targetAuditRunRows=*/2);
+  PL_CHECK(runs.rows() == timestampRows.size());
+  PL_CHECK(runs.timestampReplay().rowsSpooled() == timestampRows.size());
+  PL_CHECK(runs.timestampBytes() ==
+           timestampRows.size() * xfer::BaseReplaySpool::kRecordBytes);
+  PL_CHECK(runs.auditBytes() ==
+           timestampRows.size() * xfer::BinaryCandidateSpool::kRecordBytes);
+  PL_CHECK(runs.peakAuditRunRows() == 3);
+
+  const auto cursor = runs.openAuditCursor();
+  std::vector<Txn> actual;
+  cursor->emitUntil(kMaxBound, actual);
+  checkRowsBitIdentical(expected, actual);
+
+  // The timestamp-order precondition is a hard composition gate. Reject it
+  // before writing either run so a future caller cannot silently corrupt the
+  // concatenation proof.
+  const std::vector<Txn> unsorted{makeRow(200, 1, 2, 1.0),
+                                  makeRow(100, 1, 2, 1.0)};
+  bool rejected = false;
+  try {
+    xfer::BaseRunSet bad(unsorted, 2);
+    (void)bad;
+  } catch (const std::invalid_argument &) {
+    rejected = true;
+  }
+  PL_CHECK(rejected);
+
+  std::printf("  unit: PASS\n");
+  std::fflush(stdout);
+}
+
 } // namespace
 
 int main() {
@@ -227,6 +279,7 @@ int main() {
               "equivalence ===\n");
 
   codecAndCursorUnits();
+  baseRunSetUnits();
 
   constexpr std::uint64_t seed = 20260721;
 

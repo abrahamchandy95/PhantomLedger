@@ -70,8 +70,12 @@ inline constexpr double kCeiling = 1.10;
   double cycleMult = 1.0 - cycleDown + cycleUp;
   cycleMult = std::clamp(cycleMult, throttle.absoluteFloor, kCycleCeiling);
 
+  // H1 step 2b: the $75 cash reference floor is a BEHAVIORAL screen —
+  // it scales with the era's price level so the cash-ratio damping
+  // binds identically in 1991 and 2019 dollars (authority U-6).
   constexpr double kCashRefFloor = 75.0;
-  const double cashRef = std::max(kCashRefFloor, snap.baselineCash);
+  const double cashRef =
+      std::max(kCashRefFloor * snap.priceScale, snap.baselineCash);
   const double cashRatio =
       std::clamp(snap.availableToSpend / cashRef, 0.0, 2.0);
 

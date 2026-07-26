@@ -36,6 +36,13 @@ public:
         households_(reproduceHouseholds(context.worldSeed, personas)) {
     assert(context_.pools != nullptr &&
            "pii::Generator: IdentityContext::pools must be set");
+    // H2 step 2a (single age axis): the Dob RENDERS from the carrier
+    // drawn on the isolated {"dob", personId} lanes — the shared
+    // entity stream draws no dob (authority U-7).
+    assert(context_.birthDates != nullptr &&
+           context_.birthDates->size() == personas.byPerson.size() &&
+           "pii::Generator: IdentityContext::birthDates must carry one "
+           "birth date per person (Pack::birthDates)");
   }
 
   [[nodiscard]] entity::pii::Roster make();
@@ -81,6 +88,17 @@ private:
     return residence_.sample(rng, country);
   }
 
+  // H2 step 2a: the carrier's calendar date rendered as the record's
+  // Dob — the SAME age the SSA cohort and the persona timeline read.
+  [[nodiscard]] entity::pii::Dob dobFromCarrier(entity::PersonId person) const {
+    const auto &bd = (*context_.birthDates)[static_cast<std::size_t>(person) - 1];
+    return entity::pii::Dob{
+        static_cast<std::int16_t>(bd.year),
+        static_cast<std::uint8_t>(bd.month),
+        static_cast<std::uint8_t>(bd.day),
+    };
+  }
+
   random::Rng *rng_;
   const entity::behavior::Assignment *personas_;
   IdentityContext context_;
@@ -99,8 +117,11 @@ inline entity::pii::Record Generator::buildRecord(entity::PersonId person) {
   rec.name = sampleName(*rng_, pool);
   rec.ssn = sampleSsn(*rng_, country);
   rec.phone = samplePhone(*rng_, country);
-  rec.dob =
-      sampleDob(*rng_, personas_->byPerson[person - 1], context_.simStart);
+  // H2 step 2a: dob comes from the single-age-axis carrier, NOT the
+  // shared stream (the two in-stream dob draws are gone — every draw
+  // after this point in the stream shifted once, absorbed by the H2
+  // re-pin).
+  rec.dob = dobFromCarrier(person);
   rec.address = sampleAddress(*rng_, pool);
   rec.address.geoArea = homeAreaFor(person, country);
   return rec;

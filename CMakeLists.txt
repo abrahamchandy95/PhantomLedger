@@ -87,13 +87,27 @@ set(PL_SYNTH_PII_SOURCES
     src/synth/pii/correlate.cpp
 )
 
-# Canonical geographic catalogue (geo-causal-v1). Loader for the pinned
-# data file (data/geo/us_cities.csv) + population-weighted home
-# placement over it. Consumed by PII synthesis (homes), merchant
-# synthesis (outlets), and the exporters.
+# Canonical geographic catalogue (geo-causal-v1). Builds the catalogue
+# from the EMBEDDED constexpr rows in
+# include/phantomledger/synth/geo/geo_data.hpp — the pinned artifact
+# that replaced the retired data/geo/us_cities.csv (owner directive:
+# minimize repo data files; the embed round is byte-neutral). Consumed
+# by PII synthesis (homes), merchant synthesis (outlets), and the
+# exporters.
 set(PL_SYNTH_GEO_SOURCES
     src/synth/geo/catalog.cpp
     src/synth/geo/residence.cpp
+)
+
+# Economic era reference series (macro-history-v1). Builds the typed
+# era views from the EMBEDDED constexpr tables in
+# include/phantomledger/synth/econ/era_data.hpp — the pinned artifact
+# that replaced the retired data/econ CSVs (owner directive: minimize
+# repo data files). Validated + pinned by test_econ_catalog; UNREAD by
+# generation until the named H1+ model rounds.
+# Provenance contract: docs/era_data_provenance.md.
+set(PL_SYNTH_ECON_SOURCES
+    src/synth/econ/catalog.cpp
 )
 
 set(PL_SYNTH_PRODUCTS_SOURCES
@@ -276,6 +290,15 @@ set(PL_EXPORTER_CARD_FRAUD_SOURCES
     src/exporter/card_fraud/export.cpp
 )
 
+# Era reference tables (macro-history-v1 H0.5). Renders the EMBEDDED
+# era data (synth/econ/era_data.hpp) as direct tables in schema econ
+# for EVERY use case: econ.macro_annual, econ.mortality,
+# econ.provenance. Their own schema keeps the public-schema table
+# golden untouched; content is pinned serverlessly by test_econ_tables.
+set(PL_EXPORTER_ECON_SOURCES
+    src/exporter/econ/export.cpp
+)
+
 # ---------------------------------------------------------------------
 # 7. Application Entry
 # ---------------------------------------------------------------------
@@ -298,6 +321,7 @@ set(PL_ALL_SOURCES
     ${PL_DIAGNOSTICS_SOURCES}
     ${PL_SYNTH_PII_SOURCES}
     ${PL_SYNTH_GEO_SOURCES}
+    ${PL_SYNTH_ECON_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
@@ -312,6 +336,7 @@ set(PL_ALL_SOURCES
     ${PL_EXPORTER_MULE_ML_SOURCES}
     ${PL_EXPORTER_AML_SOURCES}
     ${PL_EXPORTER_CARD_FRAUD_SOURCES}
+    ${PL_EXPORTER_ECON_SOURCES}
     ${PL_APP_SOURCES}
 )
 
@@ -449,25 +474,23 @@ target_link_libraries(pl_primitives PRIVATE PostgreSQL::PostgreSQL)
 pl_add_job_library(pl_diagnostics ${PL_DIAGNOSTICS_SOURCES})
 target_link_libraries(pl_diagnostics PUBLIC pl_primitives)
 
-# The static universe: people/PII, canonical geography, products,
-# devices/IPs/rings, family and social graphs. One library, several
-# layer trees (synth and relationships are mutually-dependent halves of
-# world synthesis).
+# The static universe: people/PII, canonical geography (EMBEDDED in
+# geo_data.hpp), the economic era series (EMBEDDED in era_data.hpp),
+# products, devices/IPs/rings, family and social graphs. One library,
+# several layer trees (synth and relationships are mutually-dependent
+# halves of world synthesis). The repo carries NO reference data
+# files: pinned reference data is constexpr code (owner directive
+# 2026-07-24; large future datasets get their own sign-off).
 pl_add_job_library(pl_world
     ${PL_SYNTH_PII_SOURCES}
     ${PL_SYNTH_GEO_SOURCES}
+    ${PL_SYNTH_ECON_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
 )
 target_link_libraries(pl_world PUBLIC pl_primitives pl_diagnostics)
 target_link_libraries(pl_world PRIVATE faker-cxx)
-
-# geo-causal-v1: the geography catalogue lives in a pinned DATA FILE;
-# its path is fixed at BUILD TIME (compile definition, NOT a CLI flag).
-# synth::geo::geography() (src/synth/geo/catalog.cpp) loads it once.
-target_compile_definitions(pl_world PRIVATE
-    PL_GEO_DATA="${CMAKE_CURRENT_SOURCE_DIR}/data/geo/us_cities.csv")
 
 # Balance clearing: the authoritative ledger and LOC accrual.
 pl_add_job_library(pl_ledger ${PL_TRANSACTIONS_SOURCES})
@@ -498,14 +521,16 @@ target_link_libraries(pl_transfers PUBLIC pl_activity pl_ledger)
 pl_add_job_library(pl_pipeline ${PL_PIPELINE_SOURCES})
 target_link_libraries(pl_pipeline PUBLIC pl_transfers)
 
-# Corpus delivery: the four exporters, rendering, PostgreSQL sinks and
-# the read-back scan.
+# Corpus delivery: the five exporters (standard, mule-ml, the aml
+# family, card-fraud, and the shared era-reference tables), rendering,
+# PostgreSQL sinks and the read-back scan.
 pl_add_job_library(pl_export
     ${PL_EXPORTER_CORE_SOURCES}
     ${PL_EXPORTER_STANDARD_SOURCES}
     ${PL_EXPORTER_MULE_ML_SOURCES}
     ${PL_EXPORTER_AML_SOURCES}
     ${PL_EXPORTER_CARD_FRAUD_SOURCES}
+    ${PL_EXPORTER_ECON_SOURCES}
 )
 target_link_libraries(pl_export PUBLIC pl_pipeline)
 target_link_libraries(pl_export PRIVATE PostgreSQL::PostgreSQL)

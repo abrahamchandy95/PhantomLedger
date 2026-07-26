@@ -2,6 +2,8 @@
 #include "phantomledger/entities/products/event.hpp"
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/obligations.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"
@@ -19,6 +21,14 @@ namespace {
 namespace product = ::PhantomLedger::entity::product;
 namespace counterparties = ::PhantomLedger::counterparties;
 namespace channels = ::PhantomLedger::channels;
+
+// H1 step 2b (class D, realization-indexed CHOICE): IRL tax brackets
+// index annually, so the calibration-year draw realizes at each due
+// date's CPI level instead of the origination anchor (authority U-6).
+[[nodiscard]] double nominalTaxAmount(double amount, int year) {
+  return ::PhantomLedger::primitives::utils::roundMoney(
+      amount * ::PhantomLedger::synth::econ::priceScale(year));
+}
 
 void emitTaxQuarterlies(product::ObligationStream &stream,
                         ::PhantomLedger::entity::PersonId person,
@@ -54,7 +64,7 @@ void emitTaxQuarterlies(product::ObligationStream &stream,
                       .direction = product::Direction::outflow,
                       .counterpartyAcct =
                           counterparties::key(counterparties::Tax::irsTreasury),
-                      .amount = quarterlyAmount,
+                      .amount = nominalTaxAmount(quarterlyAmount, actualYear),
                       .timestamp = due,
                       .channel = channels::tag(channels::Product::taxEstimated),
                       .productType = product::ProductType::tax,
@@ -127,7 +137,7 @@ void emitTaxFiling(product::ObligationStream &stream,
                                  .direction = direction,
                                  .counterpartyAcct = counterparties::key(
                                      counterparties::Tax::irsTreasury),
-                                 .amount = filing.amount,
+                                 .amount = nominalTaxAmount(filing.amount, year),
                                  .timestamp = due,
                                  .channel = channel,
                                  .productType = product::ProductType::tax,

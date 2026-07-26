@@ -251,11 +251,19 @@ sampleProtectionType(random::Rng &rng, const PersonaProtectionShares &shares) {
 
 } // namespace detail
 
+// H1 step 2b (class P stocks): opening balances, overdraft fees,
+// protection buffers and LOC limits are calibration-year draws scaled
+// ONCE by the WINDOW-START year's price level (`stockScale`, supplied
+// by the caller — OpeningBook::build derives it from plan.startDate();
+// the 1.0 default keeps direct test constructions calibration-flat).
+// Scaling multiplies AFTER each draw, so RNG order is untouched
+// (authority U-6).
 class OpeningBalanceSeeder {
 public:
   OpeningBalanceSeeder(Ledger &ledger, random::Rng &rng,
-                       const BalanceRules &rules = {}) noexcept
-      : ledger_{&ledger}, rng_{&rng}, rules_{rules} {}
+                       const BalanceRules &rules = {},
+                       double stockScale = 1.0) noexcept
+      : ledger_{&ledger}, rng_{&rng}, rules_{rules}, stockScale_{stockScale} {}
 
   void seedHubAccount(Ledger::Index idx) const {
     ledger().cash(idx) = detail::kHubCash;
@@ -268,18 +276,19 @@ public:
     const auto profile = bufferProfile(persona.archetype.type);
 
     // 1. Cash balance.
-    ledger().cash(idx) = rules_.sampleMoney(rng(), profile.balanceMedian,
-                                            rules_.initialBalanceSigma, 1.0);
+    ledger().cash(idx) = scaleStock(rules_.sampleMoney(
+        rng(), profile.balanceMedian, rules_.initialBalanceSigma, 1.0));
 
     // 2-3. Bank tier and overdraft fee amount.
     const auto tier = detail::sampleTier(rng(), rules_.tierWeights);
-    const double fee = detail::sampleOverdraftFee(rng(), tier, rules_);
+    const double fee =
+        scaleStock(detail::sampleOverdraftFee(rng(), tier, rules_));
     ledger().setBankTier(idx, tier, fee);
 
     // 4-5. Protection type and buffer amount.
     const auto protection = detail::sampleProtectionType(rng(), profile.shares);
-    const double buffer =
-        detail::sampleBufferAmount(rng(), protection, profile, rules_);
+    const double buffer = scaleStock(
+        detail::sampleBufferAmount(rng(), protection, profile, rules_));
     ledger().setProtection(idx, protection, buffer);
 
     // 6. LOC-specific parameters.
@@ -300,9 +309,14 @@ private:
   [[nodiscard]] Ledger &ledger() const noexcept { return *ledger_; }
   [[nodiscard]] random::Rng &rng() const noexcept { return *rng_; }
 
+  [[nodiscard]] double scaleStock(double amount) const noexcept {
+    return primitives::utils::roundMoney(amount * stockScale_);
+  }
+
   Ledger *ledger_ = nullptr;
   random::Rng *rng_ = nullptr;
   BalanceRules rules_{};
+  double stockScale_ = 1.0;
 };
 
 inline void requireLedgerSlots(const Ledger &ledger,

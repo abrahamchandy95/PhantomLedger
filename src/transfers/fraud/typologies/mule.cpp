@@ -124,6 +124,8 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       }
 
       // Inbound amount: mostly fraud-scale, 40% chance to swap in 3× P2P.
+      // Calibration dollars throughout the chain math; each Draft
+      // realizes at its own event date (H1 step 2b, class F).
       double inboundAmt = math::amounts::kFraud.sample(rng);
       if (rng.coin(0.40)) {
         inboundAmt = math::amounts::kP2P.sample(rng) * 3.0;
@@ -139,7 +141,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
               transactions::Draft{
                   .source = src,
                   .destination = mule,
-                  .amount = inboundAmt,
+                  .amount = typologies::nominalAt(inboundAmt, inboundTs),
                   .timestamp = time::toEpochSeconds(inboundTs),
                   .isFraud = 1,
                   .ringId = static_cast<std::int32_t>(plan.ringId),
@@ -175,7 +177,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
               transactions::Draft{
                   .source = mule,
                   .destination = forwardDst,
-                  .amount = forwardAmt,
+                  .amount = typologies::nominalAt(forwardAmt, forwardTs),
                   .timestamp = time::toEpochSeconds(forwardTs),
                   .isFraud = 1,
                   .ringId = static_cast<std::int32_t>(plan.ringId),

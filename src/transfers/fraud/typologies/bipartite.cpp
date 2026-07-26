@@ -72,12 +72,14 @@ bool emitEdge(IllicitContext &ctx, std::vector<transactions::Transaction> &out,
   const auto ts = sampleTimestamp(rng, burst.baseDate, burst.durationDays,
                                   HourRange{.min = 0, .max = 24});
 
+  // H1 step 2b (class F): calibration-year draw (with its floor)
+  // realized at the event date's CPI level (authority U-6).
   return typologies::appendBoundedTxn(
       ctx, out, budget,
       transactions::Draft{
           .source = src,
           .destination = dst,
-          .amount = amt,
+          .amount = typologies::nominalAt(amt, ts),
           .timestamp = time::toEpochSeconds(ts),
           .isFraud = 1,
           .ringId = static_cast<std::int32_t>(ringId),

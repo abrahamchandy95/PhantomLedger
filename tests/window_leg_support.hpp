@@ -279,7 +279,8 @@ struct LegResult {
 
   if (opt.withFraud) {
     // Fraud boundary inputs. Injector construction mirrors
-    // TransferStage::makeFraudInjector, including the fraud seed derivation.
+    // TransferStage::makeFraudInjector, including the fraud seed derivation
+    // and (H3 3c-ii) the timeline carrier for the ring alive intervals.
     xfer::FraudEmission fraudEmission;
     fraudEmission.profile(&world.fraudProfile);
     fraudEmission.behavior(&fraud_ns::kDefaultBehavior);
@@ -291,7 +292,8 @@ struct LegResult {
             .ringInfra = &world.infra.ringInfra,
             .fraudSeed = opt.seed ^ 0x9E3779B97F4A7C15ULL,
         },
-        fraudEmission.ringView(world.people.roster.topology),
+        fraudEmission.ringView(world.people.roster.topology,
+                               world.people.personas.timelines),
         xfer::FraudEmission::accountView(world.holdings.accounts.registry,
                                          world.holdings.accounts.ownership),
         fraudEmission.resolvedBehavior(),

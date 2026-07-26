@@ -2,6 +2,7 @@
 
 #include "phantomledger/activity/spending/market/commerce/view.hpp"
 #include "phantomledger/activity/spending/market/population/view.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 
 #include <algorithm>
 
@@ -59,6 +60,13 @@ actors::Spender buildSpender(const market::Market &market,
   // "no local anchor". UNREAD until step-2, so this moves no golden.
   s.homeArea = pop.homeArea(person);
 
+  // H2 step 2c: the retirement day-index (kNoRetirementDay ==
+  // Spender::kNoRetireDay — both are the uint32 max sentinel). H3: the
+  // death day-index likewise. Both engines carry them through the
+  // blueprint's timeline lane.
+  s.retireDay = pop.retirementDay(person);
+  s.deathDay = pop.deathDay(person);
+
   return s;
 }
 
@@ -70,6 +78,13 @@ prepareSpenders(const market::Market &market,
                 const clearing::Ledger *ledger) {
   const auto &pop = market.population();
   const auto count = pop.count();
+
+  // H1 step 2b (class P stock): the persona's calibration-year cash
+  // reference (and its $150 floor) anchors ONCE at the window-start
+  // price level, matching the opening-book seeding, so the liquidity
+  // cash-ratio compares era dollars to era dollars (authority U-6).
+  const double stockScale = synth::econ::priceScale(
+      time::toCalendarDate(market.bounds().startDate).year);
 
   std::vector<PreparedSpender> out;
   out.reserve(count);
@@ -86,9 +101,10 @@ prepareSpenders(const market::Market &market,
     ps.paydays = std::span<const std::uint32_t>(
         pop.paydays().personView(i).first, pop.paydays().personView(i).size());
 
-    const double initialCash = ps.spender.persona->cash.initialBalance;
+    const double initialCash =
+        ps.spender.persona->cash.initialBalance * stockScale;
     ps.initialCash = initialCash;
-    ps.baselineCash = std::max(kBaselineCashFloor, initialCash);
+    ps.baselineCash = std::max(kBaselineCashFloor * stockScale, initialCash);
     ps.fixedBurden =
         i < obligations.burden.size() ? obligations.burden.monthlyAt(i) : 0.0;
     ps.paycheckSensitivity = ps.spender.persona->payday.sensitivity;

@@ -7,6 +7,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 
 #include <algorithm>
 #include <functional>
@@ -18,6 +19,10 @@
 namespace PhantomLedger::activity::recurring {
 
 /// Mutable lease state for one person.
+/// H1 step 2b: `baseRent` is denominated in CALIBRATION-YEAR dollars
+/// (2019) and compounds only the seeded idiosyncratic raises; the era
+/// price index (priceScale) multiplies at REALIZATION in
+/// calculateRent — state stays real, rent payments are nominal.
 struct Lease {
   entity::Key landlordAcct;
   time::TimePoint start;
@@ -38,8 +43,11 @@ struct Lease {
 using RentSource = std::function<double()>;
 
 struct RentGrowthRules {
+  // H1 step 2b: the flat `.025` annualInflation constant is RETIRED
+  // (authority U-6) — economy-wide nominal growth is the CPI index at
+  // realization; only the idiosyncratic lease-progression lane
+  // remains here.
   growth::CompoundRules annual{
-      .annualInflation = 0.025,
       .annualRaise =
           growth::GrowthDist{
               .mu = 0.020,
@@ -207,7 +215,13 @@ inline void requireRentAmount(double amount, std::string_view field) {
 
   primitives::validate::finite("rentAmount", amount);
 
-  return primitives::utils::roundMoney(std::max(1.0, amount));
+  // H1 step 2b (class P): the pay-date year's price index turns the
+  // calibration-year base into era-correct nominal rent. Applied AFTER
+  // the $1 minimum so the screen scales with the amounts it screens
+  // (authority U-6), BEFORE roundMoney.
+  return primitives::utils::roundMoney(
+      std::max(1.0, amount) *
+      synth::econ::priceScale(time::toCalendarDate(query.payDate).year));
 }
 
 } // namespace PhantomLedger::activity::recurring

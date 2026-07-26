@@ -22,10 +22,13 @@ const fraud::Behavior &FraudEmission::resolvedBehavior() const noexcept {
 }
 
 fraud::InjectorRingView FraudEmission::ringView(
-    const ::PhantomLedger::entity::person::Topology &topology) const noexcept {
+    const ::PhantomLedger::entity::person::Topology &topology,
+    std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
+        timelines) const noexcept {
   return fraud::InjectorRingView{
       .profile = profile_,
       .topology = &topology,
+      .timelines = timelines,
   };
 }
 

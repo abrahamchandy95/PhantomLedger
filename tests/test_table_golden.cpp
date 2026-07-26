@@ -15,17 +15,18 @@
 //   Baseline: tests/golden_tables.md5.
 //
 //   SECTION "fraud" — aml-txn-edges at a FRAUD-DENSE config (pop
-//   10000, 60 days, seed 7; probe-verified 2026-07-18: 5 rings,
-//   structuring rows spanning the widened F1 band, derived shell
-//   scores, SARs, alerts, CTRs, cases). This section exists because
-//   the standard-config goldens are structurally blind to fraud-LABEL
-//   tables (the fraud-audit-2026-07 coverage finding): ShellAccount,
-//   SAR and the SAR edges, Alert/CTR/Disposition/InvestigationCase
-//   exist only in the aml use cases. The gate HARD-REQUIRES those
-//   tables to be present in the pin, and also pins the fraud-dense
-//   corpus itself (the shared public.transactions stream, which this
-//   section's run overwrites — hence it runs AFTER the standard
-//   section is digested). Baseline: tests/golden_tables_aml.md5.
+//   10000, 60 days, seed 7, start 1991-01-01; ring density
+//   probe-verified 2026-07-18 at this pop/seed: structuring rows
+//   spanning the widened F1 band, derived shell scores, SARs, alerts,
+//   CTRs, cases). This section exists because the standard-config
+//   goldens are structurally blind to fraud-LABEL tables (the
+//   fraud-audit-2026-07 coverage finding): ShellAccount, SAR and the
+//   SAR edges, Alert/CTR/Disposition/InvestigationCase exist only in
+//   the aml use cases. The gate HARD-REQUIRES those tables to be
+//   present in the pin, and also pins the fraud-dense corpus itself
+//   (the shared public.transactions stream, which this section's run
+//   overwrites — hence it runs AFTER the standard section is
+//   digested). Baseline: tests/golden_tables_aml.md5.
 //
 //   SECTION "card_fraud" — the SAME fraud-dense config as the fraud
 //   section, under --usecase card-fraud (card-fraud T4). The config is
@@ -33,8 +34,9 @@
 //   (rings.hpp: max(0, round(lognormal * pop/1e4))), so a pop-2000
 //   seed can deterministically draw ZERO rings — and with no rings
 //   there are no victims and no unauthorized card fraud. The
-//   fraud-dense config is probe-verified to carry rings, so the card
-//   view's fraud-visibility is a fact of the config, not a gamble on a
+//   fraud-dense config carries rings, and the flag-1 hard gate below
+//   re-verifies fraud visibility on every run, so the card view's
+//   fraud-visibility is a fact of the config, not a gamble on a
 //   seed. Pins every cf_* table the run registers in schema card_fraud
 //   (the full 34-table TF_GNN_v3 set), HARD-REQUIRES its core tables,
 //   and HARD-REQUIRES flag-1 rows in cf_Payment_Transaction (the
@@ -47,6 +49,19 @@
 //   corpus stream is use-case-invariant, and this is where that law is
 //   pinned. Runs strictly LAST (its run overwrites the shared stream
 //   table too). Baseline: tests/golden_tables_card_fraud.md5.
+//
+// ERA LOCK (macro-history-v1 H0.6, owner directive #3): card-fraud is
+// time-locked to the pinned economic era (EMBEDDED in
+// synth/econ/era_data.hpp; 1990 through the measured frontier — 2024
+// since the H1 coverage extension), so BOTH fraud-dense sections run
+// at --start 1991-01-01 — they previously generated at the 2025
+// default start, OUT of the era the card-fraud use case models (the
+// confirmed axis inconsistency the lock round fixed). The two sections
+// share one config because the corpus-invariance assertion compares
+// their stream digests, so they moved in-era TOGETHER, re-pinning
+// golden_tables_aml.md5 + golden_tables_card_fraud.md5 in the H0.6
+// named round. The standard section is era-agnostic and keeps the
+// default start.
 //
 // TABLE DISCOVERY: each section's table list comes from the
 // DIRECT-TABLE REGISTRY (public.pl_direct_tables) that the run's own
@@ -122,7 +137,10 @@ namespace {
 
 // The run's own declaration of what it wrote: the direct-table
 // registry, rewritten per schema by every run (table_mirror.cpp).
-// Names arrive sorted; registry identifiers never contain newlines.
+// Registry identifiers never contain newlines. PostgreSQL's ORDER BY follows
+// the database collation, so normalize once more with C++ byte ordering: a
+// baseline captured under en_US and checked under C must describe the same
+// table set in the same order.
 [[nodiscard]] std::vector<std::string>
 registeredTables(Connection &conn, const std::string &schemaKey) {
   const auto agg = conn.queryValue(
@@ -137,6 +155,7 @@ registeredTables(Connection &conn, const std::string &schemaKey) {
       out.push_back(line);
     }
   }
+  std::ranges::sort(out);
   return out;
 }
 
@@ -192,7 +211,16 @@ enum class Section : int { pass, captured, diverged };
     }
   }
 
-  if (expected == lines) {
+  // Baseline files created before table discovery was normalized can carry a
+  // database-collation-specific line order. Table identity is the line set;
+  // row identity within each table remains pinned by digestLine(). Comparing
+  // sorted copies removes only that irrelevant PostgreSQL locale dependency.
+  auto normalizedExpected = expected;
+  auto normalizedActual = lines;
+  std::ranges::sort(normalizedExpected);
+  std::ranges::sort(normalizedActual);
+
+  if (normalizedExpected == normalizedActual) {
     std::printf("table-golden[%s]: %zu tables digest-identical to baseline\n",
                 name, lines.size());
     return Section::pass;
@@ -269,14 +297,16 @@ int main() {
   }
 
   // ------------------------------------------------------------------
-  // SECTION "fraud": aml-txn-edges at the fraud-dense probe config.
-  // Runs strictly AFTER the standard section is digested — this run
-  // overwrites the shared public.transactions stream table.
+  // SECTION "fraud": aml-txn-edges at the fraud-dense config, IN-ERA
+  // (--start 1991-01-01; H0.6). Runs strictly AFTER the standard
+  // section is digested — this run overwrites the shared
+  // public.transactions stream table.
   // ------------------------------------------------------------------
-  std::printf("  [fraud] running binary (aml-txn-edges, pop 10000) ...\n");
+  std::printf("  [fraud] running binary (aml-txn-edges, pop 10000, "
+              "start 1991-01-01) ...\n");
   std::fflush(stdout);
   if (!runBinary("--usecase aml-txn-edges --population 10000 --days 60"
-                 " --seed 7",
+                 " --seed 7 --start 1991-01-01",
                  tmp / "pl_table_golden_aml.log", conninfo)) {
     return 1;
   }
@@ -317,16 +347,18 @@ int main() {
   }
 
   // ------------------------------------------------------------------
-  // SECTION "card_fraud": the SAME fraud-dense config as the fraud
-  // section, under --usecase card-fraud (rings probe-verified — see
-  // the header: a pop-2000 seed could deterministically draw zero
-  // rings and blind the card view). Runs strictly LAST — this run
-  // overwrites the shared public.transactions stream table too.
+  // SECTION "card_fraud": the SAME fraud-dense in-era config as the
+  // fraud section, under --usecase card-fraud (the era lock REQUIRES
+  // an in-era window for this use case; the flag-1 gate below
+  // re-verifies fraud visibility at this config on every run). Runs
+  // strictly LAST — this run overwrites the shared
+  // public.transactions stream table too.
   // ------------------------------------------------------------------
-  std::printf("  [card_fraud] running binary (card-fraud, pop 10000) ...\n");
+  std::printf("  [card_fraud] running binary (card-fraud, pop 10000, "
+              "start 1991-01-01) ...\n");
   std::fflush(stdout);
   if (!runBinary("--usecase card-fraud --population 10000 --days 60"
-                 " --seed 7",
+                 " --seed 7 --start 1991-01-01",
                  tmp / "pl_table_golden_card_fraud.log", conninfo)) {
     return 1;
   }

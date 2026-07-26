@@ -10,6 +10,8 @@
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/routing/router.hpp"
 #include "phantomledger/math/timing.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
 
 #include <algorithm>
@@ -52,7 +54,14 @@ SpenderEmissionLoop::RateSampler::RateSampler(const PreparedRun::Budget &budget,
                                               RunState &state,
                                               const actors::DayFrame &frame,
                                               Rules rules) noexcept
-    : budget_(budget), state_(state), frame_(frame), rules_(rules) {}
+    : budget_(budget), state_(state), frame_(frame), rules_(rules),
+      // H1 step 2b (class P) + H4: one CPI level lookup and one REAL
+      // consumption level lookup per day frame; both engines share
+      // this code, so oracle parity is automatic.
+      dayPriceScale_(synth::econ::priceScale(
+          time::toCalendarDate(frame.day.start).year)),
+      dayRealLevel_(synth::econ::realPceLevel(
+          time::toCalendarDate(frame.day.start).year)) {}
 
 SpenderEmissionLoop::RateSampler &
 SpenderEmissionLoop::RateSampler::dailyMultipliers(
@@ -97,6 +106,7 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
       .availableToSpend = availableToSpendFor(prepared),
       .baselineCash = prepared.baselineCash,
       .fixedMonthlyBurden = prepared.fixedBurden,
+      .priceScale = dayPriceScale_,
   };
 
   const auto mult = liquidity::multiplier(rules_.liquidity, snapshot);
@@ -109,7 +119,14 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
 
 double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
     std::uint32_t personIndex) const {
-  return dailyMultipliers_[personIndex] * frame_.seasonalMult;
+  // H4 (authority U-9): the real per-capita consumption level
+  // modulates the COUNT axis here — the budget keeps its meaning as a
+  // CALIBRATION-LEVEL target, so realized session volume is
+  // target x realPceLevel(year): a 2019 frame multiplies by exactly
+  // 1.0, a 1991 frame runs at ~0.67x. Amounts are untouched (the
+  // count-only channel law).
+  return dailyMultipliers_[personIndex] * frame_.seasonalMult *
+         dayRealLevel_;
 }
 
 double
@@ -172,6 +189,15 @@ double SpenderEmissionLoop::RateSampler::lastLiquidityMult() const noexcept {
 
 double SpenderEmissionLoop::RateSampler::lastAvailableToSpend() const noexcept {
   return lastAvailableToSpend_;
+}
+
+double SpenderEmissionLoop::RateSampler::dayPriceScale() const noexcept {
+  return dayPriceScale_;
+}
+
+std::uint32_t
+SpenderEmissionLoop::RateSampler::frameDayIndex() const noexcept {
+  return frame_.day.dayIndex;
 }
 
 SpenderEmissionLoop::PaymentEmitter::PaymentEmitter(
@@ -250,6 +276,16 @@ void SpenderEmissionLoop::run(
     const auto personIndex = spender.personIndex;
     auto &rng = spenderRngs[i];
 
+    // H3: the dead emit no person-days. The skip consumes the
+    // person-day (budget bookkeeping identical to a zero-count day)
+    // and draws NOTHING on the spender's per-person rng —
+    // deterministic and thread-partition-safe.
+    if (spender.deathDay != actors::Spender::kNoDeathDay &&
+        rates_.frameDayIndex() >= spender.deathDay) {
+      rates_.consumeOnePersonDay();
+      continue;
+    }
+
     const double liquidityMult = rates_.liquidityMultiplierFor(prepared);
     const double combinedMult = rates_.combinedMultiplierFor(personIndex);
     const RateSampler::DailyMultipliers mults{.combined = combinedMult,
@@ -271,6 +307,15 @@ void SpenderEmissionLoop::run(
     const double cardAvailable = rates_.cardLiquidityFor(prepared);
     const double amountFactor = liquidity::amountFactor(liquidityMult);
 
+    // H2 step 2c: the retirement consumption step — a level factor from
+    // the claiming day onward. Pure derived data (no draws), shared by
+    // both engines through this loop.
+    const double consumptionScale =
+        (spender.retireDay != actors::Spender::kNoRetireDay &&
+         rates_.frameDayIndex() >= spender.retireDay)
+            ? actors::kRetiredSpendScale
+            : 1.0;
+
     std::uint32_t accepted = 0;
     std::uint32_t consecutiveFailures = 0;
     std::uint32_t attemptBudget = txnCount * kAttemptMultiplier;
@@ -286,6 +331,8 @@ void SpenderEmissionLoop::run(
           .availableCash = availableCash,
           .cardAvailable = cardAvailable,
           .amountFactor = amountFactor,
+          .priceScale = rates_.dayPriceScale(),
+          .consumptionScale = consumptionScale,
       };
 
       auto maybeEmitted = payments_.tryEmit(rng, event);

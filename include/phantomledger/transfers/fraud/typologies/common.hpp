@@ -1,5 +1,8 @@
 #pragma once
 
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/fraud/engine.hpp"
@@ -25,6 +28,17 @@ appendBoundedTxn(IllicitContext &ctx,
                  std::vector<transactions::Transaction> &out,
                  std::int32_t budget, const transactions::Draft &draft) {
   return appendBoundedTxn(ctx.execution.txf, out, budget, draft);
+}
+
+/// H1 step 2b (class F): realize a calibration-year fraud amount at
+/// the event date's CPI level — fraud steals era dollars (authority
+/// U-6). Chain math (haircuts, splits, floors) stays in calibration
+/// dollars; the scale applies ONCE at each Draft's emission, so
+/// behavioral floors bind identically in every era. Structuring is
+/// class S and never calls this.
+[[nodiscard]] inline double nominalAt(double amount, time::TimePoint ts) {
+  return primitives::utils::roundMoney(
+      amount * synth::econ::priceScale(time::toCalendarDate(ts).year));
 }
 
 template <class T>

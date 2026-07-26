@@ -153,7 +153,12 @@ SimulationPipeline::transferStage() const noexcept {
 void SimulationPipeline::buildEntities(SimulationResult &result,
                                        random::Rng &rng) const {
   const auto &cfg = entities_;
-  const auto identity = entityStage::defaultStart(cfg.identity, window_.start);
+  auto identity = entityStage::defaultStart(cfg.identity, window_.start);
+  // H3 part 3c-ii: the production pipeline always sizes the join
+  // cohort against its own window (Pack::joinDays; authority U-8
+  // addendum). Direct entity-stage callers that leave windowDays 0
+  // build no cohort — the pre-3c-ii shape.
+  identity.windowDays = window_.days;
 
   auto &people = result.people;
   auto &holdings = result.holdings;
@@ -162,8 +167,12 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   people.roster = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
   holdings.accounts = entityStage::buildAccounts(
       rng, people.roster, cfg.population, cfg.accountsSizing);
-  people.personas =
-      entityStage::buildPersonas(rng, people.roster, cfg.personaMix);
+  // H2 step 2a: the personas pack carries the single-age-axis birth
+  // dates ({"dob", personId} lanes off identity.worldSeed); H3 3c-ii:
+  // it also carries the join cohort, and joiners' ages anchor at
+  // their JOIN date. PII below renders its Dob from the carrier.
+  people.personas = entityStage::buildPersonas(rng, people.roster, identity,
+                                               cfg.personaMix);
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology, cfg.piiSharing);
 
@@ -182,8 +191,11 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   cps.counterparties = entityStage::buildCounterparties(
       rng, cfg.population, cfg.counterpartyTargets);
 
+  // H1 step 2b (class P stock): credit limits anchor at the
+  // window-start year's price level (authority U-6).
   holdings.creditCards = entityStage::issueCreditCards(
-      people.personas, people.roster, seed_, cfg.cards);
+      people.personas, people.roster, seed_, cfg.cards,
+      time::toCalendarDate(window_.start).year);
 
   entityStage::finalizeAccountRegistry(holdings, cps, people);
   entityStage::synthesizeBusinessOwners(holdings, people, rng,
@@ -244,7 +256,9 @@ void releaseExportOnlyPacks(SimulationResult &world) noexcept {
   // is unaffected; the fold reads none of these (their only consumers
   // are the vertex exporters). NOTE: people.homeAreas is a SEPARATE
   // compact carrier that must OUTLIVE this release (the fold's causal
-  // selection reads it), so it is deliberately NOT cleared here.
+  // selection reads it), so it is deliberately NOT cleared here. The
+  // personas pack (with its H2 birth-date carrier) also survives — the
+  // blueprint and the government pass read it inside the fold.
   world.people.pii = entity::pii::Roster{};
   world.infra.devices = synth::infra::devices::Output{};
   world.infra.ips = synth::infra::ips::Output{};

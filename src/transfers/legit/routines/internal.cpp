@@ -5,11 +5,14 @@
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
+#include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -26,6 +29,7 @@ inline constexpr std::array<double, 18> kRoundAmounts{
 };
 
 struct ActivePerson {
+  entity::PersonId person = 0;
   std::vector<entity::Key> eligible;
 };
 
@@ -74,20 +78,42 @@ selectActivePeople(random::Rng &rng, const blueprints::LegitBlueprint &plan,
     if (!rng.coin(cfg.activeP)) {
       continue;
     }
-    out.push_back(ActivePerson{std::move(eligible)});
+    out.push_back(ActivePerson{person, std::move(eligible)});
   }
 
   return out;
 }
 
-[[nodiscard]] double drawAmount(random::Rng &rng, const Config &cfg) {
+struct AmountDraw {
+  double amount = 0.0;
+  bool roundLattice = false;
+};
+
+[[nodiscard]] AmountDraw drawAmount(random::Rng &rng, const Config &cfg) {
   if (rng.coin(cfg.roundAmountP)) {
-    return kRoundAmounts[rng.choiceIndex(kRoundAmounts.size())];
+    return {kRoundAmounts[rng.choiceIndex(kRoundAmounts.size())], true};
   }
 
   const auto raw = probability::distributions::lognormalByMedian(
       rng, cfg.amountMedian, cfg.amountSigma);
-  return primitives::utils::roundMoney(std::max(10.0, raw));
+  return {primitives::utils::roundMoney(std::max(10.0, raw)), false};
+}
+
+// H1 step 2b (class P + S lattice): the calibration-year draw scales
+// to the event year's CPI level; round-lattice picks RE-SNAP to the
+// $25 round-transfer lattice so the round-number signature survives
+// the era scale (authority U-6 denomination row); lognormal draws
+// just re-round to cents (their $10 floor scales with the amount).
+[[nodiscard]] double nominalTransferAmount(const AmountDraw &draw,
+                                           std::int64_t epochSec) {
+  const auto year =
+      time::toCalendarDate(time::fromEpochSeconds(epochSec)).year;
+  const double scaled =
+      draw.amount * ::PhantomLedger::synth::econ::priceScale(year);
+  if (draw.roundLattice) {
+    return std::max(25.0, std::round(scaled / 25.0) * 25.0);
+  }
+  return primitives::utils::roundMoney(scaled);
 }
 
 [[nodiscard]] std::vector<Candidate>
@@ -113,7 +139,7 @@ buildCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
           static_cast<std::int64_t>(cfg.transfersPerMonthMax) + 1));
 
       for (std::int32_t j = 0; j < n; ++j) {
-        const auto amount = drawAmount(rng, cfg);
+        const auto draw = drawAmount(rng, cfg);
         std::int32_t dayOffset;
         if (rng.nextDouble() < 0.70) {
           dayOffset = static_cast<std::int32_t>(rng.uniformInt(0, 7));
@@ -134,7 +160,7 @@ buildCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
           continue;
         }
 
-        out.push_back(Candidate{ts, i, amount});
+        out.push_back(Candidate{ts, i, nominalTransferAmount(draw, ts)});
       }
     }
   }
@@ -255,6 +281,24 @@ Generator::generate(const blueprints::LegitBlueprint &plan, Config cfg) {
 
   auto candidates = buildCandidates(rng_, plan, activePeople, cfg);
 
+  // H3 (macro-history-v1): the dead move no money between their own
+  // accounts. Death epochs ride the blueprint pack's timeline lane;
+  // the skip below happens AFTER the source/destination draws burn,
+  // so the shared rng stream is byte-identical — only emitted rows
+  // and their soft-screen postings disappear. Sentinel max() when the
+  // pack carries no timeline lane (the filter stands down).
+  const auto *pack = plan.personas().pack;
+  const auto deathEpochOf = [&](std::size_t personIdx) -> std::int64_t {
+    if (pack == nullptr || pack->timelines.empty()) {
+      return std::numeric_limits<std::int64_t>::max();
+    }
+    const auto person = activePeople[personIdx].person;
+    if (person == 0 || person > pack->timelines.size()) {
+      return std::numeric_limits<std::int64_t>::max();
+    }
+    return time::toEpochSeconds(pack->timelines[person - 1].death);
+  };
+
   const auto channel = channels::tag(channels::Legit::selfTransfer);
   out.reserve(candidates.size());
 
@@ -269,6 +313,12 @@ Generator::generate(const blueprints::LegitBlueprint &plan, Config cfg) {
 
     const auto destination = chooseDestination(rng_, source, eligible, screen_);
     if (destination == entity::Key{}) {
+      continue;
+    }
+
+    // H3: skip dead movers here — after the draws, before the screen
+    // posting (rng byte-identical; see the note above).
+    if (candidate.timestamp >= deathEpochOf(candidate.personIdx)) {
       continue;
     }
 

@@ -1,6 +1,7 @@
 #include "phantomledger/synth/products/terms/mortgage.hpp"
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 
@@ -68,6 +69,14 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
 
   constexpr std::int32_t kMortgageTermMonths = 360;
 
+  // H1 step 2b (class D): real loans are nominal contracts — the
+  // payment anchors at the ORIGINATION year's price level and stays
+  // fixed nominal through the term. Pre-1990 originations clamp to
+  // coverage (freeze-and-declare via scaleYear; authority U-6).
+  const double nominalPayment =
+      payment * ::PhantomLedger::synth::econ::priceScale(
+                    ::PhantomLedger::time::toCalendarDate(loanStart).year);
+
   // SUSPECTED DEFECT (flagged 2026-07-19, owner-gated): mortgage
   // payments route to Lending::studentServicer, not Lending::mortgage.
   // Correcting it changes corpus bytes (counterparty key on every
@@ -82,7 +91,7 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
                             .start = loanStart,
                             .termMonths = kMortgageTermMonths,
                             .paymentDay = paymentDay,
-                            .monthlyPayment = payment,
+                            .monthlyPayment = nominalPayment,
                             .terms = installmentTerms(terms_.delinquency),
                         });
 

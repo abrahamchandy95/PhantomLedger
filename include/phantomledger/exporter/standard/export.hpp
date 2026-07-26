@@ -2,7 +2,6 @@
 
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/primitives/time/window.hpp"
-#include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 
 namespace PhantomLedger::exporter::sinks {
@@ -19,9 +18,11 @@ struct Options {
   bool emitEntityResolution = true;
   const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
+  // H3 part 3c-ii: the membership view [joinTs, closeTs) derives from
+  // the result's personas pack via join_cohort::membershipOf(pack,
+  // window) — the retired flat-Growth Options knob is gone; the world
+  // models membership, the exporter only reads it.
   ::PhantomLedger::time::Window window{};
-
-  ::PhantomLedger::synth::pii::Growth growth{};
 
   // Every table is written directly into PostgreSQL as the bytes the
   // csv::Writer renders — the only production destination (CSV

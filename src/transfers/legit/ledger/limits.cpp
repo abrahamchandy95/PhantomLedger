@@ -2,6 +2,8 @@
 
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/legit/ledger/burdens.hpp"
@@ -105,8 +107,14 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
 
   clearing::requireLedgerSlots(*ledger, *accounts_.registry);
 
-  clearing::OpeningBalanceSeeder seeder{*ledger, *rng_,
-                                        *protections_.balanceRules};
+  // H1 step 2b (class P stocks): opening balances anchor ONCE at the
+  // WINDOW-START year's price level; they then evolve through the
+  // already-scaled flows (authority U-6).
+  const double stockScale = ::PhantomLedger::synth::econ::priceScale(
+      ::PhantomLedger::time::toCalendarDate(plan.startDate()).year);
+
+  clearing::OpeningBalanceSeeder seeder{
+      *ledger, *rng_, *protections_.balanceRules, stockScale};
   clearing::seedHubAccounts(seeder, *accounts_.registry, hubIndices);
   clearing::seedOwnedAccounts(
       seeder, *accounts_.registry, plan.personas().pack->table,

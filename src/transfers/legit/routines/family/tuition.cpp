@@ -156,10 +156,12 @@ private:
       return false;
     }
 
+    // H1 step 2b (class P): calibration-year draw realized at the
+    // installment date's CPI level.
     out_.push_back(run_.emission().make(transactions::Draft{
         .source = payerAcct,
         .destination = payeeAcct,
-        .amount = amt,
+        .amount = fhelp::nominalAt(amt, ts),
         .timestamp = ts,
         .isFraud = 0,
         .ringId = -1,

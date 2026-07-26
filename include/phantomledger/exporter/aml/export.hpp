@@ -33,6 +33,10 @@ struct StreamedArtifacts {
   edges::TransactionEdgeSets edgeSets;
 
   std::int64_t firstTs = 0;
+  // H2 step 2c: the corpus MAXIMUM timestamp (the replay-sorted
+  // stream's final row), mirroring firstTs — the end-of-window persona
+  // resolution reads it in takeArtifacts().
+  std::int64_t lastTs = 0;
   std::uint64_t rows = 0;
   std::uint64_t illicitRows = 0;
 };

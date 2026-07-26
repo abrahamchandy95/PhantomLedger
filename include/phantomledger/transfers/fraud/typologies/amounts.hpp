@@ -28,6 +28,15 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 //    independent of thread/chunk scheduling once fraud is re-keyed
 //    through RngFactory (S9).
 //  * Round to cents (primitives::utils::roundMoney).
+//
+// H1 step 2b (class F, authority U-6): the CONTINUOUS samplers
+// (cardFraudSpend, atoDrainAmount) take the event year's CPI level
+// multiplier — the calibration-year median AND its clamps scale
+// together, so the tail shape is era-invariant. The DENOMINATION
+// samplers (cardTestCharge, giftCardScamAmount) stay FIXED-NOMINAL
+// (owner-approved 2026-07-25): round probe amounts and rack
+// denominations are physical artifacts like the $20 note — scaling
+// them would destroy the signature that IS the typology.
 
 /// Card-testing micro-charge: $0.50-$5.00, ~40% of mass on "round"
 /// anchor amounts {$0.50, $1, $1, $2, $5} ($1 double-weighted).
@@ -46,7 +55,7 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 /// this is a settlement-only corpus and clearing::Ledger::decide()
 /// rejects amount <= 0 (RejectReason::invalid), so a $0 event would be
 /// silently dropped in replay. The $0.50 floor is the smallest
-/// settleable probe.
+/// settleable probe. FIXED-NOMINAL (class S denomination lattice).
 [[nodiscard]] inline double cardTestCharge(random::Rng &rng) {
   static constexpr std::array<double, 5> kAnchors{0.50, 1.00, 1.00, 2.00, 5.00};
   // Fixed draw pattern: exactly 2 uniforms per call on both branches.
@@ -63,7 +72,9 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 
 /// Post-validation fraudulent card spend at ordinary billers.
 /// Lognormal by median: median $79, sigma 1.2 (analytic mean ~= $162,
-/// clamps pull it slightly lower), clamped to [$1, $5,000].
+/// clamps pull it slightly lower), clamped to [$1, $5,000] — median
+/// and clamps in CALIBRATION-YEAR dollars, both multiplied by
+/// `priceScale` (the event year's CPI level; H1 step 2b).
 ///
 /// Sources (fetched 2026-07):
 ///  * Security.org card-fraud reports: median fraudulent charge $62
@@ -73,16 +84,20 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 ///    https://www.security.org/digital-safety/credit-card-fraud-report/
 ///  * Chargeflow (above): validated cards escalate from micro-tests to
 ///    larger purchases within hours to days.
-[[nodiscard]] inline double cardFraudSpend(random::Rng &rng) {
+[[nodiscard]] inline double cardFraudSpend(random::Rng &rng,
+                                           double priceScale = 1.0) {
   const double raw =
       probability::distributions::lognormalByMedian(rng, 79.0, 1.2);
-  return primitives::utils::roundMoney(std::clamp(raw, 1.0, 5000.0));
+  return primitives::utils::roundMoney(
+      std::clamp(raw * priceScale, 1.0 * priceScale, 5000.0 * priceScale));
 }
 
 /// Account-takeover drain over bank rails (p2p to a drop account).
 /// Median-weighted fat tail: lognormal median $180, sigma 1.5
 /// (analytic mean ~= $554; ~0.4% of draws exceed $10,000), clamped to
-/// [$10, $85,000].
+/// [$10, $85,000] — median and clamps in CALIBRATION-YEAR dollars,
+/// both multiplied by `priceScale` (the event year's CPI level; H1
+/// step 2b).
 ///
 /// Sources (fetched 2026-07):
 ///  * Security.org, "Account Takeover Incidents are Rising" (annual
@@ -96,10 +111,12 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 ///    2024; ATO reports up more than 36% year over year (supports ATO
 ///    as a first-class, growing fraud family on bank rails).
 ///    https://deepstrike.io/blog/account-takeover-statistics
-[[nodiscard]] inline double atoDrainAmount(random::Rng &rng) {
+[[nodiscard]] inline double atoDrainAmount(random::Rng &rng,
+                                           double priceScale = 1.0) {
   const double raw =
       probability::distributions::lognormalByMedian(rng, 180.0, 1.5);
-  return primitives::utils::roundMoney(std::clamp(raw, 10.0, 85000.0));
+  return primitives::utils::roundMoney(
+      std::clamp(raw * priceScale, 10.0 * priceScale, 85000.0 * priceScale));
 }
 
 /// Gift-card purchase in a victim-AUTHORIZED impostor scam: the
@@ -109,7 +126,8 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
 /// with $500 triple-weighted ("buy the biggest card they have");
 /// remainder uniform $50-$500 snapped to $10 steps (racks sell $10
 /// increments). Round amounts, one-or-two merchants, minutes apart —
-/// the reportable scam signature.
+/// the reportable scam signature. FIXED-NOMINAL (class S denomination
+/// lattice; owner-approved 2026-07-25).
 ///
 /// Sources (named 2026-07; RECALLED, not fetched — the owner's
 /// retrieval pass verifies, per docs/fraud_model_audit.md F-4):

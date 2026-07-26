@@ -2,6 +2,7 @@
 
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transfers/fraud/schedule.hpp"
@@ -34,7 +35,8 @@ constexpr std::int64_t kInterOutDelayMinutesHi = 240;
 constexpr double kCollectorHaircutMin = 0.05;
 constexpr double kCollectorHaircutRange = 0.05; // → [0.05, 0.10)
 
-// Minimum survivable outbound amount before we abandon the funnel.
+// Minimum survivable outbound amount before we abandon the funnel
+// (calibration dollars; scaled to the scatter phase's era below).
 constexpr double kAmountFloor = 5.0;
 
 } // namespace
@@ -119,8 +121,13 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
 
     const auto ts = sampleTimestamp(rng, burst.baseDate, inboundDays,
                                     HourRange{.min = 8, .max = 22});
-    const double amt = primitives::utils::floorAndRound(
-        math::amounts::kFraud.sample(rng), 50.0);
+    // H1 step 2b (class F): calibration draw realized at the inbound
+    // event's CPI level; the collected pool is NOMINAL era dollars, so
+    // the scatter phase splits it flow-through (authority U-6).
+    const double amt = typologies::nominalAt(
+        primitives::utils::floorAndRound(math::amounts::kFraud.sample(rng),
+                                         50.0),
+        ts);
 
     if (!typologies::appendBoundedTxn(
             ctx, out, budget,
@@ -149,6 +156,12 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
   }
 
   // ─── Phase 2: SCATTER — collector → cashouts, after the gather ─────
+  // The pool is already nominal; the abandon floor scales to the
+  // scatter era so the funnel geometry is scale-invariant.
+  const double outScale = ::PhantomLedger::synth::econ::priceScale(
+      time::toCalendarDate(latestInTs).year);
+  const double nominalFloor = kAmountFloor * outScale;
+
   const double haircut =
       kCollectorHaircutMin + kCollectorHaircutRange * rng.nextDouble();
   double remaining = totalIn * (1.0 - haircut);
@@ -163,7 +176,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
     if (static_cast<std::int32_t>(out.size()) >= budget) {
       break;
     }
-    if (remaining < kAmountFloor) {
+    if (remaining < nominalFloor) {
       break;
     }
 
@@ -181,7 +194,7 @@ generate(IllicitContext &ctx, const Plan &plan, std::int32_t budget) {
       }
     }
     amt = primitives::utils::roundMoney(amt);
-    if (amt < kAmountFloor) {
+    if (amt < nominalFloor) {
       break;
     }
 

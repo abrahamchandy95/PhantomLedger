@@ -43,6 +43,11 @@ std::unique_ptr<SessionBundle> SessionBundle::make(
         .issuerAccount = cardConfig.issuerAccount,
 
         .window = cardConfig.window,
+
+        // H3 part 3c-ii: card servicing stops at account closure —
+        // the same carrier the monolith path passes (spending.cpp),
+        // so the two engines cannot drift.
+        .timelines = cardConfig.timelines,
     };
 
     const auto cardSeed = cardConfig.seed != 0 ? cardConfig.seed : seed;

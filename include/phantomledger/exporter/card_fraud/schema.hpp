@@ -2,7 +2,7 @@
 //
 // phantomledger/exporter/card_fraud/schema.hpp
 //
-// Table contract for the `card-fraud` use case: a TabFormer-scale,
+// Table contract for the `card-fraud` use case: a TabFormer-shaped,
 // transaction-fraud-only corpus shaped for the owner's TigerGraph
 // TF_GNN_v3 schema. The generator emits LOADED attributes only; every
 // computed slot in TF_GNN_v3 (pagerank/community/c_id/c_size, the 25
@@ -16,10 +16,12 @@
 //                                   selectPaymentRoute; the card-cycle
 //                                   driver keys ingestion by source).
 //                                   Unauthorized card fraud and the
-//                                   gift-card scam ride this SAME
-//                                   channel with fraud.flag=1 and
-//                                   row.source = the VICTIM's deposit
-//                                   account (unauthorized.cpp).
+//                                   gift-card scam currently ride this SAME
+//                                   channel with fraud.flag=1, but use the
+//                                   victim's DEPOSIT ACCOUNT as row.source
+//                                   (unauthorized.cpp). That is documented
+//                                   realism debt: the fraud event does not
+//                                   yet carry a compromised card instrument.
 //   channel == Legit::merchant      account-paid POS purchases;
 //                                   row.source is the deposit-account
 //                                   Key. Interpreted as DEBIT-card
@@ -32,17 +34,20 @@
 //   the account's derived DEBIT card: a stable identifier derived from
 //   the account Key (derive.hpp), so every account owns exactly one
 //   debit-card identity across the whole run. Fraud rows therefore
-//   label the victim account's debit card (Card.is_fraud = card ever
-//   carried a flag-1 view row).
+//   label the victim account's derived debit card (Card.is_fraud = card
+//   ever carried a flag-1 view row). That full-window attribute leaks future
+//   fraud if used as a predictive input; it is a label/analysis attribute only
+//   until a point-in-time feature contract is implemented.
 //
 // MERCHANT SET: the union of destination Keys observed in the view.
 // Catalog merchants carry their category; fraud destinations are drawn
 // from the blueprint's biller accounts (unauthorized.cpp) and may lie
 // outside the merchant catalog — they still become Merchant vertices,
-// with the content-keyed category fallback (derive.hpp). Merchant
-// geography does not exist in the world model: city/state/zip are
-// content-keyed derivations from the merchant identity (doc-anchored
-// CHOICE rows), as are City.population, use_chip, and error.
+// with the content-keyed category fallback (derive.hpp). Merchant geography
+// comes from entity::merchant::Record.location and the world geography
+// catalogue. Online merchants and non-catalog fraud billers are geography-
+// free. `use_chip` and `error` remain export-time derivations and tracked
+// realism debt; City.population is the catalogue value.
 //
 // The PII investigative layer (Address/Phone/Email/IP/Device/ID/
 // Full_Name/DOB + Has_* edges) is DEMO ONLY in TF_GNN_v3 and empty on

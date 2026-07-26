@@ -7,6 +7,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/cards/seeds.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -95,15 +96,27 @@ inline constexpr double kReservationCeiling = 0.90;
 
 } // namespace detail
 
+/// Issue the credit-card registry.
+///
+/// H1 step 2b (class P stock): `startYear` is the WINDOW-START year;
+/// credit limits are calibration-year draws scaled ONCE by
+/// priceScale(startYear) so exported limits and ledger overdraft room
+/// report the same era-correct world value (authority U-6). The 0
+/// sentinel default means "calibration-flat" (scale 1.0) for legacy
+/// call sites; production passes the real window year. Scaling
+/// multiplies AFTER the draw — RNG order untouched.
 [[nodiscard]] inline entity::card::Registry
 issue(std::uint64_t base, const entity::behavior::Table &personas,
       std::uint32_t personCount,
-      const IssuanceRules &rules = kDefaultIssuanceRules) {
+      const IssuanceRules &rules = kDefaultIssuanceRules, int startYear = 0) {
   primitives::validate::Report report;
   rules.validate(report);
   report.throwIfFailed();
 
   assert(personas.byPerson.size() == personCount);
+
+  const double stockScale =
+      startYear == 0 ? 1.0 : synth::econ::priceScale(startYear);
 
   entity::card::Registry out;
   out.byPerson.assign(personCount, entity::card::Registry::none);
@@ -135,9 +148,11 @@ issue(std::uint64_t base, const entity::behavior::Table &personas,
                                rng, rules.aprMedian, rules.aprSigma),
                            rules.aprMin, rules.aprMax);
 
-    terms.creditLimit = std::max(
-        rules.limitFloor, probability::distributions::lognormalByMedian(
-                              rng, persona.card.limit, rules.limitSigma));
+    terms.creditLimit =
+        std::max(rules.limitFloor,
+                 probability::distributions::lognormalByMedian(
+                     rng, persona.card.limit, rules.limitSigma)) *
+        stockScale;
 
     // Inclusive [min, max] => uniformInt is half-open, so +1 on top.
     terms.cycleDay = static_cast<std::uint8_t>(

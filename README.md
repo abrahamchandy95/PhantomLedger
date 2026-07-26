@@ -45,17 +45,20 @@ On top of that static universe, the pipeline emits transactions across several c
 salary, rent (five variants by landlord type), merchant purchases, bills, subscriptions, ATM,
 self-transfers, credit card lifecycle events, government benefits, insurance premiums and claims,
 loan payments, tax payments, family transfers (allowance, tuition, support, spouse, parent gifts,
-sibling transfers, grandparent gifts, inheritance), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
+sibling transfers, grandparent gifts, funerals and estates), and fraud (classic, layering, funnel, structuring, invoice, mule, solo).
 
 Output formats include a standard transaction graph (vertices + edges), an ML-ready schema for mule detection,
 a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, a transaction-edges variant of the
-AML schema with derived graph features, and a TabFormer-scale card-fraud corpus shaped for TigerGraph's TF_GNN_v3
+AML schema with derived graph features, and a TabFormer-shaped card-fraud corpus for TigerGraph's TF_GNN_v3
 schema. Every table lands directly in PostgreSQL during the run — PhantomLedger writes no files.
 
 ### Design Principles
 
 - **Deterministic.** Every decision derives from a keyed stream seed: a string key (top-level seed + stream parts) is hashed with `blake2b`, the first 8 bytes seed a SplitMix64 expansion, and that initializes a PCG64 engine. A given `(seed, config)` yields bit-identical output on a fixed toolchain. The day-to-day spending simulator runs person-partitioned across hardware threads; determinism survives because every stream is seeded from entity keys, never from a shared sequence.
 - **Research-grounded.** Every probability, median, and sigma has a published citation or an explicitly documented modeling choice.
+- **Era-correct dollars.** All calibrated dollar constants are denominated in the pinned 2019 calibration year; realized amounts scale to each event's year through the embedded CPI-U (prices) and SSA AWI (wages) history, 1990–2024. A 1991 window opens at ≈0.53× prices and ≈0.40× wages; a 2019 window reproduces the calibrated magnitudes exactly. Outside coverage the scales freeze at the nearest measured year and the run declares it (never silent extrapolation). Statutory amounts — the BSA/CTR $10,000 threshold, note/rack denominations — deliberately do NOT scale.
+- **Era-correct lifecycles.** Personas are lifecycle states, not fixed labels: each person carries a deterministic timeline derived from their single modeled birth date — students start careers at 19–28, workers retire on SSA claiming-shaped dates (the exact 1983-Amendments full-retirement-age schedule), small businesses close on a memoryless median-five-year hazard, and everyone eventually DIES on an SSA-life-table hazard — and payroll, Social Security onset, business revenue, the spending level, and the AML customer view all follow the timeline. The population both persists and dies: deaths produce funerals and estates, accounts close after settlement, and a BEA-sized join cohort replenishes the customer base (macro-history H3).
+- **Era-correct activity levels.** Dollars are only half of era realism: how OFTEN people transact also moved. The discretionary spending session's per-day transaction rate is modulated by the measured real per-capita consumption level — nominal BEA PCE per capita deflated by CPI-U, anchored at the 2019 calibration year — so a 1991 window runs at ≈0.67× today's session volume, 2009 and 2020 carry their measured downturns, and a 2019 window reproduces calibrated volumes exactly. The modulation is COUNT-ONLY: ticket amounts stay on the price index, so the denomination law above is untouched, and the fraud budget rides the realized candidate count, so fraud DENSITY stays era-stable while fraud VOLUME follows the economy (macro-history H4; see [docs/h4_macro_modulation.md](docs/h4_macro_modulation.md)).
 - **Structurally realistic.** Balance ledgers enforce affordability; overdraft protection is a per-account product with tier-specific fees; LOC interest accrues on a dollar-seconds integral; merchants receive business-checking seeds; credit cards operate as liability accounts.
 - **Strict validation.** Configuration structs participate in a `validate::Report` framework; misconfigured rules surface as `validate::Error` at construction time rather than as silent zeros mid-simulation.
 
@@ -68,8 +71,10 @@ PhantomLedger is a C++23 project built with CMake. A `Makefile` wraps the common
 - CMake ≥ 3.23
 - A C++23-capable compiler (GCC 13+, Clang 17+, or MSVC 19.38+)
 - Git (for the `faker-cxx` fetch)
+- PostgreSQL client headers and `libpq` (for the build)
+- A reachable writable PostgreSQL database for production runs
 
-The only external dependency, [`faker-cxx`](https://github.com/cieslarmichal/faker-cxx) v4.3.2, is fetched automatically through CMake's `FetchContent`.
+[`faker-cxx`](https://github.com/cieslarmichal/faker-cxx) v4.3.2 is fetched automatically through CMake's `FetchContent`; PostgreSQL's client library is a system dependency.
 
 ### Make targets
 
@@ -108,6 +113,63 @@ make test BUILD_DIR=build-debug CONFIG=Debug
 make run ARGS="--usecase standard --days 120 --population 200000"
 ```
 
+`ARGS` is the single Make variable that forwards the existing CLI surface. The
+requested 1991-through-2019 card-fraud invocation is:
+
+```sh
+make run ARGS="--start 1991-01-01 --days 10592 --population 10000 --usecase card-fraud"
+```
+
+No database environment variable is needed for the local default:
+`PL_PG` unset (or empty) resolves in code to `dbname=phantomledger`. Set
+`PL_PG` only to override that connection string for another server/database.
+
+`10592` covers the half-open interval `[1991-01-01, 2020-01-01)`. This writes
+the shared all-rails ledger to `public.transactions` and all 34 card-view/graph
+tables to `card_fraud.cf_*`; the transaction-fraud training relation is
+`card_fraud."cf_Payment_Transaction"`. It does not write output files or enable
+hidden CLI options.
+
+This is TabFormer-shaped, not a byte/scale reproduction of [IBM's released
+artifact](https://github.com/IBM/TabFormer). That corpus contains 24,386,900 transaction rows for 2,000
+users, 100,343 merchant identifiers, and 28,471 fraud rows (0.11675%), observed
+from 1991-01-02 through 2020-02-28. A 10,000-person run is intentionally much
+larger; use `--days 10651` only when the requested interval must include IBM's
+observed 2020-02-28 endpoint.
+
+IBM's raw artifact has 15 columns; its preprocessing combines the four
+date/time fields into `Timestamp` and selects 12 fields, keeping `Is Fraud?` as
+the label rather than a model input. PhantomLedger's equivalent information is
+normalized across `Payment_Transaction`, its Card/Merchant edges, and geography
+tables; it is not a flat-column clone, and the present `mer_cat` is a modeled
+category rather than an empirical MCC.
+
+R2.5a full-horizon probes emitted 3.54M / 9.12M / 18.63M all-rails rows at
+population 500 / 1,000 / 2,000, peaking at 710 MB / 1.40 GiB / 2.92 GiB. The
+10,000-person run is therefore projected at roughly 91--95M all-rails rows,
+51--53M payment-view rows, 14--16 GiB process RSS, and 8.5 GiB encoded scratch
+spools. It is conditionally feasible on a quiet 32-GiB host, but the exact run
+has not passed the <=16-GiB release gate. Allow at least 100 GiB free across
+PostgreSQL and temporary storage; expect roughly 30--50 GiB of database data.
+Direct tables are currently `UNLOGGED`; take a durable PostgreSQL backup after
+a successful build. (Those probes predate the H1 nominal-scale wiring, the
+H2 payroll era repair, and the H4 activity modulation. Two corrections
+pull in OPPOSITE directions: pre-2025 windows now carry the full
+weekly/biweekly payroll volume, which RAISES early-era row counts, while
+the discretionary session now runs at each year's measured real
+consumption level, which LOWERS them — a 1991-start window opens at
+≈0.67× session volume and climbs to 1.0× by 2019. Read the
+10,000-person projection above as an upper bound on the session-driven
+share.)
+
+After the target run finishes, the read-only acceptance script checks the
+manifest, all 34 physical/registered tables, transaction-edge cardinality,
+raw-ledger joins, date bounds, and positive fraud labels:
+
+```sh
+psql "dbname=phantomledger" -f docs/card_fraud_postgres_acceptance.sql
+```
+
 Runtime diagnostics are **silent by default**; the `run-info` / `run-debug` / `run-trace` /
 `run-mem` targets switch them on. [docs/debugging.md](docs/debugging.md) is the debugging
 playbook: every topic and level, the golden-baseline triage protocol, and what to run for
@@ -140,10 +202,21 @@ same seed and config rewrite byte-identical content.
 | `--start YYYY-MM-DD` | `2025-01-01` | Simulation start date. |
 | `--help`, `-h` | — | Print the usage message. |
 
-Environment: `PL_PG='host=... port=... dbname=...'` selects the PostgreSQL server (default
-`dbname=phantomledger`). A reachable server is required — the run fails fast before any generation
-when none answers. (`PL_FILE_ONLY=1` is test infrastructure only: a serverless escape that produces
-just the corpus stream digest; `aml-txn-edges` cannot run this way.)
+Environment: `PL_PG='host=... port=... dbname=...'` overrides the PostgreSQL
+connection. When `PL_PG` is unset or empty, the code uses
+`dbname=phantomledger`. A reachable server is required—the run fails fast
+before any generation when none answers. (`PL_FILE_ONLY=1` is test
+infrastructure only: a serverless escape that produces just the corpus stream
+digest; `aml-txn-edges` cannot run this way.)
+
+Windows touching years outside the measured 1990–2024 era coverage (including
+the 2025 default start) run with the nominal dollar scales AND the real
+activity level FROZEN at the nearest covered year's level; the binary
+prints one declared stderr notice. On the activity axis the 2024 freeze
+sits ≈9% ABOVE the 2019 calibration level, so a default 2025 run
+emits somewhat more session volume than a 2019 one.
+The card-fraud use case additionally requires its whole window inside
+coverage (the era lock).
 
 Each `--usecase` writes into its own schema, so runs with the same `--seed` against the same
 database compose into a coherent multi-format dataset without colliding (identifiers are canonical
@@ -169,7 +242,7 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
 6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages. Employers and clients are split internal/external.
 7. **Institutional externals.** SSA, disability, insurance carriers, lenders, IRS, and bank fee books are registered from a fixed catalog.
 8. **Planned external family accounts.** Deterministic `XF…` accounts for family members who bank elsewhere.
-9. **Personas.** Each person gets an archetype and a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity).
+9. **Personas.** Each person gets an archetype, a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity), a membership interval (a BEA-sized join cohort joins mid-window; accounts close after death — see [Personas](#personas)), a birth date drawn on an isolated lane at the person's own anchor (the single age axis every exporter renders), and a lifecycle timeline including a death date.
 10. **Planned owned income accounts.** Freelancers/smallbiz get a `BOP…` business operating account; HNW gets a `BRK…` brokerage/custody account. These are **internal**, same-customer accounts, not externals.
 11. **Credit cards.** Each eligible person draws card approval (persona-dependent); issued cards get APR, credit limit, cycle day, autopay mode.
 12. **Portfolios.** Mortgage / auto loan / student loan / tax profile / insurance holdings are assigned by persona priors; insurance rates for non-financed collateral owners are back-calculated so the overall persona-level rate stays close to target.
@@ -185,10 +258,10 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
 ### Stage 3: transfers
 
 1. The legit-transfer builder produces the candidate ledger in semantic order:
-   - **Income pass.** Salary (payroll cadences, job tenure, compound raises), government benefits (SSA Wednesday cohorting, disability), non-payroll revenue (client ACH, platform payouts, card settlements, owner draws, investment inflows).
-   - **Routines pass.** Direct-deposit splits, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution).
-   - **Family pass.** Allowances, tuition, retiree support, spouse transfers, parent gifts, sibling transfers, grandparent gifts, inheritance.
-   - **Credit pass.** Credit-card lifecycle (purchase → refund/chargeback, interest, late fees, payments).
+   - **Income pass.** Salary (payroll cadences, job tenure, compound raises), government benefits (SSA Wednesday cohorting, disability), non-payroll revenue (client ACH, platform payouts, card settlements, owner draws, investment inflows). Every income stream ends at death.
+   - **Routines pass.** Direct-deposit splits, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution). Behavioral flows stop at death; contractual flows stop at account closure.
+   - **Family pass.** Allowances, tuition, retiree support, spouse transfers, parent gifts, sibling transfers, grandparent gifts, funerals, and death-caused estates.
+   - **Credit pass.** Credit-card lifecycle (purchase → refund/chargeback, interest, late fees, payments), serviced until account closure.
 
    The builder also returns a starting clearing house with per-account balances, overdraft products, and credit limits applied.
 2. Insurance premium and claim events are merged in.
@@ -231,7 +304,10 @@ Density is configured per 10k people (`per10kPeople` = 120 core, `longTailExtern
 
 Categories: grocery, fuel, utilities, telecom, ecommerce, restaurant, pharmacy, retail_other, insurance, education.
 
-**In-bank probability** (`inBankP` = 0.06): a large retail bank holds ~10–12% of US deposits (FDIC SOD 2024), but NFIB 2023 shows 56% of small business owners keep personal and business at the same bank. Blended, ~6% of a customer's merchant counterparties bank at the same institution.
+**In-bank probability** (`internalP` = 0.02): this is the current explicit
+modeling choice. The older 0.06 documentation value was stale; calibrating the
+on-us merchant share against an issuer/acquirer portfolio remains a model
+round rather than a documentation inference from deposit share.
 
 ### Landlords
 
@@ -279,9 +355,82 @@ Densities per 10k people:
 
 Shares are computed at compile time: the five non-salaried personas have fixed shares (12/10/10/6/2 = 40%) and salaried takes the remainder (60%). This is enforced by a `consteval` check — any future edit that makes the non-salaried shares exceed 1.0 is a compile error.
 
+Dollar columns (initial balance, credit limit) are calibration-year values;
+the realized stocks anchor once at the window-start year's price level.
+
+### Persona timelines (macro-history H2)
+
+The seed assignment above is the persona AT THE PERSON'S ANCHOR — simulation
+start for the seed roster, the join date for the join cohort (below). Each
+person also carries a deterministic lifecycle timeline
+(`synth/personas/timeline.hpp`), derived once on an isolated RNG lane from
+their modeled birth date:
+
+- **student → working** (salaried 85% / freelancer 15%) at a work-start age
+  drawn over 19–28;
+- **salaried / freelancer → retiree** at an SSA claiming-shaped date: 30%
+  claim at 62, 10% uniformly before full retirement age, 45% at FRA (the
+  exact 1983-Amendments schedule, 65→67 by birth cohort), 5% between FRA and
+  70, 10% at 70, plus a 0–60-day jitter;
+- **smallBusiness → working** when the business closes (memoryless
+  exponential residual lifetime, median 5 years, per BLS BED five-year
+  survival) — retirement dominates when it comes first;
+- **retiree** seeds carry a backdated claim date; **highNetWorth** is exempt
+  (no transitions);
+- **everyone → deceased** on an SSA 2023 period-life-table hazard (below).
+
+Generation follows the timeline: paychecks span [career start, min(claiming
+date, death)), Social Security deposits begin at max(window start, claim date)
+and end at death, business revenue stops at the close, spending steps down
+~12% at the claim (see [Day-to-Day Spending](#day-to-day-spending)), and the
+AML Customer export reports the end-of-window persona. Spending ARCHETYPES
+(the rate/amount/timing profiles above) remain seed-based — the full
+age-profile re-anchor is a registered upgrade.
+
+### Mortality, estates, and membership (macro-history H3)
+
+Every person carries a death date, derived once on the isolated
+`{"mortality", personId}` lane from their birth date and the EMBEDDED SSA
+2023 period life table (sex-specific annual death probabilities inverted at
+one uniform; sex is a latent 50/50 mortality attribute — the ~2.7-year
+male/female gap is retained as real signal). Everyone on the roster is alive
+at their anchor by construction (the hazard is conditional on survival to
+it), and deaths anchor to birth dates, never to the window.
+
+**Behavioral flows stop at death**: spending person-days, ATM withdrawals,
+internal self-transfers, rent (the lease dies with the tenant), family
+gifts (either party dead drops the row), insurance claim filing, and every
+income stream. **Contractual flows keep posting against the estate until
+ACCOUNT CLOSURE** at death + 120 days: subscriptions, insurance premiums,
+loan/tax obligations, and card cycles (card servicing stops one final
+statement early so its payment tail lands before closure). Estates really do
+keep getting billed — the interval is the modeled settlement period.
+
+**Every in-window death produces a funeral and an estate**: one bill-channel
+funeral payment from the decedent's account at death+3–10 days (lognormal
+median $6,300 calibration dollars — the NFDA 2019 General Price List blend
+of burial and cremation-with-viewing at the ~55% cremation rate), and an
+estate distribution to the heirs (children, else supporting children) at
+death+30–90 days, both before the accounts close.
+
+**Membership is the interval [joinTs, closeTs)**: the seed roster is present
+from window start; a JOIN COHORT — sized so the customer base tracks the
+embedded BEA population series (≈0.5–1.4%/yr across 1990–2024, rate-frozen
+outside coverage) — joins on days drawn proportional to each year's
+population growth, one draw per joiner on the isolated `{"join-cohort"}`
+lane. Joiners' ages, timelines, and lifespans anchor at their JOIN date (a
+2015 joiner draws 2015-appropriate ages — this closed the declared joiner
+age-axis error). The standard exporter's visible corpus filters every row on
+both endpoint owners' intervals; customer tables carry `created_at` and
+`closed_at`; the AML Customer status flips `active → closed` at closure.
+
 ## Financial Products
 
 Every person gets a portfolio of optional products. Ownership is conditioned on persona.
+Payment medians below are calibration-year (2019) dollars; loan payments anchor
+at their origination year's price level and stay fixed nominal through the term
+(real loans are nominal contracts), while tax amounts realize at each due
+date's price level.
 
 ### Mortgage
 
@@ -378,7 +527,8 @@ Persona ownership rates:
 | smallbiz | 92% | 60% | 60% |
 | hnw | 95% | 90% | 80% |
 
-**Premium distributions** (monthly):
+**Premium distributions** (monthly, calibration-year dollars; each billing
+realizes at the billing month's price level):
 - Auto: median $225, σ = 0.35 (Bankrate 2026).
 - Home: median $163, σ = 0.40 (Ramsey 2025).
 - Life: median $40, σ = 0.50.
@@ -388,9 +538,11 @@ Persona ownership rates:
 **Claim behavior**:
 - Auto: 4.2% annual claim rate (III 2024), median payout $4,700, σ = 0.80.
 - Home: 5.5% annual (Triple-I 2024), median payout $15,750, σ = 0.90.
-- Life: not modeled (death events out of scope).
+- Life: death-benefit payouts remain a REGISTERED upgrade — deaths ARE
+  modeled (macro-history H3) and the estates carry the wealth transfer; a
+  policy payout to the estate would double-count until sized together.
 
-Annual rates are converted to a window probability via `1 - (1 - p)^(n_months/12)`.
+Annual rates are converted to a window probability via `1 - (1 - p)^(n_months/12)`. Claim filing stops at the policyholder's death; premiums keep billing the estate until account closure.
 
 **Escrow interaction**: if a homeowner has a mortgage, the home-insurance premium is treated as already embedded in the mortgage payment and is NOT emitted separately (the Census AHS median payment is already all-in). Claims still fire.
 
@@ -398,7 +550,7 @@ Annual rates are converted to a window probability via `1 - (1 - p)^(n_months/12
 
 At issuance the policy draws:
 - APR: lognormal, median 22%, σ = 0.25, clamped to [8%, 36%] (Fed G.19 Q4 2024 average 21.5%).
-- Limit: lognormal around persona credit limit, σ = 0.65. (Context: Experian Q3 2023 average total credit limit across all of a consumer's cards was $29,855; per-card persona limits sit deliberately below that aggregate.)
+- Limit: lognormal around persona credit limit, σ = 0.65, anchored at the window-start year's price level. (Context: Experian Q3 2023 average total credit limit across all of a consumer's cards was $29,855; per-card persona limits sit deliberately below that aggregate.)
 - Cycle day: uniform [1, 28].
 - Autopay mode: 40% full, 10% minimum, 50% manual.
 
@@ -409,7 +561,9 @@ Stats anchors: 82% of US adults have ≥1 card (Fed SHED 2023); average balance 
 2. Each purchase probabilistically produces a refund (0.6%, 1–14 day delay) or chargeback (0.1%, 7–45 day delay) **from the same merchant that received the charge** — no synthetic refund counterparty.
 3. Cycle-end: compute average balance via piecewise-constant integration; if out of grace and there is a debt integral, charge interest at `APR × interval_days / 365`.
 4. Minimum due = max(2% of statement, $25). Autopay mode drives payment amount (full / min / manual). Manual splits into pay-full (35%), partial Beta(2, 5) (30%), minimum (25%), miss (10%). Late by cycle has 8% probability with 1–20 day delay.
-5. Late fee $32 fires if not paid by due date (+grace_days default 25). ($32 is the CARD Act safe-harbor level restored when the CFPB's $8 cap was vacated in April 2025; real schedules step to ~$43 for repeat violations, which the model simplifies to a flat fee.)
+5. Late fee $32 fires if not paid by due date (+grace_days default 25). ($32 is the CARD Act safe-harbor level restored when the CFPB's $8 cap was vacated in April 2025; real schedules step to ~$43 for repeat violations, which the model simplifies to a flat fee.) The $25 minimum-due floor and the $32 fee are calibration-year dollars, realized at each cycle date's price level.
+
+Card servicing stops with the owner's account: the statement-close ladder truncates 50 days before ACCOUNT CLOSURE (death + 120 days), so the final cycle's payment and late-fee tail settle against the estate strictly before the accounts close.
 
 ## Banking Mechanics
 
@@ -417,10 +571,10 @@ Stats anchors: 82% of US adults have ≥1 card (Fed SHED 2023); average balance 
 
 Every internal account carries:
 
-1. **Balance** (seeded at simulation start).
+1. **Balance** (seeded at simulation start; the calibration-year draw anchors at the window-start year's price level, so 1991 accounts open with era-correct dollars).
 2. **Overdraft protection product** — exactly one of NONE / COURTESY / LINKED / LOC, drawn from a per-persona multinomial.
 3. **Bank tier** — ZERO_FEE (15%) / REDUCED_FEE (10%) / STANDARD_FEE (75%) (Bankrate 2025, Consumer Reports 2024 account-share composition).
-4. **Per-account overdraft fee** — drawn from a tier-specific lognormal at init.
+4. **Per-account overdraft fee** — drawn from a tier-specific lognormal at init (window-start anchored, like the balance).
 
 Exclusivity matters: real customers don't stack all three buffer products. Available liquidity is `balance + overdraft + linked + courtesy`, but at most one of those buffers is non-zero per account.
 
@@ -486,6 +640,22 @@ Internal merchants (`M…`) default to the SALARIED persona's $1,200 initial bal
 
 All channel → amount mappings live in a single amount-model table. Each channel has a single declared model; lookup failure is a hard runtime error.
 
+**Denomination**: every median and floor below is a CALIBRATION-YEAR (2019)
+dollar. Realized amounts multiply by the event year's index — SSA AWI for
+labor income (salary, revenue, benefits), CPI-U for everything price-like —
+from the embedded 1990–2024 era series (macro-history-v1 H1; see
+[docs/era_data_provenance.md](docs/era_data_provenance.md) and
+[docs/h1_nominal_scale_wiring.md](docs/h1_nominal_scale_wiring.md)). Behavioral
+dollar screens scale with the amounts they screen; statutory amounts (the CTR
+$10,000 threshold) and physical denominations (the $20 note, gift-card racks)
+deliberately stay fixed — scaled amounts RE-SNAP to their lattices, so a 1991
+ATM withdrawal is fewer $20s, never scaled $20s.
+
+The era's REAL growth rides the COUNT axis instead (macro-history H4):
+the medians below are what a transaction COSTS, and the measured
+per-capita consumption path decides HOW MANY transactions happen — see
+[Counts](#counts--gamma-poisson-mixture).
+
 Channel-level lognormals (median, σ, floor):
 
 | Channel | Median | σ | Floor | Source |
@@ -533,6 +703,24 @@ $$
 
 This is a Negative Binomial in disguise — it produces overdispersed, bursty counts matching observed human transaction behavior. Default shape `k = 1.5`, weekend multiplier 0.8.
 
+**Era modulation (macro-history H4).** The per-day rate additionally
+carries `realPceLevel(year)` — the measured real per-capita
+consumption index (nominal BEA PCE per capita ÷ CPI-U, both embedded,
+anchored to exactly 1.0 at the 2019 calibration year). One lookup per
+simulated day frame multiplies into the same combined multiplier that
+carries seasonality and momentum, so the count axis follows the measured
+path: ≈0.67 in 1991, the 1990-91 and 2008-09 dips, the 2020 collapse
+and 2021 rebound, and ≈1.09 at the frozen 2024 level. The 2001
+recession is deliberately FLAT — that downturn slowed consumption
+GROWTH without a per-capita level dip, and the model inherits exactly
+what the series shows, nothing more. The window-level transaction budget
+keeps its meaning as a CALIBRATION-LEVEL target: realized volume is
+target × the year's real level, so a 2019 window reproduces today's
+volumes exactly. Amounts are untouched by this factor (the channel split
+under [Amount Distributions](#amount-distributions)), and because the
+fraud budget is F = pL/(1−p) on the realized candidate count L, fraud
+density stays era-stable while fraud volume follows the economy.
+
 ### Timing Profiles
 
 Three hour-of-day profiles:
@@ -568,13 +756,17 @@ On payday, trigger a `max_residual_boost × paycheck_sensitivity` multiplier tha
 
 ### Counterparty Evolution — Monthly
 
-At month boundaries:
+The configured monthly evolution profile contains:
 - `merchantAddP` = 0.35 — add one new favorite, weighted by global merchant CDF.
 - `merchantDropP` = 0.10 — drop a random existing favorite.
 - `contactAddP` = 0.08 — add a new P2P peer.
 - `contactDropP` = 0.03 — replace a contact slot with a duplicate (reduces effective diversity).
 
-Tovanich et al. (2021) model category diversity, persistence, and monthly turnover as stable per-person spending features, building on work linking Openness to higher contact turnover; the add/drop rates above are modeling choices in that spirit, not estimates from the paper. This matters for mule detection: mules show SUDDEN counterparty explosion (10–25 new counterparties in days, per FATF 2022); legitimate accounts show 1–2 new merchants/month.
+Only contact evolution is wired in production today. Merchant favorite
+add/drop remains a structural TODO, so the two merchant probabilities above
+must not be interpreted as realized monthly turnover. Tovanich et al. (2021)
+motivates category diversity, persistence, and turnover as useful features;
+the listed rates are modeling choices, not estimates from that paper.
 
 ### Seasonal Multipliers
 
@@ -601,7 +793,7 @@ Sources: NRF ($976B 2024 holiday, $1.01T projected 2025); Bank of America Consum
 
 During day-to-day simulation each person gets a liquidity multiplier combining:
 - Days-since-payday **relief** (boost for first `reliefDays`) and **stress** (ramp over `stressRampDays` after `stressStartDay`).
-- Cash-on-hand ratio (clipped).
+- Cash-on-hand ratio (clipped; the $75 cash-reference floor scales with the day's price level).
 - Fixed-burden ratio (larger fixed monthly obligations → greater stress).
 
 Product is clipped to [0, 1.10] with an absolute floor. Count-stage liquidity shaping is **soft** (never zeros out an entire person-day) — the authoritative ledger is what truly enforces affordability.
@@ -610,18 +802,27 @@ Product is clipped to [0, 1.10] with an absolute floor. Count-stage liquidity sh
 
 ### Salary (Payroll)
 
-Persona-conditioned salary probability, then scaled by policy `paidFraction = 0.65`:
+Persona-conditioned salary probability, then scaled by policy `paidFraction = 0.74`
+(the working-type weighted mean of the table below, re-derived when selection
+moved to the timeline at macro-history H2):
 
 | Persona | p(salary) |
 |---------|-----------|
 | salaried | 98% |
-| freelancer | 8% |
+|freelancer | 8% |
 | smallbiz | 4% |
 | hnw | 12% |
 | student | 12% |
 | retired | 2% |
 
-Each recipient gets an employer, a payroll cadence (27% weekly, 43% biweekly, 20% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. Raises compound: `inflation + Normal(0.02, 0.01)` annually. Job switches trigger a `Normal(0.08, 0.05)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `payPeriodsInYear` gives the per-paycheck amount at any cadence.
+Selection keys on the WORKING-LIFE persona from the timeline: a seed student
+uses their career destination's probability, a business owner who closes uses
+their post-business type, and seed retirees draw no payroll at all. Paychecks
+are clipped to the working span — students start at their career onset,
+post-close owners at the business end, and everyone stops at their claiming
+date or their death, whichever comes first.
+
+Each recipient gets an employer, a payroll cadence (20% weekly, 55% biweekly, 15% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. The base salary is a calibration-year draw; paychecks realize at the pay-date year's WAGE index (SSA AWI), so nominal pay follows the measured economy-wide path. Idiosyncratic career progression compounds ON TOP as seeded annual real raises `Normal(0.015, 0.02)`; job switches trigger a `Normal(0.08, 0.06)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `payPeriodsInYear` gives the per-paycheck amount at any cadence. The weekly/biweekly pay lattices exist in EVERY era — the fixed 2025 anchor date is a weekday/fortnight-parity reference only, so a 1991 window pays exactly as many paychecks as a 2025 one (this repaired a defect where 75% of employer cadences were silent before 2025).
 
 ### Rent
 
@@ -636,33 +837,43 @@ Persona-conditioned renter probability (given not a homeowner), scaled by `rentF
 | smallbiz | 35% |
 | hnw | 10% |
 
-Leases have tenure uniform [2, 10] years. Base rent compounds at `inflation + Normal(0.03, 0.02)` annually. On lease turnover the base is re-sampled. Monthly payment timestamps are jittered in days 0–5 with hours 7–22. Channel is selected by the rent router using the landlord-type-specific CDF described above — so the same tenant paying the same landlord produces a consistent Zelle/check/ACH/portal signature.
+Leases have tenure uniform [2, 10] years. Base rent is a calibration-year draw realized at each payment's year through the CPI price index; idiosyncratic lease progression compounds on top as seeded annual real raises `Normal(0.02, 0.015)`. On lease turnover the base is re-sampled. Monthly payment timestamps are jittered in days 0–5 with hours 7–22. Channel is selected by the rent router using the landlord-type-specific CDF described above — so the same tenant paying the same landlord produces a consistent Zelle/check/ACH/portal signature. The lease dies with the tenant: rent stops at death.
 
 ### Day-to-Day Spending
 
 A day-by-day market simulator drives discretionary spending:
 
 1. **Market build.** Each person gets `favK` ∈ [8, 30] favorite merchants (weighted by global merchant CDF) and `billK` ∈ [2, 6] billers. Exploration propensity ~ Beta(1.6, 9.5). Burst windows (optional) ~ 8% of people get a 3–9 day high-spending burst at a random point in the window.
-2. **Per-day.** Build seasonal × momentum × dormancy × paycheck × weekday × day-shock × liquidity multiplier. Target count per person-day is back-calculated from monthly target, inverting the suppressors.
-3. **Per-transaction.** Sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknownOutflowP = 0.05` carved out).
+2. **Per-day.** Build seasonal × momentum × dormancy × paycheck × weekday × day-shock × liquidity × era-level multiplier — the last is H4's measured real consumption index (see [Counts](#counts--gamma-poisson-mixture)). Target count per person-day is back-calculated from the monthly target, inverting the suppressors; that target is a CALIBRATION-LEVEL quantity, so realized volume is target × the year's real level. Dead spenders' person-days are skipped — the dead spend nothing.
+3. **Per-transaction.** Sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknownOutflowP = 0.05` carved out). Ticket draws realize at the day's CPI level.
 4. **Merchant routing.** 82% of the time pick from favorites; else explore (with rejection if the explored merchant is already a favorite). Payment method is card (if the person holds one and `ccShare` rolls) or deposit account.
 5. **Monthly boundary.** The commerce evolver adds/drops a merchant favorite and shuffles P2P contacts per the evolution config.
 
+From a spender's Social Security claiming day onward, every ticket draw
+additionally scales by 0.88 — the Aguiar–Hurst retirement consumption step
+(~−12%, macro-history H2). It applies only to working-seed archetypes retiring
+in-window; seed retirees are exempt because their archetype already carries
+retired-calibrated rate/amount multipliers. The payday-anchored liquidity
+machinery (relief, stress, paycheck boost) re-anchors automatically at
+retirement: payday days derive from each person's ACTUAL inbound deposits and
+the SSA channels count as payday inbounds, so the cycle follows the deposit
+stream from paychecks to benefit Wednesdays with no special-case code.
+
 ### Subscriptions
 
-Each person gets 4–8 subscription "intents" with 55% actual debit probability. Prices are drawn from a pool of realistic SaaS / streaming amounts ($6.99, $9.99, $14.99, $17.99, $49.99, $99.99, etc.). Billing day uniform [1, 28] with ±1 day jitter per cycle.
+Each person gets 4–8 subscription "intents" with 55% actual debit probability. Prices are drawn from a pool of realistic SaaS / streaming amounts ($6.99, $9.99, $14.99, $17.99, $49.99, $99.99, etc. — calibration-year prices; each debit realizes at the DEBIT month's price level, so subscription pricing tracks the era). Billing day uniform [1, 28] with ±1 day jitter per cycle. Subscriptions are contractual: they keep debiting the estate after death and stop at ACCOUNT CLOSURE (death + settlement).
 
 ### ATM
 
-88% of people are ATM users. Monthly withdrawals uniform [1, 6]. Amounts drawn from a pool weighted toward round multiples of 20/40/60/100 (matches real ATM UX). 75% of withdrawals bias to days 0–18 of the month, 25% to days 18–28. Destination is the bank's ATM network hub account.
+88% of people are ATM users. Monthly withdrawals uniform [1, 6]. Amounts drawn from a pool weighted toward round multiples of 20/40/60/100 (matches real ATM UX), scaled to the event year's price level and RE-SNAPPED to the $20 note lattice — a 1991 withdrawal is fewer $20s. 75% of withdrawals bias to days 0–18 of the month, 25% to days 18–28. Destination is the bank's ATM network hub account. Withdrawals stop at death.
 
 ### Self-Transfers
 
-45% of multi-account holders actively self-transfer. Monthly [1, 3] transfers, 45% round amounts from pool, 55% lognormal($250, σ=0.80). 70% bias to days 0–6 (post-payday "move to savings"). Source is the account with most available cash; destination is the leanest.
+45% of multi-account holders actively self-transfer. Monthly [1, 3] transfers, 45% round amounts from pool, 55% lognormal($250, σ=0.80). Round picks scale to the event year then re-snap to a $25 round-amount lattice so the round-number signature survives every era. 70% bias to days 0–6 (post-payday "move to savings"). Source is the account with most available cash; destination is the leanest. The dead move no money between their own accounts.
 
 ### Direct-Deposit Splits (Paychecks)
 
-For multi-account holders: 30% split their salary. 10–35% of each salary deposit is routed within 5–30 minutes to a secondary account. APA 2024.
+For multi-account holders: 30% split their salary. 10–35% of each salary deposit is routed within 5–30 minutes to a secondary account. APA 2024. (Splits consume the payday-inbound stream, so they stop with the death-clipped income.)
 
 ### Government Benefits (SSA Wednesday Cohorting)
 
@@ -672,31 +883,51 @@ Post-1997 SSA/RSDI cycle payment rule:
 - Birth day 21–31 → 4th Wednesday
 - If Wednesday is a federal holiday, pay the preceding business day.
 
-Since the transfer generator doesn't carry DOB, the synthetic day-of-month is derived from the same `blake2b` hash used by the ML-export party renderer, so the Wednesday cohort stays aligned with the exported fake DOB.
+The Wednesday cohort derives from the person's REAL modeled birth day-of-month
+— the same single birth-date carrier that renders every exported DOB — so the
+payment calendar, the PII, and the retirement timeline all share one age axis
+(macro-history H2 step 2a; the older synthetic hash-derived birth day is
+retired).
 
 **Social Security** (defaults, SSA 2026 COLA):
-- Eligibility: 87% of retirees (SSA Dec. 31, 2025 fact sheet).
+- Eligibility: 87% of eligible retirees (SSA Dec. 31, 2025 fact sheet). Selection is timeline-driven: anyone RETIRED BY WINDOW END — including mid-window claimants — is a candidate, and deposits begin at max(window start, claiming date), so a worker who claims mid-corpus starts drawing that month. Deposits end at death — benefits die with the beneficiary (survivor benefits are a registered upgrade).
 - Monthly benefit: lognormal median $2,071 (estimated Jan 2026 avg retired-worker benefit), σ = 0.30, floor $900.
 
 **Disability**:
 - 4% of non-retired non-students.
 - Monthly: median $1,630 (Jan 2026 avg disabled-worker benefit), σ = 0.25, floor $500.
 
+Benefit levels are drawn once in calibration-year dollars; each monthly
+deposit realizes at that month's wage index (one index era-wide and the
+one-shot level draw are the declared simplifications — earnings-history-based
+benefit levels and per-cohort COLA indexing are a registered upgrade).
+
 The repo does NOT model the "paid on the 3rd" exceptions (pre-May-1997 entitlement, dual SSI, foreign residents) — all SSA-style benefits use the standard Wednesday rule.
 
 ### Non-Payroll Revenue
 
-Freelancers, smallbiz, and HNW get a revenue engine:
+Freelancers, smallbiz, and HNW get a revenue engine (labor-income axis: draws realize at the month's wage index):
 
 - **Freelancer**: 1–4 client ACH credits/month (median $1,400, σ = 0.70); 1–4 platform payouts (median $425); 1–2 owner draws (median $1,800). 12% quiet-month probability.
 - **Smallbiz**: 0–3 client ACH (median $2,600); 0–3 platform (median $950); 4–12 card settlements (median $680); 1–2 owner draws (median $3,400). 6% quiet months.
 - **HNW**: 0–2 investment inflows (median $6,500, σ = 1.05). 2% quiet months.
 
-Routing: clients/platforms/processors land on the **business operating account (BOP…)** if the person has one; otherwise on personal. Investment inflows route to the **brokerage (BRK…)** if present. Business timestamps fall on business days (weekend rejection with retry).
+Revenue months are persona-gated by the timeline: a student plan stops
+emitting at the career start, worker plans at the claiming date, business
+plans at the close; retiree investment income and HNW inflows run until
+death (those personas never transition away, but nobody earns past their
+own funeral).
+
+Routing: clients/platforms/processors land on the **business operating account (BOP…)** if the person has one; otherwise on personal. Investment inflows route to the **brokerage (BRK…)** if present. Business timestamps fall on business days (weekend rejection with retry). Cash takings stay on the $10 bill lattice after scaling, which keeps the exact-$10,000 CTR boundary reachable.
 
 ## Family and Social Flows
 
 The family graph is built from three configs: household partitioning (`singleP` = 29%, Zipf α = 2.2, `spouseP` = 62%), dependent structure (65% student-dependent, 35% co-resident, 70% two-parent), and retiree support ties (35% has-adult-child, 35% supports).
+
+Family amounts below are calibration-year dollars; each transfer realizes at
+its event date's price level. Gift flows stop at death — a row whose source
+or target owner is dead at its timestamp is dropped (external `XF…` family
+members carry no modeled deaths — declared).
 
 ### Allowances (parent → student child)
 
@@ -728,9 +959,25 @@ HRS longitudinal data: 35% of parents 51+ transfer to adult children over a two-
 
 38–45% of 50+ households send money to younger generations (EBRI 2015). Implicit grandchildren found by two-hop traversal (`retired_person → children → their children`). 8% monthly probability, median $150, σ = 0.70.
 
-### Inheritance
+### Funerals and Estates (death-caused)
 
-26% of Americans plan to leave one (NW Mutual 2024). Modeled as a rare one-shot event: per 180-day window, 0.15% of retirees trigger an inheritance. Amount lognormal median $25,000, σ = 1.0, floor $1,000. Split equally among heirs (direct children, or supporting children as fallback).
+Every in-window death produces, on the isolated family-inheritance lane:
+
+- **A funeral**: one bill-channel payment from the decedent's account to the
+  external service-merchant hub at death+3–10 days. Amount is lognormal,
+  median $6,300 calibration dollars — the NFDA 2019 General Price List blend
+  of a funeral with viewing and burial ($7,640) and cremation with viewing
+  ($5,150) at the ~55% 2019 cremation rate — σ = 0.40, floor $1,000,
+  realized at the death year's price level.
+- **An estate**: the decedent's estate distributes to the heirs (direct
+  children, else supporting children) at death+30–90 days (a declared
+  probate-settlement window). Interim size lognormal median $25,000,
+  σ = 1.0 — an SCF-anchored net-worth re-derivation is a registered
+  upgrade. Heirless estates are not yet distributed (declared).
+
+Both land strictly before the decedent's ACCOUNT CLOSURE (death + 120 days),
+so the visible corpus always carries them. The old uncaused inheritance
+hazard (0.15% of retirees per 180-day window, no death attached) is retired.
 
 ### Family External Accounts
 
@@ -759,6 +1006,13 @@ Fraud population shape:
 - Ceiling: total fraud participants ≤ 6% of population.
 - Target illicit transaction ratio: 0.5%.
 
+Fraud steals era dollars: ring-rail amounts (and the continuous unauthorized
+card/ATO draws) realize at the event year's price level. Structuring is the
+deliberate exception — its band is anchored to the statutory CTR threshold,
+which has been unindexed since the 1970s, so in 1991 the same $9,950 bites at
+roughly twice today's real value. Card-testing anchors and gift-card rack
+denominations also stay fixed-nominal (round amounts ARE the signature).
+
 ### Typologies
 
 Each ring is assigned one typology by weighted choice (defaults: 30% classic, 15% layering, 10% funnel, 10% structuring, 5% invoice, 30% mule):
@@ -766,8 +1020,8 @@ Each ring is assigned one typology by weighted choice (defaults: 30% classic, 15
 - **Classic** — victim → mule → fraud + optional cycle passes through the ring.
 - **Layering** — victim → entry mule → 3–8 hops of mule/fraud nodes → exit cashout.
 - **Funnel** — many sources → one collector → several cashouts.
-- **Structuring** — victim splits N payments just under the $10k threshold (CTR avoidance), 3–12 splits of `amount = 10000 - Uniform(50, 400)`.
-- **Invoice** — fraud → biller (mimics business-to-vendor payments).
+- **Structuring** — victim splits N payments just under the $10k threshold (CTR avoidance), 3–12 splits of `amount = 10000 - Uniform(50, 400)`. Fixed-nominal in every era (class S).
+- **Invoice** — fraud → biller (mimics business-to-vendor payments; $10-snapped era dollars).
 - **Mule** — high fan-in (8–25 inbound sources) + rapid forwarding (1–12 hour delay, 90–95% passed through with 5–10% haircut). This is the textbook FATF 2022 profile: many small-to-medium inbounds, fewer larger outbounds, concentrated in a 5–14 day burst window.
 - **Solo** — individual bad actor with no ring affiliation.
 
@@ -778,11 +1032,11 @@ Each participating ring account receives additional **legitimate-looking** trans
 - Daily small P2P: 3% per account per day.
 - Recurring salary: 12% of ring accounts receive a plausible payroll stream.
 
-Camouflage events fire with `isFraud = 0` and `ringId = -1` so they blend into the legitimate population for anyone looking only at flags.
+Camouflage events fire with `isFraud = 0` and `ringId = -1` so they blend into the legitimate population for anyone looking only at flags. Camouflage scales with the index of the flow it mimics (bills/P2P ride the price index, the salary mimic rides the wage index) — a cover row scaled differently from its cover class would be a detectable artifact.
 
 ### Burst Window
 
-Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to this window; outside it the ring members behave legitimately.
+Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to this window; outside it the ring members behave legitimately. Rings never recruit the dead: each ring's bursts and camouflage clamp to its participants' alive horizon (the earliest death among its fraud actors and mules), so no ring member moves money after their own death. Victim accounts are deliberately exempt — fraud against deceased persons' accounts is a real, documented typology — and so is the solo/unauthorized rail.
 
 ### Shared Infrastructure
 
@@ -831,6 +1085,13 @@ Vertex tables: `person`, `accountnumber`, `phone`, `email`, `device`, `ipaddress
 Edge tables: `HAS_ACCOUNT`, `HAS_PHONE`, `HAS_EMAIL`, `HAS_USED`, `HAS_IP`, `HAS_PAID` (aggregated). The raw ledger is
 the streamed `transactions` table, shared by every use case (`SELECT * FROM transactions ORDER BY row_seq`).
 
+The VISIBLE corpus behind `HAS_PAID` and the flow aggregates filters every
+row on both endpoint owners' membership intervals `[joinTs, closeTs)`: a
+joiner's pre-join history and anything at/after a decedent's account closure
+is invisible, exactly as a bank's own books would be. The entity-resolution
+`customer.csv` carries `created_at` (the join instant) and `closed_at`
+(the closure instant when it lands inside the window; empty while open).
+
 ### Mule-ML
 
 Optimized schema for GraphSAGE / node-level mule detection:
@@ -839,7 +1100,12 @@ Optimized schema for GraphSAGE / node-level mule detection:
 - `Transfer_Transaction` — raw ledger.
 - `Account_Device`, `Account_IP` — aggregated account-infra edges with counts and first/last seen.
 
-Ages are drawn from persona-specific band distributions (e.g. retired: Beta-weighted across 65–99; student: 16–34). Addresses use `faker-cxx` together with deterministic zip-code lookups so addresses resolve to real US cities, with a fallback list.
+Ages render from the single per-person birth-date carrier (persona
+band-shaped draws — e.g. retired: Beta-weighted across 65–99; student:
+16–34), shared by every exporter, the SSA payment calendar, and the persona
+timelines. Joiners' ages anchor at their join date. Addresses use `faker-cxx`
+together with deterministic zip-code lookups so addresses resolve to real US
+cities, with a fallback list.
 
 ### AML — TigerGraph AML_Schema_V1
 
@@ -848,22 +1114,34 @@ Full graph export with:
 - **Vertices**: Customer, Account, Counterparty, Name, Address, Country, Watchlist, Device, Transaction, SAR, Bank, MinHash buckets (Name / Address / Street_Line1 / City / State), Connected_Component.
 - **Edges**: customer_has_account / account_has_primary_customer, send/receive_transaction (customer side) + counterparty_send/receive_transaction (counterparty side) + sent/received_transaction_to/from_counterparty (aggregated), uses_device, logged_from, customer/account/counterparty/bank/address has_name / has_address / associated_with_country, customer_matches_watchlist, references (SAR → Customer with role), sar_covers (SAR → Account with activity amount), beneficiary_bank / originator_bank, resolves_to (counterparty → customer soft link), MinHash bucket edges.
 
+**Customer persona and lifecycle**: the Customer vertex's `customer_type`
+(and the demographic/occupation attributes derived from it) reports the
+END-OF-WINDOW persona — the lifecycle state at the corpus's final timestamp —
+so a worker who retires mid-window exports as a retiree, exactly as a bank's
+CRM would show them at export time. The Customer status cell flips
+`active → closed` once the person's ACCOUNT CLOSURE (death + settlement)
+precedes the corpus end. The AML corpora remain FULL-WORLD exports (no
+membership row filter — declared); the AML onboarding date is a synthetic
+backdated derivation, not the membership joinTs (a declared inconsistency;
+aligning them is registered).
+
 **SAR generation**: one SAR per fraud ring (filed 30 days after the last illicit transaction, per BSA); one SAR per solo fraudster. Violation type inferred from dominant fraud channel: structuring → `structuring`, invoice → `suspicious_activity`, everything else → `money_laundering`. `activity_amount` per account is both-sides (in + out) throughput, not a share.
 
 **MinHash**: byte-for-byte compatible with TigerGraph's reference `TokenBank.cpp`. Uses Austin Appleby's MurmurHash2 on byte shingles (k=3), plus the exact 101-element c1/c2 universal-hash coefficient tables from the reference. Bucket IDs include the band index (`{PREFIX}_{band}_{hash}`) to keep LSH bands independent. Reference C source is embedded as a comment in the implementation for migration / validation.
 
 ### AML — Transaction-Edges with Derived Features
 
-A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for a transaction-edge view and adds graph-derived account features (PageRank score, Louvain community ID, weakly-connected-component ID and component size, shortest path to mule, IP/device collision counts, in/out mule-ratio, multi-hop mule count, betweenness, in/out degree, clustering coefficient). Intended as input to graph-feature-aware AML models that consume both the ledger and the precomputed topology signals.
+A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for a transaction-edge view and adds graph-derived account features (PageRank score, Louvain community ID, weakly-connected-component ID and component size, shortest path to mule, IP/device collision counts, in/out mule-ratio, multi-hop mule count, betweenness, in/out degree, clustering coefficient). Intended as input to graph-feature-aware AML models that consume both the ledger and the precomputed topology signals. Its Customer table reports the same end-of-window persona and `active`/`closed` lifecycle status as the AML export.
 
-### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer scale)
+### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer-shaped)
 
 A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema (the graph used for IBM
 TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix `cf_`):
 
 - **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
-  purchases, including the unauthorized-card and gift-card-scam fraud rows attributed to the
-  victim's card) and `merchant` rows (account-paid POS, interpreted as debit-card transactions).
+  purchases plus unauthorized-card and gift-card-scam fraud rows that currently source the
+  victim's deposit account and therefore derive a debit-card identity) and `merchant` rows
+  (account-paid POS, interpreted as debit-card transactions).
   8 loaded columns: `id` (`T<row_seq>`, cross-referencing the streamed `transactions` table 1:1),
   timestamp, amount, `is_fraud`, unix time, merchant category, `use_chip`, and `error`. Streamed
   at row scale during settlement together with the `Card_Send_Transaction` /
@@ -871,15 +1149,31 @@ TabFormer-style card-fraud GNNs). 34 tables land in schema `card_fraud` (prefix 
 - **Cards and parties** — `Card` (credit cards resolve through the card registry, ≤1 per person;
   every other view source becomes the account's derived debit card; `is_fraud` marks cards that
   ever carried a flagged view row), `Party` (canonical customer ids; `is_fraud` labels fraud
-  actors — ring members, solo fraudsters, mules — never victims), and `Party_Has_Card`.
+  actors — ring members, solo fraudsters, mules — never victims; `created_at` is the
+  membership joinTs), and `Party_Has_Card`.
   `Is_Merchant` ships header-only: the world has no modeled merchant-owning-party link yet.
 - **Merchants and geography** — `Merchant`, `Merchant_Category`, `Merchant_Assigned`, and a
   consistent `City`/`State`/`Zipcode` chain (`Has_City`/`Has_State`/`Has_Zip`, `Assigned_To`,
-  `Located_In`) content-keyed onto real US city/state/zip triples.
+  `Located_In`) read the merchant's world-modeled location. The current
+  71-US-city catalogue is a runnable placeholder, not Census-complete ZCTA or
+  establishment data.
 - **PII investigative layer** — `Address`/`Phone`/`Email`/`IP`/`Device`/`ID`/`Full_Name`/`DOB`
   vertices plus `Has_*` edges from the PII synthesis; devices and IPs carry their modeled
   flagged/blacklisted state as `is_blocked`. (Marked demo-only in TF_GNN_v3 and empty on real
   TabFormer; PhantomLedger populates it.)
+
+`Card.is_fraud` means "ever fraudulent in this generated window"; Party actor
+labels and Device/IP blocked flags are likewise full-window state. Treat these
+as labels/investigative attributes, not point-in-time predictive inputs, until
+the feature contract excludes future information or versions them by time.
+
+A 10,000-person/60-day realism audit also found that every one of 748 fraud
+rows targeted a merchant with no legitimate card-view transaction. The current
+corpus is suitable for graph/loading and temporal-pipeline development, but a
+GNN can solve its positives through this synthetic merchant-identity shortcut.
+Do not publish it as an online fraud benchmark yet; follow the causal feature,
+split, metric, and minimum-realism gates in
+[docs/card_fraud_online_gnn.md](docs/card_fraud_online_gnn.md).
 
 The generator emits **loaded attributes only**: the pagerank/community slots, the engineered
 Payment_Transaction features, and TF_GNN_v3's interaction/co-occurrence/community edges are
@@ -889,7 +1183,7 @@ loading jobs map positionally; to hand a table to TigerGraph as CSV:
 
 ## Configuration
 
-The CLI exposes a small set of top-level knobs (`--days`, `--population`, `--seed`, `--start`, `--usecase`). Everything beneath that — persona shares, channel medians, fraud weights, family probabilities — is declared in code as constants or as `Rules` / `Flow` / `Profile` structs that travel with the subsystem that consumes them.
+The CLI exposes a small set of top-level knobs (`--days`, `--population`, `--seed`, `--start`, `--usecase`). Everything beneath that — persona shares, channel medians, fraud weights, family probabilities — is declared in code as constants or as `Rules` / `Flow` / `Profile` structs that travel with the subsystem that consumes them. Reference data is embedded as constexpr tables (the era macro history in `synth/econ/era_data.hpp`, the geographic catalogue in `synth/geo/geo_data.hpp`) — the repo carries no external data files and the generator never fetches at run time.
 
 All configuration structs participate in a uniform validation pass: each carries a `void validate(validate::Report&) const` method that posts named, source-located checks. The orchestrator collects a single `Report` and throws a `validate::Error` if any check fails, so misconfigured rules surface at construction time rather than as silent zeros mid-simulation.
 
@@ -915,6 +1209,21 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Federal Reserve Bank of New York Q4 2024 — 60+ day auto-loan delinquency (2.1%).
 - NFIB 2023 Small Business Survey — 56% of small businesses bank personal+business at same bank.
 - SoFi / NerdWallet 2025 — overdraft LOC prevalence.
+
+**Macro History (era-correct dollars, activity levels, lifecycles & mortality)**
+- FRED CPIAUCNS (BLS CUUR0000SA0 mirror) — CPI-U annual averages 1990–2024, verified exact.
+- SSA Average Wage Index (ssa.gov) — AWI levels 1990–2024, verified exact.
+- BEA A794RC0A052NBEA / B230RC0A052NBEA (FRED) — nominal per-capita PCE and population. Deflated by CPI-U, the PCE series is the H4 real activity level that modulates session transaction counts (≈0.67 at 1991, 1.0 at the 2019 calibration year); the population series sizes the H3 join-cohort replenishment.
+- BLS LNS14000000 (cross-checked via FRED UNRATENSA) — unemployment annual averages.
+- SSA Period Life Table 2023 (table 4.C6) — embedded mortality; drives the H3 lifespan hazard (one period table era-wide, declared).
+- SSA 1983 Amendments — the statutory full-retirement-age schedule (65→67 by birth cohort; `timeline::fraMonths`).
+- SSA Annual Statistical Supplement — claiming-age distribution (the H2 claiming mixture: 62 / pre-FRA / FRA / post-FRA / 70).
+- NCES / BLS — school-exit and labor-market-entry ages (the student work-start band, 19–28).
+- BLS Business Employment Dynamics — establishment survival (~50% at five years; the business-close hazard).
+- Aguiar & Hurst 2005, *Journal of Political Economy* 113(5) — the retirement consumption drop (the ~−12% spending step at the claim).
+- NFDA 2019 General Price List survey; NFDA/CANA cremation rate — the funeral cost blend (burial $7,640 / cremation-with-viewing $5,150 at ~55% cremation → $6,300 median).
+- 31 CFR 1010.311 — the $10,000 CTR threshold, statutory and unindexed (class S).
+- Provenance and refresh contract: [docs/era_data_provenance.md](docs/era_data_provenance.md); wiring contracts: [docs/h1_nominal_scale_wiring.md](docs/h1_nominal_scale_wiring.md), [docs/h2_persona_timeline.md](docs/h2_persona_timeline.md), [docs/h3_mortality_estate.md](docs/h3_mortality_estate.md), [docs/h4_macro_modulation.md](docs/h4_macro_modulation.md).
 
 **Credit Cards**
 - Experian: avg 3.9 cards/holder (2023 data); avg total credit limit across all cards $29,855 (Q3 2023, aggregate rather than per-card).
@@ -985,7 +1294,9 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Merseyside OCG study — 63% of organized criminal groups cooperate with ≥1 other group.
 - Unit21 2026 — legitimate reactivation transactions average 17× rule thresholds but ramp gradually.
 - FATF 2020 — AML Red Flag Indicators.
-- IBM TabFormer — synthetic credit-card transaction dataset (`credit_card_transactions`); the scale/shape anchor for the card-fraud use case (fraud share, Use Chip mix, Errors? values).
+- IBM TabFormer — released synthetic credit-card transaction artifact; a schema,
+  longitudinal-shape, and fraud-rate comparison target. Its `Use Chip` and
+  `Errors?` vocabularies do not validate PhantomLedger's current fixed mixes.
 
 **Small Business Banking**
 - Bluevine 2025 — 39% of SMBs have < 1 month of operating expenses; healthy ones hold 2–3 months.

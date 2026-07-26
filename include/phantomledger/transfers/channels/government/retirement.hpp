@@ -23,6 +23,8 @@ struct RetirementTerms {
   }
 };
 
+// Legacy static predicate (pre-H2 selection); retained for interface
+// stability — the timeline mode below supersedes it for retirement.
 [[nodiscard]] inline bool isRetirementEligible(personas::Type t) noexcept {
   return t == personas::Type::retiree;
 }
@@ -33,6 +35,10 @@ retirementProgram(entity::Key counterparty) noexcept {
       .eligible = &isRetirementEligible,
       .source = counterparty,
       .channel = channels::tag(channels::Government::socialSecurity),
+      // H2 step 2b: recipients = RETIRED BY WINDOW END per the persona
+      // timeline (seed retirees + in-window claimants); deposits begin
+      // at each claiming date (authority U-7).
+      .retiredByTimeline = true,
   };
 }
 

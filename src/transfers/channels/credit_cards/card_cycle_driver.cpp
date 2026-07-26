@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/channels/credit_cards/card_cycle_driver.hpp"
 
+#include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
 
@@ -9,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
@@ -48,6 +50,20 @@ indexOf(::PhantomLedger::clearing::Ledger *ledger,
 [[nodiscard]] transactions::Comparator chronologicalComparator() noexcept {
   return transactions::Comparator{
       transactions::Comparator::Scope::fundsTransfer};
+}
+
+// H3 part 3c-ii: the owner's card-servicing stop — ACCOUNT CLOSURE
+// (death + settlement) minus the session tail guard (see the header's
+// kCardSettleTailDays note). TimePoint max when the carrier is absent.
+[[nodiscard]] time::TimePoint
+cardServiceEnd(const DriverInputs &inputs, entity::PersonId owner) noexcept {
+  if (inputs.timelines.empty() || owner == 0 ||
+      static_cast<std::size_t>(owner) > inputs.timelines.size()) {
+    return time::TimePoint::max();
+  }
+  const auto death = inputs.timelines[owner - 1].death;
+  return time::addDays(death, ::PhantomLedger::synth::pii::kSettlementDays -
+                                  kCardSettleTailDays);
 }
 
 } // namespace
@@ -163,6 +179,18 @@ void CardCycleDriver::ensureSession(const entity::Key &cardKey, PerCard &card) {
 
   card.closes = statementCloseDates(inputs_.window.start,
                                     inputs_.window.endExcl(), card.cycleDay);
+
+  // H3 part 3c-ii: card servicing stops with the owner's account —
+  // truncate the close ladder at closure minus the settlement-tail
+  // guard, so the final cycle's payment/late-fee tail lands strictly
+  // before closeTs. The card's rng lane is isolated (keyed by card
+  // number below), so every other card is byte-identical.
+  const auto serviceEnd = cardServiceEnd(inputs_, cardTerms->owner);
+  if (serviceEnd != time::TimePoint::max()) {
+    while (!card.closes.empty() && card.closes.back() >= serviceEnd) {
+      card.closes.pop_back();
+    }
+  }
 
   card.closeCursor = 0;
 

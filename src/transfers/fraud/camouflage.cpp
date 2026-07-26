@@ -6,6 +6,7 @@
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
@@ -18,6 +19,15 @@ namespace PhantomLedger::transfers::fraud::camouflage {
 namespace {
 
 namespace recur = activity::recurring;
+
+// H1 step 2b (authority U-6): camouflage traffic scales with the index
+// of the flow it MIMICS — bills/p2p ride the CPI (class P), the salary
+// mimic rides the AWI (class W). A cover row scaled differently from
+// its cover class would be a detectable artifact.
+[[nodiscard]] double nominalPrice(double amount, time::TimePoint ts) {
+  return primitives::utils::roundMoney(
+      amount * synth::econ::priceScale(time::toCalendarDate(ts).year));
+}
 
 [[nodiscard]] recur::PayrollSchedule
 sampleCamouflagePayrollProfile(random::Rng &rng) {
@@ -129,7 +139,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
         out.push_back(ctx.execution.txf.make(transactions::Draft{
             .source = acct,
             .destination = dst,
-            .amount = math::amounts::kBill.sample(rng),
+            .amount = nominalPrice(math::amounts::kBill.sample(rng), ts),
             .timestamp = time::toEpochSeconds(ts),
             .isFraud = 0,
             .ringId = -1,
@@ -167,7 +177,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
         out.push_back(ctx.execution.txf.make(transactions::Draft{
             .source = acct,
             .destination = dst,
-            .amount = math::amounts::kP2P.sample(rng),
+            .amount = nominalPrice(math::amounts::kP2P.sample(rng), ts),
             .timestamp = time::toEpochSeconds(ts),
             .isFraud = 0,
             .ringId = -1,
@@ -210,8 +220,12 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
         const auto payDateCal = time::toCalendarDate(payDate);
         const int periods = recur::payPeriodsInYear(profile, payDateCal.year);
 
+        // Salary mimic: floored calibration paycheck × the pay-date
+        // year's WAGE index (mirrors SalaryCalculator's shape).
         const double rawAmount = annualSalary / static_cast<double>(periods);
-        const double amount = primitives::utils::floorAndRound(rawAmount, 50.0);
+        const double amount = primitives::utils::roundMoney(
+            primitives::utils::floorAndRound(rawAmount, 50.0) *
+            synth::econ::wageScale(payDateCal.year));
 
         out.push_back(ctx.execution.txf.make(transactions::Draft{
             .source = src,

@@ -74,6 +74,16 @@ public:
     [[nodiscard]] double lastLiquidityMult() const noexcept;
     [[nodiscard]] double lastAvailableToSpend() const noexcept;
 
+    // H1 step 2b (class P): the day frame's CPI level multiplier,
+    // computed once at construction — pure derived data, no draws.
+    // Carried onto every Event (ticket scaling) and Snapshot
+    // (screen scaling).
+    [[nodiscard]] double dayPriceScale() const noexcept;
+
+    // H2 step 2c: the frame's day index, so the loop can compare it to
+    // each spender's retirement day (pure derived data, no draws).
+    [[nodiscard]] std::uint32_t frameDayIndex() const noexcept;
+
   private:
     [[nodiscard]] double
     availableToSpendFor(const spenders::PreparedSpender &prepared);
@@ -85,6 +95,15 @@ public:
     Rules rules_;
     Gate ledgerView_{};
 
+    double dayPriceScale_ = 1.0;
+    // H4 (authority U-9): the day frame's REAL per-capita consumption
+    // level (econ::realPceLevel), computed once at construction like
+    // dayPriceScale_. Multiplied into every spender's combined rate
+    // multiplier, so the session's COUNT axis follows the measured BEA
+    // path while ticket AMOUNTS stay priceScale-realized — the
+    // count-only channel law. The budget stays a CALIBRATION-LEVEL
+    // target: a 2019 frame multiplies by exactly 1.0.
+    double dayRealLevel_ = 1.0;
     double lastLiquidityMult_ = 0.0;
     double lastAvailableToSpend_ = 0.0;
   };

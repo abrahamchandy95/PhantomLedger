@@ -117,6 +117,9 @@ void swapIntermediariesForShells(std::vector<entity::Key> &intermediaries,
   }
 }
 
+// H1 step 2b (class F): split/merge amounts and floors run in
+// CALIBRATION dollars; each leg realizes at its emission date's CPI
+// level via typologies::nominalAt (authority U-6).
 bool emitSplitLeg(Emit e, LegFrame frame, const Roles &roles,
                   std::span<const double> splitAmounts) {
   random::Rng &rng = *e.ctx.execution.rng;
@@ -134,7 +137,7 @@ bool emitSplitLeg(Emit e, LegFrame frame, const Roles &roles,
             transactions::Draft{
                 .source = roles.origin,
                 .destination = roles.intermediaries[i],
-                .amount = primitives::utils::roundMoney(splitAmounts[i]),
+                .amount = typologies::nominalAt(splitAmounts[i], ts),
                 .timestamp = time::toEpochSeconds(ts),
                 .isFraud = 1,
                 .ringId = static_cast<std::int32_t>(frame.ringId),
@@ -168,7 +171,7 @@ void emitMergeLeg(Emit e, LegFrame frame, const Roles &roles,
             transactions::Draft{
                 .source = roles.intermediaries[i],
                 .destination = roles.beneficiary,
-                .amount = amt,
+                .amount = typologies::nominalAt(amt, ts),
                 .timestamp = time::toEpochSeconds(ts),
                 .isFraud = 1,
                 .ringId = static_cast<std::int32_t>(frame.ringId),

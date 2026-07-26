@@ -174,6 +174,14 @@ public:
   void endSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
 
   void finish() {
+    // Production correctness: close each long-lived COPY explicitly while an
+    // exception can still reach runWindowedStream. Table's destructor is only
+    // an unwind safety net and intentionally downgrades close failures to
+    // stderr; relying on reset() alone could otherwise let the run ledger be
+    // marked complete after PostgreSQL rejected a card table's final COPY.
+    paymentW_->close();
+    cardSendW_->close();
+    merchantReceiveW_->close();
     paymentW_.reset();
     cardSendW_.reset();
     merchantReceiveW_.reset();
