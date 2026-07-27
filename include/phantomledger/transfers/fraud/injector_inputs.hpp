@@ -9,10 +9,16 @@
 #include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
+#include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
+// victimization-v2: cardExposureWeights + the behaviour table it reads.
+// Included HERE rather than at each consumer so every site that sees the
+// carrier can also derive it.
+#include "phantomledger/transfers/fraud/exposure.hpp"
 
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace PhantomLedger::transfers::fraud {
 
@@ -49,14 +55,14 @@ struct InjectorLegitCounterparties {
   // gate 1 of docs/card_fraud_online_gnn.md): THE MERCHANT ACCEPTANCE
   // POPULATION and the geographic axis that selects within it.
   //
-  // THE DEFECT THESE CLOSE: the card and giftCardScam rails currently
-  // draw their destination from `billerAccounts` above (the
-  // legit-TRANSFER biller/hub pool) while legitimate card purchases
-  // route through the market merchant CATALOG. The two populations are
-  // disjoint, so every fraud row lands on a merchant with zero
-  // legitimate card rows and merchant identity alone classifies the
-  // corpus. Sharing ONE acceptance population is what makes the
-  // card-fraud corpus a fraud problem rather than a lookup.
+  // THE DEFECT THESE CLOSE: the card and giftCardScam rails drew their
+  // destination from `billerAccounts` above (the legit-TRANSFER
+  // biller/hub pool) while legitimate card purchases route through the
+  // market merchant CATALOG. The two populations were disjoint, so every
+  // fraud row landed on a merchant with zero legitimate card rows and
+  // merchant identity alone classified the corpus. Sharing ONE
+  // acceptance population is what makes the card-fraud corpus a fraud
+  // problem rather than a lookup.
   //
   // THE CATALOG ITSELF, not a materialized key list: each Record
   // already carries `counterpartyId`, `location` (invalidGeoArea for an
@@ -73,12 +79,59 @@ struct InjectorLegitCounterparties {
   // the victim's home on the same axis legitimate activity does,
   // instead of a spatially uniform draw that would trade a
   // merchant-identity shortcut for a geographic one.
-  //
-  // UNREAD BY GENERATION until the step b-2 selection round: a null
-  // catalogue and an empty span leave every draw exactly where it is,
-  // so the carrier rounds move no golden byte.
   const entity::merchant::Catalog *merchants = nullptr;
   std::span<const entity::geography::GeoAreaId> homeAreas{};
+
+  // victimization-v3 (contract docs/card_fraud_victimization.md D2):
+  // THE PERSONAS PACK — persona-at-date, age-at-date and the join
+  // cohort, borrowed (it rides the blueprint into the fold and outlives
+  // the injection, like the two carriers above).
+  //
+  // WHAT READS IT: the SCAM rails select victims on a persona x age
+  // susceptibility hazard rebuilt AT EACH CASE DATE, grade the loss by
+  // the victim's age, and every rail now requires bank MEMBERSHIP at
+  // the case date (joined; alive too on the scam rails, where a dead
+  // victim is not a typology but an impossibility). See
+  // transfers/fraud/susceptibility.hpp for the two opposite age
+  // gradients and why exposure is the wrong axis for a scam.
+  //
+  // ONE POINTER, not three spans, and that is the parity decision: the
+  // hazard needs the timeline, the birth date and the join day
+  // TOGETHER, so three separate carriers would be three chances for a
+  // call site to fill some and not others — on exactly the path
+  // test_arch_equivalence guards. A site either passes the pack and
+  // gets the whole victim-side model or passes nothing and degrades
+  // cleanly to the v2 behaviour.
+  //
+  // nullptr = no scam tilt, no severity grading, no membership gate.
+  const synth::personas::Pack *personas = nullptr;
+
+  // victimization-v2 (contract docs/card_fraud_victimization.md D1):
+  // PER-PERSON CARD-EXPOSURE WEIGHTS, PersonId-1 indexed, mean ~1.0,
+  // produced by fraud::cardExposureWeights (exposure.hpp).
+  //
+  // THE DEFECT IT CLOSES: buildCompromisePlans drew victims with
+  // rng.choiceIndex — identical hazard for every customer. Real
+  // unauthorized card fraud is exposure-driven, and a uniform draw
+  // leaves every victim-side feature as noise BY CONSTRUCTION, so a GNN
+  // has nothing legitimate to learn on that side of the graph.
+  //
+  // OWNED BY VALUE, unlike every other member here. The weights are a
+  // DERIVED quantity with no home in the world model, so a span would
+  // need a caller-side vector at each of the four call sites — four
+  // chances to compute it differently, on the exact path
+  // test_arch_equivalence guards. Owning it lets ONE factory
+  // (FraudEmission::legitCounterparties) derive it for every site from
+  // the pack's behaviour table, so a site either passes the pack and
+  // gets the right weights or passes nothing and degrades cleanly. The
+  // vector is population-sized (~40 KB at 5000 people) and built once
+  // per inject.
+  //
+  // EMPTY leaves selection on the pre-v2 uniform draw, BIT-IDENTICALLY —
+  // the picker branches on it — so an unfilled call site moves no golden
+  // byte. As with the carriers above, every site that should tilt must
+  // be filled or its gates measure a carrier-free world.
+  std::vector<double> cardExposure{};
 };
 
 } // namespace PhantomLedger::transfers::fraud

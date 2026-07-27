@@ -46,19 +46,31 @@ fraud::InjectorLegitCounterparties FraudEmission::legitCounterparties(
         &counterparties,
     const ::PhantomLedger::entity::merchant::Catalog *merchants,
     std::span<const ::PhantomLedger::entity::geography::GeoAreaId>
-        homeAreas) noexcept {
+        homeAreas,
+    const ::PhantomLedger::synth::personas::Pack *personas) {
   // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
-  // the home-area axis ride alongside the existing legit pools. Both
-  // are borrowed, both default to absent, and NOTHING reads them until
-  // the b-2 selection round — so passing them here moves no golden byte
-  // and passing them at only SOME call sites cannot yet cause engine
-  // divergence (it would at b-2; the fill round updates all sites
-  // together).
+  // the home-area axis ride alongside the existing legit pools; all of
+  // these are borrowed and all default to absent.
+  //
+  // THE ONE DERIVATION (victimization-v2/v3). Everything victim-side
+  // that has to be COMPUTED is computed here, once, from a single
+  // pointer — never at the call sites. That is what makes the two
+  // engines structurally incapable of disagreeing about it.
   return fraud::InjectorLegitCounterparties{
       .billerAccounts = counterparties.billerView(),
       .employers = counterparties.employerView(),
       .merchants = merchants,
       .homeAreas = homeAreas,
+      // victimization-v3: the pack itself, for the scam-rail hazard
+      // (persona-at-date x age-at-date), the age-graded severity and the
+      // membership gate.
+      .personas = personas,
+      // victimization-v2: derived HERE for every call site. An absent
+      // pack yields an empty vector, and the picker branches on empty
+      // to keep the pre-v2 uniform draw bit-identical.
+      .cardExposure = personas != nullptr
+                          ? fraud::cardExposureWeights(personas->table)
+                          : std::vector<double>{},
   };
 }
 

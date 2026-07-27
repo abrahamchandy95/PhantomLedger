@@ -34,20 +34,107 @@
 //   at least two distinct fraud types, with the unauthorized family
 //   dominant (it is .60 of the unauthorized mix).
 //
-//   AMOUNT DIRECTION + DEFLATED STABILITY. Fraud tickets are larger
-//   than legitimate ones, and their era scaling is CPI-realized (U-6
-//   class F), so per-year fraud means DEFLATED by priceScale(year)
-//   should be roughly flat. This is the only gate that checks the H1
-//   amount wiring actually reaches the card fraud rail.
+//   AMOUNT DIRECTION. Fraud tickets are larger than legitimate ones.
 //
 //   EPISODE SIZE. Rows per compromised card, bounded. An unauthorized
 //   episode is a handful of transactions, not a career.
+//
+// WHAT IS PRINTED AND DELIBERATELY NOT GATED:
+//
+//   PER-YEAR CARD-VIEW ROW COUNTS. H4's real-consumption ramp raises
+//   them across the era while the harness's own small-N liquidity drain
+//   lowers them; at N=300 the two are not separable.
+//
+//   THE DEFLATED FRAUD-AMOUNT SPREAD. This WAS gated at < 2.50x and is
+//   now printed, with the decomposition that explains why. See THE
+//   DEFLATED-SPREAD RECLASSIFICATION below — it was mis-specified, not
+//   mis-calibrated.
 //
 // The aggregate rate carries a NAMED COMPARATOR rather than a tight
 // band: IBM TabFormer observed 28,471 fraud rows in 24,386,900
 // (0.11675%). PhantomLedger is TabFormer-SHAPED, not calibrated to it,
 // so the gate is a wide plausibility band and the ratio is PRINTED for
 // the record.
+//
+// THE DEFLATED-SPREAD RECLASSIFICATION (join-cohort round, authority
+// U-13 ADDENDUM). The sub-gate used to read: per-year fraud means
+// DEFLATED by priceScale(year) are flat within 2.50x, captioned "U-6
+// class F reaches the card rail". The join-cohort world shape re-rolled
+// the corpus and it went red at 2.69x, which sent someone to read the
+// amount model — and the gate was measuring something the model
+// explicitly does not promise. TWO INDEPENDENT DEFECTS:
+//
+//   (1) MIS-SPECIFIED. `unauthorized.cpp` is explicit: priceScale
+//       applies to "the continuous samplers (cardFraudSpend,
+//       atoDrainAmount)"; "the denomination samplers (cardTestCharge,
+//       giftCardScamAmount) stay FIXED-NOMINAL — owner-approved lattice
+//       CHOICE, authority U-6". The card view therefore mixes THREE
+//       amount families: card-test probes ($0.50-$5, fixed-nominal),
+//       gift-card scam rows ($50-$500 with 75% mass on {100,200,500,
+//       500,500}, fixed-nominal) and card spends (lognormal median $79
+//       sigma 1.2, CPI-scaled). Deflating the COMBINED mean by
+//       priceScale and asserting flatness asserts that the two
+//       fixed-nominal lattices are CPI-realized, which is the opposite
+//       of the U-6 CHOICE. test_econ_wiring already knew this — its
+//       `isScaledFraudRow()` EXCLUDES the whole card-purchase rail "whose
+//       card-test / gift-card lattices are fixed-nominal by the
+//       owner-approved U-6 CHOICE" — so the two gates contradicted each
+//       other and this one was wrong.
+//
+//       The mixture WEIGHT is what moves the statistic, and it is a
+//       small-count draw: a $500 gift-card row is ~5x a spend row and
+//       ~250x a probe row, and only ~20 gift-card rows exist across four
+//       years. One year drawing eight and another drawing one moves the
+//       per-year mean by more than the CPI ever does.
+//
+//   (2) UNDER-POWERED even on a pure CPI-scaled population. The per-year
+//       mean of 42-92 draws from lognormal(median 79, sigma 1.2) has
+//       CV = sqrt(e^(sigma^2)-1)/sqrt(n) = 1.79/sqrt(n), i.e. 19-28%.
+//       A 2.50x max/min envelope over four such means is INSIDE normal
+//       sampling variation, so the old 1.79x reading was luck, not
+//       evidence.
+//
+// The measurement is retained and DECOMPOSED (lattice vs CPI-scaled,
+// nominal and deflated, per year) so the replacement can be sized from
+// data rather than from a guess. REGISTERED: the class-F claim for the
+// card rail wants the instrument that already works for the ring rail in
+// test_econ_wiring — a TWO-ERA leg (1991 vs 2019) comparing the
+// non-lattice card fraud mean, where the cross-era division cancels the
+// mixture instead of riding it. That is a new gate and its own round.
+// The class-F LAW itself stays pinned meanwhile by test_econ_scale (the
+// scale), test_fraud_amounts (the samplers) and test_econ_wiring (the
+// ring rail's cross-era ratio).
+//
+// WORLD SHAPE (join-cohort round): the leg carries the PRODUCTION join
+// cohort — 15 joiners at 300 people over 1,461 days from 1991, by the
+// BEA sizing in synth/personas/join.hpp, MEASURED at 15 on the first run
+// (so no joiner drew day 0) — instead of the joinerless harness world
+// this suite was calibrated against (window_leg_support.hpp, WORLD
+// SHAPE). A joiner's dob AND persona timeline anchor at their JOIN date,
+// so their ages, transitions and lifespans move; the lanes that read
+// them consume the shared stream a different NUMBER of times once a
+// transition or death crosses a window boundary, and the corpus
+// downstream of the first such read is a FRESH REALIZATION rather than a
+// 5% edit. MEASURED before and after, with the verdict on each band:
+//
+//   band                            pre-flip -> post-flip   verdict
+//   aggregate rate (0.02%, 2%)      0.13665% -> 0.13786%    UNCHANGED
+//   >= 3 calendar years             4 -> 4                  UNCHANGED
+//   yearly RATE spread < 4.00x      1.12x -> 1.85x          UNCHANGED
+//   merchant-POS share < 0.05       0.0000 -> 0.0000        UNCHANGED
+//   card_purchase fraud > 0         256 -> 253              UNCHANGED
+//   >= 2 typologies                 2 -> 2                  UNCHANGED
+//   unauthorized share > 0.30       0.9062 -> 0.9209        UNCHANGED
+//   fraud mean > legit mean         2.21x -> 2.08x          UNCHANGED
+//   episode mean (1,20), max <= 200 7.11/15 -> 7.23/14      UNCHANGED
+//   deflated spread < 2.50x         1.79x -> 2.69x          RECLASSIFIED
+//                                                           (see above)
+//
+// So NO BAND WAS WIDENED OR RE-CENTRED by the world-shape change. The
+// one that moved was removed because it was measuring the wrong
+// quantity, and the yearly RATE spread — the gate that actually carries
+// the budget law — absorbed the re-roll with 1.85x against a 4.00x
+// bound. The world shape is PINNED below.
 //
 
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -91,9 +178,13 @@ constexpr double kRateCeiling = 0.02;
 // constant.
 constexpr double kMaxYearlyRateSpread = 4.0;
 
-// Deflated fraud-amount spread across years (U-6 class F: fraud
-// lognormals are CPI-realized, so calibration-dollar means are flat).
-constexpr double kMaxDeflatedAmountSpread = 2.5;
+// cardFraudSpend's upper clamp in CALIBRATION dollars (amounts.hpp): the
+// realized ceiling is this x priceScale(event year). Used for a PRINTED
+// class-F diagnostic — an unscaled clamp would show a ratio above 1 in
+// the early era (5000 vs 5000 x 0.53). Gift-card rows cap at $500, well
+// under 5000 x priceScale for every in-era year, so one ceiling covers
+// the whole view.
+constexpr double kCardSpendClampCalibration = 5000.0;
 
 int g_failures = 0;
 
@@ -120,6 +211,18 @@ void check(bool condition, const std::string &what) {
   return isCardPurchase(t) || isMerchantPos(t);
 }
 
+// The U-6 FIXED-NOMINAL denomination lattices, as far as a Transaction
+// can resolve them. giftCardScamAmount is identifiable by typology.
+// cardTestCharge is NOT: probes carry the same txnFraudSolo/txnFraudRing
+// type as the CPI-scaled spends they precede, so they stay in the
+// "scaled" bucket below and drag its per-year mean by a year-varying
+// amount. That residue is exactly why the decomposition is PRINTED and
+// not gated — see THE DEFLATED-SPREAD RECLASSIFICATION in the file
+// comment.
+[[nodiscard]] bool isFixedNominalLattice(const Txn &t) {
+  return t.fraud.type == pl::fraud::FraudType::scamGiftCard;
+}
+
 [[nodiscard]] int yearOf(const Txn &t) {
   return pl::time::toCalendarDate(pl::time::fromEpochSeconds(t.timestamp))
       .year;
@@ -130,6 +233,15 @@ struct YearCell {
   std::size_t fraud = 0;
   double fraudAmount = 0.0;
 
+  // The U-6 lattice split (see isFixedNominalLattice).
+  std::size_t latticeFraud = 0;
+  double latticeAmount = 0.0;
+  std::size_t scaledFraud = 0;
+  double scaledAmount = 0.0;
+
+  // Largest fraud amount seen, for the class-F clamp diagnostic.
+  double maxFraudAmount = 0.0;
+
   [[nodiscard]] double rate() const {
     return rows == 0 ? 0.0
                      : static_cast<double>(fraud) / static_cast<double>(rows);
@@ -137,7 +249,34 @@ struct YearCell {
   [[nodiscard]] double meanFraudAmount() const {
     return fraud == 0 ? 0.0 : fraudAmount / static_cast<double>(fraud);
   }
+  [[nodiscard]] double meanLatticeAmount() const {
+    return latticeFraud == 0
+               ? 0.0
+               : latticeAmount / static_cast<double>(latticeFraud);
+  }
+  [[nodiscard]] double meanScaledAmount() const {
+    return scaledFraud == 0 ? 0.0
+                            : scaledAmount / static_cast<double>(scaledFraud);
+  }
 };
+
+// max/min over a series, 0.0 when the series has a non-positive member
+// (an absent year cannot make a spread).
+[[nodiscard]] double spreadOf(const std::vector<double> &values) {
+  if (values.empty()) {
+    return 0.0;
+  }
+  double lo = values.front();
+  double hi = values.front();
+  for (const double v : values) {
+    if (v <= 0.0) {
+      return 0.0;
+    }
+    lo = std::min(lo, v);
+    hi = std::max(hi, v);
+  }
+  return lo > 0.0 ? hi / lo : 0.0;
+}
 
 } // namespace
 
@@ -154,6 +293,15 @@ int main() {
   opt.withFamily = true;
   const auto leg = pltest::runLeg(pools, opt);
   pltest::printLeg("card-prevalence", leg);
+
+  // WORLD SHAPE, asserted before anything is measured: prevalence is a
+  // claim about the shipped corpus, so it has to be measured on the
+  // shipped population. A zero here means the leg rebuilt the
+  // pre-H3-3c-ii joinerless world and every band below is describing
+  // something else.
+  check(leg.joiners > 0,
+        "the leg carries the production join cohort (joiners " +
+            std::to_string(leg.joiners) + ")");
 
   std::map<int, YearCell> byYear;
   std::map<pl::fraud::FraudType, std::size_t> byTypology;
@@ -181,6 +329,14 @@ int main() {
     ++viewFraud;
     ++cell.fraud;
     cell.fraudAmount += t.amount;
+    cell.maxFraudAmount = std::max(cell.maxFraudAmount, t.amount);
+    if (isFixedNominalLattice(t)) {
+      ++cell.latticeFraud;
+      cell.latticeAmount += t.amount;
+    } else {
+      ++cell.scaledFraud;
+      cell.scaledAmount += t.amount;
+    }
     fraudAmountTotal += t.amount;
     ++byTypology[t.fraud.type];
     ++episodeByCard[t.source];
@@ -208,7 +364,10 @@ int main() {
       static_cast<double>(viewFraud) / static_cast<double>(viewRows);
 
   // ----------------------------------------------------- the aggregate
-  std::printf("\n  CARD VIEW: %zu rows, %zu fraud, rate %.5f%%\n", viewRows,
+  std::printf("\n  WORLD SHAPE: join cohort %llu of %d people (production "
+              "sizing)\n",
+              static_cast<unsigned long long>(leg.joiners), kPopulation);
+  std::printf("  CARD VIEW: %zu rows, %zu fraud, rate %.5f%%\n", viewRows,
               viewFraud, 100.0 * rate);
   std::printf("    vs TabFormer observed %.5f%% -> %.2fx (NAMED COMPARATOR, "
               "not a calibration target)\n",
@@ -228,9 +387,10 @@ int main() {
               "rides realized L)\n");
   double minRate = 1.0;
   double maxRate = 0.0;
-  double minDeflated = 0.0;
-  double maxDeflated = 0.0;
-  bool firstDeflated = true;
+  std::vector<double> deflatedAll;
+  std::vector<double> deflatedScaled;
+  std::vector<double> nominalAll;
+  double maxClampRatio = 0.0;
   for (const auto &[year, cell] : byYear) {
     const auto scale = econ::priceScale(year);
     const auto deflated = cell.meanFraudAmount() / scale;
@@ -243,14 +403,14 @@ int main() {
     }
     minRate = std::min(minRate, cell.rate());
     maxRate = std::max(maxRate, cell.rate());
-    if (firstDeflated) {
-      minDeflated = deflated;
-      maxDeflated = deflated;
-      firstDeflated = false;
-    } else {
-      minDeflated = std::min(minDeflated, deflated);
-      maxDeflated = std::max(maxDeflated, deflated);
+    deflatedAll.push_back(deflated);
+    nominalAll.push_back(cell.meanFraudAmount());
+    if (cell.scaledFraud > 0) {
+      deflatedScaled.push_back(cell.meanScaledAmount() / scale);
     }
+    maxClampRatio = std::max(
+        maxClampRatio,
+        cell.maxFraudAmount / (kCardSpendClampCalibration * scale));
   }
 
   const double rateSpread = minRate > 0.0 ? maxRate / minRate : 0.0;
@@ -263,15 +423,39 @@ int main() {
             "). A fan-out here means a fraud budget stopped riding the "
             "realized candidate count.");
 
-  const double deflatedSpread =
-      minDeflated > 0.0 ? maxDeflated / minDeflated : 0.0;
-  std::printf("    deflated fraud-amount spread %.2fx  <- gate: < %.2fx "
-              "(U-6 class F reaches the card rail)\n",
-              deflatedSpread, kMaxDeflatedAmountSpread);
-  check(minDeflated > 0.0 && deflatedSpread < kMaxDeflatedAmountSpread,
-        "per-year fraud amounts are flat in CALIBRATION dollars (spread " +
-            std::to_string(deflatedSpread) + ", gate < " +
-            std::to_string(kMaxDeflatedAmountSpread) + ")");
+  // --------------------------------- the U-6 amount decomposition
+  //
+  // PRINTED, NEVER GATED — see THE DEFLATED-SPREAD RECLASSIFICATION in
+  // the file comment. The card view mixes two FIXED-NOMINAL denomination
+  // lattices with one CPI-scaled lognormal, so a deflated-flatness claim
+  // over the combined mean asserts the opposite of the U-6 CHOICE, and
+  // at 42-92 draws a year the mean is 19-28% noisy besides. These lines
+  // exist so the replacement two-era instrument can be sized from data.
+  std::printf("\n  AMOUNT DECOMPOSITION (U-6 lattice vs CPI-scaled; PRINTED, "
+              "NEVER GATED)\n");
+  std::printf("    year   lattice(n/mean)      scaled(n/mean)       "
+              "scaled deflated\n");
+  for (const auto &[year, cell] : byYear) {
+    if (cell.fraud == 0) {
+      continue;
+    }
+    const auto scale = econ::priceScale(year);
+    std::printf("    %d   %4zu / $%8.2f     %4zu / $%8.2f     $%8.2f\n", year,
+                cell.latticeFraud, cell.meanLatticeAmount(), cell.scaledFraud,
+                cell.meanScaledAmount(),
+                cell.scaledFraud > 0 ? cell.meanScaledAmount() / scale : 0.0);
+  }
+  std::printf("    spreads: nominal all %.2fx | deflated all %.2fx | "
+              "deflated CPI-scaled-only %.2fx\n",
+              spreadOf(nominalAll), spreadOf(deflatedAll),
+              spreadOf(deflatedScaled));
+  std::printf("    ^ the CPI-scaled column still carries the card-test probe "
+              "lattice ($0.50-$5, fixed-nominal, not resolvable from a "
+              "row)\n");
+  std::printf("    class-F clamp check: max fraud amount / (%.0f x "
+              "priceScale(year)) = %.4f  <- an UNSCALED clamp would exceed "
+              "1.0 in the early era\n",
+              kCardSpendClampCalibration, maxClampRatio);
 
   // ------------------------------------------------------- channels
   const double merchantShare = static_cast<double>(merchantPosFraud) /
@@ -346,7 +530,8 @@ int main() {
     return 1;
   }
   std::printf("\ntest_card_prevalence: card-view prevalence is measured and "
-              "era-stable (rate %.5f%%, yearly spread %.2fx)\n",
-              100.0 * rate, rateSpread);
+              "era-stable (rate %.5f%%, yearly spread %.2fx, joiners %llu)\n",
+              100.0 * rate, rateSpread,
+              static_cast<unsigned long long>(leg.joiners));
   return 0;
 }

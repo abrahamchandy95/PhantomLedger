@@ -164,6 +164,24 @@ pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
   return records[candidates[pick]].counterpartyId;
 }
 
+// The row's LABEL CLASS follows the rail. The two authorized rails are
+// separate labels because the payment MECHANISM is what a model sees:
+// a gift-card burst is a denomination lattice at a retail merchant, an
+// impostor push is a continuous amount to a payee account.
+[[nodiscard]] constexpr ::PhantomLedger::fraud::FraudType
+fraudTypeFor(Rail rail) noexcept {
+  switch (rail) {
+  case Rail::giftCardScam:
+    return ::PhantomLedger::fraud::FraudType::scamGiftCard;
+  case Rail::scamImpostor:
+    return ::PhantomLedger::fraud::FraudType::scamImpostor;
+  case Rail::card:
+  case Rail::ato:
+    break;
+  }
+  return ::PhantomLedger::fraud::FraudType::txnFraudSolo;
+}
+
 } // namespace
 
 std::vector<transactions::Transaction>
@@ -228,7 +246,17 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     // ATO drains produce no reimbursement here (scams: recovery is
     // rare once codes are read out; ATO Reg E remediation is a
     // documented gap in docs/fraud_model_audit.md F-4).
+    //
+    // NO reimbursement exists for either AUTHORIZED rail, and that is a
+    // modeled fact rather than an omission: in the corpus era a push the
+    // victim authorized was their own instruction — US Reg E covers
+    // unauthorized transfers, and the UK reimbursement code postdates
+    // the window.
     bool reported = false;
+
+    // victimization-v3: the impostor rail's payment method, one decision
+    // per case (see the scamImpostor branch below).
+    bool wireRail = false;
 
     switch (plan.rail) {
     case Rail::card: {
@@ -278,6 +306,25 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
       }
       break;
     }
+    case Rail::scamImpostor: {
+      // The victim pushes their OWN money out under deception. One
+      // per-case decision first — a wire-shaped external transfer or an
+      // app push — drawn before the event loop so the amount stream does
+      // not depend on it. BOTH channels carry heavy legitimate volume,
+      // and that is the point: the rail must not label the row.
+      wireRail = rng.coin(0.5);
+      for (std::int32_t e = 0; e < target; ++e) {
+        Event ev{};
+        ev.ts = plan.startTs + offsetIn(rng, 0, span);
+        // The victim's AGE-GRADED severity scales the whole
+        // distribution, clamps included, so the tail shape stays
+        // age-invariant and only its level moves.
+        ev.amount = amounts::scamWireAmount(rng, eventPriceScale(ev.ts),
+                                            plan.severity);
+        events.push_back(ev);
+      }
+      break;
+    }
     }
 
     std::stable_sort(
@@ -312,15 +359,30 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         draft.destination = plan.dropAccount;
         draft.channel = channels::tag(channels::Legit::p2p);
         break;
+      case Rail::scamImpostor:
+        // An ordinary outbound push to the attacker's payee account, on
+        // a rail the victim uses legitimately: a wire-shaped external
+        // transfer or an app push.
+        draft.destination = plan.dropAccount;
+        draft.channel = wireRail
+                            ? channels::tag(channels::Legit::externalUnknown)
+                            : channels::tag(channels::Legit::p2p);
+        break;
       }
 
       out.push_back(planTxf.make(draft));
       ++fraudEmitted;
+      // DECLARED DEFECT, tracked with the ownerId-prefix finding in
+      // docs/card_fraud_v2_roadmap.md step d: on an AUTHORIZED rail the
+      // operator is the VICTIM on their own device, so attaching the
+      // attacker session here is wrong. It is not a one-line fix —
+      // routing the victim's own device through infra::Router advances
+      // that person's sticky device index, which would perturb
+      // legitimate routing in later windows and diverge the two engines
+      // — and blanking the session would trade one hint for another.
       out.back().session.deviceId = plan.device;
       out.back().session.ipAddress = plan.ip;
-      out.back().fraud.type = plan.rail == Rail::giftCardScam
-                                  ? ::PhantomLedger::fraud::FraudType::scamGiftCard
-                                  : ::PhantomLedger::fraud::FraudType::txnFraudSolo;
+      out.back().fraud.type = fraudTypeFor(plan.rail);
 
       // Reported card compromise: each fraudulent SPEND (not the
       // sub-$5 test charges, which typically go unnoticed) is made

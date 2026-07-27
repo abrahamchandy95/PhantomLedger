@@ -34,6 +34,19 @@
 // structural property of the generator, not a seed artifact, so a
 // single small world measures it faithfully.
 //
+// WORLD SHAPE (join-cohort round): the leg now carries the PRODUCTION
+// join cohort — 8 joiners at 300 people over 730 days from 1991, by the
+// BEA sizing in synth/personas/join.hpp — instead of the joinerless
+// harness world this gate was first written against
+// (window_leg_support.hpp, WORLD SHAPE). NOTHING TO RE-CALIBRATE HERE:
+// this file bounds no measured value. Its four assertions are
+// well-definedness preconditions (both label populations present, every
+// row resolved, shares consistent), satisfied by margins of three orders
+// of magnitude — 124 fraud and 42,369 legitimate card rows over 254
+// merchants on the pre-flip world — and the headline ratio is printed.
+// The world shape is now PINNED below so the measurement can never again
+// silently describe a population production does not generate.
+//
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -94,6 +107,14 @@ int main() {
   opt.withFamily = true;
   const auto leg = pltest::runLeg(pools, opt);
   pltest::printLeg("card-overlap", leg);
+
+  // WORLD SHAPE, asserted before anything is measured: this gate reports
+  // on the population production generates, which has a join cohort. A
+  // zero here means the leg rebuilt the pre-H3-3c-ii joinerless world and
+  // every number below describes a world that never ships.
+  check(leg.joiners > 0,
+        "the leg carries the production join cohort (joiners " +
+            std::to_string(leg.joiners) + ")");
 
   // Per-merchant fraud/legit tallies over the card rail. entity::Key
   // has a defaulted operator<=>, so it keys a std::map directly.
@@ -156,6 +177,8 @@ int main() {
   // THE HEADLINE NUMBER. ~1.0 means merchant identity alone separates
   // the labels (the audit's finding); step b-2 drives it toward 0 by
   // routing the card rails through the merchant acceptance population.
+  std::printf("  world shape: join cohort %llu of %d people\n",
+              static_cast<unsigned long long>(leg.joiners), kPopulation);
   std::printf("  card-rail merchants %zu (fraud-touched %zu, fraud-only "
               "%zu)\n",
               byMerchant.size(), fraudMerchants, fraudOnlyMerchants);

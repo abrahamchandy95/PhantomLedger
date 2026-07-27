@@ -44,6 +44,16 @@ enum class FraudType : std::uint8_t {
   // txn fraud: legit card rail, round denominations, near-zero
   // recovery (scam-fraud-2026-07; docs/fraud_model_audit.md F-4).
   scamGiftCard = 5,
+  // Victim-AUTHORIZED impostor scam paid by PUSH TRANSFER — the victim
+  // wires or app-pushes their own money to the attacker's payee
+  // account. Gift cards are one payment method; the transfer rail is
+  // the other, and in the corpus era it is the larger one by reported
+  // loss. Separate from scamGiftCard because the payment mechanism is
+  // what a model sees: different channel, continuous (not
+  // denomination-lattice) amounts, age-graded severity, and — like
+  // every authorized push — NO reimbursement
+  // (victimization-v3; docs/card_fraud_victimization.md D2).
+  scamImpostor = 6,
 };
 
 [[nodiscard]] constexpr std::string_view fraudTypeName(FraudType t) noexcept {
@@ -60,6 +70,8 @@ enum class FraudType : std::uint8_t {
     return "txn_fraud_ring";
   case FraudType::scamGiftCard:
     return "scam_gift_card";
+  case FraudType::scamImpostor:
+    return "scam_impostor";
   }
   return {};
 }

@@ -5,7 +5,9 @@
 // Shared leg harness for the windowed two-phase driver gates
 // (test_window_invariance, test_window_bisect, test_thread_invariance,
 // test_order_ties, test_arch_equivalence, test_session_vs_simulator,
-// test_spool_equivalence).
+// test_spool_equivalence) and for the BEHAVIOURAL gates built on the
+// same legs (test_card_baselines, test_card_prevalence,
+// test_card_merchant_overlap, test_econ_wiring).
 //
 // runLeg() builds ONE complete, fresh, deterministically seeded world —
 // the shared GateWorld prefix (see gate_world.hpp): entities, infra,
@@ -28,9 +30,59 @@
 //                      and a pristine router copy (mirrors builder.cpp)
 //   withProducts       portfolio synthesis + precomputed product schedule
 //   withFraud          two-phase run; false folds Phase A only
+//   withJoinCohort     the production join-cohort world shape, and now the
+//                      DEFAULT — see WORLD SHAPE below; false is a bisect
+//                      knob, never a shipped gate configuration
 //   useBinarySpool     candidates cross the Phase A / Phase B boundary
 //                      through a file-backed binary spool instead of the
 //                      in-memory vector (byte-identical by the spool gate)
+//
+// WORLD SHAPE (the arch-equivalence trap, victimization-v3; default
+// INVERTED by the join-cohort round):
+// SimulationPipeline::buildEntities() ALWAYS sizes the join cohort
+// against its own window (simulate.cpp sets identity.windowDays =
+// window.days), so a production world carries joiners whose dob and
+// persona timeline anchor at their JOIN date (join.hpp, H3 part 3c-ii).
+// GateWorld used to default windowDays to 0 — no joiners — to keep every
+// pre-existing gate world byte-identical.
+//
+// That difference is a DIFFERENT WORLD, not a different architecture.
+// It stayed invisible while nothing on the corpus path read
+// Pack::joinDays, and became a hard test_arch_equivalence failure the
+// moment victimization-v3 gated victim selection on membership at the
+// case date (susceptibility.hpp): in the production-shaped leg the
+// joiners are not yet members early in the window, so the picker skips
+// and re-draws, and the whole unauthorized planner lane diverges from
+// that first skip onward.
+//
+// Opting arch_equivalence in fixed the ORACLE half of that defect and
+// left the MEASUREMENT half standing: the behavioural card/econ gates
+// went on reporting bands against a population production never
+// generates. So the default is now the PRODUCTION shape and there is
+// nothing left to opt into. BEA-sized cohorts at N=300, computed from
+// the embedded population series: 8 joiners over 730 days from 1991, 15
+// over 1,461 days from 1991, 2 over 730 days from 2019 (2019-20 grew at
+// ~0.40%/yr against 1991-92's ~1.34%/yr — test_econ_wiring's two legs
+// are therefore perturbed UNEQUALLY, by design), 4 over 730 days from
+// 2015 (the equivalence window).
+//
+// RULE: every leg ships with the production shape. withJoinCohort =
+// false exists ONLY to bisect a gate that moved when the world shape
+// moved — it rebuilds the pre-3c-ii joinerless world so one run can
+// separate "the world shape moved" from "the model moved". A gate that
+// leaves it false permanently is measuring something that never ships.
+//
+// LegResult::joiners is how a gate PINS the shape it thinks it is
+// running instead of assuming it. It is a MEASURED LOWER BOUND, not the
+// contract size, and deliberately so: a joiner who draws day 0 (the
+// inverse-CDF returns index 0 whenever u*total < w_0, ~1/730 per joiner
+// on a two-year window) is indistinguishable from the seed roster in the
+// carrier, so no measurement can separate them. Re-deriving the count
+// from join_cohort::joinerCount() instead would report the formula's
+// answer on BOTH sides of an equivalence gate and could never disagree —
+// which would make the pin vacuous against the exact bug it exists for.
+// Measuring the carrier is the point; both legs measure identically, so
+// the equality pin stays sound.
 //
 // The ROUTER SNAPSHOTS and FRAUD PROFILE rationale lives with the world
 // construction in gate_world.hpp.
@@ -125,6 +177,11 @@ struct LegOptions {
   bool withProducts = true;
   bool withFraud = true;
 
+  // See WORLD SHAPE in the file comment. true is the PRODUCTION shape and
+  // the only shape a gate should ship with; false rebuilds the pre-3c-ii
+  // joinerless world and is a BISECT KNOB.
+  bool withJoinCohort = true;
+
   // Candidate spool for the two-phase run: false composes via
   // driver.runTwoPhase (in-memory vector spool); true composes the same
   // phases manually around a file-backed BinaryCandidateSpool. Output
@@ -138,6 +195,13 @@ struct LegResult {
 
   std::uint64_t legitRows = 0;
   std::uint64_t sourceRows = 0;
+
+  // World shape, exported so a gate can PIN it: the number of people
+  // whose carrier shows a join day after window start. A MEASURED LOWER
+  // BOUND on the cohort, not the contract size — see WORLD SHAPE in the
+  // file comment for why measuring is the point and why a day-0 joiner is
+  // invisible here. Zero means the leg ran the joinerless world.
+  std::uint64_t joiners = 0;
 
   // Cursor-source accounting. `remaining` counts generated rows the driver
   // NEVER staged (timestamps at/beyond the final finalized coverage); a
@@ -174,6 +238,9 @@ struct LegResult {
   spec.withInfraRouting = opt.withInfraRouting;
   spec.withIncome = opt.withIncome;
   spec.withBaseRoutines = opt.withBaseRoutines;
+  // See WORLD SHAPE in the file comment: this is what makes the leg's
+  // world the same world SimulationPipeline builds, joiners included.
+  spec.withJoinCohort = opt.withJoinCohort;
 
   GateWorld world(poolSet, spec);
   auto &rng = world.rng;
@@ -277,6 +344,17 @@ struct LegResult {
   LegResult out;
   CapturingGolden sink;
 
+  // The world shape this leg actually ran — MEASURED off the carrier, not
+  // re-derived from join_cohort::joinerCount(). See WORLD SHAPE above: the
+  // formula would agree with itself on both sides of an equivalence gate
+  // and could never catch a leg that failed to build the cohort, while a
+  // day-0 joiner is invisible to any measurement. Lower bound, by
+  // construction, and that is the right trade.
+  out.joiners = static_cast<std::uint64_t>(
+      std::count_if(world.people.personas.joinDays.begin(),
+                    world.people.personas.joinDays.end(),
+                    [](std::uint32_t day) { return day > 0U; }));
+
   if (opt.withFraud) {
     // Fraud boundary inputs. Injector construction mirrors
     // TransferStage::makeFraudInjector, including the fraud seed derivation
@@ -313,12 +391,18 @@ struct LegResult {
       // carry them too — every v2 acceptance gate runs on this world, so
       // an unfilled harness would let the step b-2 gates pass against a
       // carrier-free world that can never exhibit the behavior they
-      // claim to measure. UNREAD until b-2.
+      // claim to measure.
+      //
+      // victimization-v3: the pack this passes is also the JOIN carrier
+      // the victim picker gates membership on, which is why the world
+      // shape (LegOptions::withJoinCohort) is part of the harness
+      // contract and not an incidental default — see WORLD SHAPE.
       return xfer::makeFraudSource(
           injector, opt.window,
           static_cast<std::size_t>(realizedCandidateCount),
           xfer::FraudEmission::legitCounterparties(
-              legitCps, &world.cps.merchants, world.people.homeAreas));
+              legitCps, &world.cps.merchants, world.people.homeAreas,
+              &world.people.personas));
     };
 
     xfer::RunSummary summary;
@@ -403,13 +487,14 @@ inline void announceLeg(const char *label) {
 
 inline void printLeg(const char *label, const LegResult &leg) {
   std::printf("  %-28s rows=%llu L=%llu fraud=%llu cards=%llu legit=%llu "
-              "source=%llu\n",
+              "source=%llu joiners=%llu\n",
               label, static_cast<unsigned long long>(leg.fingerprint.rows),
               static_cast<unsigned long long>(leg.fingerprint.candidateRows),
               static_cast<unsigned long long>(leg.fingerprint.fraudRows),
               static_cast<unsigned long long>(leg.fingerprint.cardEvents),
               static_cast<unsigned long long>(leg.legitRows),
-              static_cast<unsigned long long>(leg.sourceRows));
+              static_cast<unsigned long long>(leg.sourceRows),
+              static_cast<unsigned long long>(leg.joiners));
   std::fflush(stdout);
 }
 
@@ -450,12 +535,28 @@ inline void checkLegMatches(const char *label, const LegResult &reference,
   const auto diff =
       acceptance::firstDifference(reference.fingerprint, leg.fingerprint);
 
+  // WORLD SHAPE FIRST. Two legs built from different populations are not
+  // comparable at all, and every corpus diagnostic below would blame the
+  // wrong layer — that is precisely how the arch-equivalence trap
+  // presented. Reported before the fingerprint difference for that reason.
+  const bool shapeEqual = reference.joiners == leg.joiners;
+
   const bool auxEqual = reference.legitRows == leg.legitRows &&
                         reference.sourceRows == leg.sourceRows;
 
-  if (!diff.empty() || !auxEqual) {
+  if (!diff.empty() || !auxEqual || !shapeEqual) {
     std::fprintf(stderr, "[window-invariance] %s diverges from reference:\n",
                  label);
+    if (!shapeEqual) {
+      std::fprintf(stderr,
+                   "  WORLD SHAPE MISMATCH: joiners %llu vs %llu — these legs "
+                   "were built from DIFFERENT populations, so this is not an "
+                   "architecture or ordering difference. Reconcile "
+                   "LegOptions::withJoinCohort before reading anything "
+                   "below.\n",
+                   static_cast<unsigned long long>(reference.joiners),
+                   static_cast<unsigned long long>(leg.joiners));
+    }
     if (!diff.empty()) {
       std::fprintf(stderr, "  %s\n", diff.c_str());
     }
@@ -468,7 +569,7 @@ inline void checkLegMatches(const char *label, const LegResult &reference,
                    static_cast<unsigned long long>(leg.sourceRows));
     }
     reportFirstRowDifference(reference.rows, leg.rows);
-    PL_CHECK(diff.empty() && auxEqual);
+    PL_CHECK(diff.empty() && auxEqual && shapeEqual);
   }
 
   std::printf("  PASS: %s matches reference\n", label);

@@ -1,11 +1,14 @@
 # card-fraud-realism-v2 roadmap (V2-R)
 
-**STATUS (2026-07-26): CODE-COMPLETE on the critical path.** Both
+**STATUS (2026-07-27): CODE-COMPLETE on the critical path.** Both
 headline generation shortcuts are closed and measured, the exporter's
 four full-window entity labels are withheld and quarantined, the
 point-in-time feature contract is written and pinned, and prevalence is
-gated per year. What remains is the owner's verification runbook and the
-arc's wind-up commit.
+gated per year. ROUND 4 re-pointed the whole gate harness at the
+PRODUCTION population, which re-measured every band in this arc against
+a world the generator actually emits; ROUND 5 rebuilt the one claim that
+round falsified. What remains is the owner's verification runbook and
+the arc's wind-up commit.
 
 **GOVERNING DIRECTIVE (owner, 2026-07-26): the deliverable is REALISTIC
 DATA A GNN CAN BE TRAINED ON HONESTLY. Nothing on the critical path is
@@ -117,6 +120,15 @@ stale.**
   This is also the gate that catches a REPLACEMENT shortcut if the
   selection ever regresses.
 
+**PROVENANCE OF THE NUMBERS IN THIS SECTION (ROUND 4):** every count
+above was read off the JOINERLESS harness world. ROUND 4 flipped the
+harness to the production join cohort, which RE-ROLLS the corpus (see
+below), so the row counts, merchant counts and base rate move. What does
+NOT move is the verdict: both bounds are held by the b-2 destination
+MECHANISM rather than by a seed, and both were re-verified at 0.0000.
+The gates now PRINT their own world shape, so a future reader never has
+to guess which population a recorded number came from.
+
 ### ROUND 1 — label leakage (EXPORTER-ONLY; three table goldens re-pin)
 
 Four full-window entity verdicts rode the feature graph:
@@ -181,11 +193,10 @@ membership path writes `membership.joinTs(p)`.
 
 GATED: per-year fraud RATE stability (spread < 4× — `F = pL/(1−p)`
 rides the realized candidate count `L`, so a fan-out means some budget
-stopped riding `L`); per-year fraud amounts flat in CALIBRATION dollars
-(spread < 2.5× — the only gate proving U-6 class F scaling reaches the
-card fraud rail); fraud rides `card_purchase` with merchant-POS share
+stopped riding `L`); fraud rides `card_purchase` with merchant-POS share
 < 0.05; at least two typologies with the unauthorized family > 0.30;
-fraud tickets exceed legitimate ones; episode size bounded.
+fraud tickets exceed legitimate ones; episode size bounded; the
+aggregate rate inside a wide plausibility band.
 
 PRINTED, NEVER GATED: per-year card-view ROW COUNTS. H4's
 real-consumption ramp raises them while the documented small-N
@@ -194,9 +205,97 @@ them; at N=300 the two are not separable. **Do not gate what the
 harness cannot resolve** — the same reasoning that subsumed H4's
 recession-direction gate.
 
+**ALSO PRINTED, NEVER GATED — and this one was a GATE until ROUND 4
+falsified it.** A per-year "fraud amounts are flat in CALIBRATION
+dollars, spread < 2.5×" check shipped in this round, described here as
+*the only gate proving U-6 class F scaling reaches the card fraud rail*.
+That description was wrong, and so was the gate. `unauthorized.cpp`
+applies `priceScale` only to the CONTINUOUS samplers (`cardFraudSpend`,
+`atoDrainAmount`); the DENOMINATION samplers (`cardTestCharge`,
+`giftCardScamAmount`) are FIXED-NOMINAL by owner-approved CHOICE
+(authority U-6). The card view mixes all three, so deflating the
+COMBINED mean and asserting flatness asserts the OPPOSITE of U-6 — and
+`test_econ_wiring`'s `isScaledFraudRow()` already excluded this same
+rail for this same reason, meaning the two gates contradicted each other
+and this one was wrong. Independently, the statistic was under-powered:
+42–92 draws from lognormal(σ = 1.2) give CV = 1.79/√n ≈ 19–28% on a
+per-year mean, so a 2.5× max/min envelope over four years sits inside
+sampling variation. It is now PRINTED and DECOMPOSED — per-year
+fixed-nominal-lattice vs CPI-scaled counts and means, nominal and
+deflated spreads side by side, plus a class-F clamp-ceiling ratio — so
+ROUND 5's replacement could be sized from data. Full account: authority
+U-13 ADDENDUM 2.
+
 IBM TabFormer's observed 0.11675% is a NAMED COMPARATOR with a wide
 plausibility band (0.02%–2%) and the ratio is printed, not pinned.
 PhantomLedger is TabFormer-SHAPED, not calibrated to it.
+
+### ROUND 4 — the harness WORLD SHAPE (zero-golden, harness-only)
+
+Every gate in this arc runs on `pltest::runLeg`, and `GateWorld`
+defaulted `withJoinCohort = false` → `identity.windowDays = 0` → a
+population with NO join cohort. Production does the opposite
+unconditionally (`SimulationPipeline::buildEntities`, simulate.cpp:168).
+So every band in sections c and ROUND 3 above was calibrated against a
+world the generator never emits. The default is now TRUE; the flag
+survives only as a bisect knob and no gate ships with it false.
+
+Not a 3% perturbation: `joinDays`, `dob` and `timeline` draw on isolated
+lanes, so the shared stream's draw SEQUENCE is untouched — but the
+joiners' ages, transition dates and death dates move, and every lane
+that READS those attributes consumes the shared stream a different
+NUMBER of times as soon as one transition crosses a window boundary.
+Downstream of the first such read the corpus is a fresh realization.
+
+**GOLDEN IMPACT: ZERO, and it was MEASURED rather than assumed.** The
+V3 re-pin was committed before the flip was written, so the four
+baselines predate it; the golden gates recapture only when a baseline is
+absent, so the run that followed compared post-flip digests against
+pre-flip pinned baselines and passed. Do not re-capture those baselines
+casually — that would retroactively make the invariant unfalsifiable.
+
+**BAND OUTCOME: nothing widened, nothing re-centred.** One red appeared
+and it was the mis-specified flatness check above — diagnosed with the
+nominal-spread discriminator shipped alongside it, then reclassified
+rather than loosened. Each gate now PINS `joiners > 0` as its own
+precondition and prints its world shape, so an anti-shortcut baseline
+can never again be measured against a population production does not
+generate. Authority U-13 and its two addenda.
+
+### ROUND 5 — class F on the card rail (zero-golden, new gate)
+
+`tests/test_card_class_f.cpp` restores the coverage ROUND 4 withdrew.
+Two era legs at N=900 — 1991/1461d and 2019/730d — comparing the **75th
+percentile** of non-lattice card-fraud amounts, deflated by each row's
+own year's `priceScale`.
+
+Four design decisions, each one a direct answer to how the previous
+attempt failed:
+
+| Failure of the old gate | What this one does instead |
+|---|---|
+| Mixed three amount families into one deflated mean | Excludes the RESOLVABLE lattice (gift-card rows, by `FraudType`) outright |
+| Could not filter card-test probes (same `FraudType` as the spend) | Uses a QUANTILE, which a $5-bounded contaminant at the bottom of the axis cannot reach — and GATES that the probe share stays below it |
+| Asked a heavy-tailed sample to resolve a NULL effect (flatness) | Asks a CROSS-ERA question with a ~1.8× effect, the shape that already works for the ring rail |
+| Hand-picked a 2.5× envelope that turned out to be noise | Sizes the band as ±3σ of the REALIZED two-leg quantile SE (analytic CV = 1.635/√n) |
+
+The key property: a quantile of a scale family scales *exactly* with the
+scale, so `Q_p` reads the price level cleanly and `p` is free to be
+chosen above the contamination. **When a mixture cannot be separated, do
+not deflate the aggregate — pick a statistic the unresolvable component
+cannot reach.**
+
+And the gate **checks its own power**: it computes the FIXED-NOMINAL
+null (≈0.55) and the DOUBLE-SCALED null (≈1.81) from the realized price
+scales and FAILS as UNDER-POWERED unless its own band excludes both. An
+undersized leg reports that fact instead of passing vacuously, and the
+repair is a larger leg, never a tighter band.
+
+Costs ~15s. N=900 is deliberate: the card rail is sparse and the power
+arithmetic is not satisfiable at N=300, which is precisely the trap the
+withdrawn gate fell into. 900 also clears the ~833 ring threshold, so
+solo and ring card spends — which share the `cardFraudSpend` sampler —
+are both exercised.
 
 ### Layering verified
 
@@ -220,6 +319,13 @@ The two ENGINES must pass IDENTICAL arguments or
 harness must be filled too, or every gate measures a carrier-free world
 and passes vacuously.
 
+**THE SAME TRAP HAS A WORLD-SHAPE FORM (ROUND 4).** Filling the carriers
+identically is not enough if the two sides build DIFFERENT POPULATIONS.
+`test_arch_equivalence` reported a settlement-shaped "SEMANTIC
+divergence" for exactly this reason, and the diagnostics blamed the
+wrong layer for a full round. Both sides now measure the cohort off the
+carrier and pin equality BEFORE any corpus comparison.
+
 ## CUT from the critical path (polish, registered not forgotten)
 
 - **b′ — compromise incidence scaling.** The Bettencourt tilt on victim
@@ -242,6 +348,24 @@ and passes vacuously.
 - **Level calibration** of card-fraud prevalence against a named
   issuer-side series (Nilson / FTC), including the CNP share.
 - Device `ownerId` render check.
+- **~~e — the two-era card-rail class-F leg.~~ LANDED as ROUND 5**
+  (`tests/test_card_class_f.cpp`). The coverage gap opened by the
+  withdrawn flatness gate is closed.
+- **f — promote the class-F CLAMP CEILING from print to gate.**
+  `cardFraudSpend` clamps to `[1.0 × priceScale, 5000 × priceScale]`;
+  `test_card_prevalence` prints `max fraud amount / (5000 ×
+  priceScale(year))` per year. An UNSCALED clamp would push that ratio
+  above 1.0 in the early era — a sharp, sampling-free signal, unlike a
+  mean-flatness envelope. Gate it at ≤ 1.0 once a run confirms the
+  observed values. NOTE its one weakness before shipping it: the clamp
+  binds rarely (P(draw > $2,663 in 1991) ≈ 0.0017), so at a few hundred
+  rows the gate has real specificity but only partial POWER — it is a
+  cheap complement to ROUND 5, not a substitute.
+- **g — `postCloseWorkers >= 1` coverage fragility in
+  `test_persona_wiring`.** PRE-EXISTING, surfaced by the ROUND 4 audit,
+  not introduced by it: an existence gate whose expectation is ~3 reads
+  0 on roughly 5% of ANY re-roll. **The repair if it fires is a longer
+  window, NEVER a lower floor** — a floor of 0 asserts nothing.
 
 ## Population, density, and urban scaling (adopted, pending b′)
 
@@ -289,6 +413,8 @@ exponent is wrong — not the gate.
 | `Card.is_fraud`, `Party.is_fraud`, `Device.is_blocked`, `IP.is_blocked` are full-window labels | Confirmed | **CLOSED (round 1)** — columns retained for positional loading, written 0; verdicts moved to `cf_Ground_Truth_Label` |
 | `use_chip` / `error` are export-time hashes, not causal | Confirmed, and **a claim made earlier in this arc was WRONG**: b-2 did NOT make `use_chip` model-backed. `derive::useChipFor` is still an FNV content hash of the row (Swipe .63 / Chip .26 / Online .11) for fraud and legitimate rows alike; the modality decision drives destination selection and is never exported | Both are point-in-time SAFE (deterministic in the row) but MECHANISM-FREE. The feature contract classes them USE WITH CARE. Exporting the real modality is registered above |
 | Raw `public.transactions` exposes ground truth + TEST-NET IPs | **BOTH CONFIRMED.** The TEST-NET claim DOES reproduce — the earlier "did not reproduce" reading grepped the dotted-quad string and missed `Ipv4::pack(198, 51, 100, …)` | IP shortcut **CLOSED**. The raw ledger's `is_fraud`/`ring_id`/`fraud_type` columns are the generator's own ground truth and stay — that table is the corpus, not the feature graph; the contract names `ring_id`/`fraud_type` PROHIBITED for features |
+| The arc's own gates measured a joinerless population | **CONFIRMED (ROUND 4)** — `GateWorld` defaulted `withJoinCohort = false`, so no gate in this arc had ever run on the shipped world shape | **CLOSED (round 4)** — default inverted, `joiners > 0` pinned as a precondition in all four behavioural gates, world shape printed on every leg line. One band was falsified by the flip and WITHDRAWN rather than widened |
+| No gate proved U-6 class F scaling reaches the CARD rail | **CONFIRMED (ROUND 4)** — the gate that claimed to was mis-specified and under-powered, and withdrawing it left the coverage at zero | **CLOSED (round 5)** — `test_card_class_f.cpp`, a cross-era deflated-quantile gate that sizes its own band and fails as UNDER-POWERED rather than passing vacuously |
 
 ## Law compliance
 
@@ -296,5 +422,6 @@ NO new CLI; NO runtime path selection; NO network; embedded data only
 (the scaling law adds a constant, not a table). New randomness on a
 NAMED lane. b-2 and the IP fix are model-moving (four-golden re-pin);
 round 1 is exporter-only (three TABLE goldens; a moving stream golden
-would be a defect, and it did not move); the fill, c, and rounds 2–3
-are zero-golden.
+would be a defect, and it did not move); the fill, c, and rounds 2–5
+are zero-golden — rounds 4 and 5 touch only test-only code, so a moving
+golden there is a defect rather than a re-pin.

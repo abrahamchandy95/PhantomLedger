@@ -289,7 +289,8 @@ WindowedRunResult TransferStage::runWindowedErased(
     return makeFraudSource(injector, scope.window,
                            static_cast<std::size_t>(realizedCandidateCount),
                            FraudEmission::legitCounterparties(
-                               legitCps, &cps.merchants, people.homeAreas));
+                               legitCps, &cps.merchants, people.homeAreas,
+                               &people.personas));
   };
 
   ValidatingSink validating{sink, &holdings.accounts.lookup};

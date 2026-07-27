@@ -66,6 +66,59 @@
 // DIRECTION + magnitude bands, not calibration pins — the golden
 // digests pin the bytes; these gates pin the MEANING.
 //
+// WORLD SHAPE (join-cohort round): both legs now carry the PRODUCTION
+// join cohort instead of the joinerless harness world these bands were
+// calibrated against (window_leg_support.hpp, WORLD SHAPE) — and the
+// two cohorts are UNEQUAL BY DESIGN, which matters more here than in
+// any other gate on this harness. The cohort is BEA-sized off the
+// window's OWN population growth (synth/personas/join.hpp), and US
+// growth was faster in 1991-92 (~1.34%/yr -> 8 joiners at N=300) than
+// in 2019-20 (~0.40%/yr -> 2). So this is the one gate whose two sides
+// are perturbed by different amounts. Both counts are PRINTED and both
+// are PINNED nonzero below, so a future reader of a cross-era ratio
+// cannot mistake the asymmetry for a wiring fault.
+//
+// EVERY BAND RE-VERIFIED, EVERY BAND UNCHANGED. Values observed on the
+// joinerless world, and why each survives a corpus re-roll:
+//
+//   AWI band     obs 2.395 vs 2.480 +-15% = (2.108, 2.852) — a mean over
+//     thousands of salary rows per leg (16,582 payday inbounds in the
+//     1991 leg); 8-of-300 and 2-of-300 age re-anchorings cannot move it
+//     more than a fraction of a percent.
+//   CPI band     obs 1.845 vs 1.877 +-15% = (1.595, 2.159) — means over
+//     48,721 / 69,057 tickets.
+//   VOLUME band  obs 0.7055 vs 0.668 +-15% = (0.568, 0.768) — 8.9%
+//     headroom to the upper edge, the LEAST in this file. Kept: the
+//     ratio is set by realPceLevel plus the liquidity feedback, both
+//     untouched by the world shape, and it is a ratio of ~50k-vs-~69k
+//     counts, not a small-sample statistic.
+//   CALIBRATION  obs 0 off-pool — an exact identity (priceScale(2019)
+//     == 1.0), not a tolerance.
+//   LATTICES     obs 0 off-lattice — exact.
+//   CLASS S      NOT EXERCISED at this seed (zero structuring rows; the
+//     gate prints a note). This is the ONE branch a corpus re-roll can
+//     newly ACTIVATE. Its bounds are STATUTORY (<= $9,950) and the
+//     near-threshold floor ($6,000) is the "unscaled band" evidence, so
+//     neither moves. If the branch activates and the floor fails, that
+//     is a COVERAGE event on a sparse rail, not a scaling defect — the
+//     row counts are printed beside the verdict so activation is
+//     visible either way.
+//   RING-RAIL    obs 1.9104 in (1.4, 2.6) on 230/271 rows. This band
+//     already exists BECAUSE the mean recomposes on every re-roll: H3
+//     part 1 left it at 2.418 and H4 moved it to ~1.91, a 21% swing
+//     from a declared model round. It is sized for exactly this event.
+//   FRAUD RIDES L obs 0.9255 in (0.80, 1.25) — a ratio of ratios whose
+//     fraud-count quantization noise at 354/416 rows is ~5-7%.
+//   DRIFT PARITY obs 0.925 in (0.80, 1.25) — totals over ~48k tickets a
+//     year on each side, and the harness drain still cancels in the
+//     cross-era division.
+//
+// NOTHING WAS WIDENED. A band widened against a world nobody has
+// measured is not a re-calibration, it is a gate with its teeth pulled;
+// where a band here is tight, it is tight on a large-N ratio or on an
+// exact identity, and where it is loose it is already loose for the
+// documented sparse-wobble reason.
+//
 
 #include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -176,6 +229,22 @@ int main() {
   const auto leg19 = runEraLeg(pools, {2019, 1, 1}, 730, "leg 2019 (730d)");
   pltest::printLeg("1991", leg91);
   pltest::printLeg("2019", leg19);
+
+  // ---- WORLD SHAPE, before any ratio is formed ----------------------
+  // Both legs carry the production join cohort, and the two counts are
+  // DELIBERATELY UNEQUAL: the cohort is BEA-sized off each window's own
+  // population growth, which was faster in 1991-92 than in 2019-20. See
+  // WORLD SHAPE in the file comment — the asymmetry is a model fact, and
+  // it is printed so nobody debugging a cross-era ratio reads it as a
+  // fault.
+  std::printf("  world shape: join cohort 1991 leg %llu, 2019 leg %llu of %d "
+              "people (BEA-sized per window — UNEQUAL BY DESIGN)\n",
+              static_cast<unsigned long long>(leg91.joiners),
+              static_cast<unsigned long long>(leg19.joiners), kPopulation);
+  check(leg91.joiners > 0 && leg19.joiners > 0,
+        "both era legs carry the production join cohort (1991 " +
+            std::to_string(leg91.joiners) + ", 2019 " +
+            std::to_string(leg19.joiners) + ")");
 
   const double w1991 = econ::wageScale(1991);
   const double p1991 = econ::priceScale(1991);
@@ -363,7 +432,15 @@ int main() {
             " off-lattice)");
 
   // ---- CLASS S: structuring band intact, other fraud scales -------
+  // The statutory bounds do not move with the world shape. The row
+  // counts are printed either way, because at this seed the branch has
+  // never activated and a corpus re-roll is what would activate it:
+  // "no rows" and "rows inside the band" are different verdicts and the
+  // output has to say which one happened.
   if (struct91.count + struct19.count > 0) {
+    std::printf("  class-S structuring rows %zu / %zu, max $%.2f  <- gate: "
+                "in ($6,000, $9,950]\n",
+                struct91.count, struct19.count, structMax);
     check(structMax <= 9950.0 + 1e-9,
           "structuring never exceeds the $9,950 band, got max " +
               std::to_string(structMax));
@@ -371,8 +448,8 @@ int main() {
           "structuring keeps near-threshold mass (unscaled band), max " +
               std::to_string(structMax));
   } else {
-    std::printf("  note: no structuring rows at this seed — class-S band "
-                "sub-gate not exercised\n");
+    std::printf("  note: no structuring rows at this seed (0 / 0) — class-S "
+                "band sub-gate not exercised\n");
   }
 
   // ---- Ring-rail fraud scales upward (sparse band) -----------------
@@ -380,15 +457,16 @@ int main() {
   // mixed with mule-forwarding fractions) recomposes whenever the
   // candidate count L moves — the fraud budget is F = pL/(1-p), so any
   // declared model-moving round (H2 income switch, H3 death-clipped
-  // income, H4 count modulation) legitimately reshuffles which draws
-  // exist. Observed spread at this seed: 2.418 after H3 part 1 (vs CPI
-  // 1.877) — a ~29% sparse wobble, NOT a scaling defect. The band is
-  // therefore DIRECTIONAL (fraud amounts grow with the era, magnitude
-  // near-CPI, upper edge 2.60): it catches fixed-nominal fraud (~1.0)
-  // and gross double-scaling (>3), while the exact axis LAW is pinned
-  // where it is tight — test_econ_scale (the scale),
-  // test_fraud_amounts (the samplers), and the class-S sub-gate above
-  // (the statutory exception).
+  // income, H4 count modulation, the join-cohort world shape)
+  // legitimately reshuffles which draws exist. Observed spread at this
+  // seed: 2.418 after H3 part 1, ~1.91 after H4 (vs CPI 1.877) — a
+  // ~29% sparse wobble, NOT a scaling defect. The band is therefore
+  // DIRECTIONAL (fraud amounts grow with the era, magnitude near-CPI,
+  // upper edge 2.60): it catches fixed-nominal fraud (~1.0) and gross
+  // double-scaling (>3), while the exact axis LAW is pinned where it is
+  // tight — test_econ_scale (the scale), test_fraud_amounts (the
+  // samplers), and the class-S sub-gate above (the statutory
+  // exception).
   if (fraud91.count >= 30 && fraud19.count >= 30) {
     const double fraudRatio = fraud19.mean() / fraud91.mean();
     std::printf("  ring-rail fraud mean ratio %.4f (counts %zu / %zu; CPI "
@@ -465,8 +543,10 @@ int main() {
   std::printf(
       "test_econ_wiring: all gates passed (salary x%.3f vs AWI %.3f; "
       "ticket x%.3f vs CPI %.3f; volume x%.3f vs R %.3f; drift parity "
-      "%.3f)\n",
+      "%.3f; joiners %llu/%llu)\n",
       salaryRatio, expectedWageRatio, ticketRatio, expectedPriceRatio,
-      volumeRatio, expectedVolumeRatio, driftParity);
+      volumeRatio, expectedVolumeRatio, driftParity,
+      static_cast<unsigned long long>(leg91.joiners),
+      static_cast<unsigned long long>(leg19.joiners));
   return 0;
 }

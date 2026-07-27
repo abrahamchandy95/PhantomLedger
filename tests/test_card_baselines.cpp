@@ -41,6 +41,33 @@
 // signal, not a shortcut. Both are tracked in
 // docs/card_fraud_v2_roadmap.md.
 //
+// WORLD SHAPE (join-cohort round): the leg now carries the PRODUCTION
+// join cohort — 8 joiners at 300 people over 730 days from 1991, by the
+// BEA sizing in synth/personas/join.hpp — instead of the joinerless
+// harness world this gate was calibrated against
+// (window_leg_support.hpp, WORLD SHAPE). BOTH BANDS RE-VERIFIED, BOTH
+// UNCHANGED, and the reason is that neither is a statistical tolerance:
+//
+//   * recall @ P>=0.90 < 0.25. Observed 0.0000 on the pre-flip world,
+//     and the sweep's BEST precision at ANY threshold is 0.1111 — it
+//     never comes near the 0.90 floor. The bound is held by the b-2
+//     mechanism, not by a seed: fraud draws its card-rail destinations
+//     from the same merchant acceptance population the legitimate
+//     session draws from, and that population carries ~167 legitimate
+//     rows per merchant at this leg size (42,369 over 254). A
+//     0.90-precision group needs ~9 fraud rows against at most 1
+//     legitimate row on the same merchant. Re-anchoring 8 of 300
+//     people's ages and lifespans re-rolls WHICH rows exist; it does
+//     not change the destination population, so it cannot manufacture
+//     that group.
+//   * pure-fraud-merchant share < 0.10. Observed 0.0000 — zero
+//     fraud-only merchants out of 48 fraud-touched. Same mechanism: a
+//     fraud-touched merchant with zero legitimate rows is exactly what
+//     b-2 removed structurally.
+//
+// The world shape is now PINNED below, so this baseline can never again
+// be measured against a population production does not generate.
+//
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -111,6 +138,14 @@ int main() {
   opt.withFamily = true;
   const auto leg = pltest::runLeg(pools, opt);
   pltest::printLeg("card-baselines", leg);
+
+  // WORLD SHAPE, asserted before anything is measured: an anti-shortcut
+  // baseline is only evidence about the shipped corpus if it ran on the
+  // shipped population. A zero here means the leg rebuilt the
+  // pre-H3-3c-ii joinerless world.
+  check(leg.joiners > 0,
+        "the leg carries the production join cohort (joiners " +
+            std::to_string(leg.joiners) + ")");
 
   std::map<pl::entity::Key, Counts> byMerchant;
   std::size_t fraudRows = 0;
@@ -196,6 +231,8 @@ int main() {
   const double pureShare =
       static_cast<double>(pureFraudRows) / static_cast<double>(fraudRows);
 
+  std::printf("  world shape: join cohort %llu of %d people\n",
+              static_cast<unsigned long long>(leg.joiners), kPopulation);
   std::printf("  base rate %.5f over %zu card rows (%zu merchants)\n",
               baseRate, totalRows, byMerchant.size());
   std::printf("  pure-fraud-merchant share      %.4f\n", pureShare);

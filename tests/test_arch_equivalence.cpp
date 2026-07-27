@@ -24,6 +24,26 @@
 // strategy (monthly spans, 6-day lookahead) and the machine-resolved
 // spending thread count.
 //
+// THE SAME WORLD IS A PRECONDITION, NOT A RESULT. The monolithic leg goes
+// through SimulationPipeline::buildEntities(), which ALWAYS sizes the join
+// cohort against its own window (simulate.cpp sets identity.windowDays),
+// so its world carries joiners whose dob and persona timeline anchor at
+// their JOIN date. The windowed leg is built by the GateWorld harness,
+// which now DEFAULTS to that same production shape — the join-cohort round
+// inverted a default that used to mean "no joiners" (authority U-13). This
+// gate still sets LegOptions::withJoinCohort EXPLICITLY: a precondition
+// this gate's verdict depends on belongs at the call site, not inherited
+// from a default that already moved once. It then PINS the resulting
+// joiner count against the monolithic leg's BEFORE comparing corpora — a
+// world-shape mismatch is not an architecture divergence and must never be
+// reported as one.
+//
+// That trap was live: the shapes differed silently from H3 part 3c-ii
+// until victimization-v3 gated victim selection on membership at the case
+// date, at which point the joiners the harness did not have turned into a
+// diverging unauthorized planner lane and a "SEMANTIC divergence" verdict
+// pointing at the settlement path, which was innocent.
+//
 // HARD-ENFORCED: equivalence was reached (settlement/product/family
 // RNG-lane re-pins + addRoutinesWithoutSpending seam + pristine-router
 // snapshots). Any divergence now FAILS with full diagnostics: per-channel
@@ -52,6 +72,10 @@ struct MonolithicResult {
   std::vector<Txn> rows;
   std::uint64_t fraudRows = 0;
   std::uint64_t bookHash = 0;
+
+  // World shape (see THE SAME WORLD IS A PRECONDITION above): people
+  // who join after window start.
+  std::uint64_t joiners = 0;
 };
 
 [[nodiscard]] MonolithicResult
@@ -93,6 +117,19 @@ runMonolithic(const pltest::pl::synth::pii::PoolSet &poolSet,
       static_cast<std::uint64_t>(result.transfers.fraud.injectedCount);
   out.bookHash =
       pltest::acceptance::hashBook(*result.transfers.ledger.posted.book);
+
+  // buildEntities() sets identity.windowDays unconditionally, so this is
+  // the join-cohort shape the windowed leg has to reproduce. MEASURED off
+  // the carrier — deliberately not re-derived from
+  // join_cohort::joinerCount(), which would give both legs the same
+  // formula's answer and could never disagree, making this pin vacuous
+  // against the exact bug it exists for. See WORLD SHAPE in
+  // window_leg_support.hpp for the day-0 lower-bound caveat that comes
+  // with measuring.
+  const auto &joinDays = result.people.personas.joinDays;
+  out.joiners = static_cast<std::uint64_t>(
+      std::count_if(joinDays.begin(), joinDays.end(),
+                    [](std::uint32_t day) { return day > 0U; }));
 
   const auto wrap = pl::pipeline::chunk::Schedule::unpartitioned(window);
   pl::exporter::sinks::Golden golden;
@@ -220,9 +257,10 @@ int main() {
 
   pltest::announceLeg("monolithic pipeline");
   const auto mono = runMonolithic(poolSet, seed, window);
-  std::printf("  monolithic: rows=%zu fraud=%llu digest=%s\n",
+  std::printf("  monolithic: rows=%zu fraud=%llu joiners=%llu digest=%s\n",
               mono.rows.size(),
               static_cast<unsigned long long>(mono.fraudRows),
+              static_cast<unsigned long long>(mono.joiners),
               mono.digest.c_str());
   std::fflush(stdout);
 
@@ -237,6 +275,11 @@ int main() {
   options.withBaseRoutines = true;
   options.withFamily = true;
   options.threadCount = 0; // machine-resolved, matching SpendingRoutine::run
+  // THE SAME WORLD: buildEntities() always sizes the join cohort against
+  // the window, so the harness leg must too. Redundant with the harness
+  // default since the join-cohort round (U-13), and kept anyway — this
+  // gate's verdict must not depend on a default staying put.
+  options.withJoinCohort = true;
 
   pltest::announceLeg("windowed two-phase composition");
   const auto windowed = pltest::runLeg(poolSet, options);
@@ -245,6 +288,27 @@ int main() {
   PL_CHECK(windowed.fingerprint.rows > 0);
   PL_CHECK(windowed.fingerprint.fraudRows > 0);
 
+  // World-shape precondition, checked BEFORE any corpus comparison: a
+  // mismatch here means the legs were built from different populations,
+  // which is not an architecture divergence and must not be reported as
+  // one. The nonzero check keeps the gate honest — it exists to exercise
+  // joiners, and a window that plans none would pass vacuously.
+  if (mono.joiners != windowed.joiners || mono.joiners == 0) {
+    std::fprintf(stderr,
+                 "[equivalence] WORLD SHAPE MISMATCH, not an architecture "
+                 "divergence:\n"
+                 "  join cohort: %llu (monolithic) vs %llu (windowed)\n"
+                 "  the monolithic leg is built by SimulationPipeline::"
+                 "buildEntities(), which always sizes the join cohort "
+                 "against its window; the windowed leg needs "
+                 "LegOptions::withJoinCohort to match it (a zero count on "
+                 "both sides means this window plans no joiners and the "
+                 "gate is vacuous).\n",
+                 static_cast<unsigned long long>(mono.joiners),
+                 static_cast<unsigned long long>(windowed.joiners));
+    PL_CHECK(mono.joiners == windowed.joiners && mono.joiners > 0);
+  }
+
   const bool rowsEqual = mono.rows.size() == windowed.rows.size();
   const bool digestEqual = mono.digest == windowed.fingerprint.digest;
   const bool fraudEqual = mono.fraudRows == windowed.fingerprint.fraudRows;
@@ -252,8 +316,10 @@ int main() {
 
   if (rowsEqual && digestEqual && fraudEqual && bookEqual) {
     std::printf("ARCHITECTURE EQUIVALENCE HOLDS (complete model): monolithic "
-                "and windowed corpora are byte-identical (digest %s).\n",
-                mono.digest.c_str());
+                "and windowed corpora are byte-identical (digest %s), over "
+                "one world with %llu joiners.\n",
+                mono.digest.c_str(),
+                static_cast<unsigned long long>(mono.joiners));
     return 0;
   }
 

@@ -110,6 +110,10 @@ pl_add_test(test_econ_scale)
 #     CALIBRATION-LEVEL units (nominal / (priceScale x realPceLevel)),
 #     since H4 makes era real growth intentionally unequal.
 # Serverless; DIRECTION + magnitude bands, not calibration pins.
+# NOTE: its isScaledFraudRow() deliberately EXCLUDES the card-purchase
+# rail, whose card-test and gift-card lattices are fixed-nominal by the
+# U-6 CHOICE. The card rail's class-F claim is gated separately by
+# test_card_class_f below.
 pl_add_test(test_econ_wiring)
 set_tests_properties(test_econ_wiring PROPERTIES TIMEOUT 600)
 
@@ -153,6 +157,11 @@ pl_add_test(test_dob_carrier)
 # death (salary/SSA/revenue) and the emission loop stops dead
 # spenders' person-days (zero post-death spend rows).
 # MODEL-MOVING rounds: the four goldens recapture with each.
+#
+# COVERAGE FRAGILITY, registered as roadmap item g: postCloseWorkers
+# >= 1 is an existence gate whose expectation is only ~3, so it reads 0
+# on roughly 5% of ANY corpus re-roll. If it fires, the repair is a
+# LONGER WINDOW — never a lower floor, which would assert nothing.
 pl_add_test(test_persona_wiring)
 set_tests_properties(test_persona_wiring PROPERTIES TIMEOUT 300)
 
@@ -188,6 +197,11 @@ pl_add_test(test_estates)
 # lifecycle state, and the standard membership filter's interval
 # semantics (authority U-8 + addendum).
 # MODEL-MOVING: the four goldens recapture with it.
+#
+# This is also the ONE gate that deliberately builds BOTH world shapes:
+# partB_anchors compares a joinerless CONTROL pack against a COHORT
+# pack, which is exactly the comparison the harness default used to
+# make accidentally everywhere else (authority U-13).
 pl_add_test(test_membership)
 set_tests_properties(test_membership PROPERTIES TIMEOUT 300)
 
@@ -314,6 +328,12 @@ set_tests_properties(test_resume PROPERTIES
 # Skips with 77 when no server is reachable; honors PL_TEST_PG.
 # Timeout raised 600 -> 900 with the third binary run (three runs +
 # three digest passes now share the budget).
+#
+# DO NOT DELETE THESE BASELINES CASUALLY (authority U-13). They predate
+# the gate-harness world-shape flip, and the golden gates recapture only
+# when a baseline is ABSENT — so the fact that they still verify is what
+# MEASURES that the harness round moved zero goldens. Re-capturing them
+# would retroactively turn that invariant into an unfalsifiable claim.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_table_golden)
@@ -347,6 +367,10 @@ set_tests_properties(test_table_golden PROPERTIES
 # exporter-only label-leak fix must NOT move it. The b-2 merchant
 # selection and the attacker-IP de-shortcut DID (they are generation
 # changes).
+#
+# NOTE (harness world shape, U-13): GateWorld is TEST-ONLY, so the
+# joiner-default flip must not move this digest either. See the
+# do-not-delete note above.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_run_golden)
@@ -430,21 +454,142 @@ set_tests_properties(test_card_point_in_time PROPERTIES TIMEOUT 600)
 # (1991-1994).
 #   GATED: the per-year RATE is era-stable (F = pL/(1-p) rides the
 #     realized candidate count, so a fan-out means a budget stopped
-#     riding L); per-year fraud amounts are flat in CALIBRATION dollars
-#     (the only gate proving U-6 class F scaling reaches the card fraud
-#     rail); fraud rides card_purchase and NOT merchant-POS; at least
-#     two typologies with the unauthorized family dominant; fraud
+#     riding L); fraud rides card_purchase and NOT merchant-POS; at
+#     least two typologies with the unauthorized family dominant; fraud
 #     tickets exceed legitimate ones; episode size bounded.
 #   PRINTED, NEVER GATED: per-year row COUNTS. H4's consumption ramp
 #     raises them while the documented small-N liquidity drain (U-9
 #     ADDENDUM) lowers them, and at N=300 the two are not separable —
 #     do not gate what the harness cannot resolve.
+#   ALSO PRINTED, AND IT USED TO BE GATED: the per-year DEFLATED fraud
+#     amount. That sub-gate was described here as "the only gate proving
+#     U-6 class F scaling reaches the card fraud rail" and it was
+#     WITHDRAWN as mis-specified — the card view mixes two fixed-nominal
+#     lattices with one CPI-scaled sampler, so deflating the combined
+#     mean asserts the OPPOSITE of U-6, and the statistic was
+#     under-powered besides. It survives as a per-year DECOMPOSITION
+#     (lattice vs CPI-scaled, nominal and deflated, plus a class-F
+#     clamp-ceiling ratio). The claim itself moved to test_card_class_f
+#     below. Authority U-13 ADDENDUM 2.
 # The aggregate rate carries IBM TabFormer's observed 0.11675% as a
 # NAMED COMPARATOR with a wide plausibility band, not a calibration pin.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_card_prevalence)
 set_tests_properties(test_card_prevalence PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# U-6 CLASS F ON THE CARD RAIL (roadmap item e) — the instrument that
+# REPLACES the flatness sub-gate withdrawn from test_card_prevalence.
+# Without it the suite has zero coverage of "class F reaches the card
+# rail", which is a declared law.
+#
+# Two era legs, and the claim is a CROSS-ERA ratio rather than a
+# within-era flatness envelope: flatness asks a heavy-tailed sample to
+# resolve a null effect, while the cross-era comparison has a ~1.8x
+# effect to find against the same noise (the shape that already works
+# for the ring rail in test_econ_wiring).
+#
+# The two contaminating fixed-nominal families are handled DIFFERENTLY
+# because only one can be: gift-card rows are resolvable by FraudType
+# and are EXCLUDED, while card-test probes carry the same type as the
+# spend they precede and are unfilterable — so the statistic is the
+# 75th PERCENTILE, which a bounded $5 contaminant at the bottom of the
+# axis cannot reach. A quantile of a scale family scales exactly with
+# the scale, so this reads the price level cleanly.
+#
+# THE BAND IS NOT HAND-PICKED. It is +-3 sigma of the REALIZED two-leg
+# quantile standard error (analytic CV = 1.635/sqrt(n) for the p=0.75
+# quantile of lognormal sigma 1.2), so it tightens or widens with the
+# world instead of encoding one seed's luck. The gate then CHECKS ITS
+# OWN POWER: it fails as UNDER-POWERED unless that band excludes both
+# the fixed-nominal null (~0.55) and the double-scaled null (~1.81) —
+# an under-powered run can never pass vacuously, and the repair is a
+# larger leg, never a tighter band.
+#
+# POPULATION 900 / unequal windows (1461d at 1991, 730d at 2019) are
+# deliberate and cost ~15s: the card rail is sparse, the power
+# arithmetic is not satisfiable at N=300, the 2019 leg cannot extend
+# past the 2021-01-01 era lock, and 900 also clears the ~833 threshold
+# where rings exist so both solo and ring card spends are exercised.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_class_f)
+set_tests_properties(test_card_class_f PROPERTIES TIMEOUT 900)
+
+# ---------------------------------------------------------------------
+# victimization-v4: THE VICTIM-SIDE BASELINES
+# (docs/card_fraud_victimization.md D3, the anti-shortcut condition).
+#
+# SHIPS BEFORE THE TILT, deliberately. V2 will weight victim selection
+# by card exposure and V3 will add a persona/age scam hazard; both make
+# victim attributes correlate with the label, which is realistic and is
+# also exactly how this arc's original merchant-identity defect got in.
+# The recorded law is that the baseline which would catch an
+# over-strong tilt must already exist when the tilt lands — so this
+# measures the PRE-TILT world and V2/V3 must keep it passing.
+#
+# Two classifiers, same metric as the merchant baseline: score every
+# card-view row by the empirical fraud rate of (a) its owner's
+# persona-AT-THE-ROW'S-DATE (H2's timeline, so a mid-window retirement
+# changes group mid-window) and (b) its owner's 10-year age band at
+# that date (H2's single age axis). Recall at precision >= 0.90 must
+# stay below 0.25 for BOTH.
+#
+# Every group's rate is PRINTED even though only the sweep is gated:
+# pre-tilt victim selection is uniform (buildCompromisePlans draws with
+# rng.choiceIndex), so those flat rates are the BEFORE picture that
+# V2/V3 calibrate against. Kept separate from test_card_baselines
+# (merchant identity) because the two fail for different reasons and one
+# combined number would hide which moved.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_victim_baselines)
+set_tests_properties(test_card_victim_baselines PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# victimization-v1: THE RING-FREE FRAUD GATE
+# (docs/card_fraud_victimization.md F1). Ring count is
+# round(lognormal x population/1e4) with NO floor, so it is ZERO below
+# roughly population 833 — and one blanket guard at the top of
+# Injector::inject used to short-circuit the ENTIRE fraud stage there. A
+# 500-person 30-year corpus came out with no fraud at all, and nothing
+# in the suite noticed: every other fraud gate runs at population 10000
+# or on the harness's scaledFraudProfile (perTenKMean 200), both of
+# which always carry rings. This is that missing coverage, at population
+# 400 with the DEFAULT profile.
+#
+# Asserts the PAIR that defines the design: (1) this population plans
+# zero rings — the precondition, so the gate fails loudly if a future
+# profile change makes it moot; (2) fraud exists anyway and reaches the
+# card view, because the unauthorized family's attacker is exogenous and
+# its budget rides the realized candidate count; (3) fraud is
+# EXCLUSIVELY that family — zero launder_ring rows, since no rings means
+# no ring laundering. Victim share is PRINTED against a real-world
+# 2-year comparator (~7.8%), not gated; the level belongs to the
+# prevalence suite.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_fraud_low_population)
+set_tests_properties(test_fraud_low_population PROPERTIES TIMEOUT 600)
+
+# ---------------------------------------------------------------------
+# victimization-v3: THE AUTHORIZED-SCAM RAIL
+#
+# The rail exists, is labelled, is never reimbursed, and reaches victims
+# on the axis the research names: per-capita incidence FALLING with age
+# while per-case severity RISES. Both directions are asserted, because a
+# model carrying only one of them is wrong in a way the corpus cannot
+# recover from.
+#
+# It is also the anti-shortcut gate for its own tilt — an age-only or
+# persona-only classifier must not solve the scam label — and the
+# membership gate's pin: no scam row may name a victim who is dead or
+# who has not joined the bank at the case date.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_scam_rail)
+set_tests_properties(test_card_scam_rail PROPERTIES TIMEOUT 600)
 
 # ---------------------------------------------------------------------
 # Ownership invariant: every roster person owns at least one account
@@ -475,6 +620,10 @@ pl_add_test(test_chunk_invariance)
 #   test_window_bisect      layer-by-layer divergence localization
 #   test_thread_invariance  1/4/12 workers at a fixed window (step 7)
 #   test_order_ties         replay-order enforcement + tie register
+#
+# These are LEG-VERSUS-LEG gates: both sides are built by the same
+# harness, so the U-13 world-shape flip moves them together and they
+# needed no band changes.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_window_invariance)
@@ -500,6 +649,14 @@ set_tests_properties(test_order_ties PROPERTIES TIMEOUT 600)
 # both engines read them through the same RateSampler. The v2 card
 # carriers must be filled at BOTH engines' call sites for the same
 # reason.)
+#
+# It is the ONE gate here that compares a HARNESS world against a
+# PRODUCTION world, so it must PIN THE WORLD SHAPE it assumes — a
+# joinerless harness leg against a cohort-shaped monolith leg reported
+# for a full round as a settlement-side "SEMANTIC divergence" and the
+# diagnostics blamed the wrong layer (authority U-13). It therefore sets
+# withJoinCohort EXPLICITLY rather than inheriting the default, and pins
+# the measured joiner counts equal AND nonzero before comparing corpora.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_arch_equivalence)

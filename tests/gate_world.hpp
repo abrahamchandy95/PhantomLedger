@@ -35,12 +35,36 @@
 // untouched. This is leg-constant test configuration, not a model
 // change.
 //
-// JOIN COHORT (H3 part 3c-ii): production always sizes the join cohort
-// against its window (simulate.cpp sets identity.windowDays). The
-// harness default keeps windowDays = 0 — NO joiners — so every
-// pre-existing gate world's dob/timeline/mortality draws stay
-// byte-identical; spec.withJoinCohort opts a gate into the production
-// shape (test_membership).
+// JOIN COHORT (H3 part 3c-ii): production ALWAYS sizes the join cohort
+// against its own window — SimulationPipeline::buildEntities() sets
+// identity.windowDays = window.days unconditionally (simulate.cpp) — so
+// a real world carries joiners whose dob AND persona timeline anchor at
+// their JOIN date (join.hpp, dob.hpp, timeline.hpp). THE HARNESS
+// DEFAULT IS NOW THAT PRODUCTION SHAPE.
+//
+// It used to be the opposite, and the inversion is the point. The flag
+// defaulted FALSE so every gate world predating H3 3c-ii stayed
+// byte-identical — which froze the entire harness into a world
+// production never generates. test_arch_equivalence paid for it first:
+// it is the one gate that compares a PRODUCTION monolith leg against a
+// harness leg, and victimization-v3 — the first code to read
+// Pack::joinDays on the corpus path — turned the world-shape mismatch
+// into a "SEMANTIC divergence" that read exactly like a settlement bug.
+// The behavioural gates on the leg harness (test_card_baselines,
+// test_card_prevalence, test_card_merchant_overlap, test_econ_wiring)
+// were the remaining half of the same defect: they went on measuring
+// bands against a joinerless population. The standing law from the
+// episode is that when a harness default exists to freeze existing
+// gates, every gate that compares against PRODUCTION has to opt out of
+// it — and making the production shape the default leaves nothing to
+// opt into.
+//
+// The flag SURVIVES as a bisect knob, not as a world choice: false
+// rebuilds the pre-3c-ii joinerless world, which is how one run
+// separates "this gate moved because the WORLD SHAPE moved" from "this
+// gate moved because the MODEL moved". No gate ships with it false.
+// LegResult::joiners (window_leg_support.hpp) is how a gate PINS the
+// shape it measures.
 //
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
@@ -140,10 +164,12 @@ struct WorldSpec {
   bool withIncome = true;
   bool withBaseRoutines = false;
 
-  // See JOIN COHORT in the file comment: false (the default) keeps
-  // every pre-existing gate world byte-identical; true mirrors the
-  // production join-cohort sizing (identity.windowDays = window.days).
-  bool withJoinCohort = false;
+  // See JOIN COHORT in the file comment: true (the default) mirrors
+  // production's join-cohort sizing (identity.windowDays = window.days).
+  // false rebuilds the pre-3c-ii joinerless world and exists ONLY to
+  // bisect a gate that moved with the world shape — no gate ships with
+  // it false.
+  bool withJoinCohort = true;
 };
 
 // Members are public and appear in construction order; the gates read

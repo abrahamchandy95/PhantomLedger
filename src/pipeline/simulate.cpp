@@ -100,7 +100,7 @@ void runTransferStage(SimulationResult &result,
       injector.inject(stage.legit().runScope().window, candidateView,
                       stages::transfers::FraudEmission::legitCounterparties(
                           legitPayload.counterparties, &cps.merchants,
-                          people.homeAreas));
+                          people.homeAreas, &people.personas));
 
   const auto injectedCount = fraudOut.injected.size();
   diagnostics::logStageMem("fraudInject",
