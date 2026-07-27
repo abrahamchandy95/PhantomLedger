@@ -510,8 +510,8 @@ set_tests_properties(test_card_prevalence PROPERTIES TIMEOUT 600)
 # POPULATION 900 / unequal windows (1461d at 1991, 730d at 2019) are
 # deliberate and cost ~15s: the card rail is sparse, the power
 # arithmetic is not satisfiable at N=300, the 2019 leg cannot extend
-# past the 2021-01-01 era lock, and 900 also clears the ~833 threshold
-# where rings exist so both solo and ring card spends are exercised.
+# past the 2021-01-01 era lock. NOT for ring coverage: the first run
+# printed ring 0 — this rail is ring-free BY DESIGN at every population.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_card_class_f)

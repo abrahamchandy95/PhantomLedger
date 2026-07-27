@@ -372,16 +372,60 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
 
       out.push_back(planTxf.make(draft));
       ++fraudEmitted;
-      // DECLARED DEFECT, tracked with the ownerId-prefix finding in
-      // docs/card_fraud_v2_roadmap.md step d: on an AUTHORIZED rail the
-      // operator is the VICTIM on their own device, so attaching the
-      // attacker session here is wrong. It is not a one-line fix —
-      // routing the victim's own device through infra::Router advances
-      // that person's sticky device index, which would perturb
-      // legitimate routing in later windows and diverge the two engines
-      // — and blanking the session would trade one hint for another.
-      out.back().session.deviceId = plan.device;
-      out.back().session.ipAddress = plan.ip;
+
+      // WHO OPERATED THE ROW (victim-session-2026-07, roadmap step d;
+      // closes the authorized-push half of the deferred finding).
+      //
+      // THE ATTACKER SESSION IS ONLY CORRECT ON THE UNAUTHORIZED RAILS.
+      // On `card` and `ato` a third party is transacting with stolen
+      // credentials, so the exogenous device/IP is the modeled truth. On
+      // the two AUTHORIZED rails the operator is the VICTIM, on their
+      // own device: the gift-card victim walks into a store and buys the
+      // cards themselves, and the impostor-push victim wires or app-pushes
+      // their own money. Stamping the attacker's session over those rows
+      // asserted the opposite of the typology.
+      //
+      // THE VICTIM'S SESSION IS ALREADY ON THE ROW — no carrier needed.
+      // `planTxf.make(draft)` above resolved it: `draft.ringId` is -1 so
+      // the SharedInfra branch is skipped, all four rails carry a
+      // customer-session channel (cardPurchase / p2p / externalUnknown —
+      // none is payday-inbound and none is in `isExternallyInitiated`),
+      // and `draft.source` is the VICTIM'S account, so
+      // transactions::Factory routed `ownerOf(victim) -> routeDeviceFor /
+      // routeIpFor` on this plan's own rng lane. The two lines below were
+      // discarding that result. Skipping them on the authorized rails
+      // consumes NO new randomness and advances NO new sticky state — the
+      // routing had already happened either way.
+      //
+      // THIS SUPERSEDES THE RECORDED DEFERRAL RATIONALE, which held that
+      // a victim-own-device fix would have to call `infra::Router` from
+      // the fraud planner and would thereby advance that person's sticky
+      // device index and perturb legitimate routing in later windows.
+      // The advance is already paid, by the code above, in both engines
+      // identically.
+      //
+      // AND DO NOT "IMPROVE" THIS BY PICKING THE POOL'S FIRST ENTRY.
+      // A non-advancing `devicesByPerson[person].front()` read looks
+      // safer but is strictly worse: it would hand every authorized-rail
+      // row slot 0 while that same victim's LEGITIMATE rows follow the
+      // sticky index, so "device != this person's current device" would
+      // become the replacement shortcut. Letting the router's own result
+      // stand is what makes the scam row's session indistinguishable, by
+      // construction, from a legitimate row of the same victim.
+      //
+      // DECLARED, SIZED, NOT CLOSED HERE: on the card/ato rails
+      // `plan.device` carries OwnerType::ring, which
+      // exporter::common::renderDeviceId writes as a literal
+      // `encoding::kFraudDevice` ("FD") prefix rather than hashing it —
+      // a deterministic label in `public.transactions.device_id`. That is
+      // an EXPORTER-side rendering defect on the rails where the attacker
+      // device is the correct model, so it is registered separately
+      // (docs/fraud_model_audit.md OPEN ITEMS; roadmap leak inventory)
+      // rather than folded into this fix.
+      if (!authorizedRail(plan.rail)) {
+        out.back().session.deviceId = plan.device;
+        out.back().session.ipAddress = plan.ip;
+      }
       out.back().fraud.type = fraudTypeFor(plan.rail);
 
       // Reported card compromise: each fraudulent SPEND (not the

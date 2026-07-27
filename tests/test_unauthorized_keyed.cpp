@@ -1,4 +1,7 @@
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/infra/devices.hpp"
+#include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/entities/infra/router.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -9,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 namespace pl = ::PhantomLedger;
@@ -26,6 +30,23 @@ void expect(bool cond, const char *what) {
   }
 }
 
+// The victim roster used by the session gate below. One person per plan,
+// each with EXACTLY ONE device and ONE IP — with a single-entry pool
+// `Router::routeFromPool` returns items[0] and never reaches its
+// switch coin, so routing is draw-free and the expected session is
+// exact rather than stream-dependent.
+[[nodiscard]] pl::entity::PersonId personForVictim(std::uint64_t acct) {
+  return static_cast<pl::entity::PersonId>(acct / 101);
+}
+
+[[nodiscard]] pl::devices::Identity ownDevice(pl::entity::PersonId p) {
+  return pl::devices::Identity::person(static_cast<std::uint64_t>(p), 1);
+}
+
+[[nodiscard]] pl::network::Ipv4 ownIp(pl::entity::PersonId p) {
+  return pl::network::Ipv4::pack(10, 0, 0, static_cast<std::uint8_t>(p));
+}
+
 [[nodiscard]] std::vector<unauth::CompromisePlan> makePlans() {
   std::vector<unauth::CompromisePlan> plans;
 
@@ -39,6 +60,8 @@ void expect(bool cond, const char *what) {
                                            pl::entity::Bank::internal, 404);
   const auto victimE = pl::entity::makeKey(pl::entity::Role::account,
                                            pl::entity::Bank::internal, 505);
+  const auto victimF = pl::entity::makeKey(pl::entity::Role::account,
+                                           pl::entity::Bank::internal, 606);
   const auto drop = pl::entity::makeKey(pl::entity::Role::account,
                                         pl::entity::Bank::external, 999);
 
@@ -117,6 +140,24 @@ void expect(bool cond, const char *what) {
       .seq = 4,
   });
 
+  // Impostor-push plan (the OTHER victim-authorized rail,
+  // victimization-v3). Added with the session gate below: the
+  // authorized-rail session fix has two rails and a gate that exercised
+  // only one of them would leave half the change unmeasured.
+  plans.push_back(unauth::CompromisePlan{
+      .victimAccount = victimF,
+      .dropAccount = drop,
+      .device = pl::devices::Identity{.ownerType = pl::devices::OwnerType::ring,
+                                      .ownerId = 0xACE00005ULL,
+                                      .slot = 0},
+      .ip = pl::network::Ipv4::pack(198, 51, 100, 6),
+      .rail = unauth::Rail::scamImpostor,
+      .startTs = 6'000'000,
+      .spanSeconds = 3600 * 4,
+      .targetEvents = 3,
+      .seq = 5,
+  });
+
   return plans;
 }
 
@@ -127,6 +168,29 @@ void expect(bool cond, const char *what) {
         pl::entity::Role::business, pl::entity::Bank::external, 5'000 + n));
   }
   return billers;
+}
+
+// A Router over exactly the plan victims, mirroring the production
+// wiring (`Router::build(rules, ownerOf, devicesByPerson, ipsByPerson)`
+// in src/pipeline/stages/infra.cpp).
+[[nodiscard]] pl::infra::Router
+makeRouter(std::span<const unauth::CompromisePlan> plans) {
+  std::unordered_map<pl::entity::Key, pl::entity::PersonId> ownerOf;
+  std::unordered_map<pl::entity::PersonId, std::vector<pl::devices::Identity>>
+      devicesByPerson;
+  std::unordered_map<pl::entity::PersonId, std::vector<pl::network::Ipv4>>
+      ipsByPerson;
+
+  for (const auto &plan : plans) {
+    const auto person = personForVictim(plan.victimAccount.number);
+    ownerOf.emplace(plan.victimAccount, person);
+    devicesByPerson[person] = {ownDevice(person)};
+    ipsByPerson[person] = {ownIp(person)};
+  }
+
+  return pl::infra::Router::build(pl::infra::RoutingRules{}, std::move(ownerOf),
+                                  std::move(devicesByPerson),
+                                  std::move(ipsByPerson));
 }
 
 [[nodiscard]] bool sameTxn(const pl::transactions::Transaction &a,
@@ -148,6 +212,8 @@ int main() {
   const auto billers = makeBillers();
   const std::span<const pl::entity::Key> billerSpan(billers.data(),
                                                     billers.size());
+  const std::span<const unauth::CompromisePlan> planSpan(plans.data(),
+                                                         plans.size());
 
   // ---- Run A: all plans in one call, fresh context ----
   pl::random::RngFactory factoryA{kFactorySeed};
@@ -162,9 +228,7 @@ int main() {
       .window = {},
       .billerAccounts = billerSpan,
   };
-  const auto outA = unauth::generate(
-      ctxA, std::span<const unauth::CompromisePlan>(plans.data(), plans.size()),
-      kBudget);
+  const auto outA = unauth::generate(ctxA, planSpan, kBudget);
   expect(!outA.empty(), "run A produced transactions");
 
   // The gift-card scam rail must produce its own label class, and its
@@ -238,6 +302,120 @@ int main() {
   }
   expect(cursor == outA.size(),
          "batched output fully accounted for by per-plan output");
+
+  // ---- Run C: WHO OPERATED THE ROW (victim-session-2026-07, step d) ----
+  //
+  // Runs A and B carry no Router, so every session there is empty; that
+  // is deliberate and is what keeps the keyed-independence property above
+  // measured on the generator alone. This leg supplies the Router and
+  // gates the rail-conditional session.
+  //
+  //   authorized (giftCardScam, scamImpostor)  the VICTIM operated, on
+  //       their own device — the row must carry the session the Router
+  //       resolved for the victim, NOT the attacker's.
+  //   unauthorized (card, ato)  a third party operated with stolen
+  //       credentials — the exogenous attacker session is the modeled
+  //       truth and must SURVIVE. This half is a TRIPWIRE: it fails if a
+  //       later round over-applies the authorized-rail fix.
+  {
+    pl::random::RngFactory factoryC{kFactorySeed};
+    auto seqRngC = pl::random::Rng::fromSeed(1);
+    const auto router = makeRouter(planSpan);
+    fraud::IllicitContext ctxC{
+        .execution =
+            fraud::Execution{
+                .txf = pl::transactions::Factory(seqRngC, &router),
+                .rng = &seqRngC,
+                .factory = &factoryC,
+            },
+        .window = {},
+        .billerAccounts = billerSpan,
+    };
+    const auto outC = unauth::generate(ctxC, planSpan, kBudget);
+
+    std::unordered_map<std::uint64_t, const unauth::CompromisePlan *> byVictim;
+    for (const auto &plan : plans) {
+      byVictim.emplace(plan.victimAccount.number, &plan);
+    }
+
+    std::size_t authorizedRows = 0;
+    std::size_t unauthorizedRows = 0;
+    std::size_t giftCardRows = 0;
+    std::size_t impostorRows = 0;
+    std::size_t fraudDeviceRendered = 0;
+
+    for (const auto &tx : outC) {
+      if (tx.fraud.flag != 1) {
+        // Chargeback credits are externally initiated and their source is
+        // the merchant, so they carry no session on either engine.
+        expect(!tx.session.deviceId.assigned(),
+               "flag-0 chargeback rows carry no device");
+        continue;
+      }
+
+      const auto it = byVictim.find(tx.source.number);
+      expect(it != byVictim.end(), "every flag-1 row maps back to a plan");
+      if (it == byVictim.end()) {
+        continue;
+      }
+      const auto &plan = *it->second;
+      const auto person = personForVictim(plan.victimAccount.number);
+
+      if (unauth::authorizedRail(plan.rail)) {
+        ++authorizedRows;
+        if (plan.rail == unauth::Rail::giftCardScam) {
+          ++giftCardRows;
+        } else {
+          ++impostorRows;
+        }
+        expect(tx.session.deviceId == ownDevice(person),
+               "authorized-rail row carries the VICTIM'S own device");
+        expect(tx.session.ipAddress == ownIp(person),
+               "authorized-rail row carries the VICTIM'S own IP");
+        expect(tx.session.deviceId != plan.device,
+               "authorized-rail row does NOT carry the attacker device");
+        expect(tx.session.ipAddress != plan.ip,
+               "authorized-rail row does NOT carry the attacker IP");
+        // Equivalent to "renders without the kFraudDevice 'FD' prefix":
+        // exporter::common::renderDeviceId switches on ownerType, and
+        // OwnerType::ring is the only branch that emits it. Asserted on
+        // the identity rather than the rendering so this test stays
+        // inside the transfers layer.
+        expect(tx.session.deviceId.ownerType == pl::devices::OwnerType::person,
+               "authorized-rail device renders as a person device, not FD");
+      } else {
+        ++unauthorizedRows;
+        expect(tx.session.deviceId == plan.device,
+               "unauthorized-rail row keeps the attacker device");
+        expect(tx.session.ipAddress == plan.ip,
+               "unauthorized-rail row keeps the attacker IP");
+        if (tx.session.deviceId.ownerType == pl::devices::OwnerType::ring) {
+          ++fraudDeviceRendered;
+        }
+      }
+    }
+
+    // PRECONDITIONS: neither half may pass vacuously, and BOTH authorized
+    // rails must be present — the fix is rail-conditional, so a leg that
+    // saw only one of them would gate half of it.
+    expect(giftCardRows == 4, "the gift-card rail was exercised (4 rows)");
+    expect(impostorRows == 3, "the impostor rail was exercised (3 rows)");
+    expect(authorizedRows == 7, "both authorized rails were exercised");
+    expect(unauthorizedRows > 0, "the card/ato tripwire was exercised");
+
+    // DECLARED AND SIZED, not gated (docs/fraud_model_audit.md OPEN
+    // ITEMS): every card/ato row still renders its device through
+    // encoding::kFraudDevice ("FD"), a deterministic label in
+    // public.transactions.device_id. The attacker device is CORRECT on
+    // these rails; the defect is exporter-side rendering, registered as
+    // its own item rather than folded into this fix.
+    std::printf("session by rail: authorized %zu (giftCard %zu, impostor %zu) "
+                "-> victim-own device; unauthorized %zu -> attacker device, "
+                "of which %zu render with the 'FD' fraud-device prefix "
+                "(DECLARED, registered separately)\n",
+                authorizedRows, giftCardRows, impostorRows, unauthorizedRows,
+                fraudDeviceRendered);
+  }
 
   if (failures != 0) {
     std::fprintf(stderr, "unauthorized keyed-stream: %d failure(s)\n",

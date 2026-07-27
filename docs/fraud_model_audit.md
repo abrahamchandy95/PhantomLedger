@@ -646,3 +646,37 @@ CFPB SAR calibration); a per-era scam payment-method mix.
 card-fraud and scam prevalence against a named issuer-side series
 (Nilson / FTC), including the CNP share. This arc measured separability
 and stability, not level. The README states this without overclaiming.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT — victim-session-2026-07
+═══════════════════════════════════════════════════════════════════════
+
+**Supersedes the victim-own-device clause of OPEN ITEMS #4**, which is
+CLOSED. Its parenthetical rationale ("routing the victim's device through
+`infra::Router` would perturb legitimate routing") was FALSE when written.
+
+| The claim | What falsified it | The law it produced |
+|---|---|---|
+| Attaching the victim's own device to an authorized-push row requires a new carrier, because routing from the fraud planner would advance that person's sticky index and diverge the two engines | Every unauthorized row already has `ringId = -1`, `source = victimAccount` and a customer-session channel, so `transactions::Factory::make` ALREADY called `routeDeviceFor`/`routeIpFor` for the victim on the plan's rng lane and wrote the result — which `unauthorized.cpp` then overwrote. The sticky advance was already being paid; the fix removes two lines and adds no draws | **A deferral rationale is a claim and rots like any other: re-read the path and check the cost is not ALREADY BEING PAID before building the carrier it asks for.** And: before adding a carrier, check whether the value is already on the row |
+| A non-advancing `devicesByPerson[person].front()` read is the safe way to attach the victim's device | It pins authorized rows to pool slot 0 while the SAME victim's legitimate rows follow the sticky index, so "device != this person's current device" becomes the replacement label | **The more explicit fix can be the one that opens the shortcut.** Systematic difference from a person's own legitimate rows IS a label |
+
+**Session semantics, now normative.** `card`/`ato` = attacker device+IP
+(third party with stolen credentials — the exogenous session is the
+model). `giftCardScam`/`scamImpostor` = the VICTIM's routed session (the
+victim is the operator). Gated in `tests/test_unauthorized_keyed.cpp`;
+the card/ato half is a TRIPWIRE. CLASS: TYPOLOGY. Status: CONFORMS.
+
+**7. The `FD` device render — a DETERMINISTIC label, sized and declared.**
+`exporter/common/render.hpp` does NOT hash `Identity.ownerId`: the
+`OwnerType::ring` branch writes the literal `encoding::kFraudDevice`
+layout, so `public.transactions.device_id` reads `FD…` on every
+attacker-session row while person devices read `D<customer>_<slot>`.
+`writeSessionCells` puts it on every ledger row. This is strictly stronger
+than the TEST-NET-2 IP shortcut already closed (deterministic, not
+1-in-14M). The authorized-rail fix removes it from the gift-card and
+impostor rails; it SURVIVES on card/ato, where the attacker device is the
+CORRECT model and the defect is exporter-side RENDERING. Owner ruling
+(2026-07-27): size and declare, do not close — closing it changes how
+every RING device renders, touching legitimate ring rows and the AML/mule
+corpora, and is its own named arc with its own re-pin. The gate prints the
+surviving count each run. **`device_id` is NOT feature-safe.**

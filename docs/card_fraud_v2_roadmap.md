@@ -7,8 +7,10 @@ point-in-time feature contract is written and pinned, and prevalence is
 gated per year. ROUND 4 re-pointed the whole gate harness at the
 PRODUCTION population, which re-measured every band in this arc against
 a world the generator actually emits; ROUND 5 rebuilt the one claim that
-round falsified. What remains is the owner's verification runbook and
-the arc's wind-up commit.
+round falsified; ROUND 6 closed the last declared generation defect —
+the attacker session on a victim-AUTHORIZED push — and answered the
+device-render check that had been carried beside it. What remains is the
+owner's verification runbook and the arc's wind-up commit.
 
 **GOVERNING DIRECTIVE (owner, 2026-07-26): the deliverable is REALISTIC
 DATA A GNN CAN BE TRAINED ON HONESTLY. Nothing on the critical path is
@@ -26,6 +28,10 @@ Owner rulings:
 5. Population/density causality: researched, discretion exercised.
 6. Zeroed-not-dropped for the leaking label columns: TF_GNN_v3 loading
    jobs map POSITIONALLY, so the columns stay and carry 0.
+7. **ROUND 6 scope ruling:** fix the authorized rails; SIZE and DECLARE
+   the `FD` device-render leak on the card/ato rails rather than closing
+   it in the same round (closing it changes how every RING device
+   renders, which is its own named arc).
 
 ## The standing verdict, restated
 
@@ -291,11 +297,103 @@ scales and FAILS as UNDER-POWERED unless its own band excludes both. An
 undersized leg reports that fact instead of passing vacuously, and the
 repair is a larger leg, never a tighter band.
 
-Costs ~15s. N=900 is deliberate: the card rail is sparse and the power
-arithmetic is not satisfiable at N=300, which is precisely the trap the
-withdrawn gate fell into. 900 also clears the ~833 ring threshold, so
-solo and ring card spends — which share the `cardFraudSpend` sampler —
-are both exercised.
+N=900 is deliberate: the card rail is sparse and the power arithmetic is
+not satisfiable at N=300, which is precisely the trap the withdrawn gate
+fell into.
+
+**CORRECTION, from the gate's own first run.** N=900 was ALSO justified
+here as "clears the ~833 ring threshold, so solo and ring card spends
+are both exercised." That is FALSE, and wrong on mechanism rather than
+merely on count: the very first run printed `ring 0` in both legs.
+`buildCompromisePlans` excludes ring participants and ring victims, so
+**the unauthorized card rail is ring-free BY DESIGN at every
+population**, and its class-F population is `txnFraudSolo` only. N=900
+stands on the power arithmetic alone. The ring/other counters are
+RETAINED as a **TRIPWIRE** — nonzero means a later round routed a
+different fraud family onto this rail — and are documented as one so
+nobody deletes them as dead code. **Audit the justification you wrote
+against the gate's own printed output before calling a round done.**
+
+### ROUND 6 — who operated the row (MODEL-MOVING, four goldens re-pin)
+
+The last declared generation defect in this arc. `unauthorized.cpp`
+stamped the ATTACKER's device and IP onto every emitted row, including
+the two victim-AUTHORIZED rails where the victim is the one transacting:
+the gift-card victim walks into a store and buys the cards, and the
+impostor-push victim wires or app-pushes their own money. The row
+asserted the opposite of its own typology.
+
+**THE DEFERRAL RATIONALE WAS FALSIFIED BY READING THE CONSTRUCTION.**
+The recorded reason for deferring (audit OPEN ITEMS #4) was that a fix
+would have to call `infra::Router` from the fraud planner, advancing
+that victim's STICKY device index and perturbing legitimate routing in
+later windows — the exact path `test_arch_equivalence` and
+`test_production_windowed` compare byte-for-byte. That cost is **already
+being paid by the existing code**: every unauthorized row has
+`draft.ringId = -1` (so the SharedInfra branch is skipped), a
+customer-session channel (`cardPurchase` / `p2p` / `externalUnknown` —
+none is payday-inbound and none appears in `isExternallyInitiated`), and
+`draft.source = plan.victimAccount`. So `transactions::Factory::make`
+already resolves `ownerOf(victim) → routeDeviceFor / routeIpFor` on the
+plan's own rng lane and writes the victim's session onto the row. The
+two overwrite lines were **discarding a correct value that had already
+been computed**.
+
+The fix is therefore to stop overwriting on the authorized rails. It
+consumes **no new randomness**, advances **no new sticky state**, adds
+**no carrier**, and touches neither engine's plumbing — it lives entirely
+inside `unauthorized::generate`, which both engines share.
+
+**AND THE OBVIOUS "SAFER" FIX WOULD HAVE OPENED A NEW SHORTCUT.** The
+registered design was a read-only non-advancing pick —
+`devicesByPerson[person].front()`. That hands every authorized-rail row
+pool slot 0 while the SAME victim's legitimate rows follow the sticky
+index, so `device != that person's current device` becomes the
+replacement label. Letting the router's own result stand is what makes
+the scam row's session indistinguishable, by construction, from a
+legitimate row of the same victim. **The non-advancing read was the
+worse option, and only reading the routing path showed it.**
+
+Gate: `tests/test_unauthorized_keyed.cpp` gains a Router-backed leg
+asserting the rail-conditional session — authorized rows carry the
+victim's own device/IP and NOT the attacker's; card/ato rows KEEP the
+attacker session (a tripwire against over-applying the fix). Both
+authorized rails are pinned present (gift-card 4 rows, impostor 3), so
+neither half can pass vacuously. The impostor rail had no unit coverage
+before this round.
+
+**THE DEVICE `ownerId` RENDER CHECK, ANSWERED — AND IT IS A LEAK.**
+Carried beside this item was the question of whether the magic
+`0xACE00000` ownerId with `OwnerType::ring` is visible downstream, on
+the hypothesis that `renderDeviceId` might hash the key. **It does not
+hash.** `exporter/common/render.hpp` switches on `ownerType` and the
+`ring` branch writes the literal `encoding::kFraudDevice` layout
+(`{"FD", 4}`), so an attacker device renders `FD2900000768` while a
+person device renders `D<customer>_<slot>`. `writeSessionCells` puts that
+string in `public.transactions.device_id` on every ledger row. This is a
+DETERMINISTIC label, not a 1-in-14M coincidence like TEST-NET-2 — a
+strictly stronger version of the shortcut this arc already closed once.
+
+Per owner ruling 7 it is SIZED AND DECLARED here, not closed: the
+authorized-rail fix removes it from the gift-card and impostor rows
+(they now render as person devices), and on card/ato the attacker device
+is the CORRECT model — the defect is exporter-side rendering. Closing it
+means changing how every RING device renders, which touches legitimate
+ring rows and the AML/mule corpora, and that is its own named arc. The
+gate prints the surviving count each run.
+
+**GOLDEN IMPACT: all four re-pin, for two different reasons.** The
+authorized-rail rows change `device_id` and `ip_address`, so the corpus
+stream moves: `golden_run.b2sum`, `golden_tables.md5` and
+`golden_tables_aml.md5` move on those columns. `golden_tables_card_fraud.md5`
+moves **only through the corpus-stream digest it also pins** — every
+`cf_*` table should be byte-identical, because `Payment_Transaction`
+carries no device/IP column and `Device`/`IP`/`Has_Device`/`Has_IP` are
+built from `world.infra.devices|ips` (entity synthesis), not from
+transaction sessions. `use_chip` and `error` hash timestamp, endpoints
+and amount only, so they do not move either. **That asymmetry is the
+checkable prediction of this round.** The RNG stream is untouched, so
+row counts, amounts, timestamps and destinations must all be unchanged.
 
 ### Layering verified
 
@@ -326,6 +424,13 @@ divergence" for exactly this reason, and the diagnostics blamed the
 wrong layer for a full round. Both sides now measure the cohort off the
 carrier and pin equality BEFORE any corpus comparison.
 
+**ROUND 6 IS THE TRAP'S COUNTEREXAMPLE, WORTH KEEPING.** Not every fix
+needs a carrier. The session fix required no new argument at any of the
+four sites, because the value it needed was already being computed
+inside `transactions::Factory` and thrown away. **Before adding a
+carrier, check whether the value is already on the row** — the parity
+trap is a cost, and the cheapest way to pay it is not to incur it.
+
 ## CUT from the critical path (polish, registered not forgotten)
 
 - **b′ — compromise incidence scaling.** The Bettencourt tilt on victim
@@ -335,11 +440,14 @@ carrier and pin equality BEFORE any corpus comparison.
   named lane. Must land AFTER a home-area-only baseline, which is why
   that baseline is NOT in `test_card_baselines` today — with no tilt in
   the world it would measure nothing.
-- **Transaction-time device/IP edges.** The attacker's device and IP
-  exist on the corpus row (`public.transactions.device_id`,
-  `.ip_address` — feature-safe there) but are not transaction-time
-  edges in the card graph; `Has_IP`/`Has_Device` are window-wide party
-  associations.
+- **Transaction-time device/IP edges.** The session device and IP exist
+  on the corpus row (`public.transactions.device_id`, `.ip_address`) but
+  are not transaction-time edges in the card graph; `Has_IP`/`Has_Device`
+  are window-wide party associations. **An earlier version of this entry
+  called those two columns "feature-safe there". ROUND 6 falsified that:**
+  `device_id` renders attacker devices with a literal `FD` prefix, so on
+  the card/ato rails it is a deterministic label. See the leak inventory
+  below.
 - **Exporting the real card-present modality** into `use_chip` (see the
   correction below).
 - **Compromise-state effective dates.** Likely SMALLER than it looks:
@@ -347,7 +455,9 @@ carrier and pin equality BEFORE any corpus comparison.
   delivered era-varying volume. Re-scope when reached.
 - **Level calibration** of card-fraud prevalence against a named
   issuer-side series (Nilson / FTC), including the CNP share.
-- Device `ownerId` render check.
+- **~~Device `ownerId` render check.~~ ANSWERED as ROUND 6** — it does
+  NOT hash; the prefix is visible as `FD…` in `device_id`. Promoted from
+  a check to a sized, declared LEAK in the inventory below.
 - **~~e — the two-era card-rail class-F leg.~~ LANDED as ROUND 5**
   (`tests/test_card_class_f.cpp`). The coverage gap opened by the
   withdrawn flatness gate is closed.
@@ -366,6 +476,13 @@ carrier and pin equality BEFORE any corpus comparison.
   not introduced by it: an existence gate whose expectation is ~3 reads
   0 on roughly 5% of ANY re-roll. **The repair if it fires is a longer
   window, NEVER a lower floor** — a floor of 0 asserts nothing.
+- **The `FD` device render (ROUND 6, owner-deferred).** Give the
+  unauthorized attacker device a rendering a legitimate device could
+  also carry. Blast radius is why it is not in ROUND 6: `OwnerType::ring`
+  is shared with real ring shared-infrastructure devices, so either every
+  ring device stops rendering `FD` (moving AML/mule tables for legitimate
+  ring rows) or a new `OwnerType` is added. Its own named arc, its own
+  re-pin.
 
 ## Population, density, and urban scaling (adopted, pending b′)
 
@@ -415,6 +532,8 @@ exponent is wrong — not the gate.
 | Raw `public.transactions` exposes ground truth + TEST-NET IPs | **BOTH CONFIRMED.** The TEST-NET claim DOES reproduce — the earlier "did not reproduce" reading grepped the dotted-quad string and missed `Ipv4::pack(198, 51, 100, …)` | IP shortcut **CLOSED**. The raw ledger's `is_fraud`/`ring_id`/`fraud_type` columns are the generator's own ground truth and stay — that table is the corpus, not the feature graph; the contract names `ring_id`/`fraud_type` PROHIBITED for features |
 | The arc's own gates measured a joinerless population | **CONFIRMED (ROUND 4)** — `GateWorld` defaulted `withJoinCohort = false`, so no gate in this arc had ever run on the shipped world shape | **CLOSED (round 4)** — default inverted, `joiners > 0` pinned as a precondition in all four behavioural gates, world shape printed on every leg line. One band was falsified by the flip and WITHDRAWN rather than widened |
 | No gate proved U-6 class F scaling reaches the CARD rail | **CONFIRMED (ROUND 4)** — the gate that claimed to was mis-specified and under-powered, and withdrawing it left the coverage at zero | **CLOSED (round 5)** — `test_card_class_f.cpp`, a cross-era deflated-quantile gate that sizes its own band and fails as UNDER-POWERED rather than passing vacuously |
+| The attacker session rides victim-AUTHORIZED rows | **CONFIRMED (ROUND 6)**, and the recorded deferral rationale was FALSE: `transactions::Factory` already routed the victim's own device/IP onto these rows and `unauthorized.cpp` overwrote it, so the sticky-index cost the deferral feared was already being paid | **CLOSED (round 6)** — the overwrite is now skipped on the two authorized rails. No new draws, no new carrier, no plumbing change. The registered "non-advancing `front()` pick" alternative was REJECTED as a replacement shortcut |
+| Device `ownerId` carries a magic `0xACE00000` prefix — does it reach the corpus? | **CONFIRMED A LEAK (ROUND 6).** `renderDeviceId` does NOT hash: the `OwnerType::ring` branch writes the literal `kFraudDevice` layout, so `device_id` reads `FD…` on every attacker-session row while person devices read `D<customer>_<slot>`. Deterministic, i.e. strictly stronger than the TEST-NET-2 shortcut | **PARTIALLY CLOSED (round 6), REST DECLARED** — gone from the gift-card and impostor rails with the session fix. SURVIVES on card/ato, where the attacker device is the correct model and the defect is exporter-side rendering. Owner ruling 7: sized, printed by the gate, registered as its own arc |
 
 ## Law compliance
 
@@ -424,4 +543,8 @@ NAMED lane. b-2 and the IP fix are model-moving (four-golden re-pin);
 round 1 is exporter-only (three TABLE goldens; a moving stream golden
 would be a defect, and it did not move); the fill, c, and rounds 2–5
 are zero-golden — rounds 4 and 5 touch only test-only code, so a moving
-golden there is a defect rather than a re-pin.
+golden there is a defect rather than a re-pin. **ROUND 6 is
+model-moving** (four-golden re-pin) but consumes NO new randomness, so
+row counts, amounts, timestamps and destinations must be unchanged and
+only the two session columns may move — a moving amount or count there
+is a defect, not a re-pin.
