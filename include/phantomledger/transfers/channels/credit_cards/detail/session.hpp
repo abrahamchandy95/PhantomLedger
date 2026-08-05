@@ -14,6 +14,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -35,7 +36,9 @@ struct State {
 
   std::size_t purchaseCursor = 0;
 
-  std::vector<transactions::Transaction> deferredCredits;
+  // Emitted credits and lifecycle postings whose timestamps belong to
+  // this or a future statement interval.
+  std::vector<transactions::Transaction> deferredBalanceEvents;
 };
 
 struct Cycle {
@@ -88,6 +91,10 @@ public:
 
   void run(CardPurchases purchases, Cycle cycle);
 
+  // Apply generated lifecycle postings to the bound spending ledger only
+  // when their timestamps are behind the caller's day boundary.
+  void advanceLedgerTo(time::TimePoint boundExcl);
+
   [[nodiscard]] const Account &account() const noexcept { return account_; }
 
   [[nodiscard]] std::size_t purchaseCursor() const noexcept {
@@ -104,9 +111,20 @@ private:
     time::TimePoint when;
   };
 
+  struct LateFeeOnReject {
+    time::TimePoint due;
+    time::TimePoint windowEndExcl;
+    double amount = 0.0;
+  };
+
+  struct PendingLedgerPosting {
+    transactions::Transaction txn;
+    std::optional<LateFeeOnReject> lateFeeOnReject;
+  };
+
   void collectPurchases(CardPurchases purchases, Cycle cycle);
 
-  void drainDueCredits(Cycle cycle);
+  void drainDueBalanceEvents(Cycle cycle);
 
   void sortEventsByTime();
 
@@ -115,16 +133,18 @@ private:
   [[nodiscard]] PaymentIntent
   draftPayment(double statementAbs, double minimumDueAmt, time::TimePoint due);
 
-  void postPayment(const PaymentIntent &intent, time::TimePoint windowEndExcl);
+  void postPayment(const PaymentIntent &intent, time::TimePoint due,
+                   time::TimePoint windowEndExcl, double lateFeeOnReject);
 
   // H1 step 2b: the fee arrives era-scaled from run()'s per-cycle
   // effective billing terms (class P, authority U-6).
   void postLateFee(time::TimePoint due, time::TimePoint windowEndExcl,
                    double fee);
 
-  void book(const transactions::Draft &draft, double balanceDelta);
+  void book(const transactions::Draft &draft,
+            std::optional<LateFeeOnReject> lateFeeOnReject = std::nullopt);
 
-  void postToLedger(const transactions::Draft &draft);
+  [[nodiscard]] bool postToLedger(const transactions::Transaction &txn);
 
   const Environment &env_;
 
@@ -138,6 +158,7 @@ private:
   LedgerBinding ledger_{};
 
   std::vector<transactions::Transaction> events_{};
+  std::vector<PendingLedgerPosting> pendingLedgerPostings_{};
 };
 
 } // namespace PhantomLedger::transfers::credit_cards::detail

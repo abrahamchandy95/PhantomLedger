@@ -34,8 +34,20 @@ void CommerceEvolver::evolveIfNeeded(market::Market &market, random::Rng &rng,
 
   auto &commerce = market.commerceMutable();
 
+  // The month-boundary instant the liveness rebuild is evaluated at.
+  const auto boundary = time::toEpochSeconds(
+      time::addDays(market.bounds().startDate, static_cast<int>(dayIndex)));
+
+  // relocation-2026-07: HOMES MOVE FIRST, and the order is load-bearing.
+  // `evolveAll` rebuilds the live geo pools and the favourite/biller CDFs for
+  // this month; if homes were refreshed after that, a household that moved
+  // this month would spend the month selecting against its OLD area's pool.
+  // Draw-free, so the ordering changes no stream position.
+  market.populationMutable().refreshHomes(boundary);
+
   dynamics::monthly::evolveAll(rng, config_, commerce,
-                               market.population().count());
+                               market.population().count(), boundary,
+                               market.population().homeAreas());
 }
 
 } // namespace PhantomLedger::activity::spending::simulator

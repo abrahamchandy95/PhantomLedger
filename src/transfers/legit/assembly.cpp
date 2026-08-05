@@ -231,6 +231,10 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
               // into the monolith spending pass so the reference oracle
               // selects from the SAME homes as the windowed path.
               .homeAreas = world.homeAreas,
+              // relocation-2026-07: the home-area HISTORY, so the monolith
+              // oracle refreshes homes from the same schedule the windowed
+              // engine does. An asymmetry here IS an engine divergence.
+              .relocation = world.relocation,
           },
           income_.rent,
       })

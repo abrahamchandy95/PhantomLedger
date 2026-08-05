@@ -1,6 +1,8 @@
 #include "phantomledger/synth/infra/devices.hpp"
 
+#include "phantomledger/entities/infra/enrollment.hpp"
 #include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/tenure_table.hpp"
 #include "phantomledger/synth/infra/timeline.hpp"
 
 #include <algorithm>
@@ -55,29 +57,68 @@ Output AssignmentRules::build(
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
     out.byPerson.try_emplace(p);
+    out.tenureByPerson.try_emplace(p);
   }
 
   const auto windowStart = window.start;
   const auto windowDays = window.days;
 
+  // DEVICE LINES, NOT SINGLE DEVICES (device-ip-lifecycle, 2026-07-27).
+  //
+  // A person holds `nLines` devices CONCURRENTLY (a phone, maybe also a
+  // laptop), and each line is a REPLACEMENT CHAIN over the window rather
+  // than one device held forever. `nLines` keeps the old
+  // `secondDeviceP` draw and its meaning — how many endpoints are live
+  // at once — so the concurrency distribution is unchanged; what changes
+  // is that each line now turns over.
+  //
+  // Chains TILE the window, which is the property the router needs: at
+  // every instant exactly one device per line is live, so filtering by
+  // timestamp can never come up empty. Before this, spans were
+  // independent random sub-intervals and 53.51% of routed sessions fell
+  // outside the endpoint's own interval.
+  //
+  // Lines are emitted CONTIGUOUSLY into byPerson (line 0's whole chain,
+  // then line 1's). The router relies on that: when a device's tenure
+  // ends, its successor is the NEXT pool index, so "advance to the next
+  // live index" is exactly replacement-within-a-line and needs no line
+  // metadata on the hot path.
+  //
+  // Slot numbers run 1..N across the whole person, not per line, so
+  // every Identity stays distinct. Slot is an opaque discriminator here,
+  // never an ordinal a model should read — renderDeviceId maps all of
+  // them into one fixed-width namespace.
   for (entity::PersonId p = 1; p <= people.count; ++p) {
-    const std::uint32_t nDev = rng.coin(secondDeviceP) ? 2U : 1U;
+    const std::uint32_t nLines = rng.coin(secondDeviceP) ? 2U : 1U;
 
-    for (std::uint32_t slot = 1; slot <= nDev; ++slot) {
-      const auto id = DeviceIdentity::person(p, slot);
-      const auto kind = sampleKind(rng);
+    std::uint32_t slot = 1;
+    for (std::uint32_t line = 0; line < nLines; ++line) {
+      const auto chain = timeline::sampleChain(
+          rng, windowStart, windowDays,
+          [](time::TimePoint at) { return tenure::deviceTenureDays(at); });
 
-      registerRecord(out, id, kind, /*flagged=*/false);
-      out.byPerson[p].push_back(id);
+      for (const auto &link : chain) {
+        const auto id = DeviceIdentity::person(p, slot);
+        ++slot;
+        const auto kind = sampleKind(rng);
 
-      const auto [firstSeen, lastSeen] =
-          timeline::sampleSpan(rng, windowStart, windowDays);
-      out.usages.push_back(Usage{
-          .personId = p,
-          .deviceId = id,
-          .firstSeen = firstSeen,
-          .lastSeen = lastSeen,
-      });
+        registerRecord(out, id, kind, /*flagged=*/false);
+        out.byPerson[p].push_back(id);
+        out.tenureByPerson[p].push_back(::PhantomLedger::infra::Tenure{
+            .firstEpoch = time::toEpochSeconds(link.firstSeen),
+            .lastEpochExcl = time::toEpochSeconds(link.lastSeenExcl),
+        });
+
+        // Usage keeps its INCLUSIVE last-seen contract for the exporters
+        // (HAS_USED, the AML edges); the half-open form lives in Tenure.
+        out.usages.push_back(Usage{
+            .personId = p,
+            .deviceId = id,
+            .firstSeen = link.firstSeen,
+            .lastSeen = link.lastSeenExcl - time::Days{1},
+            .enrolled = ::PhantomLedger::infra::enrollment::deviceEnrolled(p, id),
+        });
+      }
     }
   }
 
@@ -135,13 +176,24 @@ Output AssignmentRules::build(
       group.push_back(pid);
     }
 
+    // Shared endpoints keep their SHORT independent span — a borrowed
+    // device genuinely is an episode, not a line the person owns. They
+    // are appended AFTER every personal line, so they never break the
+    // "next index is my replacement" rule inside a line, and they are
+    // reachable only while live.
     for (const auto pid : group) {
       out.byPerson[pid].push_back(sharedId);
+      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+          .firstEpoch = time::toEpochSeconds(firstSeen),
+          .lastEpochExcl = time::toEpochSeconds(lastSeen + time::Days{1}),
+      });
       out.usages.push_back(Usage{
           .personId = pid,
           .deviceId = sharedId,
           .firstSeen = firstSeen,
           .lastSeen = lastSeen,
+          .enrolled =
+              ::PhantomLedger::infra::enrollment::deviceEnrolled(pid, sharedId),
       });
     }
 
@@ -169,11 +221,17 @@ Output AssignmentRules::build(
 
     for (const auto pid : plan.sharedDeviceMembers) {
       out.byPerson[pid].push_back(sharedId);
+      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+          .firstEpoch = time::toEpochSeconds(plan.firstSeen),
+          .lastEpochExcl = time::toEpochSeconds(plan.lastSeen + time::Days{1}),
+      });
       out.usages.push_back(Usage{
           .personId = pid,
           .deviceId = sharedId,
           .firstSeen = plan.firstSeen,
           .lastSeen = plan.lastSeen,
+          .enrolled =
+              ::PhantomLedger::infra::enrollment::deviceEnrolled(pid, sharedId),
       });
     }
   }

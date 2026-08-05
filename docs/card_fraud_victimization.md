@@ -1,10 +1,12 @@
 # Victimization: who gets defrauded, and how PhantomLedger should decide
 
-**Status: DELIVERED (V1, V2, V4, V3). Authority rows: docs/fraud_model_audit.md
-U-11 (v1/v2) and U-12 (v3). Parts 1–5 below are the ORIGINAL research and
-plan, kept verbatim as the record of what was decided and why; the
-DELIVERED sections at the end record what actually shipped, including the
-two places the shipped model departs from this plan.**
+**Status: DELIVERED (V1, V2, V4, V3), with ROUND 6/7 supersession notes.
+Authority rows: docs/fraud_model_audit.md U-11 (v1/v2) and U-12 (v3).
+Parts 1–5 below are the ORIGINAL research and plan, retained as the
+record of what was decided and why; explicit supersession notes mark
+claims that later lifecycle/session work changed. The DELIVERED sections
+at the end record what actually shipped, including the places the
+shipped model departs from this plan.**
 
 Origin: the owner's observation that a 500-person, 30-year corpus
 producing zero fraud victims is not realistic — "someone in another
@@ -15,9 +17,9 @@ narrows the defect to something much smaller than first feared.
 
 ---
 
-## Part 1 — AUDIT (what the code does today)
+## Part 1 — AUDIT (what the code did when this arc began)
 
-### F1. The blocking defect is one line
+### F1. The blocking defect was one line
 
 `src/transfers/fraud/injector.cpp:577`
 
@@ -49,6 +51,15 @@ criminal participates in a card compromise or a scam.** The
 architecture the owner asked for is the architecture that exists — it is
 just gated behind F1.
 
+**ROUND 7 UPDATE:** “the source is the victim's own account” remains
+true and makes every card-fraud positive look like a derived debit card.
+A first-pass switch to the victim's issued credit-card liability was
+reverted after the full path was traced: fraud is planned only after
+`CardCycleDriver` has closed statements and generated payments/interest,
+so the late key swap created unserviced debt. Honest issued-card fraud
+requires lifecycle reordering and remains open. The exogenous-attacker
+conclusion is unchanged.
+
 ### F3. Its budget is window-scaled, not window-invariant
 
 `txnFraudBudget = targetTxnFraudP × (realizedBaseCount + camouflage +
@@ -71,7 +82,12 @@ Against a real-world ~69% victimized at least once over 29 years at a
 4%/year hazard. The LEVEL needs no repair. What needs repair is F1, and
 then WHO gets selected.
 
-### F5. Victim selection is UNIFORM — and that is the realism gap
+**CURRENT CALIBRATION NOTE:** the calculation above justified decoupling
+fraud visibility from ring count; it did not calibrate a benchmark level
+against a named issuer series. Absolute card/scam prevalence and CNP
+share remain open benchmark gates.
+
+### F5. Victim selection was UNIFORM — and that was the realism gap
 
 `rng.choiceIndex(personLimit)` gives every customer identical hazard.
 Real victimization is strongly differentiated, and for a GNN a uniform
@@ -251,8 +267,8 @@ the pre-tilt world in the same round.
 
 ## V3 — DELIVERED (victimization-2026-07b)
 
-The authorized-scam rail landed as the last round on this arc's critical
-path. Authority: docs/fraud_model_audit.md U-12.
+The authorized-scam rail landed as what was then the last round on this
+arc's critical path. Authority: docs/fraud_model_audit.md U-12.
 
 What shipped:
 
@@ -276,9 +292,11 @@ What shipped:
    severity rises ~3x. `scamWireAmount` (median $900, sigma 1.3, clamped
    [$50, $50k]) takes the era scale AND the age severity, both applied to
    median and clamps so only the level moves.
-6. MEMBERSHIP AT THE CASE DATE: joined for every rail; ALIVE for the
-   scam rails only, which preserves the declared deceased-account-fraud
-   exemption for card/ato rather than reversing it in passing.
+6. MEMBERSHIP AT THE CASE DATE: this round required joined for every
+   rail and ALIVE for the scam rails only. **ROUND 7 tightens it to the
+   full `[joinTs, closeTs)` interval:** card/ato retain the
+   deceased-account-fraud exemption only during the 120-day
+   estate-settlement tail, never after account closure.
 7. NO REIMBURSEMENT on either authorized rail (Reg E covers unauthorized
    transfers; the UK code postdates the window) — gated, not assumed.
 8. `tests/test_card_scam_rail.cpp`: a pure layer (the model's shape) and
@@ -398,9 +416,41 @@ The design is shaped entirely by how the previous attempt failed:
   double-scaled null (≈1.81). The repair for that is a larger leg, never
   a tighter band.
 
-Carried forward, declared: the attacker session on an authorized push is
-wrong (the victim operates their own device); fixing it needs a
-victim-own-device carrier, because routing through `infra::Router` from
-the fraud planner would advance that person's sticky device index and
-perturb legitimate routing in later windows. Tracked with the
-ownerId-prefix finding in docs/card_fraud_v2_roadmap.md step d.
+### ROUND 6/7 SUPERSESSION — session and membership closure
+
+The “carried forward” design above was re-read and found to overstate the
+fix. `transactions::Factory` had already routed the victim's normal
+device/IP for authorized rows; `unauthorized.cpp` then overwrote that
+correct session with the attacker's. ROUND 6 simply stopped the
+overwrite on gift-card/impostor rails. It consumes no new randomness,
+does not add a carrier, and does not introduce a special slot-0 device
+pattern. Card/ATO rows correctly retain the attacker session.
+
+ROUND 7 then closed the downstream structural shortcuts:
+
+- every fraud rail requires membership inside `[joinTs, death + 120d)`;
+  authorized scams additionally require the victim to be alive, and the
+  full sampled case span must fit before the earliest victim/payee
+  boundary rather than being truncated into an artificial burst;
+- unauthorized card rows remain derived-debit backed; a gate rejects the
+  false late-injected credit-liability swap until fraud planning is
+  integrated into card-cycle servicing;
+- legitimate credit-card keys participate in router ownership, so
+  ordinary credit-card purchases receive their owner's device/IP
+  session;
+- all device owner types render through one opaque fixed-width `D`
+  namespace rather than role-revealing `FD`/person/shared layouts;
+- the card graph emits timestamped transaction→device/IP edges and
+  materializes every observed endpoint as a vertex. (The
+  `Has_Device`/`Has_IP` clause here — header-only so missing Party
+  adjacency cannot reveal attacker role — is **SUPERSEDED by
+  attacker-infra-2026-07**: both tables are populated, the asymmetry that
+  made adjacency a role bit was removed in the generator rather than
+  hidden by the exporter, and the residual is sized at 2.9x lift.)
+
+These repairs make the victim/operator/session semantics internally
+consistent and make the instrument limitation explicit. They do not
+close issued-card fraud servicing, effective card expiry/reissue
+histories, era-varying attacker behavior, delayed labels, real-modality
+calibration, or the external GSQL/training/evaluation pipeline; those
+remain benchmark work, not victimization-model claims.

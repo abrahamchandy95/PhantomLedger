@@ -3,7 +3,6 @@
 #include "phantomledger/transfers/legit/ledger/streams.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <span>
 #include <utility>
 
@@ -75,23 +74,25 @@ void replayChunked(legit_ledger::ChronoReplayAccumulator &accumulator,
   };
 
   out.reserve(rows.size());
-  std::size_t begin = 0;
+  std::size_t begin = static_cast<std::size_t>(
+      std::lower_bound(rows.begin(), rows.end(),
+                       time::toEpochSeconds(schedule.totalWindow().start),
+                       tsBefore) -
+      rows.begin());
   const std::size_t spanCount = schedule.size();
 
   for (std::size_t k = 0; k < spanCount; ++k) {
     const auto &span = schedule[k];
     const bool last = (k + 1 == spanCount);
 
-    std::size_t end = rows.size();
+    const auto bound = time::toEpochSeconds(span.activeWindow.endExcl());
+    const auto end = static_cast<std::size_t>(
+        std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(begin),
+                         rows.end(), bound, tsBefore) -
+        rows.begin());
     std::size_t lookEnd = rows.size();
-    std::int64_t bound = std::numeric_limits<std::int64_t>::max();
 
     if (!last) {
-      bound = span.activeWindow.endExcl().time_since_epoch().count();
-      end = static_cast<std::size_t>(
-          std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(begin),
-                           rows.end(), bound, tsBefore) -
-          rows.begin());
       const auto lookSec = span.lookaheadBoundExcl.time_since_epoch().count();
       lookEnd = static_cast<std::size_t>(
           std::lower_bound(rows.begin() + static_cast<std::ptrdiff_t>(end),
@@ -181,24 +182,22 @@ LedgerReplay::Posted LedgerReplay::postFraudChunkedMerged(
 
   std::vector<Transaction> slice;
   std::vector<Transaction> look;
-  std::size_t cb = 0;
-  std::size_t fb = 0;
+  const auto windowStart = time::toEpochSeconds(schedule.totalWindow().start);
+  std::size_t cb = sliceTo(cand, 0, windowStart);
+  std::size_t fb = sliceTo(fr, 0, windowStart);
   const std::size_t spanCount = schedule.size();
 
   for (std::size_t k = 0; k < spanCount; ++k) {
     const auto &span = schedule[k];
     const bool last = (k + 1 == spanCount);
 
-    std::size_t cEnd = cand.size();
-    std::size_t fEnd = fr.size();
+    const auto bound = time::toEpochSeconds(span.activeWindow.endExcl());
+    const auto cEnd = sliceTo(cand, cb, bound);
+    const auto fEnd = sliceTo(fr, fb, bound);
     std::size_t cLook = cand.size();
     std::size_t fLook = fr.size();
-    std::int64_t bound = std::numeric_limits<std::int64_t>::max();
 
     if (!last) {
-      bound = span.activeWindow.endExcl().time_since_epoch().count();
-      cEnd = sliceTo(cand, cb, bound);
-      fEnd = sliceTo(fr, fb, bound);
       const auto lookSec = span.lookaheadBoundExcl.time_since_epoch().count();
       cLook = sliceTo(cand, cEnd, lookSec);
       fLook = sliceTo(fr, fEnd, lookSec);

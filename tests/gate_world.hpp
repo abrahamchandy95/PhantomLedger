@@ -71,6 +71,7 @@
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
+#include "phantomledger/synth/econ/catalog.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
 #include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -248,7 +249,25 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
                                      people.roster.topology,
                                      pl::synth::pii::Sharing{});
   people.homeAreas = pl::pipeline::homeAreasOf(people.pii);
-  cps.merchants = entityStage::buildMerchants(rng, spec.population, spec.seed);
+  // relocation-2026-07: PRODUCTION PARITY, and this one was found by
+  // test_arch_equivalence rather than by reasoning. The harness builds its own
+  // market, so wiring the schedule through `windowed_run.cpp` alone left the
+  // harness's windowed leg with immobile homes while the monolith reference
+  // had movers — a 5,156-row engine divergence that looked like a windowing
+  // bug and was a harness gap. Any carrier the fold reads must be filled HERE
+  // too, or the equivalence gate measures two different worlds.
+  people.relocation = entityStage::buildRelocation(
+      people.pii, people.homeAreas, people.personas, spec.seed,
+      spec.window);
+  // merchant-churn-2026-07: PRODUCTION PARITY, same reason the
+  // beneficial-owner note below gives. The harness must pass its real
+  // window and the real macro series, or every gate world would carry an
+  // always-live catalogue sized without churn headroom while production
+  // carries a lifecycle — the harness/production divergence the
+  // party-geography round already paid for once.
+  cps.merchants = entityStage::buildMerchants(
+      rng, spec.population, spec.seed, spec.window, {},
+      &pl::synth::econ::macroSeries());
   cps.landlords = entityStage::buildLandlords(rng, spec.population);
   cps.counterparties = entityStage::buildCounterparties(rng, spec.population);
   // H1 step 2b: like production (simulate.cpp), credit-limit stocks
@@ -259,6 +278,15 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
       pl::time::toCalendarDate(spec.window.start).year);
   entityStage::finalizeAccountRegistry(holdings, cps, people);
   entityStage::synthesizeBusinessOwners(holdings, people, rng);
+  // merchant-ownership-2026-07: PRODUCTION PARITY. buildEntities() stamps
+  // the beneficial-owner register here, so a gate world that skipped it
+  // would carry `owner == invalidPerson` on every merchant — and any gate
+  // reading it would measure zero against a production value in the
+  // hundreds. That is the harness-vs-production divergence the join-cohort
+  // round already paid for once; the law is to fill BOTH ENGINES AND THE
+  // GATE HARNESS in the same round. Draw-free, so adding it here consumes
+  // nothing from the shared stream and no existing gate moves.
+  entityStage::assignMerchantOwners(cps.merchants, holdings.accounts.registry);
 
   if (spec.withProducts) {
     // Products use their own content-keyed seed; window size cannot
@@ -268,8 +296,13 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   }
 
   if (spec.withInfra) {
+    // spec.seed drives the attacker-infrastructure lane, exactly as the
+    // run seed does in SimulationPipeline::buildWorldWith. Passing it is
+    // what keeps a gate world's attacker pool identical to the
+    // production world's for the same seed — an equivalence gate must
+    // PIN THE WORLD SHAPE IT ASSUMES.
     infra = infraStage::AccessInfraStage{}.build(rng, people, holdings,
-                                                 spec.window);
+                                                 spec.window, spec.seed);
 
     // Pristine snapshots, taken before any income or routine emission
     // touches the shared router's sticky state.
@@ -387,6 +420,9 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
       // geo-causal-v1 (G2a): the test world carries the real per-person
       // home area (like the production windowed path).
       .homeAreas = people.homeAreas,
+      // relocation-2026-07: and the history behind it, for the same parity
+      // reason.
+      .relocation = &people.relocation,
   };
 
   const std::span<const Txn> baseTxns(streams.screened());

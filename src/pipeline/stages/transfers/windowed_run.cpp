@@ -156,6 +156,10 @@ WindowedRunResult TransferStage::runWindowedErased(
       // real per-person home area for card-present distance-decay
       // selection (unread until step-2).
       .homeAreas = people.homeAreas,
+      // relocation-2026-07: and the HISTORY behind it. The monolith oracle
+      // (assembly.cpp) passes the same pointer — an asymmetry between the two
+      // engines here IS the divergence test_arch_equivalence exists to catch.
+      .relocation = &people.relocation,
   };
 
   const routineSpending::SpendingRoutine::PayeeDirectory payees{
@@ -290,7 +294,7 @@ WindowedRunResult TransferStage::runWindowedErased(
                            static_cast<std::size_t>(realizedCandidateCount),
                            FraudEmission::legitCounterparties(
                                legitCps, &cps.merchants, people.homeAreas,
-                               &people.personas));
+                               &people.personas, &people.relocation));
   };
 
   ValidatingSink validating{sink, &holdings.accounts.lookup};

@@ -3,6 +3,7 @@
 #include "phantomledger/activity/income/rent.hpp"
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
@@ -82,6 +83,10 @@ struct RoutineResources {
   // spending population View. Empty ⇒ no local anchor (invalidGeoArea).
   // Non-owning; must outlive the RoutinePass.
   std::span<const entity::geography::GeoAreaId> homeAreas{};
+
+  // relocation-2026-07: the history behind the snapshot. Null ⇒ homes never
+  // move.
+  const entity::parties::relocation::Schedule *relocation = nullptr;
 };
 
 class IncomePass {

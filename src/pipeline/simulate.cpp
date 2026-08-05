@@ -11,6 +11,7 @@
 #include "phantomledger/transfers/fraud/behavior.hpp"
 #include "phantomledger/transfers/legit/assembly.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <utility>
@@ -100,9 +101,17 @@ void runTransferStage(SimulationResult &result,
       injector.inject(stage.legit().runScope().window, candidateView,
                       stages::transfers::FraudEmission::legitCounterparties(
                           legitPayload.counterparties, &cps.merchants,
-                          people.homeAreas, &people.personas));
+                          people.homeAreas, &people.personas, &people.relocation));
 
-  const auto injectedCount = fraudOut.injected.size();
+  const auto activeStart =
+      time::toEpochSeconds(stage.legit().runScope().window.start);
+  const auto activeEnd =
+      time::toEpochSeconds(stage.legit().runScope().window.endExcl());
+  const auto injectedCount = static_cast<std::size_t>(std::count_if(
+      fraudOut.injected.begin(), fraudOut.injected.end(),
+      [activeStart, activeEnd](const tx_ns::Transaction &txn) {
+        return txn.timestamp >= activeStart && txn.timestamp < activeEnd;
+      }));
   diagnostics::logStageMem("fraudInject",
                            {{"candidate", candidate.txns.size()},
                             {"fraud", fraudOut.injected.size()}});
@@ -191,11 +200,19 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   // axis.
   people.homeAreas = homeAreasOf(people.pii);
 
+  // relocation-2026-07: the home-area HISTORY, built here for the same reason
+  // the snapshot above is — PII is alive and carries the per-person country
+  // the destination constraint needs. Runs on its OWN `{"home-relocation",
+  // <group>}` lane, so it spends nothing on `rng` and cannot move a
+  // downstream entity value.
+  people.relocation = entityStage::buildRelocation(
+      people.pii, people.homeAreas, people.personas, seed_, window_);
+
   // seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
   // which are isolated from `rng`; the merchant catalogue's economic draws
   // still come off the shared stream, so the corpus is byte-identical.
-  cps.merchants =
-      entityStage::buildMerchants(rng, cfg.population, seed_, cfg.merchants);
+  cps.merchants = entityStage::buildMerchants(
+      rng, cfg.population, seed_, window_, cfg.merchants, &synth::econ::macroSeries());
   cps.landlords =
       entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(
@@ -210,6 +227,15 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   entityStage::finalizeAccountRegistry(holdings, cps, people);
   entityStage::synthesizeBusinessOwners(holdings, people, rng,
                                         cfg.businessOwners);
+
+  // merchant-ownership-2026-07: stamp the beneficial-owner register onto
+  // the catalogue. MUST come after synthesizeBusinessOwners — the
+  // proprietor cohort is the business-owner cohort — and it is DRAW-FREE,
+  // so it appends nothing to `rng` and the corpus stream does not move.
+  // Exported as `cf_Is_Merchant`, whose emptiness hard-aborts the
+  // downstream tf_gnn_loader_v2 push before any data reaches TigerGraph.
+  entityStage::assignMerchantOwners(cps.merchants,
+                                    holdings.accounts.registry);
 }
 
 SimulationResult
@@ -231,7 +257,7 @@ SimulationPipeline::buildWorldWith(random::Rng &rng,
   notify("products");
   diagnostics::logStageMem("worldProducts", {});
 
-  out.infra = infra_.build(rng, out.people, out.holdings, window_);
+  out.infra = infra_.build(rng, out.people, out.holdings, window_, seed_);
   notify("infra");
   diagnostics::logStageMem("worldInfra", {});
 

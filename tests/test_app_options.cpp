@@ -43,8 +43,19 @@ int main() {
   assert(pl::app::lastSimulatedDay(cf).year == 2019);
   assert(pl::app::windowInsideEra(cf, era.firstYear(), era.lastYear()));
 
+  // Production acceptance window [1999-01-01, 2020-01-01): 7,670
+  // simulated days, with 2019-12-31 as the inclusive last day.
+  cf.startDate = {1999, 1, 1};
+  cf.days = 7670;
+  {
+    const auto last = pl::app::lastSimulatedDay(cf);
+    assert(last.year == 2019 && last.month == 12 && last.day == 31);
+  }
+  assert(pl::app::windowInsideEra(cf, era.firstYear(), era.lastYear()));
+
   // The artifact-endpoint variant (10651 days) ends 2020-02-28 —
   // still inside a coverage that includes 2020.
+  cf.startDate = {1991, 1, 1};
   cf.days = 10651;
   {
     const auto last = pl::app::lastSimulatedDay(cf);

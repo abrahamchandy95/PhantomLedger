@@ -379,6 +379,8 @@ void addSpending(const RoutinePass &pass,
       // reads them through the population View, so both engines stay
       // byte-identical. Empty ⇒ no local anchor (invalidGeoArea).
       .homeAreas = resources.homeAreas,
+      // relocation-2026-07: the history behind the snapshot.
+      .relocation = resources.relocation,
   };
 
   const routineSpending::SpendingRoutine::PayeeDirectory payees{

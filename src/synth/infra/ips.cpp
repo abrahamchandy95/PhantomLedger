@@ -1,7 +1,9 @@
 #include "phantomledger/synth/infra/ips.hpp"
 
+#include "phantomledger/entities/infra/enrollment.hpp"
 #include "phantomledger/entities/infra/random_ips.hpp"
 #include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/tenure_table.hpp"
 #include "phantomledger/synth/infra/timeline.hpp"
 
 #include <algorithm>
@@ -66,28 +68,47 @@ Output AssignmentRules::build(
 
   for (entity::PersonId p = 1; p <= people.count; ++p) {
     out.byPerson.try_emplace(p);
+    out.tenureByPerson.try_emplace(p);
   }
 
   const auto windowStart = window.start;
   const auto windowDays = window.days;
 
+  // IP LINES AS DHCP LEASES (device-ip-lifecycle, 2026-07-27).
+  //
+  // Same tiling contract as devices, for the same reason: independent
+  // spans left 52.09% of routed IP sessions outside the address's own
+  // interval. A residential address is a lease against an ISP pool, not
+  // a purchased object, so tenure is months and carries no era axis —
+  // see tenure_table.hpp for why that is declared rather than modelled.
+  //
+  // `nIp` keeps its original meaning: how many addresses are live at
+  // once (home broadband, mobile, work). Each is now a chain.
   for (entity::PersonId p = 1; p <= people.count; ++p) {
     const std::uint32_t nIp =
         1U + (rng.coin(extraIpP1) ? 1U : 0U) + (rng.coin(extraIpP2) ? 1U : 0U);
 
     for (std::uint32_t i = 0; i < nIp; ++i) {
-      const auto ip = network::randomIpv4(rng);
-      registerIfNew(out, seen, ip, /*blacklisted=*/false);
-      out.byPerson[p].push_back(ip);
+      const auto chain = timeline::sampleChain(
+          rng, windowStart, windowDays,
+          [](time::TimePoint) { return tenure::ipTenureDays(); });
 
-      const auto [firstSeen, lastSeen] =
-          timeline::sampleSpan(rng, windowStart, windowDays);
-      out.usages.push_back(Usage{
-          .personId = p,
-          .ipAddress = ip,
-          .firstSeen = firstSeen,
-          .lastSeen = lastSeen,
-      });
+      for (const auto &link : chain) {
+        const auto ip = network::randomIpv4(rng);
+        registerIfNew(out, seen, ip, /*blacklisted=*/false);
+        out.byPerson[p].push_back(ip);
+        out.tenureByPerson[p].push_back(::PhantomLedger::infra::Tenure{
+            .firstEpoch = time::toEpochSeconds(link.firstSeen),
+            .lastEpochExcl = time::toEpochSeconds(link.lastSeenExcl),
+        });
+        out.usages.push_back(Usage{
+            .personId = p,
+            .ipAddress = ip,
+            .firstSeen = link.firstSeen,
+            .lastSeen = link.lastSeenExcl - time::Days{1},
+            .enrolled = ::PhantomLedger::infra::enrollment::ipEnrolled(p, ip),
+        });
+      }
     }
   }
 
@@ -139,13 +160,22 @@ Output AssignmentRules::build(
       group.push_back(pid);
     }
 
+    // Shared addresses keep their SHORT independent span (a genuine
+    // episode) and are appended after every personal line, so they never
+    // break the "next index is my replacement" rule inside a line.
     for (const auto pid : group) {
       out.byPerson[pid].push_back(sharedIp);
+      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+          .firstEpoch = time::toEpochSeconds(firstSeen),
+          .lastEpochExcl = time::toEpochSeconds(lastSeen + time::Days{1}),
+      });
       out.usages.push_back(Usage{
           .personId = pid,
           .ipAddress = sharedIp,
           .firstSeen = firstSeen,
           .lastSeen = lastSeen,
+          .enrolled =
+              ::PhantomLedger::infra::enrollment::ipEnrolled(pid, sharedIp),
       });
     }
 
@@ -181,11 +211,17 @@ Output AssignmentRules::build(
 
     for (const auto pid : plan.sharedIpMembers) {
       out.byPerson[pid].push_back(sharedIp);
+      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+          .firstEpoch = time::toEpochSeconds(plan.firstSeen),
+          .lastEpochExcl = time::toEpochSeconds(plan.lastSeen + time::Days{1}),
+      });
       out.usages.push_back(Usage{
           .personId = pid,
           .ipAddress = sharedIp,
           .firstSeen = plan.firstSeen,
           .lastSeen = plan.lastSeen,
+          .enrolled =
+              ::PhantomLedger::infra::enrollment::ipEnrolled(pid, sharedIp),
       });
     }
   }

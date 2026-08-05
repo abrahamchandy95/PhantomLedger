@@ -67,6 +67,8 @@ public:
   void
   ingestPurchases(std::span<const transactions::Transaction> txns) override;
 
+  void advanceLedgerTo(time::TimePoint boundExcl) override;
+
   void tickDay(std::uint32_t dayIndex, time::TimePoint dayStart) override;
 
   void drainResidual() override;

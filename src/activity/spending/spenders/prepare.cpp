@@ -51,14 +51,13 @@ actors::Spender buildSpender(const market::Market &market,
   s.billCount = static_cast<std::uint16_t>(billRow.size());
 
   s.exploreProp = commerce.exploreProp(personIndex);
-  s.burstStart = commerce.burstStartDay(personIndex);
-  s.burstLen = commerce.burstLen(personIndex);
+  s.bursts = commerce.bursts(personIndex);
 
-  // geo-causal-v1 (G2a): the customer's home area for card-present
-  // distance-decay selection. invalidGeoArea when no carrier is bound
-  // (the monolith reference oracle) — step-2 selection then treats it as
-  // "no local anchor". UNREAD until step-2, so this moves no golden.
-  s.homeArea = pop.homeArea(person);
+  // relocation-2026-07: the home area is NO LONGER CACHED here. This function
+  // runs once for the whole fold, so a cached home would freeze at window
+  // start while the relocation schedule moved on. `payments.cpp` reads
+  // `market.population().homeArea(person)` at selection time instead, which
+  // the monthly evolver re-points.
 
   // H2 step 2c: the retirement day-index (kNoRetirementDay ==
   // Spender::kNoRetireDay — both are the uint32 max sentinel). H3: the

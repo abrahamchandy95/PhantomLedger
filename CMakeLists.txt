@@ -123,6 +123,7 @@ set(PL_SYNTH_PRODUCTS_SOURCES
 )
 
 set(PL_SYNTH_INFRA_SOURCES
+    src/synth/infra/attackers.cpp
     src/synth/infra/devices.cpp
     src/synth/infra/ips.cpp
     src/synth/infra/rings.cpp

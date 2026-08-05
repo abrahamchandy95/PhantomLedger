@@ -2,6 +2,7 @@
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/entities/infra/router.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -62,6 +63,8 @@ void expect(bool cond, const char *what) {
                                            pl::entity::Bank::internal, 505);
   const auto victimF = pl::entity::makeKey(pl::entity::Role::account,
                                            pl::entity::Bank::internal, 606);
+  const auto victimG = pl::entity::makeKey(pl::entity::Role::account,
+                                           pl::entity::Bank::internal, 707);
   const auto drop = pl::entity::makeKey(pl::entity::Role::account,
                                         pl::entity::Bank::external, 999);
 
@@ -156,6 +159,30 @@ void expect(bool cond, const char *what) {
       .spanSeconds = 3600 * 4,
       .targetEvents = 3,
       .seq = 5,
+  });
+
+  // VICTIM-ENDPOINT COMPROMISE on an UNAUTHORIZED rail
+  // (attacker-infra-2026-07). A remote-access tool or household fraud:
+  // the operator is a third party but the ENDPOINT is the victim's own,
+  // so the plan deliberately carries NO device and NO IP.
+  //
+  // The absence IS the carrier — there is no separate flag — which is
+  // exactly why this plan has to exist here. Without it nothing in the
+  // suite distinguishes `plan.device.assigned()` from an unconditional
+  // overwrite, and a later round "simplifying" that condition away would
+  // stamp a BLANK endpoint onto these rows. The card-fraud sink throws on
+  // a sessionless row, so the failure would surface as an export-time
+  // exception hours into a run rather than here.
+  plans.push_back(unauth::CompromisePlan{
+      .victimAccount = victimG,
+      .dropAccount = drop,
+      .device = {},
+      .ip = {},
+      .rail = unauth::Rail::ato,
+      .startTs = 7'000'000,
+      .spanSeconds = 3600 * 5,
+      .targetEvents = 3,
+      .seq = 6,
   });
 
   return plans;
@@ -342,7 +369,8 @@ int main() {
     std::size_t unauthorizedRows = 0;
     std::size_t giftCardRows = 0;
     std::size_t impostorRows = 0;
-    std::size_t fraudDeviceRendered = 0;
+    std::size_t victimEndpointRows = 0;
+    std::size_t roleEncodedDeviceIds = 0;
 
     for (const auto &tx : outC) {
       if (tx.fraud.flag != 1) {
@@ -376,22 +404,46 @@ int main() {
                "authorized-rail row does NOT carry the attacker device");
         expect(tx.session.ipAddress != plan.ip,
                "authorized-rail row does NOT carry the attacker IP");
-        // Equivalent to "renders without the kFraudDevice 'FD' prefix":
-        // exporter::common::renderDeviceId switches on ownerType, and
-        // OwnerType::ring is the only branch that emits it. Asserted on
-        // the identity rather than the rendering so this test stays
-        // inside the transfers layer.
+        // The authorized rail must keep the victim's modeled identity,
+        // independently of the role-neutral rendering gate below.
         expect(tx.session.deviceId.ownerType == pl::devices::OwnerType::person,
                "authorized-rail device renders as a person device, not FD");
+      } else if (!plan.device.assigned()) {
+        // VICTIM-ENDPOINT COMPROMISE (attacker-infra-2026-07): an
+        // unauthorized rail whose plan carries no endpoint. A third party
+        // operated, but from the victim's own machine — malware, a
+        // remote-access scam, or household fraud — so the session the
+        // Factory routed for the victim is the modeled truth and must
+        // stand. NOT blank, and NOT a fabricated attacker identity.
+        ++victimEndpointRows;
+        expect(tx.session.deviceId == ownDevice(person),
+               "victim-endpoint unauthorized row carries the VICTIM'S own "
+               "device");
+        expect(tx.session.ipAddress == ownIp(person),
+               "victim-endpoint unauthorized row carries the VICTIM'S own IP");
+        expect(tx.session.deviceId.assigned(),
+               "victim-endpoint unauthorized row is NOT sessionless — a blank "
+               "endpoint here only surfaces as an export-time throw");
       } else {
         ++unauthorizedRows;
         expect(tx.session.deviceId == plan.device,
                "unauthorized-rail row keeps the attacker device");
         expect(tx.session.ipAddress == plan.ip,
                "unauthorized-rail row keeps the attacker IP");
-        if (tx.session.deviceId.ownerType == pl::devices::OwnerType::ring) {
-          ++fraudDeviceRendered;
+        expect(tx.session.deviceId.ownerType == pl::devices::OwnerType::ring,
+               "attacker identity stays ring-owned inside the model");
+
+        const auto rendered =
+            pl::exporter::common::renderDeviceId(tx.session.deviceId);
+        const auto personal =
+            pl::exporter::common::renderDeviceId(ownDevice(person));
+        if (rendered.view().starts_with("FD") ||
+            rendered.view().starts_with("LD") ||
+            rendered.view().size() != personal.view().size()) {
+          ++roleEncodedDeviceIds;
         }
+        expect(rendered.view().starts_with("D"),
+               "attacker device uses the common opaque D namespace");
       }
     }
 
@@ -402,19 +454,108 @@ int main() {
     expect(impostorRows == 3, "the impostor rail was exercised (3 rows)");
     expect(authorizedRows == 7, "both authorized rails were exercised");
     expect(unauthorizedRows > 0, "the card/ato tripwire was exercised");
+    // attacker-infra-2026-07: the THIRD operating position must be
+    // exercised too, or the `plan.device.assigned()` condition is
+    // untested and its removal would go unnoticed.
+    expect(victimEndpointRows == 3,
+           "the victim-endpoint unauthorized case was exercised (3 rows)");
 
-    // DECLARED AND SIZED, not gated (docs/fraud_model_audit.md OPEN
-    // ITEMS): every card/ato row still renders its device through
-    // encoding::kFraudDevice ("FD"), a deterministic label in
-    // public.transactions.device_id. The attacker device is CORRECT on
-    // these rails; the defect is exporter-side rendering, registered as
-    // its own item rather than folded into this fix.
+    // device-identity-v1: the attacker remains an exogenous ring-owned
+    // identity in memory, but rendering is role-neutral. Prefix, length and
+    // numeric-namespace shortcuts are not allowed to reveal that role.
+    expect(roleEncodedDeviceIds == 0,
+           "no attacker device renders with a role-specific prefix/length");
     std::printf("session by rail: authorized %zu (giftCard %zu, impostor %zu) "
-                "-> victim-own device; unauthorized %zu -> attacker device, "
-                "of which %zu render with the 'FD' fraud-device prefix "
-                "(DECLARED, registered separately)\n",
+                "-> victim-own device; unauthorized %zu -> attacker device; "
+                "victim-endpoint unauthorized %zu -> victim-own device; "
+                "role-encoded rendered ids %zu (gate: 0)\n",
                 authorizedRows, giftCardRows, impostorRows, unauthorizedRows,
-                fraudDeviceRendered);
+                victimEndpointRows, roleEncodedDeviceIds);
+  }
+
+  // ---- Run D: TEMPORAL MEMBERSHIP BOUNDARY ----
+  //
+  // A case one second short of its advertised 71-hour span must be rejected,
+  // not compressed into a high-velocity burst. At the exact exclusive
+  // boundary the full case is valid: all four rails retain every fraud budget
+  // slot, every event precedes the boundary, and no chargeback may reopen the
+  // victim account after closure.
+  {
+    constexpr std::int64_t kStart = 9'000'000;
+    constexpr std::int64_t kSpan = 71 * 3600;
+    constexpr std::int32_t kEventsPerRail = 4;
+    std::vector<unauth::CompromisePlan> boundaryPlans;
+    boundaryPlans.reserve(4);
+    for (std::uint32_t i = 0; i < 4; ++i) {
+      const auto rail = static_cast<unauth::Rail>(i);
+      boundaryPlans.push_back(unauth::CompromisePlan{
+          .victimAccount = pl::entity::makeKey(
+              pl::entity::Role::account, pl::entity::Bank::internal,
+              10'100 + static_cast<std::uint64_t>(i) * 101),
+          .dropAccount =
+              pl::entity::makeKey(pl::entity::Role::account,
+                                  pl::entity::Bank::external, 20'000 + i),
+          .device =
+              pl::devices::Identity{
+                  .ownerType = pl::devices::OwnerType::ring,
+                  .ownerId = 0xACE00100ULL + i,
+                  .slot = 0,
+              },
+          .ip = pl::network::Ipv4::pack(20, 0, 0,
+                                        static_cast<std::uint8_t>(i + 1)),
+          .rail = rail,
+          .startTs = kStart + static_cast<std::int64_t>(i) * 100,
+          .spanSeconds = kSpan,
+          .targetEvents = kEventsPerRail,
+          .eventEndTsExclusive =
+              kStart + static_cast<std::int64_t>(i) * 100 + kSpan,
+          .seq = 100 + i,
+      });
+    }
+
+    pl::random::RngFactory boundaryFactory{kFactorySeed};
+    auto boundaryRng = pl::random::Rng::fromSeed(7);
+    fraud::IllicitContext boundaryCtx{
+        .execution =
+            fraud::Execution{
+                .txf = pl::transactions::Factory(boundaryRng),
+                .rng = &boundaryRng,
+                .factory = &boundaryFactory,
+            },
+        .window = {},
+        .billerAccounts = billerSpan,
+    };
+
+    std::size_t boundaryFraudRows = 0;
+    std::size_t boundaryOtherRows = 0;
+    for (const auto &plan : boundaryPlans) {
+      auto truncated = plan;
+      --truncated.eventEndTsExclusive;
+      const auto rejected = unauth::generate(
+          boundaryCtx, std::span<const unauth::CompromisePlan>(&truncated, 1),
+          kEventsPerRail);
+      expect(rejected.empty(),
+             "case without its full sampled span is rejected, not compressed");
+
+      const auto rows = unauth::generate(
+          boundaryCtx, std::span<const unauth::CompromisePlan>(&plan, 1),
+          kEventsPerRail);
+      for (const auto &tx : rows) {
+        expect(tx.timestamp < plan.eventEndTsExclusive,
+               "every fraud or remediation row precedes closure");
+        if (tx.fraud.flag == 1) {
+          ++boundaryFraudRows;
+          expect(tx.timestamp >= plan.startTs,
+                 "boundary event does not precede case start");
+        } else {
+          ++boundaryOtherRows;
+        }
+      }
+    }
+    expect(boundaryFraudRows == 4U * kEventsPerRail,
+           "full-span boundary plans preserve every fraud budget slot");
+    expect(boundaryOtherRows <= static_cast<std::size_t>(kEventsPerRail),
+           "only in-boundary card chargebacks may accompany fraud rows");
   }
 
   if (failures != 0) {

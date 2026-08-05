@@ -55,8 +55,8 @@ indexOf(::PhantomLedger::clearing::Ledger *ledger,
 // H3 part 3c-ii: the owner's card-servicing stop — ACCOUNT CLOSURE
 // (death + settlement) minus the session tail guard (see the header's
 // kCardSettleTailDays note). TimePoint max when the carrier is absent.
-[[nodiscard]] time::TimePoint
-cardServiceEnd(const DriverInputs &inputs, entity::PersonId owner) noexcept {
+[[nodiscard]] time::TimePoint cardServiceEnd(const DriverInputs &inputs,
+                                             entity::PersonId owner) noexcept {
   if (inputs.timelines.empty() || owner == 0 ||
       static_cast<std::size_t>(owner) > inputs.timelines.size()) {
     return time::TimePoint::max();
@@ -257,6 +257,19 @@ void CardCycleDriver::compactConsumedPurchases(PerCard &card) {
   card.session->rebasePurchaseCursor(0);
 }
 
+void CardCycleDriver::advanceLedgerTo(time::TimePoint boundExcl) {
+  if (!active_) {
+    return;
+  }
+
+  for (auto &entry : cards_) {
+    ensureSession(entry.first, entry.second);
+    if (entry.second.session != nullptr) {
+      entry.second.session->advanceLedgerTo(boundExcl);
+    }
+  }
+}
+
 void CardCycleDriver::closeCyclesUpTo(PerCard &card,
                                       time::TimePoint hardLimit) {
   if (!card.sessionReady || card.session == nullptr) {
@@ -318,6 +331,8 @@ void CardCycleDriver::drainResidual() {
 
     compactConsumedPurchases(entry.second);
   }
+
+  advanceLedgerTo(inputs_.window.endExcl());
 }
 
 std::vector<transactions::Transaction>

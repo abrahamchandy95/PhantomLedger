@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/activity/income/rent.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
@@ -86,6 +87,12 @@ public:
     // until this was wired so windowed==monolith under card-present
     // distance-decay selection.
     std::span<const entity::geography::GeoAreaId> homeAreas;
+
+    // relocation-2026-07: the home-area HISTORY behind the snapshot above.
+    // Non-owning, nullable; null ⇒ homes never move, the pre-round behaviour.
+    // Reaches the spending market through RoutineResources → CensusSource so
+    // BOTH engines refresh from the same schedule.
+    const entity::parties::relocation::Schedule *relocation = nullptr;
   };
 
   LegitAssembly();

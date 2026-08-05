@@ -224,8 +224,7 @@ void check(bool condition, const std::string &what) {
 }
 
 [[nodiscard]] int yearOf(const Txn &t) {
-  return pl::time::toCalendarDate(pl::time::fromEpochSeconds(t.timestamp))
-      .year;
+  return pl::time::toCalendarDate(pl::time::fromEpochSeconds(t.timestamp)).year;
 }
 
 struct YearCell {
@@ -311,6 +310,8 @@ int main() {
   std::size_t viewFraud = 0;
   std::size_t cardPurchaseFraud = 0;
   std::size_t merchantPosFraud = 0;
+  std::size_t unauthorizedCredit = 0;
+  std::size_t unauthorizedDebit = 0;
   double fraudAmountTotal = 0.0;
   double legitAmountTotal = 0.0;
 
@@ -342,6 +343,14 @@ int main() {
     ++episodeByCard[t.source];
     if (isCardPurchase(t)) {
       ++cardPurchaseFraud;
+      if (t.fraud.type == pl::fraud::FraudType::txnFraudSolo ||
+          t.fraud.type == pl::fraud::FraudType::txnFraudRing) {
+        if (t.source.role == pl::entity::Role::card) {
+          ++unauthorizedCredit;
+        } else if (t.source.role == pl::entity::Role::account) {
+          ++unauthorizedDebit;
+        }
+      }
     } else {
       ++merchantPosFraud;
     }
@@ -408,9 +417,9 @@ int main() {
     if (cell.scaledFraud > 0) {
       deflatedScaled.push_back(cell.meanScaledAmount() / scale);
     }
-    maxClampRatio = std::max(
-        maxClampRatio,
-        cell.maxFraudAmount / (kCardSpendClampCalibration * scale));
+    maxClampRatio =
+        std::max(maxClampRatio,
+                 cell.maxFraudAmount / (kCardSpendClampCalibration * scale));
   }
 
   const double rateSpread = minRate > 0.0 ? maxRate / minRate : 0.0;
@@ -458,18 +467,26 @@ int main() {
               kCardSpendClampCalibration, maxClampRatio);
 
   // ------------------------------------------------------- channels
-  const double merchantShare = static_cast<double>(merchantPosFraud) /
-                               static_cast<double>(viewFraud);
+  const double merchantShare =
+      static_cast<double>(merchantPosFraud) / static_cast<double>(viewFraud);
   std::printf("\n  CHANNELS  card_purchase fraud %zu, merchant-POS fraud %zu "
               "(share %.4f  <- gate: < 0.05)\n",
               cardPurchaseFraud, merchantPosFraud, merchantShare);
   check(cardPurchaseFraud > 0,
-        "the unauthorized card rail and gift-card scam ride card_purchase, "
-        "so that channel must carry fraud");
+        "the modeled unauthorized debit-card rail and gift-card scam ride "
+        "card_purchase, so that channel must carry fraud");
   check(merchantShare < 0.05,
         "the merchant (debit POS) channel carries essentially no modelled "
         "fraud (share " +
             std::to_string(merchantShare) + ")");
+
+  std::printf("  INSTRUMENTS unauthorized credit %zu, debit %zu\n",
+              unauthorizedCredit, unauthorizedDebit);
+  check(unauthorizedDebit > 0,
+        "unauthorized card rows use the modeled debit-card instrument");
+  check(unauthorizedCredit == 0,
+        "late-injected unauthorized rows never bypass credit-card lifecycle "
+        "servicing by sourcing an already-closed modeled liability");
 
   // ------------------------------------------------------ typologies
   std::printf("\n  TYPOLOGIES on the card view\n");
@@ -495,8 +512,7 @@ int main() {
             std::to_string(unauthorizedShare) + ", gate > 0.30)");
 
   // --------------------------------------------------------- amounts
-  const double fraudMean =
-      fraudAmountTotal / static_cast<double>(viewFraud);
+  const double fraudMean = fraudAmountTotal / static_cast<double>(viewFraud);
   const double legitMean =
       legitAmountTotal / static_cast<double>(viewRows - viewFraud);
   std::printf("\n  AMOUNTS  fraud mean $%.2f vs legit mean $%.2f (%.2fx)  "
@@ -521,9 +537,8 @@ int main() {
   check(meanEpisode > 1.0 && meanEpisode < 20.0,
         "an unauthorized episode is a handful of rows, not a career (mean " +
             std::to_string(meanEpisode) + ")");
-  check(maxEpisode <= 200,
-        "no single card absorbs the corpus (max episode " +
-            std::to_string(maxEpisode) + ")");
+  check(maxEpisode <= 200, "no single card absorbs the corpus (max episode " +
+                               std::to_string(maxEpisode) + ")");
 
   if (g_failures != 0) {
     std::fprintf(stderr, "\n%d prevalence gate(s) failed\n", g_failures);

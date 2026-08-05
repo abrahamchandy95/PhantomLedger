@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/channels/credit_cards/payment.hpp"
 
 #include "phantomledger/primitives/random/distributions/beta.hpp"
+#include "phantomledger/transfers/channels/credit_cards/cycle.hpp"
 
 #include <algorithm>
 
@@ -12,7 +13,7 @@ inline constexpr int kPayHourHigh = 21;
 
 inline constexpr int kEarlyDayWindow = 4;
 
-inline constexpr time::Hours kAutopayLag{12};
+inline constexpr time::TimeOfDay kAutopayTime{12, 0, 0};
 
 inline constexpr double kPartialResidualFloor = 1e-9;
 
@@ -67,23 +68,35 @@ double samplePaymentAmount(const PaymentMixture &mixture, random::Rng &rng,
 
 time::TimePoint samplePaymentTime(const PaymentTiming &timing, random::Rng &rng,
                                   time::TimePoint due, bool autopay) {
+  const time::TimePoint dueCutoff = resolveDueDate(due);
+  const time::TimePoint dueDay =
+      time::makeTime(time::toCalendarDate(dueCutoff));
+
   if (autopay) {
-    return due + kAutopayLag;
+    return time::makeTime(time::toCalendarDate(dueCutoff), kAutopayTime);
   }
 
   const int hour = static_cast<int>(rng.uniformInt(kPayHourLow, kPayHourHigh));
   const int minute = static_cast<int>(rng.uniformInt(0, 60));
+  const auto paymentTime = time::Hours{hour} + time::Minutes{minute};
 
   if (rng.coin(timing.lateProbability)) {
     const int delay = static_cast<int>(
         rng.uniformInt(static_cast<std::int64_t>(timing.lateDaysMin),
                        static_cast<std::int64_t>(timing.lateDaysMax) + 1));
-    return due + time::Days{delay} + time::Hours{hour} + time::Minutes{minute};
+    time::TimePoint sampled = dueDay + time::Days{delay} + paymentTime;
+    if (sampled <= dueCutoff) {
+      sampled += time::Days{1};
+    }
+    return sampled;
   }
 
   const int earlyDays = static_cast<int>(rng.uniformInt(0, kEarlyDayWindow));
-  return due - time::Days{earlyDays} + time::Hours{hour} +
-         time::Minutes{minute};
+  time::TimePoint sampled = dueDay - time::Days{earlyDays} + paymentTime;
+  if (sampled > dueCutoff) {
+    sampled -= time::Days{1};
+  }
+  return sampled;
 }
 
 } // namespace PhantomLedger::transfers::credit_cards

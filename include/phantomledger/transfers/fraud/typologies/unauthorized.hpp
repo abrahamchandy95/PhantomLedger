@@ -8,6 +8,7 @@
 #include "phantomledger/transfers/fraud/engine.hpp"
 
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <vector>
 
@@ -25,10 +26,10 @@ namespace PhantomLedger::transfers::fraud::typologies::unauthorized {
 // One label for both would have blurred the two mechanisms a model
 // actually sees.
 enum class Rail : std::uint8_t {
-  card = 0,          // stolen-credential card compromise: tests + spends
-  ato = 1,           // bank-rail account takeover: p2p drains to a drop
-  giftCardScam = 2,  // impostor scam: max-denomination gift-card burst
-  scamImpostor = 3,  // impostor scam: victim-authorized wire / app push
+  card = 0,         // stolen-credential card compromise: tests + spends
+  ato = 1,          // bank-rail account takeover: p2p drains to a drop
+  giftCardScam = 2, // impostor scam: max-denomination gift-card burst
+  scamImpostor = 3, // impostor scam: victim-authorized wire / app push
 };
 
 [[nodiscard]] constexpr bool authorizedRail(Rail rail) noexcept {
@@ -44,6 +45,17 @@ struct CompromisePlan {
   std::int64_t startTs = 0;
   std::int32_t spanSeconds = 0;
   std::int32_t targetEvents = 0;
+
+  // Exclusive temporal horizon for every event in this case. Planning
+  // resolves it as the earliest relevant participant boundary: victim
+  // account closure for every rail, victim death for authorized rails,
+  // and payee/drop closure when that endpoint is a customer. A production
+  // plan is accepted only when its complete sampled span fits before this
+  // horizon; the generator rejects malformed standalone plans rather than
+  // compressing a multi-hour case into an artificial boundary burst.
+  //
+  // The permissive default keeps standalone/unit callers carrier-free.
+  std::int64_t eventEndTsExclusive = std::numeric_limits<std::int64_t>::max();
 
   std::uint32_t seq = 0;
 

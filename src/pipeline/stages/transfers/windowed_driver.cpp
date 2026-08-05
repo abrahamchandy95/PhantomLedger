@@ -227,10 +227,10 @@ void WindowedTransferDriver::settlePreSpans(bool finished, SinkRef &sink,
     const auto &span = settleSpans_[nextPreSpan_];
     const bool last = (nextPreSpan_ + 1 == settleSpans_.size());
 
-    // The final span settles with an unbounded emit bound and therefore
-    // needs complete coverage. A non-final span needs generated coverage
-    // through its lookahead bound so cure discovery sees the same future
-    // rows as the full-range chunked replay.
+    // The final span still needs complete generated coverage: rows at or
+    // beyond the run end remain useful for cure discovery, but the active
+    // emit bound is always the half-open simulation-window boundary.
+    // A non-final span needs generated coverage through its lookahead bound.
     if (last) {
       if (!finished) {
         break;
@@ -240,18 +240,16 @@ void WindowedTransferDriver::settlePreSpans(bool finished, SinkRef &sink,
       break;
     }
 
-    std::int64_t bound = kMaxEpoch;
-    std::size_t end = preStage_.size();
-    std::size_t lookEnd = preStage_.size();
-
-    if (!last) {
-      bound = epochOf(span.activeWindow.endExcl());
-      end = sliceTo(preStage_, 0, bound);
-      lookEnd = sliceTo(preStage_, end, epochOf(span.lookaheadBoundExcl));
-    }
+    const auto activeStart = epochOf(span.activeWindow.start);
+    const auto bound = epochOf(span.activeWindow.endExcl());
+    const auto begin = sliceTo(preStage_, 0, activeStart);
+    const auto end = sliceTo(preStage_, begin, bound);
+    const auto lookEnd =
+        last ? preStage_.size()
+             : sliceTo(preStage_, end, epochOf(span.lookaheadBoundExcl));
 
     preAcc_->extendChunk(
-        std::span<const Txn>{preStage_.data(), end},
+        std::span<const Txn>{preStage_.data() + begin, end - begin},
         std::span<const Txn>{preStage_.data() + end, lookEnd - end}, bound);
 
     auto settled = preAcc_->takeSettledBefore(bound);
@@ -302,38 +300,35 @@ PhaseBResult WindowedTransferDriver::runPhaseBErased(
 
     const auto pullBound = last ? kMaxEpoch : epochOf(span.lookaheadBoundExcl);
 
-    {
-      const auto beforeCand = candStage.size();
-      candidates.emitUntil(pullBound, candStage);
-      summary.candidateRows += candStage.size() - beforeCand;
-    }
+    candidates.emitUntil(pullBound, candStage);
 
     if (fraud != nullptr) {
-      const auto beforeFraud = fraudStage.size();
       fraud->emitUntil(pullBound, fraudStage);
-      summary.fraudRows += fraudStage.size() - beforeFraud;
     }
 
-    std::int64_t bound = kMaxEpoch;
-    std::size_t cEnd = candStage.size();
-    std::size_t fEnd = fraudStage.size();
-    std::size_t cLook = candStage.size();
-    std::size_t fLook = fraudStage.size();
+    const auto activeStart = epochOf(span.activeWindow.start);
+    const auto bound = epochOf(span.activeWindow.endExcl());
+    const auto cBegin = sliceTo(candStage, 0, activeStart);
+    const auto fBegin = sliceTo(fraudStage, 0, activeStart);
+    const auto cEnd = sliceTo(candStage, cBegin, bound);
+    const auto fEnd = sliceTo(fraudStage, fBegin, bound);
+    const auto lookSec = epochOf(span.lookaheadBoundExcl);
+    const auto cLook =
+        last ? candStage.size() : sliceTo(candStage, cEnd, lookSec);
+    const auto fLook =
+        last ? fraudStage.size() : sliceTo(fraudStage, fEnd, lookSec);
 
-    if (!last) {
-      bound = epochOf(span.activeWindow.endExcl());
-      cEnd = sliceTo(candStage, 0, bound);
-      fEnd = sliceTo(fraudStage, 0, bound);
-      const auto lookSec = epochOf(span.lookaheadBoundExcl);
-      cLook = sliceTo(candStage, cEnd, lookSec);
-      fLook = sliceTo(fraudStage, fEnd, lookSec);
-    }
+    // These are active-window source counts, not cursor-prefetch counts.
+    // In particular, final-span fraud remediation rows may be retained as
+    // lookahead but cannot inflate the fraud budget/reporting denominator.
+    summary.candidateRows += cEnd - cBegin;
+    summary.fraudRows += fEnd - fBegin;
 
     slice.clear();
-    slice.reserve(cEnd + fEnd);
-    std::merge(candStage.begin(),
+    slice.reserve((cEnd - cBegin) + (fEnd - fBegin));
+    std::merge(candStage.begin() + static_cast<std::ptrdiff_t>(cBegin),
                candStage.begin() + static_cast<std::ptrdiff_t>(cEnd),
-               fraudStage.begin(),
+               fraudStage.begin() + static_cast<std::ptrdiff_t>(fBegin),
                fraudStage.begin() + static_cast<std::ptrdiff_t>(fEnd),
                std::back_inserter(slice), legit_ledger::detail::fundsLess);
 

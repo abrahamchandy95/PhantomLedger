@@ -38,16 +38,21 @@
 //   re-verifies fraud visibility on every run, so the card view's
 //   fraud-visibility is a fact of the config, not a gamble on a
 //   seed. Pins every cf_* table the run registers in schema card_fraud
-//   (35 since card-fraud-realism-v2: the 34-table TF_GNN_v3 set plus
-//   the quarantined cf_Ground_Truth_Label overlay), HARD-REQUIRES its
-//   core tables, HARD-REQUIRES flag-1 rows in cf_Payment_Transaction
-//   (the unauthorized card rail — .60 of the unauthorized mix — and the
-//   gift-card scam ride the card_purchase channel), and HARD-REQUIRES
-//   that the four full-window entity label columns are WITHHELD while
-//   their verdicts survive in the overlay. Because the config is
-//   IDENTICAL to the fraud section's and exporters are export-side
-//   only (main.cpp tees every use case's exporter alongside the same
-//   corpus sink), this section also enforces that its
+//   (37 since the point-in-time session round: the 34-table TF_GNN_v3
+//   set, the quarantined cf_Ground_Truth_Label overlay, and timestamped
+//   cf_Transaction_Uses_Device/cf_Transaction_Uses_IP edges),
+//   HARD-REQUIRES its core tables, HARD-REQUIRES flag-1 rows in
+//   cf_Payment_Transaction, HARD-REQUIRES one device and one IP edge
+//   per payment, and HARD-REQUIRES that the four full-window entity
+//   label columns are WITHHELD while their verdicts survive in the
+//   overlay. cf_Has_Device/cf_Has_IP ownership is HARD-REQUIRED to be
+//   NON-EMPTY as of attacker-infra-2026-07 — the inverse of what this
+//   file demanded for four rounds; see the check itself for what changed
+//   in the generator and where the anti-shortcut claim now lives.
+//   Because the config is IDENTICAL to
+//   the fraud section's and exporters are export-side only (main.cpp
+//   tees every use case's exporter alongside the same corpus sink),
+//   this section also enforces that its
 //   public.transactions digest line EQUALS the fraud section's — the
 //   corpus stream is use-case-invariant, and this is where that law is
 //   pinned. Runs strictly LAST (its run overwrites the shared stream
@@ -87,6 +92,7 @@
 
 #undef NDEBUG
 
+#include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/primitives/postgres/connection.hpp"
 
 #include <algorithm>
@@ -111,11 +117,12 @@
 #error "PL_TABLE_BASELINE_AML must be defined (path to the fraud baseline)"
 #endif
 #ifndef PL_TABLE_BASELINE_CARD_FRAUD
-#error \
+#error                                                                         \
     "PL_TABLE_BASELINE_CARD_FRAUD must be defined (path to the card baseline)"
 #endif
 
 namespace fs = std::filesystem;
+namespace sch_card = ::PhantomLedger::exporter::schema::card_fraud;
 using PhantomLedger::postgres::Connection;
 
 namespace {
@@ -126,10 +133,9 @@ namespace {
                                      const std::string &schema,
                                      const std::string &table,
                                      bool orderByRowSeq) {
-  const auto qualified =
-      schema.empty()
-          ? conn.escapeIdentifier(table)
-          : conn.escapeIdentifier(schema) + "." + conn.escapeIdentifier(table);
+  const auto qualified = schema.empty() ? conn.escapeIdentifier(table)
+                                        : conn.escapeIdentifier(schema) + "." +
+                                              conn.escapeIdentifier(table);
   const std::string order = orderByRowSeq ? "row_seq" : "t::text";
   const auto hash = conn.queryValue(
       "SELECT coalesce(md5(string_agg(t::text, E'\\n' ORDER BY " + order +
@@ -233,21 +239,54 @@ enum class Section : int { pass, captured, diverged };
                "table-golden[%s]: POSTGRESQL CONTENT DIVERGES FROM "
                "BASELINE\n",
                name);
-  std::size_t shown = 0;
-  for (const auto &line : lines) {
-    if (std::find(expected.begin(), expected.end(), line) == expected.end() &&
-        shown < 10) {
-      std::fprintf(stderr, "  changed-or-new: %s\n", line.c_str());
-      ++shown;
+  // THE CAP USED TO BE `shown < 10` SHARED ACROSS BOTH LISTS, AND IT
+  // TRUNCATED SILENTLY. A section with ten changed tables printed ten
+  // `changed-or-new` lines, exhausted the budget, and emitted ZERO
+  // `was-in-baseline` lines — so the reader saw new row counts with nothing
+  // to compare them against, and any further changed table simply vanished
+  // from the report. During merchant-churn-2026-07 that made
+  // `cf_Merchant_Location` look UNMOVED while `cf_Has_Zip` had moved, which
+  // is impossible (the exporter writes both in the same branch of the same
+  // loop) and cost a full diagnostic cycle to unpick.
+  //
+  // A re-pin decision is made from THIS OUTPUT. Truncating it silently is
+  // the same defect class as a gate that bounds coverage without saying so:
+  // the report reads as complete when it is not. Each list now has its own
+  // budget and every suppressed line is COUNTED and reported.
+  constexpr std::size_t kMaxShownPerList = 40;
+
+  const auto report = [&](const char *label,
+                          const std::vector<std::string> &from,
+                          const std::vector<std::string> &against) {
+    std::size_t shown = 0;
+    std::size_t suppressed = 0;
+    for (const auto &line : from) {
+      if (std::find(against.begin(), against.end(), line) != against.end()) {
+        continue;
+      }
+      if (shown < kMaxShownPerList) {
+        std::fprintf(stderr, "  %s: %s\n", label, line.c_str());
+        ++shown;
+      } else {
+        ++suppressed;
+      }
     }
-  }
-  for (const auto &line : expected) {
-    if (std::find(lines.begin(), lines.end(), line) == lines.end() &&
-        shown < 10) {
-      std::fprintf(stderr, "  was-in-baseline: %s\n", line.c_str());
-      ++shown;
+    if (suppressed > 0) {
+      std::fprintf(stderr,
+                   "  ... and %zu more %s line(s) SUPPRESSED (cap %zu) — "
+                   "raise kMaxShownPerList before deciding a re-pin from "
+                   "this report\n",
+                   suppressed, label, kMaxShownPerList);
     }
-  }
+    return shown + suppressed;
+  };
+
+  const auto changed = report("changed-or-new", lines, expected);
+  const auto missing = report("was-in-baseline", expected, lines);
+  std::fprintf(stderr,
+               "  divergence totals: %zu changed-or-new, %zu "
+               "was-in-baseline\n",
+               changed, missing);
   std::fprintf(stderr,
                "if this change was intentional, delete %s and rerun to "
                "re-pin — and re-pin every golden the change touches in the "
@@ -323,11 +362,10 @@ int main() {
   // The whole point of this section: the fraud-LABEL tables the
   // standard config never produces MUST be under the pin. Stems are
   // VERBATIM from schema.hpp (SAR.csv / CTR.csv are uppercase).
-  for (const char *required : {"aml_txn_edges_vertices_ShellAccount",
-                               "aml_txn_edges_vertices_SAR",
-                               "aml_txn_edges_vertices_Alert",
-                               "aml_txn_edges_vertices_CTR",
-                               "aml_txn_edges_vertices_InvestigationCase"}) {
+  for (const char *required :
+       {"aml_txn_edges_vertices_ShellAccount", "aml_txn_edges_vertices_SAR",
+        "aml_txn_edges_vertices_Alert", "aml_txn_edges_vertices_CTR",
+        "aml_txn_edges_vertices_InvestigationCase"}) {
     if (std::find(fraudTables.begin(), fraudTables.end(),
                   std::string{required}) == fraudTables.end()) {
       std::fprintf(stderr,
@@ -368,19 +406,32 @@ int main() {
 
   // Registry discovery for the card_fraud schema; the mirror prefixes
   // every stem with "cf_" (no subdirs; stems verbatim incl. case).
-  // 35 tables since card-fraud-realism-v2: the 34-table TF_GNN_v3 set
-  // plus cf_Ground_Truth_Label, the quarantined investigative overlay.
+  //
+  // EXACT, against the schema's own `kTableCount`. This was `>= 39` while the
+  // export grew to 43, so it could see neither the four added tables nor a
+  // table that went MISSING — a lower bound is not a count. The acceptance
+  // script's two hard-coded 39s went stale behind exactly that weakness and
+  // would have aborted the owner's acceptance run on a correct corpus.
   const auto cardTables = registeredTables(*conn, "card_fraud");
-  assert(cardTables.size() >= 35);
+  if (cardTables.size() != sch_card::kTableCount) {
+    std::fprintf(stderr,
+                 "table-golden[card_fraud]: registry has %zu tables, schema "
+                 "declares %zu (schema.hpp kTableCount). Adding or removing a "
+                 "table must update that constant AND the two scalar counts "
+                 "in docs/card_fraud_postgres_acceptance.sql, which cannot "
+                 "include this header.\n",
+                 cardTables.size(), sch_card::kTableCount);
+    return 1;
+  }
 
   // Core tables MUST be under the pin (the streamed vertex + edges,
   // the card/party layer, the documented header-only gap, and the
   // ground-truth overlay that now holds the withheld entity labels).
   for (const char *required :
        {"cf_Payment_Transaction", "cf_Card_Send_Transaction",
-        "cf_Merchant_Receive_Transaction", "cf_Card", "cf_Party",
-        "cf_Party_Has_Card", "cf_Merchant", "cf_Is_Merchant",
-        "cf_Ground_Truth_Label"}) {
+        "cf_Merchant_Receive_Transaction", "cf_Transaction_Uses_Device",
+        "cf_Transaction_Uses_IP", "cf_Card", "cf_Party", "cf_Party_Has_Card",
+        "cf_Merchant", "cf_Is_Merchant", "cf_Ground_Truth_Label"}) {
     if (std::find(cardTables.begin(), cardTables.end(),
                   std::string{required}) == cardTables.end()) {
       std::fprintf(stderr,
@@ -391,10 +442,10 @@ int main() {
     }
   }
 
-  // FRAUD-VISIBLE: at the fraud-dense config the unauthorized card
-  // rail (.60 of the unauthorized mix) and the gift-card scam ride the
-  // card_purchase channel, so the view must carry flag-1 rows — a
-  // blind card view here means the view filter or the fraud
+  // FRAUD-VISIBLE: at the fraud-dense config the modeled unauthorized
+  // debit-card rail (.60 of the unauthorized mix) and the gift-card
+  // scam ride the card_purchase channel, so the view must carry flag-1
+  // rows — a blind card view here means the view filter or the fraud
   // attribution broke. Direct-table columns are text (mirror DDL):
   // compare against the rendered '1'.
   {
@@ -406,7 +457,7 @@ int main() {
       std::fprintf(stderr,
                    "table-golden[card_fraud]: cf_Payment_Transaction carries "
                    "NO flag-1 rows at the fraud-dense config — the card view "
-                   "must be fraud-visible (unauthorized card rail + "
+                   "must be fraud-visible (unauthorized debit-card rail + "
                    "gift-card scam ride card_purchase)\n");
       return 1;
     }
@@ -461,6 +512,43 @@ int main() {
     }
   }
 
+  // ENDPOINT REACHABILITY GATE — INVERTED (attacker-infra-2026-07).
+  //
+  // This check used to hard-fail if either table carried ANY row, under
+  // the heading "STATIC ENDPOINT LEAK", and the reasoning was sound while
+  // it lasted: whole-window ownership distinguished customer endpoints
+  // from attacker-only endpoints before the first payment, because every
+  // customer endpoint had an owner and no attacker endpoint did.
+  //
+  // The generator no longer produces that asymmetry. Registry coverage is
+  // partial (`infra::enrollment`), so legitimate rows sit on endpoints
+  // with no Party edge; and a declared share of unauthorized cases runs
+  // from the victim's own endpoint or exits through a residential proxy,
+  // so fraud sits on endpoints that have one. The residual lift is SIZED
+  // and BANDED by tests/test_card_endpoint_graph.cpp, which is where an
+  // anti-shortcut claim belongs — a live-database row count cannot
+  // measure it.
+  //
+  // What is hard-failed now is the OPPOSITE condition, because it is the
+  // one that silently destroys the use case: with these tables empty and
+  // TF_GNN_v3 carrying no transaction->endpoint edge type, cf_Device and
+  // cf_IP are isolated vertices and the endpoint layer passes no
+  // messages at all.
+  for (const char *table : {"cf_Has_Device", "cf_Has_IP"}) {
+    const auto qualified = conn->escapeIdentifier("card_fraud") + "." +
+                           conn->escapeIdentifier(table);
+    const auto rows = conn->queryValue("SELECT count(*) FROM " + qualified);
+    if (rows.empty() || rows == "0") {
+      std::fprintf(stderr,
+                   "table-golden[card_fraud]: UNREACHABLE ENDPOINT LAYER — %s "
+                   "is empty. Party is the only path TF_GNN_v3 has to Device "
+                   "and IP, so an empty ownership table makes every endpoint "
+                   "vertex isolated and the layer inert\n",
+                   table);
+      return 1;
+    }
+  }
+
   std::vector<std::string> cardLines;
   cardLines.reserve(cardTables.size() + 1);
   cardLines.push_back(
@@ -493,8 +581,8 @@ int main() {
       applyBaseline(fs::path{PL_TABLE_BASELINE}, stdLines, "standard");
   const auto fraudResult =
       applyBaseline(fs::path{PL_TABLE_BASELINE_AML}, fraudLines, "fraud");
-  const auto cardResult = applyBaseline(
-      fs::path{PL_TABLE_BASELINE_CARD_FRAUD}, cardLines, "card_fraud");
+  const auto cardResult = applyBaseline(fs::path{PL_TABLE_BASELINE_CARD_FRAUD},
+                                        cardLines, "card_fraud");
 
   if (stdResult == Section::diverged || fraudResult == Section::diverged ||
       cardResult == Section::diverged) {

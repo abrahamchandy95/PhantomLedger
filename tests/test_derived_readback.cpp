@@ -43,14 +43,11 @@
 // span_index (row_seq is the cross-engine identity), so this parity
 // covers windowed runs too.
 //
-// SPAN SEMANTICS: a posted corpus extends PAST the window end
-// (settlement retries land +18/+72h after late rejections), and the
-// production drivers settle the FINAL span with an unbounded emit
-// bound so those rows are streamed with everything else. The streaming
-// loop below mirrors that: bounded slices for non-final spans, all
-// remaining rows for the last. Slicing every span by its activeWindow
-// silently drops the tail — the first version of this gate caught
-// itself doing exactly that.
+// SPAN SEMANTICS: the posted corpus is half-open on the requested window.
+// Future source rows may participate in final-span cure discovery, but
+// settlement retries and generated rows at/after window.endExcl are not
+// active corpus rows. The streaming loop below therefore slices every
+// span, including the last, at activeWindow.endExcl.
 //
 // HARD-ENFORCED where it runs.
 //
@@ -491,25 +488,18 @@ int main() {
 
   // Stream the same corpus into PostgreSQL, one COPY per span. The
   // corpus is replay-sorted (nondecreasing ts), so spans are contiguous
-  // slices; the FINAL span takes every remaining row — including the
-  // settlement tail past the window end — mirroring the production
-  // drivers' unbounded final emit bound.
+  // half-open active-window slices.
   {
     const auto sched = Schedule::partition(window, {});
     Postgres sink({.conninfo = conninfo, .table = kTable});
     std::size_t begin = 0;
     for (std::size_t k = 0; k < sched.size(); ++k) {
       const auto &span = sched[k];
-      const bool last = (k + 1 == sched.size());
-
-      std::size_t end = corpus.size();
-      if (!last) {
-        const auto boundExcl = span.activeWindow.endExcl();
-        end = begin;
-        while (end < corpus.size() &&
-               pl::time::fromEpochSeconds(corpus[end].timestamp) < boundExcl) {
-          ++end;
-        }
+      const auto boundExcl = span.activeWindow.endExcl();
+      std::size_t end = begin;
+      while (end < corpus.size() &&
+             pl::time::fromEpochSeconds(corpus[end].timestamp) < boundExcl) {
+        ++end;
       }
 
       sink.beginSpan(span);

@@ -114,18 +114,19 @@ make run ARGS="--usecase standard --days 120 --population 200000"
 ```
 
 `ARGS` is the single Make variable that forwards the existing CLI surface. The
-requested 1991-through-2019 card-fraud invocation is:
+validated 5,000-person, 1999-through-2019 card-fraud invocation is:
 
 ```sh
-make run ARGS="--start 1991-01-01 --days 10592 --population 10000 --usecase card-fraud"
+make run ARGS="--start 1999-01-01 --days 7670 --population 5000 --seed 3735928559 --usecase card-fraud"
 ```
 
 No database environment variable is needed for the local default:
 `PL_PG` unset (or empty) resolves in code to `dbname=phantomledger`. Set
 `PL_PG` only to override that connection string for another server/database.
 
-`10592` covers the half-open interval `[1991-01-01, 2020-01-01)`. This writes
-the shared all-rails ledger to `public.transactions` and all 35 card-view/graph
+`7670` covers the half-open interval `[1999-01-01, 2020-01-01)`, so the last
+included calendar day is 2019-12-31. This writes
+the shared all-rails ledger to `public.transactions` and all 37 card-view/graph
 tables to `card_fraud.cf_*`; the transaction-fraud training relation is
 `card_fraud."cf_Payment_Transaction"`. It does not write output files or enable
 hidden CLI options.
@@ -163,12 +164,20 @@ consumption level, which LOWERS them — a 1991-start window opens at
 share.)
 
 After the target run finishes, the read-only acceptance script checks the
-manifest, all 35 physical/registered tables, transaction-edge cardinality,
-raw-ledger joins, date bounds, positive transaction labels, and the withheld
-entity-label columns:
+manifest, all 37 physical/registered tables, transaction-edge cardinality
+(including one timestamped device edge and one timestamped IP edge per
+payment), edge endpoints, raw-ledger joins, date bounds, positive transaction
+labels, the withheld entity-label columns, and header-only static
+device/IP ownership tables:
 
 ```sh
-psql "dbname=phantomledger" -f docs/card_fraud_postgres_acceptance.sql
+psql "dbname=phantomledger" \
+  -v expected_population=5000 \
+  -v expected_days=7670 \
+  -v expected_start=1999-01-01 \
+  -v expected_end=2020-01-01 \
+  -v expected_seed=3735928559 \
+  -f docs/card_fraud_postgres_acceptance.sql
 ```
 
 Runtime diagnostics are **silent by default**; the `run-info` / `run-debug` / `run-trace` /
@@ -1037,7 +1046,7 @@ Camouflage events fire with `isFraud = 0` and `ringId = -1` so they blend into t
 
 ### Burst Window
 
-Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to this window; outside it the ring members behave legitimately. Rings never recruit the dead: each ring's bursts and camouflage clamp to its participants' alive horizon (the earliest death among its fraud actors and mules), so no ring member moves money after their own death. Victim accounts are deliberately exempt — fraud against deceased persons' accounts is a real, documented typology — and so is the solo/unauthorized rail.
+Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to this window; outside it the ring members behave legitimately. Rings never recruit the dead: each ring's bursts and camouflage clamp to its participants' alive horizon (the earliest death among its fraud actors and mules), so no ring member moves money after their own death. Card/ATO victims may be targeted during the modeled estate-settlement tail, but never outside their `[join, close)` membership interval; victim-authorized scams additionally require the victim to be alive. A compromise is accepted only when its complete sampled span fits before the earliest relevant victim/payee boundary, so boundary cases are rejected rather than compressed into artificial bursts.
 
 ### Shared Infrastructure
 
@@ -1050,7 +1059,7 @@ Rings operate in a 7–14 day burst. Device and IP sharing is concentrated to th
 
 ### Devices
 
-Each person has 1 device (80%) or 2 devices (20%). Device types are drawn uniformly from `{android, ios, web, desktop}`. Ring-shared flagged devices get IDs `FD0000`, `FD0001`, … Sparse legit shared groups (1% noise) model a family ambient device or a household tablet.
+Each person has 1 device (80%) or 2 devices (20%). Device types are drawn uniformly from `{android, ios, web, desktop}`. Sparse legit shared groups (1% noise) model a family ambient device or a household tablet. In the card-fraud export, personal, shared, and attacker devices all use the same fixed-width opaque `D…` identifier namespace; owner role is not encoded in the prefix, width, or numeric range.
 
 ### IPs
 
@@ -1137,16 +1146,20 @@ A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for 
 ### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer-shaped)
 
 A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema (the graph used for IBM
-TabFormer-style card-fraud GNNs). 35 tables land in schema `card_fraud` (prefix `cf_`):
+TabFormer-style card-fraud GNNs). 37 tables land in schema `card_fraud` (prefix `cf_`):
 
 - **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
-  purchases plus unauthorized-card and gift-card-scam fraud rows that currently source the
-  victim's deposit account and therefore derive a debit-card identity) and `merchant` rows
-  (account-paid POS, interpreted as debit-card transactions).
+  purchases plus unauthorized-card and gift-card-scam fraud rows) and `merchant` rows
+  (account-paid POS, interpreted as debit-card transactions). Unauthorized rows currently use
+  the victim's primary account and therefore derive a debit-card identity. They are not
+  relabeled as issued-credit-card activity after generation: fraud is planned only after the
+  credit-card lifecycle has closed its statements, so doing that honestly requires reordering
+  fraud planning into the statement/payment/interest lifecycle.
   8 loaded columns: `id` (`T<row_seq>`, cross-referencing the streamed `transactions` table 1:1),
   timestamp, amount, `is_fraud`, unix time, merchant category, `use_chip`, and `error`. Streamed
-  at row scale during settlement together with the `Card_Send_Transaction` /
-  `Merchant_Receive_Transaction` edges.
+  at row scale during settlement together with the `Card_Send_Transaction`,
+  `Merchant_Receive_Transaction`, `Transaction_Uses_Device`, and
+  `Transaction_Uses_IP` edges.
 - **Cards and parties** — `Card` (credit cards resolve through the card registry, ≤1 per person;
   every other view source becomes the account's derived debit card), `Party` (canonical
   customer ids; `created_at` is the membership joinTs), and `Party_Has_Card`. Both carry an
@@ -1158,12 +1171,19 @@ TabFormer-style card-fraud GNNs). 35 tables land in schema `card_fraud` (prefix 
   71-US-city catalogue is a runnable placeholder, not Census-complete ZCTA or
   establishment data.
 - **PII investigative layer** — `Address`/`Phone`/`Email`/`IP`/`Device`/`ID`/`Full_Name`/`DOB`
-  vertices plus `Has_*` edges from the PII synthesis; the `IP`/`Device` `is_blocked` column is
-  always **0** — see the label note below. (Marked demo-only in TF_GNN_v3 and empty on real
-  TabFormer; PhantomLedger populates it.)
+  vertices plus the non-infrastructure `Has_*` edges from the PII synthesis; the `IP`/`Device`
+  `is_blocked` column is always **0** — see the label note below. (Marked demo-only in
+  TF_GNN_v3 and empty on real TabFormer; PhantomLedger populates it.) `Has_Device` and
+  `Has_IP` are retained as header-only loader-compatibility tables. Exporting only customer
+  ownership would make the absence of a Party edge reveal exogenous attacker endpoints.
+- **Transaction-time infrastructure** — `Transaction_Uses_Device` and `Transaction_Uses_IP`
+  connect every payment to the device and IP actually observed for that session, with
+  `edge_unix_time`. Their endpoint vertices include exogenous attacker sessions as well as the
+  synthesized customer roster. Score a transaction before appending its current session edges
+  to temporal memory.
 - **`Ground_Truth_Label`** — the investigative overlay: `(entity_type, entity_id, label)`,
   positives only, joinable 1:1 to the vertex tables. No TF_GNN_v3 loading job reads it and
-  no edge points at it. This is the 35th table.
+  no edge points at it. It is one of the 37 physical tables but is outside the feature graph.
 
 **Labels (card-fraud-realism-v2).** `Card.is_fraud`, `Party.is_fraud`,
 `Device.is_blocked` and `IP.is_blocked` are full-window entity verdicts — "this
@@ -1187,15 +1207,21 @@ columns a model may read is a written and tested contract
 ([docs/card_fraud_feature_contract.md](docs/card_fraud_feature_contract.md),
 pinned by a truncation experiment in `test_card_point_in_time`), and per-year
 prevalence, channel, typology, amount and episode bands are gated by
-`test_card_prevalence`. What remains before an online-benchmark claim is
-calibrating the fraud LEVEL against a named issuer-side series; follow the
-causal feature, split, metric, and minimum-realism gates in
+`test_card_prevalence`. This is suitable for building a point-in-time temporal
+GNN pipeline, but it is not yet a public calibrated online benchmark. Remaining
+gates include fraud-level calibration, integrating unauthorized credit-card
+activity into the statement/payment/interest lifecycle, effective-dated
+card/device/residence lifecycles, era-varying fraud technology and rail mix,
+operationally delayed labels, and an executable, tested TigerGraph
+GSQL/training/evaluation pipeline.
+Follow the causal feature, split, metric, and minimum-realism gates in
 [docs/card_fraud_online_gnn.md](docs/card_fraud_online_gnn.md).
 
 The generator emits **loaded attributes only**: the pagerank/community slots, the engineered
 Payment_Transaction features, and TF_GNN_v3's interaction/co-occurrence/community edges are
-in-graph TigerGraph query work. Column order matches the TF_GNN_v3 loaded-attribute order so
-loading jobs map positionally; to hand a table to TigerGraph as CSV:
+in-graph TigerGraph query work. The repository does not yet ship the production GSQL feature
+query or a complete training/evaluation runner. Column order matches the TF_GNN_v3
+loaded-attribute order so loading jobs map positionally; to hand a table to TigerGraph as CSV:
 `\copy card_fraud."cf_Payment_Transaction" TO 'Payment_Transaction.csv' WITH (FORMAT csv, HEADER true)`.
 
 ## Configuration

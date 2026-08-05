@@ -3,6 +3,7 @@
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -51,6 +52,10 @@ public:
     // world set it. Flows to population::View for card-present
     // distance-decay selection (unread until G2a step-2).
     std::span<const entity::geography::GeoAreaId> homeAreas{};
+
+    // relocation-2026-07: the history behind the snapshot. Null ⇒ homes never
+    // move.
+    const entity::parties::relocation::Schedule *relocation = nullptr;
   };
 
   struct PayeeDirectory {

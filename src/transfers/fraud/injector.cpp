@@ -1,8 +1,9 @@
 #include "phantomledger/transfers/fraud/injector.hpp"
 
+#include "phantomledger/entities/infra/attackers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
-#include "phantomledger/entities/infra/random_ips.hpp"
+#include "phantomledger/entities/infra/router.hpp"
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 #include "phantomledger/transfers/fraud/playbook.hpp"
 #include "phantomledger/transfers/fraud/rings.hpp"
@@ -47,9 +48,8 @@ inline constexpr int kRingScheduleGuardDays = 22;
   if (aliveEndEpoch >= endEpoch) {
     return window; // every participant outlives the window
   }
-  const auto aliveDays =
-      static_cast<int>(std::max<std::int64_t>(0, aliveEndEpoch - startEpoch) /
-                       86'400);
+  const auto aliveDays = static_cast<int>(
+      std::max<std::int64_t>(0, aliveEndEpoch - startEpoch) / 86'400);
   window.days =
       std::max(1, std::min(window.days, aliveDays - kRingScheduleGuardDays));
   return window;
@@ -173,8 +173,7 @@ buildRingPlans(const InjectorRingView &rings,
 
   for (const auto &ring : rings.topology->rings) {
     plans.push_back(
-        buildPlan(ring, *rings.topology, registry, ownership,
-                  rings.timelines));
+        buildPlan(ring, *rings.topology, registry, ownership, rings.timelines));
   }
 
   return plans;
@@ -347,13 +346,54 @@ assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
   };
 }
 
-[[nodiscard]]
-std::vector<typologies::unauthorized::CompromisePlan>
+// ------------------- THE ATTACKER'S OPERATING POSITION (attacker-infra)
+//
+// Share of UNAUTHORIZED (card / ATO) cases operated from the VICTIM'S
+// OWN endpoint rather than exogenous attacker infrastructure. The
+// mechanisms are real and distinct from the authorized-scam rails: a
+// banking trojan or remote-access tool driving the victim's session, and
+// household / "friendly" fraud committed on the victim's own device.
+//
+// It is ALSO what makes the ownership topology exportable. With every
+// fraud row on exogenous infrastructure and every legitimate row on a
+// customer endpoint, "endpoint not associated with any Party" was a
+// perfect fraud rule and `Has_Device`/`Has_IP` had to be withheld
+// wholesale. This branch supplies the other direction: fraud that
+// genuinely sits on an on-file customer endpoint. The complementary
+// direction — legitimate rows on endpoints the institution has NOT
+// recorded — comes from `infra::enrollment` coverage.
+//
+// DECLARED CHOICE, DIRECTION ANCHORED: malware/RAT-driven and household
+// card fraud is a real but MINORITY share of unauthorized loss. The
+// realized share also absorbs cases where no operator campaign was live
+// at the case date, so it is measured rather than assumed —
+// tests/test_card_endpoint_graph.cpp prints both components and bands
+// the total.
+inline constexpr double kVictimEndpointShare = 0.18;
+
+// Share of operator sessions that exit through a RESIDENTIAL CUSTOMER
+// ADDRESS instead of the operator's own. Residential-proxy resale is a
+// documented staple of card-not-present fraud: the exit address is a
+// real consumer line, which is exactly why address reputation alone does
+// not classify it.
+//
+// This is the IP-side counterpart of the branch above, and it is the
+// mechanism that gives the graph its most interesting structure — a
+// fraud transaction reachable from an unrelated Party through a shared
+// address node.
+inline constexpr double kResidentialProxyShare = 0.30;
+
+[[nodiscard]] std::vector<typologies::unauthorized::CompromisePlan>
 buildCompromisePlans(
     random::Rng &rng, time::Window window,
     const entity::account::Registry &registry,
     const entity::account::Ownership &ownership,
     std::span<const Plan> ringPlans, std::int64_t budget,
+    // attacker-infra-2026-07: the exogenous infrastructure pool, and the
+    // router the residential-proxy branch borrows a customer address
+    // from. Both nullptr-tolerant; see InjectorServices::attackers.
+    const infra::AttackerInfra *attackers = nullptr,
+    const infra::Router *router = nullptr,
     std::span<const entity::geography::GeoAreaId> homeAreas = {},
     // victimization-v2 (docs/card_fraud_victimization.md D1): per-person
     // card-exposure weights, PersonId-1 indexed, mean ~1.0. EMPTY keeps
@@ -364,7 +404,11 @@ buildCompromisePlans(
     // The SCAM rails select on a persona x age hazard rebuilt AT THE
     // CASE DATE, their loss is age-graded, and EVERY rail now requires
     // bank membership at the case date. nullptr keeps the v2 behaviour.
-    const synth::personas::Pack *personas = nullptr) {
+    const synth::personas::Pack *personas = nullptr,
+    // relocation-2026-07: the victim's home-area HISTORY. This pass plans the
+    // whole window up front, so it needs the home AT THE CASE DATE and not a
+    // current value. nullptr ⇒ homes never move.
+    const entity::parties::relocation::Schedule *relocation = nullptr) {
   using typologies::unauthorized::Rail;
 
   std::vector<typologies::unauthorized::CompromisePlan> plans;
@@ -533,9 +577,28 @@ buildCompromisePlans(
   // "no local anchor" value the spending session already falls back on,
   // so an unfilled carrier degrades to the pre-v2 national behavior
   // rather than to something undefined.
-  const auto homeAreaOf =
-      [&](entity::PersonId person) -> entity::geography::GeoAreaId {
-    if (person == 0 || homeAreas.empty() ||
+  // relocation-2026-07: takes the CASE TIMESTAMP and resolves the home the
+  // victim occupied THEN. This pass plans the whole window in one go, before
+  // the fold runs, so there is no "now" to read: a case in year 12 must see
+  // the year-12 home. Using the window-start snapshot would attribute every
+  // case in a 20-year run to the victim's original area, which is precisely
+  // the point-in-time defect `device-ip-lifecycle` was opened for on the
+  // endpoint side.
+  //
+  // DRAW-FREE — a schedule lookup, no uniform — so wiring it cannot move the
+  // stream position; only the geographic ANSWER changes.
+  const auto homeAreaOf = [&](entity::PersonId person,
+                              std::int64_t ts) -> entity::geography::GeoAreaId {
+    if (person == 0) {
+      return entity::geography::invalidGeoArea;
+    }
+    if (relocation != nullptr && !relocation->empty()) {
+      const auto area = relocation->areaAt(person, ts);
+      if (entity::geography::validArea(area)) {
+        return area;
+      }
+    }
+    if (homeAreas.empty() ||
         static_cast<std::size_t>(person) > homeAreas.size()) {
       return entity::geography::invalidGeoArea;
     }
@@ -548,6 +611,8 @@ buildCompromisePlans(
 
   std::int64_t remaining = budget;
   std::uint64_t seq = 0;
+  std::size_t consecutiveBoundaryRejects = 0;
+  constexpr std::size_t kMaxBoundaryResamples = 4'096;
 
   while (remaining > 0) {
     // Rail mix (victimization-v3): card .48 / gift-card scam .12 /
@@ -586,13 +651,12 @@ buildCompromisePlans(
     // bursts the victim cannot fund only produces rows the ledger
     // discards. Severity now applies to the impostor AMOUNT alone.
     const std::int64_t targetSpan =
-        rail == Rail::card
-            ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
-            : rail == Rail::giftCardScam
-                  ? 2 + static_cast<std::int64_t>(rng.choiceIndex(5))
-                  : rail == Rail::scamImpostor
-                        ? 1 + static_cast<std::int64_t>(rng.choiceIndex(3))
-                        : 3 + static_cast<std::int64_t>(rng.choiceIndex(6));
+        rail == Rail::card ? 5 + static_cast<std::int64_t>(rng.choiceIndex(10))
+        : rail == Rail::giftCardScam
+            ? 2 + static_cast<std::int64_t>(rng.choiceIndex(5))
+        : rail == Rail::scamImpostor
+            ? 1 + static_cast<std::int64_t>(rng.choiceIndex(3))
+            : 3 + static_cast<std::int64_t>(rng.choiceIndex(6));
 
     const auto target = static_cast<std::int32_t>(
         std::min<std::int64_t>(remaining, targetSpan));
@@ -631,10 +695,11 @@ buildCompromisePlans(
     // (see targetSpan above).
     const double severity =
         rail == Rail::scamImpostor && victimPick.person != 0
-            ? victims.severity(
-                  static_cast<std::size_t>(victimPick.person) - 1, startPoint)
+            ? victims.severity(static_cast<std::size_t>(victimPick.person) - 1,
+                               startPoint)
             : 1.0;
 
+    PickedAccount dropPick{};
     entity::Key drop{};
 
     if (rail == Rail::ato || rail == Rail::scamImpostor) {
@@ -643,7 +708,8 @@ buildCompromisePlans(
       // susceptibility has any bearing on being one, so weighting them
       // would apply victim-side reasoning to the wrong end of the edge.
       // Membership still binds — a payee account has to exist.
-      drop = pickFrom(victim, nullptr, startPoint, false).key;
+      dropPick = pickFrom(victim, nullptr, startPoint, false);
+      drop = dropPick.key;
 
       if (drop == victim) {
         break;
@@ -655,13 +721,44 @@ buildCompromisePlans(
     // on the phone with the scammer the whole time); an impostor push
     // runs 1-6 hours — the call, then the branch visit or the app.
     const auto spanSeconds = static_cast<std::int32_t>(
-        3600 * (rail == Rail::card
-                    ? 6 + rng.choiceIndex(66)
-                    : rail == Rail::giftCardScam
-                          ? 1 + rng.choiceIndex(4)
-                          : rail == Rail::scamImpostor
-                                ? 1 + rng.choiceIndex(6)
-                                : 2 + rng.choiceIndex(30)));
+        3600 * (rail == Rail::card           ? 6 + rng.choiceIndex(66)
+                : rail == Rail::giftCardScam ? 1 + rng.choiceIndex(4)
+                : rail == Rail::scamImpostor ? 1 + rng.choiceIndex(6)
+                                             : 2 + rng.choiceIndex(30)));
+
+    // CASE-DATE ELIGIBILITY IS NOT ENOUGH: a compromise expands into events
+    // up to 71 hours later. Resolve the earliest exclusive participant
+    // boundary here. Authorized rails stop at victim death; every rail stops
+    // at victim account closure; account-to-account rails also stop if the
+    // receiving customer closes.
+    //
+    // Reject a case whose COMPLETE SAMPLED SPAN will not fit. Compressing all
+    // target events into a short residual interval would manufacture a
+    // boundary-velocity shortcut. `remaining` is deliberately unchanged, so
+    // the next loop iteration reselects a case and the accepted plans still
+    // carry the requested fraud budget. A defensive resample ceiling prevents
+    // a pathological all-boundary carrier from looping forever. This adds
+    // draws only for a rejected boundary case and is identical in the batch
+    // and windowed engines.
+    auto eventEndTsExclusive = victims.eligibleUntilEpoch(
+        static_cast<std::size_t>(victimPick.person) - 1, scamRail);
+    if (dropPick.person != entity::invalidPerson && dropPick.person != 0) {
+      eventEndTsExclusive =
+          std::min(eventEndTsExclusive,
+                   victims.eligibleUntilEpoch(
+                       static_cast<std::size_t>(dropPick.person) - 1,
+                       /*requireAlive=*/false));
+    }
+    if (eventEndTsExclusive != std::numeric_limits<std::int64_t>::max() &&
+        (eventEndTsExclusive <= startTs ||
+         eventEndTsExclusive - startTs <
+             static_cast<std::int64_t>(spanSeconds))) {
+      if (++consecutiveBoundaryRejects >= kMaxBoundaryResamples) {
+        break; // pathological carrier: no full case fits this population
+      }
+      continue;
+    }
+    consecutiveBoundaryRejects = 0;
 
     // SHORTCUT #2, CLOSED (card-fraud-realism-v2 step b).
     //
@@ -683,30 +780,137 @@ buildCompromisePlans(
     // events on one address — what disappears is only the free lookup
     // on the address itself.
     //
-    // STILL OPEN: `.device.ownerId` below carries a magic 0xACE00000
-    // prefix with OwnerType::ring. Whether that leaks depends on what
-    // the exporters actually render (renderDeviceId may hash the key,
-    // in which case the prefix is invisible downstream) — that check is
-    // the remaining half of this finding, tracked in
-    // docs/card_fraud_v2_roadmap.md step d. On the AUTHORIZED rails the
-    // attacker session is wrong for a second reason: the operator is
-    // the victim on their own device (authority U-12, declared).
+    // SHORTCUT #3, CLOSED (role-neutral-device-v1).
+    //
+    // `.device.ownerId` below remains a deterministic INTERNAL identity
+    // so the events in one compromise can share infrastructure. The
+    // exporter hashes the complete Identity into the same fixed-width
+    // opaque `D...` namespace used by legitimate devices; neither the
+    // 0xACE00000 value nor OwnerType::ring appears in exported IDs.
+    // Authorized rails retain the victim session produced by the router;
+    // only unauthorized card/ATO rows receive this attacker session.
+    //
+    // ============================================================
+    // DEFECT #4, CLOSED (attacker-infra-2026-07): ENDPOINT REUSE
+    //
+    // This block used to read, unconditionally and for every rail:
+    //
+    //     .device = Identity{ring, 0xACE00000 + seq, 0},
+    //     .ip     = network::randomIpv4(rng),
+    //
+    // A fresh device and a fresh address per case, `seq` advancing once
+    // per acceptance. So NO ATTACKER ENDPOINT WAS EVER SEEN TWICE, and
+    // "one endpoint touching many cards" — the single most valuable
+    // signal a card-fraud graph carries, and the reason to model this as
+    // a graph rather than a table — was ABSENT BY CONSTRUCTION. The
+    // Device and IP layers could pass no message between two victims
+    // because no two victims ever shared a node. Nothing measured it,
+    // so the missing signal sat unnoticed behind four green gates.
+    //
+    // Endpoints now come from `infra::AttackerInfra`: campaigns with a
+    // lifetime, concurrent device/IP lines that TILE the campaign, and a
+    // Pareto case load so a few operators work many cards.
+    //
+    // FOUR UNIFORMS, ALWAYS, IN THIS FIXED ORDER — exactly the four
+    // `network::randomIpv4` used to spend on this lane, drawn
+    // unconditionally so no branch can change the count. That is what
+    // confines this round's corpus movement to the device_id / ip_address
+    // columns: every rail, every event count, every amount and every
+    // timestamp is decided by draws that are now bit-identical to the
+    // pre-round stream. The two AUTHORIZED rails previously burned all
+    // four on a ghost they discarded (~24% of mints were dead weight);
+    // they still burn them, deliberately, because reclaiming them would
+    // re-roll every subsequent plan for no modelling gain.
+    const double operatorU = rng.nextDouble();
+    const double proxyU = rng.nextDouble();
+    const double proxyPickU = rng.nextDouble();
+    const double victimEndpointU = rng.nextDouble();
+
+    devices::Identity attackerDevice{};
+    network::Ipv4 attackerIp{};
+
+    // THE CARRIER IS THE ABSENCE OF A CARRIER. An UNASSIGNED device on
+    // the plan means "the victim operated this row", and
+    // `unauthorized::generate` then lets the session
+    // `transactions::Factory` already routed for the victim stand. No
+    // new plan field, no new flag to keep in sync, and hand-built unit
+    // plans that DO carry an endpoint keep their existing meaning
+    // (before adding a carrier, check whether the value is already on
+    // the row).
+    if (!scamRail && victimEndpointU >= kVictimEndpointShare &&
+        attackers != nullptr && !attackers->empty()) {
+      // DRAW-FREE FROM HERE DOWN. Resolution is a point query against
+      // world state at the case date: which campaign was running, and
+      // which of its live endpoints. `seq` salts the choice among
+      // CONCURRENTLY-live lines, so one operator's cases spread across
+      // its machines while a single case keeps one endpoint for all its
+      // events — a case has one modus operandi.
+      // The case's exclusive event horizon: `unauthorized::generate`
+      // places every event in [startTs, startTs + span), so an endpoint
+      // must cover that whole interval to be attributable to all of
+      // them. Resolving on the case START alone would let a late event
+      // carry an endpoint already replaced by then.
+      //
+      // The `max(..., 2)` MIRRORS the generator's own span floor exactly.
+      // Production spans are hours, so the clamp never binds here — but
+      // a horizon computed from the raw value would be a silent
+      // off-by-one waiting for the first caller with a degenerate span,
+      // and it would surface as a point-in-time violation rather than as
+      // an error.
+      const auto caseEndTsExcl =
+          startTs + std::max<std::int64_t>(2, spanSeconds);
+      if (const auto op = attackers->operatorAt(operatorU, startTs)) {
+        const auto device =
+            attackers->deviceAt(*op, startTs, caseEndTsExcl, seq);
+        auto ip = attackers->ipAt(*op, startTs, caseEndTsExcl, seq);
+
+        // RESIDENTIAL PROXY: exit through some customer's home address.
+        // `liveIpFor` is the draw-free, sticky-free point query — it
+        // must not advance the borrowed customer's own routing state,
+        // or their later legitimate rows would depend on whether an
+        // attacker passed through, differently in each engine.
+        if (proxyU < kResidentialProxyShare && router != nullptr &&
+            personLimit > 0) {
+          const auto idx = std::min(
+              static_cast<std::size_t>(proxyPickU *
+                                       static_cast<double>(personLimit)),
+              personLimit - 1);
+          const auto proxyPerson = static_cast<entity::PersonId>(1 + idx);
+          if (const auto borrowed = router->liveIpFor(proxyPerson, startTs,
+                                                      caseEndTsExcl, seq)) {
+            ip = borrowed;
+          }
+        }
+
+        // BOTH LEGS OR NEITHER. A half-resolved session would put an
+        // attacker device beside a victim address on the same row, which
+        // is not a typology — it is a bug wearing one.
+        if (device.has_value() && ip.has_value()) {
+          attackerDevice = *device;
+          attackerIp = *ip;
+        }
+      }
+    }
+
     plans.push_back(typologies::unauthorized::CompromisePlan{
+        // Unauthorized card rows deliberately remain on the primary
+        // account's derived debit-card instrument. Fraud is planned only
+        // after the legitimate CardCycleDriver has closed and serviced its
+        // credit-card cycles; pointing a late-injected purchase at a modeled
+        // credit-card liability would bypass statements, payments, interest,
+        // and limit behavior. Moving these rows to issued credit cards
+        // therefore requires a lifecycle-ordering redesign, not a key swap.
         .victimAccount = victim,
         .dropAccount = drop,
-        .device =
-            devices::Identity{
-                .ownerType = devices::OwnerType::ring,
-                .ownerId = 0xACE00000ULL + seq,
-                .slot = 0,
-            },
-        .ip = network::randomIpv4(rng),
+        .device = attackerDevice,
+        .ip = attackerIp,
         .rail = rail,
         .startTs = startTs,
         .spanSeconds = spanSeconds,
         .targetEvents = target,
+        .eventEndTsExclusive = eventEndTsExclusive,
         .seq = static_cast<std::uint32_t>(seq),
-        .homeArea = homeAreaOf(victimPick.person),
+        .homeArea = homeAreaOf(victimPick.person, startTs),
         .severity = severity,
     });
 
@@ -824,9 +1028,9 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
 
   const auto compromisePlans = buildCompromisePlans(
       unauthorizedPlannerRng, window, *accounts_.registry, *accounts_.ownership,
-      std::span<const Plan>(ringPlans), txnFraudBudget,
-      counterparties.homeAreas, counterparties.cardExposure,
-      counterparties.personas);
+      std::span<const Plan>(ringPlans), txnFraudBudget, services_.attackers,
+      services_.router, counterparties.homeAreas, counterparties.cardExposure,
+      counterparties.personas, counterparties.relocation);
 
   auto unauthorizedTxns = typologies::unauthorized::generate(
       illicitCtx,

@@ -368,8 +368,7 @@ int runWindowedStream(
   if (pgUp) {
     const pl::exporter::sinks::PgMirror econMirror{
         .conninfo = pgConninfo, .schema = "econ", .tablePrefix = ""};
-    pl::exporter::econ::writeEraTables(
-        {.pg = &econMirror, .capture = nullptr});
+    pl::exporter::econ::writeEraTables({.pg = &econMirror, .capture = nullptr});
     mon.mark("econ era tables");
   }
 
@@ -428,9 +427,14 @@ int runWindowedStream(
   std::optional<pl::exporter::card_fraud::StreamingCardFraudExport> cfStream;
   if (streamCardFraud) {
     cfStream.emplace(pl::exporter::card_fraud::StreamingCardFraudExport::Config{
+        .registry = &world.holdings.accounts.registry,
+        .lookup = &world.holdings.accounts.lookup,
+        .membership = pl::synth::personas::join_cohort::membershipOf(
+            world.people.personas, window),
         .cards = &world.holdings.creditCards,
         .merchants = &world.counterparties.merchants,
         .pgMirror = pgUp ? &cfMirror : nullptr,
+            .window = window,
     });
   }
 
@@ -690,7 +694,7 @@ int runWindowedStream(
 
   if (pgUp) {
     // Completion belongs after the selected use case's finisher. Card-fraud
-    // explicitly closes all 34 COPY streams, so a late failure on that path
+    // explicitly closes all 37 COPY streams, so a late failure on that path
     // leaves this manifest `running` and resumable instead of recording false
     // success. Other exporters also benefit from the later ordering, but
     // still need their own explicit-close audit before claiming that stronger

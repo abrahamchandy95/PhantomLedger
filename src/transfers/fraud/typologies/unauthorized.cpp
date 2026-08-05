@@ -1,6 +1,6 @@
 #include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
 
-#include "phantomledger/activity/spending/market/commerce/geo_pools.hpp"
+#include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
@@ -18,6 +18,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 #include <vector>
@@ -36,6 +37,79 @@ inline constexpr std::int64_t kSecondsPerDay = 86'400;
 // claim (CNP-majority), the exact split is a modeling choice pending a
 // per-era card-fraud-modality series.
 inline constexpr double kCardNotPresentShare = 0.70;
+
+// ============ THE COACHED GIFT-CARD PURCHASE IS NOT ALWAYS IN A STORE
+// (giftcard-channel-2026-07)
+//
+// This rail was hardcoded card-PRESENT, with the comment "the coached
+// victim walks into a store and buys the cards". That describes the
+// classic pattern and it was 100% of the corpus — which is wrong in a way
+// that matters for exactly the detection problem this dataset exists to
+// support.
+//
+// A coached victim is also routinely walked through buying a DIGITAL gift
+// card: an Apple / Google Play / Amazon e-gift code, purchased online and
+// delivered by email, whose number is then read out over the phone. In
+// that case the purchase is card-NOT-present, the destination is an online
+// acceptance endpoint, and **the session address on the row is genuinely
+// the victim's own home IP** — because the victim really is sitting at
+// their own machine, under instruction, doing it themselves.
+//
+// That distinction is the whole point of the rail. The intervention that
+// helps a scam victim is TIME TO RECONSIDER, and the online purchase is
+// the branch where an issuer actually has a session to score in real time
+// and something to interrupt. Collapsing every case to an in-store swipe
+// deleted the branch where the model can act.
+//
+// DIGITAL SHARE, IN BASIS POINTS, BY CALENDAR YEAR. CLASS S, CALIBRATION
+// UNCITED — mirrors `derive::chipShareBasisPoints` in construction and in
+// honesty. The DIRECTION and the ordering are the anchored claims:
+// consumer e-gift codes barely existed in the early corpus era, retailer
+// e-gift programmes and the digital-code marketplaces grew through the
+// 2010s, and the in-store physical rack REMAINS THE MAJORITY throughout
+// the window — the FTC-documented pattern of the period is a victim sent
+// to a drugstore or big-box store. The anchor numbers are a declared
+// modelling choice, not transcribed from a named series; promote to CITED
+// and re-pin in whatever arc wires a gift-card-channel-mix source.
+[[nodiscard]] constexpr std::uint32_t
+digitalGiftCardShareBasisPoints(std::int32_t year) noexcept {
+  constexpr std::int32_t kFirstDigitalYear = 2005;
+  constexpr std::array<std::uint16_t, 19> kDigitalShareBp{
+      100,   // 2005 e-gift codes appear, essentially a novelty
+      200,   // 2006
+      400,   // 2007
+      600,   // 2008
+      900,   // 2009
+      1'200, // 2010
+      1'500, // 2011
+      1'800, // 2012 app-store codes become a scam staple
+      2'100, // 2013
+      2'400, // 2014
+      2'600, // 2015
+      2'800, // 2016
+      3'000, // 2017
+      3'300, // 2018
+      3'500, // 2019
+      3'800, // 2020
+      4'100, // 2021
+      4'300, // 2022
+      4'500, // 2023 — frozen outside coverage, still a minority
+  };
+  if (year < kFirstDigitalYear) {
+    return 0U;
+  }
+  const auto offset = std::min<std::int64_t>(
+      year - kFirstDigitalYear,
+      static_cast<std::int64_t>(kDigitalShareBp.size()) - 1);
+  return kDigitalShareBp[static_cast<std::size_t>(offset)];
+}
+
+[[nodiscard]] inline double digitalGiftCardShare(std::int64_t epochSec) {
+  const auto year = ::PhantomLedger::time::toCalendarDate(
+                        ::PhantomLedger::time::fromEpochSeconds(epochSec))
+                        .year;
+  return static_cast<double>(digitalGiftCardShareBasisPoints(year)) / 10'000.0;
+}
 
 struct Event {
   std::int64_t ts = 0;
@@ -86,7 +160,7 @@ struct Event {
 //
 //   card-present  weighted over PHYSICAL outlets by the SAME kernel the
 //                 spending session uses — popularity x exp(-miles /
-//                 cardPresentDecayScaleMiles(home)) — so a stolen card
+//                 decayScaleMilesFor(home)) — so a stolen card
 //                 is spent near where the cardholder lives, on the same
 //                 geographic axis legitimate activity follows. A flat
 //                 national draw here would have made "distance from
@@ -102,8 +176,8 @@ struct Event {
 // than inventing geography.
 [[nodiscard]] entity::Key
 pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
-                        entity::geography::GeoAreaId homeArea,
-                        bool cardPresent, entity::Key fallback) {
+                        entity::geography::GeoAreaId homeArea, bool cardPresent,
+                        std::int64_t ts, entity::Key fallback) {
   namespace geography = ::PhantomLedger::entity::geography;
   namespace commerce = ::PhantomLedger::activity::spending::market::commerce;
 
@@ -116,7 +190,7 @@ pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
 
   const bool localAnchor = cardPresent && geo.contains(homeArea);
   const double scaleMiles =
-      localAnchor ? commerce::cardPresentDecayScaleMiles(geo.at(homeArea))
+      localAnchor ? commerce::decayScaleMilesFor(geo.at(homeArea))
                   : 0.0;
 
   std::vector<double> weights;
@@ -126,6 +200,18 @@ pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
 
   for (std::size_t i = 0; i < records.size(); ++i) {
     const auto &rec = records[i];
+    // merchant-churn-2026-07: fraud cannot land on a merchant that had not
+    // opened or had already closed. This filter uses the CASE'S OWN
+    // timestamp, which is strictly stronger than the legitimate path's
+    // month-boundary rebuild — the candidate list is rebuilt per case here
+    // anyway, so point-in-time exactness is free.
+    //
+    // DRAW-COUNT NEUTRAL: the candidate list shrinks but the number of
+    // uniforms spent stays exactly one, so this cannot shift any other
+    // plan's draws.
+    if (!rec.liveAt(ts)) {
+      continue;
+    }
     const bool online =
         rec.footprint == ::PhantomLedger::entity::merchant::Footprint::online;
 
@@ -216,6 +302,14 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     if (target <= 0) {
       continue;
     }
+    if (plan.eventEndTsExclusive <= plan.startTs ||
+        (plan.eventEndTsExclusive != std::numeric_limits<std::int64_t>::max() &&
+         plan.eventEndTsExclusive - plan.startTs < span)) {
+      // Production planning reselects these cases without spending budget.
+      // Standalone callers get the same safe behavior: reject rather than
+      // compressing a long case into an unrealistic boundary burst.
+      continue;
+    }
 
     auto rng = keyFactory.rng(
         {"fraud", "unauth", "plan", renderUInt(seqBuf, plan.seq)});
@@ -229,11 +323,25 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         {"fraud", "unauth", "merchant", renderUInt(seqBuf, plan.seq)});
 
     // MODALITY, one decision per compromise case (a case has a modus
-    // operandi). Gift-card scams are card-PRESENT by construction — the
-    // coached victim walks into a store and buys the cards.
+    // operandi).
+    //
+    // The gift-card rail used to be hardcoded `true` here. It now draws a
+    // DATED digital share: the coached victim is sent to a physical rack
+    // most of the time, and increasingly over the corpus era is instead
+    // walked through buying an e-gift code online — in which case the row
+    // is card-not-present, the destination is an online acceptance
+    // endpoint, and the session IP on the row is the victim's own, because
+    // it really is the victim at their own machine. See
+    // `digitalGiftCardShareBasisPoints` for why that branch has to exist.
+    //
+    // BOTH BRANCHES NOW SPEND EXACTLY ONE COIN on this per-plan lane,
+    // where the gift-card rail previously spent none. The lane is keyed
+    // per plan (`{"fraud","unauth","merchant",seq}`), so the extra draw
+    // moves the DESTINATION of gift-card cases only and cannot reach any
+    // other plan, rail, amount or timestamp.
     const bool cardPresent =
         plan.rail == Rail::giftCardScam
-            ? true
+            ? !merchantRng.coin(digitalGiftCardShare(plan.startTs))
             : !merchantRng.coin(kCardNotPresentShare);
 
     events.clear();
@@ -319,8 +427,8 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         // The victim's AGE-GRADED severity scales the whole
         // distribution, clamps included, so the tail shape stays
         // age-invariant and only its level moves.
-        ev.amount = amounts::scamWireAmount(rng, eventPriceScale(ev.ts),
-                                            plan.severity);
+        ev.amount =
+            amounts::scamWireAmount(rng, eventPriceScale(ev.ts), plan.severity);
         events.push_back(ev);
       }
       break;
@@ -351,7 +459,7 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         // pool survives only as the degraded fallback for callers that
         // supply no catalogue.
         draft.destination = pickMerchantDestination(
-            merchantRng, ctx, plan.homeArea, cardPresent,
+            merchantRng, ctx, plan.homeArea, cardPresent, plan.startTs,
             pickOne(rng, ctx.billerAccounts));
         draft.channel = channels::tag(channels::Legit::cardPurchase);
         break;
@@ -413,16 +521,30 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
       // stand is what makes the scam row's session indistinguishable, by
       // construction, from a legitimate row of the same victim.
       //
-      // DECLARED, SIZED, NOT CLOSED HERE: on the card/ato rails
-      // `plan.device` carries OwnerType::ring, which
-      // exporter::common::renderDeviceId writes as a literal
-      // `encoding::kFraudDevice` ("FD") prefix rather than hashing it —
-      // a deterministic label in `public.transactions.device_id`. That is
-      // an EXPORTER-side rendering defect on the rails where the attacker
-      // device is the correct model, so it is registered separately
-      // (docs/fraud_model_audit.md OPEN ITEMS; roadmap leak inventory)
-      // rather than folded into this fix.
-      if (!authorizedRail(plan.rail)) {
+      // The former exported-device shortcut is also closed. Although
+      // `plan.device` retains OwnerType::ring as internal routing state,
+      // renderDeviceId maps every owner type into the same fixed-width,
+      // role-neutral `D...` namespace. Card/ATO rows therefore preserve
+      // the correct attacker session without exposing an `FD`/`LD`
+      // prefix or a disjoint numeric range to the model.
+      //
+      // AN UNASSIGNED PLAN ENDPOINT IS ITSELF THE INSTRUCTION
+      // (attacker-infra-2026-07). The planner now leaves `plan.device`
+      // unassigned whenever the case was operated from the VICTIM'S own
+      // endpoint — a banking trojan or remote-access tool driving the
+      // victim's session, or household fraud on the victim's own machine
+      // — and in that case the session `planTxf.make` already routed for
+      // the victim is exactly right, by the same argument the two
+      // authorized rails rest on.
+      //
+      // This deliberately does NOT get a new plan flag. The value was
+      // already on the row: "no attacker endpoint" is fully expressed by
+      // the absence of one, a standalone caller that supplies an
+      // endpoint keeps its previous meaning bit-for-bit, and there is no
+      // second field that a future call site could set inconsistently
+      // with the first.
+      if (!authorizedRail(plan.rail) && plan.device.assigned() &&
+          plan.ip.value != 0) {
         out.back().session.deviceId = plan.device;
         out.back().session.ipAddress = plan.ip;
       }
@@ -445,7 +567,9 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         credit.ringId = -1;
         credit.channel = channels::tag(channels::Credit::chargeback);
 
-        out.push_back(planTxf.make(credit));
+        if (credit.timestamp < plan.eventEndTsExclusive) {
+          out.push_back(planTxf.make(credit));
+        }
       }
     }
   }

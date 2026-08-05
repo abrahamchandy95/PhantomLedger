@@ -80,7 +80,17 @@ public:
           // nullptr leaves victim selection on the pre-v2 uniform draw,
           // bit-identically, with no severity grading and no membership
           // gate.
-          const ::PhantomLedger::synth::personas::Pack *personas = nullptr);
+          const ::PhantomLedger::synth::personas::Pack *personas = nullptr,
+          // relocation-2026-07: the home-area HISTORY, APPENDED rather than
+          // inserted beside `homeAreas` where it belongs conceptually —
+          // inserting mid-signature silently rebinds every positional call,
+          // and there are four that must stay in lockstep.
+          //
+          // The unauthorized planner needs the home AT THE CASE DATE, because
+          // it plans the whole window before the fold runs; `homeAreas` above
+          // is only the window-start snapshot. nullptr ⇒ homes never move.
+          const ::PhantomLedger::entity::parties::relocation::Schedule
+              *relocation = nullptr);
 
 private:
   const ::PhantomLedger::synth::people::Fraud *profile_ = nullptr;

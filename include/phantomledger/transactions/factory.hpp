@@ -61,14 +61,21 @@ public:
         (!deviceResolved || !ipResolved)) {
       const auto owner = router_->ownerOf(draft.source);
       if (owner.has_value()) {
+        // AS OF THE ROW'S OWN TIMESTAMP (device-ip-lifecycle,
+        // 2026-07-27). The router used to be asked "which device does
+        // this person use?" with no time argument, so it answered from
+        // the person's whole-window pool and 53.51% of sessions landed
+        // outside the endpoint's own recorded tenure. `draft.timestamp`
+        // was in hand the entire time — the fix is to pass it.
         if (!deviceResolved) {
-          const auto d = router_->routeDeviceFor(*rng_, *owner);
+          const auto d =
+              router_->routeDeviceFor(*rng_, *owner, draft.timestamp);
           if (d.has_value()) {
             txn.session.deviceId = *d;
           }
         }
         if (!ipResolved) {
-          const auto ip = router_->routeIpFor(*rng_, *owner);
+          const auto ip = router_->routeIpFor(*rng_, *owner, draft.timestamp);
           if (ip.has_value()) {
             txn.session.ipAddress = *ip;
           }

@@ -30,6 +30,7 @@
 //
 
 #include "phantomledger/exporter/aml/vertices.hpp"
+#include "phantomledger/exporter/card_fraud/streaming.hpp"
 #include "phantomledger/exporter/standard/membership_filter.hpp"
 #include "phantomledger/pipeline/stages/transfers/fraud_emission.hpp"
 #include "phantomledger/pipeline/stages/transfers/product_replay.hpp"
@@ -53,7 +54,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <map>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -86,6 +89,25 @@ void check(bool cond, const std::string &what) {
   }
 }
 
+class Capture final : public pl::exporter::common::TableCapture {
+public:
+  void put(std::string_view stem, const char *data, std::size_t size) override {
+    tables_[std::string{stem}].append(data, size);
+  }
+
+  [[nodiscard]] std::size_t dataRows(std::string_view stem) const {
+    const auto it = tables_.find(std::string{stem});
+    if (it == tables_.end()) {
+      return 0;
+    }
+    const auto lines = std::count(it->second.begin(), it->second.end(), '\n');
+    return lines > 0 ? static_cast<std::size_t>(lines - 1) : 0;
+  }
+
+private:
+  std::map<std::string, std::string> tables_;
+};
+
 [[nodiscard]] pl::time::Window canonicalWindow(int days) {
   return pl::time::Window{
       .start = pl::time::makeTime(
@@ -111,17 +133,16 @@ void partA_joinPrimitive() {
 
   const auto joiners = joins::joinerCount(kN, window);
   check(joiners > 0 && joiners < kN, "canonical window has a join cohort");
-  check(joins::joinerCount(kN, pl::time::Window{.start = window.start,
-                                                .days = 0}) == 0,
+  check(joins::joinerCount(
+            kN, pl::time::Window{.start = window.start, .days = 0}) == 0,
         "empty window has no joiners");
 
   // Independent sizing reference: the compound population index over
   // the window's calendar years (the linear day-weighted model must
   // land inside a loose band around it).
   const auto &m = econ::macroSeries();
-  const double g =
-      m.at(std::min(2020, m.lastYear())).populationThousands /
-      m.at(1991).populationThousands;
+  const double g = m.at(std::min(2020, m.lastYear())).populationThousands /
+                   m.at(1991).populationThousands;
   const double frac = static_cast<double>(joiners) / static_cast<double>(kN);
   check(frac > 0.5 * (g - 1.0) && frac < 1.1 * (g - 1.0),
         "joiner fraction tracks the BEA population index (got " +
@@ -272,8 +293,7 @@ void partB_anchors(const pl::synth::pii::PoolSet &pools) {
             "joiner inactive the second before joinTs");
     }
     if (joinEpoch < closeEpoch) {
-      check(membership.activeAt(person, joinEpoch),
-            "member active at joinTs");
+      check(membership.activeAt(person, joinEpoch), "member active at joinTs");
     }
     check(!membership.activeAt(person, closeEpoch),
           "member inactive at closeTs (account closed)");
@@ -316,8 +336,8 @@ void partB_anchors(const pl::synth::pii::PoolSet &pools) {
   check(resolverClosed == closedInWindow,
         "resolver and membership agree on the closed set");
 
-  std::printf("  part B: joiners %zu of %zu, in-window closures %zu\n",
-              joiners, n, closedInWindow);
+  std::printf("  part B: joiners %zu of %zu, in-window closures %zu\n", joiners,
+              n, closedInWindow);
 }
 
 // ------------------------------------------------------------- Part C
@@ -341,9 +361,13 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
   const auto endEpoch = epochOf(spec.window.endExcl());
 
   std::unordered_map<pl::entity::Key, pl::entity::PersonId> ownerOfKey;
-  ownerOfKey.reserve(registry.records.size());
+  ownerOfKey.reserve(registry.records.size() +
+                     world.holdings.creditCards.records.size());
   for (const auto &rec : registry.records) {
     ownerOfKey.emplace(rec.id, rec.owner);
+  }
+  for (const auto &card : world.holdings.creditCards.records) {
+    ownerOfKey.insert_or_assign(card.key, card.owner);
   }
 
   const auto deathEpochOf = [&](pl::entity::PersonId p) -> std::int64_t {
@@ -464,8 +488,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
   {
     const pl::random::RngFactory laneFactory{kSeed};
     auto productRng = laneFactory.rng({"products", "full_schedule"});
-    const pl::transactions::Factory productTxf(productRng,
-                                               &world.productRouter,
+    const pl::transactions::Factory productTxf(productRng, &world.productRouter,
                                                &world.infra.ringInfra);
     const pl::pipeline::stages::products::ObligationSynthesis synthesis{};
     xfer::ProductTxnEmitter emitter{spec.window, kSeed,        productRng,
@@ -607,6 +630,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
             .rng = world.rng,
             .router = &world.infra.router,
             .ringInfra = &world.infra.ringInfra,
+            .attackers = &world.infra.attackers,
             .fraudSeed = kSeed ^ 0x9E3779B97F4A7C15ULL,
         },
         fraudEmission.ringView(world.people.roster.topology,
@@ -621,16 +645,46 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
     legitCps.billerAccounts = world.plan.counterparties().billerAccounts;
     legitCps.employers = world.plan.counterparties().employers;
 
-    const auto injected = injector.inject(
-        spec.window, world.streams.screened().size(),
-        xfer::FraudEmission::legitCounterparties(legitCps));
+    const auto injected =
+        injector.inject(spec.window, world.streams.screened().size(),
+                        xfer::FraudEmission::legitCounterparties(
+                            legitCps, &world.cps.merchants,
+                            world.people.homeAreas, &world.people.personas,
+                            &world.people.relocation));
 
     const auto &roster = world.people.roster.roster;
+    const auto &joinDays = world.people.personas.joinDays;
     std::size_t ringRows = 0, ringDead = 0;
+    std::size_t soloRows = 0, soloPreJoin = 0, soloPostClose = 0;
+    std::size_t authorizedAfterDeath = 0;
     for (const auto &t : injected.injected) {
-      if (t.fraud.flag == 0 ||
-          t.fraud.type != pl::fraud::FraudType::launderRing) {
-        continue; // solo/unauthorized rail exempt (declared)
+      if (t.fraud.flag == 0) {
+        continue;
+      }
+      if (t.fraud.type != pl::fraud::FraudType::launderRing) {
+        ++soloRows;
+        const bool authorized =
+            t.fraud.type == pl::fraud::FraudType::scamGiftCard ||
+            t.fraud.type == pl::fraud::FraudType::scamImpostor;
+        for (const auto &key : {t.source, t.target}) {
+          const auto p = ownerOf(key);
+          if (p == pl::entity::invalidPerson || p == 0 ||
+              static_cast<std::size_t>(p) > timelines.size()) {
+            continue;
+          }
+          const auto joinEpoch =
+              startEpoch + static_cast<std::int64_t>(joinDays[p - 1]) * 86'400;
+          if (t.timestamp < joinEpoch) {
+            ++soloPreJoin;
+          }
+          if (t.timestamp >= closeEpochOf(p)) {
+            ++soloPostClose;
+          }
+          if (authorized && key == t.source && t.timestamp >= deathEpochOf(p)) {
+            ++authorizedAfterDeath;
+          }
+        }
+        continue;
       }
       ++ringRows;
       for (const auto &key : {t.source, t.target}) {
@@ -646,10 +700,20 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
         }
       }
     }
-    check(ringRows > 0, "ring fraud rows populated (" +
-                            std::to_string(ringRows) + ")");
+    check(ringRows > 0,
+          "ring fraud rows populated (" + std::to_string(ringRows) + ")");
     check(ringDead == 0, "rings never recruit the dead (violations " +
                              std::to_string(ringDead) + ")");
+    check(soloRows > 0, "solo/card/scam fraud rows populated");
+    check(soloPreJoin == 0,
+          "fraud never targets a customer before join (violations " +
+              std::to_string(soloPreJoin) + ")");
+    check(soloPostClose == 0,
+          "fraud never targets a closed account (violations " +
+              std::to_string(soloPostClose) + ")");
+    check(authorizedAfterDeath == 0,
+          "victim-authorized scams require a living source (violations " +
+              std::to_string(authorizedAfterDeath) + ")");
   }
 
   // ---- C8: the standard exporter's membership filter over the base
@@ -692,14 +756,162 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
           "nothing posts after closure — generation stopped before the "
           "filter must (violations " +
               std::to_string(droppedPostClose) + ")");
-    check(visible.size() ==
-              world.streams.screened().size() - droppedPreJoin -
-                  droppedPostClose,
+    check(visible.size() == world.streams.screened().size() - droppedPreJoin -
+                                droppedPostClose,
           "the membership filter hides exactly the out-of-interval rows");
     std::printf("  part C: deaths %zu, pre-join rows hidden %zu, visible "
                 "%zu of %zu\n",
                 deaths, droppedPreJoin, visible.size(),
                 world.streams.screened().size());
+  }
+
+  // ---- C9: the card-view streaming filter uses that same interval
+  // contract, and every surviving payment receives one event-time device
+  // and IP edge. This exercises the production sink directly; a passive
+  // configuration/wiring regression cannot hide behind the standard view.
+  {
+    const auto membership =
+        joins::membershipOf(world.people.personas, spec.window);
+    const auto merchantTag = channels::tag(channels::Legit::merchant);
+
+    check(!world.cps.merchants.records.empty() &&
+              !world.infra.devices.records.empty() &&
+              !world.infra.ips.records.empty(),
+          "card-view membership probe has merchant and session endpoints");
+
+    pl::entity::PersonId joiner = pl::entity::invalidPerson;
+    for (std::size_t i = 0; i < world.people.personas.joinDays.size(); ++i) {
+      if (world.people.personas.joinDays[i] > 0) {
+        joiner = static_cast<pl::entity::PersonId>(i + 1);
+        break;
+      }
+    }
+    check(joiner != pl::entity::invalidPerson,
+          "card-view membership probe has a joiner");
+
+    if (world.cps.merchants.records.empty() ||
+        world.infra.devices.records.empty() ||
+        world.infra.ips.records.empty() ||
+        joiner == pl::entity::invalidPerson) {
+      return;
+    }
+
+    const auto joinerAccount =
+        registry.records[world.holdings.accounts.ownership.primaryIndex(joiner)]
+            .id;
+    const auto joinEpoch =
+        startEpoch +
+        static_cast<std::int64_t>(world.people.personas.joinDays[joiner - 1]) *
+            86'400;
+
+    Txn probe{};
+    probe.target = world.cps.merchants.records.front().counterpartyId;
+    probe.amount = 25.0;
+    probe.session.channel = merchantTag;
+    probe.session.deviceId = world.infra.devices.records.front().identity;
+    probe.session.ipAddress = world.infra.ips.records.front().address;
+
+    std::vector<Txn> probes;
+    probes.reserve(3);
+    probes.push_back(probe);
+    probes.back().source = joinerAccount;
+    probes.back().timestamp = joinEpoch - 1;
+    probes.push_back(probes.back());
+    probes.back().timestamp = joinEpoch;
+
+    for (std::size_t i = 0; i < timelines.size(); ++i) {
+      const auto person = static_cast<pl::entity::PersonId>(i + 1);
+      if (closeEpochOf(person) >= endEpoch) {
+        continue;
+      }
+      probes.push_back(probe);
+      probes.back().source =
+          registry
+              .records[world.holdings.accounts.ownership.primaryIndex(person)]
+              .id;
+      probes.back().timestamp = closeEpochOf(person);
+      break;
+    }
+    check(probes.size() == 3,
+          "card-view membership probe has an in-window closure");
+
+    Capture capture;
+    pl::exporter::card_fraud::StreamingCardFraudExport sink({
+        .registry = &registry,
+        .lookup = &world.holdings.accounts.lookup,
+        .membership = membership,
+        .cards = &world.holdings.creditCards,
+        .merchants = &world.cps.merchants,
+        .capture = &capture,
+    });
+    sink.append(probes);
+    sink.finish();
+    const auto artifacts = sink.takeArtifacts();
+
+    check(artifacts.viewRows == 1,
+          "card-view sink rejects pre-join and post-close payments");
+    check(capture.dataRows("Payment_Transaction") == 1,
+          "rendered Payment_Transaction count matches membership view");
+    check(capture.dataRows("Transaction_Uses_Device") == 1,
+          "every membership-visible payment has one device edge");
+    check(capture.dataRows("Transaction_Uses_IP") == 1,
+          "every membership-visible payment has one IP edge");
+  }
+
+  // ------------------------------------------------------------------
+  // THE SESSIONLESS CARD-VIEW ROW IS REFUSED, NOT ABSORBED.
+  //
+  // The two checks above pin ONE device edge and ONE IP edge per visible
+  // payment. That 1:1 used to hold only by luck: the sink wrote both
+  // edges CONDITIONALLY on the session being assigned, while
+  // test_pipeline_e2e and docs/card_fraud_postgres_acceptance.sql both
+  // treat any mismatch as fatal. Nothing forced the two into agreement.
+  //
+  // The gap is reachable because `Membership::activeAt` returns TRUE for
+  // out-of-range ids while the access router's owner map SKIPS accounts
+  // owned by invalidPerson — so a row sourced from an ownerless account
+  // is admitted to the card view yet was never routable.
+  //
+  // This is the tripwire for the replacement defect: if the writes ever
+  // go back to being conditional, or the guard is removed, a sessionless
+  // row silently produces a payment with no endpoint and THIS gate goes
+  // red instead of PostgreSQL failing hours into a load.
+  {
+    using Txn = pl::transactions::Transaction;
+    static constexpr auto merchantTag =
+        pl::channels::tag(pl::channels::Legit::merchant);
+
+    // An ownerless source: a key no registry resolves, so ownerOf yields
+    // invalidPerson, which activeAt reports as "always active".
+    Txn orphan{};
+    // Role::account is internalOnly, so the combination must be internal
+    // for the key to render at all — the point of the fixture is an
+    // UNREGISTERED owner, not a malformed key.
+    orphan.source = pl::entity::makeKey(pl::entity::Role::account,
+                                        pl::entity::Bank::internal,
+                                        0xD00Du);
+    orphan.target = pl::entity::makeKey(pl::entity::Role::merchant,
+                                        pl::entity::Bank::internal, 1u);
+    orphan.amount = 25.0;
+    orphan.timestamp = 0;
+    orphan.session.channel = merchantTag;
+    // session.deviceId / ipAddress deliberately left EMPTY.
+
+    Capture orphanCapture;
+    pl::exporter::card_fraud::StreamingCardFraudExport orphanSink({
+        .capture = &orphanCapture,
+    });
+
+    bool refused = false;
+    try {
+      const std::vector<Txn> one{orphan};
+      orphanSink.append(one);
+    } catch (const std::runtime_error &) {
+      refused = true;
+    }
+    check(refused,
+          "a card-view row with no session endpoint is refused, so the "
+          "payment/device/IP 1:1 cannot be violated silently");
   }
 }
 

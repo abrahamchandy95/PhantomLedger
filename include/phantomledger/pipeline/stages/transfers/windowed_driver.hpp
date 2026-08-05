@@ -15,6 +15,11 @@
 // output watermark — settled every row immediately against a window-local
 // cure index and is NOT equivalent; it has been removed.
 //
+// The total simulation window remains half-open. In the final span,
+// generated rows at/after the run end may still be indexed as lookahead for
+// an active row's cure decision, but they are never emitted, counted in the
+// fraud denominator, or applied to either ledger book.
+//
 // FRAUD BOUNDARY
 // The fraud budget denominator is the exact realized pre-fraud candidate
 // count. Phase A therefore runs to completion (generation + pre-fraud fold
@@ -190,7 +195,8 @@ struct WindowedConfig {
 struct PhaseAResult {
   // Exact number of accepted pre-fraud candidate rows (L). This is the
   // fraud-budget denominator. It includes accepted product rows and
-  // liquidity-event rows and excludes unrecoverable drops.
+  // liquidity-event rows within the half-open run window, and excludes
+  // unrecoverable drops and final-lookahead rows.
   std::uint64_t candidateRows = 0;
 
   std::uint64_t legitRows = 0;

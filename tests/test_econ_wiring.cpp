@@ -41,9 +41,14 @@
 //   * FRAUD RIDES L — H4: the fraud budget law F = pL/(1-p) reads the
 //                    REALIZED legit count, so the flagged-row count
 //                    ratio across eras must track the legit-row count
-//                    ratio (parity band 0.80-1.25) — teeth against a
-//                    fraud budget pinned to population or window
-//                    constants instead of L;
+//                    ratio — teeth against a fraud budget pinned to
+//                    population or window constants instead of L.
+//                    RE-SPECIFIED (T3 owner ruling, 2026-07-27): the
+//                    parity is the MEAN over 12 pinned seed-pairs, the
+//                    original 0.80-1.25 edges are UNCHANGED and judge
+//                    that mean, and a derived power check FAILS the
+//                    gate if its own sampling band cannot exclude the
+//                    pinned-budget defect (parity == 1/legit-ratio);
 //   * DRIFT PARITY (R-AWARE, the declared U-9 amendment) — a small
 //                    300-person world drains liquidity over its second
 //                    year in ANY era (measured ~0.73 deflated y/y — a
@@ -107,8 +112,14 @@
 //     already exists BECAUSE the mean recomposes on every re-roll: H3
 //     part 1 left it at 2.418 and H4 moved it to ~1.91, a 21% swing
 //     from a declared model round. It is sized for exactly this event.
-//   FRAUD RIDES L obs 0.9255 in (0.80, 1.25) — a ratio of ratios whose
-//     fraud-count quantization noise at 354/416 rows is ~5-7%.
+//   FRAUD RIDES L single-seed sd MEASURED at ~0.076 over 12 paired
+//     seeds (mean 0.9072 after the device-ip-lifecycle re-roll), while
+//     the pinned-budget defect value 1/legit-ratio ~= 0.79 sits only
+//     ~1.6 sigma below that mean — so ONE seed cannot separate healthy
+//     from defective, and the shipped seed drew 0.7795 (below the
+//     defect value) on a model 12 paired seeds show did not move
+//     (p ~= 0.16). The estimator is now the 12-pair mean (se ~0.02);
+//     the band edges were NOT touched.
 //   DRIFT PARITY obs 0.925 in (0.80, 1.25) — totals over ~48k tickets a
 //     year on each side, and the harness drain still cancels in the
 //     cross-era division.
@@ -200,10 +211,11 @@ void checkBand(double value, double lo, double hi, const std::string &what) {
 
 [[nodiscard]] LegResult runEraLeg(const pl::synth::pii::PoolSet &pools,
                                   pl::time::CalendarDate start, int days,
-                                  const char *label) {
+                                  const char *label,
+                                  std::uint64_t seed = kSeed) {
   pltest::announceLeg(label);
   LegOptions opt;
-  opt.seed = kSeed;
+  opt.seed = seed;
   opt.window.start = pl::time::makeTime(start);
   opt.window.days = days;
   opt.population = kPopulation;
@@ -490,24 +502,140 @@ int main() {
   // ---- H4 FRAUD RIDES L: the budget law follows the count axis -----
   // The illicit budget base is the REALIZED legit row count (plus
   // camouflage), so when the count modulation moves L across eras the
-  // flagged-row count must move proportionally. Ring/burst emission
-  // quantizes the realized count; 0.80-1.25 is the parity allowance.
-  check(fraudRows91 > 30 && fraudRows19 > 30,
-        "flagged rows populated (" + std::to_string(fraudRows91) + " / " +
-            std::to_string(fraudRows19) + ")");
-  if (fraudRows91 > 30 && fraudRows19 > 30) {
-    const double legitCountRatio = static_cast<double>(legitRows19) /
-                                   static_cast<double>(legitRows91);
-    const double fraudCountRatio = static_cast<double>(fraudRows19) /
-                                   static_cast<double>(fraudRows91);
-    const double fraudParity = fraudCountRatio / legitCountRatio;
-    std::printf("  fraud-rides-L parity %.4f (legit %zu / %zu, fraud %zu / "
-                "%zu)\n",
-                fraudParity, legitRows91, legitRows19, fraudRows91,
-                fraudRows19);
-    checkBand(fraudParity, 0.80, 1.25,
-              "fraud count ratio tracks the legit count ratio (F = "
-              "pL/(1-p))");
+  // flagged-row count must move proportionally.
+  //
+  // RE-SPECIFIED (T3 owner ruling, 2026-07-27) from one seed to a
+  // pinned seed-pair panel. The single-seed parity carries sd ~0.076
+  // (measured over 12 paired seeds), while the defect this sub-gate
+  // exists for — a fraud budget pinned to population or window
+  // constants, which makes the fraud count ratio ~1 and collapses the
+  // parity to 1/legit-ratio ~= 0.79 — sits only ~1.6 sigma below the
+  // healthy mean (~0.91). One seed cannot tell those apart: the
+  // shipped seed drew 0.7795 on a HEALTHY model, below the defect
+  // value itself. The estimator is now the MEAN over kParityPairs
+  // seed-pairs (same seed both eras, so the pairing is by
+  // construction; pair 0 is the shipped-seed pair already in hand).
+  // The original 0.80/1.25 edges are UNCHANGED and judge the mean;
+  // the power check FAILS the gate outright if its own sampling band
+  // cannot exclude the realized defect parity — under-powered is a
+  // red verdict, never a vacuous green.
+  {
+    constexpr int kParityPairs = 12;
+    // One-sided 99.5% Student-t quantile at df = kParityPairs - 1;
+    // the two constants move in lockstep.
+    constexpr double kParityTCrit = 3.106;
+
+    std::vector<double> parity;
+    std::vector<double> defectParity;
+    parity.reserve(kParityPairs);
+    defectParity.reserve(kParityPairs);
+    std::size_t pairPreconditionFailures = 0;
+
+    const auto addParityPair =
+        [&](std::uint64_t seed, std::uint64_t join91, std::uint64_t join19,
+            std::size_t l91, std::size_t l19, std::size_t f91,
+            std::size_t f19) {
+          const std::string tag = "seed " + std::to_string(seed);
+          const bool joined = join91 > 0 && join19 > 0;
+          const bool populated = f91 > 30 && f19 > 30;
+          check(joined, "fraud-rides-L " + tag + ": join cohort present (" +
+                            std::to_string(join91) + " / " +
+                            std::to_string(join19) + ")");
+          check(populated, "fraud-rides-L " + tag +
+                               ": flagged rows populated (" +
+                               std::to_string(f91) + " / " +
+                               std::to_string(f19) + ")");
+          if (!joined || !populated) {
+            ++pairPreconditionFailures;
+            return;
+          }
+          const double legitRatio =
+              static_cast<double>(l19) / static_cast<double>(l91);
+          const double p =
+              (static_cast<double>(f19) / static_cast<double>(f91)) /
+              legitRatio;
+          parity.push_back(p);
+          defectParity.push_back(1.0 / legitRatio);
+          std::printf("  fraud-rides-L %s parity %.4f (legit %zu / %zu, "
+                      "fraud %zu / %zu)\n",
+                      tag.c_str(), p, l91, l19, f91, f19);
+        };
+
+    addParityPair(kSeed, leg91.joiners, leg19.joiners, legitRows91,
+                  legitRows19, fraudRows91, fraudRows19);
+    for (int k = 1; k < kParityPairs; ++k) {
+      const auto seed = kSeed + static_cast<std::uint64_t>(k);
+      const std::string label91 =
+          "fraud-rides-L pair " + std::to_string(k) + ", leg 1991 (730d)";
+      const std::string label19 =
+          "fraud-rides-L pair " + std::to_string(k) + ", leg 2019 (730d)";
+      const auto pair91 =
+          runEraLeg(pools, {1991, 1, 1}, 730, label91.c_str(), seed);
+      const auto pair19 =
+          runEraLeg(pools, {2019, 1, 1}, 730, label19.c_str(), seed);
+      std::size_t l91 = 0;
+      std::size_t f91 = 0;
+      for (const auto &t : pair91.rows) {
+        if (t.fraud.flag == 0) {
+          ++l91;
+        } else {
+          ++f91;
+        }
+      }
+      std::size_t l19 = 0;
+      std::size_t f19 = 0;
+      for (const auto &t : pair19.rows) {
+        if (t.fraud.flag == 0) {
+          ++l19;
+        } else {
+          ++f19;
+        }
+      }
+      addParityPair(seed, pair91.joiners, pair19.joiners, l91, l19, f91,
+                    f19);
+    }
+
+    // Precondition failures above are already red; the panel must also
+    // be COMPLETE, so a silent coverage loss cannot shrink n and widen
+    // the band the power check derives.
+    check(pairPreconditionFailures == 0 &&
+              parity.size() == static_cast<std::size_t>(kParityPairs),
+          "fraud-rides-L panel complete (" + std::to_string(parity.size()) +
+              " of " + std::to_string(kParityPairs) + " seed-pairs usable)");
+    if (parity.size() >= 2) {
+      const double n = static_cast<double>(parity.size());
+      double sum = 0.0;
+      double defectSum = 0.0;
+      for (std::size_t i = 0; i < parity.size(); ++i) {
+        sum += parity[i];
+        defectSum += defectParity[i];
+      }
+      const double mean = sum / n;
+      const double meanDefect = defectSum / n;
+      double ss = 0.0;
+      for (const double p : parity) {
+        ss += (p - mean) * (p - mean);
+      }
+      const double sd = std::sqrt(ss / (n - 1.0));
+      const double se = sd / std::sqrt(n);
+      const double exclusionEdge = mean - kParityTCrit * se;
+      std::printf("  fraud-rides-L mean %.4f (sd %.4f, se %.4f, n %zu); "
+                  "pinned-budget defect parity %.4f vs exclusion edge %.4f "
+                  "(t %.3f)\n",
+                  mean, sd, se, parity.size(), meanDefect, exclusionEdge,
+                  kParityTCrit);
+      // POWER: the gate's own sampling band must exclude the defect it
+      // exists for (standing law), or the verdict is UNDER-POWERED.
+      check(meanDefect < exclusionEdge,
+            "fraud-rides-L is powered: pinned-budget defect parity " +
+                std::to_string(meanDefect) +
+                " sits below the sampling band edge " +
+                std::to_string(exclusionEdge));
+      checkBand(mean, 0.80, 1.25,
+                "fraud count ratio tracks the legit count ratio (F = "
+                "pL/(1-p); mean over " +
+                    std::to_string(parity.size()) + " pinned seed-pairs)");
+    }
   }
 
   // ---- DRIFT PARITY (R-AWARE): harness drain cancels across eras ---

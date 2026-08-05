@@ -407,6 +407,15 @@ pl_add_test(test_fraud_amounts)
 pl_add_test(test_card_merchant_overlap)
 set_tests_properties(test_card_merchant_overlap PROPERTIES TIMEOUT 600)
 
+# merchant-selection-2026-08: THE MERCHANT DEGREE GATE. Nothing in the suite
+# measured merchant degree before this — the ghost-endpoint lesson recurring on
+# the merchant vertex. Sub-gates E/F are pure arithmetic; G/H drive the real
+# sampler over the real catalogue at pop 8,000 and 500,000 without a corpus;
+# two corpus legs (pop 300 and 2,000, 730d) carry the rest. The timeout covers
+# the two direct-sampler scales plus both legs.
+pl_add_test(test_card_merchant_graph)
+set_tests_properties(test_card_merchant_graph PROPERTIES TIMEOUT 900)
+
 # ---------------------------------------------------------------------
 # card-fraud-realism-v2 step c: THE MERCHANT-ID-ONLY BASELINE — gate 5
 # of docs/card_fraud_online_gnn.md ("a merchant-ID-only baseline must

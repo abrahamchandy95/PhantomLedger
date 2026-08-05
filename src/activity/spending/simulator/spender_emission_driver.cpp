@@ -11,10 +11,57 @@
 #include <cstdint>
 #include <cstdio>
 #include <iterator>
+#include <numeric>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace PhantomLedger::activity::spending::simulator {
+
+namespace detail {
+
+void appendAcceptedDayPostings(
+    clearing::Ledger *book, std::vector<transactions::Transaction> &destination,
+    std::vector<transactions::Transaction> &dayTransactions,
+    std::vector<clearing::Ledger::Posting> &dayPostings) {
+  if (dayTransactions.size() != dayPostings.size()) {
+    throw std::logic_error(
+        "spending day transaction/posting cardinality mismatch");
+  }
+  for (std::size_t i = 0; i < dayTransactions.size(); ++i) {
+    if (dayTransactions[i].timestamp != dayPostings[i].timestamp) {
+      throw std::logic_error("spending transaction/posting timestamp mismatch");
+    }
+  }
+
+  destination.reserve(destination.size() + dayTransactions.size());
+
+  std::vector<std::size_t> replayOrder(dayTransactions.size());
+  std::iota(replayOrder.begin(), replayOrder.end(), std::size_t{0});
+  const transactions::Comparator less{
+      transactions::Comparator::Scope::fundsTransfer};
+  std::stable_sort(replayOrder.begin(), replayOrder.end(),
+                   [&](std::size_t lhs, std::size_t rhs) {
+                     return less(dayTransactions[lhs], dayTransactions[rhs]);
+                   });
+
+  for (const auto i : replayOrder) {
+    bool accepted = true;
+    if (book != nullptr) {
+      accepted = book->transferAt(dayPostings[i]).accepted();
+    }
+
+    if (accepted) {
+      destination.push_back(std::move(dayTransactions[i]));
+    }
+  }
+
+  dayTransactions.clear();
+  dayPostings.clear();
+}
+
+} // namespace detail
+
 namespace {
 
 constexpr double kTxnReserveSlack = 1.05;
@@ -186,25 +233,33 @@ void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
 
   auto &dst = state.txns();
 
-  std::size_t total = dst.size();
-  std::size_t totalPostings = dayPostings_.size();
+  std::size_t total = 0;
   for (const auto &threadState : threadStates_) {
+    if (threadState.txns.size() != threadState.postings.size()) {
+      throw std::logic_error(
+          "spending thread transaction/posting cardinality mismatch");
+    }
     total += threadState.txns.size();
-    totalPostings += threadState.postings.size();
   }
 
-  dst.reserve(total);
-  dayPostings_.reserve(totalPostings);
+  dayTransactions_.reserve(dayTransactions_.size() + total);
+  dayPostings_.reserve(dayPostings_.size() + total);
 
   for (auto &threadState : threadStates_) {
-    dst.insert(dst.end(), std::make_move_iterator(threadState.txns.begin()),
-               std::make_move_iterator(threadState.txns.end()));
-    threadState.txns.clear();
-
+    dayTransactions_.insert(dayTransactions_.end(),
+                            std::make_move_iterator(threadState.txns.begin()),
+                            std::make_move_iterator(threadState.txns.end()));
     dayPostings_.insert(dayPostings_.end(), threadState.postings.begin(),
                         threadState.postings.end());
+    threadState.txns.clear();
     threadState.postings.clear();
   }
+
+  // Settle the full cross-worker day as one batch. Sorting inside the helper
+  // matches canonical replay order and avoids thread partition order deciding
+  // which of two competing same-day transfers survives.
+  detail::appendAcceptedDayPostings(ledger(), dst, dayTransactions_,
+                                    dayPostings_);
 }
 
 void SpenderEmissionDriver::preparePool() {
@@ -212,18 +267,6 @@ void SpenderEmissionDriver::preparePool() {
   if (pool_ == nullptr || pool_->threadCount() != threadCount) {
     pool_ = std::make_unique<WorkerPool>(threadCount);
   }
-}
-
-void SpenderEmissionDriver::applyDayPostings() {
-  auto *book = ledger();
-  if (book != nullptr) {
-
-    for (const auto &posting : dayPostings_) {
-      (void)book->transfer(posting.srcIdx, posting.dstIdx, posting.amount,
-                           posting.channel);
-    }
-  }
-  dayPostings_.clear();
 }
 
 void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
@@ -261,7 +304,6 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
   pool_->run(emitBody);
 
   mergeThreadTxns(state);
-  applyDayPostings();
 }
 
 void SpenderEmissionDriver::finish(RunState &state) { mergeThreadTxns(state); }

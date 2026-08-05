@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <span>
 #include <vector>
 
 namespace PhantomLedger::activity::spending::market::population {
@@ -22,12 +23,13 @@ public:
        std::vector<entity::behavior::Persona> objects, Paydays paydays,
        std::vector<entity::geography::GeoAreaId> homeAreas = {},
        std::vector<std::uint32_t> retirementDays = {},
-       std::vector<std::uint32_t> deathDays = {})
+       std::vector<std::uint32_t> deathDays = {},
+       const entity::parties::relocation::Schedule *relocation = nullptr)
       : primary_(std::move(primary)), kinds_(std::move(kinds)),
         objects_(std::move(objects)), paydays_(std::move(paydays)),
         homeAreas_(std::move(homeAreas)),
         retirementDays_(std::move(retirementDays)),
-        deathDays_(std::move(deathDays)) {}
+        deathDays_(std::move(deathDays)), relocation_(relocation) {}
 
   [[nodiscard]] std::uint32_t count() const noexcept {
     return static_cast<std::uint32_t>(primary_.size());
@@ -57,11 +59,52 @@ public:
   // distance-decay selection. invalidGeoArea when no carrier is bound
   // (the monolith reference oracle) — the caller treats that as "no
   // local anchor" and falls back to the national selection.
+  //
+  // relocation-2026-07: this is the home as of the LAST `refreshHomes` — i.e.
+  // the current month, not the window start. `payments.cpp` reads it here
+  // rather than off the cached `Spender` copy, because `prepareSpenders` runs
+  // ONCE for the whole fold and cannot be re-run.
+  // merchant-selection-2026-08: the whole vector, index-aligned to personIdx,
+  // for the monthly favourite-membership pass. Reflects the CURRENT homes —
+  // `refreshHomes` runs before `evolveAll`, which is what lets a household that
+  // moved this month acquire favourites near its NEW home.
+  [[nodiscard]] std::span<const entity::geography::GeoAreaId>
+  homeAreas() const noexcept {
+    return homeAreas_;
+  }
+
   [[nodiscard]] entity::geography::GeoAreaId
   homeArea(entity::PersonId p) const noexcept {
     const auto i = index(p);
     return i < homeAreas_.size() ? homeAreas_[i]
                                  : entity::geography::invalidGeoArea;
+  }
+
+  // relocation-2026-07: re-point every person's home at `ts` from the
+  // schedule. Called from the monthly commerce evolver — the same hook
+  // merchant liveness uses, and for the same reason: it is the only
+  // per-instant callback the fold has.
+  //
+  // NO-OP without a bound schedule, which keeps every pre-round harness
+  // byte-identical. It is also DRAW-FREE, so it cannot shift the stream: the
+  // whole round's corpus movement comes from the ANSWER changing, never from a
+  // different number of draws.
+  void refreshHomes(std::int64_t ts) {
+    if (relocation_ == nullptr || relocation_->empty()) {
+      return;
+    }
+    for (std::size_t i = 0; i < homeAreas_.size(); ++i) {
+      const auto area =
+          relocation_->areaAt(static_cast<entity::PersonId>(i + 1), ts);
+      if (entity::geography::validArea(area)) {
+        homeAreas_[i] = area;
+      }
+    }
+  }
+
+  [[nodiscard]] const entity::parties::relocation::Schedule *
+  relocation() const noexcept {
+    return relocation_;
   }
 
   // H2 step 2c: the window day-index from which the retirement
@@ -92,6 +135,9 @@ private:
   std::vector<entity::geography::GeoAreaId> homeAreas_;
   std::vector<std::uint32_t> retirementDays_;
   std::vector<std::uint32_t> deathDays_;
+  // Non-owning; must outlive the View. Owned by `pipeline::People`, which
+  // survives the fold for exactly this reason.
+  const entity::parties::relocation::Schedule *relocation_ = nullptr;
 };
 
 } // namespace PhantomLedger::activity::spending::market::population

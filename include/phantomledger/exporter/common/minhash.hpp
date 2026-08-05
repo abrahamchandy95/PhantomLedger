@@ -52,6 +52,8 @@ addressMinhashIds(std::string_view fullAddress);
 [[nodiscard]] std::vector<BucketId>
 streetMinhashIds(std::string_view streetLine1);
 
+[[nodiscard]] std::vector<BucketId> emailMinhashIds(std::string_view email);
+
 [[nodiscard]] std::string cityMinhashId(std::string_view city);
 
 [[nodiscard]] std::string stateMinhashId(std::string_view state);

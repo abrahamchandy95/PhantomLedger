@@ -59,6 +59,24 @@ namespace detail {
 
 } // namespace detail
 
+// SIZING IS POPULATION-ONLY AND ITS DRAW COUNT IS LOAD-BEARING.
+//
+// merchant-churn-2026-07 first tried to add churn headroom HERE, scaling
+// the record count by the window length. That was wrong for a reason worth
+// recording, because it looks harmless: **this function draws one
+// `lognormal` per core record off the SHARED ENTITY STREAM**, so changing
+// the record count changes the number of draws and shifts every downstream
+// entity-stage value — personas, death dates, everything. The measured
+// result was 51,079 account-closure violations in `test_membership` plus
+// two unrelated behavioural gates moving, none of which had anything to do
+// with merchants.
+//
+// Churn replacements are therefore appended by
+// `synth::merchants::appendChurnReplacements` on an ISOLATED per-record
+// lane, exactly as `placeGeography` and `assignLifecycle` are. Do not
+// reintroduce a window or a headroom term in this signature: the fact that
+// the base catalogue's draw count is invariant is what confines this round
+// to the lifecycle mechanism instead of desynchronising the world.
 [[nodiscard]] inline entity::merchant::Catalog
 makeCatalog(random::Rng &rng, int population, const GenerationPlan &plan = {}) {
   const int coreCount =

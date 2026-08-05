@@ -219,6 +219,10 @@ std::vector<BucketId> streetMinhashIds(std::string_view streetLine1) {
   return bucketIds("SMH", signature(normalize(streetLine1)));
 }
 
+std::vector<BucketId> emailMinhashIds(std::string_view email) {
+  return bucketIds("EMH", signature(normalize(email)));
+}
+
 std::string cityMinhashId(std::string_view city) {
   std::string norm = normalize(city);
   for (auto &c : norm) {

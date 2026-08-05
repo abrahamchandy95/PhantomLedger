@@ -3,6 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/entities/infra/tenure.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 
@@ -34,18 +35,25 @@ class Router {
 public:
   Router() = default;
 
+  using DeviceTenures =
+      std::unordered_map<entity::PersonId, std::vector<Tenure>>;
+  using IpTenures = std::unordered_map<entity::PersonId, std::vector<Tenure>>;
+
   static Router
   build(RoutingRules rules,
         std::unordered_map<entity::Key, entity::PersonId> ownerOf,
         std::unordered_map<entity::PersonId, std::vector<devices::Identity>>
             devicesByPerson,
         std::unordered_map<entity::PersonId, std::vector<network::Ipv4>>
-            ipsByPerson) {
+            ipsByPerson,
+        DeviceTenures deviceTenures = {}, IpTenures ipTenures = {}) {
     Router r;
     r.rules_ = rules;
     r.ownerOf_ = std::move(ownerOf);
     r.devicesByPerson_ = std::move(devicesByPerson);
     r.ipsByPerson_ = std::move(ipsByPerson);
+    r.deviceTenures_ = std::move(deviceTenures);
+    r.ipTenures_ = std::move(ipTenures);
     r.currentDeviceIdx_.assign(poolBound(r.devicesByPerson_), kUnanchored);
     r.currentIpIdx_.assign(poolBound(r.ipsByPerson_), kUnanchored);
     return r;
@@ -60,30 +68,70 @@ public:
     return it->second;
   }
 
-  /// Route a device for a pre-resolved person.
+  /// Route a device for a pre-resolved person, AS OF `ts`.
   [[nodiscard]] std::optional<devices::Identity>
-  routeDeviceFor(random::Rng &rng, entity::PersonId person) const {
-    return routeFromPool(rng, person, devicesByPerson_, currentDeviceIdx_);
+  routeDeviceFor(random::Rng &rng, entity::PersonId person,
+                 std::int64_t ts) const {
+    return routeFromPool(rng, person, ts, devicesByPerson_, deviceTenures_,
+                         currentDeviceIdx_);
   }
 
-  /// Route an IP for a pre-resolved person.
+  /// Route an IP for a pre-resolved person, AS OF `ts`.
   [[nodiscard]] std::optional<network::Ipv4>
-  routeIpFor(random::Rng &rng, entity::PersonId person) const {
-    return routeFromPool(rng, person, ipsByPerson_, currentIpIdx_);
+  routeIpFor(random::Rng &rng, entity::PersonId person,
+             std::int64_t ts) const {
+    return routeFromPool(rng, person, ts, ipsByPerson_, ipTenures_,
+                         currentIpIdx_);
+  }
+
+  /// DRAW-FREE, STICKY-FREE point query: an IP that belonged to
+  /// `person` at `ts`, choosing among concurrently-live addresses by
+  /// `salt`. Returns nullopt when the person has no pool or nothing was
+  /// live.
+  ///
+  /// THIS IS NOT AN ALTERNATIVE TO `routeIpFor` FOR SESSION ROUTING.
+  /// It exists for the residential-proxy branch of the fraud planner
+  /// (attacker-infra-2026-07), where a THIRD PARTY exits through this
+  /// customer's home address. Two properties are load-bearing there and
+  /// neither is available from `routeIpFor`:
+  ///
+  ///   * It must not advance `currentIpIdx_`. The proxied customer is
+  ///     not transacting; perturbing their sticky index would make their
+  ///     own later legitimate rows depend on whether an unrelated
+  ///     attacker borrowed their address, and that dependence would
+  ///     differ between the batch and windowed engines.
+  ///   * It must not draw. The planner's per-plan RNG footprint is
+  ///     pinned at four uniforms so this round's golden movement stays
+  ///     confined to the device/IP columns.
+  ///
+  /// It is safe against the "a fixed slot-0 pick IS the label" trap for
+  /// the same reason the pick is salted: the exported value is the
+  /// customer's real address either way, and which of their concurrent
+  /// lines it came from is not observable downstream.
+  /// `endTsExcl` requires the address to have been held for the WHOLE
+  /// half-open interval, for the same reason `AttackerInfra::ipAt` does:
+  /// a compromise attributes ONE endpoint to every event in the case, so
+  /// an address that changed hands mid-case would be attributed to a row
+  /// after it was reassigned.
+  [[nodiscard]] std::optional<network::Ipv4>
+  liveIpFor(entity::PersonId person, std::int64_t ts, std::int64_t endTsExcl,
+            std::uint64_t salt) const {
+    return liveFromPool(person, ts, endTsExcl, salt, ipsByPerson_, ipTenures_);
   }
 
   /// Legacy convenience: resolve owner and route both legs. Retained
   /// for callers that genuinely need both every time and benefit from
   /// the single hash lookup. Prefer the split API when possible.
   [[nodiscard]] InfraAttribution routeSource(random::Rng &rng,
-                                             const entity::Key &srcAcct) const {
+                                             const entity::Key &srcAcct,
+                                             std::int64_t ts) const {
     const auto person = ownerOf(srcAcct);
     if (!person.has_value()) {
       return {};
     }
     return {
-        routeDeviceFor(rng, *person),
-        routeIpFor(rng, *person),
+        routeDeviceFor(rng, *person, ts),
+        routeIpFor(rng, *person, ts),
     };
   }
 
@@ -104,10 +152,41 @@ private:
     return bound;
   }
 
+  // POINT-IN-TIME ROUTING (device-ip-lifecycle, 2026-07-27).
+  //
+  // Endpoints have TENURES, and an endpoint may only be attributed to a
+  // transaction inside its own. Before this, routing ignored the
+  // intervals the generator had already recorded and 53.51% of device
+  // sessions / 52.09% of IP sessions landed outside them — the exported
+  // `HAS_USED` interval and the exported `transactions.device_id`
+  // contradicted each other on the same row.
+  //
+  // THE LIVE SET IS NEVER EMPTY for an in-window `ts`, because personal
+  // endpoints are generated as TILING replacement chains
+  // (synth/infra/timeline.hpp sampleChain). This routine still handles
+  // an empty live set by returning nullopt rather than asserting: a
+  // caller may legitimately ask about a `ts` outside the generation
+  // window, and the card-fraud sink already refuses a sessionless row
+  // loudly at the export boundary.
+  //
+  // SUCCESSION IS POSITIONAL, NOT A SEARCH. Each device line is emitted
+  // CONTIGUOUSLY into the pool, so when the current endpoint's tenure
+  // ends its replacement is the next live index at a HIGHER position.
+  // Scanning forward from `cur` therefore walks the line the person was
+  // already on, and only wraps when that line is exhausted. This is why
+  // the generator's contiguous-per-line emission order is a contract and
+  // not an incidental detail.
+  //
+  // Replacement DRAWS NOTHING. A person whose phone dies moves to its
+  // successor deterministically; only a voluntary switch among
+  // concurrently-live endpoints costs randomness. Keeping the draw
+  // pattern tied to liveness (not to raw pool size, which now grows with
+  // window length) is what keeps both engines in lockstep.
   template <typename T>
   [[nodiscard]] std::optional<T> routeFromPool(
-      random::Rng &rng, entity::PersonId person,
+      random::Rng &rng, entity::PersonId person, std::int64_t ts,
       const std::unordered_map<entity::PersonId, std::vector<T>> &pool,
+      const std::unordered_map<entity::PersonId, std::vector<Tenure>> &tenures,
       std::vector<std::size_t> &current) const {
     const auto poolIt = pool.find(person);
     if (poolIt == pool.end() || poolIt->second.empty()) {
@@ -124,25 +203,129 @@ private:
     // with disjoint keys.
     auto &cur = current[person];
 
-    if (cur == kUnanchored) {
-      // First use for this person: anchor on index 0, drawing nothing.
-      cur = 0;
-      return items[0];
+    // No tenure table supplied for this person: fall back to the
+    // lifetime-pool behaviour. This is the shape a hand-built test
+    // Router has, and it keeps such fixtures meaningful.
+    const auto tenureIt = tenures.find(person);
+    if (tenureIt == tenures.end() ||
+        tenureIt->second.size() != items.size()) {
+      if (cur == kUnanchored) {
+        cur = 0;
+        return items[0];
+      }
+      if (items.size() > 1 && rng.coin(rules_.switchP)) {
+        auto pickIdx = rng.choiceIndex(items.size() - 1);
+        if (pickIdx >= cur) {
+          ++pickIdx;
+        }
+        cur = pickIdx;
+      }
+      return items[cur];
     }
 
-    // Maybe switch to an alternate. Store-as-index lets us draw from
-    // the n-1 non-current slots in one go and map back via a shift,
-    // which is both guaranteed-different and cheaper than a rejection
-    // loop.
-    if (items.size() > 1 && rng.coin(rules_.switchP)) {
-      auto pickIdx = rng.choiceIndex(items.size() - 1);
-      if (pickIdx >= cur) {
-        ++pickIdx;
+    const auto &spans = tenureIt->second;
+    const auto live = [&](std::size_t i) { return spans[i].contains(ts); };
+
+    std::size_t liveCount = 0;
+    std::size_t firstLive = items.size();
+    for (std::size_t i = 0; i < items.size(); ++i) {
+      if (live(i)) {
+        ++liveCount;
+        if (firstLive == items.size()) {
+          firstLive = i;
+        }
       }
-      cur = pickIdx;
+    }
+    if (liveCount == 0) {
+      return std::nullopt;
+    }
+
+    if (cur == kUnanchored || cur >= items.size() || !live(cur)) {
+      // Anchor, or succeed a retired endpoint by walking forward from
+      // where the person already was. Draws nothing.
+      std::size_t next = items.size();
+      const std::size_t from = (cur == kUnanchored || cur >= items.size())
+                                   ? 0
+                                   : cur + 1;
+      for (std::size_t i = from; i < items.size(); ++i) {
+        if (live(i)) {
+          next = i;
+          break;
+        }
+      }
+      cur = next != items.size() ? next : firstLive;
+    }
+
+    // A voluntary switch is only meaningful between endpoints the person
+    // holds AT THE SAME TIME. Draw once, then map the choice onto the
+    // live set, skipping the current position so the pick is guaranteed
+    // different without a rejection loop.
+    if (liveCount > 1 && rng.coin(rules_.switchP)) {
+      auto pick = rng.choiceIndex(liveCount - 1);
+      for (std::size_t i = 0; i < items.size(); ++i) {
+        if (i == cur || !live(i)) {
+          continue;
+        }
+        if (pick == 0) {
+          cur = i;
+          break;
+        }
+        --pick;
+      }
     }
 
     return items[cur];
+  }
+
+  // The draw-free, state-free companion to routeFromPool. Same liveness
+  // rule, same fallback for a tenure-less hand-built fixture (index 0),
+  // but the choice among live entries comes from `salt` instead of a
+  // coin and nothing is written back.
+  template <typename T>
+  [[nodiscard]] std::optional<T> liveFromPool(
+      entity::PersonId person, std::int64_t ts, std::int64_t endTsExcl,
+      std::uint64_t salt,
+      const std::unordered_map<entity::PersonId, std::vector<T>> &pool,
+      const std::unordered_map<entity::PersonId, std::vector<Tenure>> &tenures)
+      const {
+    const auto poolIt = pool.find(person);
+    if (poolIt == pool.end() || poolIt->second.empty()) {
+      return std::nullopt;
+    }
+    const auto &items = poolIt->second;
+
+    const auto tenureIt = tenures.find(person);
+    if (tenureIt == tenures.end() ||
+        tenureIt->second.size() != items.size()) {
+      return items[static_cast<std::size_t>(salt % items.size())];
+    }
+
+    const auto &spans = tenureIt->second;
+    const auto covers = [&](std::size_t i) {
+      return spans[i].contains(ts) && spans[i].lastEpochExcl >= endTsExcl;
+    };
+
+    std::size_t live = 0;
+    for (std::size_t i = 0; i < items.size(); ++i) {
+      if (covers(i)) {
+        ++live;
+      }
+    }
+    if (live == 0) {
+      return std::nullopt;
+    }
+
+    auto want = static_cast<std::size_t>(salt % live);
+    for (std::size_t i = 0; i < items.size(); ++i) {
+      if (!covers(i)) {
+        continue;
+      }
+      if (want == 0) {
+        return items[i];
+      }
+      --want;
+    }
+    return std::nullopt;
   }
 
   RoutingRules rules_{};
@@ -151,6 +334,12 @@ private:
   std::unordered_map<entity::PersonId, std::vector<devices::Identity>>
       devicesByPerson_;
   std::unordered_map<entity::PersonId, std::vector<network::Ipv4>> ipsByPerson_;
+
+  // PARALLEL to the pools above: index i is when pool entry i belonged to
+  // that person. Empty (or size-mismatched) means "no tenure model", the
+  // hand-built-fixture shape.
+  std::unordered_map<entity::PersonId, std::vector<Tenure>> deviceTenures_;
+  std::unordered_map<entity::PersonId, std::vector<Tenure>> ipTenures_;
 
   // Sticky routing state as pre-sized, sentinel-initialized vectors
   // indexed by PersonId. Mutable so routing stays logically const. The

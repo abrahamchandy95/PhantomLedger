@@ -159,8 +159,35 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
           continue;
         }
 
-        const auto &dst = ctx.accounts->allAccounts[rng.choiceIndex(
+        // merchant-churn-2026-07: RE-PICK rather than skip.
+        //
+        // `allAccounts` mixes person deposit accounts with counterparty
+        // accounts, so a uniform pick could land a CAMOUFLAGE P2P transfer on
+        // a merchant sink. That was wrong twice over: this channel exists to
+        // mimic person-to-person traffic (the bill branch above is the one
+        // that pays merchants), and once merchants gained a lifecycle it was
+        // also a liveness hole, since there is no catalogue in scope here to
+        // test `liveAt` against.
+        //
+        // The first fix simply skipped those rows, and the table goldens
+        // showed why that was wrong: it deleted ~9,700 camouflage rows and
+        // dropped AML `ALERT_ON` by 17%. **Camouflage VOLUME is the whole
+        // point of camouflage** — thinning it makes ring accounts stand out
+        // and silently re-tunes a different use case. Re-picking keeps the
+        // row, so the only thing that changes is where it lands.
+        //
+        // Bounded attempts, then accept whatever came last: a merchant
+        // destination on one camouflage row is a far smaller error than a
+        // spin, and at any realistic person-to-counterparty ratio the loop
+        // exits on the first or second try.
+        entity::Key dst = ctx.accounts->allAccounts[rng.choiceIndex(
             ctx.accounts->allAccounts.size())];
+        for (int attempt = 0; attempt < 6 &&
+                              dst.role == entity::Role::merchant;
+             ++attempt) {
+          dst = ctx.accounts->allAccounts[rng.choiceIndex(
+              ctx.accounts->allAccounts.size())];
+        }
 
         if (dst == acct) {
           continue;

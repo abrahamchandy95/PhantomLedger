@@ -27,6 +27,26 @@ namespace geo = ::PhantomLedger::synth::geo;
 namespace geoent = ::PhantomLedger::entity::geography;
 namespace fam = ::PhantomLedger::relationships::family;
 
+// Reproduce the family HOUSEHOLD partition byte-identically to the transfer
+// stage (`family::build` draws it from `RngFactory{plan.seed()}` on the
+// `{"family","households"}` lane; `plan.seed() == the run seed == worldSeed`,
+// and production uses `kDefaultHouseholds`). This gives the home-placement
+// layer the SAME households the family graph uses, so spouses and coresident
+// dependants share one address. It draws only on a dedicated factory — never
+// the shared entity stream.
+//
+// SHARED, not duplicated: `parties::relocation` needs this exact partition so
+// a household relocates as a unit. Deriving it twice from one seed is the
+// class of duplication that silently drifts when one copy is touched.
+[[nodiscard]] inline fam::Partition
+reproduceHouseholds(std::uint64_t worldSeed,
+                    const entity::behavior::Assignment &personas) {
+  const auto personCount =
+      static_cast<std::uint32_t>(personas.byPerson.size());
+  auto rng = random::RngFactory{worldSeed}.rng({"family", "households"});
+  return fam::partition(fam::kDefaultHouseholds, rng, personCount);
+}
+
 class Generator {
 public:
   Generator(random::Rng &rng, const entity::behavior::Assignment &personas,
@@ -57,13 +77,17 @@ private:
   // home-placement layer the SAME households the family graph uses, so
   // spouses/coresident dependants share one address. It draws only on a
   // dedicated factory — never the shared entity stream.
+  //
+  // relocation-2026-07: this is now `pii::reproduceHouseholds` (below, free)
+  // because the relocation schedule needs the SAME partition — a household
+  // moves as a unit, so relocating per person would split coresidents across
+  // areas and falsify an invariant `party-geography-2026-07` declares
+  // binding. TWO derivations of one seed drift; there is one.
   [[nodiscard]] static fam::Partition
   reproduceHouseholds(std::uint64_t worldSeed,
                       const entity::behavior::Assignment &personas) {
-    const auto personCount =
-        static_cast<std::uint32_t>(personas.byPerson.size());
-    auto rng = random::RngFactory{worldSeed}.rng({"family", "households"});
-    return fam::partition(fam::kDefaultHouseholds, rng, personCount);
+    return ::PhantomLedger::synth::pii::reproduceHouseholds(worldSeed,
+                                                            personas);
   }
 
   // A population-weighted home area for `person` from the EMBEDDED world

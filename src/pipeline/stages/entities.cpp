@@ -1,6 +1,7 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/merchant_ownership.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
@@ -13,16 +14,21 @@
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
+#include "phantomledger/synth/merchants/lifecycle.hpp"
 #include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/dob.hpp"
 #include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
+#include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
+#include "phantomledger/synth/pii/relocation_build.hpp"
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <ranges>
@@ -110,16 +116,62 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
   return pii;
 }
 
+[[nodiscard]] pl::entity::parties::relocation::Schedule buildRelocation(
+    const entity::pii::Roster &pii,
+    const std::vector<pl::entity::geography::GeoAreaId> &initialAreas,
+    const sy::personas::Pack &personas, std::uint64_t worldSeed,
+    pl::time::Window window) {
+  // The per-person country, read off the live roster. The destination
+  // constraint needs it: a relocation stays inside the origin's country
+  // because `country` drives locale, PII format and the whole identity layer,
+  // none of which can move mid-run.
+  std::vector<locale::Country> countries;
+  countries.reserve(pii.records.size());
+  for (const auto &record : pii.records) {
+    countries.push_back(record.country);
+  }
+
+  // The SAME household partition home placement used — shared, not
+  // re-derived. Real coresidents must move together.
+  const auto households =
+      sy::pii::reproduceHouseholds(worldSeed, personas.assignment);
+
+  static const pl::synth::geo::ResidenceSampler residence{
+      pl::synth::geo::geography()};
+
+  sy::pii::relocation::Inputs in{};
+  in.worldSeed = worldSeed;
+  in.initialAreas = initialAreas;
+  in.householdOf = households.householdOf;
+  in.countries = countries;
+  in.catalog = &pl::synth::geo::geography();
+  in.residence = &residence;
+  in.window = window;
+  return sy::pii::relocation::build(in);
+}
+
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
-               std::uint64_t geoSeed,
-               const sy::merchants::GenerationPlan &plan) {
+               std::uint64_t geoSeed, pl::time::Window window,
+               const sy::merchants::GenerationPlan &plan,
+               const pl::synth::econ::MacroSeries *macro) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
   auto catalog = sy::merchants::makeCatalog(rng, population, plan);
-  // Geography rides an isolated per-merchant lane (geoSeed), never the
-  // shared entity stream `rng`, so the corpus is byte-identical.
+  // Geography and lifecycle both ride isolated per-merchant lanes
+  // (geoSeed), never the shared entity stream `rng`. That keeps a change to
+  // either one from perturbing any other entity-stage value; it does NOT
+  // make the round corpus-neutral, because selection now sees a
+  // time-varying live set.
   sy::merchants::placeGeography(catalog, geoSeed);
+  // merchant-churn-2026-07, in this order and for this reason: the BASE
+  // catalogue is the incumbent cohort (live when the window opens), and the
+  // replacements appended next are the births that keep the live count from
+  // decaying as incumbents die. Both the append and the interval assignment
+  // ride isolated per-record lanes off geoSeed, so the shared entity stream
+  // `rng` sees exactly the draws it saw before this round.
+  sy::merchants::appendChurnReplacements(catalog, window, geoSeed, plan);
+  sy::merchants::assignLifecycle(catalog, window, geoSeed, macro);
   return catalog;
 }
 
@@ -251,6 +303,40 @@ void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                               const sy::accounts::BusinessOwnerPlan &plan) {
   sy::accounts::assignBusinessOwners(holdings.accounts,
                                      peopleData.roster.roster, rng, plan);
+}
+
+// merchant-ownership-2026-07. Runs AFTER business owners exist, because
+// the proprietor cohort IS the business-owner cohort — "the owner banks
+// their business here" is what makes the institution able to hold a
+// beneficial-owner record at all.
+//
+// DRAW-FREE: it takes no Rng. The cohort is READ back out of the account
+// registry rather than threaded from `assignBusinessOwners`, so this
+// consumes nothing and moves no corpus byte. Sorted + deduplicated
+// because `ownership::ownerFor` indexes positionally, and an unordered
+// cohort would make the merchant->owner mapping depend on registry
+// iteration order instead of on world state.
+void assignMerchantOwners(pl::entity::merchant::Catalog &merchants,
+                          const pl::entity::account::Registry &accounts,
+                          double coverage) {
+  namespace ownership = pl::entity::merchant::ownership;
+
+  std::vector<pl::entity::PersonId> owners;
+  owners.reserve(accounts.records.size() / 8U + 1U);
+  for (const auto &record : accounts.records) {
+    if (record.id.role == pl::entity::Role::business &&
+        record.owner != pl::entity::invalidPerson) {
+      owners.push_back(record.owner);
+    }
+  }
+  std::sort(owners.begin(), owners.end());
+  owners.erase(std::unique(owners.begin(), owners.end()), owners.end());
+
+  const std::span<const pl::entity::PersonId> cohort(owners.data(),
+                                                     owners.size());
+  for (auto &record : merchants.records) {
+    record.owner = ownership::ownerFor(record.counterpartyId, cohort, coverage);
+  }
 }
 
 } // namespace PhantomLedger::pipeline::stages::entities

@@ -1,16 +1,26 @@
 # card-fraud-realism-v2 roadmap (V2-R)
 
-**STATUS (2026-07-27): CODE-COMPLETE on the critical path.** Both
-headline generation shortcuts are closed and measured, the exporter's
-four full-window entity labels are withheld and quarantined, the
-point-in-time feature contract is written and pinned, and prevalence is
-gated per year. ROUND 4 re-pointed the whole gate harness at the
-PRODUCTION population, which re-measured every band in this arc against
-a world the generator actually emits; ROUND 5 rebuilt the one claim that
-round falsified; ROUND 6 closed the last declared generation defect —
-the attacker session on a victim-AUTHORIZED push — and answered the
-device-render check that had been carried beside it. What remains is the
-owner's verification runbook and the arc's wind-up commit.
+**STATUS (2026-07-27): ROUND 8 LANDED; the export is materially safer,
+but it is not yet a public benchmark.** Both headline generation
+shortcuts are closed and measured, the exporter's four full-window
+entity labels are withheld and quarantined, the point-in-time feature
+contract is written and pinned, and prevalence is gated per year.
+ROUND 4 re-pointed the whole gate harness at the PRODUCTION population;
+ROUND 5 rebuilt the one claim that round falsified; ROUND 6 fixed the
+operator session on victim-AUTHORIZED pushes; ROUND 7 closed the
+remaining device-ID shortcut, enforced membership intervals, and added
+transaction-time device/IP edges with a closed vertex universe and no
+asymmetric Party-ownership topology. ROUND 7 also repaired legitimate
+credit-card session routing and the autopay/due-date clock. Its
+end-to-end trace rejected a tempting but false “fix”: late-injected fraud
+cannot simply be pointed at an already-serviced credit-card liability.
+ROUND 8 replaced the `use_chip` content hash with CAUSAL entry mode read
+off the destination's acceptance environment plus the dated US EMV
+terminal mix (exporter-only; `error` remains the open hash half).
+Remaining benchmark gates are explicit below: integrating credit-card
+fraud into lifecycle servicing, effective card lifecycles and reissues,
+era/concept drift in the fraud process, delayed labels, level
+calibration, and an executable GSQL/training/evaluation path.
 
 **GOVERNING DIRECTIVE (owner, 2026-07-26): the deliverable is REALISTIC
 DATA A GNN CAN BE TRAINED ON HONESTLY. Nothing on the critical path is
@@ -28,10 +38,10 @@ Owner rulings:
 5. Population/density causality: researched, discretion exercised.
 6. Zeroed-not-dropped for the leaking label columns: TF_GNN_v3 loading
    jobs map POSITIONALLY, so the columns stay and carry 0.
-7. **ROUND 6 scope ruling:** fix the authorized rails; SIZE and DECLARE
-   the `FD` device-render leak on the card/ato rails rather than closing
-   it in the same round (closing it changes how every RING device
-   renders, which is its own named arc).
+7. **HISTORICAL ROUND 6 scope ruling:** fix the authorized rails; SIZE
+   and DECLARE the `FD` device-render leak on the card/ato rails rather
+   than closing it in that round. **SUPERSEDED BY ROUND 7:** all device
+   owner types now render through one opaque, fixed-width `D` namespace.
 
 ## The standing verdict, restated
 
@@ -40,7 +50,9 @@ temporal-loading artifact and not a credible online fraud benchmark.
 Gates 1, 3, 4 and 5 now have code behind them. What is still missing for
 a benchmark CLAIM is calibration of the fraud LEVEL against a named
 issuer-side series (the arc measures separability and stability, not
-level) and the depth items cut below. The README states this without
+level), effective instrument lifecycles, era-varying fraud mechanisms,
+delayed-verdict evaluation, and the executable GSQL/training/evaluation
+implementation. The README and online-GNN contract state this without
 overclaiming.
 
 ## P0 CONFIRMED IN CODE — AND CLOSED
@@ -91,8 +103,9 @@ DISTANCE shortcut — legitimate card-present spend is distance-decayed,
 so uniformly-placed fraud would be separable by miles-from-home alone.
 Hence the same kernel, not a new one.
 
-**The modality decision drives DESTINATION SELECTION only. It is not
-exported.** See the `use_chip` correction below.
+**The modality decision drives DESTINATION SELECTION — and since
+ROUND 8 the export READS it back off the destination.** See the
+`use_chip` history in the leak inventory below.
 
 ### The attacker-IP shortcut (MODEL-MOVING, same re-pin)
 
@@ -144,20 +157,23 @@ of them scores ~100% and learns nothing about behavior.
 
 Per ruling 6 the columns are RETAINED and written as 0
 (`kLabelWithheld` in `src/exporter/card_fraud/export.cpp`), and the
-investigative content moves to a 35th table,
+investigative content moves to a dedicated table,
 `card_fraud."cf_Ground_Truth_Label"` — `(entity_type, entity_id,
 label)`, positives only, joinable 1:1 to the vertex tables, pointed at
 by no edge and loaded by no TF_GNN_v3 job. The one supervised target in
-the graph is `Payment_Transaction.is_fraud`, observable at its own row's
-timestamp.
+the graph is `Payment_Transaction.is_fraud`, anchored to its own row's
+timestamp for offline supervision and never admitted as an input
+feature. Production-like delayed verdict availability remains an open
+benchmark gate.
 
 Gates: `tests/test_pipeline_e2e.cpp` (serverless — every cell of the
 four columns renders 0, and whenever the window produced flagged card
 rows the overlay carries the cards they touched);
 `tests/test_table_golden.cpp` (the same at the production config, pop
 10000, against live PostgreSQL); `docs/card_fraud_postgres_acceptance.sql`
-(overlay↔vertex join integrity and label vocabulary). Table count
-34 → 35 in all three.
+(overlay↔vertex join integrity and label vocabulary). This round moved
+the table count 34 → 35; ROUND 7's two event-time session edges move the
+current contract to **37**.
 
 **Observed on the re-pin:** only the card_fraud section diverged;
 exactly four vertex tables changed with IDENTICAL row counts, plus the
@@ -179,9 +195,9 @@ byte-identical in the full-window export. Three enforcement classes:
 
 | Class | Requirement |
 |---|---|
-| STREAM PREFIX | the three streamed transaction tables must be a byte-exact prefix |
-| IDENTICAL | world-derived tables (Party, the PII layer) cannot move at all |
-| GROWING SET | `Card`, `Merchant`, the geo chain: the row SET may grow, a row may never change |
+| STREAM PREFIX | the five streamed transaction tables — transaction vertex, card/merchant edges, and transaction-time device/IP edges — must be a byte-exact prefix |
+| IDENTICAL | world-derived tables (Party and the PII layer) cannot move at all |
+| GROWING SET | `Card`, `Merchant`, `Device`, `IP`, and the geo chain: the row SET may grow, a row may never change |
 
 The gate is not a tautology — it would have **failed** on the
 pre-round-1 `Card.is_fraud`, whose value flipped 0 → 1 the moment a
@@ -316,7 +332,8 @@ against the gate's own printed output before calling a round done.**
 
 ### ROUND 6 — who operated the row (MODEL-MOVING, four goldens re-pin)
 
-The last declared generation defect in this arc. `unauthorized.cpp`
+What was then the last declared generation defect in this arc.
+`unauthorized.cpp`
 stamped the ATTACKER's device and IP onto every emitted row, including
 the two victim-AUTHORIZED rails where the victim is the one transacting:
 the gift-card victim walks into a store and buys the cards, and the
@@ -362,7 +379,8 @@ authorized rails are pinned present (gift-card 4 rows, impostor 3), so
 neither half can pass vacuously. The impostor rail had no unit coverage
 before this round.
 
-**THE DEVICE `ownerId` RENDER CHECK, ANSWERED — AND IT IS A LEAK.**
+**HISTORICAL ROUND 6 FINDING — THE DEVICE `ownerId` RENDER CHECK WAS A
+LEAK.**
 Carried beside this item was the question of whether the magic
 `0xACE00000` ownerId with `OwnerType::ring` is visible downstream, on
 the hypothesis that `renderDeviceId` might hash the key. **It does not
@@ -374,15 +392,15 @@ string in `public.transactions.device_id` on every ledger row. This is a
 DETERMINISTIC label, not a 1-in-14M coincidence like TEST-NET-2 — a
 strictly stronger version of the shortcut this arc already closed once.
 
-Per owner ruling 7 it is SIZED AND DECLARED here, not closed: the
-authorized-rail fix removes it from the gift-card and impostor rows
-(they now render as person devices), and on card/ato the attacker device
-is the CORRECT model — the defect is exporter-side rendering. Closing it
-means changing how every RING device renders, which touches legitimate
-ring rows and the AML/mule corpora, and that is its own named arc. The
-gate prints the surviving count each run.
+Per the historical owner ruling 7 it was SIZED AND DECLARED in ROUND 6,
+not closed: the authorized-rail fix removed it from the gift-card and
+impostor rows, while card/ato correctly retained the attacker session.
+**ROUND 7 SUPERSEDES THAT DISPOSITION.** The defect was exporter-side
+rendering, so all owner types now share the same opaque rendering rather
+than changing the underlying session semantics.
 
-**GOLDEN IMPACT: all four re-pin, for two different reasons.** The
+**ROUND 6 GOLDEN IMPACT (historical): all four re-pin, for two different
+reasons.** The
 authorized-rail rows change `device_id` and `ip_address`, so the corpus
 stream moves: `golden_run.b2sum`, `golden_tables.md5` and
 `golden_tables_aml.md5` move on those columns. `golden_tables_card_fraud.md5`
@@ -395,11 +413,191 @@ and amount only, so they do not move either. **That asymmetry is the
 checkable prediction of this round.** The RNG stream is untouched, so
 row counts, amounts, timestamps and destinations must all be unchanged.
 
+### ROUND 7 — causal session graph and lifecycle closure
+
+ROUND 7 is a combined model/export repair. It closes several ways an
+otherwise accurate temporal model could teach a GNN the generator's
+implementation instead of payment behavior.
+
+1. **Membership is now an interval, not a join-only predicate.**
+   `VictimPopulation::member()` requires the case timestamp to be inside
+   `[joinTs, death + 120-day settlement)`. Authorized scams additionally
+   require the victim to be alive; card and ATO cases may still occur
+   during the declared estate-settlement tail, but never after account
+   closure. Planning also requires the entire sampled case span to fit
+   before the earliest victim/payee horizon, so a case that starts one
+   second before closure is rejected rather than compressed into an
+   artificial velocity burst; post-horizon chargebacks are suppressed.
+   The card-graph stream independently resolves the owner of each owned
+   endpoint and excludes view rows outside that owner's membership
+   interval. Neither the raw generated fraud rail nor the online feature
+   graph now carries an owned endpoint across its boundary.
+
+2. **A false stolen-card carrier fix was rejected.** Before this round,
+   every unauthorized card case used the victim's primary deposit
+   account, so the card exporter classified every positive as a derived
+   debit card and no modeled credit card carried fraud. A first pass
+   swapped in the issued credit-card key. The end-to-end trace showed
+   why that was not a fix: fraud is planned only after
+   `CardCycleDriver` has closed and serviced legitimate cycles, so the
+   late-injected liability purchase bypassed statements, payments,
+   interest, and lifecycle screening. The swap was reverted and a gate
+   now rejects unserviced credit-liability sources. Honest credit-card
+   fraud requires moving planning into the lifecycle and remains OPEN.
+   Independently, the router's owner map now includes credit-card keys,
+   which repairs the pre-existing empty device/IP session on legitimate
+   credit-card purchases.
+
+3. **Device identifiers are role-neutral.** `FD`, `LD`, and the
+   person-key-shaped rendering are retired. Every assigned
+   `devices::Identity` is pseudonymized by a stable repository-owned
+   digest and rendered as one fixed-width `D` identifier. Owner type,
+   prefix, width, and numeric range can no longer label attacker,
+   customer, or shared infrastructure. This is a stable pseudonym, not a
+   cryptographic security boundary; models must treat it as categorical.
+   The rail semantics from ROUND 6 remain: card/ato use the attacker
+   session, authorized scams use the victim's routed session.
+
+4. **The graph now carries the session that happened at the
+   transaction.** `Transaction_Uses_Device.csv` and
+   `Transaction_Uses_IP.csv` append one timestamped edge for each
+   assigned session endpoint. They join `T<row_seq>` to the exact
+   device/IP observed on that row and are stream-prefix tables under the
+   point-in-time contract. `Has_Device` and `Has_IP` are POPULATED as of
+   attacker-infra-2026-07 (they were header-only here for four rounds):
+   they carry the associations the institution has ON FILE, with declared
+   partial coverage, so missing adjacency is weak evidence rather than an
+   attacker-role bit. World-derived, never stream-derived.
+
+5. **Observed endpoints close the vertex universe.** Exogenous attacker
+   devices and IPs are not required to belong to the synthesized
+   customer/ring infrastructure roster. `cf_Device` and `cf_IP` are now
+   the union of that roster and every endpoint observed on a card-view
+   transaction, while preserving the roster's withheld
+   flag/blacklist-overlay facts. Consequently, “edge endpoint absent
+   from its vertex table” is no longer a deterministic fraud label.
+   Withholding all static Party→Device/IP rows also closes the
+   complementary “endpoint has no Party edge” shortcut without inventing
+   false ownership for an exogenous attacker.
+   The two new edges bring the card-fraud export from **35 to 37
+   tables**.
+
+6. **Card-payment time uses one clock.** The due cutoff is constructed
+   once at 17:00 on the resolved due date. Autopay posts at noon on that
+   due calendar day, manual on-time/late samples are constrained to the
+   same cutoff, and a late fee posts at 10:00 on the following day. The
+   old path added a 12-hour lag to an already-timed due timestamp, which
+   made autopay systematically late and distorted long-horizon
+   delinquency behavior. `tests/test_card_payment_timing.cpp` pins
+   autopay, manual timing, weekend resolution, and late-fee ordering.
+
+**GOLDEN/SCHEMA IMPACT:** model-moving and exporter-moving. Legitimate
+credit-card sessions, membership filtering, payment timestamps, and
+role-neutral device rendering can move corpus and use-case digests; the
+two new edge tables and header-only static infrastructure edges move the
+table manifest. Re-pin only after the membership, endpoint-integrity,
+point-in-time-prefix, debit-only lifecycle guard, payment-timing, and
+engine-parity gates are green.
+
+### ROUND 8 — causal `use_chip` (EXPORTER-ONLY; card-fraud table golden re-pins)
+
+The registered "exporting the real card-present modality" item, landed
+as use-chip-causal-2026-07. Before this round `derive::useChipFor` was
+an FNV content hash of the row (Swipe .63 / Chip .26 / Online .11) for
+fraud and legitimate rows alike: point-in-time safe, mechanism-free,
+and INCOHERENT with the graph — a physical grocery outlet could render
+"Online Transaction", a 1994 row could render "Chip Transaction", and
+the hash could contradict the merchant-geography structure the model
+also sees.
+
+**THE MECHANISM WAS ALREADY IN THE WORLD; the export just refused to
+read it.** Entry mode is a property of the ACCEPTANCE ENVIRONMENT, and
+the acceptance environment is exactly the `Footprint` axis both sides
+of generation already partition destinations on: legitimate selection
+splits card-present picks (distance-decayed physical pools) from online
+picks (the `Footprint::online` national CDF) in
+`payments.cpp::pickMerchantIndex`, and the fraud rails make the same
+split per-case in `unauthorized.cpp::pickMerchantDestination`. So the
+DESTINATION CARRIES the modality decision, and the exporter can derive
+it causally with NO row-schema change, NO new carrier, NO new
+randomness, and NO generation impact — the ROUND 6 lesson ("check
+whether the value is already on the row") applied to the exporter.
+
+The derivation (`derive.hpp`, fed by the same catalog index that
+resolves `mer_cat`):
+
+- catalog `Footprint::online` destination → **"Online Transaction"**
+  (the CNP acceptance population, for fraud and legit rows alike);
+- non-catalog view destination (the fraud rails' degraded biller
+  fallback — remote-billed hub accounts by construction) → "Online
+  Transaction", DECLARED CHOICE;
+- physically-located outlets (localOutlet / regionalOutlet /
+  nationalService — every non-online footprint gets a real GeoArea in
+  `placeGeography`) → card-present, split **Chip/Swipe by the dated US
+  EMV terminal mix** (`chipShareBasisPoints`): zero before 2012, low
+  single digits through the October 2015 network liability shift, 0.65
+  in 2019, frozen at 0.90 outside coverage — the era-scale freeze
+  convention. Values are a DECLARED CHOICE shaped by the EMVCo US
+  chip-share series ([Likely] — owner verifies). The per-row draw stays
+  content-keyed on `kUseChipLane`, so byte-identical rows derive
+  identically on every toolchain.
+
+**THE ANTI-SHORTCUT READING, stated before anyone asks.** This
+deliberately makes `use_chip` correlate with the label — fraud is
+CNP-majority (`kCardNotPresentShare = 0.70`) while legitimate spend is
+CNP-minority (~0.11 mode roll) — and that is REAL signal, the same
+class of honest correlation as b-2's distance decay. It opens no NEW
+structural shortcut because the modality was ALREADY visible to a graph
+model through merchant geography (online merchants are geography-free
+vertices); the round makes the flat feature AGREE with the structure
+instead of contradicting it. The merchant-ID baseline gate
+(`test_card_baselines`) still holds the ceiling on destination-derived
+separability.
+
+Gate: `tests/test_card_use_chip.cpp` — two 300-person legs, 1991 and
+2019. GATED: the coherence pin (Online ⟺ geography-free destination — a
+regression barrier that fails the moment a hash returns); ZERO chip
+rows in the pre-EMV 1991 leg (sharp, sampling-free); chip AND swipe
+present in 2019 with the realized chip share inside [0.60, 0.70] behind
+a ≥1,000-row power precondition that FAILS as under-powered (ROUND 5's
+law); both modalities and labels populated per leg; the EMV table's
+fixed points pinned at compile time. PRINTED, NOT GATED: fraud-vs-legit
+CNP shares (the modeled direction realizes over CASES and the gift-card
+rail is card-present by construction — instrument first, band later).
+
+Support: `LegResult` now carries a copy of the leg's merchant catalogue
+(`window_leg_support.hpp`, additive field) so exporter-derivation gates
+resolve footprints against the records the generator selected from.
+
+**SCOPE LIMITS, declared:** entry mode only — `error` remains a content
+hash (authorization attempts are unmodelled) and is the open half of
+online-GNN gate 4. The chip/swipe split is a presentation-layer
+terminal-technology mix, not per-card/terminal adoption state (that is
+the card-lifecycle gate). The legitimate CNP share (`kCardPresentShare
+= 0.89`) is still era-flat — its dated version belongs to the
+fraud-process era-drift gate, and payments.cpp now documents that this
+constant shapes the exported entry-mode mix directly.
+
+**GOLDEN IMPACT: exporter-only, ONE baseline.**
+`golden_tables_card_fraud.md5` re-pins (`Payment_Transaction.use_chip`
+changes value distribution). The corpus stream golden
+(`golden_run.b2sum`), `golden_tables.md5` and `golden_tables_aml.md5`
+MUST NOT move — no generation code changed except a payments.cpp
+comment — and the card-fraud section's corpus-stream digest must still
+equal the fraud section's. A moving stream digest here is a defect in
+the round, not a re-pin. The point-in-time contract is unaffected:
+use_chip = f(row content, static footprint, row year) is deterministic
+in the row, so STREAM PREFIX holds by construction and
+`test_card_point_in_time` re-verifies it.
+
 ### Layering verified
 
 `PL_LINT_ALLOWED_transfers` includes `activity` and the entities vocab,
 so the injector may read the merchant catalogue and the shared decay
 curve directly — one curve, two consumers. No relocation round.
+(ROUND 8 adds no edge: the exporter already read
+`entities/counterparties/merchants.hpp` for the category index, and the
+footprint rides the same record.)
 
 ## THE PARITY TRAP (must survive into every later round)
 
@@ -410,7 +608,7 @@ curve directly — one curve, two consumers. No relocation round.
 | `src/pipeline/simulate.cpp:95` | monolith reference oracle |
 | `src/pipeline/stages/transfers/windowed_run.cpp:285` | PRODUCTION windowed engine |
 | `tests/window_leg_support.hpp:313` | the gate harness every v2 gate runs on |
-| `tests/test_membership.cpp:626` | H3 membership gate (still defaulted — harmless, it exercises ring fraud, not the card rails) |
+| `tests/test_membership.cpp:626` | membership gate, now filled with the same persona carrier as production |
 
 The two ENGINES must pass IDENTICAL arguments or
 `test_arch_equivalence` / `test_production_windowed` diverge. The gate
@@ -430,6 +628,9 @@ four sites, because the value it needed was already being computed
 inside `transactions::Factory` and thrown away. **Before adding a
 carrier, check whether the value is already on the row** — the parity
 trap is a cost, and the cheapest way to pay it is not to incur it.
+**ROUND 8 is the exporter-side instance of the same lesson:** the
+modality was already on the row (through the destination), so the
+causal export needed no generation change at all.
 
 ## CUT from the critical path (polish, registered not forgotten)
 
@@ -440,24 +641,45 @@ trap is a cost, and the cheapest way to pay it is not to incur it.
   named lane. Must land AFTER a home-area-only baseline, which is why
   that baseline is NOT in `test_card_baselines` today — with no tilt in
   the world it would measure nothing.
-- **Transaction-time device/IP edges.** The session device and IP exist
-  on the corpus row (`public.transactions.device_id`, `.ip_address`) but
-  are not transaction-time edges in the card graph; `Has_IP`/`Has_Device`
-  are window-wide party associations. **An earlier version of this entry
-  called those two columns "feature-safe there". ROUND 6 falsified that:**
-  `device_id` renders attacker devices with a literal `FD` prefix, so on
-  the card/ato rails it is a deterministic label. See the leak inventory
-  below.
-- **Exporting the real card-present modality** into `use_chip` (see the
-  correction below).
-- **Compromise-state effective dates.** Likely SMALLER than it looks:
-  H3 delivered membership intervals, closure and join anchors; H4
-  delivered era-varying volume. Re-scope when reached.
+- **~~Transaction-time device/IP edges.~~ LANDED in ROUND 7.**
+  `Transaction_Uses_Device` and `Transaction_Uses_IP` carry the exact
+  row session with `edge_unix_time`. `Has_IP`/`Has_Device` were called
+  header-only compatibility tables here; both are POPULATED as of
+  attacker-infra-2026-07. **And "LANDED" was doing a lot of work in this
+  bullet:** the edges shipped while the endpoints they pointed at were
+  minted one per compromise, so the layer was structurally inert — an
+  exported edge being implemented is not the same as the entity behind it
+  being modelled.
+- **Credit-card fraud lifecycle integration.** Unauthorized positives
+  remain derived-debit backed. Planning must move before card-cycle
+  finalization so a compromised issued card affects statements,
+  payments, interest, chargebacks, limits, and later spending. A late
+  source-key substitution is explicitly test-rejected.
+- **~~Exporting the real card-present modality~~ LANDED as ROUND 8**
+  (`use_chip` reads the destination footprint + the dated EMV terminal
+  mix; `tests/test_card_use_chip.cpp`). Still registered from that
+  design: a MODELED authorization-outcome mechanism to replace the
+  `error` hash, and a time-varying legitimate CNP share.
+- **Effective card lifecycles and reissues.** Membership intervals are
+  now enforced, but cards are still effectively static instruments over
+  the owner's tenure: expiry, replacement after compromise, renewal,
+  product migration, and multiple-card histories are not modeled.
+- **Fraud-process era/concept drift.** H4 delivered era-varying
+  legitimate volume, not an era-varying adversary. Compromise rates,
+  CNP/payment-method mix, authentication, device reuse, and fraud
+  strategy need dated mechanisms so a decades-long benchmark does not
+  repeat one 2020-shaped process backward through time. (ROUND 8's
+  dated EMV mix covers the PRESENTATION layer only.)
+- **Delayed labels and executable evaluation.** The current target is
+  emitted on the transaction row. A benchmark must reveal
+  reports/chargebacks/verdicts only after their modeled delays and ship
+  the GSQL feature query, training code, temporal splits, baselines, and
+  evaluation harness that enforce score-before-update.
 - **Level calibration** of card-fraud prevalence against a named
   issuer-side series (Nilson / FTC), including the CNP share.
-- **~~Device `ownerId` render check.~~ ANSWERED as ROUND 6** — it does
-  NOT hash; the prefix is visible as `FD…` in `device_id`. Promoted from
-  a check to a sized, declared LEAK in the inventory below.
+- **~~Device `ownerId` render check and `FD` remediation.~~ CLOSED in
+  ROUND 7.** ROUND 6 confirmed the literal role prefix; ROUND 7 replaced
+  every role-specific layout with one stable opaque `D` namespace.
 - **~~e — the two-era card-rail class-F leg.~~ LANDED as ROUND 5**
   (`tests/test_card_class_f.cpp`). The coverage gap opened by the
   withdrawn flatness gate is closed.
@@ -476,13 +698,11 @@ trap is a cost, and the cheapest way to pay it is not to incur it.
   not introduced by it: an existence gate whose expectation is ~3 reads
   0 on roughly 5% of ANY re-roll. **The repair if it fires is a longer
   window, NEVER a lower floor** — a floor of 0 asserts nothing.
-- **The `FD` device render (ROUND 6, owner-deferred).** Give the
-  unauthorized attacker device a rendering a legitimate device could
-  also carry. Blast radius is why it is not in ROUND 6: `OwnerType::ring`
-  is shared with real ring shared-infrastructure devices, so either every
-  ring device stops rendering `FD` (moving AML/mule tables for legitimate
-  ring rows) or a new `OwnerType` is added. Its own named arc, its own
-  re-pin.
+- **~~The `FD` device render (ROUND 6, owner-deferred).~~ CLOSED in
+  ROUND 7.** The chosen solution changes every owner type together:
+  stable opaque digest, common prefix, common width, common numeric
+  domain. This intentionally moves AML/mule renderings as well as
+  attacker rows, so it belongs in the ROUND 7 re-pin.
 
 ## Population, density, and urban scaling (adopted, pending b′)
 
@@ -528,23 +748,38 @@ exponent is wrong — not the gate.
 |---|---|---|
 | `Party.created_at` unusable until membership-time consistency is fixed | **ALREADY CLOSED** — `card_fraud/export.cpp` writes `membership.joinTs(p)` (H3's single membership path) | STALE; prohibition LIFTED by the feature contract |
 | `Card.is_fraud`, `Party.is_fraud`, `Device.is_blocked`, `IP.is_blocked` are full-window labels | Confirmed | **CLOSED (round 1)** — columns retained for positional loading, written 0; verdicts moved to `cf_Ground_Truth_Label` |
-| `use_chip` / `error` are export-time hashes, not causal | Confirmed, and **a claim made earlier in this arc was WRONG**: b-2 did NOT make `use_chip` model-backed. `derive::useChipFor` is still an FNV content hash of the row (Swipe .63 / Chip .26 / Online .11) for fraud and legitimate rows alike; the modality decision drives destination selection and is never exported | Both are point-in-time SAFE (deterministic in the row) but MECHANISM-FREE. The feature contract classes them USE WITH CARE. Exporting the real modality is registered above |
+| `use_chip` / `error` are export-time hashes, not causal | Confirmed, and **a claim made earlier in this arc was WRONG**: b-2 did NOT make `use_chip` model-backed — until ROUND 8 the modality decision drove destination selection and was never exported | **use_chip CLOSED (round 8)** — entry mode reads the destination's acceptance footprint plus the dated EMV terminal mix; the feature contract reclassifies it FEATURE-SAFE (`test_card_use_chip`). **error remains OPEN** — still a content hash, classed USE WITH CARE, the remaining half of online-GNN gate 4 |
 | Raw `public.transactions` exposes ground truth + TEST-NET IPs | **BOTH CONFIRMED.** The TEST-NET claim DOES reproduce — the earlier "did not reproduce" reading grepped the dotted-quad string and missed `Ipv4::pack(198, 51, 100, …)` | IP shortcut **CLOSED**. The raw ledger's `is_fraud`/`ring_id`/`fraud_type` columns are the generator's own ground truth and stay — that table is the corpus, not the feature graph; the contract names `ring_id`/`fraud_type` PROHIBITED for features |
 | The arc's own gates measured a joinerless population | **CONFIRMED (ROUND 4)** — `GateWorld` defaulted `withJoinCohort = false`, so no gate in this arc had ever run on the shipped world shape | **CLOSED (round 4)** — default inverted, `joiners > 0` pinned as a precondition in all four behavioural gates, world shape printed on every leg line. One band was falsified by the flip and WITHDRAWN rather than widened |
 | No gate proved U-6 class F scaling reaches the CARD rail | **CONFIRMED (ROUND 4)** — the gate that claimed to was mis-specified and under-powered, and withdrawing it left the coverage at zero | **CLOSED (round 5)** — `test_card_class_f.cpp`, a cross-era deflated-quantile gate that sizes its own band and fails as UNDER-POWERED rather than passing vacuously |
 | The attacker session rides victim-AUTHORIZED rows | **CONFIRMED (ROUND 6)**, and the recorded deferral rationale was FALSE: `transactions::Factory` already routed the victim's own device/IP onto these rows and `unauthorized.cpp` overwrote it, so the sticky-index cost the deferral feared was already being paid | **CLOSED (round 6)** — the overwrite is now skipped on the two authorized rails. No new draws, no new carrier, no plumbing change. The registered "non-advancing `front()` pick" alternative was REJECTED as a replacement shortcut |
-| Device `ownerId` carries a magic `0xACE00000` prefix — does it reach the corpus? | **CONFIRMED A LEAK (ROUND 6).** `renderDeviceId` does NOT hash: the `OwnerType::ring` branch writes the literal `kFraudDevice` layout, so `device_id` reads `FD…` on every attacker-session row while person devices read `D<customer>_<slot>`. Deterministic, i.e. strictly stronger than the TEST-NET-2 shortcut | **PARTIALLY CLOSED (round 6), REST DECLARED** — gone from the gift-card and impostor rails with the session fix. SURVIVES on card/ato, where the attacker device is the correct model and the defect is exporter-side rendering. Owner ruling 7: sized, printed by the gate, registered as its own arc |
+| Device `ownerId` carries a magic `0xACE00000` prefix — does it reach the corpus? | **CONFIRMED A LEAK (ROUND 6).** The old `OwnerType::ring` branch wrote literal `FD…`, while person/shared devices used distinguishable layouts | **CLOSED (round 7)** — every assigned identity now renders through the same stable opaque, fixed-width `D` namespace. Tests reject role prefixes and width/range distinctions; raw IDs remain categorical only |
+| Exogenous session endpoints are absent from `cf_Device` / `cf_IP` | **CONFIRMED (ROUND 7 audit).** Attacker endpoints can be generated outside the synthesized infrastructure roster, so vertex absence was a structural label once event-time edges were introduced | **CLOSED (round 7)** — the vertex universe is the union of roster endpoints and endpoints observed on card-view rows; every session edge endpoint is pinned present |
+| Exogenous endpoints have no `Has_Device` / `Has_IP` Party edge | **CONFIRMED (ROUND 7 adversarial review).** Populating those tables only for customer-owned endpoints turns Party adjacency into an attacker-role bit | **CLOSED (round 7) → REOPENED AND RE-CLOSED DIFFERENTLY (attacker-infra-2026-07).** The round-7 disposition treated the asymmetry as a fact about the world; it was a fact about the GENERATOR. The withholding also had a cost nobody priced: Party is TF_GNN_v3's only path to Device/IP, so empty ownership tables left every endpoint vertex isolated and the layer inert. Re-closed by removing the asymmetry — partial registry coverage (`infra::enrollment`, ~72%/~61%) puts legitimate rows on un-recorded endpoints, and victim-endpoint + residential-proxy fraud puts fraud on recorded ones. Residual "not on file ⇒ fraud" precision **0.027 at 2.9x lift**, gated by `test_card_endpoint_graph` |
+| **Attacker endpoints are never reused across victims** | **CONFIRMED (attacker-infra-2026-07), and it was the largest open defect in the use case.** `buildCompromisePlans` minted `Identity{ring, 0xACE00000 + seq, 0}` and a fresh `randomIpv4` per compromise, so cross-victim endpoint sharing was ZERO BY CONSTRUCTION — the reason to model card fraud as a graph at all. **Four gates stayed green through it**, because every one asserted endpoints were PRESENT and none asserted they were SHARED | **CLOSED (attacker-infra-2026-07)** — endpoints come from campaign-scoped operator infrastructure with tiling tenure chains and a Pareto case load. Measured: **74–82% of attacker devices seen by >1 victim, mean 5–9, max 37–40**; zero out-of-tenure attribution. Draw-count-preserving on the planner lane, so corpus row counts are UNMOVED (189,035 → 189,035) and only the device/IP columns moved. `test_card_endpoint_graph` gates degree distribution, pool sizing, the shortcut size, and the point-in-time hard zero; confirmed non-vacuous by disarming reuse (12 checks red, mean fan-out collapses to 1.03) |
+| Card positives exercise modeled credit cards | **FALSE.** Every compromise uses the primary deposit account, so every positive exports as a derived debit card. The attempted Round 7 key swap bypassed already-closed statement servicing | **OPEN, with guard** — `test_card_prevalence` requires debit-backed positives and zero late-injected liability sources until fraud planning is integrated into `CardCycleDriver` |
 
 ## Law compliance
 
 NO new CLI; NO runtime path selection; NO network; embedded data only
-(the scaling law adds a constant, not a table). New randomness on a
-NAMED lane. b-2 and the IP fix are model-moving (four-golden re-pin);
-round 1 is exporter-only (three TABLE goldens; a moving stream golden
-would be a defect, and it did not move); the fill, c, and rounds 2–5
-are zero-golden — rounds 4 and 5 touch only test-only code, so a moving
+(the scaling law adds a constant, not a table; ROUND 8's EMV curve is
+likewise an embedded constant table). New randomness on a NAMED lane.
+b-2 and the IP fix are model-moving (four-golden re-pin); round 1 is
+exporter-only (three TABLE goldens; a moving stream golden would be a
+defect, and it did not move); the fill, c, and rounds 2–5 are
+zero-golden — rounds 4 and 5 touch only test-only code, so a moving
 golden there is a defect rather than a re-pin. **ROUND 6 is
 model-moving** (four-golden re-pin) but consumes NO new randomness, so
 row counts, amounts, timestamps and destinations must be unchanged and
 only the two session columns may move — a moving amount or count there
-is a defect, not a re-pin.
+is a defect, not a re-pin. **ROUND 7 is deliberately model- and
+export-moving:** payment timestamps, sessions, membership-visible rows,
+device renderings, the endpoint vertex sets, two new edge tables, and
+the header-only static infrastructure edges can move. It adds no runtime
+network or path selection and no unscoped randomness; its opaque ID
+algorithm is repository-owned and deterministic. **ROUND 8 is
+exporter-only, ONE-baseline:** only `golden_tables_card_fraud.md5`
+re-pins; the corpus stream and the standard/aml table goldens must not
+move, it consumes no randomness (content-keyed hash retained for the
+chip/swipe tiebreak only), and it adds no CLI, no network, no runtime
+path selection.

@@ -107,7 +107,19 @@ void DayDriver::runDay(const PreparedRun &run, RunState &state,
 
   if (cards_ != nullptr && cards_->active()) {
     ingestEmittedTo(cards_, state);
+    const auto nextDayStart = frame.day.start + time::Days{1};
+
+    // The spending engine screens one day at a time. Apply that day's
+    // previously scheduled lifecycle rows only after spending has finished,
+    // so a noon payment can never fund or suppress an earlier transaction.
+    // Do this before statement close so the statement sees only payments
+    // the ledger actually accepted.
+    cards_->advanceLedgerTo(nextDayStart);
     cards_->tickDay(dayIndex, frame.day.start);
+
+    // A 23:30 close may enqueue 23:45 interest. Apply that same-day posting
+    // after the close; future payments and fees remain queued.
+    cards_->advanceLedgerTo(nextDayStart);
   }
 }
 

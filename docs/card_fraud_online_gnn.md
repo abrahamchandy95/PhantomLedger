@@ -1,132 +1,172 @@
 # Card-fraud online GNN contract
 
-Status: realism audit, 2026-07-21.
+**Status: current implementation contract, 2026-07-27.**
 
 ## Verdict
 
-The `card-fraud` use case is runnable and useful for PostgreSQL, TigerGraph,
-temporal-loading, and model-pipeline development. It is **not yet a credible
-online fraud benchmark**. The current generator contains a merchant-identity
-shortcut and several full-window attributes that leak the target.
+The `card-fraud` use case is now suitable for building and testing a
+point-in-time temporal GNN pipeline. The known deterministic merchant,
+entity-label, TEST-NET IP, device-prefix, and missing-session-endpoint
+shortcuts are closed, and `use_chip` is a causal entry mode rather than a
+content hash (use-chip-causal-2026-07).
 
-This distinction matters: a high score on the current corpus can demonstrate
-that the graph pipeline works without demonstrating that a model learned fraud
-behavior.
+**THE ENDPOINT LAYER CARRIES A MESSAGE as of attacker-infra-2026-07, and
+before that round it did not.** Attacker devices and IPs were minted one
+per compromise, so cross-victim endpoint sharing was zero by construction
+— the single most valuable card-fraud graph signal was absent while every
+existing gate stayed green, because they all checked that endpoints were
+PRESENT and none checked that they were SHARED. Attacker endpoints now
+come from campaign-scoped infrastructure with a heavy-tailed case load
+(measured: 74–82% of attacker devices seen by more than one victim, mean
+5–9, max 37–40), `Has_Device`/`Has_IP` are populated so Device and IP are
+reachable from Party at all, and the residual "endpoint not on file"
+signal is sized at 2.9x lift rather than being deterministic.
 
-## Evidence from the current smoke corpus
+Unauthorized card cases use a modeled
+credit-card channel but currently settle from the victim's primary account and
+therefore export as derived debit-card activity; every visible payment carries
+timestamped device and IP edges.
 
-The checked PostgreSQL build used population 10,000, 60 days, seed 7, and
-start date 2025-01-01. It contained 533,382 `Payment_Transaction` rows and 748
-fraud rows.
+It is still **not a public calibrated benchmark**. The remaining blockers are
+level calibration against a named issuer-side count series, integration of
+unauthorized credit-card events into lifecycle servicing, effective-dated
+card/device/residence lifecycles across the full horizon, era-varying fraud
+technology and rail mix, delayed operational labels, and verification of the
+actual TigerGraph engineered-feature query. A high model score is meaningful
+only if the replay and feature rules below are followed.
 
-- All 748 fraud rows targeted 100 merchants with no legitimate card-view row.
-  A model can therefore classify by merchant identity alone. This follows from
-  unauthorized card and gift-card events targeting the legitimate-transfer
-  biller/hub pool, while ordinary card-view purchases use the merchant catalog.
-- The 748 fraud rows occurred on 97 cards, and every one of those cards also
-  had legitimate history. That is useful longitudinal structure, but
-  `Card.is_fraud` is computed from the entire output window: it gives 100%
-  recall on fraud rows by construction and must never be a predictive input.
-- `Party.is_fraud`, `Device.is_blocked`, and `IP.is_blocked` are also timeless
-  investigative labels. The unauthorized transaction's attacker device/IP is
-  not represented as a transaction-time edge in this schema.
-- The raw `public.transactions` table exposes `is_fraud`, `ring_id`, and
-  `fraud_type`, plus generator-role artifacts such as fraud-device identifiers
-  and TEST-NET IPs. These are ground truth/debug fields, never features.
-- `use_chip` and `error` are export-time hashes over settled rows, not causal
-  transaction-mode/authentication and authorization-attempt state.
+## What is implemented
 
-The merchant shortcut can be measured on any completed corpus with:
+| Risk or requirement | Current state | Enforcement |
+|---|---|---|
+| Fraud-only merchant identity | Closed: legitimate and fraudulent card rows draw from the same acceptance catalog and geographic kernel | `test_card_merchant_overlap`, `test_card_baselines` |
+| Full-window entity labels | Closed: `Card.is_fraud`, `Party.is_fraud`, `Device.is_blocked`, and `IP.is_blocked` are retained positionally but written `0`; positives live only in `cf_Ground_Truth_Label` | `test_pipeline_e2e`, table golden |
+| Point-in-time feature drift | Closed for repository-owned exported features by a full-versus-prefix truncation experiment | `test_card_point_in_time` |
+| Victim selection | Exposure-weighted for card/ATO; persona × age susceptibility for authorized scams; every complete case span must fit inside owned endpoints' `[join, close)` intervals and authorized victims must remain alive through the span | `test_card_victim_baselines`, `test_card_scam_rail`, `test_membership`, `test_unauthorized_keyed` |
+| Compromised card | Open: unauthorized rows remain primary-account/derived-debit backed because fraud is planned after `CardCycleDriver` has closed and serviced legitimate cycles. `test_card_prevalence` prevents an unserviced credit-liability key swap from masquerading as a fix | explicit benchmark blocker |
+| Attacker IP namespace | Closed: attacker and legitimate IPs use the same address generator | `test_unauthorized_keyed` |
+| Device role namespace | Closed: every assigned device renders through one fixed-width opaque `D…` namespace; owner type is not exposed in prefix, width, or numeric range | `test_unauthorized_keyed`, `test_pipeline_e2e` |
+| Transaction-time infrastructure | Implemented: `Transaction_Uses_Device` and `Transaction_Uses_IP`, both with `edge_unix_time`; observed exogenous endpoints are included in `Device`/`IP` | `test_pipeline_e2e`, `test_card_point_in_time` |
+| Membership-visible card graph | Implemented: payment rows outside either owned endpoint's membership interval are excluded from the card graph | `test_membership`, `test_card_point_in_time` |
+| Per-year prevalence and amount behavior | Measured and gated for stability, channel, typology, episode size, merchant overlap, and CPI-scaled amount behavior | `test_card_prevalence`, `test_card_class_f` |
+| Entry mode (`use_chip`) | Closed (ROUND 8, use-chip-causal-2026-07): Online ⟺ geography-free acceptance endpoint — the same `Footprint` axis both legitimate selection and the fraud rails partition destinations on — with the physical Chip/Swipe split following the dated US EMV terminal mix (zero before 2012). `error` remains a content hash and stays out of the default feature set | `test_card_use_chip`, `test_card_point_in_time` |
 
-```sql
-WITH merchant_labels AS (
-  SELECT e.merchant_id, p.is_fraud::integer AS label
-  FROM card_fraud."cf_Merchant_Receive_Transaction" AS e
-  JOIN card_fraud."cf_Payment_Transaction" AS p ON p.id = e.txn_id
-), merchant_summary AS (
-  SELECT merchant_id,
-         count(*) FILTER (WHERE label = 1) AS fraud_rows,
-         count(*) FILTER (WHERE label = 0) AS legitimate_rows
-  FROM merchant_labels
-  GROUP BY merchant_id
-)
-SELECT count(*) FILTER (WHERE fraud_rows > 0) AS fraud_merchants,
-       count(*) FILTER (
-         WHERE fraud_rows > 0 AND legitimate_rows = 0
-       ) AS fraud_only_merchants,
-       sum(fraud_rows) AS fraud_rows,
-       sum(fraud_rows) FILTER (
-         WHERE legitimate_rows = 0
-       ) AS fraud_rows_at_fraud_only_merchants
-FROM merchant_summary;
-```
+The original 2026-07-21 smoke result—748 positives all landing on 100
+fraud-only merchants and full-window labels in the graph—is historical
+pre-v2 evidence. It is the failure case the current gates preserve; it no
+longer describes the generator.
 
 ## Point-in-time prediction contract
 
-For a transaction at time `t`, the model must score it before observing its
-label and before updating node memory with that transaction. It may use the
-current card and merchant endpoints, current transaction amount/time/category,
-and graph events with `edge_unix_time < t`. Labels may update training state
-only after the score is recorded.
+For a payment at time `t`, the system must:
 
-Never use these as predictive features:
+1. construct features only from events with timestamp `< t`, plus request
+   context observable for the current payment;
+2. score before adding the current transaction or its session edges to graph
+   memory;
+3. record the prediction;
+4. append the transaction, card, merchant, device, and IP event to memory;
+5. expose the target only when the chosen operational label policy says it was
+   observed.
 
-- `Payment_Transaction.is_fraud`, except as the supervised target;
-- `Card.is_fraud`, `Party.is_fraud`, `Device.is_blocked`, or `IP.is_blocked`;
-- aggregates, PageRank, communities, co-occurrence edges, or embeddings
-  computed from events at or after `t`;
-- `Party.created_at` until membership-time consistency is fixed;
-- `row_seq`, `span_index`, `ring_id`, `fraud_type`, identifier prefixes, or
+Current request context may include amount, timestamp, merchant/category,
+entry mode (`use_chip`, causal since ROUND 8), instrument, device, and IP.
+The current device/IP identifiers select prior state; they are categorical
+join keys, never numeric features. Historical velocity, amount deviation,
+merchant novelty, card-device/IP recency, prior outcomes available before
+`t`, and point-in-time neighborhood features are valid.
+
+Never use these as predictive inputs:
+
+- `Payment_Transaction.is_fraud` or `public.transactions.is_fraud`;
+- `cf_Ground_Truth_Label`;
+- `Card.is_fraud`, `Party.is_fraud`, `Device.is_blocked`, or `IP.is_blocked`
+  (they are currently zero, and restoring them is forbidden);
+- `public.transactions.ring_id` or `.fraud_type`;
+- `row_seq`, `span_index`, identifier prefixes, identifier magnitude, or
   other generator/debug metadata;
-- `error` until authorization attempts and declines are modeled.
+- PageRank, communities, co-occurrence edges, aggregates, or embeddings that
+  include events at or after `t`;
+- (`Has_Device` / `Has_IP` LEFT THIS LIST in attacker-infra-2026-07. They
+  are now populated, and they are the institution's INCOMPLETE endpoint
+  registry rather than ground-truth ownership — ~72% device / ~61% address
+  coverage, so absence is weak evidence. Measured "not on file ⇒ fraud"
+  precision 0.027 at 2.9x lift. Use them for graph STRUCTURE; use the
+  timestamped transaction-session edges for anything point-in-time.)
+- PII unless a separately reviewed use case explicitly requires it;
+- `error` in the default model. It remains a content-keyed compatibility
+  field rather than causal authorization state. (`use_chip` left this list
+  in ROUND 8: it is now the causal entry mode — see the feature contract.)
 
-Historical velocity, amount deviation, merchant novelty, card-merchant
-recency, prior legitimate/fraud outcomes available before `t`, and
-point-in-time neighborhood features are valid. PII should stay outside the
-model unless a separately reviewed use case needs it.
+`Party.created_at` is safe: it is the modeled membership `joinTs`. The old
+prohibition predated the H3 membership implementation.
 
 ## Evaluation protocol
 
-Use an event-stream model such as a Temporal Graph Network and maintain strict
-timestamp order. A suitable first split for the requested corpus is:
+Use strict event order, not a random row or edge split. For the validated
+1999-through-2019 corpus:
 
-- train: `[1991-01-01, 2015-01-01)`;
+- train: `[1999-01-01, 2015-01-01)`;
 - validation: `[2015-01-01, 2017-01-01)`;
 - test: `[2017-01-01, 2020-01-01)`.
 
-Do not use a random row or random edge split. Report PR-AUC, recall at a fixed
-false-positive or alert-review budget, precision at the operating threshold,
-false positives per million transactions, calibration, and time to first
-detection within a compromise episode. Include an inductive test for cards and
-merchants first observed after the training cutoff, and compare against
-amount/time-only and merchant-ID-only baselines.
+Report PR-AUC, precision and recall at a fixed alert-review budget, false
+positives per million payments, calibration, and time to first detection
+within a compromise episode. Keep natural prevalence in validation/test.
+If training undersamples positives or uses class weights, document the
+posterior correction and choose thresholds on validation only.
 
-The current exporter is an offline corpus builder, not an inference service:
-its card tables use run-long PostgreSQL COPY streams and become queryable after
-the run closes. “Online” here means replaying the completed corpus in strict
-event order and enforcing point-in-time visibility. A true live path would
-also need an incrementally committed event/outbox, transaction-time
-device/IP/channel edges, and a delayed `label_observed_at` feedback event.
+Include:
 
+- rolling-origin results by year and seed;
+- inductive cards, merchants, devices, and IPs first observed after the
+  training cutoff;
+- amount/time-only, merchant-ID-only, instrument-type-only, entry-mode-only,
+  and device/IP-namespace baselines (the entry-mode baseline exists because
+  ROUND 8 deliberately made `use_chip` carry the real CNP-majority signal —
+  it must help a model, not solve the task);
+- episode-clustered confidence intervals;
+- subtype slices for unauthorized debit and victim-authorized gift-card scams.
+  An unauthorized-credit slice is required only after credit-card fraud is
+  integrated into lifecycle servicing; the current absence is a known gap,
+  not a favorable result.
+
+The exporter builds an offline corpus. “Online” means replaying that corpus in
+strict timestamp order under this visibility contract. A live serving path
+still needs an incrementally committed event/outbox and delayed label events.
 This follows the continuous-time event framing in
 [Temporal Graph Networks](https://arxiv.org/abs/2006.10637). IBM's
 [TabFormer work](https://research.ibm.com/publications/tabular-transformers-for-modeling-multivariate-time-series)
-is a longitudinal/schema comparison target, not evidence that PhantomLedger's
-current causal mechanisms are calibrated.
+is a longitudinal/schema comparator, not a calibration source.
 
-## Minimum realism gates before a public benchmark
+## Remaining benchmark gates
 
-1. Unauthorized card fraud must select a modeled compromised card, modality,
-   eligible merchant acceptance endpoint, and transaction-time device/IP. The
-   same merchant endpoint population must support both legitimate and
-   fraudulent activity; fraud-only merchant identity cannot explain every
-   positive row.
-2. Fraud cases, cards, residence, modes, and compromise state need effective
-   dates and drift over the 29-year window.
-3. Fraud prevalence must be calibrated on the final Payment view, with
-   per-year, channel, typology, amount, episode-size, and merchant-overlap
-   gates—not only one aggregate rate.
-4. Every in-graph feature must have a point-in-time implementation and a test
-   that adding future events cannot change an earlier score-time feature.
-5. A merchant-ID-only baseline must not solve the task. Performance should
-   persist on chronological and inductive holdouts.
+1. Calibrate fraud **level** on the final payment view against a named
+   issuer-side count series; do not compare a count rate with value-loss basis
+   points.
+2. Move fraud planning early enough that unauthorized credit-card purchases
+   participate in statement close, payments, interest, chargebacks, credit
+   limits, and later spending. Then add effective-dated card
+   issue/expiry/replacement/closure, device/IP usage, residence, and merchant
+   availability. The current decades-long macro and persona timelines are
+   real, but the wallet and access graph are too static.
+3. Replace one whole-window, era-flat fraud process with content-keyed
+   calendar buckets and era-varying card-not-present, gift-card, wire/P2P, and
+   reporting behavior. A short run must be a byte-identical prefix of a longer
+   run with the same seed/start. (ROUND 8's dated EMV terminal mix covers the
+   PRESENTATION layer only; the fraud process itself — compromise incidence,
+   `kCardNotPresentShare`, the legitimate CNP share — is still era-flat.)
+4. ~~Export causal entry mode~~ **entry mode DONE (ROUND 8,
+   `test_card_use_chip`)**; still open: model authorization-attempt outcomes
+   and remove the remaining compatibility hash derivation for `error`.
+5. Add `case_id`, `label_observed_at`, dispute/report linkage, censoring, and
+   intervention-aware outcome metrics.
+6. Put the production TigerGraph/GSQL feature allowlist and query under test;
+   repository export causality does not prove an external engineered query is
+   causal.
+
+The victim-authorized jail-relative/impostor wire/P2P rail is present in the
+raw ledger as `scam_impostor`, but it is outside the card-only
+`Payment_Transaction` view. A broader “Payment Transaction Fraud” benchmark
+should be a separate graph/view rather than silently mixing that target into
+the card contract.

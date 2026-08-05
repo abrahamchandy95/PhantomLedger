@@ -80,10 +80,13 @@
 #include "phantomledger/synth/personas/lifespan.hpp"
 #include "phantomledger/synth/personas/pack.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
+#include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace PhantomLedger::transfers::fraud::susceptibility {
@@ -209,26 +212,54 @@ public:
     return ready() ? pack_->timelines.size() : 0;
   }
 
-  /// A customer of the bank at `at`: joined, and (when the caller's rail
-  /// requires it) still alive. Permissive when the carriers are absent.
+  /// A customer of the bank at `at`: inside the account-membership interval
+  /// [join, death + settlement). Authorized scam rails additionally require
+  /// the customer to be alive because a victim cannot authorize a payment
+  /// after death. Card/ATO rails may use the declared estate-settlement tail,
+  /// but never an account that has already closed.
+  ///
+  /// Permissive when the carriers are absent.
   [[nodiscard]] bool member(std::size_t idx, time::TimePoint at,
                             bool requireAlive) const noexcept {
     if (!ready() || idx >= pack_->timelines.size()) {
       return true;
     }
     if (idx < pack_->joinDays.size()) {
-      const auto joined = time::addDays(
-          windowStart_, static_cast<int>(pack_->joinDays[idx]));
+      const auto joined =
+          time::addDays(windowStart_, static_cast<int>(pack_->joinDays[idx]));
       if (at < joined) {
         return false;
       }
     }
-    if (requireAlive &&
-        !::PhantomLedger::synth::personas::timeline::aliveAt(
-            pack_->timelines[idx], at)) {
+    const auto closeEpoch = time::toEpochSeconds(pack_->timelines[idx].death) +
+                            static_cast<std::int64_t>(
+                                ::PhantomLedger::synth::pii::kSettlementDays) *
+                                86'400;
+    if (time::toEpochSeconds(at) >= closeEpoch) {
+      return false;
+    }
+    if (requireAlive && !::PhantomLedger::synth::personas::timeline::aliveAt(
+                            pack_->timelines[idx], at)) {
       return false;
     }
     return true;
+  }
+
+  /// Exclusive end of the interval used by `member`: account closure for
+  /// unauthorized rails, death for victim-authorized rails. Carrier-free
+  /// callers receive an unbounded horizon.
+  [[nodiscard]] std::int64_t
+  eligibleUntilEpoch(std::size_t idx, bool requireAlive) const noexcept {
+    if (!ready() || idx >= pack_->timelines.size()) {
+      return std::numeric_limits<std::int64_t>::max();
+    }
+    const auto deathEpoch = time::toEpochSeconds(pack_->timelines[idx].death);
+    if (requireAlive) {
+      return deathEpoch;
+    }
+    return deathEpoch + static_cast<std::int64_t>(
+                            ::PhantomLedger::synth::pii::kSettlementDays) *
+                            86'400;
   }
 
   /// Age in years at `at`. Deliberately the SAME arithmetic the
@@ -239,9 +270,9 @@ public:
     if (!ready() || idx >= pack_->birthDates.size()) {
       return 0.0;
     }
-    return std::max(0.0,
-                    ::PhantomLedger::synth::personas::lifespan::detail::
-                        ageYearsAt(pack_->birthDates[idx], at));
+    return std::max(
+        0.0, ::PhantomLedger::synth::personas::lifespan::detail::ageYearsAt(
+                 pack_->birthDates[idx], at));
   }
 
   /// The per-case loss multiplier for this victim at this date.
@@ -265,9 +296,8 @@ public:
     if (!member(idx, at, /*requireAlive=*/true)) {
       return 0.0;
     }
-    const auto persona =
-        ::PhantomLedger::synth::personas::timeline::personaAt(
-            pack_->timelines[idx], at);
+    const auto persona = ::PhantomLedger::synth::personas::timeline::personaAt(
+        pack_->timelines[idx], at);
     return scamPersonaFactor(persona) * scamAgeIncidence(ageYears(idx, at));
   }
 

@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/entities/infra/tenure.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
 #include <cstdint>
@@ -20,6 +21,11 @@ struct Usage {
   network::Ipv4 ipAddress{};
   time::TimePoint firstSeen{};
   time::TimePoint lastSeen{};
+
+  // Registry coverage for this (party, address) pair; see the same field
+  // on devices_output.hpp Usage and entities/infra/enrollment.hpp for
+  // why partial coverage is the fix rather than a compromise. Draw-free.
+  bool enrolled = false;
 };
 
 struct Output {
@@ -27,6 +33,10 @@ struct Output {
   std::vector<Usage> usages;
 
   std::unordered_map<entity::PersonId, std::vector<network::Ipv4>> byPerson;
+
+  // PARALLEL to byPerson; see devices_output.hpp for the contract.
+  std::unordered_map<entity::PersonId, std::vector<::PhantomLedger::infra::Tenure>>
+      tenureByPerson;
 
   std::unordered_map<std::uint32_t, network::Ipv4> ringMap;
 };

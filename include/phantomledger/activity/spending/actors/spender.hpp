@@ -7,6 +7,7 @@
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <cstdint>
+#include <span>
 #include <limits>
 
 namespace PhantomLedger::activity::spending::actors {
@@ -61,14 +62,22 @@ struct Spender {
   std::uint16_t billCount = 0;
 
   float exploreProp = 0.0f;
-  std::uint32_t burstStart = market::commerce::kNoBurstDay;
-  std::uint16_t burstLen = 0;
+  // burst-rate-2026-07: every burst window this person has over the run,
+  // not just the first. Points into the market's schedule, which outlives
+  // the Spender.
+  std::span<const market::commerce::BurstWindow> bursts{};
 
-  // geo-causal-v1 (G2a): the customer's home area, for card-present
-  // distance-decay selection. Sourced from the compact People::homeAreas
-  // carrier via the population View. invalidGeoArea until the carrier is
-  // threaded to buildSpender (step-1 remainder); UNREAD until step-2.
-  entity::geography::GeoAreaId homeArea = entity::geography::invalidGeoArea;
+  // relocation-2026-07: `homeArea` IS DELIBERATELY GONE from this struct.
+  //
+  // It used to cache the home area at `prepareSpenders` time, and
+  // `prepareSpenders` runs ONCE for the whole fold — so once homes could move,
+  // that cache was a value frozen at window start while the schedule and the
+  // exporter moved on. Removing the field rather than leaving it stale is what
+  // makes the compiler find every reader; `payments.cpp` now asks
+  // `market.population().homeArea(person)`, which the monthly evolver
+  // re-points. Do not reintroduce it: a per-day copy would need `runDay` to
+  // stop taking `PreparedRun` by const ref, and reading fresh costs one
+  // indirection on a path that already does a CDF walk.
 
   // H2 step 2c: the window day-index from which kRetiredSpendScale
   // applies (kNoRetireDay = never in this window). From the

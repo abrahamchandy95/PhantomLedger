@@ -10,10 +10,24 @@
 // exportAll() runs the SAME sink over the retained corpus and calls
 // the same finisher — one code path, two engines.
 //
-// Is_Merchant is emitted header-only: the world has no modeled
-// merchant-owning-party link (business owners own ACCOUNTS, not
-// catalog merchants). Documented in the card-fraud-2026-07 block;
-// populating it is a model round of its own.
+// Is_Merchant carries the merchant -> proprietor register as of
+// merchant-ownership-2026-07. It was header-only for the stated reason
+// that the world had no merchant-owning-party link — `Role::business` and
+// `Role::merchant` keys were disjoint populations, never joined — and an
+// empty table hard-aborts the downstream tf_gnn_loader_v2 push. Owners
+// come from the existing business-owner cohort, resolved draw-free from
+// the merchant key alone, and the table is restricted to view-observed
+// merchants because the Merchant vertex set is stream-derived.
+//
+// Has_Device and Has_IP are POPULATED as of attacker-infra-2026-07,
+// from the world's usage records filtered by registry coverage
+// (`infra::enrollment`) — never from the stream, because
+// test_card_point_in_time classifies both as world-derived and requires
+// full-vs-prefix byte identity. They were header-only for four rounds
+// while attacker endpoints were the only ownerless ones in the corpus;
+// see schema.hpp for what changed in the generator, and
+// tests/test_card_endpoint_graph.cpp for the gate that keeps the
+// residual signal weak.
 //
 
 #include "phantomledger/exporter/card_fraud/streaming.hpp"
@@ -59,10 +73,11 @@ struct Summary {
   std::size_t zipcodeCount = 0;
 };
 
-// Writes every table EXCEPT the three the sink streamed
-// (Payment_Transaction, Card_Send_Transaction,
-// Merchant_Receive_Transaction), from the world + the assembled
-// artifacts. Shared by both engines.
+// Writes every table EXCEPT the five the sink streamed: the
+// Payment_Transaction vertex and its four timestamped relationships
+// (Card_Send_Transaction, Merchant_Receive_Transaction,
+// Transaction_Uses_Device, and Transaction_Uses_IP). Together the sink
+// and this finisher produce the 39-table export. Shared by both engines.
 [[nodiscard]] Summary
 exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
                     const Options &options, StreamedArtifacts artifacts);

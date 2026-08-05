@@ -253,7 +253,7 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                   .dstIdx = maybeResult->dstIdx,
                   .amount = maybeResult->draft.amount,
                   .channel = maybeResult->draft.channel,
-                  .timestamp = 0},
+                  .timestamp = maybeResult->draft.timestamp},
   };
 }
 

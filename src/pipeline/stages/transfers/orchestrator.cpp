@@ -74,6 +74,9 @@ legitWorldInputs(const pipeline::People &people,
       // spending market via RoutineResources → CensusSource so BOTH the
       // windowed and monolith engines select from the same home areas.
       .homeAreas = people.homeAreas,
+      // relocation-2026-07: the home-area HISTORY behind the snapshot, so both
+      // engines refresh from one schedule.
+      .relocation = &people.relocation,
   };
 }
 
@@ -153,6 +156,12 @@ TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
           .rng = rng,
           .router = &infra.router,
           .ringInfra = &infra.ringInfra,
+          // attacker-infra-2026-07: the exogenous endpoint pool. THE
+          // WINDOWED ENGINE MUST PASS THE SAME POINTER — an asymmetry
+          // here is an immediate test_arch_equivalence divergence,
+          // because the two engines would resolve different sessions for
+          // the same case.
+          .attackers = &infra.attackers,
           .fraudSeed = legit_.runScope().seed ^ 0x9E3779B97F4A7C15ULL,
       },
       // H3 part 3c-ii: the timeline carrier gives each ring plan its

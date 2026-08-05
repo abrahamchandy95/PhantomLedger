@@ -29,6 +29,12 @@ public:
     return commerce_;
   }
   [[nodiscard]] commerce::View &commerceMutable() noexcept { return commerce_; }
+  // relocation-2026-07: the monthly evolver re-points home areas from the
+  // relocation schedule. Mutable for the same reason `commerceMutable` is —
+  // the month boundary is the fold's only per-instant hook.
+  [[nodiscard]] population::View &populationMutable() noexcept {
+    return population_;
+  }
   [[nodiscard]] const Cards &cards() const noexcept { return cards_; }
 
 private:

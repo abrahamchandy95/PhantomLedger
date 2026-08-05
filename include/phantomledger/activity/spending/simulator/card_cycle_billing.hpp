@@ -28,6 +28,12 @@ public:
   virtual void
   ingestPurchases(std::span<const transactions::Transaction> txns) = 0;
 
+  // Apply lifecycle postings whose timestamps are strictly before this
+  // bound to the spending ledger. Statement close may schedule a payment,
+  // interest charge, or late fee in the future; those rows must not change
+  // spending liquidity before their posting day.
+  virtual void advanceLedgerTo(time::TimePoint boundExcl) = 0;
+
   virtual void tickDay(std::uint32_t dayIndex, time::TimePoint dayStart) = 0;
 
   // Closes every remaining cycle at end of run.

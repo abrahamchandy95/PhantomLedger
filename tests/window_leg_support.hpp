@@ -88,6 +88,7 @@
 // construction in gate_world.hpp.
 //
 
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/acceptance/fingerprint.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
@@ -203,10 +204,17 @@ struct LegResult {
   // invisible here. Zero means the leg ran the joinerless world.
   std::uint64_t joiners = 0;
 
+  // use-chip-causal-2026-07: the merchant acceptance catalogue this
+  // leg's world carried, copied out before the world is torn down so an
+  // exporter-derivation gate (test_card_use_chip) can resolve destination
+  // footprints against the SAME records the generator selected from.
+  // Additive; the equivalence/invariance gates do not compare it.
+  pl::entity::merchant::Catalog merchants;
+
   // Cursor-source accounting. `remaining` counts generated rows the driver
-  // NEVER staged (timestamps at/beyond the final finalized coverage); a
-  // nonzero value means the leg silently lost source rows the monolithic
-  // fold would have settled in its unbounded final span.
+  // never staged, normally because their timestamps are at/beyond the
+  // half-open run end. Such future-only rows are intentionally outside the
+  // corpus and active fraud budget.
   std::uint64_t baseSourceEmitted = 0;
   std::uint64_t baseSourceRemaining = 0;
   std::uint64_t productSourceEmitted = 0;
@@ -355,6 +363,10 @@ struct LegResult {
                     world.people.personas.joinDays.end(),
                     [](std::uint32_t day) { return day > 0U; }));
 
+  // The acceptance catalogue, copied for exporter-derivation gates — the
+  // world itself is torn down with this frame (see LegResult::merchants).
+  out.merchants = world.cps.merchants;
+
   if (opt.withFraud) {
     // Fraud boundary inputs. Injector construction mirrors
     // TransferStage::makeFraudInjector, including the fraud seed derivation
@@ -368,6 +380,7 @@ struct LegResult {
             .rng = rng,
             .router = &world.infra.router,
             .ringInfra = &world.infra.ringInfra,
+            .attackers = &world.infra.attackers,
             .fraudSeed = opt.seed ^ 0x9E3779B97F4A7C15ULL,
         },
         fraudEmission.ringView(world.people.roster.topology,
@@ -402,7 +415,7 @@ struct LegResult {
           static_cast<std::size_t>(realizedCandidateCount),
           xfer::FraudEmission::legitCounterparties(
               legitCps, &world.cps.merchants, world.people.homeAreas,
-              &world.people.personas));
+              &world.people.personas, &world.people.relocation));
     };
 
     xfer::RunSummary summary;

@@ -34,7 +34,8 @@
 // FOUR COMPARISON CLASSES, and choosing the right one per table is the
 // whole design:
 //
-//   STREAM PREFIX   the three streamed transaction tables. The PREFIX
+//   STREAM PREFIX   the five streamed transaction tables (payment,
+//                   sender, receiver, device and IP). The PREFIX
 //                   export's lines must be a byte-exact PREFIX of the
 //                   FULL export's — strongest form available.
 //   IDENTICAL       world-derived tables (Party, the PII layer) cannot
@@ -73,6 +74,7 @@
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
@@ -114,8 +116,7 @@ void check(bool condition, const std::string &what) {
 
 class Capture final : public pl::exporter::common::TableCapture {
 public:
-  void put(std::string_view stem, const char *data,
-           std::size_t size) override {
+  void put(std::string_view stem, const char *data, std::size_t size) override {
     tables_[std::string{stem}].append(data, size);
   }
 
@@ -130,7 +131,7 @@ public:
       const auto nl = text.find('\n');
       auto line = text.substr(0, nl);
       text = nl == std::string_view::npos ? std::string_view{}
-                                         : text.substr(nl + 1);
+                                          : text.substr(nl + 1);
       if (!line.empty() && line.back() == '\r') {
         line.remove_suffix(1);
       }
@@ -197,6 +198,10 @@ void exportPrefix(const pl::pipeline::SimulationResult &result,
                   std::span<const pl::transactions::Transaction> txns,
                   Capture &capture) {
   pl::exporter::card_fraud::StreamingCardFraudExport sink({
+      .registry = &result.holdings.accounts.registry,
+      .lookup = &result.holdings.accounts.lookup,
+      .membership = pl::synth::personas::join_cohort::membershipOf(
+          result.people.personas, window()),
       .cards = &result.holdings.creditCards,
       .merchants = &result.counterparties.merchants,
       .pgMirror = nullptr,
@@ -320,9 +325,9 @@ void expectLineSubset(const Capture &full, const Capture &prefix,
             " row(s) present at score time do not exist over the full "
             "window — an edge changed as future events arrived" +
             firstVanished);
-  check(b.size() <= a.size(),
-        stem + " shrank as rows were added (" + std::to_string(b.size()) +
-            " > " + std::to_string(a.size()) + ")");
+  check(b.size() <= a.size(), stem + " shrank as rows were added (" +
+                                  std::to_string(b.size()) + " > " +
+                                  std::to_string(a.size()) + ")");
 }
 
 /// STREAM PREFIX: the strongest form — the score-time export must be a
@@ -417,24 +422,42 @@ int main() {
                     static_cast<double>(posted.size()));
 
     // ---------------------------------------------- the streamed tables
-    for (const char *stem : {"Payment_Transaction", "Card_Send_Transaction",
-                             "Merchant_Receive_Transaction"}) {
+    for (const char *stem :
+         {"Payment_Transaction", "Card_Send_Transaction",
+          "Merchant_Receive_Transaction", "Transaction_Uses_Device",
+          "Transaction_Uses_IP"}) {
       expectStreamPrefix(full, prefix, stem);
     }
 
     // ------------------------------------------------- world-derived
     for (const char *stem :
          {"Party", "Address", "Phone", "Email", "ID", "Full_Name", "DOB",
-          "Device", "IP", "Has_Address", "Has_Phone", "Has_Email", "Has_ID",
-          "Has_DOB", "Has_Full_Name", "Has_Device", "Has_IP",
-          "Merchant_Category"}) {
+          "Has_Address", "Has_Phone", "Has_Email", "Has_ID", "Has_DOB",
+          "Has_Full_Name", "Has_Device", "Has_IP", "Merchant_Category",
+          // party-geography-2026-07: home area is assigned once at PII
+          // synthesis, so these belong in the STRICTEST class — byte
+          // identity between the full window and any prefix. A party whose
+          // exported home geography moved as later rows arrived would be
+          // acausal, and unlike the merchant side there is no growing
+          // vertex set to excuse it: the roster is fixed.
+          "Has_Std_City", "Has_Std_Postcode", "Has_Std_State"}) {
       expectIdentical(full, prefix, stem);
     }
 
     // --------------------- growing row sets with per-entity attributes
     // Card is the one that matters: card_number is unique and is_fraud
     // sits beside it, so a restored full-window label fails HERE.
-    for (const char *stem : {"Card", "Merchant_Assigned", "City"}) {
+    // merchant-coordinates-2026-07: `Merchant_Location` belongs HERE, not
+    // in the line-subset list below, and the difference is load-bearing.
+    // Its row set grows exactly as `Merchant` does, but merchant_id is a
+    // UNIQUE key within it (one area centroid per merchant), so the keyed
+    // check applies — and it is the stronger one: it fails if a merchant's
+    // coordinate ever differs between the prefix and the full window,
+    // which is precisely the acausality a geography attribute could
+    // smuggle in. The coordinate is world state (`Record.location` is
+    // assigned once in G1c), so it must be prefix-invariant.
+    for (const char *stem : {"Card", "Merchant_Assigned", "City",
+                             "Merchant_Location", "Device", "IP"}) {
       expectKeyedStable(full, prefix, stem);
     }
 
@@ -442,8 +465,17 @@ int main() {
     // Party_Has_Card is one-to-many (a party owns a credit card plus a
     // derived debit card per account), so it is a line subset, not a
     // keyed table.
+    // merchant-ownership-2026-07: `Is_Merchant` joins this list rather
+    // than the world-derived one above, and the distinction is the whole
+    // point. The register itself IS world state, but it is emitted only
+    // for merchants OBSERVED IN THE VIEW — because `Merchant` is a
+    // stream-derived growing vertex set, and an edge to a vertex a prefix
+    // has not written yet is a dangling edge the loader rejects. So the
+    // row SET grows exactly as `Merchant` does while every row it does
+    // emit is stable.
     for (const char *stem :
-         {"Merchant", "Party_Has_Card", "Has_City", "Has_State", "Has_Zip",
+         {"Merchant", "Is_Merchant", "Party_Has_Card", "Has_City", "Has_State",
+          "Has_Zip",
           "Assigned_To", "Located_In", "State", "Zipcode"}) {
       expectLineSubset(full, prefix, stem);
     }

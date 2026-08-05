@@ -21,11 +21,15 @@
 #include "window_leg_support.hpp"
 
 #include "phantomledger/pipeline/simulate.hpp"
+#include "phantomledger/pipeline/stages/transfers/ledger_replay.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -90,10 +94,110 @@ runMonolithic(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
   return out;
 }
 
+[[nodiscard]] std::size_t outsideWindowRows(std::span<const Txn> rows,
+                                            pl::time::Window window) {
+  const auto start = pl::time::toEpochSeconds(window.start);
+  const auto end = pl::time::toEpochSeconds(window.endExcl());
+  return static_cast<std::size_t>(
+      std::count_if(rows.begin(), rows.end(), [start, end](const Txn &txn) {
+        return txn.timestamp < start || txn.timestamp >= end;
+      }));
+}
+
+[[nodiscard]] Txn makeBoundaryTxn(pl::entity::Key source,
+                                  pl::entity::Key target, double amount,
+                                  std::int64_t timestamp,
+                                  pl::channels::Tag channel) {
+  Txn txn;
+  txn.source = source;
+  txn.target = target;
+  txn.amount = amount;
+  txn.timestamp = timestamp;
+  txn.session.channel = channel;
+  return txn;
+}
+
+void finalWindowBoundaryUnit() {
+  pl::time::Window window{
+      .start = pl::time::makeTime({2025, 1, 1}),
+      .days = 1,
+  };
+  const auto schedule = pl::pipeline::chunk::Schedule::unpartitioned(window);
+  const auto start = pl::time::toEpochSeconds(window.start);
+  const auto end = pl::time::toEpochSeconds(window.endExcl());
+
+  const auto source = pl::entity::makeKey(pl::entity::Role::account,
+                                          pl::entity::Bank::internal, 1);
+  const auto target = pl::entity::makeKey(pl::entity::Role::account,
+                                          pl::entity::Bank::internal, 2);
+
+  pl::clearing::Ledger opening;
+  opening.initialize(2);
+  opening.addAccount(source, 0);
+  opening.addAccount(target, 1);
+  opening.cash(0) = 500.0;
+
+  const auto merchant = pl::channels::tag(pl::channels::Legit::merchant);
+  const auto past = makeBoundaryTxn(source, target, 50.0, start - 1, merchant);
+  const auto active = makeBoundaryTxn(source, target, 100.0, end - 1, merchant);
+  const auto future = makeBoundaryTxn(source, target, 200.0, end + 1, merchant);
+
+  pl::pipeline::stages::transfers::LedgerReplay replay;
+  auto preRng = pl::random::Rng::fromSeed(101);
+  auto candidate = replay.preFraudChunked(
+      opening, preRng, std::vector<Txn>{past, active, future}, schedule);
+
+  // The pre-fraud candidate count is the active fraud-budget denominator.
+  PL_CHECK(candidate.txns.size() == 1);
+  PL_CHECK(candidate.txns.front().timestamp == active.timestamp);
+
+  auto postRng = pl::random::Rng::fromSeed(202);
+  auto posted =
+      replay.postFraudChunkedMerged(postRng, opening, std::move(candidate.txns),
+                                    std::vector<Txn>{past, future}, schedule);
+
+  PL_CHECK(posted.txns.size() == 1);
+  PL_CHECK(posted.txns.front().timestamp == active.timestamp);
+  PL_CHECK(outsideWindowRows(posted.txns, window) == 0);
+  PL_CHECK(posted.book->cash(0) == 400.0);
+  PL_CHECK(posted.book->cash(1) == 100.0);
+
+  // A future inbound remains visible as cure lookahead. The active debit is
+  // deferred rather than terminally dropped, but neither it nor the future
+  // inbound is posted outside the corpus horizon.
+  pl::clearing::Ledger cureBook;
+  cureBook.initialize(2);
+  cureBook.addAccount(source, 0);
+  cureBook.addAccount(target, 1);
+
+  const auto bill = pl::channels::tag(pl::channels::Legit::bill);
+  const auto salary = pl::channels::tag(pl::channels::Legit::salary);
+  const auto externalEmployer = pl::entity::makeKey(
+      pl::entity::Role::business, pl::entity::Bank::external, 3);
+  const auto activeDebit =
+      makeBoundaryTxn(source, target, 25.0, end - 1'800, bill);
+  const auto futureCure =
+      makeBoundaryTxn(externalEmployer, source, 25.0, end + 1'800, salary);
+
+  auto funding =
+      pl::pipeline::stages::transfers::LedgerReplay::FundingBehavior{};
+  funding.retry.blindProbability = 0.0;
+  pl::pipeline::stages::transfers::LedgerReplay cureReplay;
+  cureReplay.fundingBehavior(funding);
+
+  auto cureRng = pl::random::Rng::fromSeed(303);
+  const auto deferred = cureReplay.preFraudChunked(
+      cureBook, cureRng, std::vector<Txn>{activeDebit, futureCure}, schedule);
+  PL_CHECK(deferred.txns.empty());
+  PL_CHECK(deferred.drops.byReason.empty());
+}
+
 } // namespace
 
 int main() {
   std::printf("=== Production windowed mode vs monolithic run ===\n");
+
+  finalWindowBoundaryUnit();
 
   constexpr std::uint64_t seed = 20260722;
 
@@ -105,21 +209,20 @@ int main() {
 
   pltest::announceLeg("monolithic pipeline.run()");
   const auto mono = runMonolithic(poolSet, seed, window);
-  std::printf("  monolithic: rows=%zu fraud=%llu digest=%s\n",
-              mono.rows.size(),
+  std::printf("  monolithic: rows=%zu fraud=%llu digest=%s\n", mono.rows.size(),
               static_cast<unsigned long long>(mono.fraudRows),
               mono.digest.c_str());
   std::fflush(stdout);
 
   PL_CHECK(!mono.rows.empty());
   PL_CHECK(mono.fraudRows > 0);
+  PL_CHECK(outsideWindowRows(mono.rows, window) == 0);
 
   pltest::announceLeg("production pipeline.runWindowed()");
 
   auto rng = pl::random::Rng::fromSeed(seed);
-  pl::pipeline::SimulationPipeline pipeline{rng, window,
-                                            makeEntities(poolSet, window),
-                                            seed};
+  pl::pipeline::SimulationPipeline pipeline{
+      rng, window, makeEntities(poolSet, window), seed};
 
   pltest::CapturingGolden sink;
   // Default options: 3-month generation windows, the monolithic
@@ -143,6 +246,8 @@ int main() {
   // candidate crossed through it.
   PL_CHECK(windowed.transfers.spoolRows == summary.phaseA.candidateRows);
   PL_CHECK(windowed.transfers.spoolBytes > 0);
+  PL_CHECK(summary.phaseB.candidateRows == summary.phaseA.candidateRows);
+  PL_CHECK(outsideWindowRows(sink.rows, window) == 0);
 
   // The posted-book handoff (the AML exporters' account vertices depend
   // on it): present, and consistent with the reported hash.

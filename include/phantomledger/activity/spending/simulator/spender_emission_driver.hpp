@@ -20,6 +20,20 @@
 
 namespace PhantomLedger::activity::spending::simulator {
 
+namespace detail {
+
+// Settle one day batch into `book` in canonical event-time order and append
+// only rows whose posting was accepted. The emission loop's read-only Gate
+// screens workers against the day-start snapshot; two individually affordable
+// rows can still be collectively unaffordable. Keeping a row after its real
+// posting rejects would let declined purchases reach CardCycleDriver.
+void appendAcceptedDayPostings(
+    clearing::Ledger *book, std::vector<transactions::Transaction> &destination,
+    std::vector<transactions::Transaction> &dayTransactions,
+    std::vector<clearing::Ledger::Posting> &dayPostings);
+
+} // namespace detail
+
 class SpenderEmissionDriver {
 public:
   struct Behavior {
@@ -75,7 +89,6 @@ private:
   void preparePool();
   void prepareSpenderRngs();
   void mergeThreadTxns(RunState &state);
-  void applyDayPostings();
 
   std::unique_ptr<WorkerPool> pool_;
   Behavior behavior_{};
@@ -88,6 +101,7 @@ private:
   const PreparedRun::Routing *routing_ = nullptr;
   std::vector<ThreadLocalState> threadStates_{};
   std::vector<random::Rng> spenderRngs_{};
+  std::vector<transactions::Transaction> dayTransactions_{};
   std::vector<clearing::Ledger::Posting> dayPostings_{};
 };
 

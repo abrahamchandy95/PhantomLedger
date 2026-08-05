@@ -1,5 +1,7 @@
 #include "phantomledger/activity/spending/routing/router.hpp"
 
+#include "phantomledger/activity/spending/market/commerce/affinity.hpp"
+#include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
@@ -30,10 +32,13 @@ inline constexpr double kAmountFloor = 1.0;
 
 // geo-causal-v1 (G2a step-2): share of NON-FAVORITE merchant picks that are
 // CARD-PRESENT (in-person, LOCAL to the customer's home area) rather than
-// online (geography-free). PROVISIONAL — aligns with the card-fraud exporter's
-// use_chip online share (~.11); it SHOULD become TIME-VARYING across the
-// modeled decades (e-commerce grows) — see the CARD-PRESENT/ONLINE SHARE debt
-// in systemprompt.md.
+// online (geography-free). PROVISIONAL. Since ROUND 8
+// (use-chip-causal-2026-07) the card-fraud exporter's use_chip no longer
+// asserts an independent ~.11 hash share: it READS the realized outcome of
+// this selection through the destination's footprint, so this constant now
+// shapes the exported entry-mode mix directly. It SHOULD become TIME-VARYING
+// across the modeled decades (e-commerce grows) — see the
+// CARD-PRESENT/ONLINE SHARE debt in systemprompt.md.
 inline constexpr double kCardPresentShare = 0.89;
 
 struct PaymentRoute {
@@ -197,7 +202,32 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
   const bool exploring = rng_.coin(exploreP);
 
   if (!exploring && !favRow.empty()) {
-    const auto slot = rng_.choiceIndex(favRow.size());
+    // merchant-selection-2026-08: ZIPF, NOT UNIFORM. This was
+    // `rng_.choiceIndex(favRow.size())`, i.e. an exponent of zero, and it
+    // carries ~99.2% of all merchant picks. The consequences ran in
+    // opposite directions and so cancelled in every total: within a card
+    // the top merchant held 1/F of visits (5.3% at the seeded F~19, 2.6%
+    // at the F~38 the evolver saturates to) against a measured 13%, while
+    // ACROSS cards `Record.weight` — having no channel left but MEMBERSHIP
+    // — entered as F independent inclusion Bernoullis and put one merchant
+    // on 51% of every card in the corpus. See commerce/affinity.hpp for
+    // the citation, the self-checking arithmetic, and why the rank is a
+    // hash of (person, merchant) rather than the slot index.
+    //
+    // ONE UNIFORM, exactly as before: `sampleFavoriteSlot` consumes the
+    // draw the caller hands it and derives the weights draw-free, so this
+    // branch's draw count is unchanged and the corpus delta is confined to
+    // WHICH favourite is picked.
+    // Fully qualified: the local `commerce` binding above shadows the
+    // namespace of the same name.
+    // Fully qualified: the local `commerce` binding above shadows the
+    // namespace of the same name.
+    // Fully qualified: the local `commerce` binding above shadows the
+    // namespace of the same name.
+    // Fully qualified: the local `commerce` binding above shadows the
+    // namespace of the same name.
+    const auto slot = market::commerce::sampleFavoriteSlot(
+        favRow, spender.personIndex, rng_.nextDouble());
     return favRow[slot];
   }
 
@@ -212,11 +242,18 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
   // isFraud/ringId/label.
   const auto &geoPools = commerce.geoPools();
   const bool cardPresent = rng_.coin(kCardPresentShare);
-  const bool local = cardPresent && geoPools.has(spender.homeArea);
+  // relocation-2026-07: read the home from the population View, which the
+  // monthly evolver re-points from the relocation schedule. NOT from a cached
+  // `Spender` copy: `prepareSpenders` runs ONCE for the whole fold and `runDay`
+  // takes `PreparedRun` by const ref, so a cached home would be frozen at the
+  // window-start value while the exporter published the moves — the corpus
+  // would disagree with itself and look correct doing it.
+  const auto homeArea = market_.population().homeArea(spender.person);
+  const bool local = cardPresent && geoPools.has(homeArea);
 
   const auto drawPick = [&]() -> std::uint32_t {
     if (local) {
-      return geoPools.sample(spender.homeArea, rng_.nextDouble());
+      return geoPools.sample(homeArea, rng_.nextDouble());
     }
     return static_cast<std::uint32_t>(probability::distributions::sampleIndex(
         commerce.merchCdf(), rng_.nextDouble()));

@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/parties/behaviors.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
@@ -46,6 +47,19 @@ struct Census {
   // path and the test world supply it. UNREAD until G2a step-2 wires
   // distance-decay selection, so an empty span moves no golden.
   std::span<const entity::geography::GeoAreaId> homeAreas;
+
+  // relocation-2026-07: the home-area HISTORY behind the snapshot above.
+  // NON-OWNING and nullable — null means "home never moves", which is the
+  // pre-round behaviour and what the monolith reference oracle and every
+  // direct unit harness get.
+  //
+  // The View needs the SCHEDULE and not just the snapshot for two reasons the
+  // snapshot cannot serve: the merchant geo-pool builder must cover the UNION
+  // of every area anyone ever occupies (a mover arriving where there is no
+  // pool would silently fall back to the national CDF, switching distance
+  // decay off for them), and the monthly evolver refreshes the snapshot from
+  // it at each month boundary.
+  const entity::parties::relocation::Schedule *relocation = nullptr;
 
   // H2 step 2c: the window day-index from which the retirement
   // consumption step applies (kNoRetirementDay = never in this window).

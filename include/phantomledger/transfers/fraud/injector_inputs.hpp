@@ -2,8 +2,10 @@
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/infra/attackers.hpp"
 #include "phantomledger/entities/infra/router.hpp"
 #include "phantomledger/entities/infra/shared.hpp"
 #include "phantomledger/entities/parties/people.hpp"
@@ -26,6 +28,23 @@ struct InjectorServices {
   random::Rng &rng;
   const infra::Router *router = nullptr;
   const infra::SharedInfra *ringInfra = nullptr;
+
+  // attacker-infra-2026-07: the exogenous fraud-infrastructure pool the
+  // unauthorized card/ATO rails transact from, borrowed from the world
+  // (pipeline::Infra::attackers).
+  //
+  // THE DEFECT IT CLOSES: `buildCompromisePlans` minted a brand-new
+  // device and IP per compromise, so cross-victim endpoint sharing was
+  // ZERO BY CONSTRUCTION and the Device/IP layers could carry no message
+  // between two victims. Attacker endpoints now come from a pool with a
+  // lifetime and a heavy-tailed case load, which is what puts many cards
+  // behind one endpoint.
+  //
+  // nullptr degrades to VICTIM-ENDPOINT attribution for every case — the
+  // remote-access/household branch — rather than to a ghost. That keeps
+  // standalone callers meaningful without reintroducing the defect, and
+  // the production path is asserted non-null by the orchestrator.
+  const infra::AttackerInfra *attackers = nullptr;
 
   std::uint64_t fraudSeed = 0;
 };
@@ -81,6 +100,19 @@ struct InjectorLegitCounterparties {
   // merchant-identity shortcut for a geographic one.
   const entity::merchant::Catalog *merchants = nullptr;
   std::span<const entity::geography::GeoAreaId> homeAreas{};
+
+  // relocation-2026-07: the home-area HISTORY, and the injector is the one
+  // consumer that needs the HISTORY rather than a mutable current value.
+  //
+  // `buildCompromisePlans` plans the WHOLE WINDOW in one pass, before the fold
+  // runs, so there is no "now" for it to read — a case in year 12 must resolve
+  // the home the victim occupied in year 12. The spending market can get away
+  // with a monthly-refreshed snapshot because it is walked day by day; this is
+  // not, and using the snapshot here would attribute every case to the
+  // victim's window-start area.
+  //
+  // Null ⇒ homes never move, and `homeAreas` above answers for all time.
+  const entity::parties::relocation::Schedule *relocation = nullptr;
 
   // victimization-v3 (contract docs/card_fraud_victimization.md D2):
   // THE PERSONAS PACK — persona-at-date, age-at-date and the join

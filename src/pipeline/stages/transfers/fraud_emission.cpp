@@ -47,7 +47,8 @@ fraud::InjectorLegitCounterparties FraudEmission::legitCounterparties(
     const ::PhantomLedger::entity::merchant::Catalog *merchants,
     std::span<const ::PhantomLedger::entity::geography::GeoAreaId>
         homeAreas,
-    const ::PhantomLedger::synth::personas::Pack *personas) {
+    const ::PhantomLedger::synth::personas::Pack *personas,
+    const ::PhantomLedger::entity::parties::relocation::Schedule *relocation) {
   // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
   // the home-area axis ride alongside the existing legit pools; all of
   // these are borrowed and all default to absent.
@@ -61,6 +62,9 @@ fraud::InjectorLegitCounterparties FraudEmission::legitCounterparties(
       .employers = counterparties.employerView(),
       .merchants = merchants,
       .homeAreas = homeAreas,
+      // relocation-2026-07: the history the unauthorized planner resolves at
+      // each case date.
+      .relocation = relocation,
       // victimization-v3: the pack itself, for the scam-rail hazard
       // (persona-at-date x age-at-date), the age-graded severity and the
       // membership gate.

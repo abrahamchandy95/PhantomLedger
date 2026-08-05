@@ -23,7 +23,7 @@
 // (distance distributions, share, decay curve) is geo debt (see systemprompt).
 //
 
-#include "phantomledger/activity/spending/market/commerce/geo_pools.hpp"
+#include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/synth/geo/catalog.hpp"
@@ -51,6 +51,20 @@ void check(bool cond, const std::string &what) {
     std::fprintf(stderr, "FAIL: %s\n", what.c_str());
     ++g_failures;
   }
+}
+
+// merchant-selection-2026-08: `LocalPools` takes the law to localise as an
+// explicit weight vector, where the retired `GeographicMerchantPools` read
+// `Record.weight` implicitly. Passing the volume weights reproduces the old
+// behaviour exactly, which is what keeps this gate's bands comparable.
+[[nodiscard]] std::vector<double>
+weightsOf(const PhantomLedger::entity::merchant::Catalog &catalog) {
+  std::vector<double> out;
+  out.reserve(catalog.records.size());
+  for (const auto &rec : catalog.records) {
+    out.push_back(rec.weight);
+  }
+  return out;
 }
 
 [[nodiscard]] geo::GeoAreaId findCity(const geo::GeoCatalog &cat,
@@ -89,7 +103,7 @@ struct PickTally {
   int samples = 0;
 };
 
-[[nodiscard]] PickTally tally(const commerce::GeographicMerchantPools &pools,
+[[nodiscard]] PickTally tally(const commerce::LocalPools &pools,
                               geo::GeoAreaId home, std::size_t catalogSize,
                               int n) {
   PickTally out;
@@ -131,7 +145,7 @@ int main() {
 
     const std::vector<geo::GeoAreaId> homes{nyc};
     const auto pools =
-        commerce::GeographicMerchantPools::build(catalog, cat, homes);
+        commerce::LocalPools::build(catalog, cat, homes, weightsOf(catalog));
 
     check(pools.has(nyc), "gate1: NYC home has a distance-decay pool");
     const auto t = tally(pools, nyc, catalog.records.size(), 1000);
@@ -145,9 +159,9 @@ int main() {
   // population (urbanicity proxy): dense NYC decays fast, small Burlington
   // slow, Denver in between.
   {
-    const double sNyc = commerce::cardPresentDecayScaleMiles(cat.at(nyc));
-    const double sDen = commerce::cardPresentDecayScaleMiles(cat.at(denver));
-    const double sBur = commerce::cardPresentDecayScaleMiles(cat.at(burlington));
+    const double sNyc = commerce::decayScaleMilesFor(cat.at(nyc));
+    const double sDen = commerce::decayScaleMilesFor(cat.at(denver));
+    const double sBur = commerce::decayScaleMilesFor(cat.at(burlington));
 
     check(sNyc <= 4.0 + 1e-9,
           "gate2: dense NYC decays at the urban floor (~4 mi), got " +
@@ -171,7 +185,7 @@ int main() {
 
     const std::vector<geo::GeoAreaId> homes{nyc};
     const auto pools =
-        commerce::GeographicMerchantPools::build(catalog, cat, homes);
+        commerce::LocalPools::build(catalog, cat, homes, weightsOf(catalog));
 
     check(pools.has(nyc), "gate3: NYC home has a pool with the physical outlet");
     const auto t = tally(pools, nyc, catalog.records.size(), 500);
@@ -200,7 +214,7 @@ int main() {
     }
 
     const auto pools =
-        commerce::GeographicMerchantPools::build(catalog, cat, homes);
+        commerce::LocalPools::build(catalog, cat, homes, weightsOf(catalog));
 
     double volBig = 0.0;
     double volSmall = 0.0;

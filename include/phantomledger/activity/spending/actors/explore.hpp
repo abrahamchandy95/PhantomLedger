@@ -34,10 +34,20 @@ struct ExploreModifiers {
     exploreP *= modifiers.weekendMultiplier;
   }
 
-  const bool inBurst = spender.burstStart != market::commerce::kNoBurstDay &&
-                       spender.burstLen > 0 &&
-                       day.dayIndex >= spender.burstStart &&
-                       day.dayIndex < spender.burstStart + spender.burstLen;
+  // burst-rate-2026-07: a person may hold several burst windows over a long
+  // run, so this is a scan rather than a single comparison. The list is tiny
+  // (a per-year rate over the window) and in day order, so the loop exits
+  // early once a window starts after today.
+  bool inBurst = false;
+  for (const auto &window : spender.bursts) {
+    if (window.startDay > day.dayIndex) {
+      break;
+    }
+    if (window.covers(day.dayIndex)) {
+      inBurst = true;
+      break;
+    }
+  }
 
   if (inBurst) {
     exploreP *= modifiers.burstMultiplier;

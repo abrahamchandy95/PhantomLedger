@@ -223,7 +223,8 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 [[nodiscard]] plMarket::MarketSources assembleMarketSources(
     const SpendingRoutine::PayeeDirectory &payees,
     const blueprints::LegitBlueprint &plan, const CensusScratch &scratch,
-    std::span<const ::PhantomLedger::entity::geography::GeoAreaId> homeAreas) {
+    std::span<const ::PhantomLedger::entity::geography::GeoAreaId> homeAreas,
+    const ::PhantomLedger::entity::parties::relocation::Schedule *relocation) {
   if (plan.days() < 0) {
     throw std::invalid_argument("spending routine requires non-negative days");
   }
@@ -254,6 +255,11 @@ buildSpendingCards(const entity::card::Registry *creditCards,
   // population View. Empty on the monolith oracle (no People threaded);
   // the windowed + test paths supply it.
   sources.census.homeAreas = homeAreas;
+
+  // relocation-2026-07: the home-area HISTORY. The population View refreshes
+  // its snapshot from this at each month boundary, and the geo-pool builder
+  // covers the union of every area it reaches.
+  sources.census.relocation = relocation;
 
   // H2 step 2c / H3: the retirement + death day-indices, from the
   // blueprint pack's timeline lane (identical on both engines).
@@ -297,7 +303,8 @@ plMarket::Market SpendingRoutine::prepareMarket(
       buildCensusScratch(plan, census.accounts.lookup, registry, baseTxns);
 
   auto sources =
-      assembleMarketSources(payees, plan, scratch, census.homeAreas);
+      assembleMarketSources(payees, plan, scratch, census.homeAreas,
+                            census.relocation);
   const auto payeeRules = marketPayeesFrom(habits_);
   const auto behavior = marketBehaviorFrom(habits_);
 

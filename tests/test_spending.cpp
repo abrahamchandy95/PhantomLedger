@@ -3,11 +3,13 @@
 #include "phantomledger/activity/spending/liquidity/snapshot.hpp"
 #include "phantomledger/activity/spending/routing/channel.hpp"
 #include "phantomledger/activity/spending/simulator/session.hpp"
+#include "phantomledger/activity/spending/simulator/spender_emission_driver.hpp"
 #include "phantomledger/activity/spending/spenders/targets.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/record.hpp"
 #include "phantomledger/transfers/legit/routines/spending_session.hpp"
 
@@ -19,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <span>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -220,6 +223,147 @@ void testTotalTargetTxns() {
   PL_CHECK(nearly(spenders::totalTargetTxns(60.0, 0, 30), 0.0));
   PL_CHECK(nearly(spenders::totalTargetTxns(60.0, 100, 0), 0.0));
   std::printf("  PASS: totalTargetTxns scaling\n");
+}
+
+void testCollectiveDayOversubscriptionIsFiltered() {
+  namespace simulator = activity::spending::simulator;
+
+  const auto card =
+      entity::makeKey(entity::Role::card, entity::Bank::internal, 90'001);
+  const auto merchant =
+      entity::makeKey(entity::Role::business, entity::Bank::internal, 90'002);
+
+  clearing::Ledger ledger;
+  ledger.initialize(2);
+  ledger.addAccount(card, 0);
+  ledger.addAccount(merchant, 1);
+  ledger.setOverdraftOnly(0, 100.0);
+  ledger.createHub(1);
+
+  transactions::Transaction later{};
+  later.source = card;
+  later.target = merchant;
+  later.amount = 60.0;
+  later.timestamp = 2;
+  later.session.channel = channels::tag(channels::Legit::cardPurchase);
+
+  auto earlier = later;
+  earlier.timestamp = 1;
+
+  // Deliberately supply generation order opposite to event-time order.
+  std::vector<transactions::Transaction> dayTransactions{later, earlier};
+  std::vector<clearing::Ledger::Posting> dayPostings{
+      {
+          .srcIdx = 0,
+          .dstIdx = 1,
+          .amount = later.amount,
+          .channel = later.session.channel,
+          .timestamp = later.timestamp,
+      },
+      {
+          .srcIdx = 0,
+          .dstIdx = 1,
+          .amount = earlier.amount,
+          .channel = earlier.session.channel,
+          .timestamp = earlier.timestamp,
+      },
+  };
+  std::vector<transactions::Transaction> accepted;
+
+  // Both rows pass an independent day-start check against $100, but only the
+  // event-time first can settle when the real postings are applied
+  // sequentially. The returned vector is exactly the state slice DayDriver
+  // subsequently hands to CardCycleDriver, so the declined later purchase
+  // cannot be billed.
+  simulator::detail::appendAcceptedDayPostings(&ledger, accepted,
+                                               dayTransactions, dayPostings);
+
+  PL_CHECK_EQ(accepted.size(), 1U);
+  PL_CHECK_EQ(accepted.front().timestamp, earlier.timestamp);
+  PL_CHECK(nearly(ledger.cash(0), -60.0));
+  PL_CHECK(dayTransactions.empty());
+  PL_CHECK(dayPostings.empty());
+  std::printf("  PASS: collectively oversubscribed same-day card purchase is "
+              "filtered before card billing\n");
+}
+
+void testDayPostingCarriesTransactionTimestamp() {
+  namespace simulator = activity::spending::simulator;
+
+  transactions::Transaction txn{};
+  txn.timestamp = 1'709'294'400;
+  std::vector<transactions::Transaction> dayTransactions{txn};
+  std::vector<clearing::Ledger::Posting> dayPostings{{
+      .timestamp = 0,
+  }};
+  std::vector<transactions::Transaction> accepted;
+
+  bool rejectedMismatch = false;
+  try {
+    simulator::detail::appendAcceptedDayPostings(nullptr, accepted,
+                                                 dayTransactions, dayPostings);
+  } catch (const std::logic_error &) {
+    rejectedMismatch = true;
+  }
+
+  PL_CHECK(rejectedMismatch);
+  PL_CHECK(accepted.empty());
+  std::printf(
+      "  PASS: day settlement rejects an epoch-zero posting timestamp\n");
+}
+
+void testCreditCardUtilizationIsNotCheckingOverdraft() {
+  const auto card =
+      entity::makeKey(entity::Role::card, entity::Bank::internal, 91'001);
+  const auto deposit =
+      entity::makeKey(entity::Role::account, entity::Bank::internal, 91'002);
+  constexpr double kFee = 35.0;
+  constexpr double kPurchase = 20.0;
+  const auto purchaseChannel = channels::tag(channels::Legit::cardPurchase);
+
+  clearing::Ledger ledger;
+  ledger.initialize(2);
+  ledger.addAccount(card, 0);
+  ledger.addAccount(deposit, 1);
+  ledger.setBankTier(0, clearing::BankTier::standardFee, kFee);
+  ledger.setBankTier(1, clearing::BankTier::standardFee, kFee);
+  ledger.setOverdraftOnly(0, 100.0);
+  ledger.setProtection(1, clearing::ProtectionType::courtesy, 100.0);
+
+  std::vector<clearing::LiquidityEvent> fees;
+  ledger.setLiquiditySink(
+      [&](const clearing::LiquidityEvent &event) { fees.push_back(event); });
+
+  PL_CHECK(ledger
+               .transferAt({
+                   .srcIdx = 0,
+                   .dstIdx = clearing::Ledger::invalid,
+                   .amount = kPurchase,
+                   .channel = purchaseChannel,
+                   .timestamp = 100,
+               })
+               .accepted());
+  PL_CHECK_EQ(ledger.cash(0), -kPurchase);
+  PL_CHECK(fees.empty());
+
+  PL_CHECK(ledger
+               .transferAt({
+                   .srcIdx = 1,
+                   .dstIdx = clearing::Ledger::invalid,
+                   .amount = kPurchase,
+                   .channel = purchaseChannel,
+                   .timestamp = 100,
+               })
+               .accepted());
+  PL_CHECK_EQ(ledger.cash(1), -(kPurchase + kFee));
+  PL_CHECK_EQ(fees.size(), 1U);
+  PL_CHECK(fees.front().payerKey == deposit);
+  PL_CHECK_EQ(fees.front().amount, kFee);
+  PL_CHECK(fees.front().channel ==
+           channels::tag(channels::Liquidity::overdraftFee));
+
+  std::printf("  PASS: card utilization avoids checking overdraft fees while "
+              "deposit courtesy fees remain intact\n");
 }
 
 // -------------- Session window-invariance matrix (step 1) ----------------
@@ -424,6 +568,9 @@ int main() {
   testMultiplierStressRegion();
   testMultiplierBurdenPenalty();
   testTotalTargetTxns();
+  testCollectiveDayOversubscriptionIsFiltered();
+  testDayPostingCarriesTransactionTimestamp();
+  testCreditCardUtilizationIsNotCheckingOverdraft();
 
   std::printf("=== Spending Session Window Invariance ===\n");
   testSessionWindowInvariance();
