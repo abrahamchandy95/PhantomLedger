@@ -51,10 +51,14 @@
 //   mis-calibrated.
 //
 // The aggregate rate carries a NAMED COMPARATOR rather than a tight
-// band: IBM TabFormer observed 28,471 fraud rows in 24,386,900
-// (0.11675%). PhantomLedger is TabFormer-SHAPED, not calibrated to it,
-// so the gate is a wide plausibility band and the ratio is PRINTED for
-// the record.
+// band: the Federal Reserve Payments Study observed 71,378,082
+// fraudulent card payments in 101,735,053,260 US general-purpose card
+// payments in 2016 (0.070161% BY NUMBER; credit alone 0.117039%).
+// PhantomLedger is a modelled world, not a replica of any issuer's
+// book, so the gate is a wide plausibility band and the ratio is
+// PRINTED for the record. The COUNT basis is load-bearing — the same
+// Fed table's VALUE column reads 13.458 bp, 1.9182x higher, and three
+// widely-published VALUE rates sit within 10% of a count rate.
 //
 // THE DEFLATED-SPREAD RECLASSIFICATION (join-cohort round, authority
 // U-13 ADDENDUM). The sub-gate used to read: per-year fraud means
@@ -165,11 +169,72 @@ constexpr std::int32_t kPopulation = 300;
 // (1991, 1992 with its leap day, 1993, 1994), all in-era.
 constexpr int kDays = 1461;
 
-// IBM TabFormer's observed transaction-fraud prevalence. A NAMED
-// COMPARATOR, not a calibration target.
-constexpr double kTabFormerRate = 0.0011675;
+// US general-purpose card-payment fraud prevalence BY NUMBER OF
+// TRANSACTIONS. A NAMED COMPARATOR, not a calibration target.
+//
+// Board of Governors of the Federal Reserve System, "Changes in U.S.
+// Payments Fraud from 2012 to 2016: Evidence from the Federal Reserve
+// Payments Study", October 2018 — Data Tables workbook
+// (frps_fraud_data.xls), Table B.5.A (numerator), Table B.6.A
+// (denominator), Table B.7.A and text Table 10 (published rate).
+// Source survey: NPIPS, the card-network survey.
+// https://www.federalreserve.gov/paymentsystems/files/frps_fraud_data.xls
+// DATA YEAR 2016. ACCESSED 2026-08-05. CLASS: CITED.
+//
+//   71,378,082 fraudulent / 101,735,053,260 card payments = 7.016076 bp
+//   published 7.016075570349938 bp, relative error 2.6e-09
+//   credit + debit close exactly:  40,105,286 +  31,272,796 = numerator
+//                          34,266,518,107 + 67,468,535,153 = denominator
+//
+// COUNT BASIS. **NOT the 13.458 bp figure in the Value column of the
+// SAME TABLE** — that is dollars lost per dollar spent and is 1.9182x
+// this one, being 7.016 bp x ($104.83 mean fraudulent ticket / $54.65
+// mean overall ticket). Comparing a count rate against value basis
+// points is the one substitution this gate exists to forbid.
+//
+// THREE PUBLISHED VALUE RATES SIT WITHIN 10% OF A COUNT RATE AND WOULD
+// LEAVE THIS GATE GREEN WHILE BEING THE WRONG BASIS: Nilson worldwide
+// 2024 is 6.43 cents per $100 = 0.064349% BY VALUE (9% from the anchor
+// below); Nilson US 2023 is 0.11009% BY VALUE and Nilson US 2024
+// 0.1024% BY VALUE. Value and count rates coincide here only because
+// the mean fraudulent ticket happens to sit near the mean legitimate
+// one. There is no law making them equal and the gap moves with the
+// CNP mix.
+//
+// SCOPE: US general-purpose networks (credit + non-prepaid debit +
+// prepaid debit). ATM withdrawals EXCLUDED. Private-label/store cards
+// EXCLUDED. Purchases AND bill payments. Card-present and
+// card-not-present COMBINED. Third-party (unauthorized) fraud only,
+// cleared and settled, BEFORE chargebacks, returns or recoveries.
+//
+// WHY ALL-CARDS AND NOT CREDIT-ONLY: the card view is credit AND debit
+// ('C'/'D' + renderAccountKey, card-churn-2026-07), so the blend is the
+// scope match. The credit-only row of the same table is
+// 40,105,286 / 34,266,518,107 = 0.117039% and is PRINTED alongside — it
+// lands within 0.25% of the retired prior anchor, which is a
+// COINCIDENCE and not a reason to prefer it.
+//
+// 2016 IS THE LAST BY-NUMBER CARD-FRAUD YEAR THE FRPS EVER PUBLISHED —
+// there is no newer release, and everything since (Regulation II, KC
+// Fed briefings) is either VALUE basis or debit-only with no published
+// numerator to divide. THE GATE LEG RUNS 1991-1994; no by-number rate
+// exists for any year in that window from any source. That era gap is
+// tolerable ONLY because this is a printed comparator inside a 28x-wide
+// plausibility band. IF ANYONE TIGHTENS THE BAND, THE ANCHOR MUST BE
+// DATED FIRST (the series has 2012/2015/2016 points) OR THE LEG RE-SITED.
+constexpr double kFrpsCardFraudRateByNumber = 0.00070161;   // 7.0161 bp
+constexpr double kFrpsCreditFraudRateByNumber = 0.00117039; // 11.7039 bp
 
 // Wide plausibility band around card-fraud prevalence: 0.02% to 2%.
+// ABSOLUTE, and DELIBERATELY NOT RE-DERIVED FROM THE ANCHOR ABOVE —
+// under it the band reads [0.285x, 28.5x]. The published record itself
+// disagrees by: 1.195x between the Fed's OWN two surveys on the same
+// instrument in the same year (NPIPS 11.697 vs DFIPS 9.787 bp, 2015
+// credit); 1.19x between Reg II Table 10 and its own components
+// re-weighted; 2.52x credit vs debit; 2.3x 2016->2023 era drift; 5.97x
+// card-present vs card-not-present; 32x prepaid vs non-prepaid. Those
+// compound multiplicatively, so ~6x is the tightest DEFENSIBLE envelope
+// and anything below that asserts precision nobody has.
 constexpr double kRateFloor = 0.0002;
 constexpr double kRateCeiling = 0.02;
 
@@ -378,9 +443,14 @@ int main() {
               static_cast<unsigned long long>(leg.joiners), kPopulation);
   std::printf("  CARD VIEW: %zu rows, %zu fraud, rate %.5f%%\n", viewRows,
               viewFraud, 100.0 * rate);
-  std::printf("    vs TabFormer observed %.5f%% -> %.2fx (NAMED COMPARATOR, "
-              "not a calibration target)\n",
-              100.0 * kTabFormerRate, rate / kTabFormerRate);
+  std::printf("    vs FRPS 2016 all general-purpose cards %.5f%% BY NUMBER "
+              "-> %.2fx (NAMED COMPARATOR, not a calibration target)\n",
+              100.0 * kFrpsCardFraudRateByNumber,
+              rate / kFrpsCardFraudRateByNumber);
+  std::printf("    vs FRPS 2016 credit only              %.5f%% BY NUMBER "
+              "-> %.2fx (PRINTED; the view is credit AND debit)\n",
+              100.0 * kFrpsCreditFraudRateByNumber,
+              rate / kFrpsCreditFraudRateByNumber);
   check(rate > kRateFloor && rate < kRateCeiling,
         "card-view fraud prevalence inside the plausibility band (" +
             std::to_string(rate) + " not in (" + std::to_string(kRateFloor) +

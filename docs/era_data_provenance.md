@@ -157,9 +157,14 @@ automatically).
 * **Backward (pre-1990):** rows are cheap (registry `publishedFrom`:
   CPI 1913, PCE/population 1929, unemployment 1948, AWI 1951) but
   pre-1990 behavioral era anchors are an unresearched arc of their own.
-* **Coverage ≠ calibration:** the TabFormer-calibration claims stay
-  1991–2020, and the calibration year stays 2019, no matter how far
-  coverage extends.
+* **Coverage ≠ calibration:** extending the pinned series does not
+  re-calibrate anything. The calibration year stays 2019 no matter how
+  far coverage extends. **Note (2026-08):** the card-fraud prevalence
+  claims that used to be scoped "1991–2020" were tied to a released
+  third-party artifact's timeframe; that lineage is removed and the
+  level is currently UNCALIBRATED. The era lock itself is unaffected —
+  it derives from the embedded series (1990–2024), not from any
+  external corpus.
 
 ## Update procedure
 

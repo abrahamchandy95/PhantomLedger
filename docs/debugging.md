@@ -182,7 +182,8 @@ Canonical QA probes (card-fraud examples; adapt schema/prefix per
 use case — see README Export Formats for the schema map):
 
 ```sql
--- fraud share of the card view (TabFormer anchor ~0.1%)
+-- fraud share of the card view (order ~0.1%; the external anchor is
+-- being re-pinned to an issuer-side BY-NUMBER rate — see the roadmap)
 SELECT count(*) FILTER (WHERE is_fraud = '1')::numeric / count(*)
 FROM card_fraud."cf_Payment_Transaction";
 

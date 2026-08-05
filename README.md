@@ -49,8 +49,9 @@ sibling transfers, grandparent gifts, funerals and estates), and fraud (classic,
 
 Output formats include a standard transaction graph (vertices + edges), an ML-ready schema for mule detection,
 a full TigerGraph AML_Schema_V1 export with MinHash-based entity resolution, a transaction-edges variant of the
-AML schema with derived graph features, and a TabFormer-shaped card-fraud corpus for TigerGraph's TF_GNN_v3
-schema. Every table lands directly in PostgreSQL during the run — PhantomLedger writes no files.
+AML schema with derived graph features, and a card-fraud corpus for TigerGraph's TF_GNN_v3
+schema aimed at temporal graph neural networks (TGN) predicting transaction-level fraud. Every
+table lands directly in PostgreSQL during the run — PhantomLedger writes no files.
 
 ### Design Principles
 
@@ -1082,10 +1083,13 @@ aligning them is registered).
 
 A variant of the AML schema that swaps the aggregated `HAS_PAID` projection for a transaction-edge view and adds graph-derived account features (PageRank score, Louvain community ID, weakly-connected-component ID and component size, shortest path to mule, IP/device collision counts, in/out mule-ratio, multi-hop mule count, betweenness, in/out degree, clustering coefficient). Intended as input to graph-feature-aware AML models that consume both the ledger and the precomputed topology signals. Its Customer table reports the same end-of-window persona and `active`/`closed` lifecycle status as the AML export.
 
-### Card-Fraud — TigerGraph TF_GNN_v3 (TabFormer-shaped)
+### Card-Fraud — TigerGraph TF_GNN_v3 (temporal graph learning)
 
-A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema (the graph used for IBM
-TabFormer-style card-fraud GNNs). 37 tables land in schema `card_fraud` (prefix `cf_`):
+A transaction-fraud corpus shaped for TigerGraph's TF_GNN_v3 GSQL schema. The primary downstream
+use case is a **temporal graph neural network (TGN) predicting fraud at the transaction level**:
+every payment carries a timestamp and timestamped device/IP session edges, so the corpus replays
+as a continuous-time event stream rather than a static graph snapshot. 43 tables land in schema
+`card_fraud` (prefix `cf_`):
 
 - **`Payment_Transaction`** — the card view of the corpus: `card_purchase` rows (credit-card
   purchases plus unauthorized-card and gift-card-scam fraud rows) and `merchant` rows
@@ -1103,7 +1107,9 @@ TabFormer-style card-fraud GNNs). 37 tables land in schema `card_fraud` (prefix 
   every other view source becomes the account's derived debit card), `Party` (canonical
   customer ids; `created_at` is the membership joinTs), and `Party_Has_Card`. Both carry an
   `is_fraud` column that is always **0** — see the label note below.
-  `Is_Merchant` ships header-only: the world has no modeled merchant-owning-party link yet.
+  `Is_Merchant` carries the beneficial-owner edge for view-observed merchants (~42% of the
+  catalogue, draw-free from world state; `merchant-ownership-2026-07`). It asserts IDENTITY,
+  not money flow — a card purchase still settles to the merchant's sink, not the proprietor.
 - **Merchants and geography** — `Merchant`, `Merchant_Category`, `Merchant_Assigned`, and a
   consistent `City`/`State`/`Zipcode` chain (`Has_City`/`Has_State`/`Has_Zip`, `Assigned_To`,
   `Located_In`) read the merchant's world-modeled location. The current
@@ -1112,9 +1118,12 @@ TabFormer-style card-fraud GNNs). 37 tables land in schema `card_fraud` (prefix 
 - **PII investigative layer** — `Address`/`Phone`/`Email`/`IP`/`Device`/`ID`/`Full_Name`/`DOB`
   vertices plus the non-infrastructure `Has_*` edges from the PII synthesis; the `IP`/`Device`
   `is_blocked` column is always **0** — see the label note below. (Marked demo-only in
-  TF_GNN_v3 and empty on real TabFormer; PhantomLedger populates it.) `Has_Device` and
-  `Has_IP` are retained as header-only loader-compatibility tables. Exporting only customer
-  ownership would make the absence of a Party edge reveal exogenous attacker endpoints.
+  TF_GNN_v3; PhantomLedger populates it.) `Has_Device` and `Has_IP` are POPULATED as of
+  `attacker-infra-2026-07`: they are the institution's INCOMPLETE endpoint registry
+  (~72% device / ~61% address coverage), not ground-truth ownership, so a missing edge is
+  weak evidence rather than an attacker tell. Measured "not on file ⇒ fraud" precision is
+  0.027 at 2.9x lift. Use them for graph structure; use the timestamped
+  `Transaction_Uses_Device`/`_IP` edges for anything point-in-time.
 - **Transaction-time infrastructure** — `Transaction_Uses_Device` and `Transaction_Uses_IP`
   connect every payment to the device and IP actually observed for that session, with
   `edge_unix_time`. Their endpoint vertices include exogenous attacker sessions as well as the
@@ -1276,9 +1285,9 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Merseyside OCG study — 63% of organized criminal groups cooperate with ≥1 other group.
 - Unit21 2026 — legitimate reactivation transactions average 17× rule thresholds but ramp gradually.
 - FATF 2020 — AML Red Flag Indicators.
-- IBM TabFormer — released synthetic credit-card transaction artifact; a schema,
-  longitudinal-shape, and fraud-rate comparison target. Its `Use Chip` and
-  `Errors?` vocabularies do not validate PhantomLedger's current fixed mixes.
+- Rossi, Chamberlain, Frasca, Eynard, Monti & Bronstein 2020 — "Temporal Graph
+  Networks for Deep Learning on Dynamic Graphs," arXiv:2006.10637. The
+  continuous-time event framing the card-fraud corpus is built to feed.
 
 **Small Business Banking**
 - Bluevine 2025 — 39% of SMBs have < 1 month of operating expenses; healthy ones hold 2–3 months.

@@ -103,12 +103,34 @@ prohibition predated the H3 membership implementation.
 
 ## Evaluation protocol
 
-Use strict event order, not a random row or edge split. For the validated
-1999-through-2019 corpus:
+Use strict event order, not a random row or edge split.
 
-- train: `[1999-01-01, 2015-01-01)`;
-- validation: `[2015-01-01, 2017-01-01)`;
-- test: `[2017-01-01, 2020-01-01)`.
+**THE SPLIT IS WINDOW-RELATIVE, NOT A FIXED SET OF CALENDAR DATES.** An earlier
+revision of this document pinned train `[1999-01-01, 2015-01-01)` / validation
+`[2015, 2017)` / test `[2017, 2020)`. That was written against a two-decade
+corpus and **no run at the current target scale can satisfy it** — the
+card-fraud use case is era-locked to the pinned macro series (1990–2024,
+`src/app/cli.cpp:185`), and the target corpus is ~100,000 people over ~3 years.
+Express the split as fractions of `[windowStart, windowEndExcl)`:
+
+- train: first ~67% of the window;
+- validation: next ~16%;
+- test: final ~17%.
+
+For the reference target window `--start 2022-01-01 --days 1096` (through
+2024-12-31, the latest 3 full years inside the era lock):
+
+| split | interval | epoch bound |
+|---|---|---|
+| train | `[2022-01-01, 2024-01-01)` | `1704067200` |
+| validation | `[2024-01-01, 2024-07-01)` | `1719792000` |
+| test | `[2024-07-01, 2025-01-01)` | — |
+
+**These bounds live in `tf_gnn_prep.split_policy` in the loader repo, not
+here** (`sql/postgres/020_create_split_policy.sql`), and that row is the
+authority the `transaction_manifest` view reads. Whenever the generated window
+changes, the split-policy row must change in the same commit — a stale policy
+does not error, it silently mislabels `split_id` for every row.
 
 Report PR-AUC, precision and recall at a fixed alert-review budget, false
 positives per million payments, calibration, and time to first detection
@@ -135,9 +157,11 @@ The exporter builds an offline corpus. “Online” means replaying that corpus 
 strict timestamp order under this visibility contract. A live serving path
 still needs an incrementally committed event/outbox and delayed label events.
 This follows the continuous-time event framing in
-[Temporal Graph Networks](https://arxiv.org/abs/2006.10637). IBM's
-[TabFormer work](https://research.ibm.com/publications/tabular-transformers-for-modeling-multivariate-time-series)
-is a longitudinal/schema comparator, not a calibration source.
+[Temporal Graph Networks](https://arxiv.org/abs/2006.10637), which is the
+target architecture for this corpus: each payment is a timestamped interaction
+event between a card node and a merchant node, carrying device and IP session
+edges stamped with the same instant, so TGN memory updates and temporal
+neighbour sampling both key off `unix_time` with no reconstruction step.
 
 ## Remaining benchmark gates
 

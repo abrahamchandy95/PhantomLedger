@@ -248,9 +248,15 @@ deflated spreads side by side, plus a class-F clamp-ceiling ratio — so
 ROUND 5's replacement could be sized from data. Full account: authority
 U-13 ADDENDUM 2.
 
-IBM TabFormer's observed 0.11675% is a NAMED COMPARATOR with a wide
-plausibility band (0.02%–2%) and the ratio is printed, not pinned.
-PhantomLedger is TabFormer-SHAPED, not calibrated to it.
+**THE PREVALENCE COMPARATOR IS BEING REPLACED (2026-08).** This arc used a
+released third-party artifact's observed 0.11675% as its NAMED COMPARATOR,
+with a wide plausibility band (0.02%–2%), printed rather than pinned. That
+lineage is removed. The replacement must be an issuer-side rate measured **BY
+NUMBER of transactions** — gate 1 of `docs/card_fraud_online_gnn.md` exists
+because a count rate compared against value-loss basis points is the standard
+error here, and most published card-fraud figures are value-loss. Until a
+replacement anchor is pinned in `tests/test_card_prevalence.cpp`, the fraud
+LEVEL is UNCALIBRATED and no realism claim about it should be made.
 
 ### ROUND 4 — the harness WORLD SHAPE (zero-golden, harness-only)
 

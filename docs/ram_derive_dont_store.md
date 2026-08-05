@@ -87,11 +87,39 @@ population × days (rows), not with population alone.
   reads (the seam R3's shards plug into).
 - **R2.5 — prologue windowing (design round FIRST).** The prologue's
   resident `screened` stream scales with person-days: measured ~0.55 KB
-  per row at peak (steady + merge transients). The owner's
-  TabFormer-timeframe target (1991–2019, 10,592 days) puts the prologue
-  at ~38 GB for 20k people and ~95 GB for 50k — windowing the prologue
+  per row at peak (steady + merge transients). Against a 10,592-day
+  horizon that put the prologue at ~38 GB for 20k people and ~95 GB for
+  50k — i.e. **~179 B per person-day** — so windowing the prologue
   (generation AND its whole-stream aggregations: market paydays,
-  burdens, SeededScreens) is the prerequisite for that run at scale.
+  burdens, SeededScreens) was the prerequisite for that run at scale.
+
+  **RETARGETED 2026-08 — the current target is ~100,000 people × ~1,096
+  days (2022-01-01 through 2024-12-31, the latest 3 full years inside
+  the era lock).** That is 109.6M person-days. Two extrapolations, both
+  LINEAR and both UNMEASURED at this configuration:
+
+  | basis | rate | 100k × 1,096d |
+  |---|---|---|
+  | prologue `screened` stream (this doc, 2026-07-20) | 179 B/person-day | **~19.6 GB** |
+  | total peak RSS (`loc-accrual-perf-2026-08`: 13.2 GB at 50k × 730d) | 362 B/person-day | **~39.7 GB** |
+
+  **The second number exceeds a 32 GB box, and it is the one that
+  binds.** `loc-accrual-perf-2026-08` rule 7 already states memory — not
+  time — is the constraint at the target config. Treat both figures as
+  ESTIMATES: neither was measured at 100k × 1,096d, and linear
+  extrapolation across both a 2x population and a 1.5x horizon is
+  exactly the kind of derivation this repository's own rules say to
+  distrust ("a gate on the answer is not a gate on the cost"). Measure
+  before planning around either:
+
+  ```
+  make run-mem ARGS="--usecase card-fraud --population 50000 --days 1096 --start 2022-01-01"
+  ```
+
+  Then double the population and confirm the slope before committing to
+  100k. If the total peak does land near 40 GB, the options are prologue
+  windowing (this item), population sharding (R3), or a shorter horizon
+  — and that is an owner decision, not an implementation detail.
 - **R3** — population sharding (design doc first; post-R2 spine ≈
   400 B/person ⇒ 1B ≈ 400 GB on one box — sharding is the answer).
 

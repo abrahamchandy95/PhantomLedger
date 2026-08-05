@@ -484,8 +484,11 @@ set_tests_properties(test_card_point_in_time PROPERTIES TIMEOUT 600)
 #     (lattice vs CPI-scaled, nominal and deflated, plus a class-F
 #     clamp-ceiling ratio). The claim itself moved to test_card_class_f
 #     below. Authority U-13 ADDENDUM 2.
-# The aggregate rate carries IBM TabFormer's observed 0.11675% as a
-# NAMED COMPARATOR with a wide plausibility band, not a calibration pin.
+# The aggregate rate carries the Federal Reserve Payments Study's 2016
+# observed 0.070161% BY NUMBER (71,378,082 / 101,735,053,260 US
+# general-purpose card payments) as a NAMED COMPARATOR with a wide
+# plausibility band, not a calibration pin. COUNT basis, never the
+# value-loss basis points most card-fraud figures are published in.
 # ---------------------------------------------------------------------
 
 pl_add_test(test_card_prevalence)
@@ -707,3 +710,30 @@ pl_add_test(test_scale_soak)
 set_tests_properties(test_scale_soak PROPERTIES
     SKIP_RETURN_CODE 77
     TIMEOUT 14400)
+
+# ---------------------------------------------------------------------
+# ORPHANED GATES — registered 2026-08 (docs audit).
+#
+# These seven sources existed in tests/ but were NEVER registered in
+# this file, at any point in git history (`git log -S"pl_add_test(<name>"`
+# returns zero commits for each). They are the gates CLAUDE.md cites as
+# the enforcement behind card-churn-2026-07, attacker-infra-2026-07,
+# use-chip-causal-2026-07, merchant-churn-2026-07 and
+# relocation-2026-07 — so those rounds' "measured" claims were never
+# under CI. A gate that is not registered is not a gate.
+# ---------------------------------------------------------------------
+
+pl_add_test(test_card_churn)
+set_tests_properties(test_card_churn PROPERTIES TIMEOUT 900)
+pl_add_test(test_card_endpoint_graph)
+set_tests_properties(test_card_endpoint_graph PROPERTIES TIMEOUT 1800)
+pl_add_test(test_card_payment_timing)
+set_tests_properties(test_card_payment_timing PROPERTIES TIMEOUT 900)
+pl_add_test(test_card_use_chip)
+set_tests_properties(test_card_use_chip PROPERTIES TIMEOUT 900)
+pl_add_test(test_merchant_churn)
+set_tests_properties(test_merchant_churn PROPERTIES TIMEOUT 900)
+pl_add_test(test_relocation)
+set_tests_properties(test_relocation PROPERTIES TIMEOUT 900)
+pl_add_test(test_session_point_in_time)
+set_tests_properties(test_session_point_in_time PROPERTIES TIMEOUT 1800)
