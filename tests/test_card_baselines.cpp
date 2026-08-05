@@ -48,22 +48,42 @@
 // (window_leg_support.hpp, WORLD SHAPE). BOTH BANDS RE-VERIFIED, BOTH
 // UNCHANGED, and the reason is that neither is a statistical tolerance:
 //
-//   * recall @ P>=0.90 < 0.25. Observed 0.0000 on the pre-flip world,
-//     and the sweep's BEST precision at ANY threshold is 0.1111 — it
-//     never comes near the 0.90 floor. The bound is held by the b-2
-//     mechanism, not by a seed: fraud draws its card-rail destinations
-//     from the same merchant acceptance population the legitimate
-//     session draws from, and that population carries ~167 legitimate
-//     rows per merchant at this leg size (42,369 over 254). A
-//     0.90-precision group needs ~9 fraud rows against at most 1
-//     legitimate row on the same merchant. Re-anchoring 8 of 300
-//     people's ages and lifespans re-rolls WHICH rows exist; it does
-//     not change the destination population, so it cannot manufacture
-//     that group.
-//   * pure-fraud-merchant share < 0.10. Observed 0.0000 — zero
-//     fraud-only merchants out of 48 fraud-touched. Same mechanism: a
-//     fraud-touched merchant with zero legitimate rows is exactly what
-//     b-2 removed structurally.
+//   * recall @ P>=0.90 < 0.25. The bound is held by the b-2 mechanism,
+//     not by a seed: fraud draws its card-rail destinations from the
+//     same merchant acceptance population the legitimate session draws
+//     from, and that population carries ~167 legitimate rows per
+//     merchant at this leg size (42,369 over 254). A 0.90-precision
+//     group needs ~9 fraud rows against at most 1 legitimate row on the
+//     same merchant. Re-anchoring 8 of 300 people's ages and lifespans
+//     re-rolls WHICH rows exist; it does not change the destination
+//     population, so it cannot manufacture that group.
+//   * pure-fraud-merchant share < 0.10. Same mechanism: a fraud-touched
+//     merchant with zero legitimate rows is exactly what b-2 removed
+//     structurally.
+//
+// THE OBSERVED FIGURES THAT USED TO SIT HERE WERE STALE AND ONE OF THEM
+// WAS A FALSE SAFETY ARGUMENT — corrected 2026-08, the world having moved
+// under them twice (the join-cohort flip, then merchant-selection-2026-08).
+// This block read "Observed 0.0000" for both bands and, worse, "the
+// sweep's BEST precision at ANY threshold is 0.1111 — it never comes near
+// the 0.90 floor". The binary PRINTS the truth on every run and disagreed:
+//
+//     pure-fraud-merchant share      0.0079   (1 fraud-only of 41 touched)
+//     best precision (any threshold) 1.0000   (lift 295.65x)
+//     RECALL @ precision>=0.90       0.0079
+//
+// Precision DOES reach 1.0 — a merchant whose only rows are fraud scores
+// 1.0 trivially, and at this leg size one exists. The band is therefore
+// held by RECALL being tiny (0.0079 of fraud sits on such merchants), NOT
+// by precision being unreachable. Both bands still pass and neither was
+// widened; what was wrong was the argument for why they are safe.
+//
+// A LARGER LEG HAS LESS ROOM THAN THIS ONE. At pop 900 x 1461d the same
+// sweep measures pureShare 0.0661 against the 0.10 band — 6 fraud-only
+// merchants of 153. Anyone sizing a new merchant-side band against the
+// 0.0000 that used to be written here would believe they had four times
+// the headroom they have. DO NOT RESTATE A PRINTED NUMBER IN A COMMENT:
+// read it off the run.
 //
 // The world shape is now PINNED below, so this baseline can never again
 // be measured against a population production does not generate.

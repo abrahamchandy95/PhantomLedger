@@ -574,7 +574,7 @@ this alters the settled corpus. Feature-safety classes are governed by
 | Is_Merchant | UNPOPULATED (header-only): the world has no merchant-owning-party link | DEVIATES-BY-CHOICE (documented gap) | — |
 | PII layer | Address/Phone/Email/ID(ssn)/Full_Name/DOB vertices deduplicated over the roster; TF_GNN_v3 marks this layer DEMO ONLY and it is empty on real TabFormer | CHOICE (the use case's differentiator) | — |
 
-**Anti-shortcut gates (all measured at 0.0000 or better).** Fraud draws
+**Anti-shortcut gates (measured; see the corrected levels below).** Fraud draws
 its card-rail destinations from the same merchant acceptance population
 legitimate sessions use — card-present from the victim's distance-decayed
 pool using the SHARED decay kernel, card-not-present from the online
@@ -587,9 +587,27 @@ tables are header-only, so Party adjacency cannot expose endpoint role.
 Since ROUND 8 the exported `use_chip` reads the same footprint axis the
 selection uses, so the flat feature AGREES with the graph structure
 instead of contradicting it — a real, modeled CNP-majority correlation,
-not a new shortcut. Measured: fraud-only-merchant row share 1.0 →
-**0.0000**; merchant-ID-only recall@precision≥0.90 **0.0000** against a
-gate of <0.25.
+not a new shortcut.
+
+**CORRECTED 2026-08 — the 0.0000 pair recorded here was STALE, and the
+world moved under it twice** (the join-cohort flip in
+`harness-world-shape-2026-07`, then `merchant-selection-2026-08`). The gate
+PRINTS its levels on every run and they disagreed with this paragraph. Read
+off `test_card_baselines` today:
+
+| leg | fraud-only-merchant share | recall@P≥0.90 | band |
+|---|---|---|---|
+| pop 300 × 730d (the gate leg) | **0.0079** (1 of 41 touched) | **0.0079** | <0.10 / <0.25 |
+| pop 900 × 1461d | **0.0661** (6 of 153) | 0.0726 | <0.10 / <0.25 |
+
+Both bands still pass and neither was widened. Two things change, though.
+**Best precision at any threshold is 1.0000 (lift 295.65x), not the 0.1111
+this document implied** — a merchant whose only rows are fraud scores 1.0
+trivially and at these leg sizes one exists, so the bound is held by RECALL
+being tiny, not by precision being unreachable. And **the larger leg carries
+only 0.034 of headroom**, so any future round touching fraud destinations is
+working with a quarter of the room the 0.0000 suggested. `AUTHORITY: measured
+by execution, 2026-08; supersedes the 0.0000 pair.`
 
 ═══════════════════════════════════════════════════════════════════════
 # SUPERSEDED CLAIMS
