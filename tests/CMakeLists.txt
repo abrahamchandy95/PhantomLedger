@@ -32,6 +32,10 @@ pl_add_test(test_channels)
 pl_add_test(test_counterparties)
 pl_add_test(test_calendar)
 pl_add_test(test_app_options)
+# loc-accrual-perf-2026-08: sub-gate D is a COST gate — it fails if the LOC
+# billing sweep goes back to scanning every enabled slot per row, which made
+# the whole generator O(population^2).
+pl_add_test(test_loc_accrual)
 
 # ---------------------------------------------------------------------
 # Unit tests: chunked pipeline

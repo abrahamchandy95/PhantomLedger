@@ -328,6 +328,15 @@ TransferDecision Ledger::transfer(const entity::Key &src,
 
 void Ledger::debitAndEmit(Index idx, double amount, channels::Tag channel,
                           std::int64_t timestamp) {
+  // loc-accrual-perf-2026-08: roll the integral to `timestamp` on the PRE-debit
+  // balance before moving cash. The old per-row scan re-read every balance each
+  // row, so a fee or interest debit that pushed a slot negative was picked up
+  // on the next row regardless; the lazy integral only advances where it is
+  // told to, and this is the one cash write that does not funnel through
+  // `transferAt`'s update pair. A no-op when the caller already stamped this
+  // slot at this instant, which is the case on both existing paths.
+  locTracker_.update(idx, cash_[idx], timestamp);
+
   // Bypass the funding check: fee collection / interest must apply
   // against already-negative balances.
   cash_[idx] -= amount;
@@ -360,10 +369,19 @@ TransferDecision Ledger::transferAt(const Posting &posting) noexcept {
     return decision;
   }
 
-  const auto fee = assessOverdraftFee(
-      protectionType_[posting.srcIdx], posting.channel,
-      CashTransition{.before = srcCashBefore, .after = cash_[posting.srcIdx]},
-      overdraftFeeAmount_[posting.srcIdx]);
+  // Credit-card limits reuse the overdraft-capacity fields, but crossing
+  // below zero on a revolving card is ordinary utilization, not a checking
+  // overdraft. Keep the generic overdraft-only/courtesy behavior for every
+  // non-card account while suppressing that category error for card sources.
+  const bool creditCardSource =
+      accountKeys_[posting.srcIdx].role == entity::Role::card;
+  const auto fee =
+      creditCardSource
+          ? OverdraftFeeAssessment{}
+          : assessOverdraftFee(protectionType_[posting.srcIdx], posting.channel,
+                               CashTransition{.before = srcCashBefore,
+                                              .after = cash_[posting.srcIdx]},
+                               overdraftFeeAmount_[posting.srcIdx]);
   if (fee) {
     debitAndEmit(posting.srcIdx, fee.amount,
                  channels::tag(channels::Liquidity::overdraftFee),

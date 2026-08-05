@@ -13,20 +13,22 @@ void LocAccrualTracker::initialize(Index count) {
   dollarSecondsIntegral_.assign(count, 0.0);
   lastUpdateTs_.assign(count, 0);
   lastBillingTs_.assign(count, 0);
-  enabledIdx_.clear();
+  queuedDueTs_.assign(count, kNotQueued);
+  billingQueue_ = {};
+  dueScratch_.clear();
+}
+
+void LocAccrualTracker::scheduleBilling(Index idx, std::int64_t dueTs) {
+  queuedDueTs_[idx] = dueTs;
+  billingQueue_.emplace(dueTs, idx);
 }
 
 bool LocAccrualTracker::isEnabled(Index idx) const noexcept {
   return idx < size_ && enabled_[idx] != 0;
 }
 
-void LocAccrualTracker::enable(Index idx, double apr, int billingDay) noexcept {
+void LocAccrualTracker::enable(Index idx, double apr, int billingDay) {
   assert(idx < size_);
-  if (enabled_[idx] == 0) {
-    const auto pos =
-        std::lower_bound(enabledIdx_.begin(), enabledIdx_.end(), idx);
-    enabledIdx_.insert(pos, idx);
-  }
   enabled_[idx] = 1;
   apr_[idx] = apr;
   billingDay_[idx] = static_cast<std::int32_t>(billingDay);
@@ -35,23 +37,25 @@ void LocAccrualTracker::enable(Index idx, double apr, int billingDay) noexcept {
   dollarSecondsIntegral_[idx] = 0.0;
   lastUpdateTs_[idx] = 0;
   lastBillingTs_[idx] = 0;
+  // Due at 0 so the FIRST sweep that runs after this pops the slot and takes
+  // the `lastBillingTs_ == 0` arm — that is where the old full scan started
+  // the billing clock, and starting it anywhere else would shift every
+  // subsequent maturity for this account. Supersedes any entry a prior
+  // enable() left queued.
+  scheduleBilling(idx, 0);
 }
 
-void LocAccrualTracker::disable(Index idx) noexcept {
+void LocAccrualTracker::disable(Index idx) {
   assert(idx < size_);
-  if (enabled_[idx] != 0) {
-    const auto pos =
-        std::lower_bound(enabledIdx_.begin(), enabledIdx_.end(), idx);
-    if (pos != enabledIdx_.end() && *pos == idx) {
-      enabledIdx_.erase(pos);
-    }
-  }
   enabled_[idx] = 0;
   apr_[idx] = 0.0;
   billingDay_[idx] = 0;
   dollarSecondsIntegral_[idx] = 0.0;
   lastUpdateTs_[idx] = 0;
   lastBillingTs_[idx] = 0;
+  // Lazy deletion: the queue entry stays, and sweep() drops it on sight
+  // because the token no longer matches.
+  queuedDueTs_[idx] = kNotQueued;
 }
 
 bool LocAccrualTracker::enabled(Index idx) const noexcept {
@@ -74,6 +78,15 @@ void LocAccrualTracker::update(Index idx, double preCash,
     return;
   }
 
+  // loc-accrual-perf-2026-08: `ts == 0` is the untimestamped `Ledger::transfer`
+  // overload, not an instant. Under the old per-row scan a stamp of 0 was
+  // harmless because the next sweep re-stamped every slot anyway; with the
+  // integral rolled forward lazily it would REWIND `lastUpdateTs_` to 0 and
+  // make the following interval accrue from the epoch. Ignore it.
+  if (ts == 0) {
+    return;
+  }
+
   const auto lastTs = lastUpdateTs_[idx];
   // Only accumulate during periods where the balance was negative;
   // positive balances accrue no LOC interest.
@@ -84,14 +97,23 @@ void LocAccrualTracker::update(Index idx, double preCash,
   lastUpdateTs_[idx] = ts;
 }
 
-void LocAccrualTracker::copyStateFrom(const LocAccrualTracker &other) noexcept {
-  // Copies accrual STATE only; enablement (and therefore enabledIdx_)
-  // must already match between the two trackers — the clone/restore
-  // pattern restores onto a book with identical account setup.
+void LocAccrualTracker::copyStateFrom(const LocAccrualTracker &other) {
+  // Copies accrual STATE only; enablement must already match between the two
+  // trackers — the clone/restore pattern restores onto a book with identical
+  // account setup.
+  //
+  // loc-accrual-perf-2026-08: the billing queue and its tokens are DERIVED
+  // FROM `lastBillingTs_`, so they are accrual state and must travel with it.
+  // Restoring the timestamps while keeping this book's own queue would leave
+  // the two disagreeing about when each slot next matures — a divergence
+  // between the monolithic and windowed engines that no golden would localise
+  // to this file.
   assert(size_ == other.size_);
   dollarSecondsIntegral_ = other.dollarSecondsIntegral_;
   lastUpdateTs_ = other.lastUpdateTs_;
   lastBillingTs_ = other.lastBillingTs_;
+  queuedDueTs_ = other.queuedDueTs_;
+  billingQueue_ = other.billingQueue_;
 }
 
 } // namespace PhantomLedger::clearing
