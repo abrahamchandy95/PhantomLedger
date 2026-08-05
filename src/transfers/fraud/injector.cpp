@@ -829,6 +829,25 @@ buildCompromisePlans(
     devices::Identity attackerDevice{};
     network::Ipv4 attackerIp{};
 
+    // venue-reuse-2026-08: resolve the CAMPAIGN once, ABOVE the endpoint
+    // branch, so it is available whether or not this case gets attacker
+    // infrastructure. DRAW-FREE: `operatorAt` is a const point query that
+    // consumes the `operatorU` already drawn above, so hoisting it spends
+    // nothing and the four-uniform block stays unconditional and ordered.
+    //
+    // Hoisting it out of the `if` also DECOUPLES merchant sharing from device
+    // sharing: campaign coverage rises from the device-resolved subset to
+    // every unauthorized case with a live operator. That is deliberate — if
+    // the two shared exactly the same case set they would be collinear, and a
+    // GNN could not tell a shared cash-out venue from a shared device.
+    std::uint32_t campaign =
+        typologies::unauthorized::CompromisePlan::kNoCampaign;
+    if (!scamRail && attackers != nullptr && !attackers->empty()) {
+      if (const auto op = attackers->operatorAt(operatorU, startTs)) {
+        campaign = *op;
+      }
+    }
+
     // THE CARRIER IS THE ABSENCE OF A CARRIER. An UNASSIGNED device on
     // the plan means "the victim operated this row", and
     // `unauthorized::generate` then lets the session
@@ -859,10 +878,15 @@ buildCompromisePlans(
       // an error.
       const auto caseEndTsExcl =
           startTs + std::max<std::int64_t>(2, spanSeconds);
-      if (const auto op = attackers->operatorAt(operatorU, startTs)) {
+      // venue-reuse-2026-08: reuses the campaign resolved above rather than
+      // re-querying. Same value by construction (same `operatorU`, same
+      // `startTs`, and `operatorAt` is const), so endpoint attribution is
+      // bit-identical to the pre-round stream.
+      if (campaign != typologies::unauthorized::CompromisePlan::kNoCampaign) {
+        const auto op = campaign;
         const auto device =
-            attackers->deviceAt(*op, startTs, caseEndTsExcl, seq);
-        auto ip = attackers->ipAt(*op, startTs, caseEndTsExcl, seq);
+            attackers->deviceAt(op, startTs, caseEndTsExcl, seq);
+        auto ip = attackers->ipAt(op, startTs, caseEndTsExcl, seq);
 
         // RESIDENTIAL PROXY: exit through some customer's home address.
         // `liveIpFor` is the draw-free, sticky-free point query — it
@@ -912,6 +936,7 @@ buildCompromisePlans(
         .seq = static_cast<std::uint32_t>(seq),
         .homeArea = homeAreaOf(victimPick.person, startTs),
         .severity = severity,
+        .campaign = campaign,
     });
 
     remaining -= target;
@@ -998,6 +1023,9 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
       // and the home-area axis the card rails select on.
       .merchants = counterparties.merchants,
       .homeAreas = counterparties.homeAreas,
+      // venue-reuse-2026-08: already a member here, so no inject call site,
+      // no harness carrier and no infra-stage signature moves.
+      .attackers = services_.attackers,
   };
 
   const auto ringPlans =

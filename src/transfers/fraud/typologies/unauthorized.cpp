@@ -174,15 +174,61 @@ struct Event {
 // catalogue (unit callers), no eligible merchant, or an unknown home
 // area falls back to the caller's pool / the national weighting rather
 // than inventing geography.
-[[nodiscard]] entity::Key
-pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
-                        entity::geography::GeoAreaId homeArea, bool cardPresent,
-                        std::int64_t ts, entity::Key fallback) {
+// venue-reuse-2026-08 —————————————————————————————————————————————————
+//
+// SLOTS PER CASE. A compromise spends at a SMALL SET of venues, not one and
+// not a fresh draw per row. Three is measured, not chosen: collapsing a case
+// onto ONE merchant is the worst option on both axes at once, because a
+// one-merchant case can no longer collide with another case at all — the
+// probe measured cross-victim overlap COLLAPSING from 0.3333 to 0.0215 while
+// P(pure-fraud share >= 0.10) rose from 0.000 to 0.078. The intuitive fix is
+// the wrong one.
+inline constexpr std::size_t kMerchantSlots = 3;
+
+// The share of online weight mass the campaign-shared cash-out venue is drawn
+// from. See `campaignVenue` for why this is a cliff rather than a dial.
+inline constexpr double kCashOutHeadMass = 0.25;
+
+// A distinct hash domain, so the cash-out venue shares no bits with any other
+// draw-free predicate in the corpus (the two-domain argument in
+// `merchant_ownership.hpp` applies verbatim).
+inline constexpr std::uint64_t kVenueDomain = 0x56'454E'5545'0001ULL;
+
+[[nodiscard]] constexpr std::uint64_t venueMix(std::uint64_t value) noexcept {
+  value += 0x9E3779B97F4A7C15ULL;
+  value = (value ^ (value >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+  value = (value ^ (value >> 27U)) * 0x94D049BB133111EBULL;
+  return value ^ (value >> 31U);
+}
+
+// A stable uniform in [0,1) for a campaign index.
+[[nodiscard]] constexpr double campaignUnit(std::uint32_t campaign) noexcept {
+  const auto mixed = venueMix(kVenueDomain ^ venueMix(campaign));
+  return static_cast<double>(venueMix(mixed) >> 11U) * 0x1.0p-53;
+}
+
+// venue-reuse-2026-08: the eligible acceptance population for ONE case,
+// with its selection weights. Everything this depends on — the victim's home
+// area, the modality coin, the case timestamp — is fixed for the whole case,
+// so the pool is built ONCE PER PLAN. It used to be rebuilt inside the event
+// loop, an O(catalogue) scan per fraud row.
+struct MerchantPool {
+  std::vector<double> weights;
+  std::vector<std::size_t> candidates;
+
+  [[nodiscard]] bool empty() const noexcept { return weights.empty(); }
+};
+
+[[nodiscard]] MerchantPool
+buildMerchantPool(const IllicitContext &ctx,
+                  entity::geography::GeoAreaId homeArea, bool cardPresent,
+                  std::int64_t ts) {
   namespace geography = ::PhantomLedger::entity::geography;
   namespace commerce = ::PhantomLedger::activity::spending::market::commerce;
 
+  MerchantPool pool;
   if (ctx.merchants == nullptr || ctx.merchants->records.empty()) {
-    return fallback;
+    return pool;
   }
 
   const auto &records = ctx.merchants->records;
@@ -193,8 +239,8 @@ pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
       localAnchor ? commerce::decayScaleMilesFor(geo.at(homeArea))
                   : 0.0;
 
-  std::vector<double> weights;
-  std::vector<std::size_t> candidates;
+  auto &weights = pool.weights;
+  auto &candidates = pool.candidates;
   weights.reserve(records.size());
   candidates.reserve(records.size());
 
@@ -238,16 +284,87 @@ pickMerchantDestination(random::Rng &rng, const IllicitContext &ctx,
     }
   }
 
-  if (weights.empty()) {
-    return fallback;
+  return pool;
+}
+
+// One weighted pick from a built pool, spending exactly one caller-supplied
+// uniform. Identical distribution to the pre-round per-row draw.
+[[nodiscard]] entity::Key pickFromPool(const entity::merchant::Catalog &cat,
+                                       const MerchantPool &pool, double u) {
+  const auto cdf = probability::distributions::buildCdf(
+      std::span<const double>(pool.weights.data(), pool.weights.size()));
+  const auto pick = probability::distributions::sampleIndex(cdf, u);
+  return cat.records[pool.candidates[pick]].counterpartyId;
+}
+
+// venue-reuse-2026-08: the CAMPAIGN'S SHARED CASH-OUT VENUE.
+//
+// DRAW-FREE — a splitmix64 of the campaign index becomes the position, so
+// every case of one campaign converges on the same outlet without spending a
+// uniform and without any cross-case state. That is what keeps the batch and
+// windowed engines in lockstep: the answer depends on the campaign index and
+// the live catalogue, never on how many cases ran before.
+//
+// HEAD-RESTRICTED, AND THE RESTRICTION IS LOAD-BEARING RATHER THAN COSMETIC.
+// An unrestricted shared slot concentrates a campaign's whole case load (up to
+// 22 cases at the pop-900 leg) onto one arbitrary outlet, which manufactures
+// fraud-only merchants: the probe measured P(pure-fraud share >= 0.10) at
+// 0.097 unrestricted against 0.000 at this q. Restricting to outlets that
+// already carry heavy LEGITIMATE traffic is what keeps the venue's fraud rows
+// diluted by real ones.
+//
+// q IS A CLIFF, NOT A DIAL. q = 0.50 measured WORSE than no restriction at all
+// (0.147) because the online head at that mass contains outlets with zero
+// legitimate rows — catalogue weight is only a partial proxy for realized
+// traffic. Do not loosen q without re-measuring zero-legit head membership at
+// every leg.
+[[nodiscard]] entity::Key campaignVenue(const entity::merchant::Catalog &cat,
+                                        const MerchantPool &pool,
+                                        std::uint32_t campaign) {
+  const auto n = pool.weights.size();
+
+  // Rank by weight, descending; ties broken by catalogue index so the order is
+  // content-determined rather than left to an unstable sort.
+  std::vector<std::size_t> order(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    order[i] = i;
+  }
+  std::sort(order.begin(), order.end(),
+            [&](std::size_t a, std::size_t b) {
+              if (pool.weights[a] != pool.weights[b]) {
+                return pool.weights[a] > pool.weights[b];
+              }
+              return pool.candidates[a] < pool.candidates[b];
+            });
+
+  double total = 0.0;
+  for (const double w : pool.weights) {
+    total += w;
   }
 
-  const auto cdf = probability::distributions::buildCdf(
-      std::span<const double>(weights.data(), weights.size()));
-  const auto pick =
-      probability::distributions::sampleIndex(cdf, rng.nextDouble());
+  // Smallest prefix carrying at least kCashOutHeadMass of the weight. Always
+  // non-empty: the first outlet alone qualifies when one dominates.
+  const double target = total * kCashOutHeadMass;
+  double headMass = 0.0;
+  std::size_t headCount = 0;
+  while (headCount < n && headMass < target) {
+    headMass += pool.weights[order[headCount]];
+    ++headCount;
+  }
 
-  return records[candidates[pick]].counterpartyId;
+  // Position by cumulative weight INSIDE the head rather than by index, so a
+  // churned-out outlet moves only the picks that landed on it — keying on the
+  // index would re-point every campaign whenever head membership changed.
+  const double u = campaignUnit(campaign);
+  double acc = 0.0;
+  const double want = u * headMass;
+  for (std::size_t k = 0; k < headCount; ++k) {
+    acc += pool.weights[order[k]];
+    if (want < acc) {
+      return cat.records[pool.candidates[order[k]]].counterpartyId;
+    }
+  }
+  return cat.records[pool.candidates[order[headCount - 1]]].counterpartyId;
 }
 
 // The row's LABEL CLASS follows the rail. The two authorized rails are
@@ -334,15 +451,52 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
     // it really is the victim at their own machine. See
     // `digitalGiftCardShareBasisPoints` for why that branch has to exist.
     //
-    // BOTH BRANCHES NOW SPEND EXACTLY ONE COIN on this per-plan lane,
-    // where the gift-card rail previously spent none. The lane is keyed
-    // per plan (`{"fraud","unauth","merchant",seq}`), so the extra draw
-    // moves the DESTINATION of gift-card cases only and cannot reach any
-    // other plan, rail, amount or timestamp.
+    // THE GIFT-CARD BRANCH DOES NOT ALWAYS SPEND A COIN, and a previous
+    // version of this comment claimed it did. `Rng::coin` short-circuits at
+    // p <= 0 (rng.hpp), and `digitalGiftCardShareBasisPoints` returns 0 before
+    // 2005 — which every gate leg and the golden window start in. Harmless,
+    // because the lane is keyed per plan and read by nothing else, but any
+    // reasoning about fixed offsets on this lane is wrong.
     const bool cardPresent =
         plan.rail == Rail::giftCardScam
             ? !merchantRng.coin(digitalGiftCardShare(plan.startTs))
             : !merchantRng.coin(kCardNotPresentShare);
+
+    // venue-reuse-2026-08: resolve this case's VENUE SLOTS once. The pool
+    // depends only on per-case values (home area, modality, case timestamp),
+    // so building it here rather than per row is both the fix and a large
+    // saving — it was an O(catalogue) scan on every fraud row.
+    const auto pool =
+        buildMerchantPool(ctx, plan.homeArea, cardPresent, plan.startTs);
+    std::array<entity::Key, kMerchantSlots> venues{};
+    const bool haveVenues = !pool.empty();
+
+    // ALL kMerchantSlots UNIFORMS ARE DRAWN UNCONDITIONALLY, including the one
+    // slot 0 may discard below. That is deliberate: it makes this lane's draw
+    // count independent of whether a campaign resolved, so no branch can shift
+    // it. Same discipline as the planner's four-uniform block.
+    for (std::size_t s = 0; s < kMerchantSlots; ++s) {
+      const double u = merchantRng.nextDouble();
+      if (haveVenues) {
+        venues[s] = pickFromPool(*ctx.merchants, pool, u);
+      }
+    }
+
+    // THE SHARED CASH-OUT VENUE IS CARD-NOT-PRESENT ONLY, and that is a
+    // measured scoping decision rather than a simplification. The
+    // card-present pool is decayed around each victim's OWN home area, and
+    // campaign co-victims are selected by exposure, not co-location — so a
+    // shared physical slot would contribute essentially ZERO cross-victim
+    // overlap while still concentrating fraud onto the popularity head. It
+    // would be pure cost. What ships is therefore an ONLINE cash-out
+    // analogue; it must not be described as physical POS-breach CPP.
+    if (haveVenues && !cardPresent &&
+        plan.campaign != CompromisePlan::kNoCampaign) {
+      venues[0] = campaignVenue(*ctx.merchants, pool, plan.campaign);
+    }
+
+    // Round-robin, matching the assignment the probe actually measured.
+    std::size_t merchantRow = 0;
 
     events.clear();
     isTest.assign(static_cast<std::size_t>(target), false);
@@ -458,9 +612,20 @@ generate(IllicitContext &ctx, std::span<const CompromisePlan> plans,
         // geographic axis legitimate card activity uses. The biller
         // pool survives only as the degraded fallback for callers that
         // supply no catalogue.
-        draft.destination = pickMerchantDestination(
-            merchantRng, ctx, plan.homeArea, cardPresent, plan.startTs,
-            pickOne(rng, ctx.billerAccounts));
+        //
+        // `pickOne` MUST STAY EAGER AND IN-LOOP. It spends one choiceIndex on
+        // the PLAN lane per emitted card row, and the chargeback lag draw
+        // below reads that lane afterwards — making it lazy (evaluating it
+        // only when the fallback is needed) is the single most tempting
+        // simplification here and it would move every reimbursement timestamp
+        // on every reported card case.
+        {
+          const auto billerFallback = pickOne(rng, ctx.billerAccounts);
+          draft.destination =
+              haveVenues ? venues[merchantRow % kMerchantSlots]
+                         : billerFallback;
+          ++merchantRow;
+        }
         draft.channel = channels::tag(channels::Legit::cardPurchase);
         break;
       case Rail::ato:

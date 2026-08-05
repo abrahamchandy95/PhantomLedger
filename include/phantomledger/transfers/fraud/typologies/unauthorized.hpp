@@ -91,6 +91,19 @@ struct CompromisePlan {
   // rail, both unauthorized rails, and every caller without the age
   // carrier get.
   double severity = 1.0;
+
+  // venue-reuse-2026-08: the ATTACKER CAMPAIGN this case belongs to — an
+  // index into `infra::AttackerInfra::operators`, which is that type's only
+  // identity (it has no id field). Resolved DRAW-FREE in the planner from the
+  // uniform already spent on endpoint attribution.
+  //
+  // It exists so a campaign's cases can converge on a shared cash-out venue.
+  // kNoCampaign means "no campaign" and every slot is drawn independently,
+  // which is what the AUTHORIZED rails, the victim-endpoint branch, and every
+  // hand-built unit plan get — the sentinel default is what keeps those
+  // callers carrier-free.
+  static constexpr std::uint32_t kNoCampaign = 0xFFFFFFFFU;
+  std::uint32_t campaign = kNoCampaign;
 };
 
 [[nodiscard]] std::vector<transactions::Transaction>

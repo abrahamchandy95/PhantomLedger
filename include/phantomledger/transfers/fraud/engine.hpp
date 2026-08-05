@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/infra/attackers.hpp"
 #include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
@@ -104,6 +105,17 @@ struct IllicitContext {
   // golden byte in place.
   const entity::merchant::Catalog *merchants = nullptr;
   std::span<const entity::geography::GeoAreaId> homeAreas{};
+
+  // venue-reuse-2026-08: attacker infrastructure, forwarded from
+  // InjectorServices. Read ONLY to size the campaign-shared cash-out slot;
+  // selection itself is a draw-free hash of the campaign index, so this
+  // pointer adds no uniforms and no state.
+  //
+  // `illicitCtx` is built INSIDE Injector::inject, where `services_.attackers`
+  // is already in scope, so wiring it needs no change at any of the three
+  // inject call sites and no new harness carrier — which is what keeps this
+  // round out of gate_world.hpp and the windowed leg support.
+  const infra::AttackerInfra *attackers = nullptr;
 
   std::uint32_t nextChainId = 1;
 
