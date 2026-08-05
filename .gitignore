@@ -1,19 +1,6 @@
-# =====================================================================
-# PhantomLedger .gitignore
-# Stack: C++23 / CMake / ctest, developed primarily on macOS.
-# Comments must stay on their own lines: git parses trailing text
-# after a pattern as part of the pattern.
-# =====================================================================
-
-# ---------------------------------------------------------------------
-# Build trees
-# ---------------------------------------------------------------------
 /build*/
 cmake-build-*/
 
-# ---------------------------------------------------------------------
-# CMake artifacts (protects against accidental in-source configure)
-# ---------------------------------------------------------------------
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
@@ -23,15 +10,9 @@ CMakeUserPresets.json
 compile_commands.json
 _deps/
 
-# ---------------------------------------------------------------------
-# CTest logs (created when ctest runs from the source root)
-# ---------------------------------------------------------------------
 Testing/
 DartConfiguration.tcl
 
-# ---------------------------------------------------------------------
-# Compiled objects, libraries, executables
-# ---------------------------------------------------------------------
 *.o
 *.obj
 *.a

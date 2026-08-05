@@ -54,7 +54,6 @@ schema. Every table lands directly in PostgreSQL during the run — PhantomLedge
 
 ### Design Principles
 
-- **Deterministic.** Every decision derives from a keyed stream seed: a string key (top-level seed + stream parts) is hashed with `blake2b`, the first 8 bytes seed a SplitMix64 expansion, and that initializes a PCG64 engine. A given `(seed, config)` yields bit-identical output on a fixed toolchain. The day-to-day spending simulator runs person-partitioned across hardware threads; determinism survives because every stream is seeded from entity keys, never from a shared sequence.
 - **Research-grounded.** Every probability, median, and sigma has a published citation or an explicitly documented modeling choice.
 - **Era-correct dollars.** All calibrated dollar constants are denominated in the pinned 2019 calibration year; realized amounts scale to each event's year through the embedded CPI-U (prices) and SSA AWI (wages) history, 1990–2024. A 1991 window opens at ≈0.53× prices and ≈0.40× wages; a 2019 window reproduces the calibrated magnitudes exactly. Outside coverage the scales freeze at the nearest measured year and the run declares it (never silent extrapolation). Statutory amounts — the BSA/CTR $10,000 threshold, note/rack denominations — deliberately do NOT scale.
 - **Era-correct lifecycles.** Personas are lifecycle states, not fixed labels: each person carries a deterministic timeline derived from their single modeled birth date — students start careers at 19–28, workers retire on SSA claiming-shaped dates (the exact 1983-Amendments full-retirement-age schedule), small businesses close on a memoryless median-five-year hazard, and everyone eventually DIES on an SSA-life-table hazard — and payroll, Social Security onset, business revenue, the spending level, and the AML customer view all follow the timeline. The population both persists and dies: deaths produce funerals and estates, accounts close after settlement, and a BEA-sized join cohort replenishes the customer base (macro-history H3).
@@ -117,67 +116,7 @@ make run ARGS="--usecase standard --days 120 --population 200000"
 validated 5,000-person, 1999-through-2019 card-fraud invocation is:
 
 ```sh
-make run ARGS="--start 1999-01-01 --days 7670 --population 5000 --seed 3735928559 --usecase card-fraud"
-```
-
-No database environment variable is needed for the local default:
-`PL_PG` unset (or empty) resolves in code to `dbname=phantomledger`. Set
-`PL_PG` only to override that connection string for another server/database.
-
-`7670` covers the half-open interval `[1999-01-01, 2020-01-01)`, so the last
-included calendar day is 2019-12-31. This writes
-the shared all-rails ledger to `public.transactions` and all 37 card-view/graph
-tables to `card_fraud.cf_*`; the transaction-fraud training relation is
-`card_fraud."cf_Payment_Transaction"`. It does not write output files or enable
-hidden CLI options.
-
-This is TabFormer-shaped, not a byte/scale reproduction of [IBM's released
-artifact](https://github.com/IBM/TabFormer). That corpus contains 24,386,900 transaction rows for 2,000
-users, 100,343 merchant identifiers, and 28,471 fraud rows (0.11675%), observed
-from 1991-01-02 through 2020-02-28. A 10,000-person run is intentionally much
-larger; use `--days 10651` only when the requested interval must include IBM's
-observed 2020-02-28 endpoint.
-
-IBM's raw artifact has 15 columns; its preprocessing combines the four
-date/time fields into `Timestamp` and selects 12 fields, keeping `Is Fraud?` as
-the label rather than a model input. PhantomLedger's equivalent information is
-normalized across `Payment_Transaction`, its Card/Merchant edges, and geography
-tables; it is not a flat-column clone, and the present `mer_cat` is a modeled
-category rather than an empirical MCC.
-
-R2.5a full-horizon probes emitted 3.54M / 9.12M / 18.63M all-rails rows at
-population 500 / 1,000 / 2,000, peaking at 710 MB / 1.40 GiB / 2.92 GiB. The
-10,000-person run is therefore projected at roughly 91--95M all-rails rows,
-51--53M payment-view rows, 14--16 GiB process RSS, and 8.5 GiB encoded scratch
-spools. It is conditionally feasible on a quiet 32-GiB host, but the exact run
-has not passed the <=16-GiB release gate. Allow at least 100 GiB free across
-PostgreSQL and temporary storage; expect roughly 30--50 GiB of database data.
-Direct tables are currently `UNLOGGED`; take a durable PostgreSQL backup after
-a successful build. (Those probes predate the H1 nominal-scale wiring, the
-H2 payroll era repair, and the H4 activity modulation. Two corrections
-pull in OPPOSITE directions: pre-2025 windows now carry the full
-weekly/biweekly payroll volume, which RAISES early-era row counts, while
-the discretionary session now runs at each year's measured real
-consumption level, which LOWERS them — a 1991-start window opens at
-≈0.67× session volume and climbs to 1.0× by 2019. Read the
-10,000-person projection above as an upper bound on the session-driven
-share.)
-
-After the target run finishes, the read-only acceptance script checks the
-manifest, all 37 physical/registered tables, transaction-edge cardinality
-(including one timestamped device edge and one timestamped IP edge per
-payment), edge endpoints, raw-ledger joins, date bounds, positive transaction
-labels, the withheld entity-label columns, and header-only static
-device/IP ownership tables:
-
-```sh
-psql "dbname=phantomledger" \
-  -v expected_population=5000 \
-  -v expected_days=7670 \
-  -v expected_start=1999-01-01 \
-  -v expected_end=2020-01-01 \
-  -v expected_seed=3735928559 \
-  -f docs/card_fraud_postgres_acceptance.sql
+make run ARGS="--start 1999-01-01 --days 1070 --population 50000 --seed 42 --usecase card-fraud"
 ```
 
 Runtime diagnostics are **silent by default**; the `run-info` / `run-debug` / `run-trace` /
