@@ -30,7 +30,7 @@
 //  3. Topic mask. Set via env var PL_LOG_TOPICS = comma-separated
 //     topic names (default: all topics enabled). Example:
 //
-//       PL_LOG_TOPICS=spending,routing,clearing  PL_LOG_LEVEL=debug \
+//       PL_LOG_TOPICS=spending,routing,clearing  PL_LOG_LEVEL=debug
 //         ./phantomledger ...
 //
 // Macros:

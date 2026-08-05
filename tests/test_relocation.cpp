@@ -138,8 +138,8 @@ buildWorld(const pl::synth::pii::PoolSet &poolSet, const Leg &leg) {
           pl::synth::pii::IdentityContext{
               .pools = &poolSet,
               .simStart = window.start,
-              .windowDays = leg.days,
               .localeMix = pl::synth::pii::LocaleMix::usOnly(),
+              .windowDays = leg.days,
           },
   };
   auto rng = pl::random::Rng::fromSeed(leg.seed);
@@ -250,14 +250,15 @@ int main() {
     const auto longWorld = buildWorld(longPools, longLeg);
     const auto longWindow = windowOf(longLeg);
     const auto &schedule = longWorld.people.relocation;
-    const auto m = measureSchedule(schedule, longWorld.people.homeAreas,
-                                   longWindow);
-    const auto rate =
-        m.personYears > 0.0 ? static_cast<double>(m.moves) / m.personYears : 0.0;
-    const auto sameStateShare =
-        m.statedMoves == 0 ? 0.0
-                           : static_cast<double>(m.sameStateMoves) /
-                                 static_cast<double>(m.statedMoves);
+    const auto m =
+        measureSchedule(schedule, longWorld.people.homeAreas, longWindow);
+    const auto rate = m.personYears > 0.0
+                          ? static_cast<double>(m.moves) / m.personYears
+                          : 0.0;
+    const auto sameStateShare = m.statedMoves == 0
+                                    ? 0.0
+                                    : static_cast<double>(m.sameStateMoves) /
+                                          static_cast<double>(m.statedMoves);
 
     std::printf("=== %s: pop %d, %d days from %d ===\n", longLeg.name,
                 longLeg.population, longLeg.days, longLeg.startYear);
@@ -328,8 +329,8 @@ int main() {
     // C
     check(m.firstHalfRate > m.secondHalfRate,
           "leg-20y: the CPS era DECLINE must be visible — first-half rate " +
-              std::to_string(m.firstHalfRate) +
-              " must exceed second-half " + std::to_string(m.secondHalfRate) +
+              std::to_string(m.firstHalfRate) + " must exceed second-half " +
+              std::to_string(m.secondHalfRate) +
               ". A FLAT hazard passes the level check and fails this one");
     // E
     check(m.crossCountry == 0,
@@ -417,10 +418,9 @@ int main() {
         measureSchedule(shortWorld.people.relocation,
                         shortWorld.people.homeAreas, windowOf(shortLeg));
     const double shortPerPerson =
-        shortMeasure.people == 0
-            ? 0.0
-            : static_cast<double>(shortMeasure.moves) /
-                  static_cast<double>(shortMeasure.people);
+        shortMeasure.people == 0 ? 0.0
+                                 : static_cast<double>(shortMeasure.moves) /
+                                       static_cast<double>(shortMeasure.people);
     std::printf("\n=== %s: pop %d, %d days ===\n", shortLeg.name,
                 shortLeg.population, shortLeg.days);
     std::printf("  %zu people, %zu moves => %.4f moves/person\n",
