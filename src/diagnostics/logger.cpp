@@ -1,11 +1,10 @@
 #include "phantomledger/diagnostics/logger.hpp"
 
 #include <cctype>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <ctime>
 #include <format>
-#include <print>
 #include <string>
 #include <string_view>
 
@@ -66,6 +65,28 @@ namespace {
   return false;
 }
 
+/* Wall-clock time of day. std::chrono's time zone database is unavailable on
+ * this toolchain, so the local offset comes from libc. */
+[[nodiscard]] std::string localTimeOfDay() noexcept {
+  const std::time_t now = std::time(nullptr);
+  std::tm tm{};
+#ifdef _WIN32
+  (void)localtime_s(&tm, &now);
+#else
+  (void)localtime_r(&now, &tm);
+#endif
+  return std::format("{:02}:{:02}:{:02}", tm.tm_hour, tm.tm_min, tm.tm_sec);
+}
+
+[[nodiscard]] const char *baseName(const char *path) noexcept {
+  const char *base = path;
+  for (const char *p = path; *p != '\0'; ++p) {
+    if (*p == '/' || *p == '\\')
+      base = p + 1;
+  }
+  return base;
+}
+
 } // namespace
 
 Logger &Logger::instance() noexcept {
@@ -113,36 +134,29 @@ void Logger::enableTopic(Topic topic, bool on) noexcept {
 }
 
 void Logger::setStream(std::FILE *stream) noexcept {
-  std::lock_guard lock(streamMu_);
+  std::lock_guard lock(streamMutex_);
   stream_ = stream;
 }
 
-void Logger::writeLog(Metadata ctx, std::string_view fmt,
+void Logger::writeLog(Metadata meta, std::string_view fmt,
                       std::format_args args) noexcept {
-  const char *base = ctx.file;
-  for (const char *p = ctx.file; *p; ++p) {
-    if (*p == '/' || *p == '\\')
-      base = p + 1;
-  }
-
-  std::lock_guard lock(streamMu_);
-  if (stream_ == nullptr) {
+  /* Formatted outside the lock so only the write itself serializes. A
+   * malformed format string throws rather than corrupting the stream. */
+  std::string line;
+  try {
+    line = std::format("[{}] [{:<5}] [{:<9}] {}:{}  {}\n", localTimeOfDay(),
+                       levelName(meta.level), topicName(meta.topic),
+                       baseName(meta.file), meta.line, std::vformat(fmt, args));
+  } catch (...) {
     return;
   }
 
-  try {
-    const auto now = std::chrono::system_clock::now();
-    const auto time_fmt = std::chrono::current_zone()->to_local(now);
-
-    std::print(stream_, "[{:%H:%M:%S}] [{:<5}] [{:<9}] {}:{}  ", time_fmt,
-               levelName(ctx.level), topicName(ctx.topic), base, ctx.line);
-
-    std::vprint_nonunicode(stream_, fmt, args);
-
-    std::println(stream_);
-    std::fflush(stream_);
-  } catch (...) {
+  std::lock_guard lock(streamMutex_);
+  if (stream_ == nullptr) {
+    return;
   }
+  (void)std::fwrite(line.data(), 1, line.size(), stream_);
+  (void)std::fflush(stream_);
 }
 
 std::atomic<std::uint64_t> &Logger::everyNCounter(std::uintptr_t key) noexcept {

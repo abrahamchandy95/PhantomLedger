@@ -134,28 +134,27 @@ PhaseAResult WindowedTransferDriver::runPhaseAErased(time::Window full,
 
   PhaseAResult summary;
 
-  const auto feedFinalized =
-      [&](activity::spending::simulator::WindowOutput output, bool finished) {
-        summary.legitRows += output.txns.size();
+  const auto feedFinalized = [&](activity::spending::simulator::Batch batch,
+                                 bool finished) {
+    summary.legitRows += batch.txns.size();
 
-        if (output.finalizedWindow.days > 0) {
-          const auto finalizedWindow = output.finalizedWindow;
-          stagePreRows(std::move(output.txns), finalizedWindow, summary);
-          preCoverageExcl_ = windowEndEpoch(finalizedWindow);
-        }
+    if (batch.finalized.days > 0) {
+      const auto finalized = batch.finalized;
+      stagePreRows(std::move(batch.txns), finalized, summary);
+      preCoverageExcl_ = windowEndEpoch(finalized);
+    }
 
-        settlePreSpans(finished, sink, summary);
+    settlePreSpans(finished, sink, summary);
 
-        // RAM R2.4c.0: fold-residency probe. The run peak now accrues
-        // inside Phase A, whose buffers are all bounded by design
-        // (preStage_ compacts per settled span; the pending queue drains
-        // per chunk). One line per generation span shows which retention
-        // actually carries the growth.
-        pipeline::diagnostics::logStageMem(
-            "phaseA:gen", {{"preStage", preStage_.size()},
-                           {"prePending", preAcc_->pendingRows()},
-                           {"preSettled", preAcc_->settledRows()}});
-      };
+    /* Fold-residency probe: one line per generation span showing which
+     * retention carries the growth. Phase A's buffers are all bounded --
+     * preStage_ compacts per settled span, the pending queue drains per
+     * chunk -- so the run peak accrues here. */
+    pipeline::diagnostics::logStageMem(
+        "phaseA:gen", {{"preStage", preStage_.size()},
+                       {"prePending", preAcc_->pendingRows()},
+                       {"preSettled", preAcc_->settledRows()}});
+  };
 
   for (const auto &span : generationSchedule) {
     feedFinalized(session_->advance(span.activeWindow), /*finished=*/false);
@@ -173,12 +172,9 @@ PhaseAResult WindowedTransferDriver::runPhaseAErased(time::Window full,
   };
 
   PL_LOG_INFO(clearing,
-              "phase A complete: candidates=%llu legit=%llu sources=%llu "
-              "cards=%llu",
-              static_cast<unsigned long long>(summary.candidateRows),
-              static_cast<unsigned long long>(summary.legitRows),
-              static_cast<unsigned long long>(summary.sourceRows),
-              static_cast<unsigned long long>(summary.cardEvents));
+              "phase A complete: candidates={} legit={} sources={} cards={}",
+              summary.candidateRows, summary.legitRows, summary.sourceRows,
+              summary.cardEvents);
 
   return summary;
 }
@@ -367,11 +363,8 @@ PhaseBResult WindowedTransferDriver::runPhaseBErased(
       .byChannel = postAcc_->dropCountsByChannel(),
   };
 
-  PL_LOG_INFO(clearing,
-              "phase B complete: flushed=%llu candidates=%llu fraud=%llu",
-              static_cast<unsigned long long>(summary.rowsFlushed),
-              static_cast<unsigned long long>(summary.candidateRows),
-              static_cast<unsigned long long>(summary.fraudRows));
+  PL_LOG_INFO(clearing, "phase B complete: flushed={} candidates={} fraud={}",
+              summary.rowsFlushed, summary.candidateRows, summary.fraudRows);
 
   return summary;
 }

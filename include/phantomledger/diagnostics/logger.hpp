@@ -8,18 +8,20 @@
 #include <string_view>
 
 /*
- Logger
- Lightweight, thread-safe, zero-dependency logging.
+  Logger
+  Lightweight, thread-safe, zero-dependency logging.
 
- Configuration:
- 1. Compile-time: kCompileMinLevel (eliminates dead branches).
- 2. Runtime Level: PL_LOG_LEVEL (trace|debug|info|warn|error|off). Default:
- warn.
- 3. Runtime Topic: PL_LOG_TOPICS (comma-separated topics). Default: all.
+  Configuration:
+  1. Compile-time: kCompileMinLevel (eliminates dead branches).
+  2. Runtime Level: PL_LOG_LEVEL (trace|debug|info|warn|error|off). Default:
+  warn.
+  3. Runtime Topic: PL_LOG_TOPICS (comma-separated topics). Default: all.
 
- Usage:
- PL_LOG_INFO(Topic::sim, "fmt %d", a);
- PL_LOG_EVERY_N(Level::warn, Topic::mem, 100, "fmt %d", a);
+  Usage. The topic is named bare; the format string is std::format, not
+  printf. Arguments are only evaluated when the level and topic are both
+  enabled.
+  PL_LOG_INFO(sim, "day {} emitted {} rows", day, rows);
+  PL_LOG_EVERY_N(Level::warn, Topic::mem, 100, "peak {:.1f} MB", mb);
  */
 
 namespace PhantomLedger::diagnostics {
@@ -47,6 +49,7 @@ enum class Topic : std::uint8_t {
 
 inline constexpr Level kCompileMinLevel = Level::trace;
 
+/* Where a log line came from, and under what severity. */
 struct Metadata {
   Level level;
   Topic topic;
@@ -79,9 +82,9 @@ public:
   }
 
   template <typename... Args>
-  void log(Metadata ctx, std::format_string<Args...> fmt,
+  void log(Metadata meta, std::format_string<Args...> fmt,
            Args &&...args) noexcept {
-    writeLog(ctx, fmt.get(), std::make_format_args(args...));
+    writeLog(meta, fmt.get(), std::make_format_args(args...));
   }
 
   /* Rate-limited logging state */
@@ -96,14 +99,14 @@ private:
 
   void configureFromEnv() noexcept;
 
-  void writeLog(Metadata ctx, std::string_view fmt,
+  void writeLog(Metadata meta, std::string_view fmt,
                 std::format_args args) noexcept;
 
   std::atomic<Level> level_{Level::warn};
   std::atomic<std::uint32_t> topicMask_{
       (1U << static_cast<std::uint8_t>(Topic::kCount)) - 1U};
   std::FILE *stream_{nullptr};
-  std::mutex streamMu_;
+  std::mutex streamMutex_;
 
   /* 16-slot striped counter table for PL_LOG_EVERY_N. Collisions skew rates
    * slightly but are harmless. */
@@ -124,9 +127,10 @@ private:
     if (::PhantomLedger::diagnostics::kCompileMinLevel <= (level_) &&          \
         ::PhantomLedger::diagnostics::Logger::instance().enabled((level_),     \
                                                                  (topic_))) {  \
-      ::PhantomLedger::diagnostics::Metadata ctx_{(level_), (topic_),          \
-                                                  __FILE__, __LINE__};         \
-      ::PhantomLedger::diagnostics::Logger::instance().log(ctx_, __VA_ARGS__); \
+      const ::PhantomLedger::diagnostics::Metadata meta_{(level_), (topic_),   \
+                                                         __FILE__, __LINE__};  \
+      ::PhantomLedger::diagnostics::Logger::instance().log(meta_,              \
+                                                           __VA_ARGS__);       \
     }                                                                          \
   } while (0)
 
@@ -161,9 +165,9 @@ private:
               reinterpret_cast<std::uintptr_t>(&kPlSiteKey_));                 \
       const auto cnt_ = counter_.fetch_add(1, std::memory_order_relaxed) + 1U; \
       if ((cnt_ % static_cast<std::uint64_t>(n_)) == 0U) {                     \
-        ::PhantomLedger::diagnostics::Metadata ctx_{(level_), (topic_),        \
-                                                    __FILE__, __LINE__};       \
-        ::PhantomLedger::diagnostics::Logger::instance().log(ctx_,             \
+        const ::PhantomLedger::diagnostics::Metadata meta_{                    \
+            (level_), (topic_), __FILE__, __LINE__};                           \
+        ::PhantomLedger::diagnostics::Logger::instance().log(meta_,            \
                                                              __VA_ARGS__);     \
       }                                                                        \
     }                                                                          \
