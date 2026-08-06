@@ -58,8 +58,8 @@ SpenderEmissionLoop::RateSampler::RateSampler(const PreparedRun::Budget &budget,
       // H1 step 2b (class P) + H4: one CPI level lookup and one REAL
       // consumption level lookup per day frame; both engines share
       // this code, so oracle parity is automatic.
-      dayPriceScale_(synth::econ::priceScale(
-          time::toCalendarDate(frame.day.start).year)),
+      dayPriceScale_(
+          synth::econ::priceScale(time::toCalendarDate(frame.day.start).year)),
       dayRealLevel_(synth::econ::realPceLevel(
           time::toCalendarDate(frame.day.start).year)) {}
 
@@ -110,7 +110,9 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
   };
 
   const auto mult = liquidity::multiplier(rules_.liquidity, snapshot);
-  diagnostics::Stats::instance().recordLiquidityMultiplier(mult);
+
+  // Use the new simplified method name
+  diagnostics::Stats::instance().liquidityMultiplier(mult);
 
   lastLiquidityMult_ = mult;
   lastAvailableToSpend_ = snapshot.availableToSpend;
@@ -125,8 +127,7 @@ double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
   // target x realPceLevel(year): a 2019 frame multiplies by exactly
   // 1.0, a 1991 frame runs at ~0.67x. Amounts are untouched (the
   // count-only channel law).
-  return dailyMultipliers_[personIndex] * frame_.seasonalMult *
-         dayRealLevel_;
+  return dailyMultipliers_[personIndex] * frame_.seasonalMult * dayRealLevel_;
 }
 
 double
@@ -152,7 +153,8 @@ std::uint32_t SpenderEmissionLoop::RateSampler::transactionCountFor(
                                      },
                                      budget_.personLimit, rules_.rates);
 
-  diagnostics::Stats::instance().recordCountSampled(cnt);
+  // Use the new simplified method name
+  diagnostics::Stats::instance().countSample(cnt);
   return cnt;
 }
 
@@ -195,8 +197,7 @@ double SpenderEmissionLoop::RateSampler::dayPriceScale() const noexcept {
   return dayPriceScale_;
 }
 
-std::uint32_t
-SpenderEmissionLoop::RateSampler::frameDayIndex() const noexcept {
+std::uint32_t SpenderEmissionLoop::RateSampler::frameDayIndex() const noexcept {
   return frame_.day.dayIndex;
 }
 
@@ -218,19 +219,30 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
 
   const auto slot = routing::pickSlot(routing_.channelCdf, rng.nextDouble());
   const auto personaBucket = personaBucketOf(*event.spender);
-  stats.recordAttempt(slot, personaBucket);
+
+  // Clean method name
+  stats.attempt(slot, personaBucket);
 
   const double liqMult =
       rateSampler_ != nullptr ? rateSampler_->lastLiquidityMult() : 0.0;
   const double avail =
       rateSampler_ != nullptr ? rateSampler_->lastAvailableToSpend() : 0.0;
 
+  // Build the state block once to pass cleanly to the failure handlers
+  diagnostics::AttemptState attemptState{
+      .dayIndex = 0u, // Note: preserved original hardcoded fallback
+      .personIndex = event.spender->personIndex,
+      .personaBucket = personaBucket,
+      .slot = slot,
+      .liquidityMult = liqMult,
+      .availableToSpend = avail,
+  };
+
   routing::PaymentRouter router{rng, market_, routing_.paymentRules, resolved_};
   auto maybeResult = router.route(slot, event);
 
   if (!maybeResult.has_value()) {
-    stats.recordRouteNullopt(0u, event.spender->personIndex, personaBucket,
-                             slot, liqMult, avail);
+    stats.routeFailure(attemptState);
     return std::nullopt;
   }
 
@@ -241,12 +253,11 @@ SpenderEmissionLoop::PaymentEmitter::tryEmit(random::Rng &rng,
                          maybeResult->draft.amount, maybeResult->draft.channel);
 
   if (decision.rejected()) {
-    stats.recordTransferRejected(0u, event.spender->personIndex, personaBucket,
-                                 slot, decision.reason(), liqMult, avail);
+    stats.transferFailure(attemptState, decision.reason());
     return std::nullopt;
   }
 
-  stats.recordEmitted(slot, personaBucket);
+  stats.emitted(slot, personaBucket);
   return Emitted{
       .txn = std::move(txn),
       .posting = {.srcIdx = maybeResult->srcIdx,

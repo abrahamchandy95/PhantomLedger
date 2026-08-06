@@ -77,8 +77,8 @@ const PreparedRun &Session::prepared() const {
   return *prepared_;
 }
 
-void Session::prepareOnce() {
-  if (preparedOnce_) {
+void Session::ensurePrepared() {
+  if (isPrepared_) {
     return;
   }
 
@@ -94,13 +94,12 @@ void Session::prepareOnce() {
   prepared_ = planner_.build(market_, obligations_, ledger_,
                              dayDriver_.sensitivities());
 
-  PL_LOG_INFO(
-      sim,
-      "Session plan built: targetTotalTxns=%.0f totalPersonDays=%llu "
-      "activeSpenders=%u days=%u",
-      prepared_->budget().targetTotalTxns,
-      static_cast<unsigned long long>(prepared_->budget().totalPersonDays),
-      prepared_->population().activeCount(), market_.bounds().days);
+  PL_LOG_INFO(sim,
+              "Session plan built: targetTotalTxns={:.0f} totalPersonDays={} "
+              "activeSpenders={} days={}",
+              prepared_->budget().targetTotalTxns,
+              prepared_->budget().totalPersonDays,
+              prepared_->population().activeCount(), market_.bounds().days);
 
   dayDriver_.bindEmission(prepared_->budget(), prepared_->routing());
 
@@ -112,8 +111,8 @@ void Session::prepareOnce() {
   const auto stagingRows = static_cast<std::size_t>(reservePerDay_ * 31.0);
 
   PL_LOG_INFO(mem,
-              "pre-flight: windowed staging reserve ~%.1f MB (%zu rows x "
-              "%zu B/row); the corpus streams out behind the finalization "
+              "pre-flight: windowed staging reserve ~{:.1f} MB ({} rows x "
+              "{} B/row); the corpus streams out behind the finalization "
               "watermark and is never retained",
               static_cast<double>(stagingRows) *
                   static_cast<double>(sizeof(transactions::Transaction)) /
@@ -127,10 +126,10 @@ void Session::prepareOnce() {
   applyWarmStartDaysSincePayday(*state_, prepared_->population().spenders);
 
   diagnostics::Stats::instance().reset();
-  preparedOnce_ = true;
+  isPrepared_ = true;
 }
 
-std::uint32_t Session::dayIndexOf(time::TimePoint tp) const {
+std::uint32_t Session::dayIndexFor(time::TimePoint tp) const {
   const auto startSec = time::toEpochSeconds(market_.bounds().startDate);
   const auto tpSec = time::toEpochSeconds(tp);
 
@@ -142,7 +141,7 @@ std::uint32_t Session::dayIndexOf(time::TimePoint tp) const {
   return static_cast<std::uint32_t>((tpSec - startSec) / time::kSecondsPerDay);
 }
 
-void Session::collectNewRows(std::vector<transactions::Transaction> rows) {
+void Session::bufferTransactions(std::vector<transactions::Transaction> rows) {
   if (cards_ != nullptr && cards_->active()) {
     auto cardRows = cards_->takeEmitted();
     cardEventCount_ += cardRows.size();
@@ -179,8 +178,8 @@ void Session::collectNewRows(std::vector<transactions::Transaction> rows) {
   pendingTxns_ = std::move(merged);
 }
 
-WindowOutput Session::drainFinalized(time::Window advancedWindow,
-                                     time::TimePoint finalizedBoundExcl) {
+Batch Session::drainFinalized(time::Window simulated,
+                              time::TimePoint finalizedBoundExcl) {
   const auto marketEnd = time::addDays(market_.bounds().startDate,
                                        static_cast<int>(market_.bounds().days));
 
@@ -203,7 +202,7 @@ WindowOutput Session::drainFinalized(time::Window advancedWindow,
 
   pendingTxns_.erase(pendingTxns_.begin(), split);
 
-  const time::Window finalizedWindow{
+  const time::Window finalized{
       .start = finalizedThrough_,
       .days = dayDistance(finalizedThrough_, finalizedBoundExcl),
   };
@@ -211,20 +210,19 @@ WindowOutput Session::drainFinalized(time::Window advancedWindow,
   finalizedThrough_ = finalizedBoundExcl;
 
   PL_LOG_DEBUG(sim,
-               "Session advanced %d days; finalized %d days; rows=%zu; "
-               "pending=%zu",
-               advancedWindow.days, finalizedWindow.days, out.size(),
-               pendingTxns_.size());
+               "Session advanced {} days; finalized {} days; rows={}; "
+               "pending={}",
+               simulated.days, finalized.days, out.size(), pendingTxns_.size());
 
-  return WindowOutput{
-      .advancedWindow = advancedWindow,
-      .finalizedWindow = finalizedWindow,
+  return Batch{
+      .simulated = simulated,
+      .finalized = finalized,
       .txns = std::move(out),
   };
 }
 
-WindowOutput Session::advance(time::Window window) {
-  if (finished_) {
+Batch Session::advance(time::Window window) {
+  if (isFinished_) {
     throw std::logic_error("Session::advance called after finish()");
   }
 
@@ -239,9 +237,9 @@ WindowOutput Session::advance(time::Window window) {
           "Session::advance window does not match the zero-day market");
     }
 
-    return WindowOutput{
-        .advancedWindow = window,
-        .finalizedWindow = window,
+    return Batch{
+        .simulated = window,
+        .finalized = window,
         .txns = {},
     };
   }
@@ -251,9 +249,9 @@ WindowOutput Session::advance(time::Window window) {
         "Session::advance requires a positive window for a non-empty market");
   }
 
-  prepareOnce();
+  ensurePrepared();
 
-  const auto beginIdx = dayIndexOf(window.start);
+  const auto beginIdx = dayIndexFor(window.start);
 
   if (beginIdx != nextDayIndex_) {
     throw std::logic_error(
@@ -275,12 +273,12 @@ WindowOutput Session::advance(time::Window window) {
 
   for (std::uint32_t dayIndex = beginIdx; dayIndex < endIdx; ++dayIndex) {
     dayDriver_.runDay(*prepared_, *state_, dayIndex);
-    diagnostics::Stats::instance().recordDaySnapshot(dayIndex);
+    diagnostics::Stats::instance().snapshotDay(dayIndex);
   }
 
   nextDayIndex_ = endIdx;
 
-  collectNewRows(dayDriver_.takeEmitted(*state_));
+  bufferTransactions(dayDriver_.takeEmitted(*state_));
 
   const auto candidateBound =
       time::addDays(window.endExcl(), -kCardFinalizationLagDays);
@@ -290,8 +288,8 @@ WindowOutput Session::advance(time::Window window) {
   return drainFinalized(window, safeBound);
 }
 
-WindowOutput Session::finish() {
-  if (finished_) {
+Batch Session::finish() {
+  if (isFinished_) {
     throw std::logic_error("Session::finish called twice");
   }
 
@@ -299,12 +297,12 @@ WindowOutput Session::finish() {
                                        static_cast<int>(market_.bounds().days));
 
   if (market_.bounds().days == 0) {
-    finished_ = true;
+    isFinished_ = true;
 
-    return WindowOutput{
-        .advancedWindow =
+    return Batch{
+        .simulated =
             time::Window{.start = market_.bounds().startDate, .days = 0},
-        .finalizedWindow =
+        .finalized =
             time::Window{.start = market_.bounds().startDate, .days = 0},
         .txns = {},
     };
@@ -315,17 +313,17 @@ WindowOutput Session::finish() {
         "Session::finish requires the full market range to be advanced");
   }
 
-  prepareOnce();
+  ensurePrepared();
 
   dayDriver_.finish(*state_);
-  collectNewRows(dayDriver_.takeEmitted(*state_));
+  bufferTransactions(dayDriver_.takeEmitted(*state_));
 
   auto cardResidual = dayDriver_.drainCardCycles();
   cardEventCount_ += cardResidual.size();
-  collectNewRows(std::move(cardResidual));
+  bufferTransactions(std::move(cardResidual));
 
   diagnostics::Stats::instance().dump();
-  finished_ = true;
+  isFinished_ = true;
 
   return drainFinalized(time::Window{.start = marketEnd, .days = 0}, marketEnd);
 }

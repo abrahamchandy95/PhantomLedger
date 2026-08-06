@@ -71,7 +71,8 @@ std::vector<transactions::Transaction> Simulator::run() {
     return {};
   }
 
-  PL_LOG_INFO(sim, "Simulator::run starting: days=%u population=%u threads=%u",
+  // Modern C++23 Log Formatting
+  PL_LOG_INFO(sim, "Simulator::run starting: days={} population={} threads={}",
               market_.bounds().days, market_.population().count(),
               emissionThreads_.count);
 
@@ -88,10 +89,9 @@ std::vector<transactions::Transaction> Simulator::run() {
                                    dayDriver_.sensitivities());
 
   PL_LOG_INFO(sim,
-              "Plan built: targetTotalTxns=%.0f totalPersonDays=%llu "
-              "txnsPerMonth=%.2f activeSpenders=%u",
-              run.budget().targetTotalTxns,
-              static_cast<unsigned long long>(run.budget().totalPersonDays),
+              "Plan built: targetTotalTxns={:.0f} totalPersonDays={} "
+              "txnsPerMonth={:.2f} activeSpenders={}",
+              run.budget().targetTotalTxns, run.budget().totalPersonDays,
               planner_.txnsPerMonth(), run.population().activeCount());
 
   dayDriver_.bindEmission(run.budget(), run.routing());
@@ -105,27 +105,28 @@ std::vector<transactions::Transaction> Simulator::run() {
       (1024.0 * 1024.0);
 
   PL_LOG_INFO(mem,
-              "pre-flight: retained-corpus reserve ~%.1f MB (%zu rows x "
-              "%zu B/row, incl. 1.05 slack); the windowed engine bounds "
+              "pre-flight: retained-corpus reserve ~{:.1f} MB ({} rows x "
+              "{} B/row, incl. 1.05 slack); the windowed engine bounds "
               "this instead of retaining it",
               reserveMB, reserveCapacity, sizeof(transactions::Transaction));
 
   const double physicalMB =
       ::PhantomLedger::diagnostics::memory::physicalRamMB();
   if (physicalMB > 0.0 && reserveMB > physicalMB * kResidentBudgetShare) {
-    PL_LOG_WARN(mem,
-                "retained-corpus reserve ~%.0f MB exceeds %.0f%% of physical "
-                "RAM (%.0f MB): this retained-corpus run risks swap "
-                "thrashing — use the windowed engine, which bounds staging "
-                "and streams the corpus instead of retaining it",
-                reserveMB, kResidentBudgetShare * 100.0, physicalMB);
+    PL_LOG_WARN(
+        mem,
+        "retained-corpus reserve ~{:.0f} MB exceeds {:.0f}% of physical "
+        "RAM ({:.0f} MB): this retained-corpus run risks swap "
+        "thrashing — use the windowed engine, which bounds staging "
+        "and streams the corpus instead of retaining it",
+        reserveMB, kResidentBudgetShare * 100.0, physicalMB);
   }
 
   RunState state(market_.population().count(), reserveCapacity,
                  run.budget().totalPersonDays, run.budget().targetTotalTxns);
 
   applyWarmStartDaysSincePayday(state, run.population().spenders);
-  PL_LOG_DEBUG(sim, "warm-start applied for %zu spenders",
+  PL_LOG_DEBUG(sim, "warm-start applied for {} spenders",
                run.population().spenders.size());
 
   auto &stats = diagnostics::Stats::instance();
@@ -137,12 +138,15 @@ std::vector<transactions::Transaction> Simulator::run() {
        ++dayIndex) {
     const auto dayStartTs = std::chrono::steady_clock::now();
     dayDriver_.runDay(run, state, dayIndex);
-    stats.recordDaySnapshot(dayIndex);
+
+    // Updated to the new diagnostics method signature
+    stats.snapshotDay(dayIndex);
+
     const auto dayMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                            std::chrono::steady_clock::now() - dayStartTs)
                            .count();
-    PL_LOG_DEBUG(sim, "day %u complete in %lldms (running total txns=%zu)",
-                 dayIndex, static_cast<long long>(dayMs), state.txns().size());
+    PL_LOG_DEBUG(sim, "day {} complete in {}ms (running total txns={})",
+                 dayIndex, dayMs, state.txns().size());
   }
 
   dayDriver_.finish(state);
@@ -158,8 +162,8 @@ std::vector<transactions::Transaction> Simulator::run() {
   const auto runMs = std::chrono::duration_cast<std::chrono::milliseconds>(
                          std::chrono::steady_clock::now() - runStartTs)
                          .count();
-  PL_LOG_INFO(sim, "Simulator::run finished in %lldms; raw txns=%zu",
-              static_cast<long long>(runMs), state.txns().size());
+  PL_LOG_INFO(sim, "Simulator::run finished in {}ms; raw txns={}", runMs,
+              state.txns().size());
 
   stats.dump();
 

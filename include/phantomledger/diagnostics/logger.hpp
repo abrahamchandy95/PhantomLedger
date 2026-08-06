@@ -3,49 +3,24 @@
 #include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <format>
 #include <mutex>
+#include <string_view>
 
-// PhantomLedger logger.
-//
-// Lightweight, thread-safe, header-only-ish logging facility modelled
-// after LLVM's `LLVM_DEBUG(...)` and Folly's `XLOG(CATEGORY, ...)`.
-// Zero external dependencies.
-//
-// Three primary levers:
-//
-//  1. Compile-time minimum level. Anything below kCompileMinLevel is
-//     eliminated by the optimizer (the gate is a constexpr-comparable
-//     enum). Default kCompileMinLevel = Level::trace lets all levels
-//     through at compile time; tighten to Level::info before tagging
-//     a release if you want to remove DEBUG/TRACE call sites entirely.
-//
-//  2. Runtime level. Set via env var PL_LOG_LEVEL = trace | debug |
-//     info | warn | error | off. DEFAULT: warn — the generator is
-//     SILENT unless diagnostics are explicitly requested (owner
-//     directive, 2026-07-19); only warnings and errors surface on a
-//     plain run. The Makefile wraps the env vars so nobody has to
-//     remember them: `make run-info`, `make run-debug`, `make
-//     run-trace` (narrow with TOPICS=...), `make run-mem`.
-//
-//  3. Topic mask. Set via env var PL_LOG_TOPICS = comma-separated
-//     topic names (default: all topics enabled). Example:
-//
-//       PL_LOG_TOPICS=spending,routing,clearing  PL_LOG_LEVEL=debug
-//         ./phantomledger ...
-//
-// Macros:
-//
-//   PL_LOG_TRACE(topic, "fmt %d", a)
-//   PL_LOG_DEBUG(topic, "fmt %d", a)
-//   PL_LOG_INFO (topic, "fmt %d", a)
-//   PL_LOG_WARN (topic, "fmt %d", a)
-//   PL_LOG_ERROR(topic, "fmt %d", a)
-//
-//   PL_LOG_EVERY_N(level, topic, n, "fmt %d", a)  // rate-limited
-//
-// Macro form is preferred over direct calls because the argument
-// evaluation is short-circuited when the level/topic is disabled --
-// no allocation, no formatting, no function-call overhead.
+/*
+ Logger
+ Lightweight, thread-safe, zero-dependency logging.
+
+ Configuration:
+ 1. Compile-time: kCompileMinLevel (eliminates dead branches).
+ 2. Runtime Level: PL_LOG_LEVEL (trace|debug|info|warn|error|off). Default:
+ warn.
+ 3. Runtime Topic: PL_LOG_TOPICS (comma-separated topics). Default: all.
+
+ Usage:
+ PL_LOG_INFO(Topic::sim, "fmt %d", a);
+ PL_LOG_EVERY_N(Level::warn, Topic::mem, 100, "fmt %d", a);
+ */
 
 namespace PhantomLedger::diagnostics {
 
@@ -66,19 +41,24 @@ enum class Topic : std::uint8_t {
   liquidity = 4,
   entities = 5,
   mem = 6,
-  // Add new topics before kCount; update Logger::topicName accordingly.
+  /* Add new topics before kCount; update Logger::topicName accordingly. */
   kCount = 7,
 };
 
 inline constexpr Level kCompileMinLevel = Level::trace;
 
+struct Metadata {
+  Level level;
+  Topic topic;
+  const char *file;
+  int line;
+};
+
 class Logger {
 public:
   static Logger &instance() noexcept;
 
-  // Configure level / topic mask. Called automatically on first
-  // instance() access from environment variables; callers may also
-  // override at runtime.
+  /* Configure level/topic mask. Defaults to env vars on first access. */
   void setLevel(Level level) noexcept;
   void enableTopic(Topic topic, bool on) noexcept;
   void setStream(std::FILE *stream) noexcept;
@@ -98,13 +78,13 @@ public:
             (1U << static_cast<std::uint8_t>(topic))) != 0;
   }
 
-  // Thread-safe formatted log. Prefer the macros below over direct
-  // calls -- they bypass the entire formatting cost when the line is
-  // filtered out.
-  void log(Level level, Topic topic, const char *file, int line,
-           const char *fmt, ...) noexcept __attribute__((format(printf, 6, 7)));
+  template <typename... Args>
+  void log(Metadata ctx, std::format_string<Args...> fmt,
+           Args &&...args) noexcept {
+    writeLog(ctx, fmt.get(), std::make_format_args(args...));
+  }
 
-  // Slot for rate-limited logging.
+  /* Rate-limited logging state */
   [[nodiscard]] std::atomic<std::uint64_t> &
   everyNCounter(std::uintptr_t key) noexcept;
 
@@ -116,33 +96,37 @@ private:
 
   void configureFromEnv() noexcept;
 
+  void writeLog(Metadata ctx, std::string_view fmt,
+                std::format_args args) noexcept;
+
   std::atomic<Level> level_{Level::warn};
   std::atomic<std::uint32_t> topicMask_{
       (1U << static_cast<std::uint8_t>(Topic::kCount)) - 1U};
   std::FILE *stream_{nullptr};
   std::mutex streamMu_;
 
-  // 16-slot striped counter table for PL_LOG_EVERY_N. We hash the
-  // caller's site pointer into this table; collisions are tolerable
-  // (a collision means two sites share a rate-limit counter, which
-  // skews the rate slightly but is otherwise harmless).
+  /* 16-slot striped counter table for PL_LOG_EVERY_N. Collisions skew rates
+   * slightly but are harmless. */
   static constexpr std::size_t kEveryNStripes = 16;
   std::atomic<std::uint64_t> everyN_[kEveryNStripes]{};
 };
 
 } // namespace PhantomLedger::diagnostics
 
-// ---------------------------------------------------------------------------
-// Macros
-// ---------------------------------------------------------------------------
+/*
+ * ---------------------------------------------------------------------------
+ * Macros
+ * ---------------------------------------------------------------------------
+ */
 
 #define PL_LOG_(level_, topic_, ...)                                           \
   do {                                                                         \
     if (::PhantomLedger::diagnostics::kCompileMinLevel <= (level_) &&          \
         ::PhantomLedger::diagnostics::Logger::instance().enabled((level_),     \
                                                                  (topic_))) {  \
-      ::PhantomLedger::diagnostics::Logger::instance().log(                    \
-          (level_), (topic_), __FILE__, __LINE__, __VA_ARGS__);                \
+      ::PhantomLedger::diagnostics::Metadata ctx_{(level_), (topic_),          \
+                                                  __FILE__, __LINE__};         \
+      ::PhantomLedger::diagnostics::Logger::instance().log(ctx_, __VA_ARGS__); \
     }                                                                          \
   } while (0)
 
@@ -177,8 +161,10 @@ private:
               reinterpret_cast<std::uintptr_t>(&kPlSiteKey_));                 \
       const auto cnt_ = counter_.fetch_add(1, std::memory_order_relaxed) + 1U; \
       if ((cnt_ % static_cast<std::uint64_t>(n_)) == 0U) {                     \
-        ::PhantomLedger::diagnostics::Logger::instance().log(                  \
-            (level_), (topic_), __FILE__, __LINE__, __VA_ARGS__);              \
+        ::PhantomLedger::diagnostics::Metadata ctx_{(level_), (topic_),        \
+                                                    __FILE__, __LINE__};       \
+        ::PhantomLedger::diagnostics::Logger::instance().log(ctx_,             \
+                                                             __VA_ARGS__);     \
       }                                                                        \
     }                                                                          \
   } while (0)

@@ -20,6 +20,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <print>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -49,7 +50,7 @@ void testChannelCdfShape() {
   PL_CHECK(nearly(cdf[1], 2.0 / 3.0));
   PL_CHECK(nearly(cdf[2], 1.0));
   PL_CHECK(nearly(cdf[3], 1.0));
-  std::printf("  PASS: channel CDF — equal weights\n");
+  std::println("  PASS: channel CDF — equal weights");
 }
 
 void testChannelCdfWithUnknown() {
@@ -64,7 +65,7 @@ void testChannelCdfWithUnknown() {
   PL_CHECK(nearly(cdf[2], 0.80));
   // cdf[3] = 0.80 + 0.20 = 1.0
   PL_CHECK(nearly(cdf[3], 1.0));
-  std::printf("  PASS: channel CDF — unknown carved out cleanly\n");
+  std::println("  PASS: channel CDF — unknown carved out cleanly");
 }
 
 void testChannelCdfFallsBackOnZeroCore() {
@@ -75,7 +76,7 @@ void testChannelCdfFallsBackOnZeroCore() {
   PL_CHECK(nearly(cdf[1], 0.60));
   PL_CHECK(nearly(cdf[2], 0.90));
   PL_CHECK(nearly(cdf[3], 1.0));
-  std::printf("  PASS: channel CDF — zero core uses uniform fallback\n");
+  std::println("  PASS: channel CDF — zero core uses uniform fallback");
 }
 
 void testChannelCdfClampsUnknown() {
@@ -90,7 +91,7 @@ void testChannelCdfClampsUnknown() {
   PL_CHECK(nearly(over[1], 0.0));
   PL_CHECK(nearly(over[2], 0.0));
   PL_CHECK(nearly(over[3], 1.0));
-  std::printf("  PASS: channel CDF — unknownP clamped to [0, 1]\n");
+  std::println("  PASS: channel CDF — unknownP clamped to [0, 1]");
 }
 
 void testPickSlot() {
@@ -106,7 +107,7 @@ void testPickSlot() {
   PL_CHECK(routing::pickSlot(cdf, 0.55) == routing::Slot::p2p);
   PL_CHECK(routing::pickSlot(cdf, 0.80) == routing::Slot::externalUnknown);
   PL_CHECK(routing::pickSlot(cdf, 0.999) == routing::Slot::externalUnknown);
-  std::printf("  PASS: pickSlot ladder\n");
+  std::println("  PASS: pickSlot ladder");
 }
 
 // ------------------------ Liquidity factor ------------------------
@@ -121,7 +122,7 @@ void testCountFactorMonotonic() {
     PL_CHECK(cur + 1e-12 >= prev);
     prev = cur;
   }
-  std::printf("  PASS: countFactor monotone non-decreasing\n");
+  std::println("  PASS: countFactor monotone non-decreasing");
 }
 
 void testCountFactorBoundaries() {
@@ -134,7 +135,7 @@ void testCountFactorBoundaries() {
   PL_CHECK(nearly(liquidity::countFactor(5.0), 1.5625));
   // Negative liquidity is clamped to 0, then softened+squared = 0.25.
   PL_CHECK(nearly(liquidity::countFactor(-1.0), 0.25));
-  std::printf("  PASS: countFactor boundary values\n");
+  std::println("  PASS: countFactor boundary values");
 }
 
 // ----------------------- Liquidity multiplier ---------------------
@@ -166,7 +167,7 @@ void testMultiplierDisabled() {
                              /*availableToSpend=*/0.0, /*baselineCash=*/1000.0,
                              /*burden=*/2000.0);
   PL_CHECK(nearly(liquidity::multiplier(disabled, snap), 1.0));
-  std::printf("  PASS: liquidity multiplier — disabled returns 1.0\n");
+  std::println("  PASS: liquidity multiplier — disabled returns 1.0");
 }
 
 void testMultiplierStressRegion() {
@@ -190,9 +191,9 @@ void testMultiplierStressRegion() {
   PL_CHECK(stressedMult >= cfg.absoluteFloor - 1e-12);
   PL_CHECK(freshMult <= liquidity::kCeiling + 1e-12);
 
-  std::printf("  PASS: liquidity multiplier — stress region < fresh region "
-              "(%.3f < %.3f)\n",
-              stressedMult, freshMult);
+  std::println("  PASS: liquidity multiplier — stress region < fresh region "
+               "({:.3f} < {:.3f})",
+               stressedMult, freshMult);
 }
 
 void testMultiplierBurdenPenalty() {
@@ -210,7 +211,7 @@ void testMultiplierBurdenPenalty() {
 
   PL_CHECK(liquidity::multiplier(cfg, highBurden) <
            liquidity::multiplier(cfg, noBurden));
-  std::printf("  PASS: liquidity multiplier — fixed burden penalises\n");
+  std::println("  PASS: liquidity multiplier — fixed burden penalises");
 }
 
 // ----------------------- Spenders helpers -------------------------
@@ -222,7 +223,7 @@ void testTotalTargetTxns() {
   PL_CHECK(nearly(spenders::totalTargetTxns(0.0, 100, 30), 0.0));
   PL_CHECK(nearly(spenders::totalTargetTxns(60.0, 0, 30), 0.0));
   PL_CHECK(nearly(spenders::totalTargetTxns(60.0, 100, 0), 0.0));
-  std::printf("  PASS: totalTargetTxns scaling\n");
+  std::println("  PASS: totalTargetTxns scaling");
 }
 
 void testCollectiveDayOversubscriptionIsFiltered() {
@@ -283,8 +284,8 @@ void testCollectiveDayOversubscriptionIsFiltered() {
   PL_CHECK(nearly(ledger.cash(0), -60.0));
   PL_CHECK(dayTransactions.empty());
   PL_CHECK(dayPostings.empty());
-  std::printf("  PASS: collectively oversubscribed same-day card purchase is "
-              "filtered before card billing\n");
+  std::println("  PASS: collectively oversubscribed same-day card purchase is "
+               "filtered before card billing");
 }
 
 void testDayPostingCarriesTransactionTimestamp() {
@@ -308,8 +309,8 @@ void testDayPostingCarriesTransactionTimestamp() {
 
   PL_CHECK(rejectedMismatch);
   PL_CHECK(accepted.empty());
-  std::printf(
-      "  PASS: day settlement rejects an epoch-zero posting timestamp\n");
+  std::println(
+      "  PASS: day settlement rejects an epoch-zero posting timestamp");
 }
 
 void testCreditCardUtilizationIsNotCheckingOverdraft() {
@@ -362,8 +363,8 @@ void testCreditCardUtilizationIsNotCheckingOverdraft() {
   PL_CHECK(fees.front().channel ==
            channels::tag(channels::Liquidity::overdraftFee));
 
-  std::printf("  PASS: card utilization avoids checking overdraft fees while "
-              "deposit courtesy fees remain intact\n");
+  std::println("  PASS: card utilization avoids checking overdraft fees while "
+               "deposit courtesy fees remain intact");
 }
 
 // -------------- Session window-invariance matrix (step 1) ----------------
@@ -425,11 +426,11 @@ struct SessionLeg {
   pl::time::TimePoint expectedStart = window.start;
   int finalizedDays = 0;
 
-  const auto consume = [&](plSim::WindowOutput output) {
-    if (output.finalizedWindow.days > 0) {
-      PL_CHECK(output.finalizedWindow.start == expectedStart);
-      expectedStart = output.finalizedWindow.endExcl();
-      finalizedDays += output.finalizedWindow.days;
+  const auto consume = [&](plSim::Batch output) {
+    if (output.finalized.days > 0) {
+      PL_CHECK(output.finalized.start == expectedStart);
+      expectedStart = output.finalized.endExcl();
+      finalizedDays += output.finalized.days;
     }
     leg.rows.insert(leg.rows.end(),
                     std::make_move_iterator(output.txns.begin()),
@@ -477,25 +478,22 @@ void reportFirstRowDifference(
         pl::transactions::detail::auditKey(b[i])) {
       const auto &lhs = a[i];
       const auto &rhs = b[i];
-      std::fprintf(
-          stderr,
-          "  first differing row %zu:\n"
-          "    full-range: ts=%lld src=%llu dst=%llu amt=%.10g ch=%u\n"
-          "    windowed:   ts=%lld src=%llu dst=%llu amt=%.10g ch=%u\n",
-          i, static_cast<long long>(lhs.timestamp),
-          static_cast<unsigned long long>(lhs.source.number),
-          static_cast<unsigned long long>(lhs.target.number), lhs.amount,
-          static_cast<unsigned>(lhs.session.channel.value),
-          static_cast<long long>(rhs.timestamp),
-          static_cast<unsigned long long>(rhs.source.number),
-          static_cast<unsigned long long>(rhs.target.number), rhs.amount,
-          static_cast<unsigned>(rhs.session.channel.value));
+
+      std::println(stderr,
+                   "  first differing row {}:\n"
+                   "    full-range: ts={} src={} dst={} amt={:.10g} ch={}\n"
+                   "    windowed:   ts={} src={} dst={} amt={:.10g} ch={}",
+                   i, lhs.timestamp, lhs.source.number, lhs.target.number,
+                   lhs.amount, static_cast<unsigned>(lhs.session.channel.value),
+                   rhs.timestamp, rhs.source.number, rhs.target.number,
+                   rhs.amount,
+                   static_cast<unsigned>(rhs.session.channel.value));
       return;
     }
   }
-  std::fprintf(stderr,
-               "  no differing row in the common prefix; row counts %zu vs "
-               "%zu\n",
+
+  std::println(stderr,
+               "  no differing row in the common prefix; row counts {} vs {}",
                a.size(), b.size());
 }
 
@@ -505,19 +503,17 @@ void checkLegMatchesReference(const char *label, const SessionLeg &reference,
                      leg.rows.size() == reference.rows.size() &&
                      leg.cardEvents == reference.cardEvents;
   if (!equal) {
-    std::fprintf(stderr,
-                 "[session-invariance] %s diverges from full range:\n"
-                 "  rows: %zu vs %zu\n"
-                 "  cardEvents: %llu vs %llu\n"
-                 "  digest: %s vs %s\n",
-                 label, leg.rows.size(), reference.rows.size(),
-                 static_cast<unsigned long long>(leg.cardEvents),
-                 static_cast<unsigned long long>(reference.cardEvents),
-                 leg.digest.c_str(), reference.digest.c_str());
+    std::println(stderr,
+                 "[session-invariance] {} diverges from full range:\n"
+                 "  rows: {} vs {}\n"
+                 "  cardEvents: {} vs {}\n"
+                 "  digest: {} vs {}",
+                 label, leg.rows.size(), reference.rows.size(), leg.cardEvents,
+                 reference.cardEvents, leg.digest, reference.digest);
     reportFirstRowDifference(reference.rows, leg.rows);
     PL_CHECK(equal);
   }
-  std::printf("  PASS: session invariance — %s matches full range\n", label);
+  std::println("  PASS: session invariance — {} matches full range", label);
 }
 
 void testSessionWindowInvariance() {
@@ -556,7 +552,7 @@ void testSessionWindowInvariance() {
 } // namespace
 
 int main() {
-  std::printf("=== Spending Pipeline Tests ===\n");
+  std::println("=== Spending Pipeline Tests ===");
   testChannelCdfShape();
   testChannelCdfWithUnknown();
   testChannelCdfFallsBackOnZeroCore();
@@ -572,9 +568,9 @@ int main() {
   testDayPostingCarriesTransactionTimestamp();
   testCreditCardUtilizationIsNotCheckingOverdraft();
 
-  std::printf("=== Spending Session Window Invariance ===\n");
+  std::println("=== Spending Session Window Invariance ===");
   testSessionWindowInvariance();
 
-  std::printf("All spending pipeline tests passed.\n\n");
+  std::println("All spending pipeline tests passed.\n");
   return 0;
 }

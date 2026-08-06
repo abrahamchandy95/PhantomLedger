@@ -1,12 +1,11 @@
 #include "phantomledger/diagnostics/logger.hpp"
 
-#include <array>
 #include <cctype>
-#include <cstdarg>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
-#include <ctime>
+#include <format>
+#include <print>
 #include <string>
 #include <string_view>
 
@@ -31,7 +30,6 @@ namespace {
     return Level::error;
   if (lower == "off" || lower == "none" || lower == "silent")
     return Level::off;
-  // Unrecognized values keep the silent-by-default posture.
   return Level::warn;
 }
 
@@ -82,9 +80,6 @@ void Logger::configureFromEnv() noexcept {
     level_.store(parseLevel(lvl), std::memory_order_relaxed);
   }
   if (const char *topics = std::getenv("PL_LOG_TOPICS")) {
-    // PL_LOG_TOPICS set => start with everything off and enable only
-    // the explicitly listed topics. Default (env not set) leaves all
-    // topics on.
     topicMask_.store(0, std::memory_order_relaxed);
 
     std::string_view view(topics);
@@ -122,48 +117,35 @@ void Logger::setStream(std::FILE *stream) noexcept {
   stream_ = stream;
 }
 
-void Logger::log(Level level, Topic topic, const char *file, int line,
-                 const char *fmt, ...) noexcept {
-  std::array<char, 1024> buf{};
-  std::array<char, 32> tbuf{};
-
-  const std::time_t now = std::time(nullptr);
-  std::tm tm{};
-#ifdef _WIN32
-  // localtime_s populates the tm by side effect; the error code is
-  // not material for log formatting.
-  (void)localtime_s(&tm, &now);
-#else
-  // localtime_r returns the pointer it was passed; we already hold
-  // it. Casting to void silences the nodiscard attribute that
-  // newer libc / clang headers attach to the POSIX wrapper.
-  (void)localtime_r(&now, &tm);
-#endif
-  (void)std::strftime(tbuf.data(), tbuf.size(), "%H:%M:%S", &tm);
-
-  // Strip file path down to basename.
-  const char *base = file;
-  for (const char *p = file; *p; ++p) {
+void Logger::writeLog(Metadata ctx, std::string_view fmt,
+                      std::format_args args) noexcept {
+  const char *base = ctx.file;
+  for (const char *p = ctx.file; *p; ++p) {
     if (*p == '/' || *p == '\\')
       base = p + 1;
   }
-
-  va_list ap;
-  va_start(ap, fmt);
-  (void)std::vsnprintf(buf.data(), buf.size(), fmt, ap);
-  va_end(ap);
 
   std::lock_guard lock(streamMu_);
   if (stream_ == nullptr) {
     return;
   }
-  std::fprintf(stream_, "[%s] [%-5s] [%-9s] %s:%d  %s\n", tbuf.data(),
-               levelName(level), topicName(topic), base, line, buf.data());
-  std::fflush(stream_);
+
+  try {
+    const auto now = std::chrono::system_clock::now();
+    const auto time_fmt = std::chrono::current_zone()->to_local(now);
+
+    std::print(stream_, "[{:%H:%M:%S}] [{:<5}] [{:<9}] {}:{}  ", time_fmt,
+               levelName(ctx.level), topicName(ctx.topic), base, ctx.line);
+
+    std::vprint_nonunicode(stream_, fmt, args);
+
+    std::println(stream_);
+    std::fflush(stream_);
+  } catch (...) {
+  }
 }
 
 std::atomic<std::uint64_t> &Logger::everyNCounter(std::uintptr_t key) noexcept {
-  // Simple multiplicative hash; collisions are tolerable.
   const auto idx = (key * 2654435761U) % kEveryNStripes;
   return everyN_[idx];
 }
