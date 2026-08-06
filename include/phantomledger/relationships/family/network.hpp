@@ -11,45 +11,30 @@
 namespace PhantomLedger::relationships::family {
 
 struct Graph {
-  // -------------------------------------------------------------------------
-  // Households (CSR)
-  // -------------------------------------------------------------------------
-
+  /* Households, in CSR form. */
   std::vector<entity::PersonId> householdMembers;
 
   std::vector<std::uint32_t> householdOffsets;
 
   std::vector<std::uint32_t> householdOf;
 
-  // -------------------------------------------------------------------------
-  // Immediate family
-  // -------------------------------------------------------------------------
-
+  /* Immediate family. */
   std::vector<entity::PersonId> spouseOf;
 
   std::vector<std::array<entity::PersonId, 2>> parentsOf;
 
   std::vector<std::vector<entity::PersonId>> childrenOf;
 
-  // -------------------------------------------------------------------------
-  // Cross-household financial-support ties
-  // -------------------------------------------------------------------------
-
+  /* Cross-household financial-support ties. */
   std::vector<std::vector<entity::PersonId>> supportedParentsBy;
 
   std::vector<std::vector<entity::PersonId>> supportingChildrenOf;
 
-  // -------------------------------------------------------------------------
-  // Constants
-  // -------------------------------------------------------------------------
-
+  /* Constants. */
   static constexpr std::uint32_t kNoHousehold =
       std::numeric_limits<std::uint32_t>::max();
 
-  // -------------------------------------------------------------------------
-  // Accessors (zero-allocation reads)
-  // -------------------------------------------------------------------------
-
+  /* Accessors: zero-allocation reads. */
   [[nodiscard]] std::uint32_t personCount() const noexcept {
     return static_cast<std::uint32_t>(householdOf.size());
   }

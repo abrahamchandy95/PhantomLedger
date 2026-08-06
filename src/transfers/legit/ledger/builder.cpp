@@ -171,7 +171,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
       .addPersonas(*rng_, timeframe_, personas_);
 
   auto initialBook = openingBook_.build(plan);
-  memlog::logPlain("openingBook");
+  memlog::log("openingBook");
 
   TxnStreams streams;
   ScreenBook screen{initialBook.get()};
@@ -223,11 +223,10 @@ WindowedPrologue LegitTransferBuilder::buildWindowedPrologue() const {
 
   WindowedPrologue out;
 
-  // RAM R2.4b-3: the windowed composition consumes only the screened
-  // view during the prologue; the replay order is derived ONCE at spool
-  // time (windowed_run.cpp). Skipping the second view halves the
-  // resident stream and its merge transients. The monolithic build()
-  // above keeps both views.
+  /* The windowed composition consumes only the screened view during the
+   * prologue; the replay order is derived ONCE at spool time
+   * (windowed_run.cpp). Skipping the second view halves the resident stream
+   * and its merge transients. The monolithic build() above keeps both. */
   out.streams.deferReplayView();
 
   auto plan = blueprints::buildLegitBlueprint(timeframe_, census_);
@@ -235,7 +234,7 @@ WindowedPrologue LegitTransferBuilder::buildWindowedPrologue() const {
       .addPersonas(*rng_, timeframe_, personas_);
 
   out.initialBook = openingBook_.build(plan);
-  memlog::logPlain("openingBook");
+  memlog::log("openingBook");
 
   out.screen = ScreenBook{out.initialBook.get()};
 

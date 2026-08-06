@@ -1,7 +1,6 @@
 #pragma once
 
 #include "phantomledger/activity/income/rent.hpp"
-#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/activity/income/salary.hpp"
 #include "phantomledger/activity/recurring/employment.hpp"
 #include "phantomledger/activity/recurring/lease.hpp"
@@ -9,6 +8,7 @@
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/products/portfolio.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -61,10 +61,10 @@ public:
     double fraction = 0.01;
   };
 
-  // The synthesized world exactly as the legit assembly consumes it
-  // (round C-2 dependency inversion: the consumer names what it needs;
-  // the pipeline adapts its bundles at legitWorldInputs()). Every
-  // pointer is non-owning and must outlive the returned builder.
+  /* The synthesized world exactly as the legit assembly consumes it: the
+   * consumer names what it needs and the pipeline adapts its bundles at
+   * legitWorldInputs(). Every pointer is non-owning and must outlive the
+   * returned builder. */
   struct WorldInputs {
     // Census
     const synth::personas::Pack *personas = nullptr;
@@ -80,18 +80,17 @@ public:
     const synth::landlords::Pack *landlords = nullptr;
     const entity::merchant::Catalog *merchants = nullptr;
 
-    // geo-causal-v1 (G2a): per-person home area (PersonId-1), the compact
-    // People::homeAreas carrier. Non-owning; must outlive the builder.
-    // Empty ⇒ the spending market's population View reports invalidGeoArea
-    // (no local anchor) — the monolith reference oracle carried empty
-    // until this was wired so windowed==monolith under card-present
-    // distance-decay selection.
+    /* Per-person home area (PersonId-1), the compact People::homeAreas
+     * carrier. Non-owning; must outlive the builder. Empty ⇒ the spending
+     * market's population View reports invalidGeoArea (no local anchor).
+     * BOTH engines must be given the same span, or card-present
+     * distance-decay selection diverges between them. */
     std::span<const entity::geography::GeoAreaId> homeAreas;
 
-    // relocation-2026-07: the home-area HISTORY behind the snapshot above.
-    // Non-owning, nullable; null ⇒ homes never move, the pre-round behaviour.
-    // Reaches the spending market through RoutineResources → CensusSource so
-    // BOTH engines refresh from the same schedule.
+    /* The home-area HISTORY behind the snapshot above. Non-owning, nullable;
+     * null ⇒ homes never move. Reaches the spending market through
+     * RoutineResources → CensusSource so BOTH engines refresh from the same
+     * schedule. */
     const entity::parties::relocation::Schedule *relocation = nullptr;
   };
 

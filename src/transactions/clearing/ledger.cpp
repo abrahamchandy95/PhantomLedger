@@ -328,17 +328,15 @@ TransferDecision Ledger::transfer(const entity::Key &src,
 
 void Ledger::debitAndEmit(Index idx, double amount, channels::Tag channel,
                           std::int64_t timestamp) {
-  // loc-accrual-perf-2026-08: roll the integral to `timestamp` on the PRE-debit
-  // balance before moving cash. The old per-row scan re-read every balance each
-  // row, so a fee or interest debit that pushed a slot negative was picked up
-  // on the next row regardless; the lazy integral only advances where it is
-  // told to, and this is the one cash write that does not funnel through
-  // `transferAt`'s update pair. A no-op when the caller already stamped this
-  // slot at this instant, which is the case on both existing paths.
+  /* Roll the integral to `timestamp` on the PRE-debit balance before moving
+   * cash. The LOC integral only advances where it is told to, and this is the
+   * one cash write that does not funnel through `transferAt`'s update pair —
+   * dropping this call loses a whole accrual interval. A no-op when the caller
+   * already stamped this slot at this instant, which both existing paths do. */
   locTracker_.update(idx, cash_[idx], timestamp);
 
-  // Bypass the funding check: fee collection / interest must apply
-  // against already-negative balances.
+  /* Bypass the funding check: fee collection / interest must apply against
+   * already-negative balances. */
   cash_[idx] -= amount;
 
   if (liquiditySink_) {

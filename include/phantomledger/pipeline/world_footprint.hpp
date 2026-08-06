@@ -6,27 +6,27 @@
 #include "phantomledger/primitives/time/window.hpp"
 
 #include <cstddef>
-#include <cstdio>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
-// Per-pack resident-byte estimates for the built world — the
-// measurement side of RAM R2 (derive-don't-store, see
-// docs/ram_derive_dont_store.md): before any pack is made regenerable,
-// this report shows which packs actually dominate residency at a given
-// scale. Estimates are exact for vector storage (capacity x element
-// size) and approximate for hash maps (node and bucket overheads vary
-// by standard library); the Router's internals are private, so its
-// line is derived from the inputs it was built from. Silent unless the
-// `mem` topic is enabled (make run-mem).
+/*
+  World residency report
+  Per-pack resident-byte estimates for the built world: which packs dominate
+  residency at a given scale, so a pack is made regenerable on evidence
+  (docs/ram_derive_dont_store.md). Exact for vector storage (capacity x
+  element size), approximate for hash maps (node and bucket overheads vary by
+  standard library); the Router's internals are private, so its line is
+  derived from the inputs it was built from. Silent unless the `mem` topic is
+  enabled (make run-mem).
+ */
 
 namespace PhantomLedger::pipeline::diagnostics {
 
 namespace footprint {
 
-// Separately-allocated hash node carries at least a next pointer and a
-// cached hash on both libc++ and libstdc++.
+/* A separately-allocated hash node carries at least a next pointer and a
+ * cached hash on both libc++ and libstdc++. */
 inline constexpr std::size_t kHashNodeOverheadBytes = 16;
 
 template <typename T>
@@ -41,7 +41,7 @@ template <typename Map>
          m.bucket_count() * sizeof(void *);
 }
 
-// Ledgers that expose only size(): assume load factor ~1.
+/* Ledgers that expose only size(): assume load factor ~1. */
 [[nodiscard]] constexpr std::size_t
 hashMapBytesFromSize(std::size_t entries, std::size_t valueBytes) noexcept {
   return entries * (valueBytes + kHashNodeOverheadBytes + sizeof(void *));
@@ -67,7 +67,8 @@ rosterBytes(const synth::people::Pack &pack) noexcept {
 
 [[nodiscard]] inline std::size_t
 personasBytes(const synth::personas::Pack &pack) noexcept {
-  return vectorBytes(pack.assignment.byPerson) + vectorBytes(pack.table.byPerson);
+  return vectorBytes(pack.assignment.byPerson) +
+         vectorBytes(pack.table.byPerson);
 }
 
 [[nodiscard]] inline std::size_t
@@ -83,7 +84,7 @@ cardsBytes(const entity::card::Registry &reg) noexcept {
          vectorBytes(reg.byPerson);
 }
 
-// Insurance and loan TERMS: compact per-holder maps.
+/* Insurance and loan TERMS: compact per-holder maps. */
 [[nodiscard]] inline std::size_t
 portfolioTermsBytes(const entity::product::PortfolioRegistry &reg) noexcept {
   using InsuranceEntry =
@@ -94,11 +95,10 @@ portfolioTermsBytes(const entity::product::PortfolioRegistry &reg) noexcept {
          hashMapBytesFromSize(reg.loans().size(), sizeof(LoanEntry));
 }
 
-// The retained obligation events. Since RAM R2.2.1c this is only the
-// burden slice (the first kBurdenWindowMonths of the window); the full
-// window is derived on demand by ObligationSynthesis::generateWindow()
-// and the windowed fold releases even the slice at fold start
-// (R2.2.1b).
+/* The retained obligation events: only the burden slice (the first
+ * kBurdenWindowMonths of the window). The full window derives on demand via
+ * ObligationSynthesis::generateWindow(), and the windowed fold releases even
+ * the slice at fold start. */
 [[nodiscard]] inline std::size_t
 obligationStreamBytes(const entity::product::PortfolioRegistry &reg) noexcept {
   return reg.obligations().size() * sizeof(entity::product::ObligationEvent);
@@ -121,7 +121,8 @@ directoryBytes(const entity::counterparty::Directory &d) noexcept {
            vectorBytes(s.all);
   };
   return splitBytes(d.employers.accounts) + splitBytes(d.clients.accounts) +
-         vectorBytes(d.external.platforms) + vectorBytes(d.external.processors) +
+         vectorBytes(d.external.platforms) +
+         vectorBytes(d.external.processors) +
          vectorBytes(d.external.ownerBusinesses) +
          vectorBytes(d.external.brokerages);
 }
@@ -138,20 +139,20 @@ ipsBytes(const synth::infra::ips::Output &out) noexcept {
          personPoolBytes(out.byPerson) + hashMapBytes(out.ringMap);
 }
 
-[[nodiscard]] inline std::size_t ringPlansBytes(
-    const std::unordered_map<std::uint32_t, synth::infra::RingPlan> &plans)
-    noexcept {
+[[nodiscard]] inline std::size_t
+ringPlansBytes(const std::unordered_map<std::uint32_t, synth::infra::RingPlan>
+                   &plans) noexcept {
   std::size_t nested = 0;
   for (const auto &[ringId, plan] : plans) {
-    nested +=
-        vectorBytes(plan.sharedDeviceMembers) + vectorBytes(plan.sharedIpMembers);
+    nested += vectorBytes(plan.sharedDeviceMembers) +
+              vectorBytes(plan.sharedIpMembers);
   }
   return hashMapBytes(plans) + nested;
 }
 
-// The Router owns copies of the per-person device/IP pools, an
-// account->owner map, and two sticky-index vectors — all private, so
-// this reconstructs the estimate from the same inputs the build used.
+/* The Router owns copies of the per-person device/IP pools, an account->owner
+ * map, and two sticky-index vectors — all private, so this reconstructs the
+ * estimate from the same inputs the build used. */
 [[nodiscard]] inline std::size_t
 routerApproxBytes(std::size_t accountCount, std::size_t personCount,
                   const synth::infra::devices::Output &devices,
@@ -164,9 +165,9 @@ routerApproxBytes(std::size_t accountCount, std::size_t personCount,
 
 } // namespace footprint
 
-// One report, printed after the world build: which packs hold the
-// resident bytes. `worldTotal` is the derive-don't-store target; the
-// posted corpus never appears here because it streams.
+/* One report, printed after the world build: which packs hold the resident
+ * bytes. `worldTotal` is the derive-don't-store target; the posted corpus
+ * never appears here because it streams. */
 inline void logWorldFootprint(const People &people, const Holdings &holdings,
                               const Counterparties &cps, const Infra &infra) {
   namespace logging = ::PhantomLedger::diagnostics;
@@ -197,10 +198,11 @@ inline void logWorldFootprint(const People &people, const Holdings &holdings,
       {"infra.devices", fp::devicesBytes(infra.devices)},
       {"infra.ips", fp::ipsBytes(infra.ips)},
       {"infra.ringPlans", fp::ringPlansBytes(infra.ringPlans)},
-      {"infra.router~", fp::routerApproxBytes(
-                            holdings.accounts.registry.records.size(),
-                            static_cast<std::size_t>(people.roster.roster.count),
-                            infra.devices, infra.ips)},
+      {"infra.router~",
+       fp::routerApproxBytes(
+           holdings.accounts.registry.records.size(),
+           static_cast<std::size_t>(people.roster.roster.count), infra.devices,
+           infra.ips)},
   };
 
   const auto mb = [](std::size_t bytes) {
@@ -211,37 +213,29 @@ inline void logWorldFootprint(const People &people, const Holdings &holdings,
   for (const auto &item : items) {
     total += item.bytes;
   }
-  const auto personCount =
-      static_cast<std::size_t>(people.roster.roster.count);
+  const auto personCount = static_cast<std::size_t>(people.roster.roster.count);
 
-  std::fprintf(stderr, "[mem] world footprint (estimated resident bytes; "
-                       "hash overheads approximate, ~ = derived):\n");
+  PL_LOG_INFO(mem, "world footprint (estimated resident bytes; hash overheads "
+                   "approximate, ~ = derived):");
   for (const auto &item : items) {
-    std::fprintf(stderr, "[mem]   %-24s %10.2f MB\n", item.name,
-                 mb(item.bytes));
+    PL_LOG_INFO(mem, "  {:<24} {:10.2f} MB", item.name, mb(item.bytes));
   }
-  std::fprintf(stderr,
-               "[mem]   %-24s %10.2f MB  (~%.0f B/person at %zu people)\n",
-               "worldTotal", mb(total),
-               personCount == 0
-                   ? 0.0
-                   : static_cast<double>(total) /
-                         static_cast<double>(personCount),
-               personCount);
+  PL_LOG_INFO(mem, "  {:<24} {:10.2f} MB  (~{:.0f} B/person at {} people)",
+              "worldTotal", mb(total),
+              personCount == 0 ? 0.0
+                               : static_cast<double>(total) /
+                                     static_cast<double>(personCount),
+              personCount);
 }
 
-// RAM R2.2 tie audit. HISTORY: this probe measured pervasive
-// equal-timestamp adjacencies (day-granular due dates) over the full
-// window, which gated the owner-approved model round pinning the stream
-// to a total order (timestamp, then generation order — stable sort).
-// The order is now pinned, and since R2.2.1c the world retains only the
-// burden slice — so the count below covers the RESIDENT slice; the full
-// window derives on demand. The report remains because it documents WHY
-// windowed regeneration is well-defined (tie groups are append-ordered,
-// not sort-arbitrary). Silent unless the mem topic is enabled.
-inline void logObligationTieAudit(
-    const entity::product::PortfolioRegistry &portfolios,
-    ::PhantomLedger::time::Window window) {
+/* Equal-timestamp adjacencies in the RESIDENT burden slice (day-granular due
+ * dates make them pervasive). The report documents WHY windowed regeneration
+ * is well-defined: the stream's total order is pinned — timestamp, then
+ * generation order, stable sort — so a tie group is append-ordered rather
+ * than sort-arbitrary. Silent unless the `mem` topic is enabled. */
+inline void
+logObligationTieAudit(const entity::product::PortfolioRegistry &portfolios,
+                      ::PhantomLedger::time::Window window) {
   namespace logging = ::PhantomLedger::diagnostics;
   if (!logging::Logger::instance().enabled(logging::Level::info,
                                            logging::Topic::mem)) {
@@ -258,11 +252,11 @@ inline void logObligationTieAudit(
     }
   }
 
-  std::fprintf(stderr,
-               "[mem] obligation burden slice: %zu events resident, %zu "
-               "equal-timestamp adjacencies (full window derives on "
-               "demand; order pinned: timestamp, then generation order)\n",
-               events.size(), tieAdjacencies);
+  PL_LOG_INFO(mem,
+              "obligation burden slice: {} events resident, {} "
+              "equal-timestamp adjacencies (full window derives on demand; "
+              "order pinned: timestamp, then generation order)",
+              events.size(), tieAdjacencies);
 }
 
 } // namespace PhantomLedger::pipeline::diagnostics

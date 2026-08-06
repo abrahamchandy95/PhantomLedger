@@ -19,27 +19,26 @@ constexpr std::uint64_t kSplitmixMix2 = 0x94d049bb133111ebULL;
   return value ^ (value >> 31U);
 }
 
-// Floyd's O(k) sample-without-replacement: cache-friendly for small k
-// against arbitrarily large n. Produces the same set distribution as
-// partial Fisher-Yates but uses O(k) memory instead of O(n).
-//
-// The output order is *not* uniformly random over permutations; it is
-// whatever Floyd's insertion order gives. Every PhantomLedger caller
-// treats the result as an unordered subset (members, mules, victims,
-// ring pools, persona assignments) so this is the correct trade.
+/* Floyd's O(k) sample-without-replacement: cache-friendly for small k against
+ * arbitrarily large n. Produces the same set distribution as partial
+ * Fisher-Yates but uses O(k) memory instead of O(n).
+ *
+ * THE OUTPUT ORDER IS NOT UNIFORMLY RANDOM over permutations; it is whatever
+ * Floyd's insertion order gives. Every caller treats the result as an
+ * unordered subset (members, mules, victims, ring pools, persona
+ * assignments), which is what makes this the correct trade. */
 [[nodiscard]] std::vector<std::size_t>
 floydSample(auto &boundedFn, std::size_t n, std::size_t k) {
   std::vector<std::size_t> out;
   out.reserve(k);
 
-  // j ranges over [n-k, n). `range` is j+1 for the inclusive draw.
+  /* j ranges over [n-k, n). `range` is j+1 for the inclusive draw. */
   for (std::size_t j = n - k; j < n; ++j) {
     const std::uint64_t range = static_cast<std::uint64_t>(j) + 1ULL;
     const auto t = static_cast<std::size_t>(boundedFn(range));
 
-    // Linear scan. With the k<=1024 guard in choiceIndices(), the
-    // inner loop stays in L1 and this is faster than a hashset for
-    // realistic inputs.
+    /* Linear scan. With the k <= 1024 guard in `choiceIndices`, the inner
+     * loop stays in L1 and beats a hashset for realistic inputs. */
     const bool duplicate = std::find(out.begin(), out.end(), t) != out.end();
     out.push_back(duplicate ? j : t);
   }

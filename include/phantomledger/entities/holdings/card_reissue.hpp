@@ -1,94 +1,4 @@
 #pragma once
-//
-// phantomledger/entities/holdings/card_reissue.hpp
-//
-// WHEN A CARD NUMBER IS REPLACED.
-//
-// ===================================================================
-// WHY THIS EXISTS (card-churn-2026-07)
-//
-// The exported card number is `'C'/'D' + format(accountKey)` — a pure
-// function of the underlying account — so **one account carried exactly one
-// card number for the entire run.** Over the owner's 20-year window that
-// claims no cardholder ever received a replacement card in two decades.
-//
-// Auriemma Consulting Group (via American Banker) puts it starkly: **~50% of
-// US cardholders had at least one reissuance within a year**, against a
-// traditional ~5-year expiry cycle, and cardholders hit by repeat fraud
-// reported ~5 cards in a single year. The decomposition by cause:
-//
-//     expiration                     33%
-//     fraudulent charges             27%
-//     magstripe -> EMV conversion    26%
-//     lost / stolen / damaged        ~14%
-//
-// Mercator's 2019 U.S. PaymentsInsights adds the physical side: 9% of
-// consumers reported card theft, 29% reported a loss, theft or fraudulent
-// charge, and 71% reported nothing at all.
-//
-// ===================================================================
-// WHAT THIS MODELS, AND THE ONE CAUSE IT DELIBERATELY OMITS
-//
-// THREE of the four causes are modelled here:
-//
-//   * EXPIRY — scheduled, not hazarded. A card has a validity term and is
-//     replaced when it ends. This is the metronome the other causes ride on
-//     top of, and at 33% it is the largest single cause.
-//   * LOST / STOLEN / DAMAGED — an over-dispersed hazard (see below).
-//   * EMV CONVERSION — an era-specific one-off wave, riding the terminal
-//     migration the repo already models rather than a new constant.
-//
-// **FRAUD-DRIVEN REISSUE IS NOT MODELLED, AND THAT IS A LEAK DECISION
-// RATHER THAN AN OVERSIGHT.** Reissue after compromise is causally
-// downstream of fraud, so "this party holds more than one card number"
-// would become an entity-level fraud label — precisely the shortcut class
-// `attacker-infra-2026-07` and `card-fraud-realism-v2` each spent a round
-// closing. Worse, the only fraud signal available at export time is
-// `seen.fraud`, a FULL-WINDOW verdict ("this card ever carried a flag-1
-// row") — the exact column `cf_Card.is_fraud` is withheld as 0 for.
-//
-// Modelling it correctly would mean reissuing strictly AFTER an observed
-// fraud row using only fraud seen up to that point, which the streaming
-// exporter could support. Until that is built with its own lift gate, the
-// 27% fraud share is a REGISTERED LIMITATION: the exported churn is
-// somewhat lower than reality and carries NO fraud correlation at all,
-// which is the safe direction to be wrong in.
-//
-// ===================================================================
-// THE DISTRIBUTION: OVER-DISPERSED, NOT POISSON
-//
-// "~50% of cardholders get one reissue a year" and "repeat-fraud victims
-// get ~5" cannot both come from one Poisson rate — the variance far exceeds
-// the mean. The unscheduled component is therefore a GAMMA-MIXED POISSON
-// (negative-binomial in shape): a per-card latent replacement-proneness
-// with mean EXACTLY 1, so it rescales the base rate without moving the
-// population average, then events at that scaled rate.
-//
-// The proneness is keyed on the CARD, not the person, because Auriemma
-// reports that among repeat-fraud cases **89% had all the fraudulent
-// charges on ONE card**. Proneness is a property of how a specific card is
-// used, not of its holder in general.
-//
-// Higher `dispersionSigma` = fatter tail. At 0.8 a small minority of cards
-// carry several unscheduled replacements while most carry none, which is
-// the shape the two reported figures imply.
-//
-// ===================================================================
-// DRAW-FREE, AND THAT IS WHAT MAKES THIS ROUND CHEAP
-//
-// Every quantity below is a hash of the card key and the generation index.
-// No Rng is touched, so the corpus stream cannot move — and it need not,
-// because **the corpus carries account keys and no card identity at all**
-// (`transactions::Transaction` has no card field, and no standard or AML
-// table has a card number). Card identity exists only in the card-fraud
-// exporter, so this round moves `golden_tables_card_fraud.md5` alone.
-//
-// CLASS: MEASUREMENT-derived shares with levels [Likely]. The cause
-// decomposition and the ~50%/year headline are published Auriemma figures;
-// the validity term is the widely documented 3-5 year range. The dispersion
-// shape is CLASS S UNCITED — its DIRECTION is pinned by the 50%-vs-5-cards
-// contrast, its magnitude is declared.
-//
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/hashing/constants.hpp"
@@ -98,27 +8,83 @@
 #include <cstdint>
 #include <vector>
 
+/*
+  When a card number is replaced.
+
+  SOURCE: Auriemma Consulting Group (via American Banker) — ~50% of US
+  cardholders had at least one reissuance within a year, against a traditional
+  ~5-year expiry cycle, and cardholders hit by repeat fraud reported ~5 cards
+  in a single year. The decomposition by cause:
+
+      expiration                     33%
+      fraudulent charges             27%
+      magstripe -> EMV conversion    26%
+      lost / stolen / damaged       ~14%
+
+  Mercator's 2019 U.S. PaymentsInsights adds the physical side: 9% of
+  consumers reported card theft, 29% reported a loss, theft or fraudulent
+  charge, 71% reported nothing.
+
+  THREE of the four causes are modelled: EXPIRY (scheduled, the metronome the
+  others ride on), LOST/STOLEN/DAMAGED (an over-dispersed hazard), and the EMV
+  CONVERSION wave (an era-specific one-off).
+
+  FRAUD-DRIVEN REISSUE IS DELIBERATELY NOT MODELLED — a leak decision, not an
+  oversight. Reissue after compromise is causally downstream of fraud, so
+  "this party holds more than one card number" would become an entity-level
+  fraud label. The only fraud signal available at export time is `seen.fraud`,
+  a FULL-WINDOW verdict, which is the exact column `cf_Card.is_fraud` is
+  withheld as 0 for. Doing it correctly means reissuing strictly AFTER an
+  observed fraud row using only fraud seen up to that point, and needs its own
+  lift gate. Until then the 27% share is a REGISTERED LIMITATION: exported
+  churn is lower than reality and carries NO fraud correlation, which is the
+  safe direction to be wrong in.
+
+  THE DISTRIBUTION IS OVER-DISPERSED, NOT POISSON. "~50% of cardholders get
+  one reissue a year" and "repeat-fraud victims get ~5" cannot come from one
+  Poisson rate — the variance far exceeds the mean. The unscheduled component
+  is a GAMMA-MIXED POISSON: a per-card latent proneness with mean EXACTLY 1,
+  so it rescales the base rate without moving the population average, then
+  events at that scaled rate.
+
+  PRONENESS IS KEYED ON THE CARD, NOT THE PERSON, because Auriemma reports
+  that among repeat-fraud cases 89% had all the fraudulent charges on ONE
+  card. It is a property of how a specific card is used, not of its holder.
+
+  DRAW-FREE: every quantity is a hash of the card key and the generation
+  index, so the corpus stream cannot move. It need not — the corpus carries
+  account keys and no card identity at all (`transactions::Transaction` has no
+  card field, and no standard or AML table has a card number). Card identity
+  exists only in the card-fraud exporter.
+
+  CLASS: MEASUREMENT-derived shares, levels [Likely]. The cause decomposition
+  and the ~50%/year headline are published Auriemma figures; the validity term
+  is the documented 3-5 year range. The dispersion shape is CLASS S UNCITED —
+  its DIRECTION is pinned by the 50%-vs-5-cards contrast, its magnitude is a
+  declared choice.
+ */
+
 namespace PhantomLedger::entity::card::reissue {
 
-// Validity term in months. Sources put the range at 3-5 years, most
-// commonly 3; Auriemma describes the traditional cycle as ~5. The mix below
-// spans both readings.
+/* Validity term in months. Sources put the range at 3-5 years, most
+ * commonly 3; Auriemma describes the traditional cycle as ~5. The mix below
+ * spans both readings. */
 inline constexpr int kValidityMonthsMin = 36;
 inline constexpr int kValidityMonthsMax = 60;
 
-// Unscheduled (lost / stolen / damaged) replacements per card-year, BEFORE
-// the Gamma mixing. Derived from Auriemma's ~14% lost/stolen/damaged share
-// of reissues against a ~50%/year total reissue rate: 0.50 * 0.14 = 0.07.
+/* Unscheduled (lost / stolen / damaged) replacements per card-year, BEFORE
+ * the Gamma mixing. Derived from Auriemma's ~14% lost/stolen/damaged share
+ * of reissues against a ~50%/year total reissue rate: 0.50 * 0.14 = 0.07. */
 inline constexpr double kUnscheduledPerYear = 0.07;
 
-// Lognormal sigma for the per-card proneness. CLASS S UNCITED — the
-// DIRECTION is pinned by Auriemma's 50%-vs-5-cards contrast, the magnitude
-// is declared. At 0.8 the 99th percentile sits near 5x the base rate.
+/* Lognormal sigma for the per-card proneness. CLASS S UNCITED — the
+ * DIRECTION is pinned by Auriemma's 50%-vs-5-cards contrast, the magnitude
+ * is declared. At 0.8 the 99th percentile sits near 5x the base rate. */
 inline constexpr double kDispersionSigma = 0.80;
 
-// The EMV conversion wave. 26% of Auriemma's reissues, concentrated in the
-// US migration around the October 2015 network liability shift. Modelled as
-// a ONE-OFF replacement for cards live across the window, not a rate.
+/* The EMV conversion wave. 26% of Auriemma's reissues, concentrated in the
+ * US migration around the October 2015 network liability shift. Modelled as
+ * a ONE-OFF replacement for cards live across the window, not a rate. */
 inline constexpr int kEmvWaveFirstYear = 2015;
 inline constexpr int kEmvWaveLastYear = 2017;
 inline constexpr double kEmvWaveShare = 0.26 / 0.50; // share of live cards
@@ -151,9 +117,9 @@ namespace detail {
   return hash ^ (hash >> 31U);
 }
 
-// Independent domains so the validity term, the proneness draw, the
-// unscheduled event times and the EMV membership cannot correlate with one
-// another through a shared hash.
+/* Independent domains so the validity term, the proneness draw, the
+ * unscheduled event times and the EMV membership cannot correlate with one
+ * another through a shared hash. */
 inline constexpr std::uint64_t kValidityDomain = 0x43'4152'4400'0001ULL;
 inline constexpr std::uint64_t kPronenessDomain = 0x43'4152'4400'0002ULL;
 inline constexpr std::uint64_t kEventDomain = 0x43'4152'4400'0003ULL;
@@ -175,25 +141,25 @@ inline constexpr std::uint64_t kEmvDomain = 0x43'4152'4400'0004ULL;
   return static_cast<double>(hash >> 11U) * 0x1.0p-53;
 }
 
-// MEAN-1 LOGNORMAL PRONENESS.
-//
-// The first version of this hand-rolled a "Gamma approximation" that
-// multiplied by 1/shape repeatedly, and the gate caught it on its first run:
-// mean 10.2 generations per card over 20 years against an expiry-only
-// expectation of ~5, with variance 99. Tail cards were reaching a 64x rate
-// multiplier — 4.5 unscheduled replacements a YEAR. An unprincipled
-// approximation with the right qualitative direction is still wrong.
-//
-// A lognormal is the right tool and is already this repo's idiom for
-// over-dispersion (`lognormalByMedian` for attacker campaigns, merchant
-// weights). Scaled as `exp(sigma*z - sigma^2/2)` its mean is EXACTLY 1, so
-// it rescales the base rate without moving the population average — which is
-// what lets the base rate stay the value derived from Auriemma's shares.
-//
-// The normal comes from Box-Muller over two independent hash uniforms, so
-// this stays draw-free. `sigma = 0.8` puts the 99th percentile near 5x the
-// base rate, matching the "repeat-fraud cardholders reported ~5 cards"
-// observation; the hard cap is a runaway guard, not a modelling statement.
+/* MEAN-1 LOGNORMAL PRONENESS.
+ *
+ * Scaled as `exp(sigma*z - sigma^2/2)` the mean is EXACTLY 1, so it rescales
+ * the base rate without moving the population average — which is what lets
+ * the base rate stay the value derived from Auriemma's shares. This is
+ * already the repo's idiom for over-dispersion (`lognormalByMedian` for
+ * attacker campaigns and merchant weights).
+ *
+ * DO NOT SUBSTITUTE A HAND-ROLLED GAMMA APPROXIMATION. One that repeatedly
+ * multiplied by 1/shape measured mean 10.2 generations per card over 20 years
+ * against an expiry-only expectation of ~5, variance 99, with tail cards
+ * reaching a 64x rate multiplier — 4.5 unscheduled replacements a YEAR. The
+ * right qualitative direction does not make an unprincipled approximation
+ * correct.
+ *
+ * The normal comes from Box-Muller over two independent hash uniforms, so
+ * this stays draw-free. `sigma = 0.8` puts the 99th percentile near 5x the
+ * base rate, matching the "repeat-fraud cardholders reported ~5 cards"
+ * observation; the hard cap is a runaway guard, not a modelling statement. */
 [[nodiscard]] inline double pronenessOf(const entity::Key &key,
                                         double sigma) noexcept {
   const double u1 =
@@ -208,8 +174,8 @@ inline constexpr std::uint64_t kEmvDomain = 0x43'4152'4400'0004ULL;
 
 } // namespace detail
 
-// One issued card number's operating interval, half-open, matching the
-// convention `infra::Tenure` and `merchant::Record` use.
+/* One issued card number's operating interval, half-open, matching the
+ * convention `infra::Tenure` and `merchant::Record` use. */
 struct Generation {
   std::uint32_t index = 0; // 0 = the originally issued card
   std::int64_t firstEpoch = 0;
@@ -220,49 +186,51 @@ struct Generation {
   }
 };
 
-/// This card's validity term in months, drawn draw-free from the key.
+/* This card's validity term in months, drawn draw-free from the key. */
 [[nodiscard]] constexpr int validityMonths(const entity::Key &key,
                                            const Rules &rules = {}) noexcept {
   const auto span = rules.validityMonthsMax - rules.validityMonthsMin;
   if (span <= 0) {
     return rules.validityMonthsMin;
   }
-  const auto u = detail::unitOf(detail::keyHash(detail::kValidityDomain, key, 0));
+  const auto u =
+      detail::unitOf(detail::keyHash(detail::kValidityDomain, key, 0));
   return rules.validityMonthsMin +
          static_cast<int>(u * static_cast<double>(span + 1));
 }
 
-/// This card's unscheduled-replacement proneness. Mean ~1 across the
-/// population, heavy-tailed: most cards near 1, a minority several times
-/// higher. See the header on why this is keyed on the CARD not the person.
+/* This card's unscheduled-replacement proneness. Mean ~1 across the
+ * population, heavy-tailed: most cards near 1, a minority several times
+ * higher. See the header on why this is keyed on the CARD not the person. */
 [[nodiscard]] constexpr double proneness(const entity::Key &key,
                                          const Rules &rules = {}) noexcept {
   return detail::pronenessOf(key, rules.dispersionSigma);
 }
 
-/// Does this card fall in the EMV conversion wave?
+/* Does this card fall in the EMV conversion wave? */
 [[nodiscard]] constexpr bool inEmvWave(const entity::Key &key,
                                        const Rules &rules = {}) noexcept {
   return detail::unitOf(detail::keyHash(detail::kEmvDomain, key, 0)) <
          std::min(1.0, rules.emvWaveShare);
 }
 
-/// Every card number this account carries across `[windowStart, windowEndExcl)`,
-/// in order, with contiguous half-open intervals that tile the window exactly.
-///
-/// Generation 0 starts at `windowStart`. Cards issued before the window are
-/// not modelled as such — a card's real issue date precedes the corpus and
-/// nothing reads it — so generation 0 simply runs until its first
-/// replacement, which is the same treatment `merchant::Record` gives an
-/// incumbent's open date.
-///
-/// THE THREE CAUSES COMPETE, and whichever comes first wins:
-///   * expiry at each `validityMonths` boundary from the window start;
-///   * unscheduled loss/theft/damage at a Gamma-mixed rate;
-///   * the one-off EMV conversion, for cards in that wave, placed inside
-///     the migration years.
-///
-/// DRAW-FREE: every date is a hash of the key and the generation index.
+/* Every card number this account carries across `[windowStart,
+ * windowEndExcl)`, in order, with contiguous half-open intervals that tile the
+ * window exactly.
+ *
+ * Generation 0 starts at `windowStart`. Cards issued before the window are
+ * not modelled as such — a card's real issue date precedes the corpus and
+ * nothing reads it — so generation 0 simply runs until its first
+ * replacement, which is the same treatment `merchant::Record` gives an
+ * incumbent's open date.
+ *
+ * THE THREE CAUSES COMPETE, and whichever comes first wins:
+ *   * expiry at each `validityMonths` boundary from the window start;
+ *   * unscheduled loss/theft/damage at a Gamma-mixed rate;
+ *   * the one-off EMV conversion, for cards in that wave, placed inside
+ *     the migration years.
+ *
+ * DRAW-FREE: every date is a hash of the key and the generation index. */
 [[nodiscard]] inline std::vector<Generation>
 generationsFor(const entity::Key &key, std::int64_t windowStart,
                std::int64_t windowEndExcl, const Rules &rules = {}) {
@@ -279,52 +247,52 @@ generationsFor(const entity::Key &key, std::int64_t windowStart,
   const auto validitySeconds = static_cast<std::int64_t>(
       static_cast<double>(validity) * kDaysPerMonth * kSecondsPerDay);
 
-  // The unscheduled rate for THIS card, after Gamma mixing.
+  /* The unscheduled rate for THIS card, after Gamma mixing. */
   const double rate = rules.unscheduledPerYear * proneness(key, rules);
 
-  // EMV wave date, if this card is in it: placed inside the migration
-  // window by a hash so the wave has realistic spread rather than a spike.
+  /* EMV wave date, if this card is in it: placed inside the migration
+   * window by a hash so the wave has realistic spread rather than a spike. */
   std::int64_t emvAt = 0;
   if (inEmvWave(key, rules)) {
     const auto u = detail::unitOf(detail::keyHash(detail::kEmvDomain, key, 1));
-    // Years since 1970 to the wave start, approximated in days; the exact
-    // day inside the wave does not matter, only that it lands in it.
+    /* Years since 1970 to the wave start, approximated in days; the exact
+     * day inside the wave does not matter, only that it lands in it. */
     const auto waveStartDays = static_cast<std::int64_t>(
         (static_cast<double>(rules.emvWaveFirstYear) - 1970.0) * kDaysPerYear);
     const auto waveSpanDays = static_cast<std::int64_t>(
-        (static_cast<double>(rules.emvWaveLastYear - rules.emvWaveFirstYear + 1)) *
+        (static_cast<double>(rules.emvWaveLastYear - rules.emvWaveFirstYear +
+                             1)) *
         kDaysPerYear);
-    emvAt = (waveStartDays + static_cast<std::int64_t>(
-                                 u * static_cast<double>(waveSpanDays))) *
+    emvAt = (waveStartDays +
+             static_cast<std::int64_t>(u * static_cast<double>(waveSpanDays))) *
             kSecondsPerDay;
   }
 
   std::uint32_t index = 0;
   std::int64_t cursor = windowStart;
 
-  // Bounded: a card cannot plausibly turn over more than this in one run,
-  // and the cap is a runaway guard rather than a modelling statement. When
-  // it binds, the final generation simply runs to the window end.
+  /* Bounded: a card cannot plausibly turn over more than this in one run,
+   * and the cap is a runaway guard rather than a modelling statement. When
+   * it binds, the final generation simply runs to the window end. */
   constexpr std::uint32_t kMaxGenerations = 64;
 
   while (cursor < windowEndExcl && index < kMaxGenerations) {
     std::int64_t next = cursor + validitySeconds;
 
-    // Unscheduled event for THIS generation: an exponential waiting time at
-    // the card's mixed rate, hashed per generation so successive intervals
-    // are independent.
+    /* Unscheduled event for THIS generation: an exponential waiting time at
+     * the card's mixed rate, hashed per generation so successive intervals
+     * are independent. */
     if (rate > 0.0) {
-      const auto u = std::max(
-          1.0e-12,
-          detail::unitOf(detail::keyHash(detail::kEventDomain, key, index)));
-      // -ln(u)/rate years until the unscheduled replacement.
+      const auto u = std::max(1.0e-12, detail::unitOf(detail::keyHash(
+                                           detail::kEventDomain, key, index)));
+      /* -ln(u)/rate years until the unscheduled replacement. */
       const double years = -std::log(u) / rate;
       const auto waitSeconds = static_cast<std::int64_t>(
           years * kDaysPerYear * static_cast<double>(kSecondsPerDay));
       next = std::min(next, cursor + std::max<std::int64_t>(1, waitSeconds));
     }
 
-    // The EMV conversion, if it falls inside this generation.
+    /* The EMV conversion, if it falls inside this generation. */
     if (emvAt > cursor && emvAt < next) {
       next = emvAt;
     }
@@ -335,16 +303,16 @@ generationsFor(const entity::Key &key, std::int64_t windowStart,
     ++index;
   }
 
-  // The cap bound, or a rounding tie: extend the last generation so the
-  // sequence TILES the window with no gap. A gap would leave transactions in
-  // it with no resolvable card number, which the exporter cannot represent.
+  /* The cap bound, or a rounding tie: extend the last generation so the
+   * sequence TILES the window with no gap. A gap would leave transactions in
+   * it with no resolvable card number, which the exporter cannot represent. */
   if (!out.empty() && out.back().lastEpochExcl < windowEndExcl) {
     out.back().lastEpochExcl = windowEndExcl;
   }
   return out;
 }
 
-/// The generation live at `ts`, or index 0 when the sequence is empty.
+/* The generation live at `ts`, or index 0 when the sequence is empty. */
 [[nodiscard]] inline std::uint32_t
 generationAt(const std::vector<Generation> &generations,
              std::int64_t ts) noexcept {

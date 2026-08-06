@@ -1,54 +1,42 @@
 #pragma once
-//
-// phantomledger/synth/infra/tenure_table.hpp
-//
-// HOW LONG A SESSION ENDPOINT STAYS WITH ONE PERSON, BY YEAR.
-//
-// This is the era axis for access infrastructure — the device/IP
-// counterpart of the dated US EMV terminal mix that already makes
-// `use_chip` causal, and of the macro-history-v1 per-year dollar scales.
-// Before it existed, a person held the SAME device for an entire 30-year
-// window (`secondDeviceP = 0.20`, so 80% of people had exactly one), and
-// device replacement was not modelled at all.
-//
-// ============================================ CLASS AND CITATION STATUS
-// CLASS S (dated exogenous series), **CALIBRATION UNCITED**.
-//
-// The SHAPE is sourced in the sense that the direction and the location
-// of the turning point are well established in trade reporting on US
-// consumer replacement cycles: long replacement in the desktop-PC and
-// feature-phone era, a minimum around 2012-2014 when two-year carrier
-// subsidy contracts were the dominant US purchase channel, then a
-// steady lengthening as those contracts disappeared and handsets became
-// more durable and more expensive.
-//
-// The ANCHOR NUMBERS BELOW ARE NOT TRANSCRIBED FROM A NAMED SERIES.
-// They are a declared modelling choice consistent with that shape, and
-// they are recorded as UNCITED rather than dressed in a citation this
-// file cannot support — the same treatment the authority document gives
-// the late-payment rate. Anyone replacing them with a named series
-// (CIRP, Kantar, or a carrier upgrade-rate disclosure) should re-pin the
-// goldens in that arc and promote this block to CITED.
-//
-// DO NOT read a benchmark claim off device tenure until that happens.
-// What IS defensible today: tenure is finite, it varies by era in the
-// documented direction, and every routed session falls inside the
-// endpoint's own interval. That is the defect this table exists to fix.
-// ======================================================================
-//
-// IPs are treated separately and much shorter. A residential address is
-// a DHCP lease against an ISP pool, not a purchased object, so it churns
-// on a scale of months regardless of era. The era axis for IP tenure is
-// deliberately NOT modelled here (dial-up per-session addressing, sticky
-// broadband DHCP and mobile CGNAT pull in different directions and the
-// net effect is not something this file can defend); IP tenure is one
-// declared flat mean with the same lognormal dispersion. Registered as
-// follow-up, not silently era-flat.
 
 #include "phantomledger/primitives/time/calendar.hpp"
 
 #include <array>
 #include <cstdint>
+
+/*
+  How long a session endpoint stays with one person, by year. The era axis for
+  access infrastructure — the device/IP counterpart of the dated US EMV
+  terminal mix that makes `use_chip` causal.
+
+  CLASS S (dated exogenous series), CALIBRATION UNCITED.
+
+  The SHAPE is sourced, in that the direction and the location of the turning
+  point are well established in trade reporting on US consumer replacement
+  cycles: long replacement in the desktop-PC and feature-phone era, a minimum
+  around 2012-2014 when two-year carrier subsidy contracts were the dominant
+  US purchase channel, then steady lengthening as those contracts disappeared
+  and handsets became more durable and expensive.
+
+  THE ANCHOR NUMBERS BELOW ARE NOT TRANSCRIBED FROM A NAMED SERIES. They are a
+  declared choice consistent with that shape, recorded as UNCITED rather than
+  dressed in a citation this file cannot support. Anyone replacing them with a
+  named series (CIRP, Kantar, or a carrier upgrade-rate disclosure) should
+  re-pin the goldens in that arc and promote this block to CITED.
+
+  DO NOT read a benchmark claim off device tenure until that happens. What IS
+  defensible today: tenure is finite, it varies by era in the documented
+  direction, and every routed session falls inside the endpoint's own
+  interval.
+
+  IPs are treated separately and much shorter. A residential address is a DHCP
+  lease against an ISP pool, not a purchased object, so it churns on a scale of
+  months regardless of era. The era axis for IP tenure is deliberately NOT
+  modelled — dial-up per-session addressing, sticky broadband DHCP and mobile
+  CGNAT pull in different directions and the net effect is not something this
+  file can defend. Registered as follow-up, not silently era-flat.
+ */
 
 namespace PhantomLedger::synth::infra::tenure {
 
@@ -104,36 +92,29 @@ inline constexpr double kIpTenureMonths = 4.0;
   return kIpTenureMonths * 30.4375;
 }
 
-// ------------------------------------------- ATTACKER INFRASTRUCTURE
-//
-// Fraud infrastructure churns on a MUCH shorter clock than a
-// customer's, and the reason is adversarial rather than economic: an
-// endpoint is worked until it is burned — declined, fingerprinted,
-// blocklisted — and then replaced. Modelling it on the consumer
-// replacement cycle would have made attacker endpoints longer-lived
-// than the campaigns that use them, which is backwards.
-//
-// The direction is what these anchor: both are far shorter than the
-// customer equivalents, and both are ERA-FLAT (the burn clock is a
-// property of the defence, not of the decade).
-//
-// AND BOTH ARE ON THE SCALE OF A CAMPAIGN, not far below it, which is a
-// deliberate modelling decision rather than an accident of the numbers.
-// An operator's endpoint tenure divided into the campaign length IS the
-// number of endpoints its case load is spread over, and cases-per-
-// endpoint is precisely the quantity the graph signal is made of. Tenure
-// far shorter than the campaign would produce a busy inventory of
-// single-use endpoints — a rebranding of the ghost-endpoint defect this
-// arc exists to close.
-//
-// The high-churn, genuinely non-reused component of real attacker
-// address usage IS modelled — as the residential-proxy branch in the
-// fraud planner, where it belongs, because those addresses are real
-// consumer lines rather than attacker inventory.
-//
-// CLASS S, CALIBRATION UNCITED, exactly like the customer table above.
-// A named series on carding-infrastructure lifetime would replace these
-// and re-pin.
+/* ATTACKER INFRASTRUCTURE.
+ *
+ * Fraud infrastructure churns on a MUCH shorter clock than a customer's, for
+ * adversarial rather than economic reasons: an endpoint is worked until it is
+ * burned — declined, fingerprinted, blocklisted — and then replaced. On the
+ * consumer replacement cycle attacker endpoints would outlive the campaigns
+ * that use them, which is backwards. Both values are ERA-FLAT: the burn clock
+ * is a property of the defence, not of the decade.
+ *
+ * BOTH MUST STAY ON THE SCALE OF A CAMPAIGN, not far below it. An operator's
+ * endpoint tenure divided into the campaign length IS the number of endpoints
+ * its case load is spread over, and cases-per-endpoint is precisely the
+ * quantity the graph signal is made of. Tenure far shorter than the campaign
+ * produces a busy inventory of single-use endpoints — the ghost-endpoint
+ * defect rebranded.
+ *
+ * The genuinely non-reused, high-churn component of real attacker address
+ * usage is modelled as the residential-proxy branch in the fraud planner,
+ * where it belongs: those addresses are real consumer lines, not attacker
+ * inventory.
+ *
+ * CLASS S, CALIBRATION UNCITED, like the customer table above. A named series
+ * on carding-infrastructure lifetime would replace these and re-pin. */
 inline constexpr double kAttackerDeviceTenureDays = 120.0;
 inline constexpr double kAttackerIpTenureDays = 90.0;
 

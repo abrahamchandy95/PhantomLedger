@@ -6,8 +6,9 @@
 
 namespace PhantomLedger::primitives::concurrent {
 
-/// Array of per-element spinlocks, one `std::atomic_flag` per index.
-
+/* Array of per-element spinlocks, one `std::atomic_flag` per index.
+ * `lockPair` orders its two acquisitions by index, which is what keeps
+ * concurrent two-account transfers deadlock-free. */
 class AccountLockArray {
 public:
   AccountLockArray() = default;

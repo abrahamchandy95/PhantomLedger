@@ -30,15 +30,18 @@ inline constexpr channels::Tag kCardChannel =
 inline constexpr double kCashCushionMultiple = 1.5;
 inline constexpr double kAmountFloor = 1.0;
 
-// geo-causal-v1 (G2a step-2): share of NON-FAVORITE merchant picks that are
-// CARD-PRESENT (in-person, LOCAL to the customer's home area) rather than
-// online (geography-free). PROVISIONAL. Since ROUND 8
-// (use-chip-causal-2026-07) the card-fraud exporter's use_chip no longer
-// asserts an independent ~.11 hash share: it READS the realized outcome of
-// this selection through the destination's footprint, so this constant now
-// shapes the exported entry-mode mix directly. It SHOULD become TIME-VARYING
-// across the modeled decades (e-commerce grows) — see the
-// CARD-PRESENT/ONLINE SHARE debt in systemprompt.md.
+/* Share of NON-FAVORITE merchant picks that are CARD-PRESENT (in-person,
+ * LOCAL to the customer's home area) rather than online (geography-free).
+ * PROVISIONAL.
+ *
+ * THIS CONSTANT SHAPES AN EXPORTED COLUMN. The card-fraud exporter's
+ * `use_chip` does not assert an independent hash share; it READS the
+ * realized outcome of this selection through the destination's footprint.
+ *
+ * REGISTERED DEBT: it should be TIME-VARYING across the modeled decades, as
+ * e-commerce grows. `commerce::cnpShareForYear` already carries the dated,
+ * cited series, but it governs favourite MEMBERSHIP only — this explore
+ * branch is still flat. */
 inline constexpr double kCardPresentShare = 0.89;
 
 struct PaymentRoute {
@@ -98,14 +101,12 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
                           ? resolved_.merchantCounterpartyIdx[billerIdx]
                           : clearing::Ledger::invalid;
 
-  // H1 step 2b (class P): event.priceScale (the day's CPI level) turns
-  // the calibration-year draw into era-correct nominal dollars — after
-  // the draw, before floorAndRound ($1 floor = de-minimis, fixed).
-  // H2 step 2c: event.consumptionScale applies the retirement step on
-  // the same seam.
-  const double raw =
-      math::amounts::kBill.sample(rng_) * event.amountFactor *
-      event.priceScale * event.consumptionScale;
+  /* `event.priceScale` (the day's CPI level, class P) turns the
+   * calibration-year draw into era-correct nominal dollars — AFTER the draw,
+   * BEFORE floorAndRound (the $1 floor is de-minimis and fixed).
+   * `event.consumptionScale` applies the retirement step on the same seam. */
+  const double raw = math::amounts::kBill.sample(rng_) * event.amountFactor *
+                     event.priceScale * event.consumptionScale;
   const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
@@ -127,9 +128,9 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
   const entity::Key dst =
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
 
-  const double raw =
-      math::amounts::kExternalUnknown.sample(rng_) * event.amountFactor *
-      event.priceScale * event.consumptionScale;
+  const double raw = math::amounts::kExternalUnknown.sample(rng_) *
+                     event.amountFactor * event.priceScale *
+                     event.consumptionScale;
   const double amount = primitives::utils::floorAndRound(raw, kAmountFloor);
 
   EmissionResult result;
@@ -202,52 +203,39 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
   const bool exploring = rng_.coin(exploreP);
 
   if (!exploring && !favRow.empty()) {
-    // merchant-selection-2026-08: ZIPF, NOT UNIFORM. This was
-    // `rng_.choiceIndex(favRow.size())`, i.e. an exponent of zero, and it
-    // carries ~99.2% of all merchant picks. The consequences ran in
-    // opposite directions and so cancelled in every total: within a card
-    // the top merchant held 1/F of visits (5.3% at the seeded F~19, 2.6%
-    // at the F~38 the evolver saturates to) against a measured 13%, while
-    // ACROSS cards `Record.weight` — having no channel left but MEMBERSHIP
-    // — entered as F independent inclusion Bernoullis and put one merchant
-    // on 51% of every card in the corpus. See commerce/affinity.hpp for
-    // the citation, the self-checking arithmetic, and why the rank is a
-    // hash of (person, merchant) rather than the slot index.
-    //
-    // ONE UNIFORM, exactly as before: `sampleFavoriteSlot` consumes the
-    // draw the caller hands it and derives the weights draw-free, so this
-    // branch's draw count is unchanged and the corpus delta is confined to
-    // WHICH favourite is picked.
-    // Fully qualified: the local `commerce` binding above shadows the
-    // namespace of the same name.
-    // Fully qualified: the local `commerce` binding above shadows the
-    // namespace of the same name.
-    // Fully qualified: the local `commerce` binding above shadows the
-    // namespace of the same name.
-    // Fully qualified: the local `commerce` binding above shadows the
-    // namespace of the same name.
+    /* ZIPF, NOT UNIFORM. A `choiceIndex` over the row is an exponent of
+     * zero, and this branch carries ~99.2% of all merchant picks. See
+     * commerce/affinity.hpp for the citation, the self-checking arithmetic,
+     * and why the rank is a hash of (person, merchant) rather than the slot
+     * index.
+     *
+     * MUST STAY AT ONE UNIFORM: `sampleFavoriteSlot` consumes the draw
+     * handed to it and derives the weights draw-free.
+     *
+     * Fully qualified because the local `commerce` binding above shadows the
+     * namespace of the same name. */
     const auto slot = market::commerce::sampleFavoriteSlot(
         favRow, spender.personIndex, rng_.nextDouble());
     return favRow[slot];
   }
 
-  // Non-favorite (popularity/geography) pick. geo-causal-v1 (G2a step-2): roll
-  // the transaction MODE. Card-present everyday spend is LOCAL to the
-  // customer's home area — sample the home-area distance-decay pool; online
-  // spend is geography-free — sample the national popularity CDF. When the
-  // home area has no pool (no local anchor), card-present falls back to the
-  // national CDF. Favorites (returned above) stay global-random regardless of
-  // mode (axiom #8). The mode roll is a NEW rng draw — it is what shifts the
-  // corpus in this round. Selection reads ONLY geography/popularity, never
-  // isFraud/ringId/label.
+  /* Non-favourite (popularity/geography) pick: roll the transaction MODE.
+   * Card-present everyday spend is LOCAL to the customer's home area and
+   * samples the home-area distance-decay pool; online spend is
+   * geography-free and samples the national popularity CDF. A home area with
+   * no pool falls back to the national CDF. Favourites (returned above) do
+   * not roll a mode.
+   *
+   * SELECTION READS ONLY GEOGRAPHY AND POPULARITY, never
+   * isFraud/ringId/label. */
   const auto &geoPools = commerce.geoPools();
   const bool cardPresent = rng_.coin(kCardPresentShare);
-  // relocation-2026-07: read the home from the population View, which the
-  // monthly evolver re-points from the relocation schedule. NOT from a cached
-  // `Spender` copy: `prepareSpenders` runs ONCE for the whole fold and `runDay`
-  // takes `PreparedRun` by const ref, so a cached home would be frozen at the
-  // window-start value while the exporter published the moves — the corpus
-  // would disagree with itself and look correct doing it.
+  /* THE HOME MUST COME FROM THE POPULATION VIEW, which the monthly evolver
+   * re-points from the relocation schedule — never from a cached `Spender`
+   * copy. `prepareSpenders` runs ONCE for the whole fold and `runDay` takes
+   * `PreparedRun` by const ref, so a cached home would freeze at the
+   * window-start value while the exporter published the moves: the corpus
+   * would disagree with itself and look correct doing it. */
   const auto homeArea = market_.population().homeArea(spender.person);
   const bool local = cardPresent && geoPools.has(homeArea);
 

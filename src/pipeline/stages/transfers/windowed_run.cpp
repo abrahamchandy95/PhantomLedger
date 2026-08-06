@@ -1,32 +1,29 @@
-//
-// src/pipeline/stages/transfers/windowed_run.cpp
-//
-// TransferStage::runWindowedErased — the windowed two-phase production
-// composition. This is the production port of the gate harness's
-// runLeg() (tests/window_leg_support.hpp), which is its executable
-// specification; test_production_windowed holds the two byte-identical
-// against the monolithic run().
-//
-// Sequence (order is output-defining for the shared sequential stream and
-// therefore fixed):
-//
-//   1. generation prologue   blueprint, opening book, income, base
-//                            routines (shared stream, live router)
-//   2. spending session      market + obligations over the screened base
-//                            stream, persistent Session with card driver
-//   3. cursor sources        base (income+routines, disk-spooled),
-//                            products (products/full_schedule lane,
-//                            pristine router copy), family (family
-//                            lanes, pristine router copy)
-//   4. two-phase fold        Phase A -> candidate spool -> exact count L
-//                            -> fraud source -> Phase B -> sink
-//
-// Rows stream to the caller's sink; nothing transaction-scale is retained
-// here beyond the driver's bounded staging and the on-disk spools (the
-// Phase A/B candidate spool, the base-stream replay spool, and the base
-// cursor spool). The final posted book is handed off in the result for
-// the AML exporters' account vertices.
-//
+/*
+  TransferStage::runWindowedErased — the windowed two-phase production
+  composition. This is the production port of the gate harness's runLeg()
+  (tests/window_leg_support.hpp), which is its executable specification;
+  test_production_windowed holds the two byte-identical against the monolithic
+  run().
+
+  Sequence (order is output-defining for the shared sequential stream and
+  therefore fixed):
+
+    1. generation prologue   blueprint, opening book, income, base routines
+                             (shared stream, live router)
+    2. spending session      market + obligations over the screened base
+                             stream, persistent Session with card driver
+    3. cursor sources        base (income+routines, disk-spooled), products
+                             (products/full_schedule lane, pristine router
+                             copy), family (family lanes, pristine router copy)
+    4. two-phase fold        Phase A -> candidate spool -> exact count L ->
+                             fraud source -> Phase B -> sink
+
+  Rows stream to the caller's sink; nothing transaction-scale is retained here
+  beyond the driver's bounded staging and the on-disk spools (the Phase A/B
+  candidate spool, the base-stream replay spool, and the base cursor spool).
+  The final posted book is handed off in the result for the AML exporters'
+  account vertices.
+ */
 
 #include "phantomledger/pipeline/stages/transfers/orchestrator.hpp"
 
@@ -61,9 +58,9 @@ namespace routineSpending =
 
 using Txn = ::PhantomLedger::transactions::Transaction;
 
-// Streams posted rows through account validation on their way to the
-// caller's sink, matching runTransferStage's posted-corpus validation
-// without retaining the corpus.
+/* Streams posted rows through account validation on their way to the caller's
+ * sink, matching runTransferStage's posted-corpus validation without retaining
+ * the corpus. */
 struct ValidatingSink {
   SinkRef inner;
   const entity::account::Lookup *lookup = nullptr;
@@ -99,22 +96,21 @@ WindowedRunResult TransferStage::runWindowedErased(
   if (obligationSynthesis_ == nullptr) {
     throw std::runtime_error(
         "transfers::TransferStage::runWindowed: obligation synthesis not "
-        "set; call .obligationSynthesis(pipeline products) first (RAM "
+        "set; call .obligationSynthesis(pipeline products) first — RAM "
         "R2.2.1c: the product source replays it for the whole-window "
-        "obligation stream)");
+        "obligation stream");
   }
   const auto &infra = *infra_;
   const auto scope = legit_.runScope();
 
-  // Pristine copies for product and family generation (the
-  // order-decoupling law): each relocatable generator routes on its own
-  // copy of the pre-generation router state, so neither perturbs — nor is
-  // perturbed by — the sticky state the session shares with income and
-  // routines.
+  /* Pristine copies for product and family generation (the order-decoupling
+   * law): each relocatable generator routes on its own copy of the
+   * pre-generation router state, so neither perturbs — nor is perturbed by —
+   * the sticky state the session shares with income and routines. */
   ::PhantomLedger::infra::Router productRouter = productRouter_;
   ::PhantomLedger::infra::Router familyRouter = productRouter_;
 
-  // 1. Generation prologue on the shared sequential stream.
+  /* 1. Generation prologue on the shared sequential stream. */
   auto builder = legit_.builder(rng, legitWorldInputs(people, holdings, cps));
   builder.router(infra.router);
   auto prologue = builder.buildWindowedPrologue();
@@ -130,12 +126,11 @@ WindowedRunResult TransferStage::runWindowedErased(
   }
 
   pipeline::diagnostics::logStageMem(
-      "windowedPrologue",
-      {{"screened", prologue.streams.screened().size()}});
+      "windowedPrologue", {{"screened", prologue.streams.screened().size()}});
 
-  // 2. Persistent spending session over the screened base stream. Mirrors
-  // passes::addSpending's preparation; the card-lifecycle config is the
-  // exact shared constructor.
+  /* 2. Persistent spending session over the screened base stream. Mirrors
+   * passes::addSpending's preparation; the card-lifecycle config is the exact
+   * shared constructor. */
   const auto routineAccess = prologue.routinePass.accounts();
   const auto resources = prologue.routinePass.resources();
 
@@ -152,13 +147,12 @@ WindowedRunResult TransferStage::runWindowedErased(
               .lookup = *resources.accountsLookup,
               .registry = *routineAccess.registry,
           },
-      // geo-causal-v1 (G2a): the production windowed path carries the
-      // real per-person home area for card-present distance-decay
-      // selection (unread until step-2).
+      /* The real per-person home area, for card-present distance-decay
+       * selection. */
       .homeAreas = people.homeAreas,
-      // relocation-2026-07: and the HISTORY behind it. The monolith oracle
-      // (assembly.cpp) passes the same pointer — an asymmetry between the two
-      // engines here IS the divergence test_arch_equivalence exists to catch.
+      /* And the HISTORY behind it. The monolith oracle (assembly.cpp) passes
+       * the same pointer — an asymmetry between the two engines here IS the
+       * divergence test_arch_equivalence exists to catch. */
       .relocation = &people.relocation,
   };
 
@@ -174,8 +168,8 @@ WindowedRunResult TransferStage::runWindowedErased(
   const std::span<const Txn> baseTxns(prologue.streams.screened());
 
   auto market = routine.prepareMarket(census, payees, baseTxns);
-  // Mutable: the R2.4b-2 spool below rewires its replay feed BEFORE the
-  // session's first advance (the planner reads the snapshot then).
+  /* Mutable: the spool below rewires its replay feed BEFORE the session's
+   * first advance, which is when the planner reads the snapshot. */
   auto obligations = routineSpending::SpendingRoutine::prepareObligations(
       census, obligationSource, baseTxns, /*baseTxnsSorted=*/true);
 
@@ -196,25 +190,24 @@ WindowedRunResult TransferStage::runWindowedErased(
       prologue.plan.seed(), rng, *prologue.txf, market, obligations, screenBook,
       std::move(inputs));
 
-  // RAM R2.4c.0: timeline probes — separate session construction and the
-  // one-shot replay sort from the fold's own growth (the run peak now
-  // accrues inside Phase A; windowed_driver.cpp carries the per-span
-  // probe).
+  /* Timeline probe: separates session construction and the one-shot replay
+   * sort from the fold's own growth. The run peak accrues inside Phase A;
+   * windowed_driver.cpp carries the per-span probe. */
   pipeline::diagnostics::logStageMem("sessionPrepared", {});
 
-  // 3. Window-independent cursor sources, precomputed at this fixed
-  // sequence point. Products and family draw only from their dedicated
-  // lanes and route from their pristine snapshots, so their generation
-  // point cannot affect the session.
+  /* 3. Window-independent cursor sources, precomputed at this fixed sequence
+   * point. Products and family draw only from their dedicated lanes and route
+   * from their pristine snapshots, so their generation point cannot affect the
+   * session. */
   const random::RngFactory rngFactory{scope.seed};
 
-  // RAM R2.5a: construct both base views while the screened timestamp view
-  // is still resident. The full-audit view is sorted in bounded runs whose
-  // boundaries never split equal timestamps; timestamp is auditKey's first
-  // field, so concatenating those runs is byte-identical to the retired
-  // whole-vector sort. Rewire the day replay and release the resident view
-  // BEFORE product/family precomputation, avoiding both the whole-window
-  // replay copy and overlap between screened and product schedules.
+  /* Construct both base views while the screened timestamp view is still
+   * resident. The full-audit view is sorted in bounded runs whose boundaries
+   * never split equal timestamps; timestamp is auditKey's first field, so
+   * concatenating those runs is byte-identical to sorting the whole vector at
+   * once. Rewire the day replay and release the resident view BEFORE
+   * product/family precomputation, which avoids both the whole-window replay
+   * copy and any overlap between the screened and product schedules. */
   BaseRunSet baseRuns(baseTxns);
   auto baseSource = baseRuns.openAuditCursor();
   obligations.baseReplayOverride = &baseRuns.timestampReplay();
@@ -222,42 +215,40 @@ WindowedRunResult TransferStage::runWindowedErased(
   prologue.streams.releaseScreened();
 
   pipeline::diagnostics::logStageMem(
-      "baseRunSet",
-      {{"base", static_cast<std::size_t>(baseRuns.rows())},
-       {"auditRunPeak", baseRuns.peakAuditRunRows()}});
+      "baseRunSet", {{"base", static_cast<std::size_t>(baseRuns.rows())},
+                     {"auditRunPeak", baseRuns.peakAuditRunRows()}});
 
-  const transactions::Factory productTxf(rng, &productRouter,
-                                         &infra.ringInfra);
+  const transactions::Factory productTxf(rng, &productRouter, &infra.ringInfra);
   auto productSource = makeProductSource(
       scope.window, scope.seed, rngFactory, productTxf, people, holdings,
       *obligationSynthesis_, products_.insurancePrograms().claimRates);
 
-  // RAM R2.2.1b/c: the world's obligation pack — since R2.2.1c just the
-  // burden slice — was consumed by the burden prep during session
-  // preparation, and the product source above derived its own transient
-  // whole-window stream. Nothing later in the fold reads the pack, so
-  // release it now. ObligationSynthesis::generateWindow() regenerates
-  // any slice byte-identically on demand, and the finisher-time world
-  // rebuild re-materializes the slice where a use case needs the world
-  // back. Output is unaffected.
+  /* The world's obligation pack — just the burden slice — was consumed by the
+   * burden prep during session preparation, and the product source above
+   * derived its own transient whole-window stream. Nothing later in the fold
+   * reads the pack, so release it now.
+   * ObligationSynthesis::generateWindow() regenerates any slice
+   * byte-identically on demand, and the finisher-time world rebuild
+   * re-materializes the slice where a use case needs the world back. Output is
+   * unaffected. */
   holdings.portfolios.obligations() =
       ::PhantomLedger::entity::product::ObligationStream{};
   pipeline::diagnostics::logStageMem("obligationsReleased", {});
 
-  auto familySource = std::make_unique<PrecomputedCursorSource>(
-      legit_ledger::sortForReplay(
+  auto familySource =
+      std::make_unique<PrecomputedCursorSource>(legit_ledger::sortForReplay(
           builder.buildFamilyRows(prologue.plan, &familyRouter)));
 
-  // 4. Two fresh opening-book copies: the pre-fraud and post-fraud folds
-  // replay independently, exactly as in the monolithic path.
+  /* 4. Two fresh opening-book copies: the pre-fraud and post-fraud folds
+   * replay independently, exactly as in the monolithic path. */
   auto preBook =
       std::make_unique<clearing::Ledger>(prologue.initialBook->clone());
   auto postBook =
       std::make_unique<clearing::Ledger>(prologue.initialBook->clone());
 
-  // hashBook reads balances through Ledger's non-const accessors
-  // (fingerprint.hpp) while the driver exposes the post book const-only;
-  // keep a mutable handle, exactly as the gate harness does.
+  /* hashBook reads balances through Ledger's non-const accessors
+   * (fingerprint.hpp) while the driver exposes the post book const-only, so
+   * keep a mutable handle, exactly as the gate harness does. */
   auto *postBookPtr = postBook.get();
 
   WindowedConfig config;
@@ -271,9 +262,9 @@ WindowedRunResult TransferStage::runWindowedErased(
   driver.addCursorSource(*productSource);
   driver.addCursorSource(*familySource);
 
-  // Fraud boundary inputs. The injector shares the sequential stream for
-  // planning, exactly like the monolithic path; its budget denominator is
-  // the exact realized candidate count delivered after Phase A.
+  /* Fraud boundary inputs. The injector shares the sequential stream for
+   * planning, exactly like the monolithic path; its budget denominator is the
+   * exact realized candidate count delivered after Phase A. */
   const auto injector = makeFraudInjector(rng, people, holdings);
 
   legit_ledger::LegitCounterparties legitCps;
@@ -284,12 +275,10 @@ WindowedRunResult TransferStage::runWindowedErased(
   const WindowedTransferDriver::FraudSourceFactory makeFraud =
       [&](std::uint64_t realizedCandidateCount)
       -> std::unique_ptr<ScheduleCursorSource> {
-    // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
-    // the home-area axis. These MUST match what the monolithic path
-    // passes at simulate.cpp — this is the production engine and
-    // test_arch_equivalence / test_production_windowed compare the two
-    // byte-for-byte, so any asymmetry becomes an engine divergence the
-    // moment step b-2 reads them. Both are UNREAD today.
+    /* The merchant acceptance catalogue and the home-area axis MUST match
+     * what the monolithic path passes at simulate.cpp: this is the production
+     * engine, and test_arch_equivalence / test_production_windowed compare the
+     * two byte-for-byte, so any asymmetry becomes an engine divergence. */
     return makeFraudSource(injector, scope.window,
                            static_cast<std::size_t>(realizedCandidateCount),
                            FraudEmission::legitCounterparties(
@@ -302,15 +291,14 @@ WindowedRunResult TransferStage::runWindowedErased(
   WindowedRunResult out;
 
   if (options.binarySpool) {
-    // The runTwoPhase composition with the file-backed spool at the
-    // Phase A / Phase B boundary.
+    /* The runTwoPhase composition with the file-backed spool at the
+     * Phase A / Phase B boundary. */
     BinaryCandidateSpool spool;
     out.summary.phaseA = driver.runPhaseA(scope.window, spool);
 
     pipeline::diagnostics::logStageMem(
-        "phaseA",
-        {{"candidate",
-          static_cast<std::size_t>(out.summary.phaseA.candidateRows)}});
+        "phaseA", {{"candidate", static_cast<std::size_t>(
+                                     out.summary.phaseA.candidateRows)}});
 
     const auto fraudSource = makeFraud(out.summary.phaseA.candidateRows);
 
@@ -334,8 +322,8 @@ WindowedRunResult TransferStage::runWindowedErased(
 
   out.postedBookHash = acceptance::hashBook(*postBookPtr);
 
-  // Hand the final book off to the caller (AML account vertices read its
-  // balances); the fold is complete, so the driver never touches it again.
+  /* Hand the final book off to the caller — AML account vertices read its
+   * balances. The fold is complete, so the driver never touches it again. */
   out.postedBook = driver.takePostedBook();
 
   return out;

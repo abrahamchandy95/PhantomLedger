@@ -11,7 +11,7 @@
 
 namespace PhantomLedger::time {
 
-/// SSA payment cohort for a given day-of-birth.
+/* SSA payment cohort for a given day-of-birth. */
 [[nodiscard]] constexpr int ssaCohort(int birthDay) noexcept {
   if (birthDay <= 10) {
     return 0;
@@ -22,7 +22,9 @@ namespace PhantomLedger::time {
   return 2;
 }
 
-/// Anchor day-of-month for an SSA cohort, used when the caller has
+/* Representative day-of-birth for an SSA cohort, for callers that hold a
+ * cohort rather than a real birth day. Every day in a cohort resolves to the
+ * same pay date, so any member of the band would do. */
 [[nodiscard]] constexpr int ssaCohortAnchorDay(int cohort) noexcept {
   switch (cohort) {
   case 0:
@@ -38,7 +40,7 @@ namespace PhantomLedger::time {
 
 class Almanac {
 public:
-  /// Constructs an almanac covering [start, endExcl)
+  /* Constructs an almanac covering [start, endExcl) */
   Almanac(TimePoint start, TimePoint endExcl);
 
   explicit Almanac(const Window &window)
@@ -47,7 +49,7 @@ public:
   [[nodiscard]] TimePoint start() const noexcept { return start_; }
   [[nodiscard]] TimePoint endExcl() const noexcept { return endExcl_; }
 
-  /// Midnight on the first day of every month overlapping the window.
+  /* Midnight on the first day of every month overlapping the window. */
   [[nodiscard]] std::span<const TimePoint> monthAnchors() const noexcept {
     return {monthAnchors_.data(), monthAnchors_.size()};
   }
@@ -57,20 +59,20 @@ public:
                                                int hour = 0, int minute = 0,
                                                int second = 0);
 
-  /// Every (month, day-of-month, time) inside the window, clipped to
-  /// [activeStart, activeEndExcl).
+  /* Every (month, day-of-month, time) inside the window, clipped to
+   * [activeStart, activeEndExcl). */
   [[nodiscard]] std::vector<TimePoint> annual(TimePoint activeStart,
                                               TimePoint activeEndExcl,
                                               int month, int day, int hour = 0,
                                               int minute = 0, int second = 0);
 
-  /// IRS 1040-ES estimated tax due dates: Jan 15 (prior-year Q4),
-  /// April 15 (Q1), June 15 (Q2), September 15 (Q3). Filed at 10:00.
+  /* IRS 1040-ES estimated tax due dates: Jan 15 (prior-year Q4),
+   * April 15 (Q1), June 15 (Q2), September 15 (Q3). Filed at 10:00. */
   [[nodiscard]] std::vector<TimePoint> estimatedTax(TimePoint activeStart,
                                                     TimePoint activeEndExcl);
 
-  /// Pay dates for one SSA cohort across the window. `cohort` must
-  /// be in [0, 2].
+  /* Pay dates for one SSA cohort across the window. `cohort` must
+   * be in [0, 2]. */
   [[nodiscard]] std::span<const TimePoint> ssaPayDates(int cohort);
 
 private:

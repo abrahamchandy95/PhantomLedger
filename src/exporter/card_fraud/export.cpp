@@ -38,31 +38,29 @@ namespace time_ns = ::PhantomLedger::time;
 
 using ::PhantomLedger::entity::person::Flag;
 
-// Party ground truth labels fraud ACTORS (ring member, solo fraudster or
-// mule) — victims stay unlabelled (label definition, card-fraud-2026-07).
+/* Party ground truth labels fraud ACTORS (ring member, solo fraudster or
+ * mule). VICTIMS STAY UNLABELLED — that is the label definition. */
 [[nodiscard]] bool isFraudActor(const ent::person::Roster &roster,
                                 ent::PersonId p) {
   return roster.has(p, Flag::fraud) || roster.has(p, Flag::soloFraud) ||
          roster.has(p, Flag::mule);
 }
 
-// ------------------------------------------- THE ZEROED LABEL COLUMNS
-//
-// card-fraud-realism-v2 (gate 1 of docs/card_fraud_online_gnn.md).
-// Card.is_fraud, Party.is_fraud, Device.is_blocked and IP.is_blocked are
-// FULL-WINDOW entity verdicts: "this card ever carried a flag-1 row".
-// Exported as features they answer the training question before the
-// model sees a transaction. The columns stay (TF_GNN_v3 loading jobs map
-// positionally) and carry this value; the investigative content moves to
-// the quarantined kGroundTruthLabel table below.
+/* THE ZEROED LABEL COLUMNS (gate 1 of docs/card_fraud_online_gnn.md).
+ * Card.is_fraud, Party.is_fraud, Device.is_blocked and IP.is_blocked are
+ * FULL-WINDOW entity verdicts: "this card ever carried a flag-1 row".
+ * Exported as features they answer the training question before the model
+ * sees a transaction. The columns stay, because TF_GNN_v3's loading jobs
+ * map positionally, and carry this value; the investigative content lives
+ * in the quarantined kGroundTruthLabel table. */
 inline constexpr std::int32_t kLabelWithheld = 0;
 
-// The label overlay: POSITIVES ONLY, joinable 1:1 to the vertex tables
-// by (entity_type, entity_id). Bounded by the number of fraud-touched
-// entities, which is a small fraction of the roster — accumulated here
-// so the single table writer runs once, after every labelled source has
-// been walked in its own deterministic order (cards by Key, parties by
-// PersonId, devices then IPs in record order).
+/* The label overlay: POSITIVES ONLY, joinable 1:1 to the vertex tables by
+ * (entity_type, entity_id). Bounded by the number of fraud-touched
+ * entities, a small fraction of the roster. Accumulated here so the single
+ * table writer runs once, after every labelled source has been walked in
+ * its own deterministic order (cards by Key, parties by PersonId, devices
+ * then IPs in record order). */
 struct GroundTruthRow {
   std::string_view entityType;
   std::string entityId;
@@ -91,11 +89,11 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
 
   std::vector<GroundTruthRow> groundTruth;
 
-  // ------------------------------------------- Card + Party_Has_Card
-  // Credit cards resolve their owner through the card registry; the
-  // derived debit cards through the account registry. Ownerless
-  // sources (external accounts, if any reach the view) get a Card
-  // vertex but no Party_Has_Card edge.
+  /* ------------------------------------------ Card + Party_Has_Card
+   * Credit cards resolve their owner through the card registry, derived
+   * debit cards through the account registry. Ownerless sources (external
+   * accounts, if any reach the view) get a Card vertex but no
+   * Party_Has_Card edge. */
   std::unordered_map<ent::Key, ent::PersonId> accountOwner;
   accountOwner.reserve(world.holdings.accounts.registry.records.size());
   for (const auto &record : world.holdings.accounts.registry.records) {
@@ -108,20 +106,20 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
 
     std::size_t cardVertices = 0;
     for (const auto &[key, seen] : artifacts.cards) {
-      // card-churn-2026-07: ONE VERTEX PER OBSERVED GENERATION. An account
-      // whose card was replaced mid-window contributes two `cf_Card` rows and
-      // two `cf_Party_Has_Card` edges, which is what makes reissue visible in
-      // the graph at all.
-      //
-      // Observed, never scheduled: a generation with no transaction in the
-      // view must not become a vertex, for the same reason `cf_Merchant` is
-      // restricted to view-observed merchants — the loader rejects an edge
-      // pointing at a vertex a prefix has not written.
-      //
-      // The generation set is never empty for a card that reached the view:
-      // the streaming pass inserts on every row it accepts. The fallback
-      // below keeps a direct unit caller (one that populates `cards` by hand)
-      // working rather than silently emitting nothing.
+      /* ONE VERTEX PER OBSERVED GENERATION. An account whose card was
+       * replaced mid-window contributes two `cf_Card` rows and two
+       * `cf_Party_Has_Card` edges, which is what makes reissue visible in
+       * the graph at all.
+       *
+       * OBSERVED, NEVER SCHEDULED: a generation with no transaction in the
+       * view must not become a vertex, for the same reason `cf_Merchant` is
+       * restricted to view-observed merchants — the loader rejects an edge
+       * pointing at a vertex a prefix has not written.
+       *
+       * The generation set is never empty for a card that reached the view:
+       * the streaming pass inserts on every row it accepts. The fallback
+       * below keeps a direct unit caller (one populating `cards` by hand)
+       * working rather than silently emitting nothing. */
       ent::PersonId owner = ent::invalidPerson;
       if (seen.credit) {
         if (const auto *terms = world.holdings.creditCards.forKey(key)) {
@@ -141,9 +139,10 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
         card.writer().writeRow(id, kLabelWithheld);
         ++cardVertices;
         if (seen.fraud) {
-          // The overlay is entity-level and stays quarantined. Every
-          // generation of a fraud-touched account is labelled, because the
-          // overlay's unit is the CARD IDENTITY and each generation is one.
+          /* The overlay is entity-level and stays quarantined. Every
+           * generation of a fraud-touched account is labelled, because the
+           * overlay's unit is the CARD IDENTITY and each generation is
+           * one. */
           groundTruth.push_back({"card", id, "ever_fraud"});
         }
         if (ent::valid(owner)) {
@@ -156,17 +155,16 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     hasCard.close();
   }
 
-  // ------------------- Merchant, Merchant_Assigned, the geo chain
-  //
-  // geo-causal-v1: a merchant's outlet geography is the WORLD-modeled
-  // `entity::merchant::Record.location` (assigned in G1c, population-
-  // weighted), resolved through the pinned catalogue — NO longer hashed
-  // at export. An `online` merchant (Footprint::online → invalidGeoArea)
-  // is geography-free: it gets Merchant + Merchant_Assigned but NO
-  // Has_City/Has_State/Has_Zip, exactly like TabFormer's Online rows
-  // (which carry no merchant geography). Non-catalog destinations (the
-  // fraud rail's biller fallback) likewise have no modeled location and
-  // stay geo-free.
+  /* ------------------ Merchant, Merchant_Assigned, the geo chain
+   *
+   * A merchant's outlet geography is the WORLD-modelled
+   * `entity::merchant::Record.location` (population-weighted), resolved
+   * through the pinned catalogue — never hashed at export. An `online`
+   * merchant (Footprint::online -> invalidGeoArea) is geography-free: it
+   * gets Merchant + Merchant_Assigned but NO Has_City/Has_State/Has_Zip,
+   * exactly like TabFormer's Online rows. Non-catalog destinations (the
+   * fraud rail's biller fallback) likewise have no modelled location and
+   * stay geo-free. */
   const auto &roster = world.people.roster.roster;
   const auto &pii = world.people.pii;
 
@@ -176,29 +174,29 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     merchantByKey.emplace(record.counterpartyId, &record);
   }
 
-  // merchant-coordinates-2026-07: `coords` is the area centroid in decimal
-  // degrees, carried alongside the identifiers it already resolves so the
-  // City/Zipcode writers below report the SAME point the merchant does. A
-  // city or zip is first-writer-wins here exactly as `population` already
-  // was, so all three attributes of a City row come from ONE area — never
-  // a population from one area and a centroid from another.
+  /* `coords` is the area centroid in decimal degrees, carried alongside the
+   * identifiers this loop already resolves so the City/Zipcode writers
+   * below report the SAME point the merchant does. A city or zip is
+   * first-writer-wins here, exactly as `population` is, so all three
+   * attributes of a City row come from ONE area — never a population from
+   * one area and a centroid from another. */
   struct Coords {
     double lat = 0.0;
     double lon = 0.0;
   };
-  struct CityInfo {
+  struct CityRow {
     std::string name;
     std::string state;
     std::uint32_t population = 0;
     Coords coords;
   };
-  struct ZipInfo {
+  struct ZipRow {
     std::string cityId;
     Coords coords;
   };
-  std::map<std::string, CityInfo> cities;
+  std::map<std::string, CityRow> cities;
   std::set<std::string> states;
-  std::map<std::string, ZipInfo> zipToCity;
+  std::map<std::string, ZipRow> zipToCity;
 
   {
     auto merchant = cmn::openTable(target, sch::kMerchant);
@@ -218,8 +216,8 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
                                 : derive::fallbackCategory(key);
       assigned.writer().writeRow(id, merchants::name(category));
 
-      // Only a physical outlet with a modeled catalogue area gets a
-      // location; online merchants and non-catalog billers are geo-free.
+      /* Only a physical outlet with a modelled catalogue area gets a
+       * location; online merchants and non-catalog billers are geo-free. */
       if (mit == merchantByKey.end() ||
           !geo::geography().contains(mit->second->location)) {
         continue;
@@ -235,16 +233,15 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
       hasState.writer().writeRow(id, state);
       hasCity.writer().writeRow(id, cityId);
       hasZip.writer().writeRow(id, zipcode);
-      // Row presence IS the has_coordinates mask: only this branch — a
-      // catalog merchant with a valid modelled area — reaches it, so an
-      // online merchant or non-catalog biller is ABSENT rather than
-      // carrying a fake 0,0 that reads as the Gulf of Guinea.
+      /* Row presence IS the has_coordinates mask: only this branch — a
+       * catalog merchant with a valid modelled area — reaches it, so an
+       * online merchant or non-catalog biller is ABSENT rather than
+       * carrying a fake 0,0 that reads as the Gulf of Guinea. */
       merchantLocation.writer().writeRow(id, coords.lat, coords.lon);
 
-      cities.emplace(cityId,
-                     CityInfo{cityName, state, area.population, coords});
+      cities.emplace(cityId, CityRow{cityName, state, area.population, coords});
       states.insert(state);
-      zipToCity.emplace(zipcode, ZipInfo{cityId, coords});
+      zipToCity.emplace(zipcode, ZipRow{cityId, coords});
     }
     out.merchantCount = artifacts.merchants.size();
     merchant.close();
@@ -255,33 +252,29 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     merchantLocation.close();
   }
 
-  // ------------------------------------------- PARTY HOME GEOGRAPHY
-  //
-  // party-geography-2026-07. This pass runs BEFORE the City/State/Zipcode
-  // writers below, and the ordering is load-bearing: a party home area the
-  // merchant loop never visited must become a City/State/Zipcode VERTEX
-  // too, or its edge dangles and the downstream loader rejects it. Party
-  // areas are therefore unioned into the same three containers merchant
-  // geography fills, which is also why `Assigned_To` and `Located_In` now
-  // span both populations.
-  //
-  // The vertex tables stay correctly classified despite the union: their
-  // party half is prefix-invariant (the relocation schedule is world state
-  // fixed before the fold) while their merchant half still grows with the
-  // stream, so `City` remains keyed-stable and `Zipcode`/`State` remain line
-  // subsets.
-  //
-  // Full roster, matching `cf_Party`'s own loop bound exactly, so no edge
-  // can point at a Party vertex that was not written. DRAW-FREE — this reads
-  // world state assigned long before any transaction settled.
-  //
-  // relocation-2026-07: ONE ROW PER TENURE, each stamped with the epoch it
-  // began. EVERY tenure is emitted, not just the ones live at window end,
-  // because a transaction in year 3 must resolve the year-3 home — and every
-  // tenure's area is unioned into the vertex tables for the same
-  // dangling-edge reason the merchant pass has. A party who never moves emits
-  // exactly one row at the window start, so the pre-round shape is the no-move
-  // case rather than a special case.
+  /* ------------------------------------------ PARTY HOME GEOGRAPHY
+   *
+   * THIS PASS MUST RUN BEFORE THE City/State/Zipcode WRITERS BELOW. A party
+   * home area the merchant loop never visited must become a
+   * City/State/Zipcode VERTEX too, or its edge dangles and the downstream
+   * loader rejects it. Party areas are therefore unioned into the same
+   * three containers merchant geography fills, which is also why
+   * `Assigned_To` and `Located_In` span both populations.
+   *
+   * The vertex tables stay correctly classified despite the union: their
+   * party half is prefix-invariant (the relocation schedule is world state
+   * fixed before the fold) while their merchant half grows with the stream,
+   * so `City` stays keyed-stable and `Zipcode`/`State` stay line subsets.
+   *
+   * Full roster, matching `cf_Party`'s own loop bound exactly, so no edge
+   * can point at a Party vertex that was not written. DRAW-FREE: this reads
+   * world state assigned long before any transaction settled.
+   *
+   * ONE ROW PER TENURE, each stamped with the epoch it began. EVERY tenure
+   * is emitted, not just the ones live at window end, because a transaction
+   * in year 3 must resolve the year-3 home — and every tenure's area is
+   * unioned into the vertex tables for the same dangling-edge reason. A
+   * party who never moves emits exactly one row at the window start. */
   {
     auto hasStdCity = cmn::openTable(target, sch::kHasStdCity);
     auto hasStdPostcode = cmn::openTable(target, sch::kHasStdPostcode);
@@ -305,9 +298,9 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
       hasStdPostcode.writer().writeRow(partyStr.view(), zipcode, since);
       hasStdState.writer().writeRow(partyStr.view(), state, since);
 
-      cities.emplace(cityId, CityInfo{cityName, state, row.population, coords});
+      cities.emplace(cityId, CityRow{cityName, state, row.population, coords});
       states.insert(state);
-      zipToCity.emplace(zipcode, ZipInfo{cityId, coords});
+      zipToCity.emplace(zipcode, ZipRow{cityId, coords});
     };
 
     const auto windowStart = time::toEpochSeconds(options.window.start);
@@ -317,13 +310,12 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
         break;
       }
       const auto tenures =
-          relocation != nullptr ? relocation->tenures(p)
-                                : std::span<const ent::parties::relocation::
-                                                Tenure>{};
+          relocation != nullptr
+              ? relocation->tenures(p)
+              : std::span<const ent::parties::relocation::Tenure>{};
       if (tenures.empty()) {
-        // No schedule bound (a direct unit caller, or a zero-day window):
-        // fall back to the static home, stamped at the window start. This is
-        // the pre-round row exactly.
+        /* No schedule bound (a direct unit caller, or a zero-day window):
+         * fall back to the static home, stamped at the window start. */
         emitArea(p, pii.records[p - 1].address.geoArea, windowStart);
         continue;
       }
@@ -374,13 +366,11 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     category.close();
   }
 
-  // ----------------------------------------------------------- Party
-  // H3 part 3c-ii: THE one membership construction path — the Party
-  // created_at reports the same [joinTs, ...) axis the standard
-  // exporter's customer.csv does (the retired flat-Growth view gone).
-  // It is also the reason Party carries no other point-in-time debt:
-  // created_at is when the customer relationship began, not a
-  // window-wide constant.
+  /* ---------------------------------------------------------- Party
+   * THE one membership construction path: Party created_at reports the same
+   * [joinTs, ...) axis the standard exporter's customer.csv does. It is
+   * also why Party carries no other point-in-time debt — created_at is when
+   * the customer relationship began, not a window-wide constant. */
   const ::PhantomLedger::synth::pii::Membership membership =
       ::PhantomLedger::synth::personas::join_cohort::membershipOf(
           world.people.personas, options.window);
@@ -406,34 +396,26 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     party.close();
   }
 
-  // ------------------------------------------------- Is_Merchant
-  //
-  // NO LONGER HEADER-ONLY (merchant-ownership-2026-07). The note it
-  // carried — "no modeled merchant-owning-party link (business owners own
-  // accounts, not catalog merchants)" — was an accurate reading of the
-  // world: `Role::business` keys and `Role::merchant` keys were disjoint
-  // populations that were never joined.
-  //
-  // Leaving it empty was not free, and the cost landed OUTSIDE this
-  // repository: `tf_gnn_loader_v2` aborts the entire push at
-  // `sql/postgres/001_validate_sources.sql` with "cf_Is_Merchant is empty;
-  // Party_Is_Merchant edges would not load". The graph schema declares
-  // `Party_Is_Merchant(FROM Party, TO Merchant)` with reverse edge
-  // `Merchant_Owned_By_Party`, so the semantics is ownership.
-  //
-  // `Record::owner` now carries the institution's beneficial-owner record,
-  // resolved draw-free from the merchant KEY ALONE so that owner-edge
-  // presence cannot correlate with footprint, size or geography — which
-  // matters because fraud destination selection IS footprint-conditioned.
-  // See entities/counterparties/merchant_ownership.hpp for that argument.
-  //
-  // RESTRICTED TO MERCHANTS OBSERVED IN THE VIEW, because `cf_Merchant`
-  // above is built from `artifacts.merchants` and is therefore a GROWING
-  // stream-derived vertex set. Emitting the world's whole register would
-  // dangle edges at merchant vertices that a prefix export has not
-  // written yet — the loader validates exactly that, and
-  // test_card_point_in_time classifies this table as a growing line
-  // subset for the same reason.
+  /* ------------------------------------------------ Is_Merchant
+   *
+   * MUST NOT BE EMPTY. `tf_gnn_loader_v2` aborts the entire push at
+   * `sql/postgres/001_validate_sources.sql` with "cf_Is_Merchant is empty;
+   * Party_Is_Merchant edges would not load". The graph schema declares
+   * `Party_Is_Merchant(FROM Party, TO Merchant)` with reverse edge
+   * `Merchant_Owned_By_Party`, so the semantics is ownership.
+   *
+   * `Record::owner` carries the institution's beneficial-owner record,
+   * resolved DRAW-FREE FROM THE MERCHANT KEY ALONE so owner-edge presence
+   * cannot correlate with footprint, size or geography — which matters
+   * because fraud destination selection IS footprint-conditioned. See
+   * entities/counterparties/merchant_ownership.hpp for that argument.
+   *
+   * RESTRICTED TO MERCHANTS OBSERVED IN THE VIEW, because `cf_Merchant`
+   * above is built from `artifacts.merchants` and is therefore a GROWING
+   * stream-derived vertex set. Emitting the world's whole register would
+   * dangle edges at merchant vertices a prefix export has not written yet;
+   * the loader validates exactly that, and test_card_point_in_time
+   * classifies this table as a growing line subset for the same reason. */
   {
     auto isMerchant = cmn::openTable(target, sch::kIsMerchant);
     for (const auto &key : artifacts.merchants) {
@@ -519,10 +501,9 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     for (const auto &v : emails) {
       email.writer().writeRow(v);
     }
-    // Email LSH layer (owner request): bucket vertices plus the
-    // Email -> bucket edges, derived from the email string alone via
-    // the shared minhash wrapper — deterministic, draw-free, so the
-    // corpus stream cannot move.
+    /* Email LSH layer: bucket vertices plus the Email -> bucket edges,
+     * derived from the email string alone via the shared minhash wrapper.
+     * Deterministic and draw-free, so the corpus stream cannot move. */
     namespace minhash = ::PhantomLedger::exporter::common::minhash;
     auto hasEmailMinhash = cmn::openTable(target, sch::kHasEmailMinhash);
     std::set<minhash::BucketId> emailBuckets;
@@ -558,53 +539,47 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     dob.close();
   }
 
-  // ===================================================================
-  // DEVICES AND IPs — THE MESSAGE-PASSING LAYER
-  //
-  // The vertex universe is the UNION of the synthesized roster and the
-  // event-time session endpoints observed in the card view. Unauthorized
-  // attackers are exogenous, so their endpoints need not belong to a
-  // customer roster; omitting them made "session endpoint absent from
-  // cf_Device/cf_IP" a deterministic card-fraud shortcut.
-  //
-  // The modelled flag / blacklist verdicts are whole-window
-  // investigative facts, so is_blocked is withheld here and the verdicts
-  // go to the ground-truth overlay.
-  //
-  // ---------------- Has_Device / Has_IP ARE NO LONGER HEADER-ONLY
-  //
-  // They shipped empty for four rounds, and the reason was sound at the
-  // time: every legitimate endpoint had an owning Party and NO attacker
-  // endpoint did, so "no Party edge" was an exact synonym for "attacker
-  // endpoint" — a free, perfect label. But that was a property of the
-  // GENERATOR, not of the world. Two generator changes removed it
-  // (attacker-infra-2026-07), and the fix had to be there rather than
-  // here:
-  //
-  //   1. `infra::enrollment` models the institution's endpoint registry
-  //      as INCOMPLETE, which it is in production. A customer endpoint
-  //      not on file carries ordinary legitimate rows, so "no Party
-  //      edge" no longer implies fraud.
-  //   2. The fraud planner puts a declared share of unauthorized cases
-  //      on the VICTIM'S OWN endpoint (remote-access / household
-  //      compromise) and routes a share of operator sessions through a
-  //      RESIDENTIAL PROXY — some other customer's address. So on-file
-  //      endpoints carry fraud, and "Party edge present" no longer
-  //      implies legitimate.
-  //
-  // Both directions are now weak, which is what production looks like,
-  // and `tests/test_card_endpoint_graph.cpp` SIZES the residual lift and
-  // fails if it climbs back toward determinism. Withholding the topology
-  // was never free: with `Has_*` empty and no transaction->endpoint edge
-  // type in TF_GNN_v3, Device and IP were UNREACHABLE — isolated
-  // vertices, zero message passing, the entire endpoint layer inert.
-  //
-  // WORLD-DERIVED, NOT STREAM-DERIVED. Both tables are built from
-  // `world.infra.*.usages` alone, never from `artifacts`.
-  // tests/test_card_point_in_time.cpp classifies them as world-derived
-  // and requires full-vs-prefix BYTE IDENTITY, which a stream-observed
-  // edge set could not satisfy. `enrolled` is a draw-free hash of
-  // (party, endpoint), so it is identical in every prefix.
+  /* ==================================================================
+   * DEVICES AND IPs — THE MESSAGE-PASSING LAYER
+   *
+   * The vertex universe is the UNION of the synthesized roster and the
+   * event-time session endpoints observed in the card view. Unauthorized
+   * attackers are exogenous, so their endpoints need not belong to a
+   * customer roster; DO NOT OMIT THEM — that makes "session endpoint absent
+   * from cf_Device/cf_IP" a deterministic card-fraud shortcut.
+   *
+   * The modelled flag / blacklist verdicts are whole-window investigative
+   * facts, so is_blocked is withheld here and the verdicts go to the
+   * ground-truth overlay.
+   *
+   * DO NOT WITHHOLD Has_Device / Has_IP. With them empty and no
+   * transaction->endpoint edge type in TF_GNN_v3, Device and IP are
+   * UNREACHABLE — isolated vertices, zero message passing, the entire
+   * endpoint layer inert. They were once withheld because every legitimate
+   * endpoint had an owning Party and NO attacker endpoint did, making "no
+   * Party edge" a free, perfect label. That was a property of the
+   * GENERATOR, and the generator no longer has it:
+   *
+   *   1. `infra::enrollment` models the institution's endpoint registry as
+   *      INCOMPLETE, which it is in production. A customer endpoint not on
+   *      file carries ordinary legitimate rows, so "no Party edge" does not
+   *      imply fraud.
+   *   2. The fraud planner puts a declared share of unauthorized cases on
+   *      the VICTIM'S OWN endpoint (remote-access / household compromise)
+   *      and routes a share of operator sessions through a RESIDENTIAL
+   *      PROXY — some other customer's address. So on-file endpoints carry
+   *      fraud, and "Party edge present" does not imply legitimate.
+   *
+   * Both directions are weak, which is what production looks like, and
+   * `tests/test_card_endpoint_graph.cpp` SIZES the residual lift and fails
+   * if it climbs back toward determinism.
+   *
+   * WORLD-DERIVED, NEVER STREAM-DERIVED. Both tables are built from
+   * `world.infra.*.usages` alone, never from `artifacts`.
+   * tests/test_card_point_in_time.cpp classifies them world-derived and
+   * requires full-vs-prefix BYTE IDENTITY, which a stream-observed edge set
+   * could not satisfy. `enrolled` is a draw-free hash of (party, endpoint),
+   * so it is identical in every prefix. */
   {
     const auto &attackers = world.infra.attackers;
 
@@ -616,18 +591,18 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
         it->second = it->second || record.flagged;
       }
     }
-    // THE LABELLING GAP, CLOSED. Attacker endpoints reach the exporter
-    // only through `artifacts`, and this line used to hard-code `false`
-    // — so the only `device/flagged` positives in the whole overlay were
-    // the five AML ring-shared devices, which enter the card view only
-    // through a ring member's LEGITIMATE purchase. Entity-level device
-    // ground truth was therefore both vanishing and ANTI-CORRELATED
-    // with the transaction label. Attacker infrastructure is now a
-    // world-known set, so the verdict can be truthful.
-    //
-    // A residential-proxy address is deliberately NOT marked: the
-    // address belongs to a customer and is not attacker infrastructure,
-    // whatever passed through it.
+    /* THE VERDICT MUST COME FROM `attackers`, NOT A CONSTANT. Attacker
+     * endpoints reach the exporter only through `artifacts`; hard-coding
+     * `false` here leaves the only `device/flagged` positives in the whole
+     * overlay as the five AML ring-shared devices, which enter the card
+     * view solely through a ring member's LEGITIMATE purchase — making
+     * entity-level device ground truth both vanishing and ANTI-CORRELATED
+     * with the transaction label. Attacker infrastructure is a world-known
+     * set, so the verdict can be truthful.
+     *
+     * A residential-proxy address is deliberately NOT marked: the address
+     * belongs to a customer and is not attacker infrastructure, whatever
+     * passed through it. */
     for (const auto &identity : artifacts.devices) {
       const bool attackerOwned = attackers.ownsDevice(identity);
       auto [it, inserted] = deviceUniverse.try_emplace(identity, attackerOwned);
@@ -645,9 +620,9 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
       }
     }
 
-    // Sorted by (party, endpoint) so the byte order is a property of the
-    // world and not of usage-vector order, which future generator work
-    // is free to change.
+    /* Sorted by (party, endpoint) so the byte order is a property of the
+     * world and not of usage-vector order, which generator work is free to
+     * change. */
     {
       std::set<std::pair<ent::PersonId, devices::Identity>> onFile;
       for (const auto &usage : world.infra.devices.usages) {
@@ -711,11 +686,11 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
     ip.close();
   }
 
-  // ------------------------------------------ investigative ground truth
-  // Outside the feature graph by construction: no TF_GNN_v3 loading job
-  // reads this table and no edge points at it. Every row is a
-  // whole-window fact, which is exactly why it may not be joined back
-  // into a model's inputs.
+  /* ----------------------------------------- investigative ground truth
+   * Outside the feature graph by construction: no TF_GNN_v3 loading job
+   * reads this table and no edge points at it. Every row is a whole-window
+   * fact, which is exactly why it may not be joined back into a model's
+   * inputs. */
   {
     auto labels = cmn::openTable(target, sch::kGroundTruthLabel);
     for (const auto &row : groundTruth) {
@@ -733,8 +708,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
   const auto txns =
       std::span<const ::PhantomLedger::transactions::Transaction>{postedTxns};
 
-  // The SAME sink the windowed engine streams through, run over the
-  // retained corpus as one batch — the engines cannot drift.
+  /* The SAME sink the windowed engine streams through, run over the
+   * retained corpus as one batch — the engines cannot drift. */
   StreamingCardFraudExport sink({
       .registry = &result.holdings.accounts.registry,
       .lookup = &result.holdings.accounts.lookup,

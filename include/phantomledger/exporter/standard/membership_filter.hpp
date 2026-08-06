@@ -1,14 +1,11 @@
 #pragma once
-//
-// phantomledger/exporter/standard/membership_filter.hpp
-//
-// The standard exporter's membership view of the corpus: a settled row
-// is visible only while BOTH endpoint owners have joined (the same
-// activeAt predicate the streaming twin applies per row). Lives with
-// its only consumer (untangling round, 2026-07-19): filtering
-// TRANSACTIONS is an export-side concern — the synth layer models
-// membership, it never reads the corpus.
-//
+/*
+  Standard Export Membership View
+  A settled row is visible only while BOTH endpoint owners have joined — the
+  same activeAt predicate the streaming twin applies per row. Lives with its
+  only consumer: filtering TRANSACTIONS is an export-side concern, since the
+  synth layer models membership and never reads the corpus.
+ */
 
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"

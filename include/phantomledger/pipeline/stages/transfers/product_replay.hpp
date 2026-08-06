@@ -22,15 +22,16 @@ class ProductTxnEmitter {
 public:
   using Transaction = transactions::Transaction;
 
-  // RAM R2.2.1c: the emitter derives the whole-window obligation stream
-  // transiently through `obligationSynthesis.generateWindow(people, ...)`
-  // — the world no longer retains it (synthesize keeps only the burden
-  // slice). The synthesis MUST be the same configuration that built the
-  // world's portfolio terms, or the replay is not a replay.
-  ProductTxnEmitter(
-      time::Window window, std::uint64_t seed, random::Rng &rng,
-      const transactions::Factory &txf, const pipeline::People &people,
-      const stages::products::ObligationSynthesis &obligationSynthesis) noexcept;
+  /* The emitter derives the whole-window obligation stream transiently
+   * through `obligationSynthesis.generateWindow(people, ...)`; the world
+   * retains only the burden slice. The synthesis MUST be the same
+   * configuration that built the world's portfolio terms, or the replay is not
+   * a replay. */
+  ProductTxnEmitter(time::Window window, std::uint64_t seed, random::Rng &rng,
+                    const transactions::Factory &txf,
+                    const pipeline::People &people,
+                    const stages::products::ObligationSynthesis
+                        &obligationSynthesis) noexcept;
 
   [[nodiscard]] std::vector<Transaction>
   premiums(const pipeline::Holdings &holdings,

@@ -69,13 +69,13 @@ legitWorldInputs(const pipeline::People &people,
       .counterparties = &cps.counterparties,
       .landlords = &cps.landlords,
       .merchants = &cps.merchants,
-      // geo-causal-v1 (G2a): the compact per-person home carrier (a span
-      // into People::homeAreas, which outlives the builder). Reaches the
-      // spending market via RoutineResources → CensusSource so BOTH the
-      // windowed and monolith engines select from the same home areas.
+      /* The compact per-person home carrier: a span into People::homeAreas,
+       * which outlives the builder. Reaches the spending market via
+       * RoutineResources → CensusSource, so BOTH the windowed and monolith
+       * engines select from the same home areas. */
       .homeAreas = people.homeAreas,
-      // relocation-2026-07: the home-area HISTORY behind the snapshot, so both
-      // engines refresh from one schedule.
+      /* The home-area HISTORY behind the snapshot, so both engines refresh
+       * from one schedule. */
       .relocation = &people.relocation,
   };
 }
@@ -97,8 +97,8 @@ requireObligationSynthesis(const stages::products::ObligationSynthesis *p) {
     throw std::runtime_error(
         "transfers::TransferStage: obligation synthesis not set; call "
         ".obligationSynthesis(pipeline products) before generating product "
-        "rows (RAM R2.2.1c: the emitters replay it for the whole-window "
-        "obligation stream)");
+        "rows — RAM R2.2.1c: the emitters replay it for the whole-window "
+        "obligation stream");
   }
   return *p;
 }
@@ -156,16 +156,15 @@ TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
           .rng = rng,
           .router = &infra.router,
           .ringInfra = &infra.ringInfra,
-          // attacker-infra-2026-07: the exogenous endpoint pool. THE
-          // WINDOWED ENGINE MUST PASS THE SAME POINTER — an asymmetry
-          // here is an immediate test_arch_equivalence divergence,
-          // because the two engines would resolve different sessions for
-          // the same case.
+          /* The exogenous attacker endpoint pool. THE WINDOWED ENGINE MUST
+           * PASS THE SAME POINTER — an asymmetry here is an immediate
+           * test_arch_equivalence divergence, because the two engines would
+           * resolve different sessions for the same case. */
           .attackers = &infra.attackers,
           .fraudSeed = legit_.runScope().seed ^ 0x9E3779B97F4A7C15ULL,
       },
-      // H3 part 3c-ii: the timeline carrier gives each ring plan its
-      // alive horizon — ring scheduling never recruits the dead.
+      /* The timeline carrier gives each ring plan its alive horizon: ring
+       * scheduling never recruits the dead. */
       fraud_.ringView(people.roster.topology, people.personas.timelines),
       FraudEmission::accountView(holdings.accounts.registry,
                                  holdings.accounts.ownership),

@@ -11,17 +11,17 @@
 #include "phantomledger/synth/cards/seeds.hpp"
 #include "phantomledger/synth/counterparties/make.hpp"
 #include "phantomledger/synth/family/pick.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
+#include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
+#include "phantomledger/synth/merchants/lifecycle.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
-#include "phantomledger/synth/merchants/lifecycle.hpp"
 #include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/dob.hpp"
 #include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/personas/make.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
-#include "phantomledger/synth/geo/catalog.hpp"
-#include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/synth/pii/relocation_build.hpp"
@@ -67,36 +67,36 @@ buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
               const sy::pii::IdentityContext &identity,
               const sy::personas::Mix &mix) {
   const std::uint64_t personasSeed = rng.nextU64();
-  auto pack = sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
+  auto pack =
+      sy::personas::makePack(rng, people.roster.count, personasSeed, mix);
 
-  // H3 part 3c-ii: the JOIN-COHORT carrier FIRST — BEA-sized joiner
-  // count, one isolated {"join-cohort", personId} draw per joiner
-  // (authority U-8 addendum). identity.windowDays == 0 (direct unit
-  // harnesses) leaves everyone a member from the start; the dob and
-  // timeline anchors below then reduce to the pre-3c-ii shape.
+  /* The JOIN-COHORT carrier FIRST: a BEA-sized joiner count, one isolated
+   * {"join-cohort", personId} draw per joiner (authority U-8 addendum).
+   * identity.windowDays == 0 (direct unit harnesses) leaves everyone a member
+   * from the start, and the dob and timeline anchors below then reduce to a
+   * no-cohort shape. */
   pack.joinDays = sy::personas::join_cohort::deriveJoinDays(
       identity.worldSeed, people.roster.count,
       pl::time::Window{.start = identity.simStart,
                        .days = identity.windowDays});
 
-  // H2 step 2a: the single-age-axis carrier, drawn on the isolated
-  // {"dob", personId} lanes (worldSeed factory) — never the shared
-  // entity stream, so assignment and profiles above are untouched.
-  // PII rendering, SSA cohorts and the persona timeline all read it.
-  // H3 3c-ii: joiners anchor at their JOIN date (the axis repair).
-  pack.birthDates = sy::personas::birthDates(identity.worldSeed,
-                                             identity.simStart,
-                                             pack.assignment, pack.joinDays);
+  /* The single-age-axis carrier, drawn on the isolated {"dob", personId}
+   * lanes (worldSeed factory) — never the shared entity stream, so the
+   * assignment and profiles above are untouched. PII rendering, SSA cohorts
+   * and the persona timeline all read it; a joiner anchors at their JOIN
+   * date. */
+  pack.birthDates = sy::personas::birthDates(
+      identity.worldSeed, identity.simStart, pack.assignment, pack.joinDays);
 
-  // H2 step 2b: the persona timeline per person, on the isolated
-  // {"persona-era", personId} lanes off the same factory. Salary
-  // selection/spans, SSA onset and revenue gating read personaAt.
-  // H3 3c-ii: the seed-state clamps and the lifespan's alive
-  // invariant bind at each person's own anchor (join date for the
-  // cohort), so a joiner dies strictly after joining.
+  /* The persona timeline per person, on the isolated
+   * {"persona-era", personId} lanes off the same factory. Salary
+   * selection/spans, SSA onset and revenue gating read personaAt. The
+   * seed-state clamps and the lifespan's alive invariant bind at each person's
+   * own anchor — the join date for the cohort — so a joiner dies strictly
+   * after joining. */
   pack.timelines = sy::personas::timeline::deriveAll(
-      identity.worldSeed, identity.simStart, pack.assignment,
-      pack.birthDates, pack.joinDays);
+      identity.worldSeed, identity.simStart, pack.assignment, pack.birthDates,
+      pack.joinDays);
   return pack;
 }
 
@@ -108,8 +108,8 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
   assert(identity.pools != nullptr &&
          "buildPii: IdentityContext::pools must be set. main is the sole "
          "owner of the PoolSet pointer.");
-  // H2 step 2a: the roster renders each Dob from the pack's carrier
-  // (single age axis) — the Generator draws no dob on the shared stream.
+  /* The roster renders each Dob from the pack's carrier (single age axis), so
+   * the Generator draws no dob on the shared stream. */
   identity.birthDates = &personas.birthDates;
   auto pii = sy::pii::make(rng, personas.assignment, identity);
   sy::pii::correlateRingPii(rng, topology, sharing, pii);
@@ -158,18 +158,16 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
   auto catalog = sy::merchants::makeCatalog(rng, population, plan);
-  // Geography and lifecycle both ride isolated per-merchant lanes
-  // (geoSeed), never the shared entity stream `rng`. That keeps a change to
-  // either one from perturbing any other entity-stage value; it does NOT
-  // make the round corpus-neutral, because selection now sees a
-  // time-varying live set.
+  /* Geography and lifecycle both ride isolated per-merchant lanes (geoSeed),
+   * never the shared entity stream `rng`. That keeps a change to either one
+   * from perturbing any other entity-stage value; it does NOT make either
+   * corpus-neutral, because selection sees a time-varying live set. */
   sy::merchants::placeGeography(catalog, geoSeed);
-  // merchant-churn-2026-07, in this order and for this reason: the BASE
-  // catalogue is the incumbent cohort (live when the window opens), and the
-  // replacements appended next are the births that keep the live count from
-  // decaying as incumbents die. Both the append and the interval assignment
-  // ride isolated per-record lanes off geoSeed, so the shared entity stream
-  // `rng` sees exactly the draws it saw before this round.
+  /* This order, for this reason: the BASE catalogue is the incumbent cohort
+   * (live when the window opens), and the replacements appended next are the
+   * births that keep the live count from decaying as incumbents die. Both the
+   * append and the interval assignment ride isolated per-record lanes off
+   * geoSeed, so the shared entity stream `rng` is untouched. */
   sy::merchants::appendChurnReplacements(catalog, window, geoSeed, plan);
   sy::merchants::assignLifecycle(catalog, window, geoSeed, macro);
   return catalog;
@@ -270,7 +268,7 @@ void registerCreditCards(AccountsPack &accounts,
   registerInternal(accounts, keys);
 }
 
-/// Per-person external payees: family members, friends, ad-hoc P2P targets.
+/* Per-person external payees: family members, friends, ad-hoc P2P targets. */
 void registerPerPersonPayees(AccountsPack &accounts,
                              const entity::person::Roster &people) {
   constexpr double externalP = family_rt::kDefaultCounterpartyRouting.externalP;
@@ -305,17 +303,16 @@ void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                                      peopleData.roster.roster, rng, plan);
 }
 
-// merchant-ownership-2026-07. Runs AFTER business owners exist, because
-// the proprietor cohort IS the business-owner cohort — "the owner banks
-// their business here" is what makes the institution able to hold a
-// beneficial-owner record at all.
-//
-// DRAW-FREE: it takes no Rng. The cohort is READ back out of the account
-// registry rather than threaded from `assignBusinessOwners`, so this
-// consumes nothing and moves no corpus byte. Sorted + deduplicated
-// because `ownership::ownerFor` indexes positionally, and an unordered
-// cohort would make the merchant->owner mapping depend on registry
-// iteration order instead of on world state.
+/* Runs AFTER business owners exist, because the proprietor cohort IS the
+ * business-owner cohort — "the owner banks their business here" is what makes
+ * the institution able to hold a beneficial-owner record at all.
+ *
+ * DRAW-FREE: it takes no Rng. The cohort is READ back out of the account
+ * registry rather than threaded from `assignBusinessOwners`, so this consumes
+ * nothing and moves no corpus byte. Sorted and deduplicated because
+ * `ownership::ownerFor` indexes positionally, and an unordered cohort would
+ * make the merchant->owner mapping depend on registry iteration order instead
+ * of on world state. */
 void assignMerchantOwners(pl::entity::merchant::Catalog &merchants,
                           const pl::entity::account::Registry &accounts,
                           double coverage) {

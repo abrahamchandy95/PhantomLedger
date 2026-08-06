@@ -21,44 +21,44 @@ namespace PhantomLedger::pipeline::stages::transfers {
 namespace legit = ::PhantomLedger::transfers::legit;
 namespace fraud_ns = ::PhantomLedger::transfers::fraud;
 
-// Configuration for the windowed two-phase production run.
+/* Configuration for the windowed two-phase production run. */
 struct WindowedRunOptions {
-  // Bounded generation windows; the lookahead covers card finalization
-  // lag so a window's finalized coverage settles cleanly.
+  /* Bounded generation windows; the lookahead covers card finalization lag so
+   * a window's finalized coverage settles cleanly. */
   chunk::Strategy generation{
       .monthsPerChunk = 3,
       .lookaheadDays = 35,
   };
 
-  // Settlement must mirror the monolithic replay schedule (the default
-  // chunk::Strategy: 1 month / 6 days) for the corpora to stay
-  // byte-identical.
+  /* Settlement must mirror the monolithic replay schedule (the default
+   * chunk::Strategy: 1 month / 6 days) for the corpora to stay
+   * byte-identical. */
   chunk::Strategy settlement{};
 
-  // Spending emission workers; nullopt leaves the count machine-resolved,
-  // exactly like the monolithic SpendingRoutine::run. Output is
-  // thread-count-invariant either way (test_thread_invariance).
+  /* Spending emission workers; nullopt leaves the count machine-resolved,
+   * exactly like the monolithic SpendingRoutine::run. Output is
+   * thread-count-invariant either way (test_thread_invariance). */
   std::optional<std::uint32_t> threadCount{};
 
-  // File-backed candidate spool (bounded memory, the production default);
-  // false retains the O(L) in-memory vector spool.
+  /* File-backed candidate spool (bounded memory, the production default);
+   * false retains the O(L) in-memory vector spool. */
   bool binarySpool = true;
 };
 
 struct WindowedRunResult {
   RunSummary summary{};
 
-  // The final posted book, handed off from the driver after Phase B. The
-  // AML exporters' account vertices read balances from it; hash below is
-  // computed from this same book for fingerprint comparison.
+  /* The final posted book, handed off from the driver after Phase B. The AML
+   * exporters' account vertices read balances from it; the hash below is
+   * computed from this same book for fingerprint comparison. */
   std::unique_ptr<clearing::Ledger> postedBook;
 
-  // FNV hash of the final posted book, comparable with
-  // acceptance::hashBook on the monolithic result's book.
+  /* FNV hash of the final posted book, comparable with acceptance::hashBook on
+   * the monolithic result's book. */
   std::uint64_t postedBookHash = 0;
 
-  // Candidate rows/bytes that crossed the Phase A / Phase B boundary
-  // through the binary spool (zero when binarySpool is false).
+  /* Candidate rows/bytes that crossed the Phase A / Phase B boundary through
+   * the binary spool; zero when binarySpool is false. */
   std::uint64_t spoolRows = 0;
   std::uint64_t spoolBytes = 0;
 };
@@ -81,20 +81,18 @@ public:
 
   TransferStage &infra(const pipeline::Infra &value);
 
-  // RAM R2.2.1c: the product emitters derive the whole-window obligation
-  // stream by replaying the world's product synthesis (the world retains
-  // only the burden slice). The pipeline wires its OWN synthesis config
-  // here — the exact object that built the world's portfolio terms —
-  // before mergeProducts() or runWindowed(). Required; both paths throw
-  // without it.
+  /* The product emitters derive the whole-window obligation stream by
+   * replaying the world's product synthesis; the world retains only the burden
+   * slice. The pipeline wires its OWN synthesis config here — the exact object
+   * that built the world's portfolio terms — before mergeProducts() or
+   * runWindowed(). Required: both paths throw without it. */
   TransferStage &obligationSynthesis(
       const stages::products::ObligationSynthesis &value) noexcept;
 
-  // Chunking policy for the monolithic settlement replay (both folds in
-  // pipeline/simulate.cpp). Chunking is orchestration policy, so it
-  // lives pipeline-side (round C-2 — it previously rode along in the
-  // transfers-layer RunScope, which never read it). The windowed path
-  // carries its own strategies in WindowedRunOptions.
+  /* Chunking policy for the monolithic settlement replay (both folds in
+   * pipeline/simulate.cpp). Chunking is orchestration policy, so it lives
+   * pipeline-side; the windowed path carries its own strategies in
+   * WindowedRunOptions. */
   [[nodiscard]] chunk::Strategy settlementChunking() const noexcept;
   TransferStage &settlementChunking(chunk::Strategy value) noexcept;
 
@@ -112,22 +110,20 @@ public:
   makeFraudInjector(random::Rng &rng, const pipeline::People &people,
                     const pipeline::Holdings &holdings) const;
 
-  // Windowed two-phase production run: Session generation and pre-fraud
-  // fold into a candidate spool, exact-realized-count fraud boundary,
-  // post-fraud fold streaming into `sink`. Byte-identical to the
-  // monolithic composition (test_production_windowed); posted rows never
-  // accumulate in memory, and with options.binarySpool the candidate
-  // corpus lives on disk. Rows are validated against the account registry
-  // as they stream through, matching the monolithic posted-corpus
-  // validation.
-  //
-  // Holdings is mutable for exactly one reason (RAM R2.2.1b/c): the
-  // world's obligation pack — now just the burden slice — is consumed
-  // during session preparation and read by nothing later in the fold
-  // (the product source derives its own transient whole-window stream),
-  // so it is released at fold start.
-  // ObligationSynthesis::generateWindow() regenerates any slice
-  // byte-identically on demand. Output is unaffected.
+  /* Windowed two-phase production run: Session generation and pre-fraud fold
+   * into a candidate spool, exact-realized-count fraud boundary, post-fraud
+   * fold streaming into `sink`. Byte-identical to the monolithic composition
+   * (test_production_windowed); posted rows never accumulate in memory, and
+   * with options.binarySpool the candidate corpus lives on disk. Rows are
+   * validated against the account registry as they stream through, matching
+   * the monolithic posted-corpus validation.
+   *
+   * Holdings is mutable for exactly one reason: the world's obligation pack —
+   * just the burden slice — is consumed during session preparation and read by
+   * nothing later in the fold, since the product source derives its own
+   * transient whole-window stream, so it is released at fold start.
+   * ObligationSynthesis::generateWindow() regenerates any slice
+   * byte-identically on demand. Output is unaffected. */
   template <class S>
   [[nodiscard]] WindowedRunResult
   runWindowed(random::Rng &rng, const pipeline::People &people,
@@ -152,20 +148,20 @@ private:
   const stages::products::ObligationSynthesis *obligationSynthesis_ = nullptr;
   chunk::Strategy settlementChunking_{};
 
-  // Pristine snapshot of the router, taken when infra() is set — before
-  // any transfer routing. The Router carries mutable sticky per-person
-  // device/IP state, so routing is order-dependent across generators.
-  // Products route from this copy so product generation cannot perturb
-  // (or be perturbed by) the sticky state that spending and fraud share;
-  // generation order stops being output-defining, which the windowed
-  // decomposition requires. The windowed run takes its product AND family
-  // copies from this same snapshot.
+  /* Pristine snapshot of the router, taken when infra() is set — before any
+   * transfer routing. The Router carries mutable sticky per-person device/IP
+   * state, so routing is order-dependent across generators. Products route
+   * from this copy so product generation cannot perturb, or be perturbed by,
+   * the sticky state that spending and fraud share; generation order stops
+   * being output-defining, which the windowed decomposition requires. The
+   * windowed run takes its product AND family copies from this same
+   * snapshot. */
   ::PhantomLedger::infra::Router productRouter_{};
 };
 
-// Adapts the pipeline's world bundles to the transfers-owned
-// LegitAssembly::WorldInputs view — the single adapter at the
-// pipeline -> transfers layer boundary (round C-2).
+/* Adapts the pipeline's world bundles to the transfers-owned
+ * LegitAssembly::WorldInputs view: the single adapter at the
+ * pipeline -> transfers layer boundary. */
 [[nodiscard]] legit::LegitAssembly::WorldInputs
 legitWorldInputs(const pipeline::People &people,
                  const pipeline::Holdings &holdings,

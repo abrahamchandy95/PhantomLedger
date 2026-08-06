@@ -1,7 +1,7 @@
 #include "phantomledger/app/progress.hpp"
 
 #include <chrono>
-#include <cstdio>
+#include <format>
 #include <iostream>
 #include <utility>
 
@@ -15,15 +15,12 @@ constexpr std::size_t kBarWidth = 32;
 [[nodiscard]] std::string formatElapsed(std::chrono::steady_clock::duration d) {
   using namespace std::chrono;
   const auto totalSec = duration_cast<duration<double>>(d).count();
-  char buf[32];
   if (totalSec < 60.0) {
-    std::snprintf(buf, sizeof(buf), "%.1fs", totalSec);
-  } else {
-    const auto mins = static_cast<int>(totalSec) / 60;
-    const auto secs = static_cast<int>(totalSec) % 60;
-    std::snprintf(buf, sizeof(buf), "%dm%02ds", mins, secs);
+    return std::format("{:.1f}s", totalSec);
   }
-  return buf;
+  const auto mins = static_cast<int>(totalSec) / 60;
+  const auto secs = static_cast<int>(totalSec) % 60;
+  return std::format("{}m{:02}s", mins, secs);
 }
 
 } // namespace
@@ -64,8 +61,8 @@ void Stage::setProgress(std::size_t current) noexcept {
 
 void Stage::setLabel(std::string label) noexcept {
   label_ = std::move(label);
-  // Force a redraw so the new label is visible immediately, even if the last
-  // render was under the throttle interval.
+  /* Force a redraw so the new label is visible immediately, even if the last
+   * render was under the throttle interval. */
   render(/*force=*/true);
 }
 
@@ -100,10 +97,9 @@ void Stage::render(bool force) noexcept {
   }
   bar.push_back(']');
 
-  const auto elapsed = formatElapsed(now - startTime_);
-  std::cerr << '\r' << label_ << ' ' << bar << ' ' << current_ << '/' << total_
-            << " (" << static_cast<int>(pct) << "%)"
-            << " [" << elapsed << "]    ";
+  std::cerr << std::format("\r{} {} {}/{} ({}%) [{}]    ", label_, bar,
+                           current_, total_, static_cast<int>(pct),
+                           formatElapsed(now - startTime_));
   std::cerr.flush();
 }
 

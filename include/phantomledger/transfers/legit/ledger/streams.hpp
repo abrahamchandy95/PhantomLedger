@@ -13,11 +13,11 @@ namespace PhantomLedger::transfers::legit::ledger {
 
 namespace detail {
 
-/// Funds-transfer replay order: the funds key (timestamp, source, target,
-/// amount) totalized by the remaining audit fields as tie-breakers (the
-/// S10 ordering re-pin — see transactions::Comparator). Rows that still
-/// compare equal are byte-identical, so this order is total for every
-/// output-affecting purpose.
+/* Funds-transfer replay order: the funds key (timestamp, source, target,
+ * amount) totalized by the remaining audit fields as tie-breakers (the
+ * S10 ordering re-pin — see transactions::Comparator). Rows that still
+ * compare equal are byte-identical, so this order is total for every
+ * output-affecting purpose. */
 [[nodiscard]] inline bool
 fundsLess(const transactions::Transaction &a,
           const transactions::Transaction &b) noexcept {
@@ -45,7 +45,7 @@ sortForReplay(std::vector<transactions::Transaction> &&txns) {
   return std::move(txns);
 }
 
-/// Merge a new (unsorted) batch into an already-replay-sorted prefix.
+/* Merge a new (unsorted) batch into an already-replay-sorted prefix. */
 [[nodiscard]] inline std::vector<transactions::Transaction>
 mergeReplaySorted(std::vector<transactions::Transaction> existing,
                   std::span<const transactions::Transaction> newItems) {
@@ -97,27 +97,26 @@ public:
     return std::move(replayReady_);
   }
 
-  // RAM R2.4a: the payday-inbound view has exactly one consumer — the
-  // split-deposit routine, immediately after income lands. Only income
-  // rows match the channel filter, so once split deposits have run the
-  // view is dead weight; releasing it also stops further collection.
+  /* The payday-inbound view has exactly one consumer — the split-deposit
+   * routine, immediately after income lands. Only income rows match the
+   * channel filter, so once split deposits have run the view is dead weight;
+   * releasing it also stops further collection. */
   void releasePaydayInbound() noexcept {
     paydayInbound_ = {};
     collectPaydayInbound_ = false;
   }
 
-  // RAM R2.4b-2: once the spending prep has aggregated the screened
-  // view (market paydays, burdens) and the windowed run has spooled it
-  // to disk for the day driver's ledger replay, the resident vector is
-  // dead weight for the rest of the run.
+  /* Once the spending prep has aggregated the screened view (market paydays,
+   * burdens) and the windowed run has spooled it to disk for the day driver's
+   * ledger replay, the resident vector is dead weight for the rest of the
+   * run. */
   void releaseScreened() noexcept { screened_ = {}; }
 
-  // RAM R2.4b-3: the windowed prologue consumes only the screened view
-  // during generation and derives the replay order ONCE at spool time
-  // (windowed_run.cpp) — fundsLess is total for every output-affecting
-  // purpose (S10), so the one-shot sort equals the incremental merge
-  // this skips. Call before the first add(); the monolithic build
-  // keeps both views.
+  /* The windowed prologue consumes only the screened view during generation
+   * and derives the replay order ONCE at spool time (windowed_run.cpp).
+   * fundsLess is total for every output-affecting purpose (S10), so that
+   * one-shot sort equals the incremental merge this skips. MUST be called
+   * before the first add(); the monolithic build keeps both views. */
   void deferReplayView() noexcept { maintainReplayView_ = false; }
 
   void add(std::vector<transactions::Transaction> items) {

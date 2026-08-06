@@ -1,4 +1,11 @@
 #pragma once
+/*
+  Shared PII Rendering For Exporters
+  Turns the indices held on a person's `pii::Record` back into the strings
+  exporters write — name, birthdate, street, and the home (city, state,
+  postcode) tuple. Rendering only: it draws nothing and invents nothing, so
+  every exporter that calls it reports the same PII for the same person.
+ */
 
 #include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/synth/geo/catalog.hpp"
@@ -61,16 +68,15 @@ namespace geo = ::PhantomLedger::synth::geo;
   return {};
 }
 
-// geo-causal-v1: a home's (city, state, postal) as ONE coherent tuple
-// from the pinned catalogue — the single point where every exporter
-// resolves home geography, so the person, their household, and the
-// downstream vertices all report the same rows. The catalogue is the
-// authority; the legacy per-country zip pool is consulted ONLY when the
-// household has no modeled area (a country with no residential row in
-// the catalogue — unreachable for the shipped locale mix, which the
-// catalogue fully covers). Both branches return views into
-// process-lifetime storage (the immutable static catalogue or the run's
-// locale pools), so callers may hold them for the export.
+/* A home's (city, state, postal) as ONE coherent tuple from the pinned
+ * catalogue — the single point where every exporter resolves home geography,
+ * so the person, their household, and the downstream vertices all report the
+ * same rows. The catalogue is the authority; the legacy per-country zip pool
+ * is consulted ONLY when the household has no modeled area (a country with no
+ * residential row in the catalogue — unreachable for the shipped locale mix,
+ * which the catalogue fully covers). Both branches return views into
+ * process-lifetime storage (the immutable static catalogue or the run's locale
+ * pools), so callers may hold them for the export. */
 struct HomeGeo {
   std::string_view city;
   std::string_view state;

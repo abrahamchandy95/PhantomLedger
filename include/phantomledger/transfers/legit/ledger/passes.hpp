@@ -2,11 +2,11 @@
 
 #include "phantomledger/activity/income/rent.hpp"
 #include "phantomledger/activity/income/salary.hpp"
+#include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/geography/area.hpp"
-#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
-#include "phantomledger/entities/counterparties/directory.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 #include "phantomledger/transfers/legit/ledger/screenbook.hpp"
@@ -76,16 +76,15 @@ struct RoutineResources {
   const ::PhantomLedger::transfers::credit_cards::LifecycleRules
       *cardLifecycle = nullptr;
 
-  // geo-causal-v1 (G2a step-2): per-person home area (PersonId-1), a span into
-  // People::homeAreas. Threaded WorldInputs -> here -> CensusSource so the
-  // monolith reference oracle carries the SAME home areas as the production
-  // windowed path; card-present distance-decay selection reads it through the
-  // spending population View. Empty ⇒ no local anchor (invalidGeoArea).
-  // Non-owning; must outlive the RoutinePass.
+  /* Per-person home area (PersonId-1), a span into People::homeAreas.
+   * Threaded WorldInputs -> here -> CensusSource so the monolith reference
+   * oracle carries the SAME home areas as the production windowed path;
+   * card-present distance-decay selection reads it through the spending
+   * population View. Empty ⇒ no local anchor (invalidGeoArea). Non-owning;
+   * must outlive the RoutinePass. */
   std::span<const entity::geography::GeoAreaId> homeAreas{};
 
-  // relocation-2026-07: the history behind the snapshot. Null ⇒ homes never
-  // move.
+  /* The home-area history behind the snapshot. Null ⇒ homes never move. */
   const entity::parties::relocation::Schedule *relocation = nullptr;
 };
 

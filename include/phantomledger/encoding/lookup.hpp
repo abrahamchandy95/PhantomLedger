@@ -48,8 +48,8 @@ inline constexpr auto kIdentityLayoutEntries =
         {Role::employer, Bank::internal, kEmployer},
         {Role::employer, Bank::external, kEmployerExternal},
 
-        // Generic key lookup only.
-        // Landlord typed lookup lives in landlord.hpp.
+        /* Generic key lookup only; landlord typed lookup lives in
+         * landlord.hpp. */
         {Role::landlord, Bank::internal, kLandlordIndividualInternal},
         {Role::landlord, Bank::external, kLandlordExternal},
 

@@ -55,9 +55,9 @@ SpenderEmissionLoop::RateSampler::RateSampler(const PreparedRun::Budget &budget,
                                               const actors::DayFrame &frame,
                                               Rules rules) noexcept
     : budget_(budget), state_(state), frame_(frame), rules_(rules),
-      // H1 step 2b (class P) + H4: one CPI level lookup and one REAL
-      // consumption level lookup per day frame; both engines share
-      // this code, so oracle parity is automatic.
+      /* One CPI level lookup (class P) and one REAL consumption level
+       * lookup per day frame; both engines share this code, so oracle
+       * parity is automatic. */
       dayPriceScale_(
           synth::econ::priceScale(time::toCalendarDate(frame.day.start).year)),
       dayRealLevel_(synth::econ::realPceLevel(
@@ -121,7 +121,7 @@ double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
 
 double SpenderEmissionLoop::RateSampler::combinedMultiplierFor(
     std::uint32_t personIndex) const {
-  // H4 (authority U-9): the real per-capita consumption level
+  // Authority U-9: the real per-capita consumption level
   // modulates the COUNT axis here — the budget keeps its meaning as a
   // CALIBRATION-LEVEL target, so realized session volume is
   // target x realPceLevel(year): a 2019 frame multiplies by exactly
@@ -180,9 +180,9 @@ void SpenderEmissionLoop::RateSampler::consumeOnePersonDay() noexcept {
   state_.consumeOnePersonDay();
 }
 
-void SpenderEmissionLoop::RateSampler::recordAccepted(
+void SpenderEmissionLoop::RateSampler::consumeAccepted(
     std::uint32_t count) noexcept {
-  state_.recordAccepted(count);
+  state_.consumeAccepted(count);
 }
 
 double SpenderEmissionLoop::RateSampler::lastLiquidityMult() const noexcept {
@@ -287,7 +287,7 @@ void SpenderEmissionLoop::run(
     const auto personIndex = spender.personIndex;
     auto &rng = spenderRngs[i];
 
-    // H3: the dead emit no person-days. The skip consumes the
+    // The dead emit no person-days. The skip consumes the
     // person-day (budget bookkeeping identical to a zero-count day)
     // and draws NOTHING on the spender's per-person rng —
     // deterministic and thread-partition-safe.
@@ -318,9 +318,9 @@ void SpenderEmissionLoop::run(
     const double cardAvailable = rates_.cardLiquidityFor(prepared);
     const double amountFactor = liquidity::amountFactor(liquidityMult);
 
-    // H2 step 2c: the retirement consumption step — a level factor from
-    // the claiming day onward. Pure derived data (no draws), shared by
-    // both engines through this loop.
+    /* The retirement consumption step — a level factor from the
+     * claiming day onward. Pure derived data (no draws), shared by both
+     * engines through this loop. */
     const double consumptionScale =
         (spender.retireDay != actors::Spender::kNoRetireDay &&
          rates_.frameDayIndex() >= spender.retireDay)
@@ -360,7 +360,7 @@ void SpenderEmissionLoop::run(
       ++accepted;
     }
 
-    rates_.recordAccepted(accepted);
+    rates_.consumeAccepted(accepted);
   }
 }
 

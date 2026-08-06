@@ -1,14 +1,13 @@
 #pragma once
-//
-// phantomledger/relationships/social/contacts.hpp
-//
-// The contact matrix: each person's fixed-width row of weighted P2P
-// contacts, flat-packed. PRODUCED by the social graph builder
-// (relationships/social/builder) and consumed by the spending market's
-// commerce view — it lives with its producer (untangling round B2,
-// 2026-07-19: the former home under activity/spending/market/commerce/
-// made the world layer depend on activity above it).
-//
+
+/*
+  The contact matrix: each person's fixed-width row of weighted P2P contacts,
+  flat-packed. PRODUCED by the social graph builder
+  (relationships/social/builder) and consumed by the spending market's
+  commerce view. It MUST live with its producer: homing it under
+  activity/spending/market/commerce/ makes the world layer depend on the
+  activity layer above it.
+ */
 
 #include <cstddef>
 #include <cstdint>

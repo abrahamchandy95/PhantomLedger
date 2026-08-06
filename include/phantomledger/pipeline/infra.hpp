@@ -20,13 +20,12 @@ struct Infra {
   ::PhantomLedger::infra::Router router;
   ::PhantomLedger::infra::SharedInfra ringInfra;
 
-  // attacker-infra-2026-07: the exogenous fraud-infrastructure pool the
-  // unauthorized card/ATO rails transact from. It is WORLD state, not
-  // planner state, because it must outlive a single injection: reuse
-  // across cases is the whole point, and a per-inject pool would be a
-  // per-inject set of ghosts under a new name. Read by the fraud
-  // injector (endpoint resolution) and by the card-fraud exporter
-  // (ground-truth endpoint verdicts).
+  /* The exogenous fraud-infrastructure pool the unauthorized card/ATO rails
+   * transact from. It is WORLD state, not planner state, because it must
+   * outlive a single injection: reuse across cases is the whole point, and a
+   * per-inject pool would be a per-inject set of ownerless endpoints under a
+   * new name. Read by the fraud injector (endpoint resolution) and by the
+   * card-fraud exporter (ground-truth endpoint verdicts). */
   ::PhantomLedger::infra::AttackerInfra attackers;
 };
 

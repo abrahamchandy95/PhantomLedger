@@ -82,14 +82,14 @@ struct CensusScratch {
 
   std::vector<std::vector<std::uint32_t>> paydayStorage;
 
-  // H2 step 2c / H3: per-person retirement + death day-index storage
-  // (see buildEventDays).
+  // Per-person retirement + death day-index storage (see
+  // buildEventDays).
   std::vector<std::uint32_t> retirementDays;
   std::vector<std::uint32_t> deathDays;
 };
 
-// H2 step 2c + H3 (macro-history-v1): the window day-indices of the
-// retirement consumption step and of DEATH, from the blueprint pack's
+// The window day-indices of the retirement consumption step and of
+// DEATH, from the blueprint pack's
 // persona-timeline lane — BOTH engines ride the same blueprint, so the
 // oracle and the windowed path carry identical values (unlike the
 // homeAreas carrier there is no empty-on-oracle mode).
@@ -107,9 +107,8 @@ struct EventDays {
   std::vector<std::uint32_t> death;
 };
 
-[[nodiscard]] EventDays
-buildEventDays(const blueprints::LegitBlueprint &plan,
-               std::uint32_t personCount) {
+[[nodiscard]] EventDays buildEventDays(const blueprints::LegitBlueprint &plan,
+                                       std::uint32_t personCount) {
   EventDays out{
       .retirement =
           std::vector<std::uint32_t>(personCount, plPop::kNoRetirementDay),
@@ -251,18 +250,16 @@ buildSpendingCards(const entity::card::Registry *creditCards,
   sources.census.paydays = std::span<const plPop::PaydaySet>(
       scratch.paydaySets.data(), scratch.paydaySets.size());
 
-  // geo-causal-v1 (G2a): carry the per-person home area to the market's
-  // population View. Empty on the monolith oracle (no People threaded);
-  // the windowed + test paths supply it.
+  /* The per-person home area reaches the market's population View here. */
   sources.census.homeAreas = homeAreas;
 
-  // relocation-2026-07: the home-area HISTORY. The population View refreshes
-  // its snapshot from this at each month boundary, and the geo-pool builder
-  // covers the union of every area it reaches.
+  /* The home-area HISTORY. The population View refreshes its snapshot from
+   * this at each month boundary, and the geo-pool builder covers the union of
+   * every area it reaches. */
   sources.census.relocation = relocation;
 
-  // H2 step 2c / H3: the retirement + death day-indices, from the
-  // blueprint pack's timeline lane (identical on both engines).
+  // The retirement + death day-indices, from the blueprint pack's
+  // timeline lane (identical on both engines).
   sources.census.retirementDays = std::span<const std::uint32_t>(
       scratch.retirementDays.data(), scratch.retirementDays.size());
   sources.census.deathDays = std::span<const std::uint32_t>(
@@ -302,9 +299,8 @@ plMarket::Market SpendingRoutine::prepareMarket(
   const auto scratch =
       buildCensusScratch(plan, census.accounts.lookup, registry, baseTxns);
 
-  auto sources =
-      assembleMarketSources(payees, plan, scratch, census.homeAreas,
-                            census.relocation);
+  auto sources = assembleMarketSources(payees, plan, scratch, census.homeAreas,
+                                       census.relocation);
   const auto payeeRules = marketPayeesFrom(habits_);
   const auto behavior = marketBehaviorFrom(habits_);
 
@@ -348,7 +344,7 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
         .primaryAccounts = &cards_.primaryAccounts,
         .issuerAccount = cards_.issuerAccount,
         .window = cards_.window,
-        // H3 part 3c-ii: card servicing stops at account closure.
+        // Card servicing stops at account closure.
         .timelines = cards_.timelines,
     };
     cardDriver.emplace(

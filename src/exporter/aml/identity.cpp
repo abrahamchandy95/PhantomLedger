@@ -50,7 +50,7 @@ StackString<N> renderPersonId(std::string_view prefix,
                               ::PhantomLedger::entity::PersonId p) noexcept {
   StackString<N> out;
   appendBytes(out, prefix);
-  // "C%010u"
+  /* "C%010u" */
   if (out.len < N) {
     out.data[out.len++] = 'C';
   }
@@ -79,7 +79,7 @@ struct PersonSeed {
 personSeed(::PhantomLedger::entity::PersonId p) noexcept {
   PersonSeed s;
   s.bytes[s.len++] = 'C';
-  // 10-digit zero-padded.
+  /* 10-digit zero-padded. */
   char tmp[10];
   auto value = static_cast<unsigned>(p);
   for (int i = 9; i >= 0; --i) {
@@ -91,7 +91,7 @@ personSeed(::PhantomLedger::entity::PersonId p) noexcept {
   return s;
 }
 
-// ────────── Pool helpers ──────────
+/* ------------------------------------------------------- pool helpers */
 
 template <std::size_t N>
 [[nodiscard]] std::string_view
@@ -131,7 +131,7 @@ inline constexpr std::array<std::string_view, 5> kSingleStatuses{
     "single", "single", "single", "divorced", "widowed",
 };
 
-// ────────── Marriage probability by persona (× 100, integer math) ──────────
+/* -------------- marriage probability by persona (× 100, integer math) */
 
 [[nodiscard]] unsigned
 marriedPctFor(::PhantomLedger::personas::Type p) noexcept {
@@ -168,17 +168,17 @@ void fillStreetLine2(StackString<24> &out, std::uint64_t seedHash) noexcept {
   }
   const auto apt = 1U + static_cast<unsigned>((seedHash >> 4U) % 500U);
   appendBytes(out, std::string_view{"Apt "});
-  // Up to 3 digits, no padding.
+  /* Up to 3 digits, no padding. */
   char tmp[6];
   auto r = std::to_chars(tmp, tmp + sizeof(tmp), apt);
   appendBytes(out,
               std::string_view{tmp, static_cast<std::size_t>(r.ptr - tmp)});
 }
 
-// Commercial addresses (counterparties, banks) are NOT residences: they
-// have no household home, so their geography stays a stable hash draw
-// over the US pool. Person residences resolve through the geo catalogue
-// (see addressForPerson); merchant outlet geography is a later round.
+/* Commercial addresses (counterparties, banks) are NOT residences: they have
+ * no household home, so their geography stays a stable hash draw over the US
+ * pool. Person residences resolve through the geo catalogue (see
+ * addressForPerson). */
 [[nodiscard]] AddressRecord
 buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
                      std::string_view addressType,
@@ -208,9 +208,7 @@ buildAddressFromHash(std::string_view seedKey, std::string_view nameSpace,
 
 } // namespace
 
-// ────────────────────────────────────────────────────────────────────
-// Pure code/rating lookups
-// ────────────────────────────────────────────────────────────────────
+/* ------------------------------------------- pure code/rating lookups */
 
 std::string_view
 customerType(::PhantomLedger::personas::Type persona) noexcept {
@@ -311,13 +309,11 @@ onboardingDate(::PhantomLedger::entity::PersonId personId,
   return simStart - ::PhantomLedger::time::Days{daysBefore};
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Name producers
-//
-// `nameForPerson` reads the indices already assigned to the person's
-// `pii::Record` and views into the matching pool slots. No hashing,
-// no allocation, no duplicate data.
-// ────────────────────────────────────────────────────────────────────
+/* ----------------------------------------------------- name producers
+ *
+ * `nameForPerson` reads the indices already assigned to the person's
+ * `pii::Record` and views into the matching pool slots. No hashing, no
+ * allocation, no duplicate data. */
 
 NameRecord nameForPerson(::PhantomLedger::entity::PersonId personId,
                          const ::PhantomLedger::entity::pii::Roster &pii,
@@ -362,7 +358,7 @@ NameRecord nameForBank(std::string_view bankId) {
 
 RoutingNumber routingNumberForId(std::string_view bankId) noexcept {
   const auto x = stableU64({bankId, "routing"});
-  // 9-digit ABA-style: in [100_000_000, 999_999_999].
+  /* 9-digit ABA-style: in [100_000_000, 999_999_999]. */
   const auto routing = (x % 900'000'000ULL) + 100'000'000ULL;
   RoutingNumber out;
   const auto r = std::to_chars(out.bytes.data(),
@@ -371,9 +367,7 @@ RoutingNumber routingNumberForId(std::string_view bankId) noexcept {
   return out;
 }
 
-// ────────────────────────────────────────────────────────────────────
-// Address producers
-// ────────────────────────────────────────────────────────────────────
+/* -------------------------------------------------- address producers */
 
 AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
                                const ::PhantomLedger::entity::pii::Roster &pii,
@@ -388,12 +382,12 @@ AddressRecord addressForPerson(::PhantomLedger::entity::PersonId personId,
     out.streetLine1 = pool.streets[rec.address.streetIdx];
   }
 
-  // geo-causal-v1: city/state/zip are the household's modeled home area
-  // from the pinned catalogue (population-weighted, coherent with the
-  // person's home), resolved through the shared exporter resolver — not
-  // an independent per-person zip draw. Views point into the immutable
-  // static catalogue (or the run's pools on the legacy fallback), both
-  // of which outlive this record's use.
+  /* city/state/zip are the household's modeled home area from the pinned
+   * catalogue (population-weighted, coherent with the person's home),
+   * resolved through the shared exporter resolver — not an independent
+   * per-person zip draw. Views point into the immutable static catalogue (or
+   * the run's pools on the legacy fallback), both of which outlive this
+   * record's use. */
   const auto home = pii_render::homeGeo(pool, rec.address);
   out.city = home.city;
   out.state = home.state;

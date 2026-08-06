@@ -8,8 +8,8 @@
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 
-#include <array>
 #include "phantomledger/primitives/random/rng.hpp"
+#include <array>
 
 #include <algorithm>
 #include <cstdint>
@@ -55,30 +55,27 @@ struct ExplorationDistribution {
 };
 
 struct BurstSchedule {
-  // BURSTS ARE A PER-YEAR RATE (burst-rate-2026-07), and the level is
-  // DERIVED rather than re-invented.
-  //
-  // This was `probability = 0.08` applied ONCE PER RUN over `[0, days)`, so
-  // the same constant meant 0.49/year at the 60-day golden config and
-  // 0.004/year over a 20-year window. **A two-decade run gave 92% of people
-  // no spending burst at all and the rest exactly one.**
-  //
-  // The rate below reproduces the OLD behaviour at the 60-day config that
-  // every existing band was calibrated against — 0.08 per 60 days is
-  // 0.08 * 365.25/60 = 0.487/year — so the fix is scoped to the
-  // window-dependence and does not silently re-tune prevalence. A 20-year
-  // run now yields ~9.7 windows per person instead of 0.08.
-  //
-  // CLASS S, level DERIVED-FROM-PRIOR-BEHAVIOUR. ~1 notable spending
-  // episode every two years is defensible for a vacation/holiday shape, but
-  // the anchor here is continuity with the calibrated configs, not a source.
+  /* BURSTS ARE A PER-YEAR RATE, never a per-run probability. `probability =
+   * 0.08` applied ONCE PER RUN over `[0, days)` means 0.49/year at the 60-day
+   * golden config and 0.004/year over a 20-year window — measured, a
+   * two-decade run gave 92% of people no spending burst at all and the rest
+   * exactly one.
+   *
+   * THE LEVEL IS DERIVED, NOT RE-INVENTED: 0.08 per 60 days is
+   * 0.08 * 365.25/60 = 0.487/year, so this reproduces the 60-day config every
+   * existing band was calibrated against and scopes the fix to the
+   * window-dependence alone. A 20-year run yields ~9.7 windows per person.
+   *
+   * CLASS S, level DERIVED-FROM-PRIOR-BEHAVIOUR. ~1 notable spending episode
+   * every two years is defensible for a vacation/holiday shape, but the
+   * anchor is continuity with the calibrated configs, not a source. */
   double burstsPerYear = 0.487;
   std::uint16_t minDays = 3;
   std::uint16_t maxDays = 9;
 
-  // Hard ceiling on stored windows per person, so a pathological window
-  // length cannot blow up the schedule. At 0.487/year this is ~60 years of
-  // headroom; exceeding it is logged by the gate, never silent.
+  /* Hard ceiling on stored windows per person, so a pathological window
+   * length cannot blow up the schedule. At 0.487/year this is ~60 years of
+   * headroom; exceeding it is logged by the gate, never silent. */
   std::uint16_t maxWindowsPerPerson = 32;
 
   void validate(primitives::validate::Report &r) const {
@@ -106,35 +103,33 @@ struct PayeeSelectionRules {
   std::uint16_t favoriteMin = 8;
   std::uint16_t favoriteMax = 30;
 
-  // merchant-churn-2026-07: slots reserved per person so the monthly
-  // evolution pass can add in place. Must be >= favoriteMax and >= the
-  // evolution config's maxFavorites, or an add silently no-ops.
+  /* Slots reserved per person so the monthly evolution pass can add in
+   * place. MUST BE >= favoriteMax AND >= the evolution config's
+   * maxFavorites, or an add silently no-ops. */
   std::uint16_t favoriteCapacity = 48;
   std::uint16_t billerMin = 2;
   std::uint16_t billerMax = 6;
 
-  // Slots reserved per person for biller churn. A closed utility is
-  // REPLACED rather than merely dropped (the obligation persists), so the
-  // count is stable and the headroom only has to absorb transient states.
+  /* Slots reserved per person for biller churn. A closed utility is REPLACED
+   * rather than merely dropped (the obligation persists), so the count is
+   * stable and the headroom only has to absorb transient states. */
   std::uint16_t billerCapacity = 10;
 };
 
-// ONE PERSON'S BURST WINDOWS for a window of `days` (burst-rate-2026-07).
-//
-// EXTRACTED so the gate can MEASURE the construction rather than re-derive
-// it. A gate that reimplements the rule it checks passes vacuously the
-// moment production changes and the copy does not — the repo's standing law
-// on preconditions is explicit about this, and the first version of
-// `test_merchant_churn`'s burst check broke it.
-//
-// A RATE IS NOT A PROBABILITY UNTIL MULTIPLIED BY A DURATION: each 365-day
-// segment draws at `burstsPerYear * segmentSpan / 365.25`, so a 60-day
-// window reproduces the pre-round 0.08 per-run coin exactly while a 20-year
-// window yields ~9.7 windows. Applying the bare annual rate to a partial
-// year was the first attempt and multiplied prevalence ~6x at every
-// calibrated config.
+/* ONE PERSON'S BURST WINDOWS for a window of `days`.
+ *
+ * KEEP THIS EXTRACTED so the gate MEASURES the construction rather than
+ * re-deriving it. A gate that reimplements the rule it checks passes
+ * vacuously the moment production changes and the copy does not.
+ *
+ * A RATE IS NOT A PROBABILITY UNTIL MULTIPLIED BY A DURATION: each 365-day
+ * segment draws at `burstsPerYear * segmentSpan / 365.25`, so a 60-day
+ * window reproduces the 0.08 per-run coin exactly while a 20-year window
+ * yields ~9.7 windows. Applying the bare annual rate to a partial year
+ * multiplies prevalence ~6x at every calibrated config. */
 [[nodiscard]] inline std::vector<commerce::BurstWindow>
-buildPersonBursts(::PhantomLedger::random::Rng &rng, const BurstSchedule &rules, int days) {
+buildPersonBursts(::PhantomLedger::random::Rng &rng, const BurstSchedule &rules,
+                  int days) {
   std::vector<commerce::BurstWindow> out;
   if (days <= 0) {
     return out;
@@ -144,9 +139,8 @@ buildPersonBursts(::PhantomLedger::random::Rng &rng, const BurstSchedule &rules,
       break;
     }
     const int segmentSpan = std::min(365, days - segmentStart);
-    const double p = std::min(1.0, rules.burstsPerYear *
-                                       static_cast<double>(segmentSpan) /
-                                       365.25);
+    const double p = std::min(
+        1.0, rules.burstsPerYear * static_cast<double>(segmentSpan) / 365.25);
     if (!rng.coin(p)) {
       continue;
     }

@@ -1,4 +1,10 @@
 #pragma once
+/*
+  Mule-ML Export Entry Point
+  One call writes the mule-ML use case's tables from a completed run. The
+  tables land directly in PostgreSQL as the bytes csv::Writer renders; the
+  capture hook exists so the serverless gates can read those same bytes.
+ */
 
 #include "phantomledger/pipeline/result.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
@@ -16,13 +22,13 @@ namespace PhantomLedger::exporter::mule_ml {
 struct Options {
   const ::PhantomLedger::synth::pii::PoolSet *piiPools = nullptr;
 
-  // Every table is written directly into PostgreSQL as the bytes the
-  // csv::Writer renders — the only production destination (CSV
-  // retirement arc complete; PhantomLedger writes no files).
+  /* Every table is written directly into PostgreSQL as the bytes the
+   * csv::Writer renders — the only production destination (PhantomLedger
+   * writes no files). */
   const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
 
-  // Test infrastructure: rendered bytes per table stem (serverless
-  // exporter gates). Never set in production.
+  /* Test infrastructure: rendered bytes per table stem (serverless exporter
+   * gates). Never set in production. */
   ::PhantomLedger::exporter::common::TableCapture *capture = nullptr;
 };
 

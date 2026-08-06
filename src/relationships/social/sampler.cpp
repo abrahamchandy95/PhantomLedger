@@ -64,7 +64,7 @@ ContactSampler::ContactSampler(std::vector<double> attract,
     return;
   }
   globalAlias_.build(std::span<const double>{attract});
-  // Sized once; reused across every drawUnique call via epoch stamping.
+  /* Sized once; reused across every drawUnique call via epoch stamping. */
   seenMark_.assign(personCount_, 0U);
   seenEpoch_ = 0U;
   const auto blockCount = communities.count();
@@ -165,9 +165,9 @@ void ContactSampler::drawUnique(std::uint32_t srcIdx,
   const auto wanted = std::min(desiredCount, personCount_ - 1U);
   out.reserve(wanted);
   const auto blockIdx = communities_->memberOf[srcIdx];
-  // O(1) dedup: bump the epoch to logically clear the membership set. On the
-  // rare wraparound to 0, reset the buffer once. srcIdx is pre-marked so it can
-  // never be selected, replacing the old `candidate == srcIdx` guard.
+  /* O(1) dedup: bump the epoch to logically clear the membership set, and on
+   * the rare wraparound to 0 reset the buffer once. `srcIdx` is pre-marked so
+   * it can never be selected. */
   if (++seenEpoch_ == 0U) {
     std::fill(seenMark_.begin(), seenMark_.end(), 0U);
     seenEpoch_ = 1U;

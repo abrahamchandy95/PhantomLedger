@@ -126,7 +126,7 @@ pipe::Infra AccessInfraStage::build(random::Rng &rng,
   out.ips = ipAssignment_.build(rng, window, peoplePack.roster, out.ringPlans);
   // The tenure arrays are what make session attribution point-in-time
   // honest: the router may only hand back an endpoint whose interval
-  // contains the row's timestamp (device-ip-lifecycle, 2026-07-27).
+  // contains the row's timestamp.
   out.router = ::PhantomLedger::infra::Router::build(
       routerRules_,
       buildOwnerMap(holdings.accounts.registry, holdings.creditCards),
@@ -134,14 +134,13 @@ pipe::Infra AccessInfraStage::build(random::Rng &rng,
       out.ips.tenureByPerson);
   out.ringInfra = buildSharedInfra(out.devices, out.ips);
 
-  // attacker-infra-2026-07: the exogenous fraud-infrastructure pool, on
-  // its OWN keyed lane off the run seed. See the header for why it is
-  // not taken off `rng`.
+  /* The exogenous fraud-infrastructure pool, on its OWN keyed lane off the
+   * run seed. See the header for why it is not taken off `rng`. */
   {
     const random::RngFactory laneFactory{runSeed};
     auto attackerRng = laneFactory.rng({"infra", "attackers"});
-    out.attackers = attackerAssignment_.build(attackerRng, window,
-                                              peoplePack.roster.count);
+    out.attackers =
+        attackerAssignment_.build(attackerRng, window, peoplePack.roster.count);
   }
 
   return out;

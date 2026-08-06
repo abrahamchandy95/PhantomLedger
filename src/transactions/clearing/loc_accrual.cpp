@@ -32,16 +32,15 @@ void LocAccrualTracker::enable(Index idx, double apr, int billingDay) {
   enabled_[idx] = 1;
   apr_[idx] = apr;
   billingDay_[idx] = static_cast<std::int32_t>(billingDay);
-  // Fresh state: if the account was previously a different protection
-  // type, any stale integral/last-update values are meaningless here.
+  /* Fresh state: if the account carried a different protection type, any
+   * stale integral/last-update values are meaningless here. */
   dollarSecondsIntegral_[idx] = 0.0;
   lastUpdateTs_[idx] = 0;
   lastBillingTs_[idx] = 0;
-  // Due at 0 so the FIRST sweep that runs after this pops the slot and takes
-  // the `lastBillingTs_ == 0` arm — that is where the old full scan started
-  // the billing clock, and starting it anywhere else would shift every
-  // subsequent maturity for this account. Supersedes any entry a prior
-  // enable() left queued.
+  /* Due at 0 so the FIRST sweep after this pops the slot and takes the
+   * `lastBillingTs_ == 0` arm. That is where the billing clock starts;
+   * starting it anywhere else shifts every subsequent maturity for this
+   * account. Supersedes any entry a prior enable() left queued. */
   scheduleBilling(idx, 0);
 }
 
@@ -53,8 +52,8 @@ void LocAccrualTracker::disable(Index idx) {
   dollarSecondsIntegral_[idx] = 0.0;
   lastUpdateTs_[idx] = 0;
   lastBillingTs_[idx] = 0;
-  // Lazy deletion: the queue entry stays, and sweep() drops it on sight
-  // because the token no longer matches.
+  /* Lazy deletion: the queue entry stays, and sweep() drops it on sight
+   * because the token no longer matches. */
   queuedDueTs_[idx] = kNotQueued;
 }
 
@@ -78,18 +77,16 @@ void LocAccrualTracker::update(Index idx, double preCash,
     return;
   }
 
-  // loc-accrual-perf-2026-08: `ts == 0` is the untimestamped `Ledger::transfer`
-  // overload, not an instant. Under the old per-row scan a stamp of 0 was
-  // harmless because the next sweep re-stamped every slot anyway; with the
-  // integral rolled forward lazily it would REWIND `lastUpdateTs_` to 0 and
-  // make the following interval accrue from the epoch. Ignore it.
+  /* `ts == 0` IS A SENTINEL, NOT AN INSTANT: it is the untimestamped
+   * `Ledger::transfer` overload. Stamping it would REWIND `lastUpdateTs_` to
+   * the epoch and accrue the following interval from 1970. Ignore it. */
   if (ts == 0) {
     return;
   }
 
   const auto lastTs = lastUpdateTs_[idx];
-  // Only accumulate during periods where the balance was negative;
-  // positive balances accrue no LOC interest.
+  /* Only accumulate over periods where the balance was negative; positive
+   * balances accrue no LOC interest. */
   if (lastTs != 0 && ts > lastTs && preCash < 0.0) {
     const double elapsed = static_cast<double>(ts - lastTs);
     dollarSecondsIntegral_[idx] += (-preCash) * elapsed;
@@ -98,16 +95,15 @@ void LocAccrualTracker::update(Index idx, double preCash,
 }
 
 void LocAccrualTracker::copyStateFrom(const LocAccrualTracker &other) {
-  // Copies accrual STATE only; enablement must already match between the two
-  // trackers — the clone/restore pattern restores onto a book with identical
-  // account setup.
-  //
-  // loc-accrual-perf-2026-08: the billing queue and its tokens are DERIVED
-  // FROM `lastBillingTs_`, so they are accrual state and must travel with it.
-  // Restoring the timestamps while keeping this book's own queue would leave
-  // the two disagreeing about when each slot next matures — a divergence
-  // between the monolithic and windowed engines that no golden would localise
-  // to this file.
+  /* Copies accrual STATE only; enablement must already match between the two
+   * trackers — the clone/restore pattern restores onto a book with identical
+   * account setup.
+   *
+   * THE BILLING QUEUE AND ITS TOKENS MUST TRAVEL HERE. They are derived from
+   * `lastBillingTs_`, so restoring the timestamps while keeping this book's
+   * own queue leaves the two disagreeing about when each slot next matures —
+   * a monolithic/windowed engine divergence no golden would localise to this
+   * file. */
   assert(size_ == other.size_);
   dollarSecondsIntegral_ = other.dollarSecondsIntegral_;
   lastUpdateTs_ = other.lastUpdateTs_;

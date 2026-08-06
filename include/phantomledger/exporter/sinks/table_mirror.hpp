@@ -1,29 +1,24 @@
 #pragma once
-//
-// phantomledger/exporter/sinks/table_mirror.hpp
-//
-// Direct-to-PostgreSQL table writing — step 1 of the CSV retirement
-// arc. A TableMirror receives the EXACT bytes of one CSV table (header
-// line included) and streams them into a schema table via
-// COPY ... WITH (FORMAT csv, HEADER true), with DDL derived from the
-// schema::Table descriptor using the same conventions as the csv_loader
-// mirror it replaces (all-text columns, DROP+CREATE per run, duplicate
-// column names deduplicated, <prefix><file stem> table naming). Because
-// the COPY payload IS the file bytes, CSV/PostgreSQL parity is a
-// structural property, pinned cell-by-cell by test_mule_ml_direct.
-//
-// One TableMirror owns one Connection: a connection can host only one
-// COPY at a time, and streamed tables (e.g. mule-ml's transfer table)
-// stay open across the whole fold.
-//
-// THE DIRECT-TABLE REGISTRY (CSV retirement step 5a): every mirrored
-// table also registers itself in public.pl_direct_tables
-// (schema_name, table_name). The first mirror a process opens for a
-// schema rewrites that schema's slate, so the registry always lists
-// exactly the tables the LAST run wrote — the table-digest golden
-// discovers a run's tables from here instead of from written CSV
-// stems, which removes the goldens' final file dependency.
-//
+/*
+  Direct-to-PostgreSQL table writing. A TableMirror receives the EXACT
+  bytes of one CSV table, header line included, and streams them into a
+  schema table via COPY ... WITH (FORMAT csv, HEADER true). DDL comes from
+  the schema::Table descriptor: all-text columns, DROP+CREATE per run,
+  duplicate column names deduplicated, <prefix><file stem> table naming.
+  Because THE COPY PAYLOAD IS THE FILE BYTES, CSV/PostgreSQL parity is a
+  structural property, pinned cell-by-cell by test_mule_ml_direct.
+
+  ONE TableMirror OWNS ONE Connection: a connection can host only one COPY
+  at a time, and streamed tables (e.g. mule-ml's transfer table) stay open
+  across the whole fold.
+
+  THE DIRECT-TABLE REGISTRY: every mirrored table also registers itself in
+  public.pl_direct_tables (schema_name, table_name). The first mirror a
+  process opens for a schema rewrites that schema's slate, so the registry
+  always lists exactly the tables the LAST run wrote — which is how the
+  table-digest golden discovers a run's tables without depending on
+  files.
+ */
 
 #include "phantomledger/primitives/postgres/connection.hpp"
 
@@ -35,8 +30,8 @@
 
 namespace PhantomLedger::exporter::sinks {
 
-// Where direct tables land. tablePrefix reproduces the csv_loader tree
-// naming (<subdirs>_<stem>), e.g. schema "mule_ml", prefix "ml_ready_".
+/* Where direct tables land. tablePrefix reproduces the loader tree naming
+ * (<subdirs>_<stem>), e.g. schema "mule_ml", prefix "ml_ready_". */
 struct PgMirror {
   std::string conninfo;
   std::string schema;
@@ -45,9 +40,9 @@ struct PgMirror {
 
 class TableMirror {
 public:
-  // Creates <schema>.<tablePrefix><tableStem> (DROP+CREATE, UNLOGGED,
-  // all-text columns from `header`), records it in the direct-table
-  // registry, and opens the COPY.
+  /* Creates <schema>.<tablePrefix><tableStem> (DROP+CREATE, UNLOGGED,
+   * all-text columns from `header`), records it in the direct-table
+   * registry, and opens the COPY. */
   TableMirror(const PgMirror &target, std::string_view tableStem,
               std::span<const std::string_view> header);
 
@@ -58,10 +53,10 @@ public:
 
   ~TableMirror();
 
-  // Exact CSV bytes, header line included (COPY runs with HEADER true).
+  /* Exact CSV bytes, header line included (COPY runs with HEADER true). */
   void put(const char *data, std::size_t size);
 
-  // Finishes the COPY. Idempotent; also invoked by the destructor.
+  /* Finishes the COPY. Idempotent; also invoked by the destructor. */
   void close();
 
 private:

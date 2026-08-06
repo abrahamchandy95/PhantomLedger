@@ -61,11 +61,11 @@ void runTransferStage(SimulationResult &result,
   const auto &holdings = result.holdings;
   const auto &cps = result.counterparties;
 
-  // Product generation and both settlement passes draw from dedicated
-  // deterministic lanes derived from the run seed — the same lanes the
-  // windowed driver owns — so both architectures share one RNG regime.
-  // Legit generation and fraud planning stay on the shared sequential
-  // stream. Corpus baseline is pinned in tests/golden_run.b2sum.
+  /* Product generation and both settlement passes draw from dedicated
+   * deterministic lanes derived from the run seed — the same lanes the
+   * windowed driver owns — so both architectures share one RNG regime. Legit
+   * generation and fraud planning stay on the shared sequential stream. The
+   * corpus baseline is pinned in tests/golden_run.b2sum. */
   const random::RngFactory laneFactory{stage.legit().runScope().seed};
   auto productRng = laneFactory.rng({"products", "full_schedule"});
   auto preSettleRng = laneFactory.rng({"settlement", "pre_fraud"});
@@ -91,17 +91,15 @@ void runTransferStage(SimulationResult &result,
   auto injector = stage.makeFraudInjector(rng, people, holdings);
   const std::span<const tx_ns::Transaction> candidateView{
       candidate.txns.data(), candidate.txns.size()};
-  // card-fraud-realism-v2 step b: the merchant acceptance catalogue and
-  // the home-area axis ride along with the legit pools. THE WINDOWED
-  // ENGINE (windowed_run.cpp) MUST PASS THE SAME TWO — this is the
-  // reference oracle test_arch_equivalence compares against, so any
-  // asymmetry here becomes an engine divergence the moment step b-2
-  // reads them. Both are UNREAD today.
-  auto fraudOut =
-      injector.inject(stage.legit().runScope().window, candidateView,
-                      stages::transfers::FraudEmission::legitCounterparties(
-                          legitPayload.counterparties, &cps.merchants,
-                          people.homeAreas, &people.personas, &people.relocation));
+  /* The merchant acceptance catalogue and the home-area axis ride along with
+   * the legit pools. THE WINDOWED ENGINE (windowed_run.cpp) MUST PASS THE SAME
+   * ARGUMENTS — this is the reference oracle test_arch_equivalence compares
+   * against, so any asymmetry here becomes an engine divergence. */
+  auto fraudOut = injector.inject(
+      stage.legit().runScope().window, candidateView,
+      stages::transfers::FraudEmission::legitCounterparties(
+          legitPayload.counterparties, &cps.merchants, people.homeAreas,
+          &people.personas, &people.relocation));
 
   const auto activeStart =
       time::toEpochSeconds(stage.legit().runScope().window.start);
@@ -170,10 +168,9 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
                                        random::Rng &rng) const {
   const auto &cfg = entities_;
   auto identity = entityStage::defaultStart(cfg.identity, window_.start);
-  // H3 part 3c-ii: the production pipeline always sizes the join
-  // cohort against its own window (Pack::joinDays; authority U-8
-  // addendum). Direct entity-stage callers that leave windowDays 0
-  // build no cohort — the pre-3c-ii shape.
+  /* The production pipeline always sizes the join cohort against its own
+   * window (Pack::joinDays; authority U-8 addendum). Direct entity-stage
+   * callers that leave windowDays 0 build no cohort. */
   identity.windowDays = window_.days;
 
   auto &people = result.people;
@@ -183,43 +180,42 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   people.roster = entityStage::buildPeople(rng, cfg.population, cfg.fraud);
   holdings.accounts = entityStage::buildAccounts(
       rng, people.roster, cfg.population, cfg.accountsSizing);
-  // H2 step 2a: the personas pack carries the single-age-axis birth
-  // dates ({"dob", personId} lanes off identity.worldSeed); H3 3c-ii:
-  // it also carries the join cohort, and joiners' ages anchor at
-  // their JOIN date. PII below renders its Dob from the carrier.
-  people.personas = entityStage::buildPersonas(rng, people.roster, identity,
-                                               cfg.personaMix);
+  /* The personas pack carries the single-age-axis birth dates
+   * ({"dob", personId} lanes off identity.worldSeed) and the join cohort;
+   * a joiner's age anchors at their JOIN date. PII below renders its Dob from
+   * the carrier. */
+  people.personas =
+      entityStage::buildPersonas(rng, people.roster, identity, cfg.personaMix);
   people.pii = entityStage::buildPii(rng, people.personas, identity,
                                      people.roster.topology, cfg.piiSharing);
 
-  // geo-causal-v1 (G2a): snapshot the compact home-area carrier NOW, while
-  // PII is alive — releaseExportOnlyPacks() nulls people.pii before the
-  // transfer fold, and causal card-present selection needs the home area.
-  // card-fraud-realism-v2 step b: the fraud injector reads the SAME
-  // carrier, so fraud and legitimate card activity share one geographic
-  // axis.
+  /* Snapshot the compact home-area carrier NOW, while PII is alive:
+   * releaseExportOnlyPacks() nulls people.pii before the transfer fold, and
+   * causal card-present selection needs the home area. The fraud injector
+   * reads the SAME carrier, so fraud and legitimate card activity share one
+   * geographic axis. */
   people.homeAreas = homeAreasOf(people.pii);
 
-  // relocation-2026-07: the home-area HISTORY, built here for the same reason
-  // the snapshot above is — PII is alive and carries the per-person country
-  // the destination constraint needs. Runs on its OWN `{"home-relocation",
-  // <group>}` lane, so it spends nothing on `rng` and cannot move a
-  // downstream entity value.
+  /* The home-area HISTORY, built here for the same reason the snapshot above
+   * is: PII is alive and carries the per-person country the destination
+   * constraint needs. Runs on its OWN `{"home-relocation", <group>}` lane, so
+   * it spends nothing on `rng` and cannot move a downstream entity value. */
   people.relocation = entityStage::buildRelocation(
       people.pii, people.homeAreas, people.personas, seed_, window_);
 
-  // seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
-  // which are isolated from `rng`; the merchant catalogue's economic draws
-  // still come off the shared stream, so the corpus is byte-identical.
-  cps.merchants = entityStage::buildMerchants(
-      rng, cfg.population, seed_, window_, cfg.merchants, &synth::econ::macroSeries());
+  /* seed_ (the run seed) drives ONLY the merchant footprint/location lanes,
+   * which are isolated from `rng`; the merchant catalogue's economic draws
+   * still come off the shared stream, so the corpus is byte-identical. */
+  cps.merchants =
+      entityStage::buildMerchants(rng, cfg.population, seed_, window_,
+                                  cfg.merchants, &synth::econ::macroSeries());
   cps.landlords =
       entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(
       rng, cfg.population, cfg.counterpartyTargets);
 
-  // H1 step 2b (class P stock): credit limits anchor at the
-  // window-start year's price level (authority U-6).
+  /* Credit limits are a class P STOCK: they anchor at the window-start
+   * year's price level (authority U-6). */
   holdings.creditCards = entityStage::issueCreditCards(
       people.personas, people.roster, seed_, cfg.cards,
       time::toCalendarDate(window_.start).year);
@@ -228,14 +224,13 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   entityStage::synthesizeBusinessOwners(holdings, people, rng,
                                         cfg.businessOwners);
 
-  // merchant-ownership-2026-07: stamp the beneficial-owner register onto
-  // the catalogue. MUST come after synthesizeBusinessOwners — the
-  // proprietor cohort is the business-owner cohort — and it is DRAW-FREE,
-  // so it appends nothing to `rng` and the corpus stream does not move.
-  // Exported as `cf_Is_Merchant`, whose emptiness hard-aborts the
-  // downstream tf_gnn_loader_v2 push before any data reaches TigerGraph.
-  entityStage::assignMerchantOwners(cps.merchants,
-                                    holdings.accounts.registry);
+  /* Stamp the beneficial-owner register onto the catalogue. MUST run AFTER
+   * synthesizeBusinessOwners — the proprietor cohort is the business-owner
+   * cohort — and it is DRAW-FREE, so it appends nothing to `rng` and the
+   * corpus stream does not move. Exported as `cf_Is_Merchant`, whose emptiness
+   * hard-aborts the downstream tf_gnn_loader_v2 push before any data reaches
+   * TigerGraph. */
+  entityStage::assignMerchantOwners(cps.merchants, holdings.accounts.registry);
 }
 
 SimulationResult
@@ -261,9 +256,8 @@ SimulationPipeline::buildWorldWith(random::Rng &rng,
   notify("infra");
   diagnostics::logStageMem("worldInfra", {});
 
-  // RAM R2 measurement: which packs hold the world's resident bytes,
-  // plus the obligation burden slice's pinned-order audit
-  // (docs/ram_derive_dont_store.md). Prints only under the mem topic.
+  /* Which packs hold the world's resident bytes, plus the obligation burden
+   * slice's pinned-order audit. Prints only under the `mem` topic. */
   diagnostics::logWorldFootprint(out.people, out.holdings, out.counterparties,
                                  out.infra);
   diagnostics::logObligationTieAudit(out.holdings.portfolios, window_);
@@ -278,24 +272,23 @@ SimulationPipeline::buildWorld(const PhaseObserver &onPhase) const {
 
 SimulationResult
 SimulationPipeline::rebuildWorldForExport(const PhaseObserver &onPhase) const {
-  // Fresh generator at the run seed: world-build draws are a prefix of
-  // the shared sequential stream, so this replay is byte-identical to
-  // the original buildWorld() (the shared RNG's later position — after
-  // the transfer fold — is irrelevant here and stays untouched).
+  /* Fresh generator at the run seed: world-build draws are a prefix of the
+   * shared sequential stream, so this replay is byte-identical to the original
+   * buildWorld(). The shared RNG's later position — after the transfer fold —
+   * is irrelevant here and stays untouched. */
   auto replayRng = random::Rng::fromSeed(seed_);
   return buildWorldWith(replayRng, onPhase);
 }
 
 void releaseExportOnlyPacks(SimulationResult &world) noexcept {
-  // Move-assign empty packs: releases the old storage now. The Router
-  // keeps its own copies of the per-person device/IP pools, so routing
-  // is unaffected; the fold reads none of these (their only consumers
-  // are the vertex exporters). NOTE: people.homeAreas is a SEPARATE
-  // compact carrier that must OUTLIVE this release (the fold's causal
-  // selection reads it, and since v2 step b so does the fraud
-  // injector), so it is deliberately NOT cleared here. The personas
-  // pack (with its H2 birth-date carrier) also survives — the
-  // blueprint and the government pass read it inside the fold.
+  /* Move-assign empty packs: releases the old storage now. The Router keeps
+   * its own copies of the per-person device/IP pools, so routing is
+   * unaffected; the fold reads none of these (their only consumers are the
+   * vertex exporters). people.homeAreas is a SEPARATE compact carrier that
+   * must OUTLIVE this release — the fold's causal selection and the fraud
+   * injector both read it — so it is deliberately NOT cleared here. The
+   * personas pack, with its birth-date carrier, also survives: the blueprint
+   * and the government pass read it inside the fold. */
   world.people.pii = entity::pii::Roster{};
   world.infra.devices = synth::infra::devices::Output{};
   world.infra.ips = synth::infra::ips::Output{};
@@ -307,9 +300,9 @@ SimulationResult SimulationPipeline::run(const PhaseObserver &onPhase) const {
   auto stage = transfers_;
   configureTransferStage(stage, window_, seed_, entities_.fraud);
   stage.infra(out.infra);
-  // RAM R2.2.1c: the product emitters replay THIS synthesis (the exact
-  // config that built the world's portfolio terms) for the transient
-  // whole-window obligation stream.
+  /* The product emitters replay THIS synthesis — the exact config that built
+   * the world's portfolio terms — for the transient whole-window obligation
+   * stream. */
   stage.obligationSynthesis(products_);
 
   runTransferStage(out, stage, *rng_);
@@ -337,13 +330,14 @@ SimulationPipeline::runWindowedTransfersErased(
   return out;
 }
 
-WindowedSimulationResult SimulationPipeline::runWindowedErased(
-    stages::transfers::SinkRef sink, const WindowedRunOptions &options,
-    const PhaseObserver &onPhase) const {
+WindowedSimulationResult
+SimulationPipeline::runWindowedErased(stages::transfers::SinkRef sink,
+                                      const WindowedRunOptions &options,
+                                      const PhaseObserver &onPhase) const {
   WindowedSimulationResult out;
 
-  // Identical world build to run(): same stages, same shared-stream
-  // consumption, so the transfer fold starts from a byte-identical world.
+  /* Identical world build to run(): same stages, same shared-stream
+   * consumption, so the transfer fold starts from a byte-identical world. */
   out.world = buildWorld(onPhase);
   out.transfers = runWindowedTransfersErased(out.world, sink, options, onPhase);
 

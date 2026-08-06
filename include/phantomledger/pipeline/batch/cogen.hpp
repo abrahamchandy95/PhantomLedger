@@ -1,38 +1,34 @@
 #pragma once
-//
-// phantomledger/pipeline/batch/cogen.hpp   (repurposed)
-//
-// The chosen scaling architecture is CHRONOLOGICAL: one persistent
-// simulation session advances the FULL population through sequential
-// generation windows (default 3 months), with monthly settlement spans
-// flushed and freed behind a lookahead watermark. Population is never
-// partitioned across the corpus in v1 (K = 1). This file therefore serves
-// two narrower roles than its first incarnation:
-//
-// ROLE 1 -- WORK SHARDS (output-neutral, used now).
-//   Within one simulated day, the population is divided into contiguous
-//   index ranges processed in parallel. Contract: work shards may steer
-//   WHERE work happens, never WHAT bytes are generated. That holds because
-//   per-person draws come from person-keyed streams, day-frame/commerce
-//   draws happen on the single-threaded prefix of the day, and postings
-//   synchronize at the day boundary. The thread-invariance test (same
-//   corpus for 1, 4, 12 workers) is the enforcement.
-//
-// ROLE 2 -- PLANNED-COUPLING GRAPH (diagnostics now; world model later).
-//   CogenGraph/Partition record which people are coupled BY PLAN
-//   (households, family links, community blocks, ring rosters,
-//   compromise victim/drop pairs). In v1 nothing consumes this at
-//   generation time; it exists to (a) measure planned coupling density,
-//   and (b) become the assigner for the EXPLICIT K>1 sharded-world model
-//   later. In that model, K is an output-defining, pinned configuration
-//   parameter (like population size): sampling is restricted per shard
-//   BEFORE any generation, shards run as independent chronological
-//   sessions, and the exported graph is block-diagonal by construction.
-//   That is a different simulation model, not an optimization of this one
-//   -- do not wire it in until the time-window implementation is stable
-//   and the K>1 realism trade-offs (WCC/PageRank/path features, negative
-//   sampling) are explicitly accepted.
-//
+/*
+  The scaling architecture is CHRONOLOGICAL: one persistent simulation session
+  advances the FULL population through sequential generation windows (default
+  3 months), with monthly settlement spans flushed and freed behind a lookahead
+  watermark. Population is never partitioned across the corpus in v1 (K = 1),
+  so this file serves two roles.
+
+  ROLE 1 — WORK SHARDS (output-neutral, used now).
+    Within one simulated day, the population is divided into contiguous index
+    ranges processed in parallel. Contract: work shards may steer WHERE work
+    happens, never WHAT bytes are generated. That holds because per-person
+    draws come from person-keyed streams, day-frame/commerce draws happen on
+    the single-threaded prefix of the day, and postings synchronize at the day
+    boundary. The thread-invariance test — same corpus for 1, 4, 12 workers —
+    is the enforcement.
+
+  ROLE 2 — PLANNED-COUPLING GRAPH (diagnostics now; world model later).
+    CogenGraph/Partition record which people are coupled BY PLAN (households,
+    family links, community blocks, ring rosters, compromise victim/drop
+    pairs). In v1 nothing consumes this at generation time; it exists to
+    (a) measure planned coupling density, and (b) become the assigner for the
+    EXPLICIT K>1 sharded-world model later. In that model K is an
+    output-defining, pinned configuration parameter, like population size:
+    sampling is restricted per shard BEFORE any generation, shards run as
+    independent chronological sessions, and the exported graph is
+    block-diagonal by construction. That is a different simulation model, not
+    an optimization of this one — DO NOT wire it in until the time-window
+    implementation is stable and the K>1 realism trade-offs (WCC/PageRank/path
+    features, negative sampling) are explicitly accepted.
+ */
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"

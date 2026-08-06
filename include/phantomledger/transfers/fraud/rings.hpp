@@ -23,13 +23,13 @@ struct Plan {
   std::vector<entity::Key> muleAccounts;
   std::vector<entity::Key> victimAccounts;
 
-  // H3 part 3c-ii (authority U-8 addendum): the ring's ALIVE HORIZON —
-  // the minimum death epoch over its ACTIVE participants (fraud
-  // persons + mules; victims are exempt: fraud against deceased
-  // persons' accounts is a real typology). The injector clamps the
-  // ring's typology bursts and camouflage window to this horizon minus
-  // a schedule guard, so rings never recruit the dead. int64 max when
-  // no timeline carrier is available (the intervals stand down).
+  /* The ring's ALIVE HORIZON: the minimum death epoch over its ACTIVE
+   * participants — fraud persons plus mules (authority U-8 addendum). Victims
+   * are EXEMPT deliberately, because fraud against a deceased person's account
+   * is a real typology. The injector clamps the ring's typology bursts and
+   * camouflage window to this horizon minus a schedule guard, so rings never
+   * recruit the dead. int64 max when no timeline carrier is available, which
+   * stands the intervals down. */
   std::int64_t participantsAliveEndEpoch =
       std::numeric_limits<std::int64_t>::max();
 
@@ -114,8 +114,7 @@ sliceView(const std::vector<entity::PersonId> &store,
       if (p == 0 || static_cast<std::size_t>(p) > timelines.size()) {
         continue;
       }
-      horizon = std::min(horizon,
-                         time::toEpochSeconds(timelines[p - 1].death));
+      horizon = std::min(horizon, time::toEpochSeconds(timelines[p - 1].death));
     }
   };
   fold(fraudPersons);

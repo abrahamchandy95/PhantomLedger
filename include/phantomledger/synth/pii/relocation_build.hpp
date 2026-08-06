@@ -1,56 +1,10 @@
 #pragma once
-//
-// phantomledger/synth/pii/relocation_build.hpp
-//
-// Construction of the per-person home-area history (relocation-2026-07). The
-// MODEL and its citations live in `entities/parties/relocation.hpp`; this file
-// is the sampler.
-//
-// DETERMINISM CONTRACT, and it is the reason this round could be landed at
-// all: construction runs on `RngFactory{worldSeed}.rng({"home-relocation",
-// <group>})` — its OWN lane, keyed by coresident group exactly as home
-// placement is keyed by household. It spends nothing on the shared entity
-// stream, so no downstream entity value moves and the blast radius stays
-// confined to what the FOLD does with a home that changes.
-// `merchant-churn-2026-07` learned this the expensive way: sizing a catalogue
-// off the shared stream produced 51,079 account-closure violations in a gate
-// with nothing to do with merchants.
-//
-// DRAW COUNT IS FIXED PER YEAR PER GROUP — FOUR uniforms, unconditionally,
-// whether or not the group moves:
-//
-//   1. the move coin
-//   2. the day-within-year
-//   3. the destination position in the residential CDF
-//   4. the same-state/different-state coin
-//
-// All four are drawn BEFORE any branch tests them. A data-dependent draw count
-// is the second coupling `merchant-churn-2026-07` was bitten by
-// (`WeightedPicker` retries on collision, so a bigger CDF spends fewer
-// uniforms and shifted every person's exploration propensity). Here it would
-// mean a group's later moves depended on whether its earlier ones happened to
-// land in-state — a coupling with no mechanism behind it.
-//
-// ================================================== WHAT A "GROUP" IS
-//
-// NOT simply a household, and the reason is a real asymmetry in the existing
-// model rather than a nicety. `pii::Generator::buildRecord` samples
-// `country` PER PERSON off the locale mix and only THEN calls
-// `homeAreaFor(person, country)`, which draws on the household lane but inside
-// that person's own country. So two members of one household who drew
-// different countries already hold DIFFERENT home areas — they are not
-// coresident in any meaningful sense, and the production locale mix
-// (`usBankDefault`, 96% US + 15 foreign weights) makes this reachable.
-//
-// A group is therefore (household, initial area). Real coresidents — same
-// household, same area — move together, which preserves the invariant
-// `party-geography-2026-07` declares binding. A foreign-domiciled member of a
-// nominal household moves on their own, inside their own country, which is the
-// only thing that could be correct.
 
 #include "phantomledger/entities/parties/relocation.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
 
@@ -60,6 +14,48 @@
 #include <string>
 #include <utility>
 #include <vector>
+
+/*
+  Construction of the per-person home-area history. The MODEL and its
+  citations live in `entities/parties/relocation.hpp`; this file is the
+  sampler.
+
+  DETERMINISM CONTRACT. Construction runs on
+  `RngFactory{worldSeed}.rng({"home-relocation", <group>})` — its OWN lane,
+  keyed by coresident group exactly as home placement is keyed by household.
+  It spends nothing on the shared entity stream, so no downstream entity value
+  moves and the blast radius stays confined to what the FOLD does with a home
+  that changes. Sizing anything off the shared stream instead has been
+  measured at 51,079 account-closure violations in a gate with nothing to do
+  with the changed subsystem.
+
+  THE DRAW COUNT IS FIXED PER YEAR PER GROUP — FOUR uniforms, unconditionally,
+  whether or not the group moves:
+
+    1. the move coin
+    2. the day-within-year
+    3. the destination position in the residential CDF
+    4. the same-state/different-state coin
+
+  ALL FOUR MUST BE DRAWN BEFORE ANY BRANCH TESTS THEM. A data-dependent draw
+  count would make a group's later moves depend on whether its earlier ones
+  happened to land in-state — a coupling with no mechanism behind it. The same
+  trap has already cost a round via `WeightedPicker`, which retries on
+  collision, so a bigger CDF spends fewer uniforms and shifted every person's
+  exploration propensity.
+
+  A "GROUP" IS (household, initial area), NOT simply a household, and the
+  reason is a real asymmetry rather than a nicety. `Generator::buildRecord`
+  samples `country` PER PERSON off the locale mix and only THEN calls
+  `homeAreaFor(person, country)`, which draws on the household lane but inside
+  that person's own country — so two members of one household who drew
+  different countries already hold DIFFERENT home areas, and the production
+  locale mix (`usBankDefault`, 96% US + 15 foreign weights) makes this
+  reachable. Real coresidents (same household, same area) therefore move
+  together, preserving the binding coresidency invariant, while a
+  foreign-domiciled member of a nominal household moves on their own inside
+  their own country.
+ */
 
 namespace PhantomLedger::synth::pii::relocation {
 
@@ -95,8 +91,8 @@ namespace detail {
 
 } // namespace detail
 
-/// Build the relocation schedule. One tenure per person minimum; coresidents
-/// receive IDENTICAL tenure sequences.
+/* Build the relocation schedule. One tenure per person minimum; coresidents
+ * receive IDENTICAL tenure sequences. */
 [[nodiscard]] inline reloc::Schedule build(const Inputs &in) {
   const auto people = in.initialAreas.size();
   if (people == 0 || in.catalog == nullptr || in.residence == nullptr ||
@@ -135,8 +131,8 @@ namespace detail {
   std::map<GroupKey, std::vector<reloc::Tenure>> byGroup;
 
   for (const auto &[group, repIndex] : representative) {
-    const auto lane = std::to_string(group.first) + ":" +
-                      std::to_string(group.second);
+    const auto lane =
+        std::to_string(group.first) + ":" + std::to_string(group.second);
     auto rng = factory.rng({"home-relocation", lane});
 
     const auto country = repIndex < in.countries.size()
@@ -190,8 +186,8 @@ namespace detail {
       const std::string_view stateCode =
           (sameState && origin != nullptr) ? std::string_view{origin->stateCode}
                                            : std::string_view{};
-      const auto destination = in.residence->sampleExcluding(
-          destRoll, country, stateCode, current);
+      const auto destination =
+          in.residence->sampleExcluding(destRoll, country, stateCode, current);
 
       // Still guarded: a country with a single residential area has no
       // destination, and that must not become a same-area tenure. The

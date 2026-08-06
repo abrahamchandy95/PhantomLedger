@@ -1,65 +1,7 @@
 #pragma once
-//
-// phantomledger/synth/personas/timeline.hpp
-//
-// macro-history-v1 H2 step 1: the persona TIMELINE primitive — the
-// single source of persona-AT-DATE truth. The seed assignment is the
-// state at THE PERSON'S ANCHOR (sim start for the seed roster; the
-// JOIN DATE for the H3 join cohort); the timeline carries the
-// transition dates:
-//
-//   student       -> working (salaried .85 / freelancer .15) at a
-//                    work-start age drawn over 19-28, then retiree at
-//                    the claiming date
-//   salaried,
-//   freelancer    -> retiree at an SSA-claiming-shaped date
-//   smallBusiness -> working (salaried .70 / freelancer .30) when the
-//                    business ends (median-5yr memoryless residual),
-//                    then retiree; retirement dominates (a business
-//                    that survives to the claiming date closes there)
-//   retiree       -> retiree (claim date backdated to <= the anchor)
-//   highNetWorth  -> NO transitions at H2 (declared exemption)
-//
-// Transition dates anchor to the person's BIRTH DATE (durability
-// criterion: life events, not window events). The anchor enters ONLY
-// through the seed-consistency clamps — the seed assignment is by
-// definition the state at the anchor, so
-//
-//   personaAt(timeline, anchor) == seed type      (pinned invariant)
-//
-// and the clamps bind ONLY when a drawn date already lies in the
-// past: a seed student past the drawn work-start age finishes in
-// 90-540 days; a seed worker past the drawn claiming date works
-// another 180-1825 days; a seed retiree's claim clamps to the anchor.
-// Drawn dates that land in the future stand exactly as drawn.
-//
-// STATUS: WIRED at H2 steps 2b/2c — `Pack::timelines` carries
-// deriveAll's output; salary selection/spans, SSA recipient
-// selection/onset, revenue month gating, the AML end-of-window
-// persona and the retirement spending step read it (contract:
-// docs/h2_persona_timeline.md; authority: docs/fraud_model_audit.md
-// U-7 + addendum).
-//
-// H3 wiring (macro-history-v1, contract docs/h3_mortality_estate.md):
-// the timeline ALSO carries the person's DEATH — filled by
-// lifespan::derive on the SEPARATE isolated {"mortality", personId}
-// lane (three draws; see lifespan.hpp), so every consumer that
-// already holds a timeline reads `death` with no new threading.
-// Income, spending, rent, cash and family flows stop at death;
-// estates and funerals trigger on it; account closure follows it
-// (authority U-8 + addendum). The lifespan shares the person's
-// anchor, so a joiner is alive at JOIN and dies strictly after it.
-//
-// DRAW DISCIPLINE: exactly eight draws per person on the
-// {"persona-era", personId} lane, unconditional and in a fixed
-// documented order (the H3 death fields ride the separate
-// {"mortality"} lane and cannot move them) — entity N can never move
-// entity N+1, and adding a ninth persona-era draw later is an
-// explicit model change.
-//
 
-#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/personas/lifespan.hpp"
@@ -72,6 +14,53 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+/*
+  The persona timeline: the single source of persona-AT-DATE truth. The seed
+  assignment is the state at THE PERSON'S ANCHOR (sim start for the seed
+  roster, the JOIN DATE for the join cohort); the timeline carries the
+  transition dates.
+
+    student       -> working (salaried .85 / freelancer .15) at a work-start
+                     age drawn over 19-28, then retiree at the claiming date
+    salaried,
+    freelancer    -> retiree at an SSA-claiming-shaped date
+    smallBusiness -> working (salaried .70 / freelancer .30) when the business
+                     ends (median-5yr memoryless residual), then retiree;
+                     retirement dominates, so a business surviving to the
+                     claiming date closes there
+    retiree       -> retiree (claim date backdated to <= the anchor)
+    highNetWorth  -> NO transitions (declared exemption)
+
+  TRANSITION DATES ANCHOR TO THE PERSON'S BIRTH DATE — life events, not window
+  events, which is what makes them durable across window lengths. The anchor
+  enters ONLY through the seed-consistency clamps, because the seed assignment
+  is by definition the state at the anchor:
+
+    personaAt(timeline, anchor) == seed type      (pinned invariant)
+
+  The clamps bind ONLY when a drawn date already lies in the past: a seed
+  student past the drawn work-start age finishes in 90-540 days; a seed worker
+  past the drawn claiming date works another 180-1825 days; a seed retiree's
+  claim clamps to the anchor. Drawn dates landing in the future stand exactly
+  as drawn.
+
+  The timeline ALSO carries the person's DEATH, filled by `lifespan::derive` on
+  the SEPARATE isolated {"mortality", personId} lane (three draws), so every
+  consumer already holding a timeline reads `death` with no new threading.
+  Income, spending, rent, cash and family flows stop at death; estates and
+  funerals trigger on it; account closure follows it. The lifespan shares the
+  person's anchor, so a joiner is alive at JOIN and dies strictly after it.
+
+  DRAW DISCIPLINE: exactly EIGHT draws per person on the
+  {"persona-era", personId} lane, unconditional and in a fixed documented
+  order, so entity N can never move entity N+1. The death fields ride the
+  separate {"mortality"} lane and cannot move them. Adding a ninth persona-era
+  draw is an explicit model change.
+
+  Contracts: docs/h2_persona_timeline.md, docs/h3_mortality_estate.md.
+  Authority: docs/fraud_model_audit.md U-7, U-8 and addendum.
+ */
 
 namespace PhantomLedger::synth::personas::timeline {
 
@@ -174,8 +163,7 @@ using PersonaType = ::PhantomLedger::personas::Type;
 // birthday-relative jitter is added by the caller.
 [[nodiscard]] inline time::TimePoint atAgeMonths(time::CalendarDate dob,
                                                  int ageMonths) {
-  const int total =
-      dob.year * 12 + static_cast<int>(dob.month) - 1 + ageMonths;
+  const int total = dob.year * 12 + static_cast<int>(dob.month) - 1 + ageMonths;
   time::CalendarDate cd = dob;
   cd.year = total / 12;
   cd.month = static_cast<unsigned>(total % 12 + 1);
@@ -185,26 +173,26 @@ using PersonaType = ::PhantomLedger::personas::Type;
 
 // --- The timeline -------------------------------------------------
 
-/// Lifecycle transition dates for one person. Dates are meaningful
-/// per seed type (see personaAt); all are derived once, deterministic
-/// on (worldSeed, personId, seed, dob, anchor).
+/* Lifecycle transition dates for one person. Dates are meaningful
+ * per seed type (see personaAt); all are derived once, deterministic
+ * on (worldSeed, personId, seed, dob, anchor). */
 struct Timeline {
   PersonaType seed = PersonaType::salaried;
-  /// The working-life type: the student's destination, the
-  /// smallBusiness owner's post-business type, otherwise the seed.
+  /* The working-life type: the student's destination, the
+   * smallBusiness owner's post-business type, otherwise the seed. */
   PersonaType working = PersonaType::salaried;
-  /// Student seeds only: study -> work.
+  /* Student seeds only: study -> work. */
   time::TimePoint workStart{};
-  /// smallBusiness seeds only: the business closes (== retirement
-  /// when the business survives to the claiming date).
+  /* smallBusiness seeds only: the business closes (== retirement
+   * when the business survives to the claiming date). */
   time::TimePoint businessEnd{};
-  /// The SSA-claiming-shaped retirement date. For retiree seeds it is
-  /// backdated (<= the anchor); for highNetWorth it is a far-future
-  /// sentinel that personaAt never consults.
+  /* The SSA-claiming-shaped retirement date. For retiree seeds it is
+   * backdated (<= the anchor); for highNetWorth it is a far-future
+   * sentinel that personaAt never consults. */
   time::TimePoint retirement{};
 
-  // H3 wiring: the lifespan primitive's outputs, drawn on the
-  // SEPARATE {"mortality", personId} lane (lifespan.hpp: three
+  // The lifespan primitive's outputs, drawn on the SEPARATE
+  // {"mortality", personId} lane (lifespan.hpp: three
   // draws; alive-at-anchor invariant — death strictly after the
   // person's anchor; age-120 cap; sex is a latent mortality
   // attribute). Income stops here; personaAt is deliberately
@@ -218,9 +206,10 @@ struct Inputs {
   entity::PersonId person = 0;
   PersonaType seed = PersonaType::salaried;
   time::CalendarDate dob{};
-  /// The person's SEED-STATE ANCHOR: sim start for the seed roster,
-  /// the JOIN DATE for the H3 join cohort (the field keeps its H2
-  /// name; deriveAll fills it per person from Pack::joinDays).
+  /* The person's SEED-STATE ANCHOR: sim start for the seed roster,
+   * the JOIN DATE for the mid-window join cohort (the field keeps
+   * its sim-start name; deriveAll fills it per person from
+   * Pack::joinDays). */
   time::TimePoint simStart{};
 };
 
@@ -245,9 +234,8 @@ inline void requireInputs(const Inputs &in) {
 // before the anchor contradicts the seed state, so the event settles
 // a drawn number of days past the anchor instead. Future dates stand
 // exactly as drawn.
-[[nodiscard]] inline time::TimePoint settled(time::TimePoint drawn,
-                                             time::TimePoint anchor,
-                                             int settleDays) {
+[[nodiscard]] inline time::TimePoint
+settled(time::TimePoint drawn, time::TimePoint anchor, int settleDays) {
   return drawn > anchor ? drawn : time::addDays(anchor, settleDays);
 }
 
@@ -260,26 +248,25 @@ inline void requireInputs(const Inputs &in) {
   auto rng = factory.rng({"persona-era", std::to_string(in.person)});
 
   // The eight draws, unconditional, in this order (contract):
-  const double uClaim = rng.nextDouble();                          // 1
-  const int claimJitter = static_cast<int>(rng.uniformInt(0, 61)); // 2
-  const double uWorkAge = rng.nextDouble();                        // 3
-  const double uWorkDest = rng.nextDouble();                       // 4
-  const double uBizResid = rng.nextDouble();                       // 5
-  const double uBizDest = rng.nextDouble();                        // 6
+  const double uClaim = rng.nextDouble();                             // 1
+  const int claimJitter = static_cast<int>(rng.uniformInt(0, 61));    // 2
+  const double uWorkAge = rng.nextDouble();                           // 3
+  const double uWorkDest = rng.nextDouble();                          // 4
+  const double uBizResid = rng.nextDouble();                          // 5
+  const double uBizDest = rng.nextDouble();                           // 6
   const int settleShort = static_cast<int>(rng.uniformInt(90, 541));  // 7
   const int settleLong = static_cast<int>(rng.uniformInt(180, 1826)); // 8
 
   const int fra = fraMonths(in.dob.year);
-  const auto claimDate =
-      time::addDays(atAgeMonths(in.dob, claimAgeMonths(uClaim, fra)),
-                    claimJitter);
+  const auto claimDate = time::addDays(
+      atAgeMonths(in.dob, claimAgeMonths(uClaim, fra)), claimJitter);
 
   Timeline tl;
   tl.seed = in.seed;
 
   switch (in.seed) {
   case PersonaType::highNetWorth:
-    // Declared H2 exemption: no transitions (revisit with the CEX/H3
+    // Declared exemption: no transitions (revisit with the CEX
     // budget work). Sentinel far beyond the mortality table.
     tl.working = PersonaType::highNetWorth;
     tl.retirement = atAgeMonths(in.dob, 150 * 12);
@@ -295,8 +282,7 @@ inline void requireInputs(const Inputs &in) {
   case PersonaType::student: {
     tl.working =
         uWorkDest < 0.85 ? PersonaType::salaried : PersonaType::freelancer;
-    const auto drawn =
-        atAgeMonths(in.dob, workStartAgeYears(uWorkAge) * 12);
+    const auto drawn = atAgeMonths(in.dob, workStartAgeYears(uWorkAge) * 12);
     tl.workStart = detail::settled(drawn, in.simStart, settleShort);
     tl.retirement =
         std::max(claimDate, time::addDays(tl.workStart, 365)); // safety
@@ -320,7 +306,7 @@ inline void requireInputs(const Inputs &in) {
     break;
   }
 
-  // H3: the lifespan, on its OWN isolated lane — the eight draws
+  // The lifespan, on its OWN isolated lane — the eight draws
   // above are byte-identical with or without it. It shares the
   // person's anchor, so a joiner's death lands strictly after their
   // join date (alive-at-join).
@@ -335,9 +321,9 @@ inline void requireInputs(const Inputs &in) {
   return tl;
 }
 
-/// The effective persona on a date. Pure; the seed dominates only
-/// through the transition dates derived above. Deliberately
-/// death-agnostic — gate on aliveAt separately.
+/* The effective persona on a date. Pure; the seed dominates only
+ * through the transition dates derived above. Deliberately
+ * death-agnostic — gate on aliveAt separately. */
 [[nodiscard]] inline PersonaType personaAt(const Timeline &tl,
                                            time::TimePoint at) noexcept {
   if (tl.seed == PersonaType::highNetWorth) {
@@ -358,21 +344,21 @@ inline void requireInputs(const Inputs &in) {
   return tl.working;
 }
 
-/// Alive strictly before the death instant (H3).
+/* Alive strictly before the death instant. */
 [[nodiscard]] inline bool aliveAt(const Timeline &tl,
                                   time::TimePoint at) noexcept {
   return at < tl.death;
 }
 
-// --- Batch derivation + consumer helpers (H2 step 2b) -------------
+// --- Batch derivation + consumer helpers --------------------------
 
-/// Every person's timeline from the seed assignment + the single-age
-/// carrier (Pack::birthDates), on the same world-seed factory the dob
-/// lanes use. Fills Pack::timelines at the entities stage. `joinDays`
-/// (Pack::joinDays; optional — empty means everyone anchors at sim
-/// start, the pre-3c-ii shape) moves each joiner's seed-state anchor
-/// to their join date (H3 part 3c-ii: the age axis and the alive
-/// invariant bind at JOIN for the join cohort).
+/* Every person's timeline from the seed assignment + the single-age
+ * carrier (Pack::birthDates), on the same world-seed factory the dob
+ * lanes use. Fills Pack::timelines at the entities stage. `joinDays`
+ * (Pack::joinDays; optional — empty means everyone anchors at sim
+ * start) moves each joiner's seed-state anchor to their join date:
+ * the age axis and the alive invariant bind at JOIN for the join
+ * cohort. */
 [[nodiscard]] inline std::vector<Timeline>
 deriveAll(std::uint64_t worldSeed, time::TimePoint simStart,
           const entity::behavior::Assignment &assignment,
@@ -391,24 +377,23 @@ deriveAll(std::uint64_t worldSeed, time::TimePoint simStart,
     const auto anchor =
         anchored ? simStart + time::Days{static_cast<int>(joinDays[idx])}
                  : simStart;
-    out.push_back(derive(factory, Inputs{
-                                      .person = static_cast<entity::PersonId>(
-                                          idx + 1),
-                                      .seed = assignment.byPerson[idx],
-                                      .dob = birthDates[idx],
-                                      .simStart = anchor,
-                                  }));
+    out.push_back(
+        derive(factory, Inputs{
+                            .person = static_cast<entity::PersonId>(idx + 1),
+                            .seed = assignment.byPerson[idx],
+                            .dob = birthDates[idx],
+                            .simStart = anchor,
+                        }));
   }
   return out;
 }
 
-/// When PAYROLL becomes possible for this life: students at the
-/// study->work transition, small-business owners after the business
-/// closes (they take a job), everyone else from the beginning of
-/// time. Payroll is active on [payrollStart(tl), min(tl.retirement,
-/// tl.death)) since H3.
-[[nodiscard]] inline time::TimePoint
-payrollStart(const Timeline &tl) noexcept {
+/* When PAYROLL becomes possible for this life: students at the
+ * study->work transition, small-business owners after the business
+ * closes (they take a job), everyone else from the beginning of
+ * time. Payroll is active on [payrollStart(tl), min(tl.retirement,
+ * tl.death)). */
+[[nodiscard]] inline time::TimePoint payrollStart(const Timeline &tl) noexcept {
   if (tl.seed == PersonaType::student) {
     return tl.workStart;
   }

@@ -8,31 +8,31 @@
 
 namespace PhantomLedger::primitives::utils {
 
-// A flat compressed-row container: `offsets_` bounds each row inside a
-// single `flat_` array.
-//
-// VARIABLE-LENGTH ROWS (merchant-churn-2026-07). A row's slot span
-// `[offsets[i], offsets[i+1])` is its CAPACITY; `counts_`, when populated,
-// gives the number of live entries at the front of that span. `rowOf`
-// returns only the live prefix, so a consumer sees a shorter row without
-// knowing anything about the reservation behind it.
-//
-// This exists because growing a row the obvious way — inserting into
-// `flat_` and bumping every later offset — is O(n) per insert AND
-// invalidates every outstanding span. `src/activity/spending/dynamics/
-// monthly/evolution.cpp` carried a TODO deferring the whole favourites
-// add/drop pass on exactly that obstacle, which meant
-// `math::evolution::evolveFavorites` was fully written, its config
-// validated at startup, and NEVER CALLED: favourite merchant sets were
-// frozen for every day of a 20-year run.
-//
-// With capacity plus a count, `pushBack` writes at `count++` and
-// `swapRemove` moves the last live entry over the hole and decrements —
-// both O(1), no reallocation, no offset arithmetic, spans stay valid.
-//
-// BACKWARD COMPATIBLE BY DESIGN: an instance built without counts (the
-// two-argument constructor, which `Billers` still uses) reports each row's
-// full span, so existing callers are bit-identical.
+/* A flat compressed-row container: `offsets_` bounds each row inside a single
+ * `flat_` array.
+ *
+ * VARIABLE-LENGTH ROWS. A row's slot span `[offsets[i], offsets[i+1])` is its
+ * CAPACITY; `counts_`, when populated, gives the number of live entries at
+ * the front of that span. `rowOf` returns only the live prefix, so a consumer
+ * sees a shorter row without knowing anything about the reservation behind
+ * it.
+ *
+ * The per-row capacity exists because growing a row the obvious way —
+ * inserting into `flat_` and bumping every later offset — is O(n) per insert
+ * AND invalidates every outstanding span. `src/activity/spending/dynamics/
+ * monthly/evolution.cpp` carried a TODO deferring the whole favourites
+ * add/drop pass on exactly that obstacle, which meant
+ * `math::evolution::evolveFavorites` was fully written, its config validated
+ * at startup, and NEVER CALLED: favourite merchant sets were frozen for every
+ * day of a 20-year run.
+ *
+ * With capacity plus a count, `pushBack` writes at `count++` and `swapRemove`
+ * moves the last live entry over the hole and decrements — both O(1), no
+ * reallocation, no offset arithmetic, spans stay valid.
+ *
+ * BACKWARD COMPATIBLE BY DESIGN: an instance built without counts (the
+ * two-argument constructor, which `Billers` uses) reports each row's full
+ * span, so those callers are bit-identical. */
 template <typename Offset = std::uint32_t, typename Value = std::uint32_t>
 class Csr {
 public:
@@ -44,16 +44,15 @@ public:
   Csr(std::vector<Offset> offsets, std::vector<Value> flat) noexcept
       : offsets_(std::move(offsets)), flat_(std::move(flat)) {}
 
-  // Variable-length form: `counts[i]` live entries at the front of row i's
-  // capacity span.
+  /* Variable-length form: `counts[i]` live entries at the front of row i's
+   * capacity span. */
   Csr(std::vector<Offset> offsets, std::vector<Value> flat,
       std::vector<Offset> counts) noexcept
       : offsets_(std::move(offsets)), flat_(std::move(flat)),
         counts_(std::move(counts)) {}
 
-  // Live length of row i. Falls back to the full capacity span when no
-  // counts were supplied, which is what keeps fixed-length callers
-  // unchanged.
+  /* Live length of row i. Falls back to the full capacity span when no counts
+   * were supplied, which is what keeps fixed-length callers unchanged. */
   [[nodiscard]] std::size_t rowLength(std::uint32_t row) const noexcept {
     if (counts_.empty()) {
       return static_cast<std::size_t>(offsets_[row + 1] - offsets_[row]);
@@ -66,16 +65,15 @@ public:
   }
 
   [[nodiscard]] std::span<const Value> rowOf(std::uint32_t row) const noexcept {
-    return std::span<const Value>(flat_.data() + offsets_[row],
-                                  rowLength(row));
+    return std::span<const Value>(flat_.data() + offsets_[row], rowLength(row));
   }
 
   [[nodiscard]] std::span<Value> rowOfMutable(std::uint32_t row) noexcept {
     return std::span<Value>(flat_.data() + offsets_[row], rowLength(row));
   }
 
-  // Append to row i if it has spare capacity. Returns false when full —
-  // the caller decides whether that is a no-op or an error. O(1).
+  /* Append to row i if it has spare capacity. Returns false when full — the
+   * caller decides whether that is a no-op or an error. O(1). */
   [[nodiscard]] bool pushBack(std::uint32_t row, Value value) noexcept {
     if (counts_.empty() || rowLength(row) >= rowCapacity(row)) {
       return false;
@@ -85,10 +83,11 @@ public:
     return true;
   }
 
-  // Remove the entry at `slot` within row i by moving the LAST live entry
-  // into its place. O(1), and it does not preserve order — which is correct
-  // here: a favourite list is a set, and every consumer either scans it
-  // whole or samples it uniformly.
+  /* Remove the entry at `slot` within row i by moving the LAST live entry
+   * into its place. O(1), and it deliberately does not preserve order: a
+   * favourite list is a set, and every consumer either scans it whole or
+   * samples it. SLOT ORDER IS THEREFORE MEANINGLESS — nothing may key a
+   * weight or a rank on a slot index. */
   [[nodiscard]] bool swapRemove(std::uint32_t row, std::size_t slot) noexcept {
     const auto length = rowLength(row);
     if (counts_.empty() || slot >= length) {
@@ -129,7 +128,7 @@ public:
 private:
   std::vector<Offset> offsets_;
   std::vector<Value> flat_;
-  // Empty => fixed-length rows (each row is its full capacity span).
+  /* Empty => fixed-length rows (each row is its full capacity span). */
   std::vector<Offset> counts_;
 };
 

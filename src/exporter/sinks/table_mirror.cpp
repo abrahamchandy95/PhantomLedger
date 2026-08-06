@@ -12,8 +12,8 @@ namespace PhantomLedger::exporter::sinks {
 
 namespace {
 
-// Same deduplication rule as the csv_loader it replaces, so the DDL of
-// a directly-written table can never diverge from a file-loaded one.
+/* Same deduplication rule the file loader used, so the DDL of a
+ * directly-written table can never diverge from a file-loaded one. */
 [[nodiscard]] std::vector<std::string>
 dedupColumns(std::span<const std::string_view> header) {
   std::vector<std::string> cols;
@@ -35,9 +35,8 @@ dedupColumns(std::span<const std::string_view> header) {
   return cols;
 }
 
-// Registry values are internal identifiers ([A-Za-z0-9_] by
-// construction); reject anything that would need SQL escaping rather
-// than escape it.
+/* Registry values are internal identifiers ([A-Za-z0-9_] by construction).
+ * REJECT anything that would need SQL escaping rather than escaping it. */
 [[nodiscard]] const std::string &requirePlain(const std::string &value) {
   if (value.find('\'') != std::string::npos ||
       value.find('\\') != std::string::npos) {
@@ -48,15 +47,13 @@ dedupColumns(std::span<const std::string_view> header) {
   return value;
 }
 
-// THE DIRECT-TABLE REGISTRY (CSV retirement step 5a): every table a
-// run writes via COPY is recorded in public.pl_direct_tables, so the
-// table-digest golden discovers a run's tables from PostgreSQL itself
-// instead of from written CSV stems — the last file dependency of the
-// falsifiability chain. The FIRST mirror opened for a schema in this
-// process rewrites that schema's slate, so the registry always
-// describes the LAST run that wrote the schema (stray tables in a
-// shared database are never picked up; tables dropped by newer binary
-// versions never linger).
+/* THE DIRECT-TABLE REGISTRY: every table a run writes via COPY is recorded
+ * in public.pl_direct_tables, so the table-digest golden discovers a run's
+ * tables from PostgreSQL itself rather than from written file stems. The
+ * FIRST mirror opened for a schema in this process rewrites that schema's
+ * slate, so the registry always describes the LAST run that wrote the
+ * schema — stray tables in a shared database are never picked up, and
+ * tables dropped by a newer binary never linger. */
 void registerDirectTable(postgres::Connection &conn,
                          const std::string &schemaKey,
                          const std::string &table) {
@@ -116,8 +113,10 @@ TableMirror::~TableMirror() {
   try {
     close();
   } catch (const std::exception &err) {
-    // Destructors must not throw; a failed COPY finish surfaces loudly
-    // but non-fatally. Callers wanting the hard error use close().
+    /* Destructors must not throw; a failed COPY finish surfaces loudly but
+     * non-fatally. Callers wanting the hard error use close(). Keep
+     * std::fprintf here — a throwing formatter in a destructor's catch
+     * handler would terminate the process. */
     std::fprintf(stderr, "TableMirror: close failed in destructor: %s\n",
                  err.what());
   }

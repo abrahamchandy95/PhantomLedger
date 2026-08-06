@@ -34,18 +34,17 @@ public:
   AccessInfraStage &
   attackerAssignment(synth::infra::attackers::AssignmentRules value) noexcept;
 
-  // `runSeed` drives ONE isolated lane: the attacker-infrastructure pool
-  // (attacker-infra-2026-07). It is deliberately NOT taken off `rng`.
-  //
-  // The shared sequential stream is consumed by ring access, then
-  // devices, then IPs, and then by everything downstream of the world
-  // build — so appending a fourth consumer here would shift every
-  // legitimate draw in the corpus for a change that has no business
-  // touching amounts, timestamps or row counts. Isolating it is the same
-  // device `buildMerchants` and `issueCreditCards` already use for their
-  // seed-driven lanes, and it is what keeps this round's golden movement
-  // auditable: the corpus moves only where an attacker endpoint is
-  // actually written.
+  /* `runSeed` drives ONE isolated lane: the attacker-infrastructure pool. It
+   * is deliberately NOT taken off `rng`.
+   *
+   * The shared sequential stream is consumed by ring access, then devices,
+   * then IPs, and then by everything downstream of the world build — so
+   * appending a fourth consumer here would shift every legitimate draw in the
+   * corpus for a change that has no business touching amounts, timestamps or
+   * row counts. Isolating it is the same device `buildMerchants` and
+   * `issueCreditCards` already use for their seed-driven lanes, and it is what
+   * keeps golden movement auditable: the corpus moves only where an attacker
+   * endpoint is actually written. */
   [[nodiscard]] pipeline::Infra build(random::Rng &rng,
                                       const pipeline::People &people,
                                       const pipeline::Holdings &holdings,

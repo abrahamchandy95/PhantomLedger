@@ -15,10 +15,7 @@ namespace PhantomLedger::primitives::validate {
 template <class T>
 concept Numeric = std::integral<T> || std::floating_point<T>;
 
-// -----------------------------------------------------------------------------
-// Error type
-// -----------------------------------------------------------------------------
-
+/* Error type. */
 class Error : public std::invalid_argument {
 public:
   Error(std::string message, std::source_location where)
@@ -30,16 +27,16 @@ private:
   std::source_location where_;
 };
 
-// -----------------------------------------------------------------------------
-// Formatting (lazy — only touched on the failure path)
-// -----------------------------------------------------------------------------
-
+/* Formatting, lazy: only touched on the failure path. */
 namespace detail {
 
 template <Numeric T> [[nodiscard]] inline std::string fmt(T v) {
   if constexpr (std::integral<T>) {
     return std::to_string(v);
   } else {
+    /* FROZEN. This rendering is fingerprint-bound, and `%.17g` and
+     * `std::format`'s `{:.17g}` are not guaranteed to agree byte-for-byte on
+     * every double. Do not modernize this call. */
     char buf[32];
     std::snprintf(buf, sizeof(buf), "%.17g", static_cast<double>(v));
     return std::string{buf};
@@ -67,11 +64,8 @@ template <Numeric T> [[nodiscard]] inline std::string fmt(T v) {
 
 } // namespace detail
 
-// -----------------------------------------------------------------------------
-// Individual checks (eager throw). Defaulted source_location captures
-// the caller, not this file.
-// -----------------------------------------------------------------------------
-
+/* Individual checks, eager throw. The defaulted `source_location` captures
+ * the caller, not this file. */
 template <Numeric T, Numeric U>
 constexpr void gt(std::string_view field, T value, U lo,
                   std::source_location loc = std::source_location::current()) {
@@ -138,11 +132,8 @@ inline void unit(std::string_view field, double value,
   between(field, value, 0.0, 1.0, loc);
 }
 
-// -----------------------------------------------------------------------------
-// Report — batch accumulator. Useful when validating a whole Policy and you
-// want to see every failure at once, not just the first.
-// -----------------------------------------------------------------------------
-
+/* Batch accumulator: validating a whole Policy reports every failure at
+ * once, not just the first. */
 class Report {
 public:
   template <class Fn> void check(Fn &&fn) noexcept {
@@ -173,10 +164,7 @@ private:
   std::vector<std::string> messages_;
 };
 
-// -----------------------------------------------------------------------------
-// Validator concept — so structs can opt into validation uniformly.
-// -----------------------------------------------------------------------------
-
+/* Opt-in: any struct exposing `validate(Report&)` is `Validatable`. */
 template <class T>
 concept Validatable = requires(const T &t, Report &r) {
   { t.validate(r) } -> std::same_as<void>;

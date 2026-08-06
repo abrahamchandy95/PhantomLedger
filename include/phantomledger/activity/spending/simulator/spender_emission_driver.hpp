@@ -85,7 +85,7 @@ private:
   [[nodiscard]] const PreparedRun::Budget &budget() const;
   [[nodiscard]] const PreparedRun::Routing &routing() const;
 
-  void prepareThreadStates(double txnsPerMonth);
+  void prepareThreadScratch(double txnsPerMonth);
   void preparePool();
   void prepareSpenderRngs();
   void mergeThreadTxns(RunState &state);
@@ -99,7 +99,7 @@ private:
   Threads threads_{};
   const PreparedRun::Budget *budget_ = nullptr;
   const PreparedRun::Routing *routing_ = nullptr;
-  std::vector<ThreadLocalState> threadStates_{};
+  std::vector<ThreadScratch> threadScratch_{};
   std::vector<random::Rng> spenderRngs_{};
   std::vector<transactions::Transaction> dayTransactions_{};
   std::vector<clearing::Ledger::Posting> dayPostings_{};

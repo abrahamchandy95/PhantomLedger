@@ -16,9 +16,9 @@ namespace PhantomLedger::pipeline {
 
 using PhaseObserver = std::function<void(std::string_view phase)>;
 
-// Result of a windowed run: the built world (entities, infra; the
-// transfers member of `world` stays empty) plus the transfer-fold summary.
-// The posted corpus is NOT retained — it streamed to the caller's sink.
+/* Result of a windowed run: the built world (entities, infra; the transfers
+ * member of `world` stays empty) plus the transfer-fold summary. The posted
+ * corpus is NOT retained — it streamed to the caller's sink. */
 struct WindowedSimulationResult {
   SimulationResult world;
   ::PhantomLedger::pipeline::stages::transfers::WindowedRunResult transfers;
@@ -56,31 +56,28 @@ public:
 
   [[nodiscard]] SimulationResult run(const PhaseObserver &onPhase = {}) const;
 
-  // World build shared by run() and the windowed path: entities, products,
-  // infra, consuming the shared sequential stream in the exact same order.
-  // The transfers member of the returned result stays empty. Callers that
-  // need the world BEFORE the transfer fold (e.g. to bind a streaming
-  // exporter to the account registry) pair this with
-  // runWindowedTransfers().
+  /* World build shared by run() and the windowed path: entities, products,
+   * infra, consuming the shared sequential stream in the exact same order. The
+   * transfers member of the returned result stays empty. Callers that need the
+   * world BEFORE the transfer fold — to bind a streaming exporter to the
+   * account registry, say — pair this with runWindowedTransfers(). */
   [[nodiscard]] SimulationResult
   buildWorld(const PhaseObserver &onPhase = {}) const;
 
-  // RAM R2.1 (derive-don't-store, docs/ram_derive_dont_store.md):
-  // rebuild the world by replaying the identical construction from a
-  // FRESH generator seeded with the run seed. World-build draws are a
-  // prefix of the run's shared sequential stream — the stream starts at
-  // Rng::fromSeed(seed) and buildWorld() is its first consumer — so the
-  // replay is byte-identical to the original buildWorld() result no
-  // matter how far the transfer fold has advanced the shared RNG since.
-  // Pairs with releaseExportOnlyPacks(): release the export-only packs
-  // for the duration of the fold, rebuild the full world for the vertex
-  // exporters afterwards.
+  /* Rebuild the world by replaying the identical construction from a FRESH
+   * generator seeded with the run seed. World-build draws are a prefix of the
+   * run's shared sequential stream — the stream starts at Rng::fromSeed(seed)
+   * and buildWorld() is its first consumer — so the replay is byte-identical
+   * to the original buildWorld() result no matter how far the transfer fold
+   * has advanced the shared RNG since. Pairs with releaseExportOnlyPacks():
+   * release the export-only packs for the duration of the fold, rebuild the
+   * full world for the vertex exporters afterwards. */
   [[nodiscard]] SimulationResult
   rebuildWorldForExport(const PhaseObserver &onPhase = {}) const;
 
-  // Windowed transfer fold over a world previously built by buildWorld()
-  // on the SAME pipeline (the shared RNG has advanced accordingly). Rows
-  // stream to `sink`.
+  /* Windowed transfer fold over a world previously built by buildWorld() on
+   * the SAME pipeline, whose shared RNG has advanced accordingly. Rows stream
+   * to `sink`. */
   template <class S>
   [[nodiscard]] ::PhantomLedger::pipeline::stages::transfers::WindowedRunResult
   runWindowedTransfers(SimulationResult &world, S &sink,
@@ -96,12 +93,12 @@ public:
       ::PhantomLedger::pipeline::stages::transfers::SinkRef sink,
       const WindowedRunOptions &options, const PhaseObserver &onPhase) const;
 
-  // Windowed two-phase run: identical world build and deterministic
-  // regime as run(), but transfers fold through the bounded-memory
-  // windowed driver and STREAM to `sink` (SinkRef-compatible: beginSpan/
-  // append/endSpan/finish/rowsWritten) instead of accumulating a posted
-  // corpus. Byte-identical output to run() (test_production_windowed).
-  // Equivalent to buildWorld() followed by runWindowedTransfers().
+  /* Windowed two-phase run: identical world build and deterministic regime as
+   * run(), but transfers fold through the bounded-memory windowed driver and
+   * STREAM to `sink` (SinkRef-compatible: beginSpan / append / endSpan /
+   * finish / rowsWritten) instead of accumulating a posted corpus.
+   * Byte-identical output to run() (test_production_windowed). Equivalent to
+   * buildWorld() followed by runWindowedTransfers(). */
   template <class S>
   [[nodiscard]] WindowedSimulationResult
   runWindowed(S &sink, const WindowedRunOptions &options = {},
@@ -110,17 +107,18 @@ public:
     return runWindowedErased(ref, options, onPhase);
   }
 
-  [[nodiscard]] WindowedSimulationResult runWindowedErased(
-      ::PhantomLedger::pipeline::stages::transfers::SinkRef sink,
-      const WindowedRunOptions &options, const PhaseObserver &onPhase) const;
+  [[nodiscard]] WindowedSimulationResult
+  runWindowedErased(::PhantomLedger::pipeline::stages::transfers::SinkRef sink,
+                    const WindowedRunOptions &options,
+                    const PhaseObserver &onPhase) const;
 
 private:
   void buildEntities(SimulationResult &result,
                      ::PhantomLedger::random::Rng &rng) const;
 
-  // The one world-build sequence, parameterized on the generator so the
-  // run path (shared stream) and the export replay (fresh stream from
-  // the run seed) cannot drift.
+  /* The one world-build sequence, parameterized on the generator so the run
+   * path (shared stream) and the export replay (fresh stream from the run
+   * seed) cannot drift. */
   [[nodiscard]] SimulationResult
   buildWorldWith(::PhantomLedger::random::Rng &rng,
                  const PhaseObserver &onPhase) const;
@@ -136,12 +134,11 @@ private:
   TransferStage transfers_{};
 };
 
-// RAM R2.1: release the packs NO part of the transfer fold reads —
-// the PII roster and the device/IP inventories (verified: their only
-// consumers are the vertex exporters; the Router carries its own
-// routing copies of the per-person pools). Frees the storage by
-// swapping in empty packs. Callers whose finisher needs the world
-// rebuild it afterwards via rebuildWorldForExport().
+/* Release the packs NO part of the transfer fold reads: the PII roster and
+ * the device/IP inventories. Their only consumers are the vertex exporters,
+ * and the Router carries its own routing copies of the per-person pools.
+ * Frees the storage by swapping in empty packs; callers whose finisher needs
+ * the world rebuild it afterwards via rebuildWorldForExport(). */
 void releaseExportOnlyPacks(SimulationResult &world) noexcept;
 
 [[nodiscard]] SimulationResult

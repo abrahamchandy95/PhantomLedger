@@ -1,4 +1,10 @@
 #pragma once
+/*
+  Mule-ML Party Identity Rendering
+  Flattens a person's `pii::Record` into the one string-per-column shape the
+  mule-ML tables carry. Pure rendering off the record's own indices and the
+  household's modelled home area — no draws and no independent PII.
+ */
 
 #include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/exporter/common/pii_render.hpp"
@@ -93,9 +99,9 @@ renderIdentity(const ::PhantomLedger::entity::pii::Record &record,
     out.address = pool.streets[record.address.streetIdx];
   }
 
-  // geo-causal-v1: city/state/zip are the household's modeled home area
-  // (population-weighted, coherent with the person's home), resolved
-  // through the shared exporter resolver — not an independent zip draw.
+  /* city/state/zip are the household's modeled home area
+   * (population-weighted, coherent with the person's home), resolved through
+   * the shared exporter resolver — not an independent zip draw. */
   const auto home = common::pii_render::homeGeo(pool, record.address);
   out.city = std::string{home.city};
   out.state = std::string{home.state};

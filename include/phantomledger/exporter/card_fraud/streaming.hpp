@@ -1,53 +1,47 @@
 #pragma once
-//
-// phantomledger/exporter/card_fraud/streaming.hpp
-//
-// Streaming half of the card-fraud exporter, shared by BOTH engines: a
-// chunk sink that consumes settled rows, filters THE CARD VIEW
-// (schema.hpp: channels cardPurchase + merchant), and
-//
-//   STREAMS (row-scale, never retained):
-//     Payment_Transaction vertices    id T<row_seq>; the 8 loaded attrs
-//     Card_Send_Transaction edges     txn -> card, edge_unix_time
-//     Merchant_Receive_Transaction    txn -> merchant, edge_unix_time
-//     Transaction_Uses_Device edges   txn -> event-time device
-//     Transaction_Uses_IP edges       txn -> event-time IP
-//   These are five streamed tables (one vertex and four relationships)
-//   in the 39-table card-fraud export.
-//
-//   ACCUMULATES (bounded — the finisher's inputs):
-//     cards       distinct source Keys seen in the view, with the
-//                 credit/debit resolution and the ever-fraud flag
-//                 (account/card scale; ordered map so the finisher
-//                 writes vertices in deterministic Key order)
-//     merchants   distinct destination Keys (merchant scale; ordered)
-//     devices/IPs distinct session endpoints observed in the card view
-//     stream stats  first timestamp, total/view/fraud row counts
-//
-// row_seq alignment: the sink counts EVERY settled row (view or not),
-// so T<row_seq> ids cross-reference the streamed 'transactions' table
-// 1:1 — the same identity test_postgres pins for the corpus.
-//
-// use_chip is CAUSAL (ROUND 8, use-chip-causal-2026-07): the catalog
-// index built at construction resolves each destination's category AND
-// footprint, and derive::useChipFor reads the footprint (the acceptance
-// environment) plus the row's own year — the same axis generation
-// partitioned on. error / category fallback remain the content-keyed
-// derivations in derive.hpp (doc-anchored card-fraud-2026-07 block).
-//
-// All five streamed tables go through common::Table: when
-// Config::pgMirror is armed the rendered bytes stream into PostgreSQL
-// directly — the only production destination (no files) — each on its
-// own connection, open across the whole fold.
-//
+/*
+  Streaming half of the card-fraud exporter, shared by BOTH engines: a
+  chunk sink that consumes settled rows, filters THE CARD VIEW (schema.hpp:
+  channels cardPurchase + merchant), and
+
+    STREAMS (row-scale, never retained) — one vertex, four relationships:
+      Payment_Transaction vertices    id T<row_seq>; the 8 loaded attrs
+      Card_Send_Transaction edges     txn -> card, edge_unix_time
+      Merchant_Receive_Transaction    txn -> merchant, edge_unix_time
+      Transaction_Uses_Device edges   txn -> event-time device
+      Transaction_Uses_IP edges       txn -> event-time IP
+
+    ACCUMULATES (bounded — the finisher's inputs):
+      cards       distinct source Keys seen in the view, with the
+                  credit/debit resolution and the ever-fraud flag
+                  (account/card scale; ordered map so the finisher writes
+                  vertices in deterministic Key order)
+      merchants   distinct destination Keys (merchant scale; ordered)
+      devices/IPs distinct session endpoints observed in the card view
+      stream stats  first timestamp, total/view/fraud row counts
+
+  ROW_SEQ ALIGNMENT: the sink counts EVERY settled row, view or not, so
+  T<row_seq> ids cross-reference the streamed 'transactions' table 1:1 —
+  the same identity test_postgres pins for the corpus.
+
+  use_chip is CAUSAL: the catalog index built at construction resolves each
+  destination's category AND footprint, and derive::useChipFor reads the
+  footprint (the acceptance environment) plus the row's own year — the same
+  axis generation partitioned on. `error` and the category fallback stay
+  content-keyed in derive.hpp.
+
+  All five streamed tables go through common::Table: when Config::pgMirror
+  is armed the rendered bytes stream straight into PostgreSQL — the only
+  production destination, no files — each on its own connection, open
+  across the whole fold.
+ */
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/holdings/card_reissue.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/format.hpp"
-#include "phantomledger/entities/holdings/card_reissue.hpp"
-#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
 #include "phantomledger/exporter/common/framework.hpp"
@@ -56,6 +50,7 @@
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/pipeline/chunk/schedule.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
+#include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/merchants/names.hpp"
@@ -78,15 +73,14 @@ struct CardSeen {
   bool credit = false;
   bool fraud = false;
 
-  // card-churn-2026-07: which card GENERATIONS this account was actually
-  // observed transacting on. The finisher emits one `cf_Card` row per
-  // observed generation, so a card replaced mid-window contributes two
-  // vertices — which is the point.
-  //
-  // OBSERVED, not scheduled: the schedule may say a card turned over five
-  // times, but a generation with no transaction in the view must not become
-  // a vertex, for the same reason `cf_Merchant` is restricted to
-  // view-observed merchants — an unreferenced vertex is a dangling one.
+  /* Which card GENERATIONS this account was observed transacting on. The
+   * finisher emits one `cf_Card` row per observed generation, so a card
+   * replaced mid-window contributes two vertices — which is the point.
+   *
+   * OBSERVED, NEVER SCHEDULED: the schedule may say a card turned over five
+   * times, but a generation with no transaction in the view must not become
+   * a vertex, for the same reason `cf_Merchant` is restricted to
+   * view-observed merchants — an unreferenced vertex is a dangling one. */
   std::set<std::uint32_t> generations;
 };
 
@@ -105,39 +99,37 @@ struct StreamedArtifacts {
 class StreamingCardFraudExport {
 public:
   struct Config {
-    // Membership resolution for the visible card graph. The shared raw
-    // ledger retains generation rows, but a Party and its card may enter this
-    // feature graph only during the owner's [join, close) interval.
+    /* Membership resolution for the visible card graph. The shared raw
+     * ledger retains generation rows, but a Party and its card may enter
+     * this feature graph only during the [join, close) interval. */
     const entity::account::Registry *registry = nullptr;
     const entity::account::Lookup *lookup = nullptr;
     ::PhantomLedger::synth::pii::Membership membership;
 
-    // Credit-card resolution: source Key in byKey => credit card.
+    /* Credit-card resolution: source Key in byKey => credit card. */
     const entity::card::Registry *cards = nullptr;
 
-    // Category and footprint resolution for catalog destinations;
-    // non-catalog destinations use derive::fallbackCategory and derive
-    // as remote (Online) acceptance endpoints.
+    /* Category and footprint resolution for catalog destinations;
+     * non-catalog destinations use derive::fallbackCategory and derive as
+     * remote (Online) acceptance endpoints. */
     const entity::merchant::Catalog *merchants = nullptr;
 
-    // When set, the streamed tables are written directly into
-    // PostgreSQL as the bytes the csv::Writer renders — the only
-    // production destination.
+    /* When set, the streamed tables are written directly into PostgreSQL as
+     * the bytes the csv::Writer renders — the only production
+     * destination. */
     const ::PhantomLedger::exporter::sinks::PgMirror *pgMirror = nullptr;
 
-    // Test infrastructure: rendered bytes per table stem.
+    /* Test infrastructure: rendered bytes per table stem. */
     common::TableCapture *capture = nullptr;
 
-    // card-churn-2026-07: the run window, which anchors the card reissue
-    // schedule. Generation 0 begins at `window.start`.
-    //
-    // WINDOW-ANCHORED RATHER THAN EPOCH-ANCHORED, deliberately. Anchoring at
-    // a fixed epoch would make a 2000-start run open at generation ~7 and
-    // rewrite EVERY card id in every table; anchoring at the window start
-    // keeps generation 0 un-suffixed and identical to the pre-round value.
-    // The point-in-time property is unaffected because a prefix export and a
-    // full export of the same run share the same window start — which is
-    // exactly what `test_card_point_in_time` compares.
+    /* The run window, which anchors the card reissue schedule. Generation 0
+     * begins at `window.start`.
+     *
+     * KEEP IT WINDOW-ANCHORED, NOT EPOCH-ANCHORED. A fixed epoch would open
+     * a 2000-start run at generation ~7 and rewrite EVERY card id in every
+     * table. The point-in-time property is unaffected because a prefix
+     * export and a full export of the same run share the same window start,
+     * which is exactly what `test_card_point_in_time` compares. */
     ::PhantomLedger::time::Window window{};
   };
 
@@ -169,8 +161,8 @@ public:
       return;
     }
     if (artifacts_.rows == 0) {
-      // Replay-sorted stream: the first row carries the minimum
-      // timestamp, identical to deriveSimStart over the full corpus.
+      /* Replay-sorted stream: the first row carries the minimum timestamp,
+       * identical to deriveSimStart over the full corpus. */
       artifacts_.firstTs = txnsBatch.front().timestamp;
     }
 
@@ -195,36 +187,34 @@ public:
       }
       ++artifacts_.viewRows;
 
-      // THE SESSION IS PART OF THE CARD VIEW'S CONTRACT, NOT AN OPTION.
-      // test_pipeline_e2e and docs/card_fraud_postgres_acceptance.sql BOTH
-      // require exactly ONE device edge and ONE IP edge per
-      // Payment_Transaction row (the acceptance script FULL JOINs and
-      // counts any unmatched side as a failure). The two edge writes below
-      // are therefore UNCONDITIONAL, and they can only stay unconditional
-      // if every row reaching them carries a session.
-      //
-      // A row CAN reach here without one, and the asymmetry that lets it
-      // is worth naming. `Membership::activeAt` returns TRUE for
-      // out-of-range ids — "counterparties, hubs, invalid owners are
-      // always active" (synth/pii/membership.hpp) — which is correct for
-      // the TARGET side, where merchants are legitimately ownerless. But
-      // the access router's owner map SKIPS every account whose owner is
-      // invalidPerson (pipeline/stages/infra.cpp), and ownerless accounts
-      // do exist (synth/accounts/assign.hpp registers them). So a
-      // card-view row sourced from an ownerless account passes the filter
-      // above while never having been routable, and transactions::Factory
-      // left its session empty.
-      //
-      // That is a GENERATION defect, and it is REFUSED here rather than
-      // absorbed. The two alternatives are both worse: dropping the row
-      // would hide the defect and make the payment count silently depend
-      // on session availability, and writing a blank endpoint would emit a
-      // dangling edge that only surfaces as a PostgreSQL acceptance
-      // exception hours later. Fail at the point of truth, naming the row.
-      //
-      // No production row trips this today — if one did, the e2e 1:1 check
-      // would already be red. This closes the gap between "happens to
-      // hold" and "cannot be violated silently".
+      /* THE SESSION IS PART OF THE CARD VIEW'S CONTRACT, NOT AN OPTION.
+       * test_pipeline_e2e and docs/card_fraud_postgres_acceptance.sql both
+       * require exactly ONE device edge and ONE IP edge per
+       * Payment_Transaction row (the acceptance script FULL JOINs and
+       * counts any unmatched side as a failure). The two edge writes below
+       * are therefore UNCONDITIONAL, and can only stay that way if every
+       * row reaching them carries a session.
+       *
+       * A row CAN reach here without one, and the asymmetry that lets it is
+       * worth naming. `Membership::activeAt` returns TRUE for out-of-range
+       * ids — "counterparties, hubs, invalid owners are always active"
+       * (synth/pii/membership.hpp) — which is right for the TARGET side,
+       * where merchants are legitimately ownerless. But the access router's
+       * owner map SKIPS every account whose owner is invalidPerson
+       * (pipeline/stages/infra.cpp), and ownerless accounts do exist
+       * (synth/accounts/assign.hpp registers them). So a card-view row
+       * sourced from an ownerless account passes the filter above while
+       * never having been routable, and transactions::Factory left its
+       * session empty.
+       *
+       * That is a GENERATION defect and it is REFUSED here, not absorbed.
+       * Both alternatives are worse: dropping the row hides the defect and
+       * makes the payment count silently depend on session availability,
+       * and writing a blank endpoint emits a dangling edge that surfaces
+       * only as a PostgreSQL acceptance exception hours later. Fail at the
+       * point of truth, naming the row. No production row trips this — the
+       * e2e 1:1 check would already be red if one did. The throw closes the
+       * gap between "happens to hold" and "cannot be violated silently". */
       if (!tx.session.deviceId.assigned() || tx.session.ipAddress.value == 0) {
         throw std::runtime_error(
             "card_fraud: card-view row carries no session endpoint (source "
@@ -254,11 +244,11 @@ public:
       artifacts_.ips.insert(tx.session.ipAddress);
 
       const auto id = derive::txnId(artifacts_.rows);
-      // card-churn-2026-07: the card number for THIS row is the generation
-      // live at THIS row's timestamp, so a transaction before a reissue and
-      // one after it carry different numbers on the same account. Schedules
-      // are cached per account — `generationsFor` is draw-free and pure, so
-      // caching cannot change the answer, only the cost.
+      /* The card number for THIS row is the generation live at THIS row's
+       * timestamp, so a transaction before a reissue and one after it carry
+       * different numbers on the same account. Schedules are cached per
+       * account: `generationsFor` is draw-free and pure, so caching cannot
+       * change the answer, only the cost. */
       const auto generation = generationFor(tx.source, tx.timestamp);
       card.generations.insert(generation);
       const auto cardNumber = derive::cardId(tx.source, credit, generation);
@@ -293,11 +283,11 @@ public:
   void endSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
 
   void finish() {
-    // Production correctness: close each long-lived COPY explicitly while an
-    // exception can still reach runWindowedStream. Table's destructor is only
-    // an unwind safety net and intentionally downgrades close failures to
-    // stderr; relying on reset() alone could otherwise let the run ledger be
-    // marked complete after PostgreSQL rejected a card table's final COPY.
+    /* CLOSE EXPLICITLY, do not rely on reset(). Each long-lived COPY must
+     * close while an exception can still reach runWindowedStream. Table's
+     * destructor is only an unwind safety net and downgrades close failures
+     * to stderr, so reset() alone could let the run ledger be marked
+     * complete after PostgreSQL rejected a card table's final COPY. */
     paymentW_->close();
     cardSendW_->close();
     merchantReceiveW_->close();
@@ -314,24 +304,26 @@ public:
     return artifacts_.rows;
   }
 
-  // Call after finish(); the writers are done by then.
+  /* Call after finish(); the writers are done by then. */
   [[nodiscard]] StreamedArtifacts takeArtifacts() noexcept {
     return std::move(artifacts_);
   }
 
 private:
-  // The reissue schedule for one account, memoised. Bounded by the number of
-  // distinct card accounts in the view.
+  /* The reissue schedule for one account, memoised. Bounded by the number
+   * of distinct card accounts in the view. */
   [[nodiscard]] std::uint32_t generationFor(const entity::Key &key,
                                             std::int64_t ts) {
     auto it = generationCache_.find(key);
     if (it == generationCache_.end()) {
-      const auto start = ::PhantomLedger::time::toEpochSeconds(config_.window.start);
-      const auto endExcl = ::PhantomLedger::time::toEpochSeconds(
-          ::PhantomLedger::time::addDays(config_.window.start, config_.window.days));
+      const auto start =
+          ::PhantomLedger::time::toEpochSeconds(config_.window.start);
+      const auto endExcl =
+          ::PhantomLedger::time::toEpochSeconds(::PhantomLedger::time::addDays(
+              config_.window.start, config_.window.days));
       it = generationCache_
                .emplace(key, entity::card::reissue::generationsFor(key, start,
-                                                                  endExcl))
+                                                                   endExcl))
                .first;
     }
     return entity::card::reissue::generationAt(it->second, ts);

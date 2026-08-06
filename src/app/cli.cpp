@@ -18,7 +18,11 @@ namespace {
 
 namespace pl = ::PhantomLedger;
 
-void writeUsage(const char *prog, std::FILE *stream) noexcept {
+} // namespace
+
+/* Stays on fprintf: the text contains literal braces (`--usecase {a,b,c}`),
+ * which std::format would require doubling in every future edit. */
+void printUsage(const char *prog, std::FILE *stream) noexcept {
   std::fprintf(
       stream,
       "PhantomLedger — synthetic bank transaction generator\n"
@@ -64,12 +68,6 @@ void writeUsage(const char *prog, std::FILE *stream) noexcept {
       prog, pl::app::kDefaultPgConninfo);
 }
 
-} // namespace
-
-void printUsage(const char *prog, std::FILE *stream) noexcept {
-  writeUsage(prog, stream);
-}
-
 pl::app::RunOptions parse(int argc, char **argv) {
   pl::app::RunOptions opts;
 
@@ -77,7 +75,7 @@ pl::app::RunOptions parse(int argc, char **argv) {
                                 T &&...formatArgs) {
     std::println(stderr, fmt, std::forward<T>(formatArgs)...);
     std::println(stderr, "");
-    writeUsage(argv[0], stderr);
+    printUsage(argv[0], stderr);
     std::exit(2);
   };
 
@@ -93,7 +91,7 @@ pl::app::RunOptions parse(int argc, char **argv) {
     const std::string_view arg{argv[i]};
 
     if (arg == "--help" || arg == "-h") {
-      writeUsage(argv[0], stdout);
+      printUsage(argv[0], stdout);
       std::exit(0);
     }
 
@@ -173,13 +171,12 @@ pl::app::RunOptions parse(int argc, char **argv) {
     die("Unknown argument: {}", arg);
   }
 
-  // Era lock (macro-history-v1 H0.6, owner directive #3): card-fraud
-  // realism is anchored to the frozen economic era EMBEDDED in
-  // synth/econ/era_data.hpp, so an out-of-era window fails fast here
-  // instead of silently simulating years the model has no data for.
-  // The bounds come from the pinned series (appending fully published
-  // years to the embedded data widens the lock — no engine change);
-  // other use cases stay era-agnostic until macro-history H1 wiring.
+  /* Era lock: card-fraud realism is anchored to the frozen economic era
+   * embedded in synth/econ/era_data.hpp, so an out-of-era window fails fast
+   * here instead of silently simulating years the model has no data for. The
+   * bounds come from the pinned series — appending fully published years to
+   * the embedded data widens the lock with no engine change. Other use cases
+   * are era-agnostic. */
   if (opts.usecase == pl::app::UseCase::cardFraud) {
     const auto &era = pl::synth::econ::macroSeries();
     if (!pl::app::windowInsideEra(opts, era.firstYear(), era.lastYear())) {

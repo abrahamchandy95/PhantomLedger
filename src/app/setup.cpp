@@ -97,9 +97,9 @@ buildEntitySynthesis(const RunOptions &opts, const pii::PoolSet &pools,
               .pools = &pools,
               .simStart = simStart,
               .localeMix = mix,
-              // Raw run seed: geo-causal-v1 reproduces the family
-              // household partition from it (byte-identical to the
-              // transfer stage's), so coresidents share a home.
+              /* Raw run seed: the family household partition is
+               * reproduced from it, byte-identically to the transfer
+               * stage's, so coresidents share a home. */
               .worldSeed = opts.seed,
           },
   };

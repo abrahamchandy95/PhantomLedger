@@ -127,7 +127,7 @@ void SpenderEmissionDriver::prepare(double txnsPerMonth) {
   budget_ = nullptr;
   routing_ = nullptr;
 
-  prepareThreadStates(txnsPerMonth);
+  prepareThreadScratch(txnsPerMonth);
   preparePool();
   prepareSpenderRngs();
 }
@@ -188,11 +188,11 @@ const PreparedRun::Routing &SpenderEmissionDriver::routing() const {
   return *routing_;
 }
 
-void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
-  threadStates_.clear();
+void SpenderEmissionDriver::prepareThreadScratch(double txnsPerMonth) {
+  threadScratch_.clear();
 
   const auto threadCount = std::max(threading().count, std::uint32_t{1});
-  threadStates_.reserve(threadCount);
+  threadScratch_.reserve(threadCount);
 
   const auto people = static_cast<double>(market().population().count());
   const auto expectedPerDay = people * txnsPerMonth / 30.0 * kTxnReserveSlack;
@@ -202,8 +202,8 @@ void SpenderEmissionDriver::prepareThreadStates(double txnsPerMonth) {
                          static_cast<double>(threadCount)));
 
   for (std::uint32_t t = 0; t < threadCount; ++t) {
-    threadStates_.emplace_back();
-    threadStates_.back().txns.reserve(perThreadReserve);
+    threadScratch_.emplace_back();
+    threadScratch_.back().txns.reserve(perThreadReserve);
   }
 }
 
@@ -227,32 +227,32 @@ void SpenderEmissionDriver::prepareSpenderRngs() {
 }
 
 void SpenderEmissionDriver::mergeThreadTxns(RunState &state) {
-  if (threadStates_.empty()) {
+  if (threadScratch_.empty()) {
     return;
   }
 
   auto &dst = state.txns();
 
   std::size_t total = 0;
-  for (const auto &threadState : threadStates_) {
-    if (threadState.txns.size() != threadState.postings.size()) {
+  for (const auto &scratch : threadScratch_) {
+    if (scratch.txns.size() != scratch.postings.size()) {
       throw std::logic_error(
           "spending thread transaction/posting cardinality mismatch");
     }
-    total += threadState.txns.size();
+    total += scratch.txns.size();
   }
 
   dayTransactions_.reserve(dayTransactions_.size() + total);
   dayPostings_.reserve(dayPostings_.size() + total);
 
-  for (auto &threadState : threadStates_) {
+  for (auto &scratch : threadScratch_) {
     dayTransactions_.insert(dayTransactions_.end(),
-                            std::make_move_iterator(threadState.txns.begin()),
-                            std::make_move_iterator(threadState.txns.end()));
-    dayPostings_.insert(dayPostings_.end(), threadState.postings.begin(),
-                        threadState.postings.end());
-    threadState.txns.clear();
-    threadState.postings.clear();
+                            std::make_move_iterator(scratch.txns.begin()),
+                            std::make_move_iterator(scratch.txns.end()));
+    dayPostings_.insert(dayPostings_.end(), scratch.postings.begin(),
+                        scratch.postings.end());
+    scratch.txns.clear();
+    scratch.postings.clear();
   }
 
   // Settle the full cross-worker day as one batch. Sorting inside the helper
@@ -288,7 +288,7 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
           return;
         }
 
-        auto &threadState = threadStates_[threadIdx];
+        auto &scratch = threadScratch_[threadIdx];
 
         SpenderEmissionLoop::RateSampler rates{budget(), state, frame,
                                                rulesFrom(behavior_)};
@@ -299,7 +299,7 @@ void SpenderEmissionDriver::emitDay(const PreparedRun::Population &population,
         SpenderEmissionLoop loop{population, rates, payments};
 
         loop.run(range.begin, range.end, std::span<random::Rng>{spenderRngs_},
-                 threadState.txns, threadState.postings);
+                 scratch.txns, scratch.postings);
       };
   pool_->run(emitBody);
 

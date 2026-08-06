@@ -48,7 +48,7 @@ public:
     daysSincePayday_[personIndex] = value;
   }
 
-  /// Bump every person's counter by one (saturating).
+  /* Bump every person's counter by one (saturating). */
   void bumpAllDaysSincePayday() noexcept {
     constexpr auto kCap = std::numeric_limits<std::uint16_t>::max();
     for (auto &v : daysSincePayday_) {
@@ -76,7 +76,7 @@ public:
     return remainingTargetTxns_.load(std::memory_order_relaxed);
   }
 
-  void recordAccepted(std::uint32_t count) noexcept {
+  void consumeAccepted(std::uint32_t count) noexcept {
     if (count == 0) {
       return;
     }
@@ -101,16 +101,18 @@ private:
   std::atomic<double> remainingTargetTxns_{0.0};
 };
 
-struct ThreadLocalState {
+/* One worker's reusable emission buffers, kept alive across days so the hot
+ * path does not reallocate. Non-copyable: each worker owns exactly one. */
+struct ThreadScratch {
   std::vector<transactions::Transaction> txns;
   std::vector<clearing::Ledger::Posting> postings;
 
-  ThreadLocalState() = default;
+  ThreadScratch() = default;
 
-  ThreadLocalState(const ThreadLocalState &) = delete;
-  ThreadLocalState &operator=(const ThreadLocalState &) = delete;
-  ThreadLocalState(ThreadLocalState &&) noexcept = default;
-  ThreadLocalState &operator=(ThreadLocalState &&) noexcept = default;
+  ThreadScratch(const ThreadScratch &) = delete;
+  ThreadScratch &operator=(const ThreadScratch &) = delete;
+  ThreadScratch(ThreadScratch &&) noexcept = default;
+  ThreadScratch &operator=(ThreadScratch &&) noexcept = default;
 };
 
 } // namespace PhantomLedger::activity::spending::simulator

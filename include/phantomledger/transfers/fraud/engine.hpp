@@ -2,9 +2,9 @@
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/attackers.hpp"
 #include "phantomledger/entities/parties/relocation.hpp"
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -75,7 +75,7 @@ struct Execution {
   const random::RngFactory *factory = nullptr;
 };
 
-/// Pre-materialized account pools used by the camouflage layer.
+/* Pre-materialized account pools used by the camouflage layer. */
 struct AccountPools {
   std::vector<entity::Key> allAccounts;
   std::vector<entity::Key> billerAccounts;
@@ -93,28 +93,19 @@ struct IllicitContext {
   time::Window window;
   std::span<const entity::Key> billerAccounts{};
 
-  // card-fraud-realism-v2 step b: the MERCHANT ACCEPTANCE catalogue and
-  // the geographic axis, forwarded verbatim from
-  // InjectorLegitCounterparties (see that header for the defect they
-  // close and why the catalogue itself is the right carrier — each
-  // Record already has counterpartyId, location, footprint and weight,
-  // and the modality split needs all four).
-  //
-  // UNREAD BY GENERATION until the step b-2 selection round — a null
-  // catalogue and an empty span keep every existing draw and every
-  // golden byte in place.
+  /* The MERCHANT ACCEPTANCE catalogue and the geographic axis, forwarded
+   * verbatim from InjectorLegitCounterparties — see that header for why the
+   * catalogue itself is the right carrier. A null catalogue and an empty span
+   * leave every draw and every golden byte in place. */
   const entity::merchant::Catalog *merchants = nullptr;
   std::span<const entity::geography::GeoAreaId> homeAreas{};
 
-  // venue-reuse-2026-08: attacker infrastructure, forwarded from
-  // InjectorServices. Read ONLY to size the campaign-shared cash-out slot;
-  // selection itself is a draw-free hash of the campaign index, so this
-  // pointer adds no uniforms and no state.
-  //
-  // `illicitCtx` is built INSIDE Injector::inject, where `services_.attackers`
-  // is already in scope, so wiring it needs no change at any of the three
-  // inject call sites and no new harness carrier — which is what keeps this
-  // round out of gate_world.hpp and the windowed leg support.
+  /* Attacker infrastructure, forwarded from InjectorServices. Read ONLY to
+   * size the campaign-shared cash-out slot; selection itself is a draw-free
+   * hash of the campaign index, so this pointer adds no uniforms and no state.
+   * It is filled inside Injector::inject where `services_.attackers` is
+   * already in scope, so it needs no change at any inject call site and no new
+   * harness carrier. */
   const infra::AttackerInfra *attackers = nullptr;
 
   std::uint32_t nextChainId = 1;

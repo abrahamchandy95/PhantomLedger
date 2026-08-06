@@ -75,8 +75,11 @@ make run-debug ARGS="--population 2000 --days 60" TOPICS=spending,liquidity
 make run-mem   ARGS="--population 70000 --days 365"
 ```
 
-Log lines are formatted `[HH:MM:SS] [LEVEL] [topic] file:line message`
-on stderr.
+Log lines are formatted `[HH:MM:SS] [LEVEL] [topic] file:line  message`
+on stderr. The topic is a **column the logger writes**, not a prefix the
+call site puts in its own message: no line carries a literal `[mem]`-style
+tag. Filter on the topic column (`TOPICS=`/`PL_LOG_TOPICS`), never by
+grepping for a prefix.
 
 ### Topics
 
@@ -88,7 +91,7 @@ on stderr.
 | `clearing` | ledger screening: balance-gated rejections and their reasons | rejection spikes, overdraft storms, cure/retry behavior |
 | `liquidity` | liquidity-multiplier inputs and outputs | spending looks suppressed or inflated around paydays |
 | `entities` | world synthesis | population, registry, or counterparty-pool issues |
-| `mem` | RAM observability: the planner's **pre-flight** reserve estimate (retained corpus in monolithic mode, bounded staging in windowed mode), the one-shot **world footprint** report after the world build (per-pack resident bytes — the RAM R2 measurement, see `docs/ram_derive_dont_store.md`), plus `[mem]` peak-RSS lines across the world build (worldEntities/worldProducts/worldInfra), the batch settlement stages (buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle), and the windowed phases (windowedPrologue/phaseA/phaseB) | RAM planning; deciding whether a config needs the windowed streaming path; leak hunting |
+| `mem` | RAM observability: the planner's **pre-flight** reserve estimate (retained corpus in monolithic mode, bounded staging in windowed mode), the one-shot **world footprint** report after the world build (per-pack resident bytes — the RAM R2 measurement, see `docs/ram_derive_dont_store.md`), plus per-stage peak-RSS lines across the world build (worldEntities/worldProducts/worldInfra), the base-stream composition, the batch settlement stages (buildLegit → mergeProducts → preFraudSettle → fraudInject → postFraudSettle), and the windowed phases (windowedPrologue/phaseA/phaseB) — all of them carried on this topic, which is how you select them; the lines have no prefix of their own | RAM planning; deciding whether a config needs the windowed streaming path; leak hunting |
 
 ### Raw environment variables
 
@@ -109,8 +112,14 @@ PostgreSQL connection (unset/empty uses the code default
 `dbname=phantomledger`; see README Usage), and `PL_FILE_ONLY=1` is test
 infrastructure only (serverless corpus-digest escape).
 
+Call sites are `PL_LOG_INFO(mem, "peak {:.1f} MB", mb)` — the topic is
+named bare and **the format string is `std::format`**: `{}` and `{:.1f}`
+placeholders, not printf `%s`/`%.1f` specifiers. A malformed format string
+drops the line rather than corrupting the stream.
+
 `PL_LOG_EVERY_N(level, topic, n, ...)` exists in code for rate-limited
-hot-path sites; and `kCompileMinLevel` in
+hot-path sites (it takes the fully qualified `Level::`/`Topic::`
+enumerators, unlike the bare-topic macros); and `kCompileMinLevel` in
 `include/phantomledger/diagnostics/logger.hpp` is the compile-time
 floor — tighten it to strip DEBUG/TRACE call sites from a release
 binary entirely.

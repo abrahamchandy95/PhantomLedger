@@ -30,9 +30,9 @@ ProductTxnEmitter::ProductTxnEmitter(
 std::vector<ProductTxnEmitter::Transaction>
 ProductTxnEmitter::premiums(const ::PhantomLedger::pipeline::Holdings &holdings,
                             const PrimaryAccounts &primaryAccounts) {
-  // H3 part 3c-ii: the timeline carrier — premiums stop at ACCOUNT
-  // CLOSURE (both engines construct this emitter from the same
-  // People, so the stops are engine-identical).
+  /* The timeline carrier: premiums stop at ACCOUNT CLOSURE. Both engines
+   * construct this emitter from the same People, so the stops are
+   * engine-identical. */
   insurance::Population population{
       .primaryAccounts = &primaryAccounts,
       .timelines = people_->personas.timelines,
@@ -46,7 +46,7 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
     ::PhantomLedger::transfers::insurance::ClaimRates rates,
     const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
-  // H3 part 3c-ii: claims stop at DEATH (behavioral filing).
+  /* Claims stop at DEATH (behavioral filing). */
   insurance::Population population{
       .primaryAccounts = &primaryAccounts,
       .timelines = people_->personas.timelines,
@@ -60,20 +60,19 @@ std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::claims(
 std::vector<ProductTxnEmitter::Transaction> ProductTxnEmitter::obligations(
     const ::PhantomLedger::pipeline::Holdings &holdings,
     const PrimaryAccounts &primaryAccounts) {
-  // H3 part 3c-ii: loan/tax obligation events stop at ACCOUNT CLOSURE.
+  /* Loan/tax obligation events stop at ACCOUNT CLOSURE. */
   obligations::Population population{
       .primaryAccounts = &primaryAccounts,
       .timelines = people_->personas.timelines,
   };
   obligations::Scheduler scheduler{rng_, txf_};
 
-  // RAM R2.2.1c (derive, don't store): the whole-window stream is
-  // replayed transiently — same content-keyed draws, same pinned total
-  // order, byte-identical to the between() slice of a materialized
-  // stream — consumed by the scheduler in this one pass and freed on
-  // return. The world retains only the burden slice
-  // (ObligationSynthesis::synthesize). The scheduler reads the REAL
-  // loan terms from holdings; only the event stream is derived.
+  /* Derive, don't store: the whole-window stream is replayed transiently —
+   * same content-keyed draws, same pinned total order, byte-identical to the
+   * between() slice of a materialized stream — consumed by the scheduler in
+   * this one pass and freed on return. The world retains only the burden slice
+   * (ObligationSynthesis::synthesize). The scheduler reads the REAL loan terms
+   * from holdings; only the event stream is derived. */
   const auto events = obligationSynthesis_->generateWindow(
       *people_, window_, window_.start, window_.endExcl());
 

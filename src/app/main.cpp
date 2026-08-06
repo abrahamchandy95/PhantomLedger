@@ -2,6 +2,7 @@
 #include "phantomledger/app/options.hpp"
 #include "phantomledger/app/progress.hpp"
 #include "phantomledger/app/setup.hpp"
+#include "phantomledger/diagnostics/memory.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
 #include "phantomledger/exporter/aml/sar.hpp"
 #include "phantomledger/exporter/aml/streaming.hpp"
@@ -36,26 +37,17 @@
 #include <cstdlib>
 #include <exception>
 #include <optional>
+#include <print>
 #include <span>
 #include <string>
 #include <string_view>
-#include <sys/resource.h>
 #include <utility>
 
 namespace {
 
 namespace pl = ::PhantomLedger;
 
-double peakRssMB() {
-  struct rusage ru;
-  getrusage(RUSAGE_SELF, &ru);
-#if defined(__APPLE__)
-  return static_cast<double>(ru.ru_maxrss) / (1024.0 * 1024.0);
-#else
-  return static_cast<double>(ru.ru_maxrss) / 1024.0;
-#endif
-}
-
+/* Wall-clock and peak-RSS trace of the run's phases, on stderr. */
 class PhaseMonitor {
 public:
   PhaseMonitor() : start_(Clock::now()), last_(start_) {}
@@ -68,10 +60,12 @@ public:
     const auto totalMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - start_)
             .count();
-    std::fprintf(
-        stderr, "[phase] %-24s  +%9.1fs  (total %9.1fs)  peakRSS=%9.1f MB\n",
-        std::string{label}.c_str(), static_cast<double>(deltaMs) / 1000.0,
-        static_cast<double>(totalMs) / 1000.0, peakRssMB());
+    std::print(stderr,
+               "[phase] {:<24}  +{:9.1f}s  (total {:9.1f}s)  "
+               "peakRSS={:9.1f} MB\n",
+               label, static_cast<double>(deltaMs) / 1000.0,
+               static_cast<double>(totalMs) / 1000.0,
+               pl::diagnostics::memory::peakRssMB());
     last_ = now;
   }
 
@@ -81,18 +75,15 @@ private:
   Clock::time_point last_;
 };
 
-// -------------------------------------------------------- backend policy
-//
-// PostgreSQL is a requirement of every run, not an option: the corpus
-// streams into the 'transactions' table during settlement, every
-// exporter writes its tables directly (no files are written), and the
-// derived analytics read the corpus back. Probe BEFORE any generation
-// and fail fast with an actionable error — the error message IS the
-// prompt (CI-safe, never interactive). PL_FILE_ONLY=1 is the harness
-// escape that keeps the serverless gates (the run golden) independent
-// of any server; under it a run persists nothing and yields only the
-// stream digest.
-
+/* Backend policy
+ * PostgreSQL is a requirement of every run, not an option: the corpus streams
+ * into the 'transactions' table during settlement, every exporter writes its
+ * tables directly (no files are written), and the derived analytics read the
+ * corpus back. Probe BEFORE any generation and fail fast with an actionable
+ * error — the error message IS the prompt (CI-safe, never interactive).
+ * PL_FILE_ONLY=1 is the harness escape that keeps the serverless gates (the
+ * run golden) independent of any server; under it a run persists nothing and
+ * yields only the stream digest. */
 struct BackendPolicy {
   std::string conninfo;
   bool fileOnly = false; // PL_FILE_ONLY: no server (serverless gates)
@@ -108,17 +99,17 @@ struct BackendPolicy {
   }
 
   if (policy.fileOnly) {
-    std::fprintf(stderr, "note: PL_FILE_ONLY set — skipping PostgreSQL "
-                         "(harness escape); nothing is persisted\n");
+    std::print(stderr, "note: PL_FILE_ONLY set — skipping PostgreSQL "
+                       "(harness escape); nothing is persisted\n");
     return policy;
   }
 
   try {
     pl::postgres::Connection probe{policy.conninfo};
   } catch (const std::exception &err) {
-    std::fprintf(
+    std::print(
         stderr,
-        "fatal: PostgreSQL is required and no server answered via '%s'.\n"
+        "fatal: PostgreSQL is required and no server answered via '{}'.\n"
         "\n"
         "PhantomLedger streams every corpus into PostgreSQL (table\n"
         "'transactions') during settlement and reads it back for the\n"
@@ -134,8 +125,8 @@ struct BackendPolicy {
         "Reruns with the same seed and config are idempotent: data tables\n"
         "are fully rewritten with byte-identical content.\n"
         "\n"
-        "Server said: %s",
-        policy.conninfo.c_str(), err.what());
+        "Server said: {}",
+        policy.conninfo, err.what());
     std::exit(1);
   }
   return policy;
@@ -157,11 +148,9 @@ struct BackendPolicy {
   return "";
 }
 
-// ------------------------------------------------------------- summaries
-
-// Takes the world-scale counts by value: with the RAM R2 release/
-// rebuild flow the world object may be empty or rebuilt by the time the
-// summary prints, so the counts are captured right after the build.
+/* Takes the world-scale counts BY VALUE: the release/rebuild flow may leave
+ * the world object empty or rebuilt by the time the summary prints, so the
+ * counts are captured right after the build. */
 void printWindowedSummary(
     std::uint32_t peopleCount, std::size_t accountCount,
     const pl::pipeline::stages::transfers::WindowedRunResult &transfers,
@@ -173,20 +162,15 @@ void printWindowedSummary(
           ? 0.0
           : static_cast<double>(summary.phaseB.fraudRows) / streamRows;
 
-  std::printf("People: %u  Accounts: %zu\n", static_cast<unsigned>(peopleCount),
-              accountCount);
-  std::printf("Transactions: %llu  Fraud rows: %llu (%.4f%%)  candidates "
-              "L=%llu  card events=%llu\n",
-              static_cast<unsigned long long>(streamRows),
-              static_cast<unsigned long long>(summary.phaseB.fraudRows),
-              ratio * 100.0,
-              static_cast<unsigned long long>(summary.phaseA.candidateRows),
-              static_cast<unsigned long long>(summary.phaseA.cardEvents));
-  std::printf("Candidate spool: %llu rows, %.1f MiB on disk\n",
-              static_cast<unsigned long long>(transfers.spoolRows),
-              static_cast<double>(transfers.spoolBytes) / (1024.0 * 1024.0));
-  std::printf("Posted book hash: 0x%llx\n",
-              static_cast<unsigned long long>(transfers.postedBookHash));
+  std::print("People: {}  Accounts: {}\n", peopleCount, accountCount);
+  std::print("Transactions: {}  Fraud rows: {} ({:.4f}%)  candidates "
+             "L={}  card events={}\n",
+             streamRows, summary.phaseB.fraudRows, ratio * 100.0,
+             summary.phaseA.candidateRows, summary.phaseA.cardEvents);
+  std::print("Candidate spool: {} rows, {:.1f} MiB on disk\n",
+             transfers.spoolRows,
+             static_cast<double>(transfers.spoolBytes) / (1024.0 * 1024.0));
+  std::print("Posted book hash: 0x{:x}\n", transfers.postedBookHash);
 }
 
 void printAmlSummary(const pl::exporter::aml::Summary &summary) {
@@ -196,15 +180,15 @@ void printAmlSummary(const pl::exporter::aml::Summary &summary) {
                            : static_cast<double>(summary.illicitTxnCount) /
                                  summary.totalTxnCount;
 
-  std::printf("AML export complete\n");
-  std::printf("  Customers:       %zu\n", summary.customerCount);
-  std::printf("  Accounts:        %zu\n", summary.internalAccountCount);
-  std::printf("  Counterparties:  %zu\n", summary.counterpartyCount);
-  std::printf("  Transactions:    %zu  (illicit: %zu, %.4f%%)\n",
-              summary.totalTxnCount, summary.illicitTxnCount, ratio * 100.0);
-  std::printf("  Fraud rings:     %zu\n", summary.fraudRingCount);
-  std::printf("  Solo fraudsters: %zu\n", summary.soloFraudCount);
-  std::printf("  SARs filed:      %zu\n", summary.sarsFiledCount);
+  std::print("AML export complete\n");
+  std::print("  Customers:       {}\n", summary.customerCount);
+  std::print("  Accounts:        {}\n", summary.internalAccountCount);
+  std::print("  Counterparties:  {}\n", summary.counterpartyCount);
+  std::print("  Transactions:    {}  (illicit: {}, {:.4f}%)\n",
+             summary.totalTxnCount, summary.illicitTxnCount, ratio * 100.0);
+  std::print("  Fraud rings:     {}\n", summary.fraudRingCount);
+  std::print("  Solo fraudsters: {}\n", summary.soloFraudCount);
+  std::print("  SARs filed:      {}\n", summary.sarsFiledCount);
 }
 
 void printAmlTxnEdgesSummary(
@@ -215,21 +199,21 @@ void printAmlTxnEdgesSummary(
                            : static_cast<double>(summary.illicitTxnCount) /
                                  summary.totalTxnCount;
 
-  std::printf("AML (txn-edges) export complete\n");
-  std::printf("  Customers:       %zu\n", summary.customerCount);
-  std::printf("  Accounts:        %zu\n", summary.internalAccountCount);
-  std::printf("  Counterparties:  %zu\n", summary.counterpartyCount);
-  std::printf("  Transactions:    %zu  (illicit: %zu, %.4f%%)\n",
-              summary.totalTxnCount, summary.illicitTxnCount, ratio * 100.0);
-  std::printf("  Fraud rings:     %zu\n", summary.fraudRingCount);
-  std::printf("  Solo fraudsters: %zu\n", summary.soloFraudCount);
-  std::printf("  SARs filed:      %zu\n", summary.sarsFiledCount);
-  std::printf("  Alerts:          %zu  (CTRs: %zu)\n", summary.alertCount,
-              summary.ctrCount);
-  std::printf("  Cases:           %zu  (businesses: %zu)\n", summary.caseCount,
-              summary.businessCount);
-  std::printf("  Flow-agg edges:  %zu  (link-comm: %zu)\n",
-              summary.flowAggEdgeCount, summary.linkCommEdgeCount);
+  std::print("AML (txn-edges) export complete\n");
+  std::print("  Customers:       {}\n", summary.customerCount);
+  std::print("  Accounts:        {}\n", summary.internalAccountCount);
+  std::print("  Counterparties:  {}\n", summary.counterpartyCount);
+  std::print("  Transactions:    {}  (illicit: {}, {:.4f}%)\n",
+             summary.totalTxnCount, summary.illicitTxnCount, ratio * 100.0);
+  std::print("  Fraud rings:     {}\n", summary.fraudRingCount);
+  std::print("  Solo fraudsters: {}\n", summary.soloFraudCount);
+  std::print("  SARs filed:      {}\n", summary.sarsFiledCount);
+  std::print("  Alerts:          {}  (CTRs: {})\n", summary.alertCount,
+             summary.ctrCount);
+  std::print("  Cases:           {}  (businesses: {})\n", summary.caseCount,
+             summary.businessCount);
+  std::print("  Flow-agg edges:  {}  (link-comm: {})\n",
+             summary.flowAggEdgeCount, summary.linkCommEdgeCount);
 }
 
 void printCardFraudSummary(const pl::exporter::card_fraud::Summary &summary) {
@@ -238,56 +222,50 @@ void printCardFraudSummary(const pl::exporter::card_fraud::Summary &summary) {
                            : static_cast<double>(summary.fraudViewRows) /
                                  static_cast<double>(summary.viewRows);
 
-  std::printf("card-fraud export complete (TF_GNN_v3 loaded attributes)\n");
-  std::printf("  Payment txns:    %llu of %llu corpus rows  (fraud: %llu, "
-              "%.4f%%)\n",
-              static_cast<unsigned long long>(summary.viewRows),
-              static_cast<unsigned long long>(summary.totalRows),
-              static_cast<unsigned long long>(summary.fraudViewRows),
-              ratio * 100.0);
-  std::printf("  Cards:           %zu\n", summary.cardCount);
-  std::printf("  Merchants:       %zu\n", summary.merchantCount);
-  std::printf("  Parties:         %zu\n", summary.partyCount);
-  std::printf("  Geo:             %zu cities, %zu states, %zu zipcodes\n",
-              summary.cityCount, summary.stateCount, summary.zipcodeCount);
+  std::print("card-fraud export complete (TF_GNN_v3 loaded attributes)\n");
+  std::print("  Payment txns:    {} of {} corpus rows  (fraud: {}, "
+             "{:.4f}%)\n",
+             summary.viewRows, summary.totalRows, summary.fraudViewRows,
+             ratio * 100.0);
+  std::print("  Cards:           {}\n", summary.cardCount);
+  std::print("  Merchants:       {}\n", summary.merchantCount);
+  std::print("  Parties:         {}\n", summary.partyCount);
+  std::print("  Geo:             {} cities, {} states, {} zipcodes\n",
+             summary.cityCount, summary.stateCount, summary.zipcodeCount);
 }
 
-// --------------------------------------------------------------- engine
-//
-// The windowed streaming engine is THE engine — bounded memory for
-// every use case: the world is built first, then the transfer fold
-// streams settled transactions straight into Golden + PostgreSQL + the
-// use case's streaming exporter, whose tables write directly into
-// PostgreSQL (one csv::Writer rendering — the COPY payload). The
-// posted corpus is never materialized; the candidate corpus lives in
-// the on-disk binary spool. aml-txn-edges additionally REQUIRES the
-// server — its derived analytics read the streamed corpus back
-// (readback::buildBundle) — which the backend policy guarantees; under
-// the PL_FILE_ONLY harness escape it fails with its own clear error.
-//
-// RAM R2.1 + R2.3a (docs/ram_derive_dont_store.md): the transfer fold
-// never reads the PII roster or the device/IP inventories, and every
-// streaming exporter except mule-ml either never binds them (standard,
-// card-fraud) or COPIES what it needs at bind time (the aml family's
-// SharedContext and ShellStats own their data; their append paths read
-// only the transaction batch). Those use cases therefore release the
-// packs for the whole fold and — when a finisher needs the world —
-// rebuild it afterwards by replaying the construction from the run
-// seed (byte-identical: world-build draws are a prefix of the shared
-// sequential stream). mule-ml dereferences the packs at stream finish
-// (addDeviceUsageRanges / addIpUsageRanges / writePartyRows), so it
-// keeps the world resident until R2.3's regenerable attribute view.
-//
-// The retained-corpus reference implementation survives at the LIBRARY
-// level only (SimulationPipeline::run() + the corpus exportAll forms),
-// as the executable specification this engine is verified against
-// (test_arch_equivalence, test_production_windowed, and the corpus
-// gates). It is not reachable from the binary.
-//
-// Checkpoint/resume (RunLedger + ResumableSpanSink, test_resume):
-// determinism is the checkpoint — regenerate, verify committed spans
-// by digest + lockstep read-back, skip their COPYs, resume writes.
-
+/* The windowed streaming engine
+ * THE engine — bounded memory for every use case: the world is built first,
+ * then the transfer fold streams settled transactions straight into Golden +
+ * PostgreSQL + the use case's streaming exporter, whose tables write directly
+ * into PostgreSQL (one csv::Writer rendering — the COPY payload). The posted
+ * corpus is never materialized; the candidate corpus lives in the on-disk
+ * binary spool. aml-txn-edges additionally REQUIRES the server — its derived
+ * analytics read the streamed corpus back (readback::buildBundle) — which the
+ * backend policy guarantees; under the PL_FILE_ONLY harness escape it fails
+ * with its own clear error.
+ *
+ * Pack release (docs/ram_derive_dont_store.md): the transfer fold never reads
+ * the PII roster or the device/IP inventories, and every streaming exporter
+ * except mule-ml either never binds them (standard, card-fraud) or COPIES what
+ * it needs at bind time (the aml family's SharedContext and ShellStats own
+ * their data; their append paths read only the transaction batch). Those use
+ * cases therefore release the packs for the whole fold and — when a finisher
+ * needs the world — rebuild it afterwards by replaying the construction from
+ * the run seed (byte-identical: world-build draws are a prefix of the shared
+ * sequential stream). mule-ml dereferences the packs at stream finish
+ * (addDeviceUsageRanges / addIpUsageRanges / writePartyRows), so it keeps the
+ * world resident.
+ *
+ * The retained-corpus reference implementation survives at the LIBRARY level
+ * only (SimulationPipeline::run() + the corpus exportAll forms), as the
+ * executable specification this engine is verified against
+ * (test_arch_equivalence, test_production_windowed, and the corpus gates). It
+ * is not reachable from the binary.
+ *
+ * Checkpoint/resume (RunLedger + ResumableSpanSink, test_resume): determinism
+ * is the checkpoint — regenerate, verify committed spans by digest + lockstep
+ * read-back, skip their COPYs, resume writes. */
 int runWindowedStream(
     const pl::app::RunOptions &opts, pl::time::Window window,
     const pl::synth::pii::PoolSet &pools,
@@ -311,7 +289,7 @@ int runWindowedStream(
   const bool streamCardFraud = opts.usecase == pl::app::UseCase::cardFraud;
 
   if (streamAmlTxn && !pgUp) {
-    std::fprintf(
+    std::print(
         stderr,
         "fatal: --usecase aml-txn-edges requires PostgreSQL: the derived "
         "analytics (alerts, cases, 30/90-day aggregates) read the "
@@ -320,8 +298,8 @@ int runWindowedStream(
     return 1;
   }
 
-  // World first: the streaming exporters bind to the account registry
-  // (and membership, for standard) before the fold starts.
+  /* World first: the streaming exporters bind to the account registry (and
+   * membership, for standard) before the fold starts. */
   pl::pipeline::SimulationResult world;
   {
     pg::Stage genStage("Generating (windowed: world)", 3);
@@ -333,16 +311,16 @@ int runWindowedStream(
     world = pipeline.buildWorld(onPhase);
   } // genStage destructor prints trailing newline here
 
-  // Captured now: with the R2 release/rebuild flow the world object
-  // is not guaranteed to be populated when the summary prints.
+  /* Captured now: the release/rebuild flow does not guarantee the world object
+   * is populated when the summary prints. */
   const auto worldPeopleCount = world.people.roster.roster.count;
   const auto worldAccountCount =
       world.holdings.accounts.registry.records.size();
 
-  // With the server up, EVERY use case's tables are written directly
-  // into PostgreSQL as the bytes the csv::Writer renders (standard
-  // lands unprefixed in the public schema; the aml exporters derive
-  // their vertices_/edges_ prefixes internally).
+  /* With the server up, EVERY use case's tables are written directly into
+   * PostgreSQL as the bytes the csv::Writer renders (standard lands unprefixed
+   * in the public schema; the aml exporters derive their vertices_/edges_
+   * prefixes internally). */
   const pl::exporter::sinks::PgMirror stdMirror{
       .conninfo = pgConninfo, .schema = "", .tablePrefix = ""};
   const pl::exporter::sinks::PgMirror mlMirror{
@@ -356,15 +334,12 @@ int runWindowedStream(
   const pl::exporter::sinks::PgMirror cfMirror{
       .conninfo = pgConninfo, .schema = "card_fraud", .tablePrefix = "cf_"};
 
-  // macro-history-v1 H0.5 (owner directive #2): the pinned era
-  // reference series land in PostgreSQL for EVERY use case — schema
-  // econ (its OWN schema, so the public-schema table golden does not
-  // move): econ.macro_annual, econ.mortality, econ.provenance — the
-  // exact rows of the EMBEDDED era data (synth/econ/era_data.hpp, the
-  // constexpr successor of the retired data/econ CSVs). Since H1 step
-  // 2b generation READS the series (the nominal scales); the tables
-  // remain a REPORT for downstream in-database modeling. Content is
-  // pinned serverlessly by test_econ_tables (TableCapture seam).
+  /* The pinned era reference series land in PostgreSQL for EVERY use case, in
+   * their OWN schema `econ` so the public-schema table golden does not move:
+   * econ.macro_annual, econ.mortality, econ.provenance — the exact rows of the
+   * EMBEDDED era data (synth/econ/era_data.hpp). Generation READS the series
+   * (the nominal scales); the tables are a REPORT for downstream in-database
+   * modeling. Content is pinned serverlessly by test_econ_tables. */
   if (pgUp) {
     const pl::exporter::sinks::PgMirror econMirror{
         .conninfo = pgConninfo, .schema = "econ", .tablePrefix = ""};
@@ -374,11 +349,11 @@ int runWindowedStream(
 
   std::optional<pl::exporter::standard::StreamingTransfersExport> stdStream;
   if (streamStandard) {
-    // H3 part 3c-ii: the membership view [joinTs, closeTs) — THE one
-    // construction path (join_cohort::membershipOf), the same call
-    // exportEntities/exportAll make, so the streamed and corpus-based
-    // visible corpora cannot diverge. The Membership OWNS its carrier
-    // copies, so the R2 pack release below cannot dangle it.
+    /* The membership view [joinTs, closeTs) through THE one construction path
+     * (join_cohort::membershipOf) — the same call exportEntities/exportAll
+     * make, so the streamed and corpus-based visible corpora cannot diverge.
+     * The Membership OWNS its carrier copies, so the pack release below cannot
+     * dangle it. */
     stdStream.emplace(pl::exporter::standard::StreamingTransfersExport::Config{
         .registry = &world.holdings.accounts.registry,
         .lookup = &world.holdings.accounts.lookup,
@@ -434,7 +409,7 @@ int runWindowedStream(
         .cards = &world.holdings.creditCards,
         .merchants = &world.counterparties.merchants,
         .pgMirror = pgUp ? &cfMirror : nullptr,
-            .window = window,
+        .window = window,
     });
   }
 
@@ -471,24 +446,23 @@ int runWindowedStream(
 
     auto plan = ledger.findResumable(configHash);
     if (plan.has_value() && !ledger.prepareResume(*plan, "transactions")) {
-      std::fprintf(stderr,
-                   "warning: interrupted run #%lld is not resumable (the "
-                   "transactions table changed since it stopped); marking "
-                   "it failed and rewriting in full\n",
-                   plan->manifestId);
+      std::print(stderr,
+                 "warning: interrupted run #{} is not resumable (the "
+                 "transactions table changed since it stopped); marking "
+                 "it failed and rewriting in full\n",
+                 plan->manifestId);
       ledger.markFailed(plan->manifestId);
       plan.reset();
     }
 
     if (plan.has_value()) {
       pgManifestId = plan->manifestId;
-      std::printf("Resuming run #%lld: %zu spans (%llu rows) already "
-                  "durable — verifying by digest, skipping their COPYs\n",
-                  plan->manifestId, plan->spans.size(),
-                  static_cast<unsigned long long>(plan->rows));
+      std::print("Resuming run #{}: {} spans ({} rows) already "
+                 "durable — verifying by digest, skipping their COPYs\n",
+                 plan->manifestId, plan->spans.size(), plan->rows);
     } else {
-      // A fresh run rewrites the shared table: no older crash record
-      // may outlive its rows.
+      /* A fresh run rewrites the shared table: no older crash record may
+       * outlive its rows. */
       ledger.supersedeRunning();
       pgManifestId = ledger.beginRun(configHash, opts.seed, opts.population,
                                      opts.days, opts.startDate);
@@ -581,13 +555,13 @@ int runWindowedStream(
 
     pgRows = pgSink.rowsWritten();
     if (pgSkipped > 0) {
-      std::printf("PostgreSQL: %llu rows total -> table 'transactions' "
-                  "(%u spans copied this run, %u verified and skipped)\n",
-                  static_cast<unsigned long long>(pgRows), pgSpans, pgSkipped);
+      std::print("PostgreSQL: {} rows total -> table 'transactions' "
+                 "({} spans copied this run, {} verified and skipped)\n",
+                 pgRows, pgSpans, pgSkipped);
     } else {
-      std::printf("PostgreSQL: %llu rows -> table 'transactions' (%u spans, "
-                  "streamed during settlement)\n",
-                  static_cast<unsigned long long>(pgRows), pgSpans);
+      std::print("PostgreSQL: {} rows -> table 'transactions' ({} spans, "
+                 "streamed during settlement)\n",
+                 pgRows, pgSpans);
     }
   } else if (stdStream.has_value()) {
     pl::pipeline::chunk::Tee tee{golden, *stdStream};
@@ -602,19 +576,19 @@ int runWindowedStream(
     pl::pipeline::chunk::Tee tee{golden, *cfStream};
     transfers = runFold(tee);
   } else {
-    // aml-txn-edges cannot land here: it is guarded to require pgUp.
+    /* aml-txn-edges cannot land here: it is guarded to require pgUp. */
     transfers = runFold(golden);
   }
 
-  std::printf("Stream digest: %s  rows: %llu\n", golden.digest().c_str(),
-              static_cast<unsigned long long>(golden.rowsWritten()));
+  std::print("Stream digest: {}  rows: {}\n", golden.digest(),
+             golden.rowsWritten());
   mon.mark("stream flush");
 
-  // RAM R2.1 + R2.3a: the vertex finishers below need the full world
-  // back. Free the fold's (partially released) world FIRST so two
-  // worlds never coexist, then replay the identical construction from
-  // the run seed. Plain runs skip the rebuild — nothing after this
-  // point reads the world (the summary uses the captured counts).
+  /* The vertex finishers below need the full world back. Free the fold's
+   * (partially released) world FIRST so two worlds never coexist, then replay
+   * the identical construction from the run seed. Plain runs skip the rebuild
+   * — nothing after this point reads the world (the summary uses the captured
+   * counts). */
   if (exportPacksReleased &&
       (streamStandard || streamCardFraud || streamAml || streamAmlTxn)) {
     world = pl::pipeline::SimulationResult{};
@@ -654,10 +628,10 @@ int runWindowedStream(
   if (streamAmlTxn) {
     pg::status("Exporting AML txn-edges tables (PostgreSQL read-back)...");
 
-    // Assemble the fold's stream products: SARs from the accumulated
-    // groups, and the derived bundle read back from PostgreSQL (its
-    // sim-end windows need a second pass over the corpus, which lives
-    // there — row_seq order).
+    /* Assemble the fold's stream products: SARs from the accumulated groups,
+     * and the derived bundle read back from PostgreSQL (its sim-end windows
+     * need a second pass over the corpus, which lives there — row_seq
+     * order). */
     auto artifacts = amlTxnStream->takeArtifacts();
     auto sars = pl::exporter::aml::sar::generateSars(
         world.people, world.holdings, artifacts.fraudGroups);
@@ -693,20 +667,19 @@ int runWindowedStream(
   }
 
   if (pgUp) {
-    // Completion belongs after the selected use case's finisher. Card-fraud
-    // explicitly closes all 37 COPY streams, so a late failure on that path
-    // leaves this manifest `running` and resumable instead of recording false
-    // success. Other exporters also benefit from the later ordering, but
-    // still need their own explicit-close audit before claiming that stronger
-    // invariant globally.
+    /* Completion belongs after the selected use case's finisher. Card-fraud
+     * explicitly closes every one of its COPY streams, so a late failure on
+     * that path leaves this manifest `running` and resumable instead of
+     * recording false success. Other exporters also benefit from the later
+     * ordering, but still need their own explicit-close audit before claiming
+     * that stronger invariant globally. */
     pl::postgres::Connection conn{pgConninfo};
     pl::exporter::sinks::RunLedger ledger{conn};
     ledger.finishRun(pgManifestId, golden.rowsWritten(), golden.digest());
 
-    std::printf("PostgreSQL: %s tables written directly during the run "
-                "(%s)\n",
-                std::string{pl::app::name(opts.usecase)}.c_str(),
-                directSchemaNote(opts.usecase));
+    std::print("PostgreSQL: {} tables written directly during the run "
+               "({})\n",
+               pl::app::name(opts.usecase), directSchemaNote(opts.usecase));
     mon.mark("pg direct tables");
   }
 
@@ -725,24 +698,22 @@ int main(int argc, char **argv) {
 
     const auto opts = app::cli::parse(argc, argv);
 
-    // macro-history-v1 H1 step 2b (freeze-and-declare): if the window
-    // touches years outside the measured era coverage, the nominal
-    // scales clamp at the nearest covered year's level — say so ONCE,
-    // out loud, before generation. Deterministic; stderr only; never
-    // part of the corpus stream.
+    /* Freeze-and-declare: when the window touches years outside the measured
+     * era coverage the nominal scales clamp at the nearest covered year's
+     * level, so say so ONCE, out loud, before generation. Deterministic;
+     * stderr only; never part of the corpus stream. */
     {
       const auto &era = synth::econ::macroSeries();
       const auto notice =
           app::frozenEraNotice(opts, era.firstYear(), era.lastYear());
       if (notice.has_value()) {
-        std::fprintf(stderr, "%s\n", notice->c_str());
+        std::println(stderr, "{}", *notice);
       }
     }
 
-    // Backend policy: PostgreSQL is required — probe BEFORE generation
-    // and fail fast with the teaching error (resolveBackend exits).
-    // PL_FILE_ONLY is the harness escape that keeps the run golden
-    // independent of any server.
+    /* PostgreSQL is required — probe BEFORE generation and fail fast with the
+     * teaching error (resolveBackend exits). PL_FILE_ONLY is the harness
+     * escape that keeps the run golden independent of any server. */
     const auto backend = resolveBackend(opts);
 
     time::Window window;
@@ -757,10 +728,10 @@ int main(int argc, char **argv) {
 
     return runWindowedStream(opts, window, pools, entityConfig, backend);
   } catch (const std::exception &e) {
-    std::fprintf(stderr, "fatal: %s\n", e.what());
+    std::println(stderr, "fatal: {}", e.what());
     return 1;
   } catch (...) {
-    std::fprintf(stderr, "fatal: unknown exception\n");
+    std::println(stderr, "fatal: unknown exception");
     return 1;
   }
 }

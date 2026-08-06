@@ -2,12 +2,12 @@
 
 #include "phantomledger/activity/spending/market/market.hpp"
 #include "phantomledger/activity/spending/obligations/snapshot.hpp"
+#include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
-#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
-#include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
@@ -46,15 +46,12 @@ public:
     const blueprints::LegitBlueprint &blueprint;
     AccountSource accounts;
 
-    // geo-causal-v1 (G2a): per-person home area (PersonId-1), from
-    // People::homeAreas. EMPTY on the monolith reference oracle (no People
-    // in addSpending's scope); the production windowed path and the test
-    // world set it. Flows to population::View for card-present
-    // distance-decay selection (unread until G2a step-2).
+    /* Per-person home area (PersonId-1), from People::homeAreas. Flows to
+     * population::View for card-present distance-decay selection. Both
+     * engines supply it; empty ⇒ no local anchor (invalidGeoArea). */
     std::span<const entity::geography::GeoAreaId> homeAreas{};
 
-    // relocation-2026-07: the history behind the snapshot. Null ⇒ homes never
-    // move.
+    /* The home-area history behind the snapshot. Null ⇒ homes never move. */
     const entity::parties::relocation::Schedule *relocation = nullptr;
   };
 
@@ -82,8 +79,8 @@ public:
     ::PhantomLedger::time::Window window{};
     std::uint64_t seed = 0;
 
-    // H3 part 3c-ii: the persona-timeline carrier (PersonId-1
-    // indexed) — the CardCycleDriver truncates each card's statement
+    // The persona-timeline carrier (PersonId-1 indexed) — the
+    // CardCycleDriver truncates each card's statement
     // ladder at the owner's ACCOUNT CLOSURE minus the settlement-tail
     // guard. Filled by buildCardLifecycleConfig (passes.cpp) for BOTH
     // engines; empty stands the truncation down.
@@ -109,14 +106,18 @@ public:
   prepareMarket(const CensusSource &census, PayeeDirectory payees,
                 std::span<const transactions::Transaction> baseTxns) const;
 
-  [[nodiscard]] static ::PhantomLedger::activity::spending::obligations::Snapshot
-  prepareObligations(const CensusSource &census, ObligationSource obligations,
-                     std::span<const transactions::Transaction> baseTxns,
-                     bool baseTxnsSorted);
+  [[nodiscard]] static ::PhantomLedger::activity::spending::obligations::
+      Snapshot
+      prepareObligations(const CensusSource &census,
+                         ObligationSource obligations,
+                         std::span<const transactions::Transaction> baseTxns,
+                         bool baseTxnsSorted);
 
   [[nodiscard]] std::vector<transactions::Transaction>
-  run(Execution execution, ::PhantomLedger::activity::spending::market::Market &market,
-      const ::PhantomLedger::activity::spending::obligations::Snapshot &obligations,
+  run(Execution execution,
+      ::PhantomLedger::activity::spending::market::Market &market,
+      const ::PhantomLedger::activity::spending::obligations::Snapshot
+          &obligations,
       clearing::Ledger *screenBook = nullptr) const;
 
 private:

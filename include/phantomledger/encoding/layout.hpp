@@ -41,9 +41,9 @@ inline constexpr Layout kBusinessExternal{"XO", 8};
 inline constexpr Layout kBrokerageInternal{"BRK", 7};
 inline constexpr Layout kBrokerageExternal{"XB", 8};
 
-// Device identifiers are rendered through one role-neutral namespace.
-// The numeric token is a stable opaque digest of the in-memory identity;
-// owner type must never be visible in a prefix, width, or numeric range.
+/* Device identifiers are rendered through one role-neutral namespace. The
+ * numeric token is a stable opaque digest of the in-memory identity; OWNER
+ * TYPE MUST NEVER BE VISIBLE in a prefix, width, or numeric range. */
 inline constexpr Layout kOpaqueDevice{"D", 20, true};
 
 } // namespace PhantomLedger::encoding

@@ -70,11 +70,11 @@ buildPeople(pl::random::Rng &rng, std::int32_t population,
 buildAccounts(pl::random::Rng &rng, const synth::people::Pack &people,
               std::int32_t population, const sy::accounts::Sizing &sizing = {});
 
-// H2 step 2a: the pack now carries the single-age-axis birth-date
-// carrier, drawn on the isolated {"dob", personId} lanes off
-// identity.worldSeed at identity.simStart (the persona age bands).
-// `identity` must be the defaultStart()-resolved context the PII
-// build receives, so the carrier and the rendered PII agree.
+/* The pack carries the single-age-axis birth-date carrier, drawn on the
+ * isolated {"dob", personId} lanes off identity.worldSeed at
+ * identity.simStart (the persona age bands). `identity` must be the
+ * defaultStart()-resolved context the PII build receives, so the carrier and
+ * the rendered PII agree. */
 [[nodiscard]] sy::personas::Pack
 buildPersonas(pl::random::Rng &rng, const synth::people::Pack &people,
               const sy::pii::IdentityContext &identity,
@@ -86,15 +86,14 @@ buildPii(pl::random::Rng &rng, const sy::personas::Pack &personas,
          const entity::person::Topology &topology,
          const sy::pii::Sharing &sharing);
 
-// geoSeed seeds the isolated merchant footprint/location lanes (G1c) and,
-// as of merchant-churn-2026-07, the lifecycle lane too; it never touches
-// `rng` (the shared entity stream). Pass the run seed.
-//
-// `window` is REQUIRED for lifecycle: the catalogue is sized from the
-// window length (a longer run needs more records, because deaths must be
-// replaced by births or the pool thins instead of churning), and birth and
-// death dates are placed inside it. A zero-day window leaves every record
-// always-live, which is the pre-lifecycle behaviour.
+/* geoSeed seeds the isolated merchant footprint/location lanes and the
+ * lifecycle lane; it never touches `rng`, the shared entity stream. Pass the
+ * run seed.
+ *
+ * `window` is REQUIRED for lifecycle: the catalogue is sized from the window
+ * length — a longer run needs more records, because deaths must be replaced by
+ * births or the pool thins instead of churning — and birth and death dates are
+ * placed inside it. A zero-day window leaves every record always-live. */
 [[nodiscard]] entity::merchant::Catalog
 buildMerchants(pl::random::Rng &rng, std::int32_t population,
                std::uint64_t geoSeed, pl::time::Window window,
@@ -105,9 +104,8 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
                const sy::landlords::GenerationPlan &plan = {});
 
-// H1 step 2b: `startYear` = the WINDOW-START year for the credit-limit
-// stock scale (synth::cards::issue); 0 = calibration-flat (legacy
-// call sites / direct tests).
+/* `startYear` is the WINDOW-START year for the credit-limit stock scale
+ * (synth::cards::issue); 0 means calibration-flat, for direct tests. */
 [[nodiscard]] entity::card::Registry
 issueCreditCards(const sy::personas::Pack &personas,
                  const synth::people::Pack &people, std::uint64_t topLevelSeed,
@@ -127,28 +125,28 @@ void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                               pl::random::Rng &rng,
                               const sy::accounts::BusinessOwnerPlan &plan = {});
 
-// relocation-2026-07: the per-person home-area HISTORY.
-//
-// TAKES NO Rng, deliberately — it draws on its own
-// `{"home-relocation", <group>}` lanes off `worldSeed`, so it cannot perturb
-// the shared entity stream. `initialAreas` must be the `homeAreasOf(pii)`
-// snapshot: tenure 0 is required to be byte-identical to it, which is what
-// makes a zero-move window reproduce the pre-round corpus exactly.
-//
-// A zero-day window returns an EMPTY schedule, and every consumer treats that
-// exactly as it treats an unbound `homeAreas` carrier.
+/* The per-person home-area HISTORY.
+ *
+ * TAKES NO Rng, deliberately: it draws on its own
+ * `{"home-relocation", <group>}` lanes off `worldSeed`, so it cannot perturb
+ * the shared entity stream. `initialAreas` must be the `homeAreasOf(pii)`
+ * snapshot — tenure 0 is required to be byte-identical to it, which is what
+ * makes a zero-move window reproduce an immobile corpus exactly.
+ *
+ * A zero-day window returns an EMPTY schedule, and every consumer treats that
+ * exactly as it treats an unbound `homeAreas` carrier. */
 [[nodiscard]] pl::entity::parties::relocation::Schedule buildRelocation(
     const entity::pii::Roster &pii,
     const std::vector<pl::entity::geography::GeoAreaId> &initialAreas,
     const sy::personas::Pack &personas, std::uint64_t worldSeed,
     pl::time::Window window);
 
-// merchant-ownership-2026-07: stamp each catalog merchant with the
-// proprietor Party the institution holds a beneficial-owner record for, or
-// leave `invalidPerson`. DRAW-FREE — takes no Rng, so it cannot move the
-// corpus — and must run AFTER synthesizeBusinessOwners, whose cohort it
-// reads back out of the account registry. Exported as `cf_Is_Merchant`,
-// whose emptiness hard-aborts the downstream loader push.
+/* Stamp each catalog merchant with the proprietor Party the institution holds
+ * a beneficial-owner record for, or leave `invalidPerson`. DRAW-FREE — it
+ * takes no Rng, so it cannot move the corpus — and it must run AFTER
+ * synthesizeBusinessOwners, whose cohort it reads back out of the account
+ * registry. Exported as `cf_Is_Merchant`, whose emptiness hard-aborts the
+ * downstream loader push. */
 void assignMerchantOwners(
     pl::entity::merchant::Catalog &merchants,
     const pl::entity::account::Registry &accounts,

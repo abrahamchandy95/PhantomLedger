@@ -22,7 +22,8 @@ struct Archetype {
   double paycheckSensitivity;
 };
 
-struct BetaParams {
+/* Shape pair of a Beta distribution. */
+struct Beta {
   double alpha;
   double beta;
 };
@@ -31,9 +32,9 @@ namespace detail {
 
 static_assert(enumTax::isIndexable(kTypes));
 
-// cardProb (5th column) gates strictly-CREDIT card issuance; the
-// share-weighted mean is ~.826 against the S-DCPC credit-adoption
-// 82.3% (card-behavior-2026-07; docs/fraud_model_audit.md L-1).
+/* cardProb (5th column) gates strictly-CREDIT card issuance; the
+ * share-weighted mean is ~.826 against the S-DCPC credit-adoption 82.3%
+ * (docs/fraud_model_audit.md L-1). */
 inline constexpr auto kArchetypes = std::to_array<Archetype>({
     {0.7, 0.7, Timing::consumer, 200.0, 0.60, 0.55, 800.0, 0.18, 0.67},
     {0.6, 0.9, Timing::consumerDay, 1500.0, 0.82, 0.55, 2500.0, 0.30, 0.50},
@@ -43,7 +44,7 @@ inline constexpr auto kArchetypes = std::to_array<Archetype>({
     {1.0, 1.0, Timing::consumer, 1200.0, 0.85, 0.70, 3000.0, 1.00, 0.40},
 });
 
-inline constexpr auto kPaycheckBetas = std::to_array<BetaParams>({
+inline constexpr auto kPaycheckBetas = std::to_array<Beta>({
     {4.0, 2.0},
     {3.0, 3.0},
     {2.0, 4.0},
@@ -61,7 +62,7 @@ static_assert(kPaycheckBetas.size() == kTypeCount);
   return detail::kArchetypes[enumTax::toIndex(type)];
 }
 
-[[nodiscard]] constexpr BetaParams paycheckBeta(Type type) noexcept {
+[[nodiscard]] constexpr Beta paycheckBeta(Type type) noexcept {
   return detail::kPaycheckBetas[enumTax::toIndex(type)];
 }
 

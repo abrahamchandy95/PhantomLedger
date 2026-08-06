@@ -7,7 +7,7 @@
 namespace PhantomLedger::time {
 namespace {
 
-// IRS quarterly estimated-tax dates: prior-Q4, Q1, Q2, Q3.
+/* IRS quarterly estimated-tax dates: prior-Q4, Q1, Q2, Q3. */
 constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
     {1, 15},
     {4, 15},
@@ -15,7 +15,7 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
     {9, 15},
 }};
 
-/// Days since epoch, signed. Monotone in time, suitable as a set key.
+/* Days since epoch, signed. Monotone in time, suitable as a set key. */
 [[nodiscard]] std::int64_t dayKey(CalendarDate date) noexcept {
   const auto ymd = std::chrono::year_month_day{std::chrono::year{date.year},
                                                std::chrono::month{date.month},
@@ -24,7 +24,7 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return static_cast<std::int64_t>(sd.time_since_epoch().count());
 }
 
-/// Weekday of a CalendarDate using the same convention as
+/* Weekday of a CalendarDate, Mon=0 .. Sun=6. */
 [[nodiscard]] int weekdayOf(CalendarDate date) noexcept {
   const auto ymd = std::chrono::year_month_day{std::chrono::year{date.year},
                                                std::chrono::month{date.month},
@@ -33,7 +33,9 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return static_cast<int>(wd.iso_encoding()) - 1;
 }
 
-/// nth occurrence of a given weekday (Mon=0..Sun=6) in the given
+/* nth occurrence of a given weekday (Mon=0..Sun=6) in the given year and
+ * month. Clears `ok` and returns a default date when the month has no such
+ * occurrence. */
 [[nodiscard]] CalendarDate nthWeekdayOfMonth(int year, unsigned month,
                                              int weekday, int occurrence,
                                              bool &ok) noexcept {
@@ -52,7 +54,7 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return {year, month, day};
 }
 
-/// Last occurrence of a given weekday in the given year/month.
+/* Last occurrence of a given weekday in the given year/month. */
 [[nodiscard]] CalendarDate lastWeekdayOfMonth(int year, unsigned month,
                                               int weekday) noexcept {
   const auto lastDom = daysInMonth(year, month);
@@ -62,7 +64,8 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return {year, month, lastDom - static_cast<unsigned>(delta)};
 }
 
-/// Shifts Saturday/Sunday holidays to the nearest weekday using the
+/* Shifts a fixed-date holiday to its observed weekday under the federal
+ * rule: Saturday moves back to Friday, Sunday forward to Monday. */
 [[nodiscard]] CalendarDate observedFixedHoliday(int year, unsigned month,
                                                 unsigned day) noexcept {
   const CalendarDate actual{year, month, day};
@@ -80,7 +83,7 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return actual;
 }
 
-/// Build the set of US federal holiday dates for a single year as
+/* The US federal holidays of a single year, as `dayKey` values. */
 [[nodiscard]] std::unordered_set<std::int64_t> buildFederalHolidays(int year) {
   std::unordered_set<std::int64_t> h;
   h.reserve(11);
@@ -122,7 +125,8 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   return h;
 }
 
-/// SSA cycle payment date: nth Wednesday of month, stepped backward
+/* SSA cycle payment date: the 2nd/3rd/4th Wednesday of the month by birth
+ * day band, stepped backward off weekends and federal holidays. */
 [[nodiscard]] CalendarDate ssaCyclePaymentDate(
     int year, unsigned month, int birthDay,
     std::unordered_map<int, std::unordered_set<std::int64_t>> &holidayCache) {
@@ -136,11 +140,11 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
   bool ok = true;
   auto date = nthWeekdayOfMonth(year, month, /*wed=*/2, occurrence, ok);
   if (!ok) {
-    // Extremely rare: a given month doesn't have an Nth Wednesday
+    /* Extremely rare: a given month doesn't have an Nth Wednesday */
     date = lastWeekdayOfMonth(year, month, 2);
   }
 
-  // Walk backward over holidays/weekends until a business day is found.
+  /* Walk backward over holidays/weekends until a business day is found. */
   auto tp = makeTime(date);
   while (true) {
     const auto cal = toCalendarDate(tp);
@@ -163,13 +167,9 @@ constexpr std::array<std::pair<int, int>, 4> kQuarterlyTaxDates{{
 
 } // namespace
 
-// ----------------------------------------------------------------
-// Key hashers
-// ----------------------------------------------------------------
-
 std::size_t
 Almanac::MonthlyKeyHash::operator()(const MonthlyKey &k) const noexcept {
-  // Fold four small ints into a 64-bit value; they all fit in 16 bits.
+  /* Fold four small ints into a 64-bit value; they all fit in 16 bits. */
   const auto v = (static_cast<std::uint64_t>(k.day) << 48U) |
                  (static_cast<std::uint64_t>(k.hour) << 32U) |
                  (static_cast<std::uint64_t>(k.minute) << 16U) |
@@ -187,10 +187,6 @@ Almanac::AnnualKeyHash::operator()(const AnnualKey &k) const noexcept {
   return std::hash<std::uint64_t>{}(v);
 }
 
-// ----------------------------------------------------------------
-// Constructor
-// ----------------------------------------------------------------
-
 Almanac::Almanac(TimePoint start, TimePoint endExcl)
     : start_(start), endExcl_(endExcl) {
   if (endExcl < start) {
@@ -198,10 +194,6 @@ Almanac::Almanac(TimePoint start, TimePoint endExcl)
   }
   monthAnchors_ = monthStarts(start, endExcl);
 }
-
-// ----------------------------------------------------------------
-// Slicing helper
-// ----------------------------------------------------------------
 
 std::span<const TimePoint>
 Almanac::slice(std::span<const TimePoint> items, TimePoint activeStart,
@@ -222,10 +214,6 @@ bool Almanac::isBusinessDay(CalendarDate date) {
   }
   return !it->second.contains(dayKey(date));
 }
-
-// ----------------------------------------------------------------
-// monthly
-// ----------------------------------------------------------------
 
 std::vector<TimePoint> Almanac::monthly(TimePoint activeStart,
                                         TimePoint activeEndExcl, int day,
@@ -258,10 +246,6 @@ std::vector<TimePoint> Almanac::monthly(TimePoint activeStart,
   const auto sliced = slice(it->second, activeStart, activeEndExcl);
   return std::vector<TimePoint>(sliced.begin(), sliced.end());
 }
-
-// ----------------------------------------------------------------
-// annual
-// ----------------------------------------------------------------
 
 std::vector<TimePoint> Almanac::annual(TimePoint activeStart,
                                        TimePoint activeEndExcl, int month,
@@ -302,10 +286,6 @@ std::vector<TimePoint> Almanac::annual(TimePoint activeStart,
   return std::vector<TimePoint>(sliced.begin(), sliced.end());
 }
 
-// ----------------------------------------------------------------
-// estimatedTax
-// ----------------------------------------------------------------
-
 std::vector<TimePoint> Almanac::estimatedTax(TimePoint activeStart,
                                              TimePoint activeEndExcl) {
   if (!quarterlyBuilt_) {
@@ -330,10 +310,6 @@ std::vector<TimePoint> Almanac::estimatedTax(TimePoint activeStart,
   const auto sliced = slice(quarterlyCache_, activeStart, activeEndExcl);
   return std::vector<TimePoint>(sliced.begin(), sliced.end());
 }
-
-// ----------------------------------------------------------------
-// SSA payment dates
-// ----------------------------------------------------------------
 
 std::span<const TimePoint> Almanac::ssaPayDates(int cohort) {
   if (cohort < 0 || cohort > 2) {

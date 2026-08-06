@@ -57,8 +57,7 @@ void ObligationSynthesis::emitPerson(
   productSynth::StudentLoanEmitter studentLoanEmitter{local, window,
                                                       studentLoan_};
   productSynth::TaxEmitter taxEmitter{local, obligations, window, tax_};
-  productSynth::InsuranceEmitter insuranceEmitter{local, insurance,
-                                                  insurance_};
+  productSynth::InsuranceEmitter insuranceEmitter{local, insurance, insurance_};
 
   const bool hasMortgage =
       mortgageEmitter.emit(person, persona, loans, obligations);
@@ -87,19 +86,19 @@ void ObligationSynthesis::synthesize(
   const auto population = static_cast<::PhantomLedger::entity::PersonId>(
       assignment.byPerson.size());
 
-  // RAM R2.2.1c: retain only the burden slice. buildMonthlyBurdens is
-  // the stream's sole resident reader, and both of its call sites (the
-  // opening-book burden buffer, the spending prep) query exactly
-  // [window.start, window.start + kBurdenWindowMonths x 30 days) — the
-  // same arithmetic as its addMonths helper. The full window is derived
-  // on demand by generateWindow(). Emission (and therefore every draw)
-  // is unchanged; out-of-slice events are dropped at append.
+  /* Retain only the burden slice. buildMonthlyBurdens is the stream's sole
+   * resident reader, and both of its call sites — the opening-book burden
+   * buffer and the spending prep — query exactly
+   * [window.start, window.start + kBurdenWindowMonths x 30 days), the same
+   * arithmetic as its addMonths helper. The full window is derived on demand
+   * by generateWindow(). Emission, and therefore every draw, is unchanged;
+   * out-of-slice events are dropped at append. */
   auto &obligations = holdings.portfolios.obligations();
   obligations.restrictTo(
       window.start,
-      time::addDays(window.start,
-                    30 * ::PhantomLedger::transfers::legit::ledger::
-                             kBurdenWindowMonths));
+      time::addDays(
+          window.start,
+          30 * ::PhantomLedger::transfers::legit::ledger::kBurdenWindowMonths));
 
   for (::PhantomLedger::entity::PersonId person = 1; person <= population;
        ++person) {
@@ -114,7 +113,8 @@ void ObligationSynthesis::synthesize(
 ::PhantomLedger::entity::product::ObligationStream
 ObligationSynthesis::generateWindow(
     const ::PhantomLedger::pipeline::People &people,
-    ::PhantomLedger::time::Window window, ::PhantomLedger::time::TimePoint start,
+    ::PhantomLedger::time::Window window,
+    ::PhantomLedger::time::TimePoint start,
     ::PhantomLedger::time::TimePoint endExcl) const {
 
   const auto &assignment = people.personas.assignment;

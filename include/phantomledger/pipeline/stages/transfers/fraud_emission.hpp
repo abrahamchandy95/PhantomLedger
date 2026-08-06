@@ -32,33 +32,31 @@ public:
   [[nodiscard]] const ::PhantomLedger::transfers::fraud::Behavior &
   resolvedBehavior() const noexcept;
 
-  // H3 part 3c-ii: `timelines` (the personas pack's carrier) gives the
-  // injector each ring's alive horizon — ring scheduling never
-  // recruits the dead. Empty (the default) stands the intervals down.
-  [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectorRingView ringView(
-      const ::PhantomLedger::entity::person::Topology &topology,
-      std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
-          timelines = {}) const noexcept;
+  /* `timelines`, the personas pack's carrier, gives the injector each ring's
+   * alive horizon: ring scheduling never recruits the dead. Empty (the
+   * default) stands the intervals down. */
+  [[nodiscard]] ::PhantomLedger::transfers::fraud::InjectorRingView
+  ringView(const ::PhantomLedger::entity::person::Topology &topology,
+           std::span<const ::PhantomLedger::synth::personas::timeline::Timeline>
+               timelines = {}) const noexcept;
 
   [[nodiscard]] static ::PhantomLedger::transfers::fraud::InjectorAccountView
   accountView(
       const ::PhantomLedger::entity::account::Registry &registry,
       const ::PhantomLedger::entity::account::Ownership &ownership) noexcept;
 
-  // card-fraud-realism-v2 step b: `merchants` (the entity stage's
-  // acceptance catalogue) and `homeAreas` (People's compact per-person
-  // home carrier) are the inputs the card rails need in order to select
-  // their destination from the SAME population — on the SAME geographic
-  // axis — that legitimate card purchases use. See
-  // transfers/fraud/injector_inputs.hpp for the defect they close.
-  //
-  // ALL DEFAULT TO ABSENT, and absent means "behave exactly as before".
-  // FOUR call sites exist — simulate.cpp (the monolith reference),
-  // windowed_run.cpp (production), window_leg_support.hpp (the gate
-  // harness) and test_membership.cpp — and the two ENGINES must pass
-  // IDENTICAL arguments or test_arch_equivalence / test_production_
-  // windowed will diverge. Every carrier round updates all of the sites
-  // that read it together, for exactly that reason.
+  /* `merchants` (the entity stage's acceptance catalogue) and `homeAreas`
+   * (People's compact per-person home carrier) are the inputs the card rails
+   * need in order to select their destination from the SAME population, on the
+   * SAME geographic axis, that legitimate card purchases use. See
+   * transfers/fraud/injector_inputs.hpp for the defect they close.
+   *
+   * ALL DEFAULT TO ABSENT, and absent means "behave as if unbound". FOUR call
+   * sites exist — simulate.cpp (the monolith reference), windowed_run.cpp
+   * (production), window_leg_support.hpp (the gate harness) and
+   * test_membership.cpp — and the two ENGINES must pass IDENTICAL arguments or
+   * test_arch_equivalence / test_production_windowed will diverge. Any change
+   * to a carrier must update every site that reads it, together. */
   [[nodiscard]] static ::PhantomLedger::transfers::fraud::
       InjectorLegitCounterparties
       legitCounterparties(
@@ -67,28 +65,26 @@ public:
           const ::PhantomLedger::entity::merchant::Catalog *merchants = nullptr,
           std::span<const ::PhantomLedger::entity::geography::GeoAreaId>
               homeAreas = {},
-          // THE VICTIM-SIDE CARRIER, one pointer for the whole victim
-          // model (victimization-v2 + v3):
-          //   * v2 DERIVES the per-person card-exposure weights from
-          //     `personas->table` HERE rather than at each call site —
-          //     one derivation, so the two engines cannot compute it
-          //     differently on the path test_arch_equivalence guards.
-          //   * v3 forwards the pack itself, because the scam-rail
-          //     hazard needs persona-at-date, age-at-date and the join
-          //     day TOGETHER; three spans would be three chances for a
-          //     site to fill some and not others.
-          // nullptr leaves victim selection on the pre-v2 uniform draw,
-          // bit-identically, with no severity grading and no membership
-          // gate.
+          /* THE VICTIM-SIDE CARRIER, one pointer for the whole victim
+           * model. The per-person card-exposure weights are DERIVED from
+           * `personas->table` HERE rather than at each call site — one
+           * derivation, so the two engines cannot compute it differently on
+           * the path test_arch_equivalence guards — and the pack itself is
+           * forwarded, because the scam-rail hazard needs persona-at-date,
+           * age-at-date and the join day TOGETHER; three spans would be three
+           * chances for a site to fill some and not others. nullptr leaves
+           * victim selection on a plain uniform draw, bit-identically, with no
+           * severity grading and no membership gate. */
           const ::PhantomLedger::synth::personas::Pack *personas = nullptr,
-          // relocation-2026-07: the home-area HISTORY, APPENDED rather than
-          // inserted beside `homeAreas` where it belongs conceptually —
-          // inserting mid-signature silently rebinds every positional call,
-          // and there are four that must stay in lockstep.
-          //
-          // The unauthorized planner needs the home AT THE CASE DATE, because
-          // it plans the whole window before the fold runs; `homeAreas` above
-          // is only the window-start snapshot. nullptr ⇒ homes never move.
+          /* The home-area HISTORY, APPENDED rather than inserted beside
+           * `homeAreas` where it belongs conceptually: inserting mid-signature
+           * silently rebinds every positional call, and there are four that
+           * must stay in lockstep.
+           *
+           * The unauthorized planner needs the home AT THE CASE DATE, because
+           * it plans the whole window before the fold runs; `homeAreas` above
+           * is only the window-start snapshot. nullptr means homes never
+           * move. */
           const ::PhantomLedger::entity::parties::relocation::Schedule
               *relocation = nullptr);
 

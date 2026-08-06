@@ -37,8 +37,7 @@ void validateHubFraction(double value) {
 }
 
 [[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
-    ::PhantomLedger::random::Rng &rng,
-    const LegitAssembly::WorldInputs &world,
+    ::PhantomLedger::random::Rng &rng, const LegitAssembly::WorldInputs &world,
     const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
   return legit_ledger::OpeningBook{
       rng,
@@ -168,8 +167,9 @@ void LegitAssembly::validate() const {
   validateHubFraction(hubSelection_.fraction);
 }
 
-legit_ledger::LegitTransferBuilder LegitAssembly::builder(
-    ::PhantomLedger::random::Rng &rng, const WorldInputs &world) const {
+legit_ledger::LegitTransferBuilder
+LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
+                       const WorldInputs &world) const {
   legit_ledger::LegitTransferBuilder out{
       rng,
       blueprints::LegitTimeframe{
@@ -227,13 +227,10 @@ legit_ledger::LegitTransferBuilder LegitAssembly::builder(
               .portfolios = world.portfolios,
               .creditCards = world.creditCards,
               .cardLifecycle = cardLifecycle_.lifecycleRules,
-              // geo-causal-v1 (G2a step-2): carry the per-person home areas
-              // into the monolith spending pass so the reference oracle
-              // selects from the SAME homes as the windowed path.
+              /* The monolith spending pass must select from the SAME homes,
+               * and refresh them from the SAME schedule, as the windowed
+               * path. An asymmetry here IS an engine divergence. */
               .homeAreas = world.homeAreas,
-              // relocation-2026-07: the home-area HISTORY, so the monolith
-              // oracle refreshes homes from the same schedule the windowed
-              // engine does. An asymmetry here IS an engine divergence.
               .relocation = world.relocation,
           },
           income_.rent,

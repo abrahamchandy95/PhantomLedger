@@ -9,11 +9,10 @@ namespace PhantomLedger::math::seasonal {
 
 namespace detail {
 
-// Index 0 is unused so month numbers map directly: table[month] for
-// month in 1..12. Amplitude is anchored to the Census MARTS NSA
-// Dec-to-Jan ratio (~1.22 = 1.15/0.94); PL models TOTAL consumer
-// spending, which is flatter than retail, so the tails stay damped
-// (household-econ-2026-07; docs/fraud_model_audit.md L-2).
+/* Index 0 is unused so month numbers map directly: table[month] for month in
+ * 1..12. Amplitude is anchored to the Census MARTS NSA Dec-to-Jan ratio
+ * (~1.22 = 1.15/0.94); PL models TOTAL consumer spending, which is flatter
+ * than retail, so the tails stay damped (docs/fraud_model_audit.md L-2). */
 inline constexpr std::array<double, 13> kMonthlyRaw{
     0.0,  // sentinel
     0.94, // Jan: post-holiday trough, "dry January"
@@ -64,10 +63,8 @@ struct Config {
 
 inline constexpr Config kDefaultConfig{};
 
-/// Intensity scales the deviation from 1.0:
-///   intensity=0 -> always 1.0 (seasonality off)
-///   intensity=1 -> use kMonthly as-is
-///   intensity>1 -> amplified (useful for sensitivity testing)
+/* Intensity scales the deviation from 1.0: 0 -> always 1.0 (seasonality off),
+ * 1 -> `kMonthly` as-is, >1 -> amplified (sensitivity testing). */
 [[nodiscard]] constexpr double
 monthlyMultiplier(int month, const Config &cfg = kDefaultConfig) noexcept {
   if (!cfg.enabled || month < 1 || month > 12) {

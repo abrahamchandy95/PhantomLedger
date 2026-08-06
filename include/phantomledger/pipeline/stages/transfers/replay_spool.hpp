@@ -1,14 +1,12 @@
 #pragma once
-//
-// phantomledger/pipeline/stages/transfers/replay_spool.hpp
-//
-// RAM R2.4b-2: the disk-backed implementation of the base-stream replay
-// seam (activity/spending/replay_source.hpp). The windowed run writes
-// the screened base stream (timestamp order) to a sequential temporary
-// file after the spending prep has consumed it, frees the resident
-// vector, and the day driver's ledger replay decodes rows back one
-// bounded buffer at a time.
-//
+/*
+  Base-stream replay spool
+  The disk-backed implementation of the base-stream replay seam
+  (activity/spending/replay_source.hpp). The windowed run writes the screened
+  base stream, in timestamp order, to a sequential temporary file after the
+  spending prep has consumed it, frees the resident vector, and the day
+  driver's ledger replay decodes rows back one bounded buffer at a time.
+ */
 // Each record carries exactly the fields advanceBookThrough uses —
 // source key, target key, amount (IEEE-754 bit pattern), channel,
 // timestamp — written field by field (never a struct memcpy). The file
@@ -92,9 +90,7 @@ public:
     sealed_ = true;
   }
 
-  [[nodiscard]] std::uint64_t rowsSpooled() const noexcept {
-    return rowCount_;
-  }
+  [[nodiscard]] std::uint64_t rowsSpooled() const noexcept { return rowCount_; }
 
   [[nodiscard]] std::uint64_t bytesSpooled() const noexcept {
     return rowCount_ * kRecordBytes;

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/parties/relocation.hpp"
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <cstdint>
@@ -13,20 +13,20 @@
 
 namespace PhantomLedger::activity::spending::market::population {
 
-/// Sparse set of payday day-indices for one person within the run window.
+/* Sparse set of payday day-indices for one person within the run window. */
 struct PaydaySet {
   std::span<const std::uint32_t> days;
 
   [[nodiscard]] bool contains(std::uint32_t dayIndex) const noexcept;
 };
 
-// H2 step 2c (macro-history-v1): "no retirement consumption step in this
-// window" sentinel for Census::retirementDays / View::retirementDay.
+/* "No retirement consumption step in this window" sentinel for
+ * Census::retirementDays / View::retirementDay. */
 inline constexpr std::uint32_t kNoRetirementDay =
     std::numeric_limits<std::uint32_t>::max();
 
-// H3 (macro-history-v1): "does not die in this window" sentinel for
-// Census::deathDays / View::deathDay.
+/* "Does not die in this window" sentinel for Census::deathDays /
+ * View::deathDay. */
 inline constexpr std::uint32_t kNoDeathDay =
     std::numeric_limits<std::uint32_t>::max();
 
@@ -41,41 +41,37 @@ struct Census {
   // Payday rosters: one PaydaySet per person.
   std::span<const PaydaySet> paydays;
 
-  // geo-causal-v1 (G2a): per-person home area (PersonId-1), from the
-  // compact People::homeAreas carrier. EMPTY on the monolith reference
-  // oracle (addSpending has no People in scope); the production windowed
-  // path and the test world supply it. UNREAD until G2a step-2 wires
-  // distance-decay selection, so an empty span moves no golden.
+  /* Per-person home area (PersonId-1), from the compact People::homeAreas
+   * carrier. Drives distance-decay merchant selection. EMPTY on the monolith
+   * reference oracle (addSpending has no People in scope); the production
+   * windowed path and the test world supply it. */
   std::span<const entity::geography::GeoAreaId> homeAreas;
 
-  // relocation-2026-07: the home-area HISTORY behind the snapshot above.
-  // NON-OWNING and nullable — null means "home never moves", which is the
-  // pre-round behaviour and what the monolith reference oracle and every
-  // direct unit harness get.
-  //
-  // The View needs the SCHEDULE and not just the snapshot for two reasons the
-  // snapshot cannot serve: the merchant geo-pool builder must cover the UNION
-  // of every area anyone ever occupies (a mover arriving where there is no
-  // pool would silently fall back to the national CDF, switching distance
-  // decay off for them), and the monthly evolver refreshes the snapshot from
-  // it at each month boundary.
+  /* The home-area HISTORY behind the snapshot above. NON-OWNING and nullable
+   * — null means "home never moves", which is what the monolith reference
+   * oracle and every direct unit harness get.
+   *
+   * THE VIEW NEEDS THE SCHEDULE, NOT JUST THE SNAPSHOT, for two reasons the
+   * snapshot cannot serve: the merchant geo-pool builder must cover the UNION
+   * of every area anyone ever occupies (a mover arriving where there is no
+   * pool would silently fall back to the national CDF, switching distance
+   * decay off for them), and the monthly evolver refreshes the snapshot from
+   * it at each month boundary. */
   const entity::parties::relocation::Schedule *relocation = nullptr;
 
-  // H2 step 2c: the window day-index from which the retirement
-  // consumption step applies (kNoRetirementDay = never in this window).
-  // Computed by the transfers layer from the persona-timeline carrier
-  // (the blueprint's pack), which BOTH engines share — so unlike
-  // homeAreas this is never empty on the oracle. Seed retirees and
-  // highNetWorth carry the sentinel: a seed retiree's archetype already
-  // encodes retired-calibrated spending (rate x0.6 / amount x0.9), so
-  // the step models only the IN-WINDOW transition.
+  /* The window day-index from which the retirement consumption step applies
+   * (kNoRetirementDay = never in this window). Computed by the transfers
+   * layer from the persona-timeline carrier, which BOTH engines share — so
+   * unlike homeAreas this is never empty on the oracle. Seed retirees and
+   * highNetWorth carry the sentinel: a seed retiree's archetype already
+   * encodes retired-calibrated spending (rate x0.6 / amount x0.9), so the
+   * step models only the IN-WINDOW transition. */
   std::span<const std::uint32_t> retirementDays;
 
-  // H3: the window day-index of the person's DEATH (kNoDeathDay = the
-  // person survives the window). Same provenance as retirementDays —
-  // the blueprint pack's timeline lane carries tl.death, both engines
-  // identical. The emission loop stops a spender's person-days here;
-  // no exemptions (everyone dies).
+  /* The window day-index of the person's DEATH (kNoDeathDay = the person
+   * survives the window). Same provenance as retirementDays — the blueprint
+   * pack's timeline lane carries tl.death, both engines identical. The
+   * emission loop stops a spender's person-days here; no exemptions. */
   std::span<const std::uint32_t> deathDays;
 };
 

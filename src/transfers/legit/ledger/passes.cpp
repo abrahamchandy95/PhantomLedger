@@ -90,8 +90,8 @@ buildPopulation(const blueprints::LegitBlueprint &plan,
       ownership,
       plan.personas().pack->assignment,
       std::move(hubs),
-      // H2 step 2b: the persona-timeline carrier — salary selection/
-      // spans and the revenue month gate read persona-AT-DATE.
+      // The persona-timeline carrier — salary selection/spans and the
+      // revenue month gate read persona-AT-DATE.
       &plan.personas().pack->timelines,
   };
 }
@@ -120,9 +120,9 @@ buildRevenueCounterparties(const blueprints::LegitBlueprint &plan,
                            const entity::counterparty::Directory *directory) {
   income::RevenueCounterparties out;
   out.directory = directory;
-  // Cash takings deposits draw from the branch/ATM cash hub — the same
-  // infrastructure account ATM withdrawals pay into
-  // (cash-deposits-2026-07). Sentinel Key{} when no hub exists.
+  /* Cash takings deposits draw from the branch/ATM cash hub — the same
+   * infrastructure account ATM withdrawals pay into. Sentinel Key{} when no
+   * hub exists. */
   if (!plan.counterparties().hubAccounts.empty()) {
     out.cashHubAccount = plan.counterparties().hubAccounts.front();
   }
@@ -191,11 +191,11 @@ buildGovernmentPopulation(const blueprints::LegitBlueprint &plan,
       .personas = &plan.personas().pack->assignment,
       .accounts = &registry,
       .ownership = &ownership,
-      // H2 step 2a: the single-age-axis carrier — SSA deposit cohorts
-      // derive from the REAL birth day-of-month (authority U-7).
+      // The single-age-axis carrier — SSA deposit cohorts derive from
+      // the REAL birth day-of-month (authority U-7).
       .birthDates = &plan.personas().pack->birthDates,
-      // H2 step 2b: retirement recipients select by RETIRED-AT-DATE
-      // with claim-date deposit onset.
+      // Retirement recipients select by RETIRED-AT-DATE with
+      // claim-date deposit onset.
       .timelines = &plan.personas().pack->timelines,
   };
 }
@@ -330,8 +330,8 @@ buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
   cfg.window = windowFromPlan(plan);
   cfg.seed = plan.seed();
 
-  // H3 part 3c-ii: the timeline carrier — the CardCycleDriver stops
-  // each card's servicing at its owner's ACCOUNT CLOSURE. Filled here
+  // The timeline carrier — the CardCycleDriver stops each card's
+  // servicing at its owner's ACCOUNT CLOSURE. Filled here
   // for BOTH engines (this function is the shared config source).
   if (plan.personas().pack != nullptr) {
     cfg.timelines = plan.personas().pack->timelines;
@@ -373,13 +373,11 @@ void addSpending(const RoutinePass &pass,
               .lookup = *resources.accountsLookup,
               .registry = *accounts.registry,
           },
-      // geo-causal-v1 (G2a step-2): the monolith reference oracle now carries
-      // the same per-person home areas as the production windowed path (via
-      // RoutineResources.homeAreas). Card-present distance-decay selection
-      // reads them through the population View, so both engines stay
-      // byte-identical. Empty ⇒ no local anchor (invalidGeoArea).
+      /* Card-present distance-decay selection reads these through the
+       * population View, so the monolith reference oracle must carry the SAME
+       * home areas and the SAME relocation schedule as the windowed path or
+       * the two engines stop being byte-identical. */
       .homeAreas = resources.homeAreas,
-      // relocation-2026-07: the history behind the snapshot.
       .relocation = resources.relocation,
   };
 
@@ -465,11 +463,10 @@ void addRoutinesWithoutSpending(const RoutinePass &pass,
   addSplitDeposits(pass, plan, streams);
   memlog::log("routines:splitters", streams);
 
-  // RAM R2.4a: split deposits were the payday-inbound view's only
-  // consumer, and only income rows match its channel filter — nothing
-  // added below contributes to it. Release it now (and stop
-  // collecting); at 200k/730d this frees ~1.4 GB for the rest of the
-  // prologue and the whole fold. Output is unaffected.
+  /* Split deposits are the payday-inbound view's only consumer, and only
+   * income rows match its channel filter — nothing added below contributes to
+   * it. Releasing here (and stopping collection) frees ~1.4 GB at 200k/730d
+   * for the rest of the prologue and the whole fold. Output is unaffected. */
   streams.releasePaydayInbound();
 
   addRent(pass, plan, streams);

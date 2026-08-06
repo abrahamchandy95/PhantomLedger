@@ -1,66 +1,4 @@
 #pragma once
-//
-// phantomledger/entities/infra/attackers.hpp
-//
-// THE ATTACKER-SIDE ACCESS LAYER: exogenous fraud infrastructure that
-// PERSISTS AND IS REUSED ACROSS VICTIMS.
-//
-// ===================================================================
-// THE DEFECT THIS TYPE EXISTS TO CLOSE (attacker-infra-2026-07)
-//
-// Every unauthorized compromise used to mint a BRAND-NEW device and a
-// brand-new IP inside the planning loop:
-//
-//     .device = Identity{ring, 0xACE00000 + seq, 0}   // ++seq per plan
-//     .ip     = network::randomIpv4(rng)              // ~3.5e9 space
-//
-// One unique endpoint per case, so CROSS-VICTIM ENDPOINT SHARING WAS
-// ZERO BY CONSTRUCTION. "One device touching many cards" is the single
-// most valuable signal a card-fraud graph carries — it is the reason to
-// model this as a graph at all — and the generator made it
-// unreachable. No message can pass between two victims through an
-// endpoint that only ever sees one of them, so the Device and IP layers
-// were inert for a GNN no matter how they were exported.
-//
-// ===================================================================
-// THE MODEL: AN OPERATOR IS A CAMPAIGN, NOT A PERSON
-//
-// Real card fraud monetizes stolen credentials through infrastructure
-// with a LIFETIME: a set of devices/fingerprints and addresses worked
-// for weeks or months across many cards, then burned and replaced.
-// That is what an `AttackerOperator` is — a bounded campaign holding
-// concurrent device and IP LINES, each line a replacement chain that
-// TILES the campaign exactly the way `synth::infra::timeline::sampleChain`
-// tiles a customer's window.
-//
-// Operators are deliberately NOT roster Parties. The bank's 6,000
-// customers do not commit the card fraud suffered by those same
-// customers; the attacker population is exogenous and much larger than
-// any plausible in-corpus fraud cohort, and pretending otherwise would
-// have traded a missing signal for a false one. What the operators DO
-// have is internal structure, which is all the graph needed.
-//
-// ===================================================================
-// EVERY LOOKUP HERE IS DRAW-FREE AND POINT-IN-TIME
-//
-// The fraud planner resolves a case's endpoints through these methods,
-// so they must not consume randomness and must not carry sticky state:
-//
-//   * DRAW-FREE keeps the planner's per-plan RNG footprint fixed at the
-//     four draws `network::randomIpv4` used to spend, which is what
-//     confines this round's golden movement to the device/IP columns
-//     instead of re-rolling every amount, timestamp and row count.
-//   * STATELESS keeps the batch and windowed engines in lockstep. The
-//     Router's sticky index is legitimate for customers, whose sessions
-//     are a walk; an attacker case is a point query, and a mutable
-//     cache here would make the answer depend on injection order.
-//
-// Selection among CONCURRENTLY-live endpoints is therefore keyed on a
-// caller-supplied salt (the plan sequence), not on a coin. Two cases
-// run by the same operator at the same instant may still land on
-// different lines — a botnet is several machines — while one case keeps
-// one endpoint for all of its events, which is what "a case has one
-// modus operandi" means.
 
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
@@ -71,6 +9,47 @@
 #include <cstdint>
 #include <optional>
 #include <vector>
+
+/*
+  The attacker-side access layer: exogenous fraud infrastructure that PERSISTS
+  AND IS REUSED ACROSS VICTIMS.
+
+  "One device touching many cards" is the single most valuable signal a
+  card-fraud graph carries — it is the reason to model this as a graph at all.
+  Minting a fresh device and IP per compromise makes cross-victim endpoint
+  sharing ZERO BY CONSTRUCTION: no message can pass between two victims
+  through an endpoint that only ever sees one of them, and the Device and IP
+  layers go inert for a GNN no matter how they are exported.
+
+  AN OPERATOR IS A CAMPAIGN, NOT A PERSON. Real card fraud monetizes stolen
+  credentials through infrastructure with a LIFETIME: devices/fingerprints and
+  addresses worked for weeks or months across many cards, then burned and
+  replaced. An `AttackerOperator` is a bounded campaign holding concurrent
+  device and IP LINES, each line a replacement chain that TILES the campaign
+  the way `synth::infra::timeline::sampleChain` tiles a customer's window.
+
+  OPERATORS ARE DELIBERATELY NOT ROSTER PARTIES. The attacker population is
+  exogenous and far larger than any plausible in-corpus fraud cohort; making
+  them customers would trade a missing signal for a false one. What they do
+  have is internal structure, which is all the graph needed.
+
+  EVERY LOOKUP HERE MUST STAY DRAW-FREE AND STATELESS. The fraud planner
+  resolves a case's endpoints through these methods:
+    * DRAW-FREE holds the planner's per-plan RNG footprint at the four draws
+      `network::randomIpv4` spent, which is what confines golden movement to
+      the device/IP columns instead of re-rolling every amount, timestamp and
+      row count.
+    * STATELESS keeps the batch and windowed engines in lockstep. The Router's
+      sticky index is legitimate for customers, whose sessions are a walk; an
+      attacker case is a point query, and a mutable cache here would make the
+      answer depend on injection order.
+
+  Selection among CONCURRENTLY-live endpoints is therefore keyed on a
+  caller-supplied salt (the plan sequence), never on a coin. Two cases run by
+  one operator at the same instant may land on different lines — a botnet is
+  several machines — while one case keeps one endpoint for all of its events,
+  which is what "a case has one modus operandi" means.
+ */
 
 namespace PhantomLedger::infra {
 
@@ -144,14 +123,13 @@ public:
   }
   [[nodiscard]] std::size_t ipCount() const noexcept { return ips.size(); }
 
-  /// Build the membership and time indexes. Call once, after the
-  /// generator has filled the arrays above.
+  /* Build the membership and time indexes. Call once, after the
+   * generator has filled the arrays above. */
   void index() {
     sortedDevices = devices;
     std::sort(sortedDevices.begin(), sortedDevices.end());
-    sortedDevices.erase(
-        std::unique(sortedDevices.begin(), sortedDevices.end()),
-        sortedDevices.end());
+    sortedDevices.erase(std::unique(sortedDevices.begin(), sortedDevices.end()),
+                        sortedDevices.end());
 
     sortedIps = ips;
     std::sort(sortedIps.begin(), sortedIps.end());
@@ -184,8 +162,8 @@ public:
       const auto hiRaw = static_cast<std::size_t>(
           std::max<std::int64_t>(0, op.campaignLastEpochExcl - 1 - first) /
           bucketSeconds);
-      return std::pair<std::size_t, std::size_t>{
-          std::min(lo, buckets - 1), std::min(hiRaw, buckets - 1)};
+      return std::pair<std::size_t, std::size_t>{std::min(lo, buckets - 1),
+                                                 std::min(hiRaw, buckets - 1)};
     };
 
     for (const auto &op : operators) {
@@ -219,8 +197,8 @@ public:
     return std::binary_search(sortedIps.begin(), sortedIps.end(), address);
   }
 
-  /// Weighted pick among the operators whose campaign contains `ts`.
-  /// `u` must be in [0, 1). Draw-free: the caller owns the uniform.
+  /* Weighted pick among the operators whose campaign contains `ts`.
+   * `u` must be in [0, 1). Draw-free: the caller owns the uniform. */
   [[nodiscard]] std::optional<std::uint32_t> operatorAt(double u,
                                                         std::int64_t ts) const {
     if (bucketOffsets.size() < 2) {
@@ -270,25 +248,25 @@ public:
     return any ? std::optional<std::uint32_t>{last} : std::nullopt;
   }
 
-  /// An endpoint the operator held for the WHOLE of [`ts`, `endTsExcl`).
-  ///
-  /// The whole-span requirement is what makes the exported session
-  /// point-in-time honest with ZERO exceptions. A compromise keeps ONE
-  /// endpoint for all of its events — a case has one modus operandi —
-  /// and its events run up to 71 hours past the case date, so an
-  /// endpoint chosen on liveness at the case START alone could be
-  /// attributed to an event after it had already been replaced. That is
-  /// exactly the class of contradiction `device-ip-lifecycle` measured
-  /// at 53% on the customer side, and admitting a few percent of it here
-  /// would be reintroducing it in miniature.
-  ///
-  /// Returning nullopt is a legitimate answer: no single endpoint
-  /// covered the case, so this operator did not run it. The caller falls
-  /// back to victim-endpoint attribution, which is a modelled mechanism
-  /// rather than a patch, and the realized share is gated.
+  /* An endpoint the operator held for the WHOLE of [`ts`, `endTsExcl`).
+   *
+   * The whole-span requirement is what makes the exported session
+   * point-in-time honest with ZERO exceptions. A compromise keeps ONE
+   * endpoint for all of its events — a case has one modus operandi —
+   * and its events run up to 71 hours past the case date, so an
+   * endpoint chosen on liveness at the case START alone could be
+   * attributed to an event after it had already been replaced. That is
+   * exactly the class of contradiction measured at 53% on the customer
+   * endpoint side, and admitting a few percent of it here would be
+   * reintroducing it in miniature.
+   *
+   * Returning nullopt is a legitimate answer: no single endpoint
+   * covered the case, so this operator did not run it. The caller falls
+   * back to victim-endpoint attribution, which is a modelled mechanism
+   * rather than a patch, and the realized share is gated. */
   [[nodiscard]] std::optional<devices::Identity>
-  deviceAt(std::uint32_t operatorIndex, std::int64_t ts,
-           std::int64_t endTsExcl, std::uint64_t salt) const {
+  deviceAt(std::uint32_t operatorIndex, std::int64_t ts, std::int64_t endTsExcl,
+           std::uint64_t salt) const {
     const auto pick =
         coveringSpan(operatorIndex, ts, endTsExcl, salt, deviceTenures,
                      [&](const AttackerOperator &op) {
@@ -300,12 +278,12 @@ public:
     return devices[*pick];
   }
 
-  [[nodiscard]] std::optional<network::Ipv4>
-  ipAt(std::uint32_t operatorIndex, std::int64_t ts, std::int64_t endTsExcl,
-       std::uint64_t salt) const {
+  [[nodiscard]] std::optional<network::Ipv4> ipAt(std::uint32_t operatorIndex,
+                                                  std::int64_t ts,
+                                                  std::int64_t endTsExcl,
+                                                  std::uint64_t salt) const {
     const auto pick = coveringSpan(operatorIndex, ts, endTsExcl, salt,
-                                   ipTenures,
-                                   [&](const AttackerOperator &op) {
+                                   ipTenures, [&](const AttackerOperator &op) {
                                      return std::pair{op.ipBegin, op.ipEnd};
                                    });
     if (!pick.has_value()) {
