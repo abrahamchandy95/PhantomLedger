@@ -306,7 +306,10 @@ set(PL_EXPORTER_ECON_SOURCES
 set(PL_APP_SOURCES
     src/app/cli.cpp
     src/app/progress.cpp
+    src/app/reporting.cpp
+    src/app/backend.cpp
     src/app/setup.cpp
+    src/app/orchestrator.cpp
 )
 
 # ---------------------------------------------------------------------
