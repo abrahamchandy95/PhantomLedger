@@ -427,6 +427,18 @@ constexpr double kMaxHeldActivityRatio = 1.134;
 constexpr double kHeldHalfRatioLo = 0.90;
 constexpr double kHeldHalfRatioHi = 1.06;
 
+/* SUB-GATE G' — the largest owned-share gap between fraud-touched merchants
+ * and view merchants overall that a clean register produces. Sized BETWEEN the
+ * armed maximum (0.0487) and the weight-disarm minimum (0.1072); see the
+ * derivation at the check itself. */
+constexpr double kMaxOwnedShareGap = 0.08;
+
+/* SUB-GATE G'' — online-to-physical owner coverage ratio. Armed 1.0632 /
+ * 0.9268 / 1.2756 / 0.8104, mean 1.0190, sample SD 0.2000, mean +/- 3.5 SD.
+ * Footprint disarm reads 0.0000 on every leg. */
+constexpr double kModalityRatioLo = 0.32;
+constexpr double kModalityRatioHi = 1.72;
+
 struct Leg {
   const char *name;
   std::uint64_t seed;
@@ -792,6 +804,12 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
   std::size_t viewOwnedMerchant = 0;
   std::size_t viewOwnedMerchantFraud = 0;
 
+  /* THE MERCHANT-LEVEL FORM of the same question, and the one with the
+   * power. See sub-gate G' for why the row-weighted pair above cannot
+   * answer it. */
+  std::set<pl::entity::Key> viewMerchantSet;
+  std::set<pl::entity::Key> viewFraudMerchantSet;
+
   // Sub-gate H. Keyed on the card, memoised, and computed over the SAME
   // window bounds the exporter's `generationFor` uses — a mismatch here would
   // measure a different schedule than the one that reached the tables.
@@ -839,6 +857,54 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
     footprintByKey.emplace(rec.counterpartyId, rec.footprint);
     if (rec.owner != pl::entity::invalidPerson) {
       ownerByMerchant.emplace(rec.counterpartyId, rec.owner);
+    }
+  }
+
+  /* DISARM FOR SUB-GATE G', and it drives the exact leak the header warns
+   * about: "small local outlets have proprietors, national services and
+   * online merchants do not". That rule is the TEMPTING version of this
+   * feature and it would be a label shortcut, because the card rail is
+   * heavily card-not-present and draws only from `Footprint::online`, so any
+   * eligibility rule reading `footprint` inherits the modality split.
+   *
+   * Left in the file permanently. A negative that has never been made to fail
+   * is indistinguishable from a check that cannot. */
+  if (const char *mode = std::getenv("PL_OWNERSHIP_DISARM")) {
+    const std::string which{mode};
+    ownerByMerchant.clear();
+    if (which == "weight") {
+      /* THE OTHER ATTRIBUTE CLAUDE.md RULE 1 NAMES. A register keyed on
+       * popularity does not touch footprint at all, so G'' cannot see it —
+       * but merchants are selected for fraud by weight, so it lands straight
+       * on the destination side of the label. This is G's disarm. */
+      std::vector<double> weights;
+      weights.reserve(result.counterparties.merchants.records.size());
+      for (const auto &rec : result.counterparties.merchants.records) {
+        weights.push_back(rec.weight);
+      }
+      auto sorted = weights;
+      std::sort(sorted.begin(), sorted.end());
+      const double cut =
+          sorted.empty()
+              ? 0.0
+              : sorted[static_cast<std::size_t>(
+                    static_cast<double>(sorted.size()) *
+                    (1.0 - pl::entity::merchant::ownership::
+                               kBeneficialOwnerCoverage))];
+      for (const auto &rec : result.counterparties.merchants.records) {
+        if (rec.weight >= cut) {
+          ownerByMerchant.emplace(rec.counterpartyId,
+                                  static_cast<pl::entity::PersonId>(1));
+        }
+      }
+    } else {
+      /* Default: the footprint leak. */
+      for (const auto &rec : result.counterparties.merchants.records) {
+        if (rec.footprint != pl::entity::merchant::Footprint::online) {
+          ownerByMerchant.emplace(rec.counterpartyId,
+                                  static_cast<pl::entity::PersonId>(1));
+        }
+      }
     }
   }
 
@@ -1068,6 +1134,13 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
       if (fraud) {
         ++viewOwnedMerchantFraud;
       }
+    }
+
+    /* One entry per DESTINATION, not per row: the unit the ownership hash
+     * actually decides. */
+    viewMerchantSet.insert(tx.target);
+    if (fraud) {
+      viewFraudMerchantSet.insert(tx.target);
     }
 
     // ------- H: THE REISSUE SCHEDULE CARRIES NO FRAUD SIGNAL
@@ -1630,6 +1703,103 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
               ownerByMerchant.size(),
               result.counterparties.merchants.records.size(), viewOwnedMerchant,
               ownedPrecision, ownedLift);
+  /* G' THE MERCHANT-LEVEL FORM, and it is now the one that is BANDED.
+   *
+   * The row-weighted lift above asks "what share of rows landing on an owned
+   * merchant are fraud, against the base rate". That question confounds TWO
+   * independent things: whether the ownership hash correlates with being a
+   * fraud destination — the construction claim, which is what this gate is
+   * for — and how heavily fraud rows CONCENTRATE on a few merchants, which is
+   * a property of the fraud rail and has nothing to do with ownership.
+   *
+   * The confound is not small. With ~343 merchants and ~4,000 fraud rows
+   * spread over a heavy-tailed destination pool, whether ONE busy fraud
+   * merchant happens to fall on the owned side of a 45% coin moves the row
+   * ratio by tens of percent. The effective sample is a handful of merchants,
+   * not 326,000 rows, so a row-level binomial understates the variance by
+   * more than an order of magnitude — CLAUDE.md card-churn rule 3, the same
+   * clustering trap, in a form where it is far more severe.
+   *
+   * This form asks the construction question directly: of the DISTINCT
+   * merchants fraud reached, what share carry an owner edge, against the
+   * share among all view merchants? One entry per merchant, so the unit
+   * matches the coin the hash actually flips. */
+  const double ownedShareAll =
+      viewMerchantSet.empty()
+          ? 0.0
+          : static_cast<double>(std::count_if(
+                viewMerchantSet.begin(), viewMerchantSet.end(),
+                [&](const pl::entity::Key &k) {
+                  return ownerByMerchant.find(k) != ownerByMerchant.end();
+                })) /
+                static_cast<double>(viewMerchantSet.size());
+  const double ownedShareFraud =
+      viewFraudMerchantSet.empty()
+          ? 0.0
+          : static_cast<double>(std::count_if(
+                viewFraudMerchantSet.begin(), viewFraudMerchantSet.end(),
+                [&](const pl::entity::Key &k) {
+                  return ownerByMerchant.find(k) != ownerByMerchant.end();
+                })) /
+                static_cast<double>(viewFraudMerchantSet.size());
+  const double merchantLift =
+      ownedShareAll > 0.0 ? ownedShareFraud / ownedShareAll : 0.0;
+
+  /* G'' THE CONSTRUCTION RULE ITSELF, tested directly rather than through a
+   * consequence — and it is here because the CONSEQUENCE form cannot see the
+   * leak that matters.
+   *
+   * `ownership::onFile` hashes the merchant key alone, so coverage must be the
+   * SAME on either side of any other merchant attribute. Footprint is the
+   * attribute that matters: the card rail is heavily card-not-present and
+   * draws only from `Footprint::online`, so a register that preferred
+   * physical outlets would make "has an owner edge" a modality flag and, with
+   * it, a label flag.
+   *
+   * MEASURED WHY THIS EXISTS: driving that exact leak (`PL_OWNERSHIP_DISARM`,
+   * ownership = physical-only) leaves the merchant-level fraud lift at
+   * 0.9337-0.9683 — INSIDE any band its own armed readings would justify. The
+   * consequence form is ceiling-compressed once coverage reaches 86%, so it
+   * cannot separate. This form reads 0.0 against ~1.0 and separates
+   * completely. CLAUDE.md merchant-selection rule 6, third instance: a band
+   * whose disarm passes is not a check. */
+  std::size_t onlineSeen = 0;
+  std::size_t onlineOwned = 0;
+  std::size_t physicalSeen = 0;
+  std::size_t physicalOwned = 0;
+  for (const auto &key : viewMerchantSet) {
+    const auto fit = footprintByKey.find(key);
+    if (fit == footprintByKey.end()) {
+      continue;
+    }
+    const bool owned = ownerByMerchant.find(key) != ownerByMerchant.end();
+    if (fit->second == pl::entity::merchant::Footprint::online) {
+      ++onlineSeen;
+      onlineOwned += owned ? 1 : 0;
+    } else {
+      ++physicalSeen;
+      physicalOwned += owned ? 1 : 0;
+    }
+  }
+  const double onlineCoverage =
+      onlineSeen == 0 ? 0.0
+                      : static_cast<double>(onlineOwned) /
+                            static_cast<double>(onlineSeen);
+  const double physicalCoverage =
+      physicalSeen == 0 ? 0.0
+                        : static_cast<double>(physicalOwned) /
+                              static_cast<double>(physicalSeen);
+  const double modalityRatio =
+      physicalCoverage > 0.0 ? onlineCoverage / physicalCoverage : 0.0;
+  std::printf("  G'' modality independence: online %zu (owned %.4f), physical "
+              "%zu (owned %.4f), ratio %.4fx\n",
+              onlineSeen, onlineCoverage, physicalSeen, physicalCoverage,
+              modalityRatio);
+  std::printf("  G' merchant-level: %zu view merchants (owned share %.4f), "
+              "%zu fraud-touched (owned share %.4f), lift %.4fx\n",
+              viewMerchantSet.size(), ownedShareAll,
+              viewFraudMerchantSet.size(), ownedShareFraud, merchantLift);
+
   // IS THE REGISTER DEGENERATE? Coverage alone does not answer that. A
   // register where one Party owns every merchant would satisfy a
   // non-emptiness check, satisfy the loader, and be a single hub vertex
@@ -1672,24 +1842,83 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
         std::string(leg.name) +
             ": card-view rows must reach owned merchants, or sub-gate G "
             "measures nothing");
-  // THE BAND IS NOT ZERO-WIDTH, AND THE REASON IS WORTH RECORDING.
-  // Observed 1.122x (leg-long) and 0.950x (leg-wide) — it STRADDLES 1.0,
-  // and that sign flip across two independent seeds is the evidence that
-  // there is no construction correlation. What remains is a finite-
-  // catalogue realization effect: with only a few hundred merchants, a
-  // 45%-coverage hash lands on a subset whose online/physical composition
-  // differs from the complement's by a few points, and the card rail's
-  // ~70% card-not-present share turns that into a small lift of either
-  // sign. A systematic leak would keep the same sign in both legs.
-  check(ownedLift > 0.80 && ownedLift < 1.25,
+  /* THE ROW-WEIGHTED LIFT IS PRINTED AND NO LONGER BANDED, and retiring that
+   * band is a correction rather than a relaxation.
+   *
+   * It used to assert `0.80 < ownedLift < 1.25`, sized on TWO readings (1.122
+   * and 0.950) of a superseded leg set. Re-measured over the four legs this
+   * file now runs: 1.345 / 1.249 / 1.495 / 0.581. Three of four fail — while
+   * the construction is provably clean, since `ownership::onFile` hashes role,
+   * bank and number and reads nothing else.
+   *
+   * WHY THE STATISTIC IS WRONG, not the world. It divides a fraud rate over
+   * ROWS landing on owned merchants by the corpus base rate, which confounds
+   * the construction question — does the ownership hash correlate with being a
+   * fraud destination — with how heavily fraud rows CONCENTRATE on a few
+   * merchants, a property of the fraud rail that has nothing to do with
+   * ownership. With ~343 merchants and fraud spread over a heavy-tailed
+   * destination pool, whether ONE busy fraud merchant lands on the owned side
+   * of a 45% coin moves the ratio by tens of percent. The effective sample is
+   * a handful of merchants, not the 326,000 rows the denominator suggests, so
+   * a row-level binomial understates the variance by more than an order of
+   * magnitude. Same clustering trap as CLAUDE.md card-churn rule 3, in a far
+   * more severe form, and the same lesson as venue-reuse rule 3: the pairwise
+   * statistic was the wrong one.
+   *
+   * As a DETECTOR it was broken in both directions: it fired on 3 of 4 clean
+   * legs, and its one true positive (the footprint disarm, 0.72-0.78) is
+   * caught with total separation by G'' below. G' and G'' replace it. */
+  std::printf("  G  (row-weighted lift %.3fx — PRINTED, confounded by "
+              "fraud-row concentration; G'/G'' carry the check)\n",
+              ownedLift);
+
+  /* G' THE WEIGHT LEAK. Merchant-level owned-share DIFFERENCE, not the ratio:
+   * the ratio is ceiling-compressed once coverage is high and cannot separate.
+   *
+   * MEASURED armed: +0.0059 / +0.0161 / +0.0487 / -0.0120, so the sign flips
+   * and the magnitude stays under 0.05.
+   * DISARM `PL_OWNERSHIP_DISARM=weight` (register keyed on popularity, the
+   * other attribute CLAUDE.md merchant-ownership rule 1 names): +0.1162 /
+   * +0.1146 / +0.1072 / +0.1251 — all four outside, minimum 0.1072.
+   *
+   * The bound sits between armed max 0.0487 and disarm min 0.1072: 1.64x
+   * headroom above the clean readings, 1.34x below the leak. Thin on the
+   * disarm side and stated rather than hidden — the honest reading is that
+   * this catches a FULL weight keying and would miss a weak one. G'' is the
+   * high-margin half of the pair. */
+  const double ownedShareGap = ownedShareFraud - ownedShareAll;
+  check(std::abs(ownedShareGap) <= kMaxOwnedShareGap,
         std::string(leg.name) +
-            ": 'destination merchant has an owner edge' must carry NO "
-            "SYSTEMATIC fraud signal — lift must straddle 1.0, got " +
-            std::to_string(ownedLift) +
+            ": fraud-touched merchants carry owner edges at a different rate "
+            "than view merchants overall — gap " +
+            std::to_string(ownedShareGap) + " exceeds " +
+            std::to_string(kMaxOwnedShareGap) +
             ". Register membership is a hash of the merchant key alone "
-            "precisely so this holds; a rule reading footprint or weight "
-            "would inherit the card rail's card-not-present modality split "
-            "and turn an ownership table into a label shortcut");
+            "precisely so this holds; a rule reading weight would put the "
+            "register on the destination side of every fraud row");
+
+  /* G'' THE FOOTPRINT LEAK, and the high-margin half.
+   *
+   * MEASURED armed: 1.0632 / 0.9268 / 1.2756 / 0.8104, mean 1.0190, sample SD
+   * 0.2000, mean +/- 3.5 SD = [0.319, 1.719]. Rounded outward. The band is
+   * wide because only 40-59 view merchants are online — a structural limit,
+   * not a choice, and the observed SD (0.200) tracks its own binomial
+   * prediction (0.175), so this is noise and not residual signal.
+   *
+   * DISARM `PL_OWNERSHIP_DISARM` (register = physical outlets only, the
+   * tempting version of the feature): 0.0000 on all four legs. Total
+   * separation — 2.5x below the lower band edge and 0 against an armed
+   * minimum of 0.81. */
+  check(modalityRatio >= kModalityRatioLo && modalityRatio <= kModalityRatioHi,
+        std::string(leg.name) +
+            ": owner-edge coverage differs by FOOTPRINT — online/physical "
+            "ratio " +
+            std::to_string(modalityRatio) + " outside [" +
+            std::to_string(kModalityRatioLo) + ", " +
+            std::to_string(kModalityRatioHi) +
+            "]. The card rail draws card-not-present rows only from "
+            "Footprint::online, so a register that prefers either modality "
+            "becomes a modality flag and with it a label flag");
 
   // ------- H reissue schedule: cardinality, not signal
   const double multiGenPrecision =
