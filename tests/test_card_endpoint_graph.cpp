@@ -439,6 +439,25 @@ constexpr double kMaxOwnedShareGap = 0.08;
 constexpr double kModalityRatioLo = 0.32;
 constexpr double kModalityRatioHi = 1.72;
 
+/* I.3's CEILING. Sub-gate I.3 has always REQUIRED fraud on single-card
+ * endpoints — the bimodal curve is real, since a card-not-present attacker
+ * buys a fresh fingerprint per attempt and burns it, and a model that learns
+ * "fan-out 1 is safe" has learned an artifact. But the check was a FLOOR with
+ * no ceiling, and `bestPrecision` cannot cover the gap: that sweep is over
+ * `degree >= k` thresholds, which at k = 1 is the entire view and scores the
+ * base rate by construction. So "this endpoint was seen with exactly one
+ * card" was an UNBOUNDED feature for the life of the file.
+ *
+ * MEASURED row-level lift over four legs — device 2.30 / 1.86 / 2.30 / 2.27,
+ * mean 2.183, sample SD 0.215; ip 2.91 / 2.18 / 3.22 / 2.90, mean 2.803,
+ * sample SD 0.441. Ceilings are mean + 3.5 SD, rounded outward.
+ *
+ * THE FLOOR AND THE CEILING ARE BOTH REAL AND THEY PULL APART: I.3's
+ * existing `> 0` keeps the bucket populated, this keeps it from becoming the
+ * shortcut. Same two-sided shape as sub-gate C's not-on-file pair. */
+constexpr double kMaxDegreeOneLift = 2.95;
+constexpr double kMaxIpDegreeOneLift = 4.35;
+
 struct Leg {
   const char *name;
   std::uint64_t seed;
@@ -636,6 +655,12 @@ struct DegreeReport {
   double bestPrecision = 0.0;
   double bestRecall = 0.0;
   std::size_t fraudAtDegreeOne = 0;
+  /* The EXACT-degree-1 bucket's row precision. I.3 has always required this
+   * bucket to be non-empty; nothing has ever bounded how strong it may get,
+   * and `bestPrecision` cannot cover it because that sweep is over
+   * `degree >= k` thresholds, which at k = 1 is the whole view. */
+  std::size_t rowsAtDegreeOne = 0;
+  double degreeOnePrecision = 0.0;
 };
 
 /* The joint degree/label sweep. Precision is over ROWS, not endpoints,
@@ -687,6 +712,13 @@ struct DegreeReport {
   }
   if (const auto it = bucketFraud.find(1); it != bucketFraud.end()) {
     out.fraudAtDegreeOne = it->second;
+  }
+  if (const auto it = bucketRows.find(1); it != bucketRows.end()) {
+    out.rowsAtDegreeOne = it->second;
+    out.degreeOnePrecision =
+        it->second == 0 ? 0.0
+                        : static_cast<double>(out.fraudAtDegreeOne) /
+                              static_cast<double>(it->second);
   }
   for (const auto &[k, rows] : bucketRows) {
     if (rows > 0 && bucketClean[k] == 0) {
@@ -2193,6 +2225,15 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
               ipSweep.endpoints, ipSweep.meanDegree, ipSweep.maxDegree,
               ipSweep.fano, ipSweep.firstAllFraudK, ipSweep.bestK,
               ipSweep.bestPrecision, ipSweep.bestRecall, ipLiftAtBest);
+  const double degreeOneLift =
+      baseRate > 0.0 ? accountSweep.degreeOnePrecision / baseRate : 0.0;
+  const double ipDegreeOneLift =
+      baseRate > 0.0 ? ipSweep.degreeOnePrecision / baseRate : 0.0;
+  std::printf("  I.3 exact-degree-1: device %zu rows, precision %.4f, lift "
+              "%.2fx | ip %zu rows, precision %.4f, lift %.2fx\n",
+              accountSweep.rowsAtDegreeOne, accountSweep.degreeOnePrecision,
+              degreeOneLift, ipSweep.rowsAtDegreeOne,
+              ipSweep.degreeOnePrecision, ipDegreeOneLift);
   std::printf("  I legitimate side: %zu non-ring devices, p99 fan-out %zu; "
               "%zu CONSUMER devices, p99 %zu, max %zu; "
               "mixed-endpoint fraud share device %.4f, ip %.4f\n",
@@ -2296,6 +2337,23 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
   // `plan.device.assigned()` check away from disappearing, and its absence
   // would make "the device is shared" a necessary condition for fraud. See
   // `kDisarmFraudOffLowDegree` above for the switch that reds it.
+  /* THE CEILING SIDE OF I.3. The floor below keeps the bucket populated; this
+   * keeps "seen with exactly one card" from becoming the shortcut that the
+   * high-degree end is guarded against. */
+  check(degreeOneLift <= kMaxDegreeOneLift,
+        std::string(leg.name) +
+            ": 'device seen with exactly ONE card' has become a fraud rule — "
+            "lift " +
+            std::to_string(degreeOneLift) + " above the measured ceiling " +
+            std::to_string(kMaxDegreeOneLift) +
+            ". Burner fingerprints make this bucket legitimately risky, but "
+            "an unbounded one is a shortcut wearing a degree");
+  check(ipDegreeOneLift <= kMaxIpDegreeOneLift,
+        std::string(leg.name) +
+            ": 'ip seen with exactly ONE card' has become a fraud rule — lift " +
+            std::to_string(ipDegreeOneLift) + " above the measured ceiling " +
+            std::to_string(kMaxIpDegreeOneLift));
+
   check(accountSweep.fraudAtDegreeOne > 0,
         std::string(leg.name) +
             ": fraud must appear on SINGLE-CARD devices, got " +
