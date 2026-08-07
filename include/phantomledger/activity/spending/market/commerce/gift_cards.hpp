@@ -87,17 +87,20 @@ eligibleCategory(::PhantomLedger::merchants::Category category) noexcept {
  * Denominations are Apple's official US set. Weights are DECLARED (CLASS S
  * UNCITED for the shape — no published denomination histogram exists) but are
  * CONSTRAINED: they must reproduce the cited ~$47.91-$60 average card value.
- * Realized mean = 0.10*10 + 0.34*25 + 0.32*50 + 0.18*100 + 0.05*200 +
- * 0.01*500 = $58.50.
+ * Realized mean = $58.15, inside the cited band.
  *
- * THE $500 WEIGHT IS THE LOAD-BEARING ONE. At 1% of gift-card purchases it
- * puts a few hundred legitimate rows on the exact value the scam sampler
- * concentrates on, which is what breaks precision 1.0000 without pretending
- * $500 cards are common. */
+ * THE $500 WEIGHT IS THE LOAD-BEARING ONE, and it is CAPPED BY THE MEAN rather
+ * than tuned to a target lift. Raising it puts more legitimate rows on the
+ * value the scam sampler concentrates on, which is what drives the residual
+ * fraud precision down — but it also drags the mean off its citation, and
+ * breaking a cited quantity to improve an uncited one is the error
+ * merchant-selection rule 1 records. 200bp is the most $500 mass the $47.91-$60
+ * average will carry. The residual overshoot is therefore NOT closable from
+ * this constant; see the note on scam VOLUME below. */
 inline constexpr std::array<double, 6> kDenominations{10.0,  25.0,  50.0,
                                                       100.0, 200.0, 500.0};
-inline constexpr std::array<std::uint32_t, 6> kDenomWeightBp{1000, 3400, 3200,
-                                                             1800, 500,  100};
+inline constexpr std::array<std::uint32_t, 6> kDenomWeightBp{1400, 3500, 3000,
+                                                             1500, 400,  200};
 
 /* Is this purchase a gift-card purchase, and if so for how much?
  *

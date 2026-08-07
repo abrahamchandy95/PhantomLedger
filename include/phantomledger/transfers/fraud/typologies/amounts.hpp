@@ -169,6 +169,12 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
    * a victim pushed to the maximum, versus one buying what was in reach. */
   static constexpr std::array<double, 6> kLadder{10.0,  25.0,  50.0,
                                                  100.0, 200.0, 500.0};
+  /* $500 stays DOMINANT here and that is not tunable: `test_fraud_amounts`
+   * bands the median at (250, 500], which encodes the cited "buy the biggest
+   * card they have" behaviour. Flattening this branch to 5500bp dropped the
+   * overall median to $200 and reds that check. The fraud side is pinned by
+   * its citation, the legitimate side by its average-value citation, so the
+   * residual $500 lift is NOT closable from either weight vector. */
   static constexpr std::array<std::uint32_t, 6> kHardBp{0, 0, 300, 1200, 2500,
                                                         6000};
   /* ZERO on $10 and $25 in BOTH branches, and `test_fraud_amounts` is what
