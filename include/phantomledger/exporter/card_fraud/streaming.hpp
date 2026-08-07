@@ -288,6 +288,11 @@ public:
           config_.cards != nullptr &&
           config_.cards->byKey.find(tx.source) != config_.cards->byKey.end();
 
+      /* Every funding decline this row does not precede, emitted first. This
+       * is the merge that keeps the table causally ordered and the score-time
+       * export a byte prefix of the full one. */
+      writeFundingDeclinesUpTo(tx.timestamp);
+
       auto &card = artifacts_.cards[tx.source];
       card.credit = credit;
       card.fraud = card.fraud || fraud;
@@ -386,7 +391,23 @@ private:
   /* THE FUNDING DECLINES — the ones the replay actually decided, as opposed
    * to the non-funding ones synthesised beside each settled row.
    *
-   * Run once from `finish()`, so both drive sites feed them identically. An
+   * MERGED INTO THE SETTLED STREAM BY TIMESTAMP, not appended at the end, and
+   * that ordering is a correctness requirement rather than a tidiness one.
+   * `test_card_point_in_time` demands a score-time export be a byte PREFIX of
+   * the full-window one. Rows written from `finish()` land after every settled
+   * row, so a short export's declines sit where a long export still has
+   * purchases — measured as all five streamed tables diverging at the first
+   * declined line. Emitting each attempt just before the first settled row it
+   * does not precede makes the prefix exact.
+   *
+   * NO TAIL FLUSH, deliberately. An attempt later than the last settled row is
+   * dropped rather than emitted at close, because emitting it is precisely
+   * what breaks the prefix: the short export would have to show a decline the
+   * long export places after rows the short one never saw. The loss is the
+   * handful of attempts in the gap between the final settled row and the
+   * window end.
+   *
+   * Called from `append()`, so both drive sites feed them identically. An
    * asymmetry here would make the binary and the tests export different
    * tables from the same world, which is what `test_card_point_in_time`
    * forbids.
@@ -411,7 +432,7 @@ private:
    * Ids carry an 'F' suffix, disjoint from the settled 'T<n>' space and the
    * non-funding 'T<n>D' space, so nothing can collide and no settled row is
    * renumbered by a change here. */
-  void writeFundingDeclines() {
+  void writeFundingDeclinesUpTo(std::int64_t boundInclusive) {
     if (config_.declined == nullptr || paymentW_ == std::nullopt) {
       return;
     }
@@ -420,10 +441,16 @@ private:
     static constexpr auto kMerchantTag =
         channels::tag(channels::Legit::merchant);
 
-    std::uint64_t seq = 0;
-    for (const auto &attempt : *config_.declined) {
+    const auto &all = *config_.declined;
+    while (declinedCursor_ < all.size() &&
+           all[declinedCursor_].txn.timestamp <= boundInclusive) {
+      const auto &attempt = all[declinedCursor_];
+      /* One-based, and advanced for EVERY attempt including the ones the view
+       * filter drops below, so an id names a fixed entry of the run's decline
+       * list. Keying it on emitted rows instead would renumber every later
+       * decline whenever an earlier one fell outside the view. */
+      const auto seq = ++declinedCursor_;
       const auto &tx = attempt.txn;
-      ++seq;
 
       const auto channel = tx.session.channel;
       if (channel != kCardTag && channel != kMerchantTag) {
@@ -488,10 +515,6 @@ private:
 
 public:
   void finish() {
-    /* The funding declines go out BEFORE the tables close — the only point
-     * where the attempts exist and the writers are still open. */
-    writeFundingDeclines();
-
     /* CLOSE EXPLICITLY, do not rely on reset(). Each long-lived COPY must
      * close while an exception can still reach runWindowedStream. Table's
      * destructor is only an unwind safety net and downgrades close failures
@@ -561,6 +584,11 @@ private:
     }
     return config_.registry->records[it->second].owner;
   }
+
+  /* How far into `config_.declined` the merge has consumed. Monotonic, and
+   * indexes the WHOLE list rather than the emitted rows, so a declined row's
+   * id is a fixed name for a fixed attempt. */
+  std::size_t declinedCursor_ = 0;
 
   Config config_;
 

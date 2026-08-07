@@ -197,6 +197,17 @@ void exportPrefix(const pl::pipeline::SimulationResult &result,
                   const pl::synth::pii::PoolSet &poolSet,
                   std::span<const pl::transactions::Transaction> txns,
                   Capture &capture) {
+  /* THE FUNDING DECLINES MUST BE WIRED, and leaving them out is how they
+   * shipped unverified. This harness is the only place the prefix property is
+   * enforced; with the pointer null both exports carry zero declined rows and
+   * every check below passes on a table the production binary does not write.
+   *
+   * The WHOLE run's attempts go to both exports, exactly as the fold hands
+   * them over — the sink itself decides which are observable, by merging on
+   * the timestamps of the rows it is given. Pre-filtering here would test the
+   * harness's cut rather than the sink's. */
+  const auto &declined = result.transfers.ledger.posted.declined;
+
   pl::exporter::card_fraud::StreamingCardFraudExport sink({
       .registry = &result.holdings.accounts.registry,
       .lookup = &result.holdings.accounts.lookup,
@@ -206,6 +217,7 @@ void exportPrefix(const pl::pipeline::SimulationResult &result,
       .merchants = &result.counterparties.merchants,
       .pgMirror = nullptr,
       .capture = &capture,
+      .declined = &declined,
   });
   sink.append(txns);
   sink.finish();
@@ -420,6 +432,40 @@ int main() {
                 posted.size(), prefixCount,
                 100.0 * static_cast<double>(prefixCount) /
                     static_cast<double>(posted.size()));
+
+    /* THE DECLINED ROWS MUST BE IN WHAT IS COMPARED, and this check is here
+     * because for one round they were not. `exportPrefix` left
+     * `Config::declined` null, so both exports carried zero funding declines
+     * and the prefix checks below passed on a table the production binary does
+     * not write. When the pointer was finally wired, all five streamed tables
+     * diverged at the first declined line.
+     *
+     * A count of the rows carrying the funding-decline reason, which is
+     * disjoint from the settled rows' empty `error` and from the non-funding
+     * reasons. Zero means the comparison went vacuous again. */
+    const auto declinedLines = [](const Capture &c) {
+      std::size_t n = 0;
+      for (const auto &line : c.lines("Payment_Transaction")) {
+        if (line.find(pl::exporter::card_fraud::derive::
+                          kInsufficientBalanceError) != std::string::npos) {
+          ++n;
+        }
+      }
+      return n;
+    };
+    const auto fullDeclined = declinedLines(full);
+    const auto prefixDeclined = declinedLines(prefix);
+    std::printf("  funding declines exported: full %zu, score-time %zu\n",
+                fullDeclined, prefixDeclined);
+    check(fullDeclined > 0,
+          "the full export wrote NO funding declines, so the prefix checks "
+          "below cannot see them — the vacuity this gate shipped with");
+    check(prefixDeclined > 0,
+          "the score-time export wrote no funding declines, so the prefix "
+          "checks below are only exercising settled rows");
+    check(prefixDeclined <= fullDeclined,
+          "the score-time export wrote MORE funding declines than the full "
+          "window, which means the merge is not causal");
 
     // ---------------------------------------------- the streamed tables
     for (const char *stem :

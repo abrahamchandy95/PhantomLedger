@@ -226,14 +226,12 @@ LedgerReplay::Posted LedgerReplay::postFraudChunkedMerged(
     auto settled = accumulator.takeSettledBefore(bound);
     out.txns.insert(out.txns.end(), std::make_move_iterator(settled.begin()),
                     std::make_move_iterator(settled.end()));
+    legit_ledger::appendDeclinedSpan(accumulator, out.declined);
     cb = cEnd;
     fb = fEnd;
   }
 
   out.book = std::move(bookCopy);
-  /* One accumulator serves every span, so this is the whole run's declined
-   * population in replay-decision order. */
-  out.declined = accumulator.takeDeclined();
   return out;
 }
 

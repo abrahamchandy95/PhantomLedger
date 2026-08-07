@@ -344,6 +344,17 @@ PhaseBResult WindowedTransferDriver::runPhaseBErased(
 
     auto finalized = postAcc_->takeSettledBefore(bound);
 
+    /* BEFORE the span's settled rows reach the sink, because the card-fraud
+     * export merges declined rows into that stream by timestamp and reads them
+     * through the pointer this vector lives behind. Handing the whole run over
+     * at the end instead — which is what the first version of this did — puts
+     * every declined row AFTER every settled row, and a score-time export then
+     * stops being a byte prefix of the full-window one. Measured: five streamed
+     * tables diverging at the first declined line. */
+    if (config_.declinedOut != nullptr) {
+      legit_ledger::appendDeclinedSpan(*postAcc_, *config_.declinedOut);
+    }
+
     sink.beginSpan(span);
     sink.append(std::span<const Txn>(finalized.data(), finalized.size()));
     sink.endSpan(span);
@@ -352,16 +363,6 @@ PhaseBResult WindowedTransferDriver::runPhaseBErased(
                     candStage.begin() + static_cast<std::ptrdiff_t>(cEnd));
     fraudStage.erase(fraudStage.begin(),
                      fraudStage.begin() + static_cast<std::ptrdiff_t>(fEnd));
-  }
-
-  /* BEFORE `finish()`, because that is when the sink reads them: the
-   * card-fraud export captures this same vector's address at construction and
-   * writes the funding declines out of its own close. One accumulator serves
-   * every span — `declined_` is only appended to and moved out — so this take
-   * yields the whole run in replay-decision order, byte-for-byte what
-   * `postFraudChunkedMerged` hands the monolithic path. */
-  if (config_.declinedOut != nullptr) {
-    *config_.declinedOut = postAcc_->takeDeclined();
   }
 
   sink.finish();

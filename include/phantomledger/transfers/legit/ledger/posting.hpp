@@ -254,6 +254,21 @@ public:
     return std::move(declined_);
   }
 
+  /* The attempts decided SINCE THE LAST DRAIN, leaving the accumulator empty.
+   * The per-span counterpart of takeSettledBefore(), and the reason it exists
+   * is the export's ordering law: declined rows are merged into the settled
+   * stream BY TIMESTAMP, so a consumer must receive a span's attempts before
+   * that span's settled rows rather than the whole run at the end.
+   *
+   * Definite clear, unlike takeDeclined()'s bare move — a moved-from vector is
+   * valid but unspecified, and a stale entry re-drained into the next span
+   * would duplicate an exported row. */
+  [[nodiscard]] std::vector<DeclinedAttempt> drainDeclined() {
+    auto out = std::move(declined_);
+    declined_.clear();
+    return out;
+  }
+
   using ChannelReasonKey = ReplayDropLedger::ChannelReasonKey;
   using ChannelReasonHash = ReplayDropLedger::ChannelReasonHash;
   using ChannelReasonEq = ReplayDropLedger::ChannelReasonEq;
@@ -340,5 +355,29 @@ private:
 };
 
 [[nodiscard]] bool isCureInbound(const transactions::Transaction &txn) noexcept;
+
+/* ONE SPAN'S DECLINED ATTEMPTS, APPENDED IN TIMESTAMP ORDER.
+ *
+ * Both replay drivers call this at the same point in their span loop — right
+ * after taking the span's settled rows — so the monolithic and windowed
+ * engines build byte-identical decline vectors. `test_production_windowed`
+ * compares them field-wise for exactly that reason.
+ *
+ * THE SORT IS WHAT MAKES THE EXPORT'S PREFIX PROPERTY HOLD. The replay decides
+ * attempts in retry order, not clock order, and the card-fraud export merges
+ * declined rows into the settled stream by timestamp; an out-of-order entry
+ * would emit after a settled row it precedes, so a score-time export would
+ * stop being a byte prefix of the full one. Stable, so two attempts sharing a
+ * timestamp keep the order the replay decided them in. */
+inline void appendDeclinedSpan(ChronoReplayAccumulator &accumulator,
+                               std::vector<DeclinedAttempt> &out) {
+  auto batch = accumulator.drainDeclined();
+  std::stable_sort(batch.begin(), batch.end(),
+                   [](const DeclinedAttempt &a, const DeclinedAttempt &b) {
+                     return a.txn.timestamp < b.txn.timestamp;
+                   });
+  out.insert(out.end(), std::make_move_iterator(batch.begin()),
+             std::make_move_iterator(batch.end()));
+}
 
 } // namespace PhantomLedger::transfers::legit::ledger
