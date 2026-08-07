@@ -312,6 +312,52 @@ This is the **only** supervised label inside the feature graph. It is a
 per-row fact observable at that row's timestamp, which is exactly what
 makes it a legitimate target.
 
+### The label is CENSORED on authorization attempts — exclude them from the loss
+
+**A row with a non-empty `error` is an authorization ATTEMPT, not a settled
+purchase, and its `is_fraud` is 0 because no label exists — not because the row
+is known-good.** Treating those zeros as negatives poisons the training set.
+
+Three populations carry a non-empty `error`, all separable by its value:
+
+| `error` | population | share of the payment table |
+|---|---|---|
+| empty / NULL | settled purchase — **the only rows with a real label** | ~94% |
+| `Insufficient Balance` | the replay's own funding declines | ~0.1% |
+| `Do Not Honor` | card-testing probes (`infra/enumeration.hpp`) | ~0.03% |
+| anything else | non-funding declines (bad PIN, bad CVV, …) | ~5.6% |
+
+**WHY THE ZEROS ARE NOT NEGATIVES, and the reason is a property of the real
+world rather than of this generator.** Production fraud labels come from
+disputes and chargebacks. A declined authorization never settles, so it is
+never disputed, so it **never receives a label at all** — the *censored
+feedback* problem, "endogenously missing for declined transactions" (Fundamental
+Limits of Fraud Detection in Card Payment Networks, arXiv 2605.27557; accessed
+2026-08-07). No production pipeline can supply a ground truth for these rows, so
+neither can this corpus. A share of the funding declines ARE fraud attempts —
+the unauthorized rail drains a victim, so its own later charges cannot fund —
+and labelling them 1 would be just as wrong, because production never learns
+that either.
+
+**WHAT A CONSUMER SHOULD DO: keep the nodes, drop them from the loss.** The
+declined rows carry real `Card_Send` / `Merchant_Receive` / `Uses_Device` /
+`Uses_IP` edges, so excluding them entirely throws away graph structure a GNN
+wants. Masking the loss keeps the structure and refuses the false negative.
+
+**AND THE DISCRIMINATOR MUST REACH THE CONSUMER, WHICH TODAY IT DOES NOT.**
+`tf_gnn_loader_v2/sql/postgres/070_create_transaction_views.sql` deliberately
+does not load `error` — correctly, since a decline code is a property of the
+authorization RESPONSE and the scoring moment is the REQUEST. But it also
+applies no filter, so every attempt loads as an ordinary transaction node with
+`is_fraud = 0` and nothing downstream can tell them apart. **This repo's export
+is not the defect: the fact is present in `error` on every row.** The action is
+one line in the loader's view — filter, or expose a boolean derived from
+`error` so the training pipeline can mask.
+
+Same shape as `cf_Is_Merchant` (see CLAUDE.md `merchant-ownership-2026-07`): an
+export decision that is invisible to the repository depending on it. Recorded
+here so it is a stated contract rather than a fact a consumer has to rediscover.
+
 ## PROHIBITED (leaks, ground truth, or both)
 
 | Column | Why |
