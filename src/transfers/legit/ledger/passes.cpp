@@ -240,13 +240,19 @@ void addSplitDeposits(const RoutinePass &pass,
                       const blueprints::LegitBlueprint &plan,
                       TxnStreams &streams) {
   const auto accounts = routineAccounts(pass);
-  auto &rng = routineRng(pass);
 
+  /* SPENDS NOTHING, ON ANY LANE. Both halves are pure functions of world
+   * state — see `paychecks.hpp`. This pass runs FIRST in the routine order,
+   * so a data-dependent draw count here would have shifted rent,
+   * subscriptions, ATM, internal transfers and the whole spending fold
+   * (`merchant-churn-2026-07` rule 2); and a per-row stream would have broken
+   * monolith/windowed lockstep, which is how the first version of this change
+   * was caught. Draw-free removes both hazards at once. */
   auto splitters = routines::paychecks::planSplitters(
-      rng, plan, *accounts.ownership, *accounts.registry);
+      plan, *accounts.ownership, *accounts.registry);
 
   streams.add(routines::paychecks::emitSplitTransfers(
-      rng, routineTxf(pass), splitters,
+      routineTxf(pass), splitters,
       std::span<const transactions::Transaction>(streams.paydayInbound())));
 }
 
