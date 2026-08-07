@@ -36,7 +36,7 @@ b50faa33ca49be2691cdcd19dfd51989  286  cf_Is_Merchant
 0c0a1cbc32e2530c9b2fe814a98b2dee  317525  cf_Merchant_Receive_Transaction
 a96f09d0e6f85f978116bc86d84346d2  10000  cf_Party
 e3604d49f372c1055bcc489766604a31  36131  cf_Party_Has_Card
-3ded5b8d2a44a04169545923519f3516  317525  cf_Payment_Transaction
+ae46b90b55a1ce2c22e00eff2a80763a  317525  cf_Payment_Transaction
 5c30f2b0d607ff2ac4e178eba8fd00be  9999  cf_Phone
 6883d556c72b8664ca37a1471cb05723  64  cf_State
 fdb8cecd4ae5b5de035e78d75e258c4c  317525  cf_Transaction_Uses_Device
