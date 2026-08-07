@@ -157,6 +157,8 @@ void StreamOrchestrator::bindStreams() {
             .merchants = &world_.counterparties.merchants,
             .pgMirror = isPgUp() ? &mirrors_.cfMirror : nullptr,
             .window = window_,
+            /* Empty now; the fold fills it before the sink's finish(). */
+            .declined = &declined_,
         });
     break;
   }
@@ -198,12 +200,22 @@ void StreamOrchestrator::executeFoldWithStream(StreamT *streamPtr) {
     foldStage.tick();
   };
 
+  /* ONE options object for every branch below, because the branches differ in
+   * SINK and must not differ in fold behaviour. `declined` is what the
+   * card-fraud sink already points at; the other use cases fill it and ignore
+   * it, which costs one small vector and keeps the fold identical across
+   * them. */
+  pipeline::stages::transfers::WindowedRunOptions foldOpts{};
+  foldOpts.declined = &declined_;
+
   if (!isPgUp()) {
     if (streamPtr) {
       pipeline::chunk::Tee tee{golden_, *streamPtr};
-      transfers_ = pipeline_.runWindowedTransfers(world_, tee, {}, onPhase);
+      transfers_ = pipeline_.runWindowedTransfers(world_, tee, foldOpts,
+                                                  onPhase);
     } else {
-      transfers_ = pipeline_.runWindowedTransfers(world_, golden_, {}, onPhase);
+      transfers_ =
+          pipeline_.runWindowedTransfers(world_, golden_, foldOpts, onPhase);
     }
     return;
   }
@@ -258,7 +270,7 @@ void StreamOrchestrator::executeFoldWithStream(StreamT *streamPtr) {
          .plan = planPtr,
          .conninfo = backend_.conninfo}};
 
-    transfers_ = pipeline_.runWindowedTransfers(world_, sink, {}, onPhase);
+    transfers_ = pipeline_.runWindowedTransfers(world_, sink, foldOpts, onPhase);
 
     if (sink.spansSkipped() > 0) {
       std::println("PostgreSQL: {} rows total -> table 'transactions' ({} "
@@ -279,7 +291,7 @@ void StreamOrchestrator::executeFoldWithStream(StreamT *streamPtr) {
          .plan = planPtr,
          .conninfo = backend_.conninfo}};
 
-    transfers_ = pipeline_.runWindowedTransfers(world_, sink, {}, onPhase);
+    transfers_ = pipeline_.runWindowedTransfers(world_, sink, foldOpts, onPhase);
 
     if (sink.spansSkipped() > 0) {
       std::println("PostgreSQL: {} rows total -> table 'transactions' ({} "

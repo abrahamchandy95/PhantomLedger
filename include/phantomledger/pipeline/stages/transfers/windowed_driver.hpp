@@ -190,6 +190,21 @@ struct WindowedConfig {
 
   // Matches LedgerReplay::postFraud().
   bool postEmitLiquidityEvents = false;
+
+  /* THE FUNDING DECLINES, OUT. `LedgerReplay::postFraudChunkedMerged` returns
+   * them on `Posted::declined`; this driver returns no corpus at all — that is
+   * the point of streaming — so the only way out is a caller-owned vector.
+   *
+   * WRITTEN BEFORE `sink.finish()`, which is what makes the two engines feed
+   * the export identically. A card-fraud sink captures the same address in its
+   * own Config at construction and reads it from `finish()`; shipping this
+   * pointer on one path only is exactly the silent asymmetry backed out in
+   * 6de9c95, where the batch path wrote declines and the binary wrote none.
+   *
+   * Null means the caller does not want them and the take is skipped, leaving
+   * the attempts to die with the accumulator. */
+  std::vector<::PhantomLedger::transfers::legit::ledger::DeclinedAttempt>
+      *declinedOut = nullptr;
 };
 
 struct PhaseAResult {

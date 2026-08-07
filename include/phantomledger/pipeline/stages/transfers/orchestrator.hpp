@@ -43,6 +43,10 @@ struct WindowedRunOptions {
   /* File-backed candidate spool (bounded memory, the production default);
    * false retains the O(L) in-memory vector spool. */
   bool binarySpool = true;
+
+  /* Where the fold deposits the funding declines, or null to discard them.
+   * Filled before the sink's `finish()`; see WindowedConfig::declinedOut. */
+  std::vector<legit::ledger::DeclinedAttempt> *declined = nullptr;
 };
 
 struct WindowedRunResult {

@@ -94,6 +94,11 @@ void cardFraudSummary(const exporter::card_fraud::Summary &summary) {
   std::println("  Payment txns:    {} of {} corpus rows  (fraud: {}, {:.4f}%)",
                summary.viewRows, summary.totalRows, summary.fraudViewRows,
                ratio * 100.0);
+  /* The payment table is settled rows PLUS these, so print the addend rather
+   * than leave the reader to subtract. A zero here on a card-fraud run means
+   * no authorization was ever refused, which is a defect, not a quiet corpus. */
+  std::println("  Declined auths:  {} additional rows (labels withheld)",
+               summary.declinedRows);
   std::println("  Cards:           {}", summary.cardCount);
   std::println("  Merchants:       {}", summary.merchantCount);
   std::println("  Parties:         {}", summary.partyCount);

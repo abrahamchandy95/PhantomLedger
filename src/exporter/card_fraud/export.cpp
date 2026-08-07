@@ -87,6 +87,7 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
   out.totalRows = artifacts.rows;
   out.viewRows = artifacts.viewRows;
   out.fraudViewRows = artifacts.fraudViewRows;
+  out.declinedRows = artifacts.declinedRows;
 
   std::vector<GroundTruthRow> groundTruth;
 

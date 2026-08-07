@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <vector>
 
 namespace PhantomLedger::app::orchestrator {
 
@@ -80,6 +81,13 @@ private:
   // --- Evolving Run State ---
   pipeline::SimulationResult world_;
   PgMirrors mirrors_;
+
+  /* The fold's funding declines. DECLARED BEFORE `streams_` on purpose: a
+   * card-fraud sink holds this vector's address from `bindStreams()` until its
+   * own `finish()`, and members are destroyed in reverse declaration order, so
+   * the sink must die first. The fold fills it before that `finish()`. */
+  std::vector<transfers::legit::ledger::DeclinedAttempt> declined_;
+
   ExporterStreams streams_;
   exporter::sinks::Golden golden_;
   pipeline::stages::transfers::WindowedRunResult transfers_;

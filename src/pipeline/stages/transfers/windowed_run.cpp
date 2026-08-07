@@ -254,6 +254,7 @@ WindowedRunResult TransferStage::runWindowedErased(
   WindowedConfig config;
   config.generation = options.generation;
   config.settlement = options.settlement;
+  config.declinedOut = options.declined;
 
   WindowedTransferDriver driver(std::move(preBook), std::move(postBook),
                                 rngFactory, config);

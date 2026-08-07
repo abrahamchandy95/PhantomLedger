@@ -354,6 +354,16 @@ PhaseBResult WindowedTransferDriver::runPhaseBErased(
                      fraudStage.begin() + static_cast<std::ptrdiff_t>(fEnd));
   }
 
+  /* BEFORE `finish()`, because that is when the sink reads them: the
+   * card-fraud export captures this same vector's address at construction and
+   * writes the funding declines out of its own close. One accumulator serves
+   * every span — `declined_` is only appended to and moved out — so this take
+   * yields the whole run in replay-decision order, byte-for-byte what
+   * `postFraudChunkedMerged` hands the monolithic path. */
+  if (config_.declinedOut != nullptr) {
+    *config_.declinedOut = postAcc_->takeDeclined();
+  }
+
   sink.finish();
 
   summary.rowsFlushed = sink.rowsWritten();

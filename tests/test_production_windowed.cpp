@@ -37,12 +37,43 @@ namespace {
 using pltest::Txn;
 namespace pl = pltest::pl;
 
+using Declined = pl::transfers::legit::ledger::DeclinedAttempt;
+
 struct MonolithicResult {
   std::string digest;
   std::vector<Txn> rows;
   std::uint64_t fraudRows = 0;
   std::uint64_t bookHash = 0;
+
+  /* THE FUNDING DECLINES. They are the one product of the fold that never
+   * reaches the row stream, so the digest above cannot see them — which is
+   * exactly how 6de9c95's asymmetry shipped: the monolithic path exported
+   * declines, the windowed path exported none, and every check here stayed
+   * green because both agreed on the SETTLED rows. */
+  std::vector<Declined> declined;
 };
+
+/* Field-wise, because DeclinedAttempt has no operator== and comparing the
+ * count alone would accept two different populations of the same size. The
+ * five fields are the ones the card-fraud export reads. */
+[[nodiscard]] bool sameAttempt(const Declined &a, const Declined &b) noexcept {
+  return a.txn.timestamp == b.txn.timestamp && a.txn.source == b.txn.source &&
+         a.txn.target == b.txn.target && a.txn.amount == b.txn.amount &&
+         a.reason == b.reason;
+}
+
+/* Index of the first disagreement, or npos when the two agree. */
+[[nodiscard]] std::size_t
+firstDeclinedDifference(std::span<const Declined> mono,
+                        std::span<const Declined> windowed) noexcept {
+  const auto shared = std::min(mono.size(), windowed.size());
+  for (std::size_t i = 0; i < shared; ++i) {
+    if (!sameAttempt(mono[i], windowed[i])) {
+      return i;
+    }
+  }
+  return mono.size() == windowed.size() ? std::string::npos : shared;
+}
 
 [[nodiscard]] pl::pipeline::stages::entities::EntitySynthesis
 makeEntities(const pl::synth::pii::PoolSet &poolSet,
@@ -82,6 +113,7 @@ runMonolithic(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed,
       static_cast<std::uint64_t>(result.transfers.fraud.injectedCount);
   out.bookHash =
       pltest::acceptance::hashBook(*result.transfers.ledger.posted.book);
+  out.declined = result.transfers.ledger.posted.declined;
 
   const auto wrap = pl::pipeline::chunk::Schedule::unpartitioned(window);
   pl::exporter::sinks::Golden golden;
@@ -227,7 +259,12 @@ int main() {
   pltest::CapturingGolden sink;
   // Default options: 3-month generation windows, the monolithic
   // settlement strategy, machine-resolved spending threads, binary spool.
-  const auto windowed = pipeline.runWindowed(sink);
+  // The declines are asked for explicitly — this is the production drive
+  // site's wiring, and it is the thing under test.
+  std::vector<Declined> windowedDeclined;
+  pl::pipeline::stages::transfers::WindowedRunOptions options{};
+  options.declined = &windowedDeclined;
+  const auto windowed = pipeline.runWindowed(sink, options);
 
   const auto &summary = windowed.transfers.summary;
   std::printf("  windowed:   rows=%llu L=%llu fraud=%llu digest=%s\n",
@@ -255,12 +292,30 @@ int main() {
   PL_CHECK(pltest::acceptance::hashBook(*windowed.transfers.postedBook) ==
            windowed.transfers.postedBookHash);
 
+  /* THE DECLINES MUST AGREE, AND THE FIRST CHECK IS THAT THEY EXIST.
+   *
+   * A pointer wired to a path that never fills it reads as an empty vector on
+   * both sides, and an equality check alone would call that a match — the
+   * precise failure mode of 6de9c95, where the binary exported zero declines
+   * and nothing went red. So the floor comes first: the fold must decide at
+   * least one funding decline at this leg, and both engines must agree on the
+   * whole population field-wise, in order. */
+  std::printf("  declines:   monolithic=%zu windowed=%zu\n",
+              mono.declined.size(), windowedDeclined.size());
+  std::fflush(stdout);
+
+  const bool declinedPresent = !mono.declined.empty();
+  const auto declinedDiff = firstDeclinedDifference(mono.declined,
+                                                    windowedDeclined);
+  const bool declinedEqual = declinedDiff == std::string::npos;
+
   const bool rowsEqual = mono.rows.size() == sink.rows.size();
   const bool digestEqual = mono.digest == sink.golden.digest();
   const bool fraudEqual = mono.fraudRows == summary.phaseB.fraudRows;
   const bool bookEqual = mono.bookHash == windowed.transfers.postedBookHash;
 
-  if (rowsEqual && digestEqual && fraudEqual && bookEqual) {
+  if (rowsEqual && digestEqual && fraudEqual && bookEqual && declinedPresent &&
+      declinedEqual) {
     std::printf("PRODUCTION WINDOWED MODE HOLDS: runWindowed() reproduces "
                 "run() byte-for-byte (digest %s).\n",
                 mono.digest.c_str());
@@ -286,6 +341,30 @@ int main() {
                  static_cast<unsigned long long>(mono.bookHash),
                  static_cast<unsigned long long>(
                      windowed.transfers.postedBookHash));
+  }
+
+  if (!declinedPresent) {
+    std::fprintf(stderr,
+                 "  declines: the monolithic fold decided NONE, so the "
+                 "comparison below is vacuous. Either the leg no longer "
+                 "exercises the funding test, or the replay stopped "
+                 "recording attempts.\n");
+  }
+  if (!declinedEqual) {
+    std::fprintf(stderr, "  declines: %zu (monolithic) vs %zu (windowed)",
+                 mono.declined.size(), windowedDeclined.size());
+    if (declinedDiff < mono.declined.size() &&
+        declinedDiff < windowedDeclined.size()) {
+      const auto &a = mono.declined[declinedDiff];
+      const auto &b = windowedDeclined[declinedDiff];
+      std::fprintf(stderr,
+                   "; first difference at [%zu]: ts %lld vs %lld, amount "
+                   "%.2f vs %.2f",
+                   declinedDiff, static_cast<long long>(a.txn.timestamp),
+                   static_cast<long long>(b.txn.timestamp), a.txn.amount,
+                   b.txn.amount);
+    }
+    std::fprintf(stderr, "\n");
   }
 
   pltest::reportFirstRowDifference(mono.rows, sink.rows);

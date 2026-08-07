@@ -56,6 +56,16 @@ struct Summary {
   std::uint64_t viewRows = 0;
   std::uint64_t fraudViewRows = 0;
 
+  /* DECLINED AUTHORIZATIONS, reported SEPARATELY from `viewRows` because they
+   * are not settled purchases and every consumer of that count means settled.
+   *
+   * Reported at all because the acceptance script counts the payment table
+   * whole, so a decline population that silently went to zero would look like
+   * an ordinary corpus drift. That is not hypothetical: 6de9c95 shipped
+   * exactly that, and it was caught by a prediction rather than by an
+   * instrument. This is the instrument. */
+  std::uint64_t declinedRows = 0;
+
   std::size_t cardCount = 0;
   std::size_t merchantCount = 0;
   std::size_t partyCount = 0;
