@@ -30,6 +30,10 @@ public:
   struct Posted {
     std::vector<Transaction> txns;
     std::unique_ptr<clearing::Ledger> book;
+    /* Authorizations the funding test declined. Carried out of the replay
+     * rather than counted and dropped — see `ledger::DeclinedAttempt`. */
+    std::vector<::PhantomLedger::transfers::legit::ledger::DeclinedAttempt>
+        declined;
   };
 
   LedgerReplay() = default;

@@ -135,6 +135,63 @@ private:
   CountsByChannel byChannel_;
 };
 
+/* ONE DECLINED AUTHORIZATION ATTEMPT, KEPT RATHER THAN COUNTED.
+ *
+ * `ReplayDropLedger` has always recorded declines — it carries a real
+ * taxonomy, cure windows, retry padding and blind-retry delays — but it
+ * records COUNTS ONLY, so the attempt itself was discarded at the drop site
+ * and nothing survived to export. That is why the corpus contains no declined
+ * authorizations at all, and why `card_fraud/derive.hpp`'s `error` column had
+ * to be a content hash: its own comment says "authorization attempts are not
+ * modelled, so nothing drives this column".
+ *
+ * The transaction is in hand at every drop site, so keeping it costs one push
+ * and no draw. `reason` points at the `drop_reasons` constants, which have
+ * static storage, so the view cannot dangle.
+ *
+ * FUNDING DECLINES ONLY. `kInvalid` and `kUnbooked` mean the book does not
+ * know the account — a generator fault, not an authorization outcome — and
+ * surfacing those as declines would export a bug as a feature.
+ *
+ * ------------------------------------------------------------------
+ * READ THIS BEFORE EXPORTING ANY OF IT.
+ *
+ * THIS POPULATION IS MASSIVELY FRAUD-ENRICHED AND EXPORTING IT ALONE WOULD
+ * OPEN A SHORTCUT SEVERAL TIMES WORSE THAN THE ONE `device-fanout-2026-08`
+ * CLOSED. Measured on capture, four legs: 4,487 / 5,123 / 4,643 / 4,943
+ * card-view declines, of which 1,913 / 2,224 / 1,762 / 2,261 carry the fraud
+ * flag — 42.6% / 43.4% / 37.9% / 45.7%. Against a settled card-view base rate
+ * near 0.96%, "this authorization was declined therefore fraud" would score
+ * roughly 0.43 precision at ~45x lift. The degree shortcut this round spent
+ * itself closing now sits at 0.03-0.06 precision and 2.8-6.2x.
+ *
+ * THE CAUSE IS REAL AND SHOULD NOT BE DIALLED AWAY. The unauthorized rail
+ * drains a victim across 5-14 charges in a 6-71 hour span, so its own later
+ * charges genuinely cannot fund — real card fraud does exhaust an account and
+ * get declined. What is wrong is the DENOMINATOR: the model declines
+ * legitimate customers only when they run out of money, which is rare,
+ * whereas real authorization traffic declines 5-15% of the time and is
+ * overwhelmingly legitimate — expired cards, CVV and AVS mismatches, velocity
+ * rules, technical failures. Fraud is ~0.1% of real transactions, so it
+ * cannot be 43% of real declines.
+ *
+ * SO THE NON-FUNDING DECLINES ARE LOAD-BEARING FOR SAFETY, NOT GARNISH. They
+ * were scoped as the realism half of this work — keeping TabFormer's error
+ * mix instead of collapsing it to 100% Insufficient Balance — and the
+ * measurement promotes them to the part that makes the export publishable at
+ * all. Size them so the funding declines are a MINORITY of the exported
+ * decline population, then band the decline population's fraud lift the way
+ * sub-gate C bands not-on-file: a ceiling with a lift floor above 1.0,
+ * because a declined authorization IS riskier and driving it to 1.0 would
+ * replace a shortcut with noise (`attacker-infra-2026-07` rule 5).
+ *
+ * Nothing here is exported yet. Capturing is inert: measured 66/67 with
+ * `golden_run.b2sum` unmoved. */
+struct DeclinedAttempt {
+  transactions::Transaction txn{};
+  std::string_view reason{};
+};
+
 class ChronoReplayAccumulator {
 public:
   [[nodiscard]] static constexpr ReplayFundingBehavior
@@ -182,6 +239,19 @@ public:
 
   [[nodiscard]] const ReplayDropLedger::Counts &dropCounts() const noexcept {
     return drops_.byReason();
+  }
+
+  /* The declined attempts, in the order the replay decided them. Retries are
+   * INCLUDED as separate entries: each pass through the funding test is one
+   * authorization the issuer answered, which is what the exported row means,
+   * and the cure/retry machinery already models exactly that sequence. */
+  [[nodiscard]] const std::vector<DeclinedAttempt> &
+  declined() const noexcept {
+    return declined_;
+  }
+
+  [[nodiscard]] std::vector<DeclinedAttempt> &&takeDeclined() noexcept {
+    return std::move(declined_);
   }
 
   using ChannelReasonKey = ReplayDropLedger::ChannelReasonKey;
@@ -246,6 +316,7 @@ private:
 
   std::vector<transactions::Transaction> txns_;
   ReplayDropLedger drops_;
+  std::vector<DeclinedAttempt> declined_;
 
   std::uint64_t nextSequence_ = 0;
 

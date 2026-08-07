@@ -166,6 +166,11 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
       break;
     case clearing::RejectReason::unfunded:
       drops_.record(drop_reasons::kInsufficientFunds, txn.session.channel);
+      /* A DECLINED AUTHORIZATION, KEPT. This is the un-queued path — no cure
+       * window, no retry — so the attempt is decided once and this is the
+       * only record of it. Draw-free: a push, nothing sampled. */
+      declined_.push_back(
+          DeclinedAttempt{txn, drop_reasons::kInsufficientFunds});
       break;
     }
   }
@@ -259,6 +264,20 @@ void ChronoReplayAccumulator::drainPending(std::int64_t emitBoundExcl) {
       drops_.record(reasonStr, item.txn.session.channel);
       continue;
     }
+
+    /* EVERY UNFUNDED PASS IS ONE DECLINED AUTHORIZATION, and it is recorded
+     * HERE — above the retry/terminal split — precisely because all three
+     * outcomes below are the same event from the issuer's side. A row that
+     * will be retried in eighteen hours was still declined now; only the
+     * counter-side taxonomy differs, and `drops_` keeps that distinction.
+     *
+     * Recording per PASS rather than per ROW is what makes the exported
+     * decline population match the retry machinery the model already has:
+     * `maxAttemptsFor` allows several attempts on a card, and a corpus that
+     * showed only the last one would understate authorization traffic by
+     * exactly the retry depth. Draw-free. */
+    declined_.push_back(
+        DeclinedAttempt{item.txn, drop_reasons::kInsufficientFunds});
 
     const auto retryTs = resolveRetryTimestamp(item.txn, item.retryCount);
     if (retryTs == 0) {

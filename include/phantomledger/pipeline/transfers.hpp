@@ -25,6 +25,13 @@ struct CandidateLedgerReplay {
 struct PostedLedgerReplay {
   std::vector<transactions::Transaction> txns;
   std::unique_ptr<clearing::Ledger> book;
+
+  /* THE DECLINED AUTHORIZATIONS, which had no carrier before this round.
+   * `ReplayDrops` above sits on `candidate` and holds counts; this holds the
+   * attempts themselves, off the POSTED replay, which is the one whose
+   * outcome the corpus reports. */
+  std::vector<::PhantomLedger::transfers::legit::ledger::DeclinedAttempt>
+      declined;
 };
 
 struct TransferLedger {

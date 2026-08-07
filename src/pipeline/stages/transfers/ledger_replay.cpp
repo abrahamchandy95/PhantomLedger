@@ -231,6 +231,9 @@ LedgerReplay::Posted LedgerReplay::postFraudChunkedMerged(
   }
 
   out.book = std::move(bookCopy);
+  /* One accumulator serves every span, so this is the whole run's declined
+   * population in replay-decision order. */
+  out.declined = accumulator.takeDeclined();
   return out;
 }
 

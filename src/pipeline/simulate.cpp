@@ -125,6 +125,7 @@ void runTransferStage(SimulationResult &result,
   out.fraud.injectedCount = injectedCount;
   out.ledger.posted.txns = std::move(posted.txns);
   out.ledger.posted.book = std::move(posted.book);
+  out.ledger.posted.declined = std::move(posted.declined);
   result.transfers = std::move(out);
 }
 
