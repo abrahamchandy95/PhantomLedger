@@ -246,12 +246,20 @@ BEGIN
   END IF;
 
   RAISE NOTICE '[4/9] checking bidirectional raw-ledger payment parity';
+  -- SETTLED ROWS ONLY, and the filter is the contract rather than a
+  -- convenience. A non-empty `error` marks a DECLINED AUTHORIZATION: an
+  -- attempt the issuer refused, which by definition never posted and so has
+  -- no raw-ledger counterpart to join to. Declines carry a suffixed id
+  -- ('T<n>D') precisely so they cannot collide with a settled row_seq, and
+  -- every consumer that means "settled" -- this parity check, the manifest
+  -- reconciliation, and the graph loader itself -- filters on error = ''.
   SELECT count(*)
     INTO problem_count
     FROM card_fraud."cf_Payment_Transaction" p
     LEFT JOIN public.transactions t
       ON p.id = 'T' || t.row_seq::text
-   WHERE t.row_seq IS NULL;
+   WHERE p.error = ''
+     AND t.row_seq IS NULL;
   IF problem_count <> 0 THEN
     RAISE EXCEPTION 'Payment_Transaction rows missing raw-ledger joins: %',
       problem_count;
@@ -262,12 +270,13 @@ BEGIN
     FROM card_fraud."cf_Payment_Transaction" p
     JOIN public.transactions t
       ON p.id = 'T' || t.row_seq::text
-   WHERE t.channel NOT IN ('card_purchase', 'merchant')
+   WHERE p.error = ''
+     AND (t.channel NOT IN ('card_purchase', 'merchant')
       OR p.is_fraud::integer IS DISTINCT FROM t.is_fraud::integer
       OR p.transaction_time::timestamp IS DISTINCT FROM t.ts
       OR p.unix_time::bigint IS DISTINCT
          FROM extract(epoch FROM t.ts)::bigint
-      OR p.amount::double precision IS DISTINCT FROM t.amount;
+      OR p.amount::double precision IS DISTINCT FROM t.amount);
   IF problem_count <> 0 THEN
     RAISE EXCEPTION
       'Payment_Transaction rows disagree with raw channel/label/time/amount: %',

@@ -225,37 +225,90 @@ useChipFor(const transactions::Transaction &tx,
  * [Likely] — owner verifies). Rows without an error carry the empty string,
  * exactly like the source dataset.
  *
- * A CONTENT HASH, NOT A CAUSE: authorization attempts are not modelled, so
- * nothing drives this column. Tracked realism debt — the remaining half of
- * online-GNN gate 4 (docs/card_fraud_online_gnn.md). */
+ * IT IS NOW A CAUSE, AND A SETTLED ROW CARRIES NO ERROR.
+ *
+ * This used to be a content hash that stamped an error on 2% of rows, and its
+ * own comment said why: "authorization attempts are not modelled, so nothing
+ * drives this column". That was worse than noise — it put "Insufficient
+ * Balance" on transactions that SETTLED, which is a contradiction in the
+ * exported data rather than merely an unrealistic value.
+ *
+ * The column now means exactly one thing: a NON-EMPTY error marks a DECLINED
+ * AUTHORIZATION, and that is the flag a consumer filters on. Settled rows
+ * carry the empty string, exactly like the source dataset's non-error rows.
+ * `emptyIfSettled` exists so the call site reads as the assertion it is.
+ *
+ * THE DECLINE POPULATION MUST NOT BE FRAUD-DOMINATED, and this is the half
+ * that keeps it honest. The funding declines the replay produces are
+ * 37.9-45.7% fraud (measured; see `ledger::DeclinedAttempt`), because the
+ * unauthorized rail drains a victim and its own later charges cannot fund.
+ * That is real, but a decline population shaped like that is a fraud marker
+ * rather than authorization traffic. Real declines are overwhelmingly
+ * LEGITIMATE — expired cards, CVV and AVS mismatches, velocity rules,
+ * technical failures — and they are what this half supplies.
+ *
+ * SELECTION IS LABEL-BLIND BY CONSTRUCTION. `rowHash` mixes the row's funds
+ * key, never its fraud flag, so a fraud row and a legitimate row of the same
+ * shape are equally likely to draw a non-funding decline. That is what
+ * dilutes the funding declines' fraud share instead of concentrating it, and
+ * it is why the predicate must never be allowed to read `tx.fraud`.
+ *
+ * THE MIX IS THE TABFORMER VALUE SET MINUS ITS FUNDING ENTRY. "Insufficient
+ * Balance" is deliberately absent here: that string is reserved for the
+ * declines the ledger actually decided, so the two populations stay
+ * distinguishable in the exported column. The remaining six are renormalised
+ * over their original relative weights (20/20/8/5/5/2 -> 33.3/33.3/13.3/8.3/
+ * 8.3/3.4). DECLARED CHOICE, as the original mix was.
+ *
+ * THE RATE IS DECLARED AND IS THE DIAL THAT SETS THE POPULATION'S SHAPE. Real
+ * card authorization decline rates run 5-15% depending on channel and issuer;
+ * this is the legitimate share of that, and it must stay large enough that
+ * the funding declines are a MINORITY of all declines. CLASS S UNCITED for
+ * the level. */
+inline constexpr std::uint32_t kNonFundingDeclineBasisPoints = 600;
 
+/* Does this settled row also generate a preceding DECLINED attempt?
+ *
+ * Draw-free and label-blind. The declined row is ADDITIVE — the settled row
+ * is untouched and no balance moves — which models the ordinary case of a
+ * customer whose first attempt failed on a mistyped CVV and whose second
+ * succeeded. */
+[[nodiscard]] inline bool declinedBefore(
+    const transactions::Transaction &tx) noexcept {
+  return rowHash(kErrorLane, tx) % 10'000U < kNonFundingDeclineBasisPoints;
+}
+
+/* The non-funding decline reason for a row `declinedBefore` selected. */
 [[nodiscard]] inline std::string_view
-errorFor(const transactions::Transaction &tx) noexcept {
-  const auto h = rowHash(kErrorLane, tx);
-  if (h % 10'000U >= 200U) {
-    return "";
-  }
-  const auto pick = (h / 10'000U) % 10'000U;
-  if (pick < 4'000U) {
-    return "Insufficient Balance";
-  }
-  if (pick < 6'000U) {
+nonFundingErrorFor(const transactions::Transaction &tx) noexcept {
+  const auto pick = (rowHash(kErrorLane, tx) / 10'000U) % 10'000U;
+  if (pick < 3'333U) {
     return "Bad PIN";
   }
-  if (pick < 8'000U) {
+  if (pick < 6'666U) {
     return "Technical Glitch";
   }
-  if (pick < 8'800U) {
+  if (pick < 8'000U) {
     return "Bad Card Number";
   }
-  if (pick < 9'300U) {
+  if (pick < 8'830U) {
     return "Bad Expiration";
   }
-  if (pick < 9'800U) {
+  if (pick < 9'660U) {
     return "Bad CVV";
   }
   return "Bad Zipcode";
 }
+
+/* The exported error for the FUNDING declines the replay decided. Every
+ * `drop_reasons` funding variant is the same answer to the cardholder, so
+ * they collapse to the one TabFormer string; the finer taxonomy stays on the
+ * world side where the retry machinery uses it. */
+inline constexpr std::string_view kInsufficientBalanceError =
+    "Insufficient Balance";
+
+/* A settled row carries no error. */
+[[nodiscard]] inline std::string_view emptyIfSettled() noexcept { return ""; }
 
 /* --------------------------------------------------- category fallback
  *

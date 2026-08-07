@@ -94,6 +94,12 @@ struct StreamedArtifacts {
   std::uint64_t rows = 0;     // every settled row (row_seq domain)
   std::uint64_t viewRows = 0; // rows in the card view
   std::uint64_t fraudViewRows = 0;
+  /* Declined authorizations written alongside the settled rows. NOT counted
+   * in `rows` or `viewRows`: those two are the SETTLED population, and every
+   * consumer of them — the acceptance script's payment/edge parity, the
+   * manifest, the gates — means settled. A declined row is identified by a
+   * non-empty `error`. */
+  std::uint64_t declinedRows = 0;
 };
 
 class StreamingCardFraudExport {
@@ -265,11 +271,59 @@ public:
                                                                .footprint}
               : std::nullopt;
 
+      /* THE DECLINED ATTEMPT COMES FIRST, IF THERE IS ONE.
+       *
+       * A non-empty `error` marks a DECLINED AUTHORIZATION; the settled row
+       * below always carries the empty string. That one bit is what lets a
+       * consumer keep declines out of the graph — they are authorization
+       * traffic, not settled purchases, and the GNN's transaction nodes are
+       * the latter.
+       *
+       * It is ADDITIVE: the settled row is byte-unchanged, no balance moves,
+       * and the ledger never sees it. That is the ordinary shape of a
+       * mistyped CVV followed by a successful retry, and it is why this can
+       * be generated at export time from a draw-free hash rather than
+       * modelled in the replay.
+       *
+       * THE DECLINED ROW CARRIES THE SAME SESSION, CARD AND MERCHANT, which
+       * is the point: a declined attempt happened on a real device, at a real
+       * address, against a real card. Withholding its edges would make
+       * "row with no device edge" mean "declined" and hand back a shortcut on
+       * the way out.
+       *
+       * Its id is suffixed rather than drawn from the row counter, so adding
+       * or removing declines cannot renumber a single settled row. */
+      if (derive::declinedBefore(tx)) {
+        const auto declinedId = id + "D";
+        /* One minute earlier: inside the same authorization episode, and
+         * strictly ordered before the settlement it precedes. Fixed rather
+         * than hashed because the ordering is the only thing that carries
+         * meaning here. */
+        const auto declinedTs = tx.timestamp - 60;
+        const auto declinedUnix = static_cast<std::uint64_t>(declinedTs);
+        paymentW_->writer().writeRow(
+            declinedId,
+            time::formatTimestamp(time::fromEpochSeconds(declinedTs)),
+            tx.amount, static_cast<std::int32_t>(fraud ? 1 : 0), declinedUnix,
+            merchants::name(category), derive::useChipFor(tx, footprint),
+            derive::nonFundingErrorFor(tx));
+        cardSendW_->writer().writeRow(declinedId, cardNumber, declinedUnix);
+        merchantReceiveW_->writer().writeRow(declinedId, merchant,
+                                             declinedUnix);
+        transactionDeviceW_->writer().writeRow(
+            declinedId, common::renderDeviceId(tx.session.deviceId).view(),
+            declinedUnix);
+        transactionIpW_->writer().writeRow(
+            declinedId, network::format(tx.session.ipAddress).view(),
+            declinedUnix);
+        ++artifacts_.declinedRows;
+      }
+
       paymentW_->writer().writeRow(
           id, time::formatTimestamp(time::fromEpochSeconds(tx.timestamp)),
           tx.amount, static_cast<std::int32_t>(fraud ? 1 : 0), unixTime,
           merchants::name(category), derive::useChipFor(tx, footprint),
-          derive::errorFor(tx));
+          derive::emptyIfSettled());
 
       cardSendW_->writer().writeRow(id, cardNumber, unixTime);
       merchantReceiveW_->writer().writeRow(id, merchant, unixTime);
