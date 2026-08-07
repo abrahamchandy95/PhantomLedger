@@ -366,7 +366,8 @@ public:
         writeEnumerationProbe(tx, id, cardNumber, generation);
       }
 
-      if (derive::declinedBefore(tx)) {
+      if (derive::declinedBefore(tx) &&
+          backdatedRowIsObservable(tx, tx.timestamp - 60)) {
         const auto declinedId = id + "D";
         /* One minute earlier: inside the same authorization episode, and
          * strictly ordered before the settlement it precedes. Fixed rather
@@ -410,6 +411,37 @@ public:
   void endSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
 
 private:
+  /* IS A BACKDATED SYNTHETIC ROW ACTUALLY OBSERVABLE AT ITS OWN INSTANT?
+   *
+   * Both synthetic populations are stamped EARLIER than the settled row they
+   * hang off — a non-funding decline by 60 seconds, a card-testing probe by
+   * 900 — and neither offset was checked against anything. Two ways that goes
+   * wrong, and the membership one is the subtle one:
+   *
+   *   WINDOW. A settled row in the first 900 seconds of the run backdates to
+   *   BEFORE `window.start`. The acceptance script bounds the payment window
+   *   and would hard-abort on it.
+   *
+   *   MEMBERSHIP. The settled row's membership is checked at the SETTLED
+   *   timestamp, but `Membership::joinTs` is always MIDNIGHT of the join day
+   *   while transaction timestamps carry an intraday offset. So a card whose
+   *   first view row lands within the offset after midnight on its owner's
+   *   join day emits a synthetic row from before that Party existed.
+   *
+   * SKIPPED, NOT CLAMPED. Clamping would invent a timestamp and could collapse
+   * the strict ordering against the settled row that makes these rows readable
+   * as a preceding attempt. Dropping a handful of rows at a boundary costs
+   * nothing; a row that precedes its own Party is a referential defect. */
+  [[nodiscard]] bool
+  backdatedRowIsObservable(const transactions::Transaction &tx,
+                           std::int64_t backdatedTs) const {
+    if (backdatedTs < time::toEpochSeconds(config_.window.start)) {
+      return false;
+    }
+    return config_.membership.activeAt(ownerOf(tx.source), backdatedTs) &&
+           config_.membership.activeAt(ownerOf(tx.target), backdatedTs);
+  }
+
   /* ONE CARD-TESTING PROBE, on the card's first appearance in the view.
    *
    * The row is a DECLINED authorization carrying the OPERATOR's device and
@@ -442,12 +474,34 @@ private:
     if (!probe.has_value()) {
       return;
     }
+    if (!backdatedRowIsObservable(tx, probe->timestamp)) {
+      return;
+    }
 
+    /* LIVE MERCHANTS ONLY. Every other merchant pick in the repo gates on
+     * liveness (`unauthorized.cpp` does it for the fraud rail); this one did
+     * not, so a probe could name an outlet that had already closed or had not
+     * yet opened at the probe instant — an out-of-tenure edge of exactly the
+     * kind `merchant-churn-2026-07` drove from 49% to 0.27%.
+     *
+     * Draw-free and stable: the same hash, taken modulo the LIVE index list
+     * rather than the whole catalogue. */
     const auto &records = config_.merchants->records;
-    const auto slot = ::PhantomLedger::infra::derived::splitmix(
-                          ::PhantomLedger::infra::enumeration::kOperatorDomain ^
-                          probe->operatorIndex) %
-                      records.size();
+    std::vector<std::uint32_t> live;
+    live.reserve(records.size());
+    for (std::uint32_t i = 0; i < records.size(); ++i) {
+      if (records[i].liveAt(probe->timestamp)) {
+        live.push_back(i);
+      }
+    }
+    if (live.empty()) {
+      return;
+    }
+    const auto slot =
+        live[::PhantomLedger::infra::derived::splitmix(
+                 ::PhantomLedger::infra::enumeration::kOperatorDomain ^
+                 probe->operatorIndex) %
+             live.size()];
     const auto merchantKey = records[slot].counterpartyId;
 
     artifacts_.merchants.insert(merchantKey);
