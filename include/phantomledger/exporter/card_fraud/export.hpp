@@ -66,6 +66,12 @@ struct Summary {
    * instrument. This is the instrument. */
   std::uint64_t declinedRows = 0;
 
+  /* Card-testing probes. Reported apart from `declinedRows` so a reader can
+   * tell this corpus's own refused purchases from an operator sweeping a
+   * stolen list — and because a zero here means the fan-out this exists to
+   * create is absent. */
+  std::uint64_t enumerationRows = 0;
+
   std::size_t cardCount = 0;
   std::size_t merchantCount = 0;
   std::size_t partyCount = 0;

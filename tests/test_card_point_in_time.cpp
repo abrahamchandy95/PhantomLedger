@@ -218,6 +218,9 @@ void exportPrefix(const pl::pipeline::SimulationResult &result,
       .pgMirror = nullptr,
       .capture = &capture,
       .declined = &declined,
+      /* And the card-testing probes, for the same reason: a null here would
+       * make both exports agree on a table with no probe rows in it. */
+      .attackers = &result.infra.attackers,
   });
   sink.append(txns);
   sink.finish();
@@ -453,6 +456,27 @@ int main() {
       }
       return n;
     };
+    const auto countReason = [](const Capture &c, std::string_view reason) {
+      std::size_t n = 0;
+      for (const auto &line : c.lines("Payment_Transaction")) {
+        if (line.find(reason) != std::string::npos) {
+          ++n;
+        }
+      }
+      return n;
+    };
+    const auto fullProbes =
+        countReason(full, pl::exporter::card_fraud::derive::kEnumerationError);
+    const auto prefixProbes = countReason(
+        prefix, pl::exporter::card_fraud::derive::kEnumerationError);
+    std::printf("  card-testing probes exported: full %zu, score-time %zu\n",
+                fullProbes, prefixProbes);
+    check(fullProbes > 0,
+          "the full export wrote NO card-testing probes, so the prefix checks "
+          "below cannot see them");
+    check(prefixProbes <= fullProbes,
+          "the score-time export wrote MORE probes than the full window");
+
     const auto fullDeclined = declinedLines(full);
     const auto prefixDeclined = declinedLines(prefix);
     std::printf("  funding declines exported: full %zu, score-time %zu\n",

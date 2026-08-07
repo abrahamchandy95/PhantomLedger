@@ -99,6 +99,8 @@ void cardFraudSummary(const exporter::card_fraud::Summary &summary) {
    * no authorization was ever refused, which is a defect, not a quiet corpus. */
   std::println("  Declined auths:  {} additional rows (labels withheld)",
                summary.declinedRows);
+  std::println("  Card-testing:    {} probe rows (labels withheld)",
+               summary.enumerationRows);
   std::println("  Cards:           {}", summary.cardCount);
   std::println("  Merchants:       {}", summary.merchantCount);
   std::println("  Parties:         {}", summary.partyCount);

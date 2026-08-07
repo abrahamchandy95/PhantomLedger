@@ -304,6 +304,13 @@ nonFundingErrorFor(const transactions::Transaction &tx) noexcept {
  * `drop_reasons` funding variant is the same answer to the cardholder, so
  * they collapse to the one TabFormer string; the finer taxonomy stays on the
  * world side where the retry machinery uses it. */
+/* The card-testing probe's reason. DISJOINT from both the funding reason and
+ * the six non-funding ones, so the three decline populations stay separable in
+ * the exported column — a consumer can drop enumeration traffic without
+ * dropping a cardholder's refused purchase. "Do Not Honor" is the generic
+ * issuer refusal a probe against an unrecognised number actually draws. */
+inline constexpr std::string_view kEnumerationError = "Do Not Honor";
+
 inline constexpr std::string_view kInsufficientBalanceError =
     "Insufficient Balance";
 

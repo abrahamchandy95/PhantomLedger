@@ -41,6 +41,7 @@
 #include "phantomledger/entities/holdings/card_reissue.hpp"
 #include "phantomledger/entities/holdings/cards.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/infra/enumeration.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/schema.hpp"
@@ -124,6 +125,13 @@ struct StreamedArtifacts {
    * manifest, the gates — means settled. A declined row is identified by a
    * non-empty `error`. */
   std::uint64_t declinedRows = 0;
+
+  /* Card-testing probes, counted apart from `declinedRows` because they are a
+   * different population with a different cause: those are this corpus's own
+   * cardholders being refused, these are an operator sweeping a stolen list.
+   * A consumer separating authorization traffic from purchases wants their
+   * sum; anyone asking why fan-out is high wants this one alone. */
+  std::uint64_t enumerationRows = 0;
 };
 
 class StreamingCardFraudExport {
@@ -183,6 +191,11 @@ public:
      * construction), and the pass is simply skipped. */
     const std::vector<transfers::legit::ledger::DeclinedAttempt> *declined =
         nullptr;
+
+    /* Attacker infrastructure, for the card-testing probes. Null disables
+     * them entirely, which is what a direct unit construction wants and what
+     * the enumeration gate's disarm leg uses. */
+    const ::PhantomLedger::infra::AttackerInfra *attackers = nullptr;
   };
 
   explicit StreamingCardFraudExport(Config config)
@@ -293,6 +306,11 @@ public:
        * export a byte prefix of the full one. */
       writeFundingDeclinesUpTo(tx.timestamp);
 
+      /* Read BEFORE the map insert below creates the entry. A card's first row
+       * in the view is what anchors its enumeration probe, and it is the same
+       * row in a score-time export as in a full-window one. */
+      const bool firstRowForCard = !artifacts_.cards.contains(tx.source);
+
       auto &card = artifacts_.cards[tx.source];
       card.credit = credit;
       card.fraud = card.fraud || fraud;
@@ -344,6 +362,10 @@ public:
        *
        * Its id is suffixed rather than drawn from the row counter, so adding
        * or removing declines cannot renumber a single settled row. */
+      if (firstRowForCard) {
+        writeEnumerationProbe(tx, id, cardNumber, generation);
+      }
+
       if (derive::declinedBefore(tx)) {
         const auto declinedId = id + "D";
         /* One minute earlier: inside the same authorization episode, and
@@ -388,6 +410,77 @@ public:
   void endSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
 
 private:
+  /* ONE CARD-TESTING PROBE, on the card's first appearance in the view.
+   *
+   * The row is a DECLINED authorization carrying the OPERATOR's device and
+   * address rather than the cardholder's, which is the whole point: one
+   * endpoint touches every card on that operator's list, so device-to-card
+   * fan-out stops being a fraud tell. The label is withheld, so those edges
+   * carry no supervision — a 500-card enumeration device is uninformative,
+   * not diagnostic.
+   *
+   * THE MERCHANT IS THE OPERATOR'S, NOT THE ROW'S. Card testing runs against
+   * one acquirer the operator has picked, and reusing the settled row's
+   * merchant would instead smear probes across the catalogue and correlate
+   * them with wherever the victim happened to shop first. Chosen by hashing
+   * the operator index, so it is draw-free and stable, and REGISTERED below
+   * so no edge dangles.
+   *
+   * `card.fraud` is deliberately untouched, for the same reason a funding
+   * decline does not set it: that flag means fraud SETTLED on the card. */
+  void writeEnumerationProbe(const transactions::Transaction &tx,
+                             const std::string &id,
+                             const std::string &cardNumber,
+                             std::uint32_t generation) {
+    if (config_.attackers == nullptr || paymentW_ == std::nullopt ||
+        config_.merchants == nullptr ||
+        config_.merchants->records.empty()) {
+      return;
+    }
+    const auto probe = ::PhantomLedger::infra::enumeration::probeFor(
+        *config_.attackers, tx.source, tx.timestamp);
+    if (!probe.has_value()) {
+      return;
+    }
+
+    const auto &records = config_.merchants->records;
+    const auto slot = ::PhantomLedger::infra::derived::splitmix(
+                          ::PhantomLedger::infra::enumeration::kOperatorDomain ^
+                          probe->operatorIndex) %
+                      records.size();
+    const auto merchantKey = records[slot].counterpartyId;
+
+    artifacts_.merchants.insert(merchantKey);
+    artifacts_.devices.insert(probe->device);
+    artifacts_.ips.insert(probe->ip);
+    /* The probe's own generation is the one live at the settled row it is
+     * anchored to; a 900-second lead cannot cross a reissue boundary. */
+    (void)generation;
+
+    const auto probeId = id + "E";
+    const auto probeUnix = static_cast<std::uint64_t>(probe->timestamp);
+
+    paymentW_->writer().writeRow(
+        probeId,
+        time::formatTimestamp(time::fromEpochSeconds(probe->timestamp)),
+        /* A probe is a live-or-not question, not a purchase. The amount is
+         * the small fixed ticket operators use so the authorization is cheap
+         * and unremarkable; it is a DECLARED value, CLASS S UNCITED. */
+        ::PhantomLedger::infra::enumeration::kProbeAmount,
+        kDeclinedLabelWithheld, probeUnix,
+        merchants::name(records[slot].category),
+        /* Card-not-present: the operator is not holding the card. */
+        0, derive::kEnumerationError);
+    cardSendW_->writer().writeRow(probeId, cardNumber, probeUnix);
+    merchantReceiveW_->writer().writeRow(
+        probeId, derive::merchantId(merchantKey), probeUnix);
+    transactionDeviceW_->writer().writeRow(
+        probeId, common::renderDeviceId(probe->device).view(), probeUnix);
+    transactionIpW_->writer().writeRow(
+        probeId, network::format(probe->ip).view(), probeUnix);
+    ++artifacts_.enumerationRows;
+  }
+
   /* THE FUNDING DECLINES — the ones the replay actually decided, as opposed
    * to the non-funding ones synthesised beside each settled row.
    *

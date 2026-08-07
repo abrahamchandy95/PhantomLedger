@@ -159,6 +159,7 @@ void StreamOrchestrator::bindStreams() {
             .window = window_,
             /* Empty now; the fold fills it before the sink's finish(). */
             .declined = &declined_,
+            .attackers = &world_.infra.attackers,
         });
     break;
   }
