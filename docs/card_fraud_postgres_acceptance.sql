@@ -246,19 +246,45 @@ BEGIN
   END IF;
 
   RAISE NOTICE '[4/9] checking bidirectional raw-ledger payment parity';
+  -- NON-VACUITY FIRST, AND IT IS HERE BECAUSE THIS CHECK ONCE PASSED ON AN
+  -- EMPTY SET FOR AN ENTIRE ROUND.
+  --
+  -- The mirror COPYs with (FORMAT csv), and in CSV mode an unquoted empty
+  -- field is read as NULL -- not as the empty string the exporter wrote. So
+  -- `p.error = ''` is NULL for every settled row, never true, and both parity
+  -- checks below counted zero rows and reported PASS while comparing nothing.
+  -- The filter is now coalesce()'d; this guard is what makes the failure
+  -- LOUD if the representation shifts again.
+  SELECT count(*)
+    INTO problem_count
+    FROM card_fraud."cf_Payment_Transaction" p
+   WHERE coalesce(p.error, '') = '';
+  IF problem_count = 0 THEN
+    RAISE EXCEPTION 'no SETTLED payment rows matched the parity filter, so '
+      'the two checks below would compare an empty set. Either the corpus '
+      'is empty or the error column no longer represents "settled" as NULL '
+      'or empty string.';
+  END IF;
+  RAISE NOTICE '  settled rows entering parity: %', problem_count;
   -- SETTLED ROWS ONLY, and the filter is the contract rather than a
   -- convenience. A non-empty `error` marks a DECLINED AUTHORIZATION: an
   -- attempt the issuer refused, which by definition never posted and so has
   -- no raw-ledger counterpart to join to. Declines carry a suffixed id
   -- ('T<n>D') precisely so they cannot collide with a settled row_seq, and
   -- every consumer that means "settled" -- this parity check, the manifest
-  -- reconciliation, and the graph loader itself -- filters on error = ''.
+  -- reconciliation, and the graph loader itself -- means coalesce(error,'')=''.
+  --
+  -- IT IS NULL, NOT '', AND THAT COST AN ENTIRE ROUND. The exporter writes an
+  -- empty string; the mirror COPYs with (FORMAT csv); CSV reads an unquoted
+  -- empty field as NULL. Any consumer written against the CSV FILES sees '',
+  -- any consumer written against POSTGRES sees NULL, and the two are not
+  -- interchangeable in a WHERE clause. Always coalesce.
   SELECT count(*)
     INTO problem_count
     FROM card_fraud."cf_Payment_Transaction" p
     LEFT JOIN public.transactions t
       ON p.id = 'T' || t.row_seq::text
-   WHERE p.error = ''
+   WHERE coalesce(p.error, '') = ''
      AND t.row_seq IS NULL;
   IF problem_count <> 0 THEN
     RAISE EXCEPTION 'Payment_Transaction rows missing raw-ledger joins: %',
@@ -270,7 +296,7 @@ BEGIN
     FROM card_fraud."cf_Payment_Transaction" p
     JOIN public.transactions t
       ON p.id = 'T' || t.row_seq::text
-   WHERE p.error = ''
+   WHERE coalesce(p.error, '') = ''
      AND (t.channel NOT IN ('card_purchase', 'merchant')
       OR p.is_fraud::integer IS DISTINCT FROM t.is_fraud::integer
       OR p.transaction_time::timestamp IS DISTINCT FROM t.ts

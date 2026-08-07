@@ -40,7 +40,7 @@ BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
 \echo ''
 \echo '[1/4] row census by authorization outcome'
 SELECT CASE
-         WHEN error = '' THEN 'settled purchase'
+         WHEN coalesce(error, '') = '' THEN 'settled purchase'
          WHEN error = 'Insufficient Balance' THEN 'funding decline'
          WHEN error = 'Do Not Honor' THEN 'card-testing probe'
          ELSE 'non-funding decline'
@@ -82,7 +82,7 @@ WITH card_truth AS (
          bool_or(p.is_fraud::integer <> 0) AS ever_fraud
   FROM card_fraud."cf_Card_Send_Transaction" cs
   JOIN card_fraud."cf_Payment_Transaction" p ON p.id = cs.txn_id
-  WHERE p.error = ''
+  WHERE coalesce(p.error, '') = ''
   GROUP BY cs.card_number
 ), device_card AS (
   SELECT DISTINCT d.device_id, cs.card_number
@@ -116,7 +116,7 @@ WITH card_truth AS (
          bool_or(p.is_fraud::integer <> 0) AS ever_fraud
   FROM card_fraud."cf_Card_Send_Transaction" cs
   JOIN card_fraud."cf_Payment_Transaction" p ON p.id = cs.txn_id
-  WHERE p.error = ''
+  WHERE coalesce(p.error, '') = ''
   GROUP BY cs.card_number
 ), ip_card AS (
   SELECT DISTINCT i.ip_id, cs.card_number
