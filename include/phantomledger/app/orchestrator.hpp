@@ -56,15 +56,14 @@ private:
   void buildWorld();
   void initializeSinks();
   void bindStreams();
-  void executeFold();
+  void streamTransfers();
   void rebuildWorldIfNeeded();
   void finalizeExports();
 
   // --- Internal Helpers ---
   [[nodiscard]] bool isPgUp() const noexcept;
 
-  // Resolves the template deduction error cleanly
-  template <typename StreamT> void executeFoldWithStream(StreamT *streamPtr);
+  template <typename StreamT> void pumpTransfers(StreamT *streamPtr);
 
   // --- Immutable Configuration ---
   const RunOptions &opts_;
@@ -82,10 +81,6 @@ private:
   pipeline::SimulationResult world_;
   PgMirrors mirrors_;
 
-  /* The fold's funding declines. DECLARED BEFORE `streams_` on purpose: a
-   * card-fraud sink holds this vector's address from `bindStreams()` until its
-   * own `finish()`, and members are destroyed in reverse declaration order, so
-   * the sink must die first. The fold fills it before that `finish()`. */
   std::vector<transfers::legit::ledger::DeclinedAttempt> declined_;
 
   ExporterStreams streams_;

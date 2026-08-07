@@ -36,7 +36,7 @@ int StreamOrchestrator::run() {
   buildWorld();
   initializeSinks();
   bindStreams();
-  executeFold();
+  streamTransfers();
   rebuildWorldIfNeeded();
   finalizeExports();
 
@@ -165,27 +165,28 @@ void StreamOrchestrator::bindStreams() {
   }
 }
 
-void StreamOrchestrator::executeFold() {
+void StreamOrchestrator::streamTransfers() {
   if (exportPacksReleased_) {
     pipeline::releaseExportOnlyPacks(world_);
     mon_.mark("export-only packs freed");
   }
 
-  // Branch explicitly to satisfy C++ template strictness
-  if (opts_.usecase == UseCase::standard) {
-    executeFoldWithStream(streams_.stdStream ? &*streams_.stdStream : nullptr);
-  } else if (opts_.usecase == UseCase::muleMl) {
-    executeFoldWithStream(streams_.mlStream ? &*streams_.mlStream : nullptr);
-  } else if (opts_.usecase == UseCase::aml) {
-    executeFoldWithStream(streams_.amlStream ? &*streams_.amlStream : nullptr);
-  } else if (opts_.usecase == UseCase::amlTxnEdges) {
-    executeFoldWithStream(streams_.amlTxnStream ? &*streams_.amlTxnStream
-                                                : nullptr);
-  } else if (opts_.usecase == UseCase::cardFraud) {
-    executeFoldWithStream(streams_.cfStream ? &*streams_.cfStream : nullptr);
-  } else {
-    executeFoldWithStream<exporter::standard::StreamingTransfersExport>(
-        nullptr);
+  switch (opts_.usecase) {
+  case UseCase::standard:
+    pumpTransfers(streams_.stdStream ? &*streams_.stdStream : nullptr);
+    break;
+  case UseCase::muleMl:
+    pumpTransfers(streams_.mlStream ? &*streams_.mlStream : nullptr);
+    break;
+  case UseCase::aml:
+    pumpTransfers(streams_.amlStream ? &*streams_.amlStream : nullptr);
+    break;
+  case UseCase::amlTxnEdges:
+    pumpTransfers(streams_.amlTxnStream ? &*streams_.amlTxnStream : nullptr);
+    break;
+  case UseCase::cardFraud:
+    pumpTransfers(streams_.cfStream ? &*streams_.cfStream : nullptr);
+    break;
   }
 
   std::println("Stream digest: {}  rows: {}", golden_.digest(),
@@ -194,29 +195,28 @@ void StreamOrchestrator::executeFold() {
 }
 
 template <typename StreamT>
-void StreamOrchestrator::executeFoldWithStream(StreamT *streamPtr) {
+void StreamOrchestrator::pumpTransfers(StreamT *streamPtr) {
   progress::Stage foldStage("Generating (windowed: transfers)", 1);
   const auto onPhase = [&](std::string_view phase) {
     mon_.mark(phase);
     foldStage.tick();
   };
 
-  /* ONE options object for every branch below, because the branches differ in
-   * SINK and must not differ in fold behaviour. `declined` is what the
-   * card-fraud sink already points at; the other use cases fill it and ignore
-   * it, which costs one small vector and keeps the fold identical across
-   * them. */
   pipeline::stages::transfers::WindowedRunOptions foldOpts{};
   foldOpts.declined = &declined_;
+
+  // pipeline execution
+  auto runPipeline = [&](auto &finalSink) {
+    transfers_ =
+        pipeline_.runWindowedTransfers(world_, finalSink, foldOpts, onPhase);
+  };
 
   if (!isPgUp()) {
     if (streamPtr) {
       pipeline::chunk::Tee tee{golden_, *streamPtr};
-      transfers_ = pipeline_.runWindowedTransfers(world_, tee, foldOpts,
-                                                  onPhase);
+      runPipeline(tee);
     } else {
-      transfers_ =
-          pipeline_.runWindowedTransfers(world_, golden_, foldOpts, onPhase);
+      runPipeline(golden_);
     }
     return;
   }
@@ -261,49 +261,36 @@ void StreamOrchestrator::executeFoldWithStream(StreamT *streamPtr) {
   const exporter::sinks::ResumePlan *planPtr =
       plan.has_value() ? &*plan : nullptr;
 
+  // creating the ResumableSpanSink and logging
+  auto executeResumable = [&](auto &innerTee) {
+    exporter::sinks::ResumableSpanSink<
+        std::remove_reference_t<decltype(innerTee)>>
+        sink{{.inner = &innerTee,
+              .copyGate = &gatedPg.open,
+              .ledger = &ledger,
+              .manifestId = pgManifestId,
+              .plan = planPtr,
+              .conninfo = backend_.conninfo}};
+
+    runPipeline(sink);
+
+    if (sink.spansSkipped() > 0) {
+      std::println("PostgreSQL: {} rows total -> table 'transactions' ({} "
+                   "spans copied, {} skipped)",
+                   pgSink.rowsWritten(), sink.spansWritten(),
+                   sink.spansSkipped());
+    } else {
+      std::println(
+          "PostgreSQL: {} rows -> table 'transactions' ({} spans, streamed)",
+          pgSink.rowsWritten(), sink.spansWritten());
+    }
+  };
+
   if (streamPtr) {
     pipeline::chunk::Tee teeAll{teePg, *streamPtr};
-    exporter::sinks::ResumableSpanSink<decltype(teeAll)> sink{
-        {.inner = &teeAll,
-         .copyGate = &gatedPg.open,
-         .ledger = &ledger,
-         .manifestId = pgManifestId,
-         .plan = planPtr,
-         .conninfo = backend_.conninfo}};
-
-    transfers_ = pipeline_.runWindowedTransfers(world_, sink, foldOpts, onPhase);
-
-    if (sink.spansSkipped() > 0) {
-      std::println("PostgreSQL: {} rows total -> table 'transactions' ({} "
-                   "spans copied, {} skipped)",
-                   pgSink.rowsWritten(), sink.spansWritten(),
-                   sink.spansSkipped());
-    } else {
-      std::println(
-          "PostgreSQL: {} rows -> table 'transactions' ({} spans, streamed)",
-          pgSink.rowsWritten(), sink.spansWritten());
-    }
+    executeResumable(teeAll);
   } else {
-    exporter::sinks::ResumableSpanSink<decltype(teePg)> sink{
-        {.inner = &teePg,
-         .copyGate = &gatedPg.open,
-         .ledger = &ledger,
-         .manifestId = pgManifestId,
-         .plan = planPtr,
-         .conninfo = backend_.conninfo}};
-
-    transfers_ = pipeline_.runWindowedTransfers(world_, sink, foldOpts, onPhase);
-
-    if (sink.spansSkipped() > 0) {
-      std::println("PostgreSQL: {} rows total -> table 'transactions' ({} "
-                   "spans copied, {} skipped)",
-                   pgSink.rowsWritten(), sink.spansWritten(),
-                   sink.spansSkipped());
-    } else {
-      std::println(
-          "PostgreSQL: {} rows -> table 'transactions' ({} spans, streamed)",
-          pgSink.rowsWritten(), sink.spansWritten());
-    }
+    executeResumable(teePg);
   }
 }
 
