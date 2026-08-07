@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 
 namespace PhantomLedger::activity::spending::routing {
 
@@ -50,32 +51,61 @@ struct PaymentRoute {
   channels::Tag channel{};
 };
 
-[[nodiscard]] PaymentRoute selectPaymentRoute(random::Rng &rng,
-                                              const actors::Spender &spender,
-                                              double cashAvailable,
-                                              double cardAvailable,
-                                              double txnAmount) {
-  if (!spender.hasCard) {
-    return {spender.depositAccount, spender.depositAccountIdx,
-            kMerchantChannel};
+/* WHICH of the person's instruments pays, chosen DRAW-FREE from
+ * (person, rowSalt). See `actors/instruments.hpp` for why the rank is a hash
+ * of the account NUMBER and never of the slot, why the selecting uniform is
+ * derived rather than drawn, and why it is keyed on the ROW rather than on the
+ * merchant. */
+[[nodiscard]] PaymentRoute depositRoute(const actors::Spender &spender,
+                                        std::uint64_t rowSalt) {
+  const auto region = spender.instruments.deposits();
+  const auto slot =
+      actors::pickInstrumentSlot(region, spender.personIndex, rowSalt);
+  return {region[slot], spender.instruments.depositIndices()[slot],
+          kMerchantChannel};
+}
+
+/* THE PER-ROW DRAW COUNT DOES NOT MOVE, FOR ANY PERSON. Zero uniforms when
+ * the person holds no spend-active credit instrument (the early return below
+ * sits exactly where `!hasCard` did), exactly one otherwise, in the same
+ * position. Both instrument picks are draw-free, so the merchant channel's
+ * lane is byte-identical in COUNT to the pre-round tree and only the ANSWER
+ * moves.
+ *
+ * `creditAvailable` is index-aligned to `instruments.credits()`; the credit
+ * slot is chosen first, and the room test then reads that slot alone. */
+[[nodiscard]] PaymentRoute
+selectPaymentRoute(random::Rng &rng, const actors::Spender &spender,
+                   std::uint64_t rowSalt, double cashAvailable,
+                   std::span<const double> creditAvailable, double txnAmount) {
+  const auto credits = spender.instruments.credits();
+  if (credits.empty()) {
+    return depositRoute(spender, rowSalt);
   }
 
-  const bool cardHasRoom = cardAvailable >= txnAmount;
+  const auto creditSlot =
+      actors::pickInstrumentSlot(credits, spender.personIndex, rowSalt);
+  const double available =
+      creditSlot < creditAvailable.size() ? creditAvailable[creditSlot] : 0.0;
+  const bool cardHasRoom = available >= txnAmount;
+
+  const PaymentRoute cardLeg{credits[creditSlot],
+                             spender.instruments.creditIndices()[creditSlot],
+                             kCardChannel};
 
   if (rng.coin(spender.cardShare)) {
     if (cardHasRoom) {
-      return {spender.card, spender.cardIdx, kCardChannel};
+      return cardLeg;
     }
-    return {spender.depositAccount, spender.depositAccountIdx,
-            kMerchantChannel};
+    return depositRoute(spender, rowSalt);
   }
 
   const double cushion = txnAmount * kCashCushionMultiple;
   if (cashAvailable < cushion && cardHasRoom) {
-    return {spender.card, spender.cardIdx, kCardChannel};
+    return cardLeg;
   }
 
-  return {spender.depositAccount, spender.depositAccountIdx, kMerchantChannel};
+  return depositRoute(spender, rowSalt);
 }
 
 } // namespace
@@ -111,7 +141,7 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
 
   EmissionResult result;
   result.draft = transactions::Draft{
-      .source = event.spender->depositAccount,
+      .source = event.spender->instruments.primaryDeposit(),
       .destination = dst,
       .amount = amount,
       .timestamp = time::toEpochSeconds(event.ts),
@@ -119,7 +149,7 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
       .ringId = -1,
       .channel = kBillChannel,
   };
-  result.srcIdx = event.spender->depositAccountIdx;
+  result.srcIdx = event.spender->instruments.primaryDepositIndex();
   result.dstIdx = dstIdx;
   return result;
 }
@@ -135,7 +165,7 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
 
   EmissionResult result;
   result.draft = transactions::Draft{
-      .source = event.spender->depositAccount,
+      .source = event.spender->instruments.primaryDeposit(),
       .destination = dst,
       .amount = amount,
       .timestamp = time::toEpochSeconds(event.ts),
@@ -143,7 +173,7 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
       .ringId = -1,
       .channel = kExternalChannel,
   };
-  result.srcIdx = event.spender->depositAccountIdx;
+  result.srcIdx = event.spender->instruments.primaryDepositIndex();
   result.dstIdx = resolved_.externalUnknownIdx;
   return result;
 }
@@ -168,7 +198,8 @@ PaymentRouter::emitP2p(const actors::Event &event) {
       static_cast<entity::PersonId>(contactPersonIndex + 1);
   const auto dst = market_.population().primary(contactPerson);
 
-  if (!entity::valid(dst) || dst == event.spender->depositAccount) {
+  if (!entity::valid(dst) ||
+      dst == event.spender->instruments.primaryDeposit()) {
     return emitExternal(event);
   }
 
@@ -183,7 +214,7 @@ PaymentRouter::emitP2p(const actors::Event &event) {
 
   EmissionResult result;
   result.draft = transactions::Draft{
-      .source = event.spender->depositAccount,
+      .source = event.spender->instruments.primaryDeposit(),
       .destination = dst,
       .amount = amount,
       .timestamp = time::toEpochSeconds(event.ts),
@@ -191,7 +222,7 @@ PaymentRouter::emitP2p(const actors::Event &event) {
       .ringId = -1,
       .channel = kP2pChannel,
   };
-  result.srcIdx = event.spender->depositAccountIdx;
+  result.srcIdx = event.spender->instruments.primaryDepositIndex();
   result.dstIdx = dstIdx;
   return result;
 }
@@ -287,8 +318,12 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
   const double amount =
       primitives::utils::floorAndRound(rawAmount, kAmountFloor);
 
-  const auto route = selectPaymentRoute(
-      rng_, *event.spender, event.availableCash, event.cardAvailable, amount);
+  /* The row's own timestamp is the instrument salt: world-derived, row-stable,
+   * and not an emission ordinal. See `pickInstrumentSlot`. */
+  const auto ts = time::toEpochSeconds(event.ts);
+  const auto route =
+      selectPaymentRoute(rng_, *event.spender, static_cast<std::uint64_t>(ts),
+                         event.availableCash, event.cardAvailable, amount);
 
   const auto dstIdx = merchantIdx < resolved_.merchantCounterpartyIdx.size()
                           ? resolved_.merchantCounterpartyIdx[merchantIdx]
@@ -299,7 +334,7 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
       .source = route.srcKey,
       .destination = dst,
       .amount = amount,
-      .timestamp = time::toEpochSeconds(event.ts),
+      .timestamp = ts,
       .isFraud = 0,
       .ringId = -1,
       .channel = route.channel,

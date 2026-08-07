@@ -71,12 +71,12 @@
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/pipeline/infra.hpp"
 #include "phantomledger/pipeline/stages/entities.hpp"
-#include "phantomledger/synth/econ/catalog.hpp"
 #include "phantomledger/pipeline/stages/infra.hpp"
 #include "phantomledger/pipeline/stages/products.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/econ/catalog.hpp"
 #include "phantomledger/synth/people/fraud.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
@@ -245,9 +245,9 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   holdings.accounts =
       entityStage::buildAccounts(rng, people.roster, spec.population);
   people.personas = entityStage::buildPersonas(rng, people.roster, identity);
-  people.pii = entityStage::buildPii(rng, people.personas, identity,
-                                     people.roster.topology,
-                                     pl::synth::pii::Sharing{});
+  people.pii =
+      entityStage::buildPii(rng, people.personas, identity,
+                            people.roster.topology, pl::synth::pii::Sharing{});
   people.homeAreas = pl::pipeline::homeAreasOf(people.pii);
   // relocation-2026-07: PRODUCTION PARITY, and this one was found by
   // test_arch_equivalence rather than by reasoning. The harness builds its own
@@ -257,17 +257,16 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   // bug and was a harness gap. Any carrier the fold reads must be filled HERE
   // too, or the equivalence gate measures two different worlds.
   people.relocation = entityStage::buildRelocation(
-      people.pii, people.homeAreas, people.personas, spec.seed,
-      spec.window);
+      people.pii, people.homeAreas, people.personas, spec.seed, spec.window);
   // merchant-churn-2026-07: PRODUCTION PARITY, same reason the
   // beneficial-owner note below gives. The harness must pass its real
   // window and the real macro series, or every gate world would carry an
   // always-live catalogue sized without churn headroom while production
   // carries a lifecycle — the harness/production divergence the
   // party-geography round already paid for once.
-  cps.merchants = entityStage::buildMerchants(
-      rng, spec.population, spec.seed, spec.window, {},
-      &pl::synth::econ::macroSeries());
+  cps.merchants =
+      entityStage::buildMerchants(rng, spec.population, spec.seed, spec.window,
+                                  {}, &pl::synth::econ::macroSeries());
   cps.landlords = entityStage::buildLandlords(rng, spec.population);
   cps.counterparties = entityStage::buildCounterparties(rng, spec.population);
   // H1 step 2b: like production (simulate.cpp), credit-limit stocks
@@ -296,11 +295,12 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   }
 
   if (spec.withInfra) {
-    // spec.seed drives the attacker-infrastructure lane, exactly as the
-    // run seed does in SimulationPipeline::buildWorldWith. Passing it is
-    // what keeps a gate world's attacker pool identical to the
-    // production world's for the same seed — an equivalence gate must
-    // PIN THE WORLD SHAPE IT ASSUMES.
+    // spec.seed drives every KEYED lane, exactly as the run seed does in
+    // SimulationPipeline::buildWorldWith: attacker infrastructure, the
+    // household-endpoint groups, and the public terminal / carrier-NAT
+    // pools. Passing it is what keeps a gate world's shared and attacker
+    // populations identical to the production world's for the same seed —
+    // an equivalence gate must PIN THE WORLD SHAPE IT ASSUMES.
     infra = infraStage::AccessInfraStage{}.build(rng, people, holdings,
                                                  spec.window, spec.seed);
 
@@ -321,16 +321,15 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   };
 
   plan = legitBlueprints::buildLegitBlueprint(timeframe, census);
-  plan.addCounterparties(
-          rng, census,
-          legitBlueprints::CounterpartyPools{
-              .directory = &cps.counterparties,
-              .landlords = &cps.landlords.roster,
-          },
-          legitBlueprints::HubSelectionRules{
-              .populationCount = people.roster.roster.count,
-              .fraction = 0.01,
-          })
+  plan.addCounterparties(rng, census,
+                         legitBlueprints::CounterpartyPools{
+                             .directory = &cps.counterparties,
+                             .landlords = &cps.landlords.roster,
+                         },
+                         legitBlueprints::HubSelectionRules{
+                             .populationCount = people.roster.roster.count,
+                             .fraction = 0.01,
+                         })
       .addPersonas(rng, timeframe,
                    legitBlueprints::PersonaCatalog{.pack = &people.personas});
 
@@ -427,13 +426,13 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
 
   const std::span<const Txn> baseTxns(streams.screened());
 
-  market = routine.prepareMarket(
-      censusSource,
-      routineSpending::SpendingRoutine::PayeeDirectory{
-          .merchants = &cps.merchants,
-          .creditCards = &holdings.creditCards,
-      },
-      baseTxns);
+  market =
+      routine.prepareMarket(censusSource,
+                            routineSpending::SpendingRoutine::PayeeDirectory{
+                                .merchants = &cps.merchants,
+                                .creditCards = &holdings.creditCards,
+                            },
+                            baseTxns);
 
   obligations = routineSpending::SpendingRoutine::prepareObligations(
       censusSource,

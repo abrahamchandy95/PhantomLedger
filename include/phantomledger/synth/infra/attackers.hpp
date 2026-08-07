@@ -111,6 +111,38 @@ struct AssignmentRules {
   // rule above is what should change.
   std::uint32_t maxOperators = 250'000;
 
+  // SHARE OF THE ROSTER WHOSE OWN MACHINES OPERATORS RUN CASES FROM —
+  // the compromised-host pool, sized as a fraction of the population so
+  // it is population-invariant and window-independent.
+  //
+  // WHY A POOL AND NOT A PER-CASE PICK is argued at
+  // `AttackerInfra::compromisedHosts`; this constant only sets its size,
+  // and the size is what decides how many victims one borrowed machine
+  // carries. Cases per host is (borrowed cases) / (pool size), so this
+  // is the dial between "every host serves one victim" — which puts a
+  // consumer device in the graph and gives it nothing to say — and a
+  // handful of machines carrying implausibly much.
+  //
+  // LEVEL: CLASS S UNCITED. The DIRECTION and the ORDER OF MAGNITUDE are
+  // cited on both sides. Non-zero and small, because consumer-endpoint
+  // compromise is documented and priced — hidden-desktop modules run the
+  // victim's own browser profile while the victim keeps using the
+  // machine (ThreatFabric on-device fraud, 2022; HVNC sold as a service)
+  // — while the dominant attacker kit is device farms, emulators and
+  // per-victim anti-detect profiles, which are not consumer machines at
+  // all. The CEILING is consumer malware prevalence, not any
+  // attacker-side share: Microsoft's MSRT reported 5.8-8.0 computers
+  // cleaned per 1,000 scanned per QUARTER (worldwide / US, 2013), so a
+  // multi-year window admits a low-single-digit cumulative percentage
+  // and no more. Accessed 2026-08-07.
+  //
+  // A HOST IS A PERSON, NOT A MACHINE, and the realized share of
+  // card-view DEVICES that host a compromise runs higher than this
+  // number because a person holds a replacement chain of several device
+  // lines across a long window. The ceiling above is the one to measure
+  // against, and it is measured per quarter, not per run.
+  double compromisedHostShare = 0.02;
+
   void validate(primitives::validate::Report &r) const {
     namespace v = primitives::validate;
     r.check([&] {
@@ -123,8 +155,10 @@ struct AssignmentRules {
     r.check([&] {
       v::between("effectiveCampaignDays", effectiveCampaignDays, 1.0, 1.0e5);
     });
-    r.check([&] { v::between("secondDeviceLineP", secondDeviceLineP, 0.0, 1.0); });
-    r.check([&] { v::between("thirdDeviceLineP", thirdDeviceLineP, 0.0, 1.0); });
+    r.check(
+        [&] { v::between("secondDeviceLineP", secondDeviceLineP, 0.0, 1.0); });
+    r.check(
+        [&] { v::between("thirdDeviceLineP", thirdDeviceLineP, 0.0, 1.0); });
     r.check([&] { v::between("secondIpLineP", secondIpLineP, 0.0, 1.0); });
     r.check([&] { v::between("thirdIpLineP", thirdIpLineP, 0.0, 1.0); });
     r.check([&] { v::between("fourthIpLineP", fourthIpLineP, 0.0, 1.0); });
@@ -134,6 +168,9 @@ struct AssignmentRules {
     r.check([&] { v::between("campaignSigma", campaignSigma, 0.0, 5.0); });
     r.check([&] { v::between("weightAlpha", weightAlpha, 0.2, 10.0); });
     r.check([&] { v::between("weightMax", weightMax, 1.0, 1.0e6); });
+    r.check([&] {
+      v::between("compromisedHostShare", compromisedHostShare, 0.0, 1.0);
+    });
   }
 
   [[nodiscard]] Output build(random::Rng &rng, time::Window window,

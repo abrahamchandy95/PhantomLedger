@@ -35,6 +35,25 @@ struct Census {
 
   // Per-person, indexed by PersonId-1.
   std::span<const entity::Key> primaryAccounts;
+
+  /* EVERY deposit account the person owns, as a flat array bounded by
+   * `depositOffsets` (count + 1 entries, so person i occupies
+   * `[depositOffsets[i], depositOffsets[i+1])`). Slot 0 of each row is the
+   * PRIMARY, which is what lets the bill / external / P2P channels keep
+   * sourcing from one fixed account.
+   *
+   * Only the primary was ever reachable before, so a person could present at
+   * most ONE debit identity in the card view no matter how many accounts the
+   * world had seeded for them. The card-view exporter already mints a
+   * `D`-prefixed identity per deposit ACCOUNT, so nothing downstream had to
+   * change to make the rest of them visible.
+   *
+   * EMPTY is legal and means "primary only" — every direct harness that
+   * builds a Census without an ownership pack gets exactly the pre-round
+   * single-instrument behaviour. */
+  std::span<const std::uint32_t> depositOffsets;
+  std::span<const entity::Key> depositAccounts;
+
   std::span<const personas::Type> personaTypes;
   std::span<const entity::behavior::Persona> personaObjects;
 

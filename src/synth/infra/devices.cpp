@@ -1,7 +1,10 @@
 #include "phantomledger/synth/infra/devices.hpp"
 
 #include "phantomledger/entities/infra/enrollment.hpp"
+#include "phantomledger/entities/infra/public_endpoints.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/public_pool.hpp"
 #include "phantomledger/synth/infra/tenure_table.hpp"
 #include "phantomledger/synth/infra/timeline.hpp"
 
@@ -32,6 +35,11 @@ void registerRecord(Output &out, DeviceIdentity id, DeviceKind kind,
   });
 }
 
+/* A world with fewer people than one terminal serves still has public
+ * terminals in it, and every gate leg is such a world. Rounding the pool to
+ * zero there would leave the population inert exactly where it is measured. */
+constexpr std::size_t kMinTerminalLines = 2;
+
 [[nodiscard]] std::vector<entity::PersonId>
 buildLegitPool(const entity::person::Roster &people) {
   std::vector<entity::PersonId> out;
@@ -48,7 +56,8 @@ buildLegitPool(const entity::person::Roster &people) {
 
 Output AssignmentRules::build(
     random::Rng &rng, time::Window window, const entity::person::Roster &people,
-    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const {
+    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
+    std::uint64_t runSeed) const {
   Output out;
   const auto reserveHint =
       static_cast<std::size_t>(people.count) * 12U / 10U + ringPlans.size();
@@ -116,90 +125,135 @@ Output AssignmentRules::build(
             .deviceId = id,
             .firstSeen = link.firstSeen,
             .lastSeen = link.lastSeenExcl - time::Days{1},
-            .enrolled = ::PhantomLedger::infra::enrollment::deviceEnrolled(p, id),
+            .enrolled =
+                ::PhantomLedger::infra::enrollment::deviceEnrolled(p, id),
         });
       }
     }
   }
 
-  const auto legitPool = buildLegitPool(people);
+  /* TWO ISOLATED LANES, AND THIS IS THE ROUND'S WHOLE DRAW-DISCIPLINE
+   * ARGUMENT.
+   *
+   * Everything below this point has a draw count that depends on DATA: the
+   * household pass spends a coin per still-unattached person plus a
+   * data-dependent `choiceIndices` per group, and the terminal pass spends a
+   * chain per line with the line count sized off the roster. On the shared
+   * entity stream that is the `merchant-churn` rule 2 hazard in its exact
+   * original form — a bigger or smaller count here would shift the ring pass,
+   * then the whole IP synthesis (which runs next off the same `rng`), and then
+   * every draw the transfer stage takes after it.
+   *
+   * Budgeting a fixed count PER DEVICE would not be enough, because the number
+   * of GROUPS is itself data. So both passes run on lanes keyed off the RUN
+   * SEED and the main stream spends nothing at all on them. Keying on the run
+   * seed rather than on a word drawn from `rng` is what makes these two
+   * populations immune to an unrelated upstream change in how many uniforms
+   * the entity stream has already spent — which is exactly the failure this
+   * project has paid for twice. */
+  const random::RngFactory laneFactory{runSeed};
 
-  std::vector<entity::PersonId> remaining = legitPool;
-  std::unordered_map<entity::PersonId, std::size_t> remainingIndex;
-  remainingIndex.reserve(remaining.size());
-  for (std::size_t i = 0; i < remaining.size(); ++i) {
-    remainingIndex[remaining[i]] = i;
-  }
+  {
+    auto sharedRng = laneFactory.rng({"infra", "devices", "shared"});
 
-  std::uint64_t legitSharedCounter = 1;
+    const auto legitPool = buildLegitPool(people);
 
-  for (const auto anchor : legitPool) {
-    if (!pool::contains(remainingIndex, anchor)) {
-      continue;
-    }
-    if (!rng.coin(legitDeviceNoiseP)) {
-      continue;
-    }
-
-    pool::swapDelete(remaining, remainingIndex, anchor);
-
-    if (remaining.empty()) {
-      break;
-    }
-
-    const auto cap = std::min<std::size_t>(remaining.size(), 3U);
-    const auto extraCount = static_cast<std::size_t>(
-        rng.uniformInt(1, static_cast<std::int64_t>(cap) + 1));
-
-    const auto pickIdx = rng.choiceIndices(remaining.size(), extraCount, false);
-    std::vector<entity::PersonId> peers;
-    peers.reserve(extraCount);
-    for (const auto i : pickIdx) {
-      peers.push_back(remaining[i]);
+    std::vector<entity::PersonId> remaining = legitPool;
+    std::unordered_map<entity::PersonId, std::size_t> remainingIndex;
+    remainingIndex.reserve(remaining.size());
+    for (std::size_t i = 0; i < remaining.size(); ++i) {
+      remainingIndex[remaining[i]] = i;
     }
 
-    const auto sharedId =
-        ::PhantomLedger::devices::legitShared(legitSharedCounter, 0);
-    ++legitSharedCounter;
+    std::uint64_t sharedGroupCounter = 1;
 
-    const auto kind = sampleKind(rng);
-    registerRecord(out, sharedId, kind, /*flagged=*/false);
+    for (const auto anchor : legitPool) {
+      if (!pool::contains(remainingIndex, anchor)) {
+        continue;
+      }
+      if (!sharedRng.coin(sharedDeviceP)) {
+        continue;
+      }
 
-    const auto [firstSeen, lastSeen] =
-        timeline::sampleShortSpan(rng, windowStart, windowDays);
+      pool::swapDelete(remaining, remainingIndex, anchor);
 
-    // The anchor is part of the group too.
-    std::vector<entity::PersonId> group;
-    group.reserve(peers.size() + 1);
-    group.push_back(anchor);
-    for (const auto pid : peers) {
-      group.push_back(pid);
-    }
+      if (remaining.empty()) {
+        break;
+      }
 
-    // Shared endpoints keep their SHORT independent span — a borrowed
-    // device genuinely is an episode, not a line the person owns. They
-    // are appended AFTER every personal line, so they never break the
-    // "next index is my replacement" rule inside a line, and they are
-    // reachable only while live.
-    for (const auto pid : group) {
-      out.byPerson[pid].push_back(sharedId);
-      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
-          .firstEpoch = time::toEpochSeconds(firstSeen),
-          .lastEpochExcl = time::toEpochSeconds(lastSeen + time::Days{1}),
-      });
-      out.usages.push_back(Usage{
-          .personId = pid,
-          .deviceId = sharedId,
-          .firstSeen = firstSeen,
-          .lastSeen = lastSeen,
-          .enrolled =
-              ::PhantomLedger::infra::enrollment::deviceEnrolled(pid, sharedId),
-      });
-    }
+      const auto cap = std::min<std::size_t>(
+          remaining.size(), static_cast<std::size_t>(sharedGroupMaxExtra));
+      const auto extraCount = static_cast<std::size_t>(
+          sharedRng.uniformInt(1, static_cast<std::int64_t>(cap) + 1));
 
-    for (const auto pid : peers) {
-      if (pool::contains(remainingIndex, pid)) {
-        pool::swapDelete(remaining, remainingIndex, pid);
+      const auto pickIdx =
+          sharedRng.choiceIndices(remaining.size(), extraCount, false);
+      std::vector<entity::PersonId> peers;
+      peers.reserve(extraCount);
+      for (const auto i : pickIdx) {
+        peers.push_back(remaining[i]);
+      }
+
+      // The anchor is part of the group too.
+      std::vector<entity::PersonId> group;
+      group.reserve(peers.size() + 1);
+      group.push_back(anchor);
+      for (const auto pid : peers) {
+        group.push_back(pid);
+      }
+
+      /* A HOUSEHOLD LINE, NOT AN EPISODE, and that is the whole of the level
+       * change. This device used to get `sampleShortSpan` — a tenure bounded
+       * at min(days, 7) DAYS, 0.48% of a four-year window — so the population
+       * existed, was correctly wired into the router, and carried 0.0065% of
+       * card-view rows. A family tablet is a line the household owns.
+       *
+       * It is a CHAIN on the same era-dated replacement clock as a personal
+       * line, for two reasons. It tiles, so the group holds a shared endpoint
+       * continuously instead of once; and a household replacing its tablet is
+       * the same event as a person replacing their phone, so modelling it with
+       * a different law would be a claim this file cannot support.
+       *
+       * Links are appended AFTER every personal line and CONTIGUOUSLY in chain
+       * order, which is what the router's positional succession requires: when
+       * a shared link retires, the next index IS its replacement. */
+      const auto chain = timeline::sampleChain(
+          sharedRng, windowStart, windowDays,
+          [](time::TimePoint at) { return tenure::deviceTenureDays(at); });
+
+      const auto groupId = sharedGroupCounter;
+      ++sharedGroupCounter;
+
+      std::uint32_t slot = 0;
+      for (const auto &link : chain) {
+        const auto sharedId =
+            ::PhantomLedger::devices::legitShared(groupId, slot);
+        ++slot;
+
+        const auto kind = sampleKind(sharedRng);
+        registerRecord(out, sharedId, kind, /*flagged=*/false);
+
+        for (const auto pid : group) {
+          out.byPerson[pid].push_back(sharedId);
+          out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+              .firstEpoch = time::toEpochSeconds(link.firstSeen),
+              .lastEpochExcl = time::toEpochSeconds(link.lastSeenExcl),
+          });
+          out.usages.push_back(Usage{
+              .personId = pid,
+              .deviceId = sharedId,
+              .firstSeen = link.firstSeen,
+              .lastSeen = link.lastSeenExcl - time::Days{1},
+              .enrolled = ::PhantomLedger::infra::enrollment::deviceEnrolled(
+                  pid, sharedId),
+          });
+        }
+      }
+
+      for (const auto pid : peers) {
+        if (pool::contains(remainingIndex, pid)) {
+          pool::swapDelete(remaining, remainingIndex, pid);
+        }
       }
     }
   }
@@ -234,6 +288,50 @@ Output AssignmentRules::build(
               ::PhantomLedger::infra::enrollment::deviceEnrolled(pid, sharedId),
       });
     }
+  }
+
+  /* PUBLIC TERMINALS, MINTED LAST AND ON THEIR OWN LANE.
+   *
+   * This is the population that fills the empty stretch between a household
+   * device and the attacker cluster, and it does it WITHOUT touching the
+   * attacker rail: a terminal is entirely legitimate, carries hundreds of
+   * distinct cards, and is owned by nobody.
+   *
+   * NO `Usage` ROW AND NO ENTRY IN `byPerson`, DELIBERATELY. Nobody owns a
+   * kiosk, so there is no ownership edge to write, and an entry in a person's
+   * own pool would hand it a third to a half of that person's traffic through
+   * the router's sticky random walk. Resolution is a draw-free point query on
+   * the pool; see `entities/infra/public_endpoints.hpp`.
+   *
+   * The kind is fixed rather than sampled. A public terminal is a fixed
+   * workstation, not a handset, and fixing it also keeps the mint free of
+   * draws so the pool's uniform budget is exactly the reach weight plus the
+   * chain. */
+  {
+    auto terminalRng = laneFactory.rng({"infra", "devices", "terminals"});
+
+    const auto lineCount = publics::lineCountFor(
+        people.count, peoplePerTerminal, kMinTerminalLines);
+
+    out.terminals = publics::buildPublicPool<DeviceIdentity>(
+        terminalRng, window,
+        publics::PoolSpec{
+            .lineCount = lineCount,
+            .people = people.count,
+            .maxUsersPerLine = maxUsersPerTerminal,
+            .tenureDays = tenure::publicTerminalTenureDays(),
+            .rowShare = terminalRowShare,
+            .poolDomain =
+                ::PhantomLedger::infra::publicEndpoints::kTerminalPoolDomain,
+        },
+        [&out](std::size_t line, std::size_t link) {
+          const auto id = DeviceIdentity::publicTerminal(
+              ::PhantomLedger::infra::kPublicTerminalOwnerIdBase +
+                  static_cast<std::uint64_t>(line),
+              static_cast<std::uint32_t>(link));
+          registerRecord(out, id, DeviceKind::desktop, /*flagged=*/false);
+          return id;
+        });
   }
 
   return out;

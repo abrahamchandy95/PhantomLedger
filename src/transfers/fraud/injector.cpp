@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/fraud/injector.hpp"
 
 #include "phantomledger/entities/infra/attackers.hpp"
+#include "phantomledger/entities/infra/derived_endpoints.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/entities/infra/router.hpp"
@@ -360,8 +361,17 @@ assembleOutput(std::vector<transactions::Transaction> &&camoTxns,
  * fraud is a real but MINORITY share of unauthorized loss. The realized share
  * also absorbs cases with no live operator campaign at the case date, so it is
  * measured, not assumed — tests/test_card_endpoint_graph.cpp prints both
- * components and bands the total. */
-inline constexpr double kVictimEndpointShare = 0.18;
+ * components and bands the total.
+ *
+ * RAISED FROM 0.18. This branch is the cheapest source of fraud on a device
+ * that ALSO carries legitimate rows: it leaves `plan.device` unassigned, so
+ * the victim's own routed session stands and the compromise lands at the
+ * victim's own low fan-out, mixed with their ordinary traffic. It is
+ * draw-free — it thresholds a uniform that is drawn either way — so raising
+ * it moves no rail, no event count, no amount and no timestamp. The level
+ * remains a DECLARED CHOICE and 0.30 is still a minority share; it is not a
+ * measured quantity and must not be quoted as one. */
+inline constexpr double kVictimEndpointShare = 0.30;
 
 /* Share of operator sessions exiting through a RESIDENTIAL CUSTOMER ADDRESS
  * instead of the operator's own. Residential-proxy resale is a documented
@@ -850,6 +860,150 @@ buildCompromisePlans(
         if (device.has_value() && ip.has_value()) {
           attackerDevice = *device;
           attackerIp = *ip;
+
+          /* THE DEVICE MODE IS CHOSEN AFTER THE PAIR RESOLVES, ON PURPOSE.
+           * Deciding it earlier would change WHICH cases get attacker
+           * infrastructure at all, and that set is what sub-gate B's realized
+           * victim-endpoint share is measured against. Deciding it here
+           * leaves the eligible set bit-identical and moves only the identity
+           * stamped on the row.
+           *
+           * BOTH BRANCHES ARE DRAW-FREE. `caseUnit` derives its uniform from
+           * the plan sequence and the victim — both already fixed — so the
+           * four-uniform block above stays unconditional, ordered and
+           * unchanged in count. */
+          const auto borrowU = infra::derived::caseUnit(
+              infra::derived::kBorrowCaseDomain, seq, victimPick.person);
+          const auto burnerU = infra::derived::caseUnit(
+              infra::derived::kBurnerCaseDomain, seq, victimPick.person);
+
+          bool borrowed = false;
+
+          /* BORROWED CONSUMER DEVICE — the device-side twin of the
+           * residential proxy, and the only construct that puts fraud
+           * against one victim onto a device that ALSO carries an unrelated
+           * person's legitimate rows.
+           *
+           * IT MUST LEAVE THE FRAUD ROWS ON THE BORROWED DEVICE, not merely
+           * take them off the attacker's. The IP-side proxy was measured
+           * doing the latter — every attacker address it did not touch
+           * stayed 100% pure — so a device-side copy that only subtracted
+           * would reproduce a known non-fix. The stamp below is the borrowed
+           * machine, and the machine keeps its owner's traffic.
+           *
+           * `liveDeviceFor` is the draw-free, sticky-free, whole-span point
+           * query. It must stay all three: advancing the borrowed customer's
+           * own routing state would make their later legitimate rows depend
+           * on whether an attacker passed through, differently in each
+           * engine.
+           *
+           * BOTH LEGS MOVE TO THE HOST, for the reason the burner branch
+           * below already states about its own pair: moving one axis alone
+           * leaves the other at full strength and the shortcut relocates
+           * rather than closing. A machine standing in someone's home that
+           * exits through campaign infrastructure is also not a session any
+           * mechanism produces — on-device fraud runs inside the host's own
+           * connection, which is what makes it look ordinary. Leaving the
+           * campaign address here would additionally pair a customer device
+           * with an attacker address on one row, which is a cleaner joint
+           * discriminator than either column alone.
+           *
+           * The address is taken only when the host held one for the WHOLE
+           * case span. When they did not, whatever the campaign or the
+           * residential proxy already resolved stands: a host behind an
+           * address this model cannot resolve is still a coherent session,
+           * and forcing one would need a draw.
+           *
+           * THE HOST COMES FROM A BOUNDED WORLD-STATE POOL, NOT FROM A
+           * UNIFORM PICK OVER THE ROSTER, and that is what makes the branch
+           * worth having. A fresh host per case lends each machine to
+           * exactly one victim, so the borrowed device carries one
+           * compromise and can pass no message between two victims — the
+           * "zero by construction" this round exists to remove, moved one
+           * layer down rather than closed. `AttackerInfra::compromisedHosts`
+           * is a small, stable set, so one consumer machine carries fraud
+           * against SEVERAL victims while its owner keeps shopping on it.
+           *
+           * THE HOST MUST NOT BE THE VICTIM. When it is, the row is the
+           * victim operating their own machine — the victim-endpoint
+           * typology, which has its own branch and its own gated share — and
+           * stamping it here would report one mechanism's rows under
+           * another's name. Skipping rather than re-picking keeps the branch
+           * draw-free; the case falls through to the terminal and burner
+           * branches exactly as an unresolvable host already does. */
+          if (borrowU < infra::derived::kBorrowedDeviceShare &&
+              router != nullptr && personLimit > 0) {
+            const auto hostPerson = attackers->hostAt(seq);
+            if (hostPerson.has_value() && *hostPerson != victimPick.person &&
+                static_cast<std::size_t>(*hostPerson) <= personLimit) {
+              if (const auto host = router->liveDeviceFor(*hostPerson, startTs,
+                                                          caseEndTsExcl, seq)) {
+                attackerDevice = *host;
+                borrowed = true;
+                if (const auto hostIp = router->liveIpFor(*hostPerson, startTs,
+                                                          caseEndTsExcl, seq)) {
+                  attackerIp = *hostIp;
+                }
+              }
+            }
+          }
+
+          /* PUBLIC TERMINAL — carding from a library or hotel machine.
+           *
+           * IT IS THE ANTI-MIRROR BRANCH. The terminal and carrier-NAT pools
+           * are what give legitimate endpoints degrees in the hundreds, and
+           * without this branch NOTHING can put a fraud row on one — so "degree
+           * above the consumer range implies LEGITIMATE" would become as
+           * learnable as the rule this round removes. See
+           * `kPublicTerminalShare`.
+           *
+           * Ranked ABOVE the burner and below the borrowed machine, and never
+           * combined with either: a terminal is a real, persistent, shared
+           * endpoint, so burning its fingerprint would contradict what it is,
+           * and it is not the host's own machine.
+           *
+           * Draw-free throughout — `caseUnit` again, and
+           * `publicDeviceForCase` is a pure lookup that requires ONE terminal
+           * link to cover the whole case span. */
+          bool onTerminal = false;
+          if (!borrowed && router != nullptr && personLimit > 0) {
+            const auto terminalU = infra::derived::caseUnit(
+                infra::derived::kTerminalCaseDomain, seq, victimPick.person);
+            if (terminalU < infra::derived::kPublicTerminalShare) {
+              const auto pickU = infra::derived::caseUnit(
+                  infra::derived::kTerminalPickDomain, seq, victimPick.person);
+              const auto idx =
+                  std::min(static_cast<std::size_t>(
+                               pickU * static_cast<double>(personLimit)),
+                           personLimit - 1);
+              const auto hostPerson = static_cast<entity::PersonId>(1 + idx);
+              if (const auto terminal = router->publicDeviceForCase(
+                      hostPerson, startTs, caseEndTsExcl)) {
+                attackerDevice = *terminal;
+                attackerIp = infra::derived::endpointIp(*terminal);
+                onTerminal = true;
+              }
+            }
+          }
+
+          /* BURNER FINGERPRINT — the anti-detect mode, bought per attempt and
+           * discarded. It is the low-fan-out half of a bimodal attacker
+           * population the model previously did not contain at all, and it is
+           * what stops "many cards on one device" from being a property of
+           * every fraud row. Never applied on top of a borrowed machine: a
+           * compromised consumer device is exactly what is NOT disposable. */
+          if (!borrowed && !onTerminal &&
+              burnerU < infra::derived::kBurnerEndpointShare) {
+            attackerDevice =
+                infra::derived::burnerDeviceFrom(attackerDevice, seq);
+            /* The address is burned with the fingerprint. Leaving the
+             * campaign's persistent address on a burner session would keep
+             * the IP-side degree signal at full strength while the device
+             * side moved — the two axes have to move together or the
+             * shortcut simply relocates. A borrowed-machine session keeps
+             * whatever the proxy branch already decided. */
+            attackerIp = infra::derived::endpointIp(attackerDevice);
+          }
         }
       }
     }

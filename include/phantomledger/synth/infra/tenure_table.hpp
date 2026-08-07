@@ -126,4 +126,29 @@ inline constexpr double kAttackerIpTenureDays = 90.0;
   return kAttackerIpTenureDays;
 }
 
+/* PUBLIC INFRASTRUCTURE — endpoints held by an operator rather than by a
+ * customer: a library or hotel terminal, a carrier's public address.
+ *
+ * Both are LONGER than their consumer counterparts and both are ERA-FLAT, for
+ * the same reason: they are capital an institution refreshes on a budget cycle
+ * rather than objects a consumer replaces on a fashion-and-subsidy cycle. A
+ * terminal outliving several generations of the handsets around it is the
+ * defensible direction; the magnitudes are not transcribed from any series.
+ *
+ * BOTH ARE CLASS S, CALIBRATION UNCITED, exactly like the two attacker
+ * constants above. They set how many distinct exported identities one physical
+ * public endpoint fragments into over a long window, which is the quantity a
+ * fan-out measurement is made of, so anyone pinning them to a named refresh
+ * series should re-pin the goldens in that arc and promote this block. */
+inline constexpr double kPublicTerminalTenureMonths = 60.0;
+inline constexpr double kCarrierNatTenureMonths = 18.0;
+
+[[nodiscard]] inline double publicTerminalTenureDays() noexcept {
+  return kPublicTerminalTenureMonths * 30.4375;
+}
+
+[[nodiscard]] inline double carrierNatTenureDays() noexcept {
+  return kCarrierNatTenureMonths * 30.4375;
+}
+
 } // namespace PhantomLedger::synth::infra::tenure

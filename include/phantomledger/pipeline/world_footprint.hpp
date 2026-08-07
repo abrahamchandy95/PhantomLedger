@@ -57,6 +57,16 @@ personPoolBytes(const std::unordered_map<K, std::vector<T>> &pool) noexcept {
   return hashMapBytes(pool) + heap;
 }
 
+/* Public endpoints are sized off the ROSTER, so this grows with population and
+ * not with the window — unlike the per-person pools above, which carry one
+ * entry per replacement link. */
+template <typename Endpoint>
+[[nodiscard]] inline std::size_t publicPoolBytes(
+    const ::PhantomLedger::infra::PublicEndpointPool<Endpoint> &pool) noexcept {
+  return vectorBytes(pool.links) + vectorBytes(pool.lines) +
+         vectorBytes(pool.reachCdf);
+}
+
 [[nodiscard]] inline std::size_t
 rosterBytes(const synth::people::Pack &pack) noexcept {
   const auto &t = pack.topology;
@@ -81,7 +91,8 @@ accountsBytes(const synth::accounts::Pack &pack) noexcept {
 [[nodiscard]] inline std::size_t
 cardsBytes(const entity::card::Registry &reg) noexcept {
   return vectorBytes(reg.records) + hashMapBytes(reg.byKey) +
-         vectorBytes(reg.byPerson);
+         vectorBytes(reg.byPerson.offsets()) +
+         vectorBytes(reg.byPerson.flat()) + vectorBytes(reg.byPerson.counts());
 }
 
 /* Insurance and loan TERMS: compact per-holder maps. */
@@ -130,13 +141,15 @@ directoryBytes(const entity::counterparty::Directory &d) noexcept {
 [[nodiscard]] inline std::size_t
 devicesBytes(const synth::infra::devices::Output &out) noexcept {
   return vectorBytes(out.records) + vectorBytes(out.usages) +
-         personPoolBytes(out.byPerson) + hashMapBytes(out.ringMap);
+         personPoolBytes(out.byPerson) + hashMapBytes(out.ringMap) +
+         publicPoolBytes(out.terminals);
 }
 
 [[nodiscard]] inline std::size_t
 ipsBytes(const synth::infra::ips::Output &out) noexcept {
   return vectorBytes(out.records) + vectorBytes(out.usages) +
-         personPoolBytes(out.byPerson) + hashMapBytes(out.ringMap);
+         personPoolBytes(out.byPerson) + hashMapBytes(out.ringMap) +
+         publicPoolBytes(out.carrierNat);
 }
 
 [[nodiscard]] inline std::size_t
@@ -150,9 +163,13 @@ ringPlansBytes(const std::unordered_map<std::uint32_t, synth::infra::RingPlan>
   return hashMapBytes(plans) + nested;
 }
 
-/* The Router owns copies of the per-person device/IP pools, an account->owner
- * map, and two sticky-index vectors — all private, so this reconstructs the
- * estimate from the same inputs the build used. */
+/* The Router owns copies of the per-person device/IP pools, both public
+ * endpoint pools, an account->owner map, and two sticky-index vectors — all
+ * private, so this reconstructs the estimate from the same inputs the build
+ * used. The two public pools are counted here as well as under their own
+ * generator's line: the Router holds them BY VALUE, so at the production
+ * population they are resident twice and a footprint report that showed them
+ * once would understate the peak. */
 [[nodiscard]] inline std::size_t
 routerApproxBytes(std::size_t accountCount, std::size_t personCount,
                   const synth::infra::devices::Output &devices,
@@ -160,6 +177,7 @@ routerApproxBytes(std::size_t accountCount, std::size_t personCount,
   using OwnerEntry = std::pair<const entity::Key, entity::PersonId>;
   return hashMapBytesFromSize(accountCount, sizeof(OwnerEntry)) +
          personPoolBytes(devices.byPerson) + personPoolBytes(ips.byPerson) +
+         publicPoolBytes(devices.terminals) + publicPoolBytes(ips.carrierNat) +
          2 * personCount * sizeof(std::size_t);
 }
 

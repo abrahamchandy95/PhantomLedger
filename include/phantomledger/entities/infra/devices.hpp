@@ -6,11 +6,21 @@
 
 namespace PhantomLedger::devices {
 
+/* APPEND ONLY. The numeric value is MIXED INTO THE EXPORTED IDENTIFIER —
+ * `exporter::common::renderDeviceId` FNV-mixes
+ * `static_cast<uint8_t>(ownerType)` before the splitmix avalanche — so
+ * renumbering any existing member rewrites every device id of that kind across
+ * `cf_Device`, `Transaction_Uses_Device`, `Has_Device` and the AML device
+ * tables. `none` in particular must keep the value 3: it is the
+ * default-constructed sentinel `assigned()` tests against, and
+ * `binary_spool.cpp` round-trips the raw byte with no range check, so a spooled
+ * 3 would silently decode as a different owner kind. */
 enum class OwnerType : std::uint8_t {
   person = 0,
   ring = 1,
   legitShared = 2,
   none = 3,
+  publicTerminal = 4,
 };
 
 struct Identity {
@@ -30,6 +40,15 @@ struct Identity {
   [[nodiscard]] static constexpr Identity
   ring(std::uint64_t ringId, std::uint32_t slot = 0) noexcept {
     return Identity{OwnerType::ring, ringId, slot};
+  }
+
+  /* A shared/public terminal: a legitimate endpoint owned by NO person, held
+   * by an operator rather than a customer. `terminalId` namespaces the
+   * operator; `slot` discriminates its replacement chain, exactly as it does
+   * for a personal line. */
+  [[nodiscard]] static constexpr Identity
+  publicTerminal(std::uint64_t terminalId, std::uint32_t slot = 0) noexcept {
+    return Identity{OwnerType::publicTerminal, terminalId, slot};
   }
 
   [[nodiscard]] constexpr bool assigned() const noexcept {

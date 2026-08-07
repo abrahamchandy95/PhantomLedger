@@ -1,11 +1,13 @@
 #include "phantomledger/exporter/aml/vertices.hpp"
 
 #include "phantomledger/encoding/render.hpp"
+#include "phantomledger/entities/infra/derived_endpoints.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/exporter/aml/identity.hpp"
 #include "phantomledger/exporter/aml/shared.hpp"
 #include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/common/support.hpp"
+#include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
@@ -432,6 +434,42 @@ void writeDeviceRows(::PhantomLedger::exporter::csv::Writer &w,
     exporter::common::recordSeen(seen[usage.deviceId], usage.firstSeen,
                                  usage.lastSeen);
     recordOwnerIp(deviceIpStr, usage.deviceId, usage.personId, ips);
+  }
+
+  /* PUBLIC TERMINALS HAVE NO `Usage` ROW, AND WITHOUT THIS PASS THE TWO
+   * FALLBACKS BELOW TURN THAT INTO A PERFECT DETECTOR.
+   *
+   * A terminal is passed through, not held, so nothing pushes a `Usage` for it
+   * (`synth/infra/devices_output.hpp`: "nobody owns it, so it has no `Usage`
+   * row and no ownership edge"). Both lookups below therefore miss, and the
+   * row ships `ip_address = 0.0.0.0` with `first_seen == last_seen ==
+   * 1970-01-01` — and it is the ONLY class that does, because `records` holds
+   * exactly person, legitShared, ring and publicTerminal devices and the first
+   * three all push usages. Two exported columns would then identify the
+   * terminal population exactly, which is the `attacker-infra-2026-07` lesson
+   * in a new place: an endpoint attribute that is a synonym for an endpoint
+   * CLASS is a label wearing a column.
+   *
+   * Both correct values already exist and neither costs a draw. The exit
+   * address is `infra::derived::endpointIp` — the same pure function the
+   * generator stamps terminal rows with, so the exported address is the one
+   * the terminal actually used. The window is the link's OWN `Tenure`, which
+   * the pool carries beside the identity; a terminal's replacement chain gives
+   * each link its own interval, so a turned-over line reports per-link windows
+   * exactly as a personal line's usages do.
+   *
+   * This is a WINDOW OF EXISTENCE, not of observation, and that asymmetry is
+   * deliberate and matches the personal line: `Usage.firstSeen/lastSeen` are
+   * the tenure bounds the synth pass wrote, not the first and last row the
+   * device carried. */
+  for (const auto &link : devices.terminals.links) {
+    const auto ipBuf = ::PhantomLedger::network::format(
+        ::PhantomLedger::infra::derived::endpointIp(link.endpoint));
+    deviceIpStr.try_emplace(link.endpoint, std::string{ipBuf.view()});
+    exporter::common::recordSeen(
+        seen[link.endpoint],
+        time::fromEpochSeconds(link.tenure.firstEpoch),
+        time::fromEpochSeconds(link.tenure.lastEpochExcl));
   }
 
   for (const auto &record : devices.records) {

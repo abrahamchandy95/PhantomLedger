@@ -3,14 +3,14 @@
 #include "phantomledger/activity/spending/market/population/census.hpp"
 #include "phantomledger/activity/spending/market/population/paydays.hpp"
 #include "phantomledger/entities/geography/area.hpp"
-#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace PhantomLedger::activity::spending::market::population {
@@ -24,12 +24,16 @@ public:
        std::vector<entity::geography::GeoAreaId> homeAreas = {},
        std::vector<std::uint32_t> retirementDays = {},
        std::vector<std::uint32_t> deathDays = {},
-       const entity::parties::relocation::Schedule *relocation = nullptr)
+       const entity::parties::relocation::Schedule *relocation = nullptr,
+       std::vector<std::uint32_t> depositOffsets = {},
+       std::vector<entity::Key> depositAccounts = {})
       : primary_(std::move(primary)), kinds_(std::move(kinds)),
         objects_(std::move(objects)), paydays_(std::move(paydays)),
         homeAreas_(std::move(homeAreas)),
         retirementDays_(std::move(retirementDays)),
-        deathDays_(std::move(deathDays)), relocation_(relocation) {}
+        deathDays_(std::move(deathDays)), relocation_(relocation),
+        depositOffsets_(std::move(depositOffsets)),
+        depositAccounts_(std::move(depositAccounts)) {}
 
   [[nodiscard]] std::uint32_t count() const noexcept {
     return static_cast<std::uint32_t>(primary_.size());
@@ -37,6 +41,24 @@ public:
 
   [[nodiscard]] entity::Key primary(entity::PersonId p) const noexcept {
     return primary_[index(p)];
+  }
+
+  /* Every deposit account this person owns, PRIMARY FIRST. Falls back to a
+   * one-entry view of the primary when no ownership carrier is bound, so a
+   * harness that builds a Census without one behaves exactly as it did when
+   * the primary was the only reachable account. */
+  [[nodiscard]] std::span<const entity::Key>
+  deposits(entity::PersonId p) const noexcept {
+    const auto i = index(p);
+    if (i + 1 >= depositOffsets_.size()) {
+      return {primary_.data() + i, 1};
+    }
+    const auto start = depositOffsets_[i];
+    const auto end = depositOffsets_[i + 1];
+    if (end <= start) {
+      return {primary_.data() + i, 1};
+    }
+    return {depositAccounts_.data() + start, end - start};
   }
 
   [[nodiscard]] personas::Type kind(entity::PersonId p) const noexcept {
@@ -110,8 +132,7 @@ public:
   // H2 step 2c: the window day-index from which the retirement
   // consumption step applies; kNoRetirementDay when the person never
   // retires in-window (or no carrier is bound).
-  [[nodiscard]] std::uint32_t
-  retirementDay(entity::PersonId p) const noexcept {
+  [[nodiscard]] std::uint32_t retirementDay(entity::PersonId p) const noexcept {
     const auto i = index(p);
     return i < retirementDays_.size() ? retirementDays_[i] : kNoRetirementDay;
   }
@@ -138,6 +159,12 @@ private:
   // Non-owning; must outlive the View. Owned by `pipeline::People`, which
   // survives the fold for exactly this reason.
   const entity::parties::relocation::Schedule *relocation_ = nullptr;
+
+  /* Per-person deposit-account rows: `depositOffsets_` has count + 1 entries
+   * and bounds each person's slice of `depositAccounts_`. Both empty means
+   * "primary only" — see `deposits`. */
+  std::vector<std::uint32_t> depositOffsets_;
+  std::vector<entity::Key> depositAccounts_;
 };
 
 } // namespace PhantomLedger::activity::spending::market::population

@@ -3,6 +3,8 @@
 #include "phantomledger/activity/spending/actors/spender.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 
+#include <span>
+
 namespace PhantomLedger::activity::spending::actors {
 
 struct Event {
@@ -10,7 +12,14 @@ struct Event {
   time::TimePoint ts{};
   double exploreP = 0.0;
   double availableCash = 0.0;
-  double cardAvailable = 0.0;
+
+  /* Per-CREDIT-SLOT available liquidity, index-aligned to
+   * `Spender::instruments.credits()`. It is a span and not a scalar because
+   * the credit instrument is chosen PER ROW from (person, merchant) while
+   * this is read once per person-day: a scalar could only describe one card.
+   * Changing the TYPE rather than adding a field is what makes the compiler
+   * find both readers. */
+  std::span<const double> cardAvailable{};
   double amountFactor = 1.0;
   // H1 step 2b (class P): the event day's CPI level multiplier
   // (synth/econ/nominal.hpp priceScale), computed ONCE per day frame

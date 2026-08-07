@@ -3,6 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
+#include "phantomledger/entities/infra/public_endpoints.hpp"
 #include "phantomledger/entities/infra/tenure.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -46,7 +47,18 @@ public:
             devicesByPerson,
         std::unordered_map<entity::PersonId, std::vector<network::Ipv4>>
             ipsByPerson,
-        DeviceTenures deviceTenures = {}, IpTenures ipTenures = {}) {
+        DeviceTenures deviceTenures = {}, IpTenures ipTenures = {},
+        /* The PASS-THROUGH pool, carried BY VALUE for the same reason every
+         * pool above is: the Router owns its endpoint state outright, and a
+         * pointer into the infra stage's output would add a lifetime coupling
+         * to an object the gate harness copies twice. Default-constructed is
+         * inactive, so a Router built without one routes exactly as before. */
+        TerminalPool terminals = {},
+        /* The IP-side companion, and the stronger of the two: a terminal moves
+         * ~2% of rows, a carrier address ~30%. Wiring only the terminal pool
+         * would close the device axis and leave the IP degree shortcut — which
+         * measures at essentially the same strength — untouched. */
+        CarrierNatPool carrierNat = {}) {
     Router r;
     r.rules_ = rules;
     r.ownerOf_ = std::move(ownerOf);
@@ -54,6 +66,8 @@ public:
     r.ipsByPerson_ = std::move(ipsByPerson);
     r.deviceTenures_ = std::move(deviceTenures);
     r.ipTenures_ = std::move(ipTenures);
+    r.terminals_ = std::move(terminals);
+    r.carrierNat_ = std::move(carrierNat);
     r.currentDeviceIdx_.assign(poolBound(r.devicesByPerson_), kUnanchored);
     r.currentIpIdx_.assign(poolBound(r.ipsByPerson_), kUnanchored);
     return r;
@@ -78,8 +92,7 @@ public:
 
   /// Route an IP for a pre-resolved person, AS OF `ts`.
   [[nodiscard]] std::optional<network::Ipv4>
-  routeIpFor(random::Rng &rng, entity::PersonId person,
-             std::int64_t ts) const {
+  routeIpFor(random::Rng &rng, entity::PersonId person, std::int64_t ts) const {
     return routeFromPool(rng, person, ts, ipsByPerson_, ipTenures_,
                          currentIpIdx_);
   }
@@ -119,6 +132,100 @@ public:
     return liveFromPool(person, ts, endTsExcl, salt, ipsByPerson_, ipTenures_);
   }
 
+  /* The DEVICE-SIDE twin of `liveIpFor`, and the same three properties are
+   * load-bearing for the same reasons.
+   *
+   *   * DRAW-FREE. The fraud planner's per-plan footprint is pinned at four
+   *     uniforms; a coin here would change the lane's draw count and unpin
+   *     every amount and timestamp downstream of it.
+   *   * STICKY-FREE. It must not advance `currentDeviceIdx_`. The borrowed
+   *     customer is not transacting, and perturbing their sticky index would
+   *     make their own later legitimate rows depend on whether an attacker
+   *     passed through — differently in the batch and windowed engines
+   *     (attacker-infra rule 3).
+   *   * POINT-IN-TIME CORRECT. `endTsExcl` demands the device was held for
+   *     the WHOLE half-open case interval, because a compromise attributes
+   *     ONE endpoint to every event in the case.
+   *
+   * IT IS NOT AN ALTERNATIVE TO `routeDeviceFor` FOR SESSION ROUTING.
+   * `routeDeviceFor` answers "which of MY devices am I on right now",
+   * anchors and succeeds a retired line positionally, and may spend a
+   * switch coin. This answers "was this device SOMEONE ELSE's for the
+   * whole of this interval", spends nothing, and writes nothing back. */
+  [[nodiscard]] std::optional<devices::Identity>
+  liveDeviceFor(entity::PersonId person, std::int64_t ts,
+                std::int64_t endTsExcl, std::uint64_t salt) const {
+    return liveFromPool(person, ts, endTsExcl, salt, devicesByPerson_,
+                        deviceTenures_);
+  }
+
+  /* THE PASS-THROUGH ENDPOINT for a row, or nullopt when this row happens on
+   * an endpoint the person holds.
+   *
+   * DRAW-FREE, STICKY-FREE, POINT-IN-TIME CORRECT — the same three properties
+   * `liveDeviceFor` carries, and here they matter for an additional reason:
+   * this is on the LEGITIMATE hot path, once per routed row. A coin here
+   * would spend one uniform on every routed row in the corpus.
+   *
+   * `rowSalt` must be world-derived and row-stable — the row's timestamp — and
+   * never an emission ordinal, or a short run stops being a byte-identical
+   * prefix of a long one.
+   *
+   * A terminal is NOT one of the person's own endpoints and must never be
+   * added to `devicesByPerson_`: an always-live extra entry there would take
+   * `1/liveCount` of the person's rows by the switch walk's stationary
+   * distribution AND would raise `liveCount` from 1 to 2 for the ~80% of
+   * people holding a single line, adding a coin to every routed row. The full
+   * argument is at the head of `entities/infra/public_endpoints.hpp`. */
+  [[nodiscard]] std::optional<devices::Identity>
+  publicDeviceFor(entity::PersonId person, std::int64_t ts,
+                  std::uint64_t rowSalt) const {
+    return terminals_.resolve(person, ts, rowSalt);
+  }
+
+  [[nodiscard]] bool hasPublicDevices() const noexcept {
+    return terminals_.active();
+  }
+
+  /* The public terminal `person` is local to, held for a WHOLE case interval.
+   *
+   * DELIBERATELY IGNORES THE POOL'S ROW SHARE, and that is the difference from
+   * `publicDeviceFor`. The row share answers "does this ordinary row happen at
+   * a terminal", which is a per-row coin the pool owns. A compromise case is
+   * not an ordinary row: the caller has already decided this case is operated
+   * from a terminal, and the only question left is which one and whether it is
+   * live throughout. Re-applying the row share here would silently multiply
+   * the caller's declared share by 0.02 and the branch would look wired while
+   * firing almost never — the exact shape of the pre-round `legitShared`
+   * defect, where two independent suppressors multiplied to 0.0065%. */
+  [[nodiscard]] std::optional<devices::Identity>
+  publicDeviceForCase(entity::PersonId person, std::int64_t fromTs,
+                      std::int64_t toTsExcl) const {
+    if (!terminals_.active()) {
+      return std::nullopt;
+    }
+    return terminals_.coveringOn(terminals_.homeLineFor(person), fromTs,
+                                 toTsExcl);
+  }
+
+  /* The carrier-grade NAT address this row exits through, if any.
+   *
+   * DELIBERATELY IP-ONLY, and that is the difference from a terminal. A
+   * terminal is a machine the person does not own, so its own address travels
+   * with it and both legs move together. A carrier address is the person's own
+   * handset behind their ISP's translator: the device is theirs and only the
+   * address is shared. Overriding the device here would invent a machine the
+   * subscriber does not have. */
+  [[nodiscard]] std::optional<network::Ipv4>
+  publicIpFor(entity::PersonId person, std::int64_t ts,
+              std::uint64_t rowSalt) const {
+    return carrierNat_.resolve(person, ts, rowSalt);
+  }
+
+  [[nodiscard]] bool hasPublicIps() const noexcept {
+    return carrierNat_.active();
+  }
+
   /// Legacy convenience: resolve owner and route both legs. Retained
   /// for callers that genuinely need both every time and benefit from
   /// the single hash lookup. Prefer the split API when possible.
@@ -143,11 +250,12 @@ private:
   // Smallest vector size that can be indexed by every person key in the
   // pool, so a successful pool lookup guarantees an in-bounds sticky slot.
   template <typename T>
-  [[nodiscard]] static std::size_t poolBound(
-      const std::unordered_map<entity::PersonId, std::vector<T>> &pool) {
+  [[nodiscard]] static std::size_t
+  poolBound(const std::unordered_map<entity::PersonId, std::vector<T>> &pool) {
     std::size_t bound = 0;
     for (const auto &[person, items] : pool) {
-      bound = std::max<std::size_t>(bound, static_cast<std::size_t>(person) + 1);
+      bound =
+          std::max<std::size_t>(bound, static_cast<std::size_t>(person) + 1);
     }
     return bound;
   }
@@ -207,8 +315,7 @@ private:
     // lifetime-pool behaviour. This is the shape a hand-built test
     // Router has, and it keeps such fixtures meaningful.
     const auto tenureIt = tenures.find(person);
-    if (tenureIt == tenures.end() ||
-        tenureIt->second.size() != items.size()) {
+    if (tenureIt == tenures.end() || tenureIt->second.size() != items.size()) {
       if (cur == kUnanchored) {
         cur = 0;
         return items[0];
@@ -244,9 +351,8 @@ private:
       // Anchor, or succeed a retired endpoint by walking forward from
       // where the person already was. Draws nothing.
       std::size_t next = items.size();
-      const std::size_t from = (cur == kUnanchored || cur >= items.size())
-                                   ? 0
-                                   : cur + 1;
+      const std::size_t from =
+          (cur == kUnanchored || cur >= items.size()) ? 0 : cur + 1;
       for (std::size_t i = from; i < items.size(); ++i) {
         if (live(i)) {
           next = i;
@@ -282,12 +388,12 @@ private:
   // but the choice among live entries comes from `salt` instead of a
   // coin and nothing is written back.
   template <typename T>
-  [[nodiscard]] std::optional<T> liveFromPool(
-      entity::PersonId person, std::int64_t ts, std::int64_t endTsExcl,
-      std::uint64_t salt,
-      const std::unordered_map<entity::PersonId, std::vector<T>> &pool,
-      const std::unordered_map<entity::PersonId, std::vector<Tenure>> &tenures)
-      const {
+  [[nodiscard]] std::optional<T>
+  liveFromPool(entity::PersonId person, std::int64_t ts, std::int64_t endTsExcl,
+               std::uint64_t salt,
+               const std::unordered_map<entity::PersonId, std::vector<T>> &pool,
+               const std::unordered_map<entity::PersonId, std::vector<Tenure>>
+                   &tenures) const {
     const auto poolIt = pool.find(person);
     if (poolIt == pool.end() || poolIt->second.empty()) {
       return std::nullopt;
@@ -295,8 +401,7 @@ private:
     const auto &items = poolIt->second;
 
     const auto tenureIt = tenures.find(person);
-    if (tenureIt == tenures.end() ||
-        tenureIt->second.size() != items.size()) {
+    if (tenureIt == tenures.end() || tenureIt->second.size() != items.size()) {
       return items[static_cast<std::size_t>(salt % items.size())];
     }
 
@@ -340,6 +445,11 @@ private:
   // hand-built-fixture shape.
   std::unordered_map<entity::PersonId, std::vector<Tenure>> deviceTenures_;
   std::unordered_map<entity::PersonId, std::vector<Tenure>> ipTenures_;
+
+  // Endpoints the person PASSES THROUGH, deliberately outside the pools
+  // above and outside the sticky walk. Inactive by default.
+  TerminalPool terminals_;
+  CarrierNatPool carrierNat_;
 
   // Sticky routing state as pre-sized, sentinel-initialized vectors
   // indexed by PersonId. Mutable so routing stays logically const. The

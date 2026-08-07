@@ -76,24 +76,75 @@ SpenderEmissionLoop::RateSampler::ledgerView(Gate value) noexcept {
   return *this;
 }
 
+/* THE DEPOSIT SIDE IS POOLED AND THEN NORMALISED BY THE ACCOUNT COUNT, AND
+ * THAT NORMALISATION IS THE WHOLE POINT.
+ *
+ * Once a card-view row can source from any of a person's deposit accounts,
+ * reading the PRIMARY alone would make the emission rate depend on how many
+ * accounts the person owns: rows paid out of a secondary would not drain the
+ * account the rate is measured against, the liquidity multiplier would stay
+ * high, and people with more instruments would emit more rows. Activity is
+ * exactly what `transfers/fraud/exposure.hpp` tilts unauthorized victim
+ * selection by, so an instrument count that raised activity would become a
+ * fraud signal — the one outcome this round is forbidden to produce.
+ *
+ * The MEAN over the person's deposit slots removes it. `baselineCash`,
+ * `initialCash`, `fixedMonthlyBurden` and the multiplier's cash reference are
+ * all PER-ACCOUNT quantities drawn from the same distribution for every
+ * account the world seeded, so a per-account numerator is the dimensionally
+ * matching one, and neither the level nor the reference moves with the count.
+ * With one deposit account — 56% of people — this is byte-identical to the
+ * scalar it replaces, including the unattached-ledger fallback.
+ *
+ * IT WORKS, AND IT IS MEASURED. Bucketing people on DEPOSIT ACCOUNTS HELD —
+ * the clean world variable, never the observed one — card-view rows per person
+ * is flat across the support on all four gate legs: leg-long 848/895/800/931
+ * at 1/2/3/4 accounts, leg-wide 458/462/451/502, leg-sizeA 685/650/637/531,
+ * leg-sizeB 547/553/565/549.
+ *
+ * The residual is second-order and must be MEASURED, not assumed away: the
+ * mean responds to a given row 1/K as fast as the primary alone did, so a
+ * multi-account person's liquidity signal is less volatile, not higher. The
+ * round's gate has to band an instrument-count-versus-victimization lift the
+ * way sub-gate G bands merchant-ownership lift — straddling 1.0. */
 double SpenderEmissionLoop::RateSampler::availableToSpendFor(
     const spenders::PreparedSpender &prepared) {
-  return readLiquidity(ledgerView_, prepared.spender.depositAccountIdx,
-                       prepared.initialCash);
+  const auto slots = prepared.spender.instruments.depositIndices();
+  if (slots.empty()) {
+    return prepared.initialCash;
+  }
+
+  double total = 0.0;
+  for (const auto idx : slots) {
+    total += readLiquidity(ledgerView_, idx, prepared.initialCash);
+  }
+  return total / static_cast<double>(slots.size());
 }
 
 double SpenderEmissionLoop::RateSampler::availableCashFor(
     const spenders::PreparedSpender &prepared) {
-  return readCash(ledgerView_, prepared.spender.depositAccountIdx,
-                  prepared.initialCash);
+  const auto slots = prepared.spender.instruments.depositIndices();
+  if (slots.empty()) {
+    return prepared.initialCash;
+  }
+
+  double total = 0.0;
+  for (const auto idx : slots) {
+    total += readCash(ledgerView_, idx, prepared.initialCash);
+  }
+  return total / static_cast<double>(slots.size());
 }
 
-double SpenderEmissionLoop::RateSampler::cardLiquidityFor(
-    const spenders::PreparedSpender &prepared) {
-  if (!prepared.spender.hasCard) {
-    return 0.0;
+std::span<const double> SpenderEmissionLoop::RateSampler::cardLiquidityFor(
+    const spenders::PreparedSpender &prepared,
+    std::array<double, actors::kMaxCreditInstruments> &out) {
+  const auto slots = prepared.spender.instruments.creditIndices();
+  const auto count = std::min(slots.size(), out.size());
+
+  for (std::size_t i = 0; i < count; ++i) {
+    out[i] = readLiquidity(ledgerView_, slots[i], 0.0);
   }
-  return readLiquidity(ledgerView_, prepared.spender.cardIdx, 0.0);
+  return {out.data(), count};
 }
 
 double SpenderEmissionLoop::RateSampler::liquidityMultiplierFor(
@@ -315,7 +366,11 @@ void SpenderEmissionLoop::run(
     const double exploreP =
         rates_.exploreProbabilityFor(spender, liquidityMult);
     const double availableCash = rates_.availableCashFor(prepared);
-    const double cardAvailable = rates_.cardLiquidityFor(prepared);
+    /* Read once per person-day and indexed per row by the credit pick. The
+     * scratch buffer is stack-local and fixed-capacity, so the span never
+     * outlives it and no allocation happens in the hot loop. */
+    std::array<double, actors::kMaxCreditInstruments> cardScratch{};
+    const auto cardAvailable = rates_.cardLiquidityFor(prepared, cardScratch);
     const double amountFactor = liquidity::amountFactor(liquidityMult);
 
     /* The retirement consumption step — a level factor from the

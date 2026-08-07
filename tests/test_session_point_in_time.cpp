@@ -80,10 +80,13 @@ struct Leg {
   const auto people = entities::buildPeople(rng, kPopulation, {});
   const std::unordered_map<std::uint32_t, pl::synth::infra::RingPlan> noRings;
 
+  /* The last argument keys the shared-endpoint and public-endpoint lanes.
+   * Passing the leg's own seed keeps this fixture's world a function of the
+   * leg alone, exactly as it is in production. */
   const auto devices = pl::synth::infra::devices::AssignmentRules{}.build(
-      rng, window, people.roster, noRings);
+      rng, window, people.roster, noRings, kSeed);
   const auto ips = pl::synth::infra::ips::AssignmentRules{}.build(
-      rng, window, people.roster, noRings);
+      rng, window, people.roster, noRings, kSeed);
 
   std::unordered_map<pl::entity::Key, pl::entity::PersonId> ownerOf;
   std::vector<pl::entity::Key> keyOf(people.roster.count + 1);
@@ -94,10 +97,9 @@ struct Leg {
     keyOf[p] = k;
   }
 
-  auto router = pl::infra::Router::build(pl::infra::RoutingRules{}, ownerOf,
-                                         devices.byPerson, ips.byPerson,
-                                         devices.tenureByPerson,
-                                         ips.tenureByPerson);
+  auto router = pl::infra::Router::build(
+      pl::infra::RoutingRules{}, ownerOf, devices.byPerson, ips.byPerson,
+      devices.tenureByPerson, ips.tenureByPerson);
 
   // The generator's own record, keyed the way the exporters read it.
   std::map<std::pair<pl::entity::PersonId, pl::devices::Identity>,
@@ -109,7 +111,8 @@ struct Leg {
         pl::infra::Tenure{pl::time::toEpochSeconds(u.firstSeen),
                           pl::time::toEpochSeconds(u.lastSeen) + 86'400});
   }
-  std::map<std::pair<pl::entity::PersonId, pl::network::Ipv4>, pl::infra::Tenure>
+  std::map<std::pair<pl::entity::PersonId, pl::network::Ipv4>,
+           pl::infra::Tenure>
       ipSpan;
   for (const auto &u : ips.usages) {
     ipSpan.emplace(
@@ -212,7 +215,8 @@ int main() {
   // The era axis must MOVE, and move the declared way: replacement is
   // faster in 2019 (33-month mean) than in 1991 (60-month mean), so the
   // same window holds MORE devices per person in 2019.
-  const double eraRatio = leg19.meanDevicesPerPerson / leg91.meanDevicesPerPerson;
+  const double eraRatio =
+      leg19.meanDevicesPerPerson / leg91.meanDevicesPerPerson;
   std::printf("  device turnover ratio 2019/1991 %.4f (declared means 33mo vs "
               "60mo -> expect > 1)\n",
               eraRatio);

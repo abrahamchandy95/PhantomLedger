@@ -14,6 +14,7 @@
 #include "phantomledger/transactions/factory.hpp"
 #include "phantomledger/transactions/record.hpp"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -68,8 +69,13 @@ public:
     [[nodiscard]] double
     availableCashFor(const spenders::PreparedSpender &prepared);
 
-    [[nodiscard]] double
-    cardLiquidityFor(const spenders::PreparedSpender &prepared);
+    /* Available liquidity for EVERY spend-active credit instrument, written
+     * into `out` and returned as the live prefix. One `readLiquidity` per live
+     * credit slot, once per person-day; the per-row credit pick then indexes
+     * it. Returns an empty span when the person holds none. */
+    [[nodiscard]] std::span<const double>
+    cardLiquidityFor(const spenders::PreparedSpender &prepared,
+                     std::array<double, actors::kMaxCreditInstruments> &out);
 
     [[nodiscard]] double lastLiquidityMult() const noexcept;
     [[nodiscard]] double lastAvailableToSpend() const noexcept;

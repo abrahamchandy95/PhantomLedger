@@ -121,17 +121,26 @@ pipe::Infra AccessInfraStage::build(random::Rng &rng,
   pipe::Infra out;
   out.ringPlans = ringAccess_.build(rng, window, peoplePack.topology.rings,
                                     peoplePack.topology);
-  out.devices =
-      deviceAssignment_.build(rng, window, peoplePack.roster, out.ringPlans);
-  out.ips = ipAssignment_.build(rng, window, peoplePack.roster, out.ringPlans);
-  // The tenure arrays are what make session attribution point-in-time
-  // honest: the router may only hand back an endpoint whose interval
-  // contains the row's timestamp.
+  /* `runSeed` keys the shared-endpoint and public-endpoint lanes inside both
+   * generators, the same way the attacker pool below is keyed. Those two
+   * populations have data-dependent draw counts and must not sit on `rng`. */
+  out.devices = deviceAssignment_.build(rng, window, peoplePack.roster,
+                                        out.ringPlans, runSeed);
+  out.ips = ipAssignment_.build(rng, window, peoplePack.roster, out.ringPlans,
+                                runSeed);
+  /* The tenure arrays are what make session attribution point-in-time
+   * honest: the router may only hand back an endpoint whose interval
+   * contains the row's timestamp.
+   *
+   * The two public pools travel SEPARATELY from `byPerson` and must keep doing
+   * so — a public endpoint is passed through, not held, and putting it in a
+   * person's own pool would both hand it a third of their rows and add a
+   * switch coin to every routed row. */
   out.router = ::PhantomLedger::infra::Router::build(
       routerRules_,
       buildOwnerMap(holdings.accounts.registry, holdings.creditCards),
       out.devices.byPerson, out.ips.byPerson, out.devices.tenureByPerson,
-      out.ips.tenureByPerson);
+      out.ips.tenureByPerson, out.devices.terminals, out.ips.carrierNat);
   out.ringInfra = buildSharedInfra(out.devices, out.ips);
 
   /* The exogenous fraud-infrastructure pool, on its OWN keyed lane off the

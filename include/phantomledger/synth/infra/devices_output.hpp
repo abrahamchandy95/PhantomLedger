@@ -2,6 +2,7 @@
 
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
+#include "phantomledger/entities/infra/public_endpoints.hpp"
 #include "phantomledger/entities/infra/tenure.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/infra/types.hpp"
@@ -51,10 +52,24 @@ struct Output {
   // this to keep session attribution point-in-time honest; its sticky
   // state is a pool index, so the two arrays share one coordinate
   // system. Every push to byPerson must push here in the same step.
-  std::unordered_map<entity::PersonId, std::vector<::PhantomLedger::infra::Tenure>>
+  std::unordered_map<entity::PersonId,
+                     std::vector<::PhantomLedger::infra::Tenure>>
       tenureByPerson;
 
   std::unordered_map<std::uint32_t, ::PhantomLedger::devices::Identity> ringMap;
+
+  /* PUBLIC TERMINALS, and they are deliberately NOT in `byPerson`.
+   *
+   * A terminal is passed through, not held: nobody owns it, so it has no
+   * `Usage` row and no ownership edge, and the router must never treat it as
+   * one of a person's own endpoints — see the head of
+   * `entities/infra/public_endpoints.hpp` for why an entry in the per-person
+   * pool would take a third to a half of that person's rows and add a coin to
+   * every routed row besides.
+   *
+   * Its links ARE in `records`, so a terminal is a device vertex like any
+   * other. Resolution is a draw-free point query on the pool itself. */
+  ::PhantomLedger::infra::TerminalPool terminals;
 };
 
 } // namespace PhantomLedger::synth::infra::devices

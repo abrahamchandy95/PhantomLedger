@@ -1,14 +1,15 @@
 #pragma once
 
+#include "phantomledger/activity/spending/actors/instruments.hpp"
 #include "phantomledger/activity/spending/market/commerce/view.hpp"
 #include "phantomledger/entities/geography/area.hpp"
-#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 
 #include <cstdint>
-#include <span>
 #include <limits>
+#include <span>
 
 namespace PhantomLedger::activity::spending::actors {
 
@@ -25,8 +26,11 @@ inline constexpr double kRetiredSpendScale = 0.88;
 
 struct Spender {
 
+  /* One constant, two spellings. The definition lives in
+   * `actors/instruments.hpp` beside the set that uses it; this alias keeps
+   * every existing `Spender::kInvalidLedgerIndex` caller working. */
   static constexpr std::uint32_t kInvalidLedgerIndex =
-      std::numeric_limits<std::uint32_t>::max();
+      actors::kInvalidLedgerIndex;
 
   // "Never retires in this window" (mirrors population::kNoRetirementDay).
   static constexpr std::uint32_t kNoRetireDay =
@@ -40,12 +44,22 @@ struct Spender {
   entity::PersonId person = entity::invalidPerson;
   std::uint32_t personIndex = 0;
 
-  // Routing destinations (Keys + their resolved Ledger indices).
-  entity::Key depositAccount{};
-  entity::Key card{};
-  std::uint32_t depositAccountIdx = kInvalidLedgerIndex;
-  std::uint32_t cardIdx = kInvalidLedgerIndex;
-  bool hasCard = false;
+  /* Routing destinations. The card-view instrument SET — every deposit
+   * account and every spend-active credit card the person can source a row
+   * from. Enumerate with `instruments.deposits()` / `instruments.credits()`;
+   * choose among them DRAW-FREE with `pickInstrumentSlot`. See
+   * `actors/instruments.hpp`.
+   *
+   * THE SCALARS THIS REPLACES ARE GONE, NOT DEPRECATED. `depositAccount`,
+   * `card`, `depositAccountIdx`, `cardIdx` and `hasCard` were the entire
+   * structural ceiling on exported device fan-out: two Keys per person meant
+   * no legitimate device could ever reach three distinct cards. Deleting the
+   * fields rather than leaving them beside the set is what makes the compiler
+   * find every reader — the same discipline `relocation-2026-07` used to
+   * retire the cached `homeArea`. Slot 0 of the deposit region is the primary
+   * account and the bill / external / P2P channels source from it
+   * unconditionally; only the merchant/card channel spreads across the set. */
+  InstrumentSet instruments{};
 
   // Persona type + back-pointer for cold fields not cached below.
   personas::Type personaType{};

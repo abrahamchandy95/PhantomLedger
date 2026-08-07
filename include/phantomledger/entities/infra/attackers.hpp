@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/devices.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/entities/infra/tenure.hpp"
@@ -105,6 +106,33 @@ public:
   std::vector<devices::Identity> sortedDevices;
   std::vector<network::Ipv4> sortedIps;
 
+  /* THE COMPROMISED-HOST POOL: roster people whose OWN machines operators
+   * run cases from. Sorted and unique, so membership is a binary search and
+   * selection is an index.
+   *
+   * IT IS A POOL AND NOT A PER-CASE PICK, AND THAT IS THE WHOLE POINT. A
+   * host drawn afresh for every case serves one victim, so the machine it
+   * lends carries exactly one compromise and cannot pass a message between
+   * two victims — the same "zero by construction" this file exists to
+   * remove, one layer down. A bounded pool makes one consumer device carry
+   * fraud against SEVERAL victims while it keeps carrying its owner's
+   * ordinary purchases, which is the only population in the model that is
+   * high-degree, mixed, and attacker-operated at once.
+   *
+   * THESE PEOPLE'S DEVICES ARE DELIBERATELY NOT IN `sortedDevices`. A host
+   * is a victim of a second crime, not attacker inventory: its identity
+   * belongs to a customer, it is on that customer's `Has_Device` file, and
+   * its tenure is the customer's. Marking it attacker-owned would flip the
+   * exporter's entity verdict on a machine whose traffic is overwhelmingly
+   * legitimate — the same call `export.cpp` already makes for a
+   * residential-proxy address, for the same reason. `runsFrom` is the
+   * separate predicate, and it is what makes attacker-operated purity a
+   * FALSIFIABLE quantity rather than one that reads zero by construction.
+   *
+   * DERIVED DRAW-FREE FROM THE ROSTER SIZE at build time, so it is world
+   * state in both engines and costs the attacker lane nothing. */
+  std::vector<entity::PersonId> compromisedHosts;
+
   // Coarse time index over the campaign span, so selecting among live
   // operators does not scan the whole population per case. An operator
   // appears in every bucket its campaign overlaps.
@@ -195,6 +223,30 @@ public:
 
   [[nodiscard]] bool ownsIp(network::Ipv4 address) const noexcept {
     return std::binary_search(sortedIps.begin(), sortedIps.end(), address);
+  }
+
+  /* Whether operators run cases from this person's machines. DISTINCT FROM
+   * `ownsDevice` on purpose — see `compromisedHosts`. A caller measuring
+   * "attacker-operated endpoints" wants the UNION; a caller writing an
+   * entity verdict wants `ownsDevice` alone. */
+  [[nodiscard]] bool runsFrom(entity::PersonId person) const noexcept {
+    return std::binary_search(compromisedHosts.begin(), compromisedHosts.end(),
+                              person);
+  }
+
+  /* The host a case runs from, chosen by `salt` alone. Draw-free and
+   * stateless, like every other selector here: the caller owns the entropy
+   * and nothing is written back.
+   *
+   * `salt` is the plan sequence, so successive cases spread over the pool
+   * while one case keeps one host for all of its events. */
+  [[nodiscard]] std::optional<entity::PersonId>
+  hostAt(std::uint64_t salt) const noexcept {
+    if (compromisedHosts.empty()) {
+      return std::nullopt;
+    }
+    return compromisedHosts[static_cast<std::size_t>(salt %
+                                                     compromisedHosts.size())];
   }
 
   /* Weighted pick among the operators whose campaign contains `ts`.

@@ -1,5 +1,6 @@
 #include "phantomledger/synth/infra/attackers.hpp"
 
+#include "phantomledger/entities/infra/derived_endpoints.hpp"
 #include "phantomledger/entities/infra/random_ips.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/synth/infra/tenure_table.hpp"
@@ -20,9 +21,18 @@ namespace dist = ::PhantomLedger::probability::distributions;
 using AttackerOperator = ::PhantomLedger::infra::AttackerOperator;
 using Tenure = ::PhantomLedger::infra::Tenure;
 
-[[nodiscard]] std::uint32_t
-operatorCountFor(const AssignmentRules &rules, std::uint32_t population,
-                 std::int32_t windowDays) noexcept {
+/* One hash domain for the compromised-host pool, distinct from every
+ * domain in `infra::derived` for the reason that file states: a shared
+ * domain makes two supposedly independent draw-free decisions collinear on
+ * the same key. Here the neighbour that matters is `kBorrowCaseDomain` —
+ * if host MEMBERSHIP and the borrow COIN shared bits, whether a case
+ * borrowed would be a function of who was available to borrow from. */
+inline constexpr std::uint64_t kCompromisedHostDomain =
+    0x4154'4B48'0000'0001ULL;
+
+[[nodiscard]] std::uint32_t operatorCountFor(const AssignmentRules &rules,
+                                             std::uint32_t population,
+                                             std::int32_t windowDays) noexcept {
   if (population == 0 || windowDays <= 0) {
     return 0;
   }
@@ -127,9 +137,9 @@ Output AssignmentRules::build(random::Rng &rng, time::Window window,
     // The gate's B' sub-gate measures the resulting concurrency and is
     // what surfaced the original one-sided version.
     const auto startOffset =
-        static_cast<std::int64_t>(rng.choiceIndex(static_cast<std::size_t>(
-            std::max<std::int64_t>(1, static_cast<std::int64_t>(windowDays) +
-                                          length)))) -
+        static_cast<std::int64_t>(
+            rng.choiceIndex(static_cast<std::size_t>(std::max<std::int64_t>(
+                1, static_cast<std::int64_t>(windowDays) + length)))) -
         static_cast<std::int64_t>(length);
 
     const auto rawStartEpoch =
@@ -159,16 +169,17 @@ Output AssignmentRules::build(random::Rng &rng, time::Window window,
     const auto usableDays = static_cast<std::int32_t>(std::max<std::int64_t>(
         1, (campaignEndEpoch - campaignStartEpoch) / 86'400));
 
-    const std::uint32_t deviceLines =
-        1U + (rng.coin(secondDeviceLineP) ? 1U : 0U) +
-        (rng.coin(thirdDeviceLineP) ? 1U : 0U);
+    const std::uint32_t deviceLines = 1U +
+                                      (rng.coin(secondDeviceLineP) ? 1U : 0U) +
+                                      (rng.coin(thirdDeviceLineP) ? 1U : 0U);
     const std::uint32_t ipLines = 1U + (rng.coin(secondIpLineP) ? 1U : 0U) +
-                                 (rng.coin(thirdIpLineP) ? 1U : 0U) +
-                                 (rng.coin(fourthIpLineP) ? 1U : 0U);
+                                  (rng.coin(thirdIpLineP) ? 1U : 0U) +
+                                  (rng.coin(fourthIpLineP) ? 1U : 0U);
 
     AttackerOperator op{};
     op.campaignFirstEpoch = campaignStartEpoch;
-    op.campaignLastEpochExcl = std::max(campaignStartEpoch + 1, campaignEndEpoch);
+    op.campaignLastEpochExcl =
+        std::max(campaignStartEpoch + 1, campaignEndEpoch);
     op.weight = weight;
     op.deviceBegin = static_cast<std::uint32_t>(out.devices.size());
     op.ipBegin = static_cast<std::uint32_t>(out.ips.size());
@@ -219,6 +230,40 @@ Output AssignmentRules::build(random::Rng &rng, time::Window window,
     op.deviceEnd = static_cast<std::uint32_t>(out.devices.size());
     op.ipEnd = static_cast<std::uint32_t>(out.ips.size());
     out.operators.push_back(op);
+  }
+
+  /* THE COMPROMISED-HOST POOL — roster people whose own machines operators
+   * run cases from. Sized by `compromisedHostShare`; the model it encodes is
+   * at `AttackerInfra::compromisedHosts`.
+   *
+   * DRAW-FREE, AND IT MUST STAY SO. This runs at the END of the attacker
+   * lane, after every coin the loop above spends, but that is not what makes
+   * it safe: a lane whose draw COUNT moved with the population would shift
+   * every later value on it, which is `merchant-churn-2026-07` rule 1 in the
+   * one place a population-sized loop would be easiest to write. A hash over
+   * the index spends nothing, so the pool can be sized from the roster
+   * without the lane noticing.
+   *
+   * Deduplicated rather than rejection-sampled for the same reason: a
+   * retry loop's iteration count depends on the collisions it hits. The
+   * realized pool is a few percent under nominal at small populations and
+   * that shortfall is the honest one — birthday collisions, not a
+   * suppressor. */
+  const auto hostTarget = static_cast<std::size_t>(std::llround(
+      static_cast<double>(population) * std::max(0.0, compromisedHostShare)));
+  if (population > 0 && hostTarget > 0) {
+    out.compromisedHosts.reserve(hostTarget);
+    for (std::size_t h = 0; h < hostTarget; ++h) {
+      const auto mixed = ::PhantomLedger::infra::derived::splitmix(
+          kCompromisedHostDomain ^ ::PhantomLedger::infra::derived::splitmix(
+                                       static_cast<std::uint64_t>(h)));
+      out.compromisedHosts.push_back(static_cast<entity::PersonId>(
+          1U + static_cast<std::uint32_t>(mixed % population)));
+    }
+    std::sort(out.compromisedHosts.begin(), out.compromisedHosts.end());
+    out.compromisedHosts.erase(
+        std::unique(out.compromisedHosts.begin(), out.compromisedHosts.end()),
+        out.compromisedHosts.end());
   }
 
   out.index();

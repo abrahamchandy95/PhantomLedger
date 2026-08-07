@@ -78,6 +78,12 @@ personCount(const blueprints::LegitBlueprint &plan) {
 struct CensusScratch {
   std::uint32_t personCount = 0;
   std::vector<entity::Key> primaryAccounts;
+
+  /* Every deposit account per person, PRIMARY FIRST, flattened with a
+   * count + 1 offset array. The market's population View copies both. */
+  std::vector<std::uint32_t> depositOffsets;
+  std::vector<entity::Key> depositAccounts;
+
   std::vector<plPop::PaydaySet> paydaySets;
 
   std::vector<std::vector<std::uint32_t>> paydayStorage;
@@ -174,6 +180,46 @@ buildCensusScratch(const blueprints::LegitBlueprint &plan,
     out.primaryAccounts[personIx] = registry.records[recordIx].id;
   }
 
+  /* The card-view instrument set's DEPOSIT half. `ownedAccountSlices` walks
+   * `ownership.byPersonIndex`, which already holds the primary at the front
+   * of each person's slice — but slot 0 is written EXPLICITLY here rather
+   * than inherited from that ordering, because `emitBill`, `emitExternal`
+   * and `emitP2p` all source from slot 0 unconditionally and a reordering
+   * upstream would silently move three whole channels.
+   *
+   * The role/bank filter keeps this to the person's own deposit accounts: a
+   * proprietor's `Role::business` account is owned by them and appears in the
+   * same slice, and routing a household card purchase out of it would invent
+   * a relationship the world does not model. */
+  out.depositOffsets.assign(static_cast<std::size_t>(out.personCount) + 1, 0);
+  out.depositAccounts.reserve(out.personCount);
+
+  for (std::uint32_t i = 0; i < out.personCount; ++i) {
+    const auto primary = out.primaryAccounts[i];
+    out.depositOffsets[i] =
+        static_cast<std::uint32_t>(out.depositAccounts.size());
+
+    if (!entity::valid(primary)) {
+      continue;
+    }
+    out.depositAccounts.push_back(primary);
+
+    const auto person = static_cast<entity::PersonId>(i + 1);
+    for (const auto recordIx : plan.ownedAccountSlices().recordsFor(person)) {
+      if (recordIx >= registry.records.size()) {
+        continue;
+      }
+      const auto id = registry.records[recordIx].id;
+      if (id == primary || id.role != primary.role || id.bank != primary.bank) {
+        continue;
+      }
+      out.depositAccounts.push_back(id);
+    }
+  }
+
+  out.depositOffsets[out.personCount] =
+      static_cast<std::uint32_t>(out.depositAccounts.size());
+
   out.paydayStorage = blueprints::buildPaydaysByPerson(
       baseTxns,
       blueprints::LegitAccountIndex{.registry = &registry, .lookup = &lookup},
@@ -238,6 +284,12 @@ buildSpendingCards(const entity::card::Registry *creditCards,
 
   sources.census.primaryAccounts = std::span<const entity::Key>(
       scratch.primaryAccounts.data(), scratch.primaryAccounts.size());
+
+  sources.census.depositOffsets = std::span<const std::uint32_t>(
+      scratch.depositOffsets.data(), scratch.depositOffsets.size());
+
+  sources.census.depositAccounts = std::span<const entity::Key>(
+      scratch.depositAccounts.data(), scratch.depositAccounts.size());
 
   sources.census.personaTypes = std::span<const personas::Type>(
       plan.personas().pack->assignment.byPerson.data(),

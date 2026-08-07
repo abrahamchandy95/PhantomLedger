@@ -23,7 +23,6 @@ actors::Spender buildSpender(const market::Market &market,
   actors::Spender s{};
   s.person = person;
   s.personIndex = personIndex;
-  s.depositAccount = pop.primary(person);
   s.personaType = pop.kind(person);
   s.persona = &persona;
 
@@ -32,15 +31,43 @@ actors::Spender buildSpender(const market::Market &market,
   s.cardShare = persona.card.share;
   s.timing = persona.archetype.timing;
 
-  if (market.cards().hasCard(person)) {
-    s.hasCard = true;
-    s.card = market.cards().card(person);
+  /* THE CARD-VIEW INSTRUMENT SET.
+   *
+   * `View::deposits` reports the PRIMARY first and falls back to a one-entry
+   * view of it when no ownership carrier is bound, so slot 0 is the primary
+   * on every path — which is what `emitBill`, `emitExternal` and `emitP2p`
+   * rely on to stay byte-identical to the pre-round corpus.
+   *
+   * The credit side takes the person's HELD cards in issuance order and stops
+   * at `kMaxCreditInstruments`. Holdings follow the cited Fed count law;
+   * this cap is the smaller, declared, SPEND-ACTIVE subset, and it is what
+   * bounds the CardCycleDriver's statement and payment blast radius — the
+   * driver only ever opens a session for a card that receives a purchase.
+   *
+   * The ledger index is resolved here, once per person for the whole fold,
+   * exactly as the two scalar carriers were. An unresolvable account keeps
+   * `kInvalidLedgerIndex` and the liquidity readers fall back, same as
+   * before. */
+  const auto deposits = pop.deposits(person);
+  for (const auto &key : deposits) {
+    if (!entity::valid(key)) {
+      continue;
+    }
+    const auto idx = ledger != nullptr ? ledger->findAccount(key)
+                                       : actors::kInvalidLedgerIndex;
+    if (!s.instruments.addDeposit(key, idx)) {
+      break;
+    }
   }
 
-  if (ledger != nullptr) {
-    s.depositAccountIdx = ledger->findAccount(s.depositAccount);
-    if (s.hasCard) {
-      s.cardIdx = ledger->findAccount(s.card);
+  for (const auto &key : market.cards().cards(person)) {
+    if (!entity::valid(key)) {
+      continue;
+    }
+    const auto idx = ledger != nullptr ? ledger->findAccount(key)
+                                       : actors::kInvalidLedgerIndex;
+    if (!s.instruments.addCredit(key, idx)) {
+      break;
     }
   }
 

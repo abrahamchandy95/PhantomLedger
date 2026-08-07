@@ -1,6 +1,7 @@
 #include "phantomledger/exporter/card_fraud/export.hpp"
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/infra/derived_endpoints.hpp"
 #include "phantomledger/entities/infra/format.hpp"
 #include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/exporter/card_fraud/derive.hpp"
@@ -603,8 +604,39 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
      * A residential-proxy address is deliberately NOT marked: the address
      * belongs to a customer and is not attacker infrastructure, whatever
      * passed through it. */
+    /* BURNERS ARE ATTACKER INFRASTRUCTURE AND MUST BE LABELLED AS SUCH, EVEN
+     * THOUGH `ownsDevice` IS FALSE FOR THEM AND MUST STAY FALSE.
+     *
+     * A burner fingerprint is derived per case from the campaign device and is
+     * deliberately absent from `AttackerInfra::sortedDevices`, because a
+     * fingerprint bought for one attempt is not persistent infrastructure and
+     * counting it would dilute the reuse floors sub-gate A exists to hold. But
+     * `ownsDevice` was ALSO serving as the ground-truth verdict here, so every
+     * burner shipped as a NEGATIVE in `cf_Ground_Truth_Label` while being a
+     * 100%-fraud, ownerless, single-case device.
+     *
+     * That is worse than a missing row. Burners are one device vertex PER
+     * CASE while a campaign device is one per many, so they dominate the
+     * ownerless device-vertex population — and labelling them negative made
+     * the overlay say that the ownerless population is mostly benign, which
+     * is the exact inverse of the truth and anti-correlated with the
+     * transaction label. It is the same defect the `flagged`/`blacklisted`
+     * overlay already had once (CLAUDE.md: "vanishing and anti-correlated").
+     *
+     * The two roles are separated here rather than by widening `ownsDevice`:
+     * `isBurnerDevice` is the exact structural test, pure and draw-free, and
+     * no legitimate row can reach the triple it matches.
+     *
+     * A residential-proxy address and a borrowed host are still deliberately
+     * NOT marked: those endpoints belong to a customer and are not attacker
+     * infrastructure, whatever passed through them. */
+    std::set<network::Ipv4> burnerIps;
     for (const auto &identity : artifacts.devices) {
-      const bool attackerOwned = attackers.ownsDevice(identity);
+      const bool burner = ::PhantomLedger::infra::derived::isBurnerDevice(identity);
+      const bool attackerOwned = attackers.ownsDevice(identity) || burner;
+      if (burner) {
+        burnerIps.insert(::PhantomLedger::infra::derived::endpointIp(identity));
+      }
       auto [it, inserted] = deviceUniverse.try_emplace(identity, attackerOwned);
       if (!inserted) {
         it->second = it->second || attackerOwned;
@@ -648,8 +680,13 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
         it->second = it->second || record.blacklisted;
       }
     }
+    /* The burner's address is burned WITH the fingerprint, so the omission was
+     * on both axes and is closed on both. `burnerIps` is derived from the same
+     * pure `endpointIp` the generator stamped the row with, so this marks the
+     * address the burner actually used and nothing else. */
     for (const auto address : artifacts.ips) {
-      const bool attackerOwned = attackers.ownsIp(address);
+      const bool attackerOwned =
+          attackers.ownsIp(address) || burnerIps.contains(address);
       auto [it, inserted] = ipUniverse.try_emplace(address, attackerOwned);
       if (!inserted) {
         it->second = it->second || attackerOwned;

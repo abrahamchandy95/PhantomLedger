@@ -186,8 +186,15 @@ void testAnalyticInterest() {
 // `drainPending`: sweep at the row instant, then roll the touched slot forward
 // on its pre-posting balance, then move cash. The lazy integral sums FEWER,
 // LARGER terms for the identical mathematical quantity, so the two agree to
-// rounding and not to the bit — that is the whole reason this round moves
-// `golden_run.b2sum` while leaving its row count at 186,144.
+// rounding and not to the bit — that is the whole reason `loc-accrual-perf`
+// moved `golden_run.b2sum`'s DIGEST while leaving its row count alone.
+//
+// The row count it named (186,144) is deliberately NOT restated here. It has
+// since moved twice, and a count copied into a comment in another file is the
+// `kTableCount` lesson in miniature — a duplicated number that goes stale
+// silently. The claim this comment actually makes is "digest moves, rows do
+// not", which is a statement about THIS change and stays true whatever the
+// corpus size is.
 // ---------------------------------------------------------------------------
 void testMatchesReferenceScan() {
   constexpr std::uint32_t kAccounts = 400;

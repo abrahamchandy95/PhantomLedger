@@ -1,8 +1,11 @@
 #include "phantomledger/synth/infra/ips.hpp"
 
 #include "phantomledger/entities/infra/enrollment.hpp"
+#include "phantomledger/entities/infra/public_endpoints.hpp"
 #include "phantomledger/entities/infra/random_ips.hpp"
+#include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/synth/infra/pool.hpp"
+#include "phantomledger/synth/infra/public_pool.hpp"
 #include "phantomledger/synth/infra/tenure_table.hpp"
 #include "phantomledger/synth/infra/timeline.hpp"
 
@@ -39,6 +42,11 @@ void promoteToBlacklisted(Output &out, network::Ipv4 ip) {
   }
 }
 
+/* The device-side twin carries the argument: a roster smaller than one
+ * endpoint's reach still sits behind carrier NAT, and every gate leg is such a
+ * roster. */
+constexpr std::size_t kMinCarrierNatLines = 2;
+
 [[nodiscard]] std::vector<entity::PersonId>
 buildLegitPool(const entity::person::Roster &people) {
   std::vector<entity::PersonId> out;
@@ -55,7 +63,8 @@ buildLegitPool(const entity::person::Roster &people) {
 
 Output AssignmentRules::build(
     random::Rng &rng, time::Window window, const entity::person::Roster &people,
-    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans) const {
+    const std::unordered_map<std::uint32_t, RingPlan> &ringPlans,
+    std::uint64_t runSeed) const {
   Output out;
 
   const auto reserveHint =
@@ -112,76 +121,95 @@ Output AssignmentRules::build(
     }
   }
 
-  // legit-shared "noise" IPs
-  const auto legitPool = buildLegitPool(people);
+  /* TWO ISOLATED LANES, KEYED OFF THE RUN SEED. The device generator carries
+   * the full argument; it applies verbatim here, and with one extra edge: this
+   * pass runs AFTER the device pass off the same `rng`, so a data-dependent
+   * count here moves nothing of its own but everything built after it. */
+  const random::RngFactory laneFactory{runSeed};
 
-  std::vector<entity::PersonId> remaining = legitPool;
-  std::unordered_map<entity::PersonId, std::size_t> remainingIndex;
-  remainingIndex.reserve(remaining.size());
-  for (std::size_t i = 0; i < remaining.size(); ++i) {
-    remainingIndex[remaining[i]] = i;
-  }
+  {
+    auto sharedRng = laneFactory.rng({"infra", "ips", "shared"});
 
-  for (const auto anchor : legitPool) {
-    if (!pool::contains(remainingIndex, anchor)) {
-      continue;
-    }
-    if (!rng.coin(legitIpNoiseP)) {
-      continue;
-    }
+    const auto legitPool = buildLegitPool(people);
 
-    pool::swapDelete(remaining, remainingIndex, anchor);
-
-    if (remaining.empty()) {
-      break;
+    std::vector<entity::PersonId> remaining = legitPool;
+    std::unordered_map<entity::PersonId, std::size_t> remainingIndex;
+    remainingIndex.reserve(remaining.size());
+    for (std::size_t i = 0; i < remaining.size(); ++i) {
+      remainingIndex[remaining[i]] = i;
     }
 
-    const auto cap = std::min<std::size_t>(remaining.size(), 3U);
-    const auto extraCount = static_cast<std::size_t>(
-        rng.uniformInt(1, static_cast<std::int64_t>(cap) + 1));
+    for (const auto anchor : legitPool) {
+      if (!pool::contains(remainingIndex, anchor)) {
+        continue;
+      }
+      if (!sharedRng.coin(sharedIpP)) {
+        continue;
+      }
 
-    const auto pickIdx = rng.choiceIndices(remaining.size(), extraCount, false);
-    std::vector<entity::PersonId> peers;
-    peers.reserve(extraCount);
-    for (const auto i : pickIdx) {
-      peers.push_back(remaining[i]);
-    }
+      pool::swapDelete(remaining, remainingIndex, anchor);
 
-    const auto sharedIp = network::randomIpv4(rng);
-    registerIfNew(out, seen, sharedIp, /*blacklisted=*/false);
+      if (remaining.empty()) {
+        break;
+      }
 
-    const auto [firstSeen, lastSeen] =
-        timeline::sampleShortSpan(rng, windowStart, windowDays);
+      const auto cap = std::min<std::size_t>(
+          remaining.size(), static_cast<std::size_t>(sharedGroupMaxExtra));
+      const auto extraCount = static_cast<std::size_t>(
+          sharedRng.uniformInt(1, static_cast<std::int64_t>(cap) + 1));
 
-    std::vector<entity::PersonId> group;
-    group.reserve(peers.size() + 1);
-    group.push_back(anchor);
-    for (const auto pid : peers) {
-      group.push_back(pid);
-    }
+      const auto pickIdx =
+          sharedRng.choiceIndices(remaining.size(), extraCount, false);
+      std::vector<entity::PersonId> peers;
+      peers.reserve(extraCount);
+      for (const auto i : pickIdx) {
+        peers.push_back(remaining[i]);
+      }
 
-    // Shared addresses keep their SHORT independent span (a genuine
-    // episode) and are appended after every personal line, so they never
-    // break the "next index is my replacement" rule inside a line.
-    for (const auto pid : group) {
-      out.byPerson[pid].push_back(sharedIp);
-      out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
-          .firstEpoch = time::toEpochSeconds(firstSeen),
-          .lastEpochExcl = time::toEpochSeconds(lastSeen + time::Days{1}),
-      });
-      out.usages.push_back(Usage{
-          .personId = pid,
-          .ipAddress = sharedIp,
-          .firstSeen = firstSeen,
-          .lastSeen = lastSeen,
-          .enrolled =
-              ::PhantomLedger::infra::enrollment::ipEnrolled(pid, sharedIp),
-      });
-    }
+      std::vector<entity::PersonId> group;
+      group.reserve(peers.size() + 1);
+      group.push_back(anchor);
+      for (const auto pid : peers) {
+        group.push_back(pid);
+      }
 
-    for (const auto pid : peers) {
-      if (pool::contains(remainingIndex, pid)) {
-        pool::swapDelete(remaining, remainingIndex, pid);
+      /* A HOUSEHOLD ADDRESS, NOT AN EPISODE. This used to be a
+       * `sampleShortSpan` of at most seven days against a multi-year window,
+       * which is why the shared population was correctly wired and
+       * statistically invisible. A group that shares a router shares it for as
+       * long as they live together, and the address behind it churns on the
+       * ordinary residential DHCP clock — the same chain, the same lease
+       * length, as any personal line, appended after all of them and
+       * contiguous so positional succession still holds. */
+      const auto chain = timeline::sampleChain(
+          sharedRng, windowStart, windowDays,
+          [](time::TimePoint) { return tenure::ipTenureDays(); });
+
+      for (const auto &link : chain) {
+        const auto sharedIp = network::randomIpv4(sharedRng);
+        registerIfNew(out, seen, sharedIp, /*blacklisted=*/false);
+
+        for (const auto pid : group) {
+          out.byPerson[pid].push_back(sharedIp);
+          out.tenureByPerson[pid].push_back(::PhantomLedger::infra::Tenure{
+              .firstEpoch = time::toEpochSeconds(link.firstSeen),
+              .lastEpochExcl = time::toEpochSeconds(link.lastSeenExcl),
+          });
+          out.usages.push_back(Usage{
+              .personId = pid,
+              .ipAddress = sharedIp,
+              .firstSeen = link.firstSeen,
+              .lastSeen = link.lastSeenExcl - time::Days{1},
+              .enrolled =
+                  ::PhantomLedger::infra::enrollment::ipEnrolled(pid, sharedIp),
+          });
+        }
+      }
+
+      for (const auto pid : peers) {
+        if (pool::contains(remainingIndex, pid)) {
+          pool::swapDelete(remaining, remainingIndex, pid);
+        }
       }
     }
   }
@@ -224,6 +252,41 @@ Output AssignmentRules::build(
               ::PhantomLedger::infra::enrollment::ipEnrolled(pid, sharedIp),
       });
     }
+  }
+
+  /* CARRIER-GRADE NAT, MINTED LAST AND ON ITS OWN LANE.
+   *
+   * The IP axis carries the same shortcut as the device axis at roughly 60% of
+   * its strength, and it must move in the same round or the model simply
+   * learns the other one. This is the address-side twin of the terminal pool:
+   * a legitimate endpoint serving tens to hundreds of subscribers, owned by
+   * nobody, sitting in exactly the fan-out band that is otherwise pure
+   * attacker infrastructure.
+   *
+   * No `Usage` row and no entry in `byPerson`, for the reasons on the pool
+   * type. Resolution is a draw-free point query. */
+  {
+    auto carrierRng = laneFactory.rng({"infra", "ips", "carrier_nat"});
+
+    const auto lineCount = publics::lineCountFor(
+        people.count, peoplePerCarrierNat, kMinCarrierNatLines);
+
+    out.carrierNat = publics::buildPublicPool<network::Ipv4>(
+        carrierRng, window,
+        publics::PoolSpec{
+            .lineCount = lineCount,
+            .people = people.count,
+            .maxUsersPerLine = maxUsersPerCarrierNat,
+            .tenureDays = tenure::carrierNatTenureDays(),
+            .rowShare = carrierNatRowShare,
+            .poolDomain =
+                ::PhantomLedger::infra::publicEndpoints::kCarrierNatPoolDomain,
+        },
+        [&](std::size_t, std::size_t) {
+          const auto ip = network::randomIpv4(carrierRng);
+          registerIfNew(out, seen, ip, /*blacklisted=*/false);
+          return ip;
+        });
   }
 
   return out;

@@ -64,10 +64,19 @@ population::View buildPopulationView(const population::Census &census) {
 
   population::Paydays paydays(std::move(offsets), std::move(flat));
 
-  return population::View(std::move(primary), std::move(kinds),
-                          std::move(objects), std::move(paydays),
-                          std::move(homeAreas), std::move(retirementDays),
-                          std::move(deathDays), census.relocation);
+  /* Every deposit account per person, primary first. Empty on any harness
+   * that supplies no ownership carrier, in which case `View::deposits`
+   * reports the primary alone. */
+  std::vector<std::uint32_t> depositOffsets(census.depositOffsets.begin(),
+                                            census.depositOffsets.end());
+  std::vector<entity::Key> depositAccounts(census.depositAccounts.begin(),
+                                           census.depositAccounts.end());
+
+  return population::View(
+      std::move(primary), std::move(kinds), std::move(objects),
+      std::move(paydays), std::move(homeAreas), std::move(retirementDays),
+      std::move(deathDays), census.relocation, std::move(depositOffsets),
+      std::move(depositAccounts));
 }
 
 std::vector<double> buildMerchCdf(const entity::merchant::Catalog &catalog) {
