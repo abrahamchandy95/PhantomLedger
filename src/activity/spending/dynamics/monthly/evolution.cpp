@@ -71,7 +71,7 @@ void rebuildLiveReach(market::commerce::View &commerce, std::int64_t ts,
     weights.push_back(record.liveAt(ts) ? record.weight : 0.0);
   }
 
-  auto model = market::commerce::buildReachModel(weights, meanSetSize);
+  auto model = market::commerce::calibrateReachModel(weights, meanSetSize);
   auto cdf = market::commerce::cdfOrEmpty(model.membership);
   if (cdf.empty()) {
     return; // every merchant dead: keep last month's law, as above

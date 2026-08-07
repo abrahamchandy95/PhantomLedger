@@ -279,7 +279,7 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
     }
     startLiveCdf = commerce::cdfOrEmpty(liveWeights);
 
-    reachModel = commerce::buildReachModel(liveWeights, meanSetSize);
+    reachModel = commerce::calibrateReachModel(liveWeights, meanSetSize);
     reachCdf = commerce::cdfOrEmpty(reachModel.membership);
 
     std::vector<double> liveBillerWeights(catalog->records.size(), 0.0);

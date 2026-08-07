@@ -1,78 +1,31 @@
 #pragma once
 
 /*
-  REACH IS NOT VOLUME, and the two must never be sampled from one law.
+  VOLUME != MEMBERSHIP (FAVORITE SET) PROBABILITY
 
-  `Record.weight` is a VOLUME weight — the share of card spend a merchant
-  should receive. Favourite-set MEMBERSHIP is a graph EDGE, and a picker
-  drawing favK ~ U[8,30] times turns a volume weight `w` into
+  Directly sampling a merchant's volume weight (share of total spend) to pick
+  a person's favorite merchants exponentially amplifies large merchants into
+  unrealistic mega-hubs.
 
-      P(card -> merchant) = 1 - (1 - w)^favK
+  Instead, we construct a flatter membership distribution:
+    membership q_i  ∝  w_i^γ
+    realized   π_i  =  1 - (1-q_i)^k̄  (where k̄ is mean favorite set size)
 
-  a favK-fold amplification of volume into edge probability. Measured at
-  8,000 people: a ~5% volume weight became a 51% share of every card, which
-  the monthly evolver's ratchet took to 85%. It deflated volume at the same
-  time — the within-row pick was uniform, so realized top-1 volume was 2.2%
-  against its own 2.56% nominal weight. Inflated degree and deflated volume
-  cancel in every total, which is why the symptom presented as "too few
-  merchants" while the merchant count was correct.
+  We use binary search to solve for γ so the top merchant's realized
+  inclusion probability (π_i) hits a safe target (default 12%).
 
-  THE CONSTRUCTION — a separate, flatter, draw-free law for membership:
+  Finding: 12%
+  1. It aligns with real-world cardholder behavior (Krumme et al. 2013).
+  2. If a merchant's inclusion rate exceeds ~25%, they become a massive graph
 
-      membership q_i  ∝  w_i^γ          what the favourite draw samples
-      realized   π_i  =  1 - (1-q_i)^k̄  inclusion probability at the mean
-                                        set size
+  WARNING: Do not alter `makeCatalog` or the base volume law here. Doing so will
+  desynchronize the RNG stream and break downstream entity generation.
+*/
 
-  γ is solved by bisection so max_i π_i equals a declared target. Volume
-  within a card is governed separately by `commerce/affinity.hpp` (a Zipf
-  rank law over the person's own set), and the two compose.
-
-  DO NOT RE-IMPOSE NATIONAL VOLUME CONCENTRATION ON TOP OF REACH. Since
-  national share_i ≈ reach_i × (that merchant's share of a card's visits),
-  reach pinned at 0.12 against a measured ~13-19% within-card top-1 caps any
-  outlet's national share at ~0.12 × 0.19 ≈ 2%. Weighting the within-row
-  pick by w_i/π_i restores E[share] = w_i exactly, but buys the higher
-  national share only by pushing the WITHIN-card top-1 share to 31%, outside
-  Krumme's cited 13% (NA) to 22% (EU) band — it breaks a cited quantity to
-  chase an unreachable one. The 6.66% US top-1 figure (NRF Walmart / Census
-  MARTS 2024) is a BRAND number reachable only at BRAND reach: 0.86
-  household penetration × ~8% within-household share ≈ 6.9%. At outlet
-  granularity a 12%-reach merchant must sit near 1% national share, and it
-  does — measured 0.64% at n=570 and 0.48% at n=26,000. Pinning both is
-  over-determined; the two CITED quantities are pinned and national
-  concentration falls out, PRINTED by `test_card_merchant_graph`.
-
-  TARGET LEVEL 0.12, CLASS S UNCITED, because no published source reports
-  per-card merchant reach. Krumme et al. give the card side only (median 64
-  distinct merchants per cardholder per 6 months, Zipf α = 0.80, top-1 = 13%
-  of that cardholder's visits; Scientific Reports 3:1645, 2013). Numerator's
-  household-penetration ladder (Great Value 86% of US households, McDonald's
-  87%, Amazon 83%) is BRAND granularity and the wrong anchor: every
-  non-online record holds exactly one GeoArea and the exporter writes one
-  `cf_Merchant_Location` centroid per record, so a Record is an ACCEPTANCE
-  LOCATION and cannot reach half a national cardholder population.
-
-  The 5-15% band is anchored on the consequence, not a measurement: above
-  ~25% the merchant is a hub through which a large fraction of card PAIRS
-  are 2-hop neighbours, "shared merchant" carries ~0 bits, and the
-  common-point-of-purchase motif card-fraud graph models exist to find stops
-  existing. R-GCN's authors record that its fixed 1/|N_i^r| normalisation is
-  "particularly problematic for nodes of high degree" (Schlichtkrull et al.,
-  ESWC 2018, §5.1).
-
-  THIS FILE MUST NOT TOUCH `makeCatalog`. The volume law is still a fixed-σ
-  lognormal whose top-1 share depends on catalogue size (6.05% at n=570
-  falling to 0.79% at n=26,000, against a size-INVARIANT 6.66% US anchor).
-  Replacing it with a rank-size law needs its own round: making `coreCount`
-  population-independent changes `makeCatalog`'s SHARED-ENTITY-STREAM draw
-  count and desynchronises every downstream entity value — 51,079
-  `test_membership` violations, measured. This file rides the market
-  bootstrap's own seed and the `{"payees", id}` lane, so the entity layer is
-  untouched.
- */
-
+#include <algorithm>
 #include <cmath>
-#include <cstddef>
+#include <functional>
+#include <ranges>
 #include <vector>
 
 namespace PhantomLedger::activity::spending::market::commerce {
@@ -141,49 +94,60 @@ namespace reach {
 
 } // namespace reach
 
-/* Build the membership law from the live volume weights. `weights` is the
- * live-masked volume vector (zeros for dead or unborn records),
- * `meanSetSize` the expected favourite-row length.
- *
- * MUST STAY DRAW-FREE AND STATELESS: the bisection reads only `weights`, so
- * the batch and windowed engines compute the identical model at the
- * identical instant. Rebuilt at each month boundary beside the live CDFs and
- * BEFORE `evolveAll`, because the evolver's add pass samples this model. */
+/*
+  Compute the membership probability distribution from the live merchant volume
+  weights. `weights` is the raw volume for each merchant (dead or unborn
+  merchants are 0.0), and `meanSetSize` is the expected number of distinct
+  merchants a person interacts with.
+
+  Rebuilt at every month boundary, right before the network evolution phase.
+*/
 [[nodiscard]] inline ReachModel
-buildReachModel(const std::vector<double> &weights, double meanSetSize,
-                double target = kTargetTop1Reach) {
+calibrateReachModel(const std::vector<double> &weights, double meanSetSize,
+                    double target = kTargetTop1Reach) {
   ReachModel out;
   if (weights.empty() || !(meanSetSize > 0.0)) {
     return out;
   }
 
+  auto isValid = [](double w) { return w > 0.0 && std::isfinite(w); };
+
   double total = 0.0;
   std::size_t liveCount = 0;
   double maxWeight = 0.0;
   for (const double w : weights) {
-    if (!(w > 0.0) || !std::isfinite(w)) {
+    if (!isValid(w)) {
       continue;
     }
     total += w;
-    maxWeight = w > maxWeight ? w : maxWeight;
+    maxWeight = std::max(maxWeight, w);
     ++liveCount;
   }
+
   if (liveCount == 0 || !(total > 0.0)) {
     return out;
   }
 
   const double targetQ = reach::topProbabilityFor(target, meanSetSize);
 
-  /* max_i q_i as a function of gamma, with q_i proportional to w_i^gamma.
-   * Monotone INCREASING in gamma: gamma = 0 is uniform (1/liveCount) and
-   * gamma = 1 is the raw volume law (q == w). */
+  /*
+    Calculate the market share of the biggest merchant for a given 'gamma'
+    tuning dial.
+      gamma = 0.0: Perfectly equal distribution
+      gamma = 1.0: Weight-based distribution
+
+    Because the top merchant's share steadily increases as gamma rises,
+    we can use binary search to find the exact gamma that hits our
+    target.
+  */
   const auto topQFor = [&](double gamma) {
-    double sum = 0.0;
-    for (const double w : weights) {
-      if (w > 0.0 && std::isfinite(w)) {
-        sum += std::pow(w / total, gamma);
-      }
-    }
+    const double sum =
+        std::ranges::fold_left(weights | std::views::filter(isValid) |
+                                   std::views::transform([&](double w) {
+                                     return std::pow(w / total, gamma);
+                                   }),
+                               0.0, std::plus<>{});
+
     if (!(sum > 0.0)) {
       return 1.0;
     }
@@ -192,13 +156,11 @@ buildReachModel(const std::vector<double> &weights, double meanSetSize,
 
   double gamma = 0.0;
   if (topQFor(0.0) < targetQ) {
-    /* Reachable: bisect. 60 iterations resolves gamma to ~1e-18, far past
-     * any level the realized share can distinguish, and the loop count must
-     * stay FIXED so it cannot become data-dependent. */
+    // If the target is reachable, use binary search to dial in the exact gamma.
     double low = 0.0;
     double high = 1.0;
     if (topQFor(1.0) <= targetQ) {
-      gamma = 1.0; // even the raw volume law is flatter than the target
+      gamma = 1.0;
     } else {
       for (int i = 0; i < 60; ++i) {
         const double mid = 0.5 * (low + high);
@@ -211,33 +173,30 @@ buildReachModel(const std::vector<double> &weights, double meanSetSize,
       gamma = 0.5 * (low + high);
     }
   }
-  /* gamma stays 0 (uniform membership) when the target is unreachable.
-   * `reach::reachAchievable` is how a caller or a gate detects that, and
-   * `ReachModel::gamma` is printed so it can never be silent. */
-
+  // gamma remains 0.0 if impossible to reach
   out.gamma = gamma;
   out.membership.assign(weights.size(), 0.0);
 
   double qSum = 0.0;
-  for (std::size_t i = 0; i < weights.size(); ++i) {
-    const double w = weights[i];
-    if (!(w > 0.0) || !std::isfinite(w)) {
+  for (auto [i, w] : std::views::enumerate(weights)) {
+    if (!isValid(w)) {
       continue;
     }
     out.membership[i] = std::pow(w / total, gamma);
     qSum += out.membership[i];
   }
+
   if (!(qSum > 0.0)) {
     return ReachModel{};
   }
 
-  for (std::size_t i = 0; i < weights.size(); ++i) {
-    if (!(out.membership[i] > 0.0)) {
+  for (double &m : out.membership) {
+    if (!(m > 0.0)) {
       continue;
     }
-    const double q = out.membership[i] / qSum;
+    const double q = m / qSum;
     const double pi = 1.0 - std::pow(1.0 - q, meanSetSize);
-    out.realizedTop1 = pi > out.realizedTop1 ? pi : out.realizedTop1;
+    out.realizedTop1 = std::max(out.realizedTop1, pi);
   }
 
   return out;

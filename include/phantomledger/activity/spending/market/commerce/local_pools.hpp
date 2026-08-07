@@ -546,7 +546,7 @@ public:
   MembershipSampler() = default;
 
   /* `meanSetSize` is the expected favourite-row length. It is needed here and
-   * not only in `buildReachModel` because THE ONLINE SUB-LAW NEEDS ITS OWN
+   * not only in `calibrateReachModel` because THE ONLINE SUB-LAW NEEDS ITS OWN
    * FLATTENING EXPONENT, solved against its OWN draw count
    * `meanSetSize * onlineShare`.
    *
@@ -690,7 +690,7 @@ private:
         sub.push_back(c - prev);
         prev = c;
       }
-      const auto subModel = buildReachModel(sub, onlineDraws);
+      const auto subModel = calibrateReachModel(sub, onlineDraws);
       if (!subModel.membership.empty()) {
         double t = 0.0;
         for (const double m : subModel.membership) {

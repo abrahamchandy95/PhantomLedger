@@ -62,11 +62,11 @@
 #include "phantomledger/activity/spending/market/commerce/affinity.hpp"
 #include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/activity/spending/market/commerce/reach.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 
 #include "window_leg_support.hpp"
@@ -83,7 +83,6 @@ namespace channels = pl::channels;
 namespace commerce = pl::activity::spending::market::commerce;
 
 using pltest::LegOptions;
-using pltest::LegResult;
 using Txn = pltest::Txn;
 
 namespace {
@@ -183,9 +182,8 @@ struct Shape {
   }
   const double mean = total / static_cast<double>(degrees.size());
   const double median = degrees[degrees.size() / 2];
-  const double p99 =
-      degrees[static_cast<std::size_t>(0.99 * static_cast<double>(
-                                                  degrees.size() - 1))];
+  const double p99 = degrees[static_cast<std::size_t>(
+      0.99 * static_cast<double>(degrees.size() - 1))];
   double variance = 0.0;
   for (const double d : degrees) {
     variance += (d - mean) * (d - mean);
@@ -227,10 +225,10 @@ struct Shape {
     const double denom = static_cast<double>(counted);
     out.meanWithinCardTop1 = shareTotal / denom;
     out.meanUniformBaseline = uniformTotal / denom;
-    out.concentrationRatio = out.meanUniformBaseline > 0.0
-                                 ? out.meanWithinCardTop1 /
-                                       out.meanUniformBaseline
-                                 : 0.0;
+    out.concentrationRatio =
+        out.meanUniformBaseline > 0.0
+            ? out.meanWithinCardTop1 / out.meanUniformBaseline
+            : 0.0;
   }
 
   return out;
@@ -243,9 +241,11 @@ void report(const char *label, const Shape &s) {
               s.top1Penetration, commerce::kMaxTop1Reach);
   std::printf("  hubs >25%% / >50%%            %zu / %zu\n", s.above25,
               s.above50);
-  std::printf("  WITHIN-CARD TOP-1 SHARE     %.4f   (Krumme 0.13 NA / 0.22 EU)\n",
-              s.meanWithinCardTop1);
-  std::printf("  vs UNIFORM baseline         %.4f   ratio %.3f  (uniform measures 1.79-1.83)\n",
+  std::printf(
+      "  WITHIN-CARD TOP-1 SHARE     %.4f   (Krumme 0.13 NA / 0.22 EU)\n",
+      s.meanWithinCardTop1);
+  std::printf("  vs UNIFORM baseline         %.4f   ratio %.3f  (uniform "
+              "measures 1.79-1.83)\n",
               s.meanUniformBaseline, s.concentrationRatio);
   std::printf("  P(2 cards share a merchant) %.4f\n", s.pairShareProbability);
   std::printf("  cards/merchant  median/mean %.4f   p99/mean %.2f   Fano %.2f"
@@ -254,7 +254,6 @@ void report(const char *label, const Shape &s) {
 }
 
 } // namespace
-
 
 namespace {
 
@@ -267,9 +266,10 @@ namespace {
 // 500,000. Gating only on small legs would band a regime production never uses.
 //
 // So these two sub-gates drive the REAL sampler (`makeCatalog` +
-// `placeGeography` + `buildReachModel` + `MembershipSampler`) against the REAL
-// residence model at both populations directly. No ledger, no fold, seconds to
-// run — the mechanism is exactly the production one, only the corpus is absent.
+// `placeGeography` + `calibrateReachModel` + `MembershipSampler`) against the
+// REAL residence model at both populations directly. No ledger, no fold,
+// seconds to run — the mechanism is exactly the production one, only the corpus
+// is absent.
 struct ScaleShape {
   double top1 = 0.0;
   std::size_t above25 = 0;
@@ -282,8 +282,7 @@ struct ScaleShape {
   double poolMiB = 0.0;
 };
 
-[[nodiscard]] ScaleShape measureAtScale(int population, int people,
-                                       int year) {
+[[nodiscard]] ScaleShape measureAtScale(int population, int people, int year) {
   namespace ge = pl::entity::geography;
   const auto &geo = pl::synth::geo::geography();
   const pl::synth::geo::ResidenceSampler residence{geo};
@@ -297,15 +296,15 @@ struct ScaleShape {
   for (const auto &r : catalog.records) {
     volume.push_back(r.weight);
   }
-  const auto model = commerce::buildReachModel(volume, 30.0);
+  const auto model = commerce::calibrateReachModel(volume, 30.0);
 
   std::vector<ge::GeoAreaId> homes;
   for (std::size_t a = 1; a <= geo.size(); ++a) {
     homes.push_back(static_cast<ge::GeoAreaId>(a));
   }
-  const auto sampler = commerce::MembershipSampler::build(
-      catalog, geo, homes, model.membership, 30.0,
-      commerce::cnpShareForYear(year));
+  const auto sampler =
+      commerce::MembershipSampler::build(catalog, geo, homes, model.membership,
+                                         30.0, commerce::cnpShareForYear(year));
 
   auto prng = pl::random::Rng::fromSeed(4242ULL);
   std::map<std::uint32_t, std::size_t> holders;
@@ -346,13 +345,14 @@ struct ScaleShape {
     const double share =
         static_cast<double>(count) / static_cast<double>(people);
     out.top1 = std::max(out.top1, share);
-    if (share > 0.25) ++out.above25;
-    if (share > 0.50) ++out.above50;
+    if (share > 0.25)
+      ++out.above25;
+    if (share > 0.50)
+      ++out.above50;
     const auto loc = catalog.records[idx].location;
-    const bool online =
-        catalog.records[idx].footprint ==
-            pl::entity::merchant::Footprint::online ||
-        !ge::validArea(loc) || !geo.contains(loc);
+    const bool online = catalog.records[idx].footprint ==
+                            pl::entity::merchant::Footprint::online ||
+                        !ge::validArea(loc) || !geo.contains(loc);
     if (!online && share > topPhysical) {
       topPhysical = share;
       topPhysicalIdx = idx;
@@ -392,7 +392,8 @@ int main() {
     check(std::abs(predicted - 0.13) < 0.02,
           "sub-gate F: the shipped Zipf exponent must reproduce Krumme's "
           "published 13% top-1 visit share at their reported median set size "
-          "of 64; got " + std::to_string(predicted));
+          "of 64; got " +
+              std::to_string(predicted));
   }
 
   // ------------------------------------------------------------------
@@ -401,7 +402,7 @@ int main() {
   // CLAUDE.md rule 6: SIZING CONSTANTS THAT CONVERT A DISTRIBUTION INTO A
   // COUNT MUST BE MEASURED, NOT DERIVED — the attacker concurrency floor was
   // under-delivered twice and both times the disposition was to fix the
-  // construction, never to widen the band. `buildReachModel` solves an
+  // construction, never to widen the band. `calibrateReachModel` solves an
   // exponent by bisection, and a solved constant that pins at a bound while
   // reporting success is exactly that failure. Both bounds are exercised.
   {
@@ -410,7 +411,7 @@ int main() {
     for (std::size_t i = 0; i < heavy.size(); ++i) {
       heavy[i] = 1.0 / std::pow(static_cast<double>(i + 1), 1.6);
     }
-    const auto model = commerce::buildReachModel(heavy, 30.0);
+    const auto model = commerce::calibrateReachModel(heavy, 30.0);
     std::printf("sub-gate E: heavy law -> gamma %.4f, realized top-1 %.4f "
                 "(target %.2f)\n",
                 model.gamma, model.realizedTop1, commerce::kTargetTop1Reach);
@@ -425,7 +426,7 @@ int main() {
     // being pushed up to it. Over-correcting toward a hub would be the
     // dangerous direction.
     std::vector<double> flat(26000, 1.0);
-    const auto flatModel = commerce::buildReachModel(flat, 30.0);
+    const auto flatModel = commerce::calibrateReachModel(flat, 30.0);
     check(flatModel.gamma == 1.0,
           "sub-gate E: a law already flatter than target must not be "
           "flattened further");
@@ -446,8 +447,6 @@ int main() {
           "already ~0.14 there");
   }
 
-
-
   // ------------------------------------------------------------------
   // SUB-GATE I — THE DATED CARD-NOT-PRESENT SHARE.
   //
@@ -463,7 +462,8 @@ int main() {
     const double y2019 = commerce::cnpShareForYear(2019);
     const double y2022 = commerce::cnpShareForYear(2022);
     std::printf("\nsub-gate I: CNP share 1991 %.4f  2005 %.4f  2019 %.4f  "
-                "2022 %.4f\n", y1991, y2005, y2019, y2022);
+                "2022 %.4f\n",
+                y1991, y2005, y2019, y2022);
 
     // The one CITED level: Fed Payments Study 2022 puts in-person at 63.8% of
     // GP card payments BY NUMBER, so remote is 36.2%.
@@ -490,7 +490,12 @@ int main() {
   // merchants-per-area, so a single population cannot distinguish a correct
   // mechanism from a small-world artifact.
   {
-    struct Scale { const char *name; int population; int people; bool bound; };
+    struct Scale {
+      const char *name;
+      int population;
+      int people;
+      bool bound;
+    };
     // pop 8,000 is PRINTED, not bounded: ~570 records over 71 areas is ~7
     // physical merchants per area against a 19-merchant favourite set, so the
     // local pool cannot satisfy the set and reach concentrates for arithmetic
@@ -508,8 +513,8 @@ int main() {
       std::printf("    home->merchant  mean %.1f mi   P(<=50mi) %.4f   "
                   "top physical spans %zu areas\n",
                   shape.meanMiles, shape.within50, shape.topPhysicalAreas);
-      std::printf("    pools %.3f MiB   cutoff discarded %.2e\n",
-                  shape.poolMiB, shape.worstDiscarded);
+      std::printf("    pools %.3f MiB   cutoff discarded %.2e\n", shape.poolMiB,
+                  shape.worstDiscarded);
 
       // H — LOCALITY. Bounded at BOTH scales, because it is the defect the
       // owner identified and it is scale-robust: a physical favourite must be
@@ -520,8 +525,7 @@ int main() {
       // DISARM: build the sampler over a national CDF instead of the local
       // pools. Reds immediately at both scales.
       check(shape.within50 >= 0.80,
-            std::string(sc.name) +
-                ": only " + std::to_string(shape.within50) +
+            std::string(sc.name) + ": only " + std::to_string(shape.within50) +
                 " of physical favourites are within 50 miles of home; "
                 "membership must be geography-conditioned or "
                 "distance-from-home becomes a label shortcut");
@@ -543,12 +547,12 @@ int main() {
       check(shape.top1 <= commerce::kMaxTop1Reach,
             std::string(sc.name) + ": top-1 reach " +
                 std::to_string(shape.top1) + " exceeds the ceiling");
-      check(shape.above50 == 0, std::string(sc.name) +
-                                    ": no merchant may reach half the cards");
-      check(shape.above25 <= 3,
-            std::string(sc.name) + ": at most 3 merchants above 25% reach "
-                                   "(found " +
-                std::to_string(shape.above25) + ")");
+      check(shape.above50 == 0,
+            std::string(sc.name) + ": no merchant may reach half the cards");
+      check(shape.above25 <= 3, std::string(sc.name) +
+                                    ": at most 3 merchants above 25% reach "
+                                    "(found " +
+                                    std::to_string(shape.above25) + ")");
     }
   }
 
@@ -584,10 +588,10 @@ int main() {
     // WORLD SHAPE FIRST, per the join-cohort round: a zero here means the leg
     // rebuilt a population production never generates and every number below
     // describes a world that does not ship.
-    check(result.joiners > 0,
-          std::string(leg.name) + ": the leg must carry the production join "
+    check(result.joiners > 0, std::string(leg.name) +
+                                  ": the leg must carry the production join "
                                   "cohort (joiners " +
-              std::to_string(result.joiners) + ")");
+                                  std::to_string(result.joiners) + ")");
 
     const auto shape = measureShape(result.rows);
     report(leg.name, shape);
@@ -619,10 +623,10 @@ int main() {
 
     // What IS bounded at every scale: no merchant may reach half the cards.
     // That survives the small-population incoherence and is the hard failure.
-    check(shape.above50 == 0,
-          std::string(leg.name) + ": no merchant may sit on more than half "
+    check(shape.above50 == 0, std::string(leg.name) +
+                                  ": no merchant may sit on more than half "
                                   "the cards (found " +
-              std::to_string(shape.above50) + ")");
+                                  std::to_string(shape.above50) + ")");
 
     // --------------------------------------------------------------
     // SUB-GATE D — WITHIN-CARD VISIT CONCENTRATION, AS A RATIO AGAINST THE
