@@ -377,9 +377,11 @@ constexpr double kCardCountLiftHi = 1.25;
 
 // I.9 on the CLEAN world variable. A bucket thinner than this is printed but
 // not banded: the cited Fed count law's tail is genuinely sparse, and a
-// 20-person bucket cannot distinguish a coupling from a coin. MEASURED at the
-// four legs this keeps every bucket from 0 to 5-6 cards in band and prints
-// the rest.
+// 35-person bucket's own standard error is wide enough that banding it
+// asserts nothing. MEASURED at the four legs, this bands 0-4 cards on
+// leg-long, 0-8 on leg-wide and leg-sizeB, and 0-6 on leg-sizeA — i.e. the
+// whole distribution wherever the leg is large enough to populate it, and the
+// sparse tail is printed.
 constexpr std::size_t kMinHeldBucketPeople = 60;
 
 // The ACTIVITY ceiling: card-view rows per person for cardholders with 2 or
