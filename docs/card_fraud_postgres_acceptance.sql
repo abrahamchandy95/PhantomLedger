@@ -596,15 +596,23 @@ BEGIN
   -- (0) so nothing in the feature graph answers the training question
   -- before the model sees a transaction.
   RAISE NOTICE '[8/9] checking entity-label quarantine and overlay integrity';
+  -- NULL COUNTS AS A VIOLATION, and that direction is deliberate. These four
+  -- are LEAK DETECTORS: they pass when nothing carries a full-window verdict.
+  -- Written bare as `is_fraud::integer <> 0`, a NULL yields NULL, the row is
+  -- not counted, and the detector goes silent exactly when the column has
+  -- stopped meaning what it is supposed to mean. The columns are non-NULL
+  -- today -- the exporter writes a literal 0 -- but `error` was also "empty
+  -- string" right up until COPY (FORMAT csv) turned it into NULL and made two
+  -- parity checks vacuous for a whole round. Fail LOUD instead.
   SELECT
       (SELECT count(*) FROM card_fraud."cf_Card"
-        WHERE is_fraud::integer <> 0)
+        WHERE is_fraud IS NULL OR is_fraud::integer <> 0)
     + (SELECT count(*) FROM card_fraud."cf_Party"
-        WHERE is_fraud::integer <> 0)
+        WHERE is_fraud IS NULL OR is_fraud::integer <> 0)
     + (SELECT count(*) FROM card_fraud."cf_Device"
-        WHERE is_blocked::integer <> 0)
+        WHERE is_blocked IS NULL OR is_blocked::integer <> 0)
     + (SELECT count(*) FROM card_fraud."cf_IP"
-        WHERE is_blocked::integer <> 0)
+        WHERE is_blocked IS NULL OR is_blocked::integer <> 0)
     INTO problem_count;
   IF problem_count <> 0 THEN
     RAISE EXCEPTION
