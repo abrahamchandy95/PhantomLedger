@@ -739,3 +739,9 @@ pl_add_test(test_relocation)
 set_tests_properties(test_relocation PROPERTIES TIMEOUT 900)
 pl_add_test(test_session_point_in_time)
 set_tests_properties(test_session_point_in_time PROPERTIES TIMEOUT 1800)
+
+# TEMPORARY AUDIT PROBE — remove after measuring.
+add_executable(probe_credit_view probe_credit_view.cpp)
+target_link_libraries(probe_credit_view PRIVATE pl_generator)
+
+pl_add_test(probe_backdate_window)
