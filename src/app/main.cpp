@@ -410,6 +410,9 @@ int runWindowedStream(
         .merchants = &world.counterparties.merchants,
         .pgMirror = pgUp ? &cfMirror : nullptr,
         .window = window,
+        /* By POINTER: this sink is built before the run, and `finish()`
+         * reads the attempts at end-of-run when they exist. */
+        .declined = &world.transfers.ledger.posted.declined,
     });
   }
 

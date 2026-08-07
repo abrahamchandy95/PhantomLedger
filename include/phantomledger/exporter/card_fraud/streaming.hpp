@@ -56,6 +56,7 @@
 #include "phantomledger/taxonomies/merchants/names.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/transactions/record.hpp"
+#include "phantomledger/transfers/legit/ledger/posting.hpp"
 
 #include <cstdint>
 #include <map>
@@ -66,6 +67,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace PhantomLedger::exporter::card_fraud {
 
@@ -83,6 +85,28 @@ struct CardSeen {
    * view-observed merchants — an unreferenced vertex is a dangling one. */
   std::set<std::uint32_t> generations;
 };
+
+/* A DECLINED ROW'S LABEL IS WITHHELD, exactly as `cf_Card.is_fraud`,
+ * `cf_Party.is_fraud`, `cf_Device.is_blocked` and `cf_IP.is_blocked` are.
+ *
+ * Declined authorizations are not GNN transaction nodes — they are
+ * authorization traffic, separated by a non-empty `error` — so their label
+ * has no consumer that should train on it. Exporting it anyway would be a
+ * liability rather than information, and for two reasons beyond tidiness.
+ *
+ * The funding declines are 37.9-45.7% fraud by construction (the unauthorized
+ * rail drains a victim, so its own later charges cannot fund), which makes the
+ * column the single strongest correlate anywhere in the export. And even with
+ * the rows themselves excluded as nodes, any velocity feature computed OVER
+ * them — "declines on this card in the last 24h" is the canonical one — would
+ * carry that correlation straight back into the graph through the aggregate.
+ * Withholding the label removes the whole class of path rather than managing
+ * its magnitude.
+ *
+ * The truth is not lost: it stays on the SETTLED rows, which is where the
+ * per-row target lives, and entity-level verdicts stay quarantined in
+ * `cf_Ground_Truth_Label`. */
+inline constexpr std::int32_t kDeclinedLabelWithheld = 0;
 
 struct StreamedArtifacts {
   std::map<entity::Key, CardSeen> cards;
@@ -137,6 +161,21 @@ public:
      * export and a full export of the same run share the same window start,
      * which is exactly what `test_card_point_in_time` compares. */
     ::PhantomLedger::time::Window window{};
+
+    /* THE FUNDING DECLINES, BY POINTER RATHER THAN BY VALUE, and the
+     * indirection is what makes both engines feed them.
+     *
+     * The streaming drive site constructs this sink BEFORE the run, while
+     * `posted.declined` is only populated by the run; and `finish()` closes
+     * the writers at end-of-run through the chunk-sink protocol. So there is
+     * no moment at which a caller could hand the attempts over with the
+     * tables still open. A pointer captured at construction is valid the
+     * whole time and is populated by the time `finish()` reads it.
+     *
+     * Null means the caller has no declined stream (a direct unit
+     * construction), and the pass is simply skipped. */
+    const std::vector<transfers::legit::ledger::DeclinedAttempt> *declined =
+        nullptr;
   };
 
   explicit StreamingCardFraudExport(Config config)
@@ -304,7 +343,7 @@ public:
         paymentW_->writer().writeRow(
             declinedId,
             time::formatTimestamp(time::fromEpochSeconds(declinedTs)),
-            tx.amount, static_cast<std::int32_t>(fraud ? 1 : 0), declinedUnix,
+            tx.amount, kDeclinedLabelWithheld, declinedUnix,
             merchants::name(category), derive::useChipFor(tx, footprint),
             derive::nonFundingErrorFor(tx));
         cardSendW_->writer().writeRow(declinedId, cardNumber, declinedUnix);
@@ -336,7 +375,117 @@ public:
 
   void endSpan(const ::PhantomLedger::pipeline::chunk::Span &) noexcept {}
 
+private:
+  /* THE FUNDING DECLINES — the ones the replay actually decided, as opposed
+   * to the non-funding ones synthesised beside each settled row.
+   *
+   * Run once from `finish()`, so both drive sites feed them identically. An
+   * asymmetry here would make the binary and the tests export different
+   * tables from the same world, which is what `test_card_point_in_time`
+   * forbids.
+   *
+   * SAME VIEW FILTER AS THE SETTLED STREAM, deliberately: an attempt on a
+   * channel the card view does not carry, or by a party outside its
+   * membership interval, is not a card-view authorization just because it
+   * failed.
+   *
+   * THEIR ENTITIES MUST BE REGISTERED, and this is the part that is easy to
+   * get wrong. A settled row's card, merchant, device and address are already
+   * vertices; a declined attempt's need not be, because the attempt may be
+   * the only time that combination appears. Skipping registration would emit
+   * edges pointing at vertices no writer produced — the dangling-edge failure
+   * the acceptance script's orphan check exists to catch.
+   *
+   * `card.fraud` is deliberately NOT set from a declined attempt. That flag
+   * drives the `cf_Ground_Truth_Label` card overlay, and a card is
+   * "ever_fraud" because fraud SETTLED on it, not because an attempt was
+   * refused — the same reason the row's own label is withheld.
+   *
+   * Ids carry an 'F' suffix, disjoint from the settled 'T<n>' space and the
+   * non-funding 'T<n>D' space, so nothing can collide and no settled row is
+   * renumbered by a change here. */
+  void writeFundingDeclines() {
+    if (config_.declined == nullptr || paymentW_ == std::nullopt) {
+      return;
+    }
+    static constexpr auto kCardTag =
+        channels::tag(channels::Legit::cardPurchase);
+    static constexpr auto kMerchantTag =
+        channels::tag(channels::Legit::merchant);
+
+    std::uint64_t seq = 0;
+    for (const auto &attempt : *config_.declined) {
+      const auto &tx = attempt.txn;
+      ++seq;
+
+      const auto channel = tx.session.channel;
+      if (channel != kCardTag && channel != kMerchantTag) {
+        continue;
+      }
+      if (!config_.membership.activeAt(ownerOf(tx.source), tx.timestamp) ||
+          !config_.membership.activeAt(ownerOf(tx.target), tx.timestamp)) {
+        continue;
+      }
+      /* A declined attempt with no session cannot carry the two endpoint
+       * edges the card view requires. The settled path THROWS on this,
+       * because a settled row reaching it is a generation defect; here it is
+       * skipped, because the funding test can refuse a row the router never
+       * reached and that is not a defect in this pass. */
+      if (!tx.session.deviceId.assigned() || tx.session.ipAddress.value == 0) {
+        continue;
+      }
+
+      const bool credit =
+          config_.cards != nullptr &&
+          config_.cards->byKey.find(tx.source) != config_.cards->byKey.end();
+      const auto generation = generationFor(tx.source, tx.timestamp);
+
+      auto &card = artifacts_.cards[tx.source];
+      card.credit = credit;
+      card.generations.insert(generation);
+      artifacts_.merchants.insert(tx.target);
+      artifacts_.devices.insert(tx.session.deviceId);
+      artifacts_.ips.insert(tx.session.ipAddress);
+
+      const auto declinedId = "T" + std::to_string(seq) + "F";
+      const auto cardNumber = derive::cardId(tx.source, credit, generation);
+      const auto merchant = derive::merchantId(tx.target);
+      const auto unixTime = static_cast<std::uint64_t>(tx.timestamp);
+
+      const auto catIt = catalogByKey_.find(tx.target);
+      const auto category = catIt != catalogByKey_.end()
+                                ? catIt->second.category
+                                : derive::fallbackCategory(tx.target);
+      const auto footprint =
+          catIt != catalogByKey_.end()
+              ? std::optional<entity::merchant::Footprint>{catIt->second
+                                                               .footprint}
+              : std::nullopt;
+
+      paymentW_->writer().writeRow(
+          declinedId,
+          time::formatTimestamp(time::fromEpochSeconds(tx.timestamp)),
+          tx.amount, kDeclinedLabelWithheld, unixTime,
+          merchants::name(category), derive::useChipFor(tx, footprint),
+          derive::kInsufficientBalanceError);
+      cardSendW_->writer().writeRow(declinedId, cardNumber, unixTime);
+      merchantReceiveW_->writer().writeRow(declinedId, merchant, unixTime);
+      transactionDeviceW_->writer().writeRow(
+          declinedId, common::renderDeviceId(tx.session.deviceId).view(),
+          unixTime);
+      transactionIpW_->writer().writeRow(
+          declinedId, network::format(tx.session.ipAddress).view(), unixTime);
+      ++artifacts_.declinedRows;
+    }
+  }
+
+public:
+
   void finish() {
+    /* The funding declines go out BEFORE the tables close — the only point
+     * where the attempts exist and the writers are still open. */
+    writeFundingDeclines();
+
     /* CLOSE EXPLICITLY, do not rely on reset(). Each long-lived COPY must
      * close while an exception can still reach runWindowedStream. Table's
      * destructor is only an unwind safety net and downgrades close failures

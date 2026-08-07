@@ -757,6 +757,8 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       .pgMirror = options.pgMirror,
       .capture = options.capture,
       .window = options.window,
+      /* The funding declines; written by `finish()`. */
+      .declined = &result.transfers.ledger.posted.declined,
   });
   sink.append(txns);
   sink.finish();
