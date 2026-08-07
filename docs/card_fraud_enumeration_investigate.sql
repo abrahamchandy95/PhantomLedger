@@ -45,11 +45,11 @@ SELECT CASE
          WHEN error = 'Do Not Honor' THEN 'card-testing probe'
          ELSE 'non-funding decline'
        END AS outcome,
-       count(*) AS rows,
-       sum(CASE WHEN is_fraud <> 0 THEN 1 ELSE 0 END) AS labelled_fraud
+       count(*) AS row_count,
+       sum(CASE WHEN is_fraud::integer <> 0 THEN 1 ELSE 0 END) AS labelled_fraud
 FROM card_fraud."cf_Payment_Transaction"
 GROUP BY 1
-ORDER BY rows DESC;
+ORDER BY row_count DESC;
 
 \echo ''
 \echo '[2/4] the top endpoints by distinct cards -- what are they?'
@@ -64,7 +64,7 @@ WITH edge AS (
 )
 SELECT device_id,
        count(DISTINCT card_number) AS distinct_cards,
-       count(*) AS rows,
+       count(*) AS row_count,
        round(avg(CASE WHEN error = 'Do Not Honor' THEN 1.0 ELSE 0.0 END), 4)
          AS probe_share
 FROM edge
@@ -79,7 +79,7 @@ WITH card_truth AS (
   -- Card-level truth from SETTLED rows only: a withheld decline must not
   -- decide whether its card counts as a victim.
   SELECT cs.card_number,
-         bool_or(p.is_fraud <> 0) AS ever_fraud
+         bool_or(p.is_fraud::integer <> 0) AS ever_fraud
   FROM card_fraud."cf_Card_Send_Transaction" cs
   JOIN card_fraud."cf_Payment_Transaction" p ON p.id = cs.txn_id
   WHERE p.error = ''
@@ -113,7 +113,7 @@ ORDER BY 1;
 \echo '[4/4] the same cut for IP, since IP carried the heavier tail'
 WITH card_truth AS (
   SELECT cs.card_number,
-         bool_or(p.is_fraud <> 0) AS ever_fraud
+         bool_or(p.is_fraud::integer <> 0) AS ever_fraud
   FROM card_fraud."cf_Card_Send_Transaction" cs
   JOIN card_fraud."cf_Payment_Transaction" p ON p.id = cs.txn_id
   WHERE p.error = ''
