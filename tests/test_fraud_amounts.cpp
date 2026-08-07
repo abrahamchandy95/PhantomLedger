@@ -176,14 +176,32 @@ void testGiftCardScamAmount() {
       ++maxDenomHits;
     }
   }
-  // 75% forced denomination mass ({100, 200, 500} with 500
-  // triple-weighted: "buy the biggest card they have") plus incidental
-  // continuous hits; generous bands per the house rule.
+  // RE-DERIVED, NOT WIDENED. The old band was denomFrac in (0.65, 0.90),
+  // and its lower half was measured against a construction that no longer
+  // exists: the sampler used to have an OFF-LATTICE branch returning
+  // round(U[50,500]/10)*10, so ~25% of amounts landed on a non-denomination
+  // and the complement of denomFrac was those "incidental continuous hits".
+  //
+  // That branch was a LEAK and was removed. It put fraud on 46 round-ten
+  // values that cent-rounded legitimate spend essentially never reaches:
+  // measured at pop 900 x 1461d, `amount == $310.00` was 4 fraud of 8 rows,
+  // precision 0.5000 at 486x lift, a residual oracle at a value the retail
+  // ladder does not even contain. Both branches now land on the ladder that
+  // legitimate gift-card buyers also use (commerce/gift_cards.hpp); only the
+  // WEIGHTS differ, which is the realistic relationship and the whole signal.
+  //
+  // So the statistic's complement changed meaning, and the check is now
+  // STRONGER rather than looser: every amount must be ON the ladder, and
+  // denomFrac measures concentration on the HIGH rungs against $50.
+  // Derived: 0.75 * 0.97 + 0.25 * 0.80 = 0.9275.
+  for (const double x : v) {
+    PL_CHECK(x == 50.0 || x == 100.0 || x == 200.0 || x == 500.0);
+  }
   const double denomFrac =
       static_cast<double>(denomHits) / static_cast<double>(v.size());
   const double maxFrac =
       static_cast<double>(maxDenomHits) / static_cast<double>(v.size());
-  PL_CHECK(denomFrac > 0.65 && denomFrac < 0.90);
+  PL_CHECK(denomFrac > 0.88 && denomFrac < 0.97);
   PL_CHECK(maxFrac > 0.35 && maxFrac < 0.60); // .75 x .6 = .45 target
   const double avg = mean(v);
   const double med = median(v);

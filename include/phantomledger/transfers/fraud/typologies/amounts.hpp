@@ -149,18 +149,47 @@ namespace PhantomLedger::transfers::fraud::typologies::amounts {
  *    reimbursement, in deliberate contrast to the unauthorized card
  *    rail (Reg Z zero-liability) which is mostly reimbursed. */
 [[nodiscard]] inline double giftCardScamAmount(random::Rng &rng) {
-  static constexpr std::array<double, 5> kDenoms{100.0, 200.0, 500.0, 500.0,
-                                                 500.0};
-  /* Fixed draw pattern: exactly 2 uniforms per call on both branches. */
-  const bool onDenom = rng.coin(0.75);
+  /* THE SAME LADDER LEGITIMATE GIFT-CARD PURCHASES USE — Apple's official US
+   * denominations. Only the WEIGHTS differ, and that difference IS the signal:
+   * the FTC spotlight above says victims are directed to max-denomination
+   * cards, so this skews hard to $500 while ordinary buyers cluster at $25-$50
+   * (commerce/gift_cards.hpp).
+   *
+   * THE OLD OFF-LATTICE BRANCH WAS A LEAK AND IS GONE. It returned
+   * `round(U[50,500] / 10) * 10`, i.e. one of 46 round-TEN values, while every
+   * legitimate card amount is cent-rounded and lands on them only by accident.
+   * Measured at pop 900 x 1461d AFTER legitimate gift cards existed:
+   * `amount == $310.00` was still 4 fraud of 8 rows — precision 0.5000 at 486x
+   * lift, a residual oracle at a value the ladder does not contain. Nothing in
+   * the citation supports non-standard denominations: a victim buys the cards
+   * on the rack. Both branches now land on the ladder.
+   *
+   * Fixed draw pattern preserved: exactly 2 uniforms per call on both
+   * branches, so no downstream draw shifts. The coin now selects the SKEW —
+   * a victim pushed to the maximum, versus one buying what was in reach. */
+  static constexpr std::array<double, 6> kLadder{10.0,  25.0,  50.0,
+                                                 100.0, 200.0, 500.0};
+  static constexpr std::array<std::uint32_t, 6> kHardBp{0, 0, 300, 1200, 2500,
+                                                        6000};
+  /* ZERO on $10 and $25 in BOTH branches, and `test_fraud_amounts` is what
+   * insisted: the FTC spotlight puts typical per-card demand at $100-$500, and
+   * that gate bands the sampler at [$50, $500]. A scammer does not send a
+   * victim for a $10 card. So the ladder is SHARED with legitimate buyers but
+   * the two occupy different parts of it, which is the realistic relationship
+   * and is why the low rungs come out ~0% fraud. */
+  static constexpr std::array<std::uint32_t, 6> kSoftBp{0, 0, 2000, 3500, 2500,
+                                                        2000};
+  const bool maxPressure = rng.coin(0.75);
   const double u = rng.nextDouble();
-  if (onDenom) {
-    auto idx =
-        static_cast<std::size_t>(u * static_cast<double>(kDenoms.size()));
-    idx = std::min(idx, kDenoms.size() - 1);
-    return kDenoms[idx];
+  const auto &weights = maxPressure ? kHardBp : kSoftBp;
+  auto pick = static_cast<std::uint32_t>(u * 10'000.0);
+  for (std::size_t i = 0; i < kLadder.size(); ++i) {
+    if (pick < weights[i]) {
+      return kLadder[i];
+    }
+    pick -= weights[i];
   }
-  return std::round((50.0 + 450.0 * u) / 10.0) * 10.0;
+  return kLadder.back();
 }
 
 /* Victim-AUTHORIZED PUSH PAYMENT in an impostor scam: the victim wires

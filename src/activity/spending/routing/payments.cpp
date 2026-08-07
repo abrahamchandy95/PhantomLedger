@@ -1,6 +1,7 @@
 #include "phantomledger/activity/spending/routing/router.hpp"
 
 #include "phantomledger/activity/spending/market/commerce/affinity.hpp"
+#include "phantomledger/activity/spending/market/commerce/gift_cards.hpp"
 #include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/math/amounts.hpp"
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
@@ -315,12 +316,26 @@ PaymentRouter::emitMerchant(const actors::Event &event) {
                            event.spender->amountMultiplier *
                            event.amountFactor * event.priceScale *
                            event.consumptionScale;
-  const double amount =
-      primitives::utils::floorAndRound(rawAmount, kAmountFloor);
 
   /* The row's own timestamp is the instrument salt: world-derived, row-stable,
    * and not an emission ordinal. See `pickInstrumentSlot`. */
   const auto ts = time::toEpochSeconds(event.ts);
+
+  /* A LEGITIMATE GIFT-CARD PURCHASE lands on the denomination ladder instead
+   * of the continuous category law — and it must, because the gift-card SCAM
+   * typology draws from that same ladder while every other legitimate amount
+   * is CPI-scaled and cent-rounded. Without this, `amount == $500.00` was a
+   * precision-1.0000 fraud oracle. See commerce/gift_cards.hpp.
+   *
+   * DRAW-FREE, so the RNG lane is untouched: the override replaces a value,
+   * it does not consume a uniform, and `merchantAmount` above is still called
+   * unconditionally so no branch can change the draw count. */
+  const auto giftCard = ::PhantomLedger::activity::spending::market::commerce::giftcards::amountFor(
+      event.spender->person, dst, ts, category);
+  const double amount =
+      giftCard.has_value()
+          ? *giftCard
+          : primitives::utils::floorAndRound(rawAmount, kAmountFloor);
   const auto route =
       selectPaymentRoute(rng_, *event.spender, static_cast<std::uint64_t>(ts),
                          event.availableCash, event.cardAvailable, amount);
