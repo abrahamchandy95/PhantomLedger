@@ -22,27 +22,26 @@ namespace detail {
 
 } // namespace detail
 
-struct CounterpartyRevenueProfile {
+struct MultiSource {
   double activeP = 0.0;
-  int counterpartiesMin = 1;
-  int counterpartiesMax = 1;
+  int minCount = 1;
+  int maxCount = 1;
   int paymentsMin = 0;
   int paymentsMax = 0;
   double median = 0.0;
   double sigma = 0.0;
 
   [[nodiscard]] constexpr bool valid() const noexcept {
-    return detail::unitProbability(activeP) && counterpartiesMin >= 1 &&
-           detail::orderedRange(counterpartiesMin, counterpartiesMax) &&
+    return detail::unitProbability(activeP) && minCount >= 1 &&
+           detail::orderedRange(minCount, maxCount) &&
            detail::nonNegative(paymentsMin) &&
            detail::orderedRange(paymentsMin, paymentsMax) &&
            detail::nonNegative(median) && detail::nonNegative(sigma);
   }
 };
 
-/// Profile for a single-source revenue flow (settlements, draws,
-/// investments, cash takings deposits).
-struct SingleSourceRevenueProfile {
+// Profile for a single-source revenue flow
+struct SingleSource {
   double activeP = 0.0;
   int paymentsMin = 0;
   int paymentsMax = 0;
@@ -58,7 +57,7 @@ struct SingleSourceRevenueProfile {
 };
 
 /// Controls whether a persona skips a given month entirely.
-struct QuietMonthProfile {
+struct QuietMonth {
   double probability = 0.0;
   double skipProbability = 0.60;
 
@@ -69,14 +68,14 @@ struct QuietMonthProfile {
 };
 
 /// Complete revenue profile for one persona archetype.
-struct RevenuePersonaProfile {
-  CounterpartyRevenueProfile client{};
-  CounterpartyRevenueProfile platform{};
-  SingleSourceRevenueProfile settlement{};
-  SingleSourceRevenueProfile ownerDraw{};
-  SingleSourceRevenueProfile investment{};
-  SingleSourceRevenueProfile cashTakings{};
-  QuietMonthProfile quietMonth{};
+struct PersonaRevenue {
+  MultiSource client{};
+  MultiSource platform{};
+  SingleSource settlement{};
+  SingleSource ownerDraw{};
+  SingleSource investment{};
+  SingleSource cashTakings{};
+  QuietMonth quietMonth{};
 
   [[nodiscard]] constexpr bool valid() const noexcept {
     return client.valid() && platform.valid() && settlement.valid() &&

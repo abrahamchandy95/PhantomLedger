@@ -63,7 +63,7 @@ struct Sources {
 struct Plan {
   PersonId person = 0;
   personas::Type persona = personas::kDefaultType;
-  const RevenuePersonaProfile *profile = nullptr;
+  const PersonaRevenue *profile = nullptr;
   Accounts accounts{};
   Sources sources{};
 
@@ -105,7 +105,7 @@ namespace detail {
 
 [[nodiscard]] inline std::vector<Key>
 counterpartySources(random::Rng &rng, std::span<const Key> pool,
-                    const CounterpartyRevenueProfile &profile) {
+                    const MultiSource &profile) {
   if (profile.activeP <= 0.0 || pool.empty()) {
     return {};
   }
@@ -114,13 +114,14 @@ counterpartySources(random::Rng &rng, std::span<const Key> pool,
     return {};
   }
 
-  return choiceK(rng, pool, profile.counterpartiesMin,
-                 profile.counterpartiesMax);
+  // Note: assumes counterpartiesMin/Max have been correctly renamed in
+  // MultiSource
+  return choiceK(rng, pool, profile.minCount, profile.maxCount);
 }
 
-[[nodiscard]] inline std::optional<Key>
-source(random::Rng &rng, std::span<const Key> pool,
-       const SingleSourceRevenueProfile &profile) {
+[[nodiscard]] inline std::optional<Key> source(random::Rng &rng,
+                                               std::span<const Key> pool,
+                                               const SingleSource &profile) {
   if (profile.activeP <= 0.0 || pool.empty()) {
     return std::nullopt;
   }
@@ -181,11 +182,16 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
   const auto &population = book.population;
   const auto &counterparties = book.counterparties;
 
+  // Unrelated checks are now strictly separated for readability
   if (!counterparties.available()) {
     return std::nullopt;
   }
 
-  if (!population.exists(person) || !population.hasAccount(person)) {
+  if (!population.exists(person)) {
+    return std::nullopt;
+  }
+
+  if (!population.hasAccount(person)) {
     return std::nullopt;
   }
 
@@ -195,56 +201,53 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
   }
 
   const auto persona = population.persona(person);
-  const auto &profileOpt = archetypeFor(persona);
-  if (!profileOpt.has_value()) {
-    return std::nullopt;
-  }
 
-  const auto *profile = &*profileOpt;
-  const auto accounts =
-      detail::accountsFor(population, person, persona, personal);
+  // C++23 monadic transform: perfectly flat pipeline
+  return lookupProfile(persona).transform([&](const PersonaRevenue &profile) {
+    const auto accounts =
+        detail::accountsFor(population, person, persona, personal);
+    const auto personKey = std::to_string(static_cast<unsigned>(person));
+    auto rng =
+        book.entropy.factory.rng({"legit", "nonpayroll_income", personKey});
 
-  const auto personKey = std::to_string(static_cast<unsigned>(person));
-  auto rng =
-      book.entropy.factory.rng({"legit", "nonpayroll_income", personKey});
+    Sources sources{
+        .clients = detail::counterpartySources(rng, counterparties.clients(),
+                                               profile.client),
+        .platforms = detail::counterpartySources(
+            rng, counterparties.platforms(), profile.platform),
+        .processor = detail::source(rng, counterparties.processors(),
+                                    profile.settlement),
 
-  Sources sources{
-      .clients = detail::counterpartySources(rng, counterparties.clients(),
-                                             profile->client),
-      .platforms = detail::counterpartySources(rng, counterparties.platforms(),
-                                               profile->platform),
-      .processor =
-          detail::source(rng, counterparties.processors(), profile->settlement),
-      .drawSrc = accounts.business.has_value()
-                     ? accounts.business
-                     : detail::source(rng, counterparties.ownerBusinesses(),
-                                      profile->ownerDraw),
-      .investmentSrc = accounts.brokerage.has_value()
-                           ? accounts.brokerage
-                           : detail::source(rng, counterparties.brokerages(),
-                                            profile->investment),
-  };
+        // C++23 or_else: lazily defers the RNG draw unless the
+        // business/brokerage accounts don't exist
+        .drawSrc = accounts.business.or_else([&] {
+          return detail::source(rng, counterparties.ownerBusinesses(),
+                                profile.ownerDraw);
+        }),
+        .investmentSrc = accounts.brokerage.or_else([&] {
+          return detail::source(rng, counterparties.brokerages(),
+                                profile.investment);
+        }),
+    };
 
-  // Cash-takings source draws LAST so its addition leaves every
-  // pre-existing per-person source draw unchanged (content-keyed
-  // stream, fixed draw order; cash-deposits-2026-07). The source
-  // entity is the branch/ATM cash hub — the same infrastructure
-  // account ATM withdrawals pay into.
-  if (const auto hub = counterparties.cashHub();
-      hub.has_value() && profile->cashTakings.activeP > 0.0 &&
-      rng.nextDouble() < profile->cashTakings.activeP) {
-    sources.cashSrc = hub;
-  }
+    // Cash-takings source draws LAST so its addition leaves every
+    // pre-existing per-person source draw unchanged
+    if (const auto hub = counterparties.cashHub();
+        hub.has_value() && profile.cashTakings.activeP > 0.0 &&
+        rng.nextDouble() < profile.cashTakings.activeP) {
+      sources.cashSrc = hub;
+    }
 
-  sources.applyFallback(persona, rng, counterparties, accounts);
+    sources.applyFallback(persona, rng, counterparties, accounts);
 
-  return Plan{
-      .person = person,
-      .persona = persona,
-      .profile = profile,
-      .accounts = accounts,
-      .sources = std::move(sources),
-  };
+    return Plan{
+        .person = person,
+        .persona = persona,
+        .profile = &profile, // Safe: profile points to the static kCatalog
+        .accounts = accounts,
+        .sources = std::move(sources),
+    };
+  });
 }
 
 } // namespace source

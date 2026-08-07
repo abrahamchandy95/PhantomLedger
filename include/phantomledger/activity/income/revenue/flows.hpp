@@ -131,37 +131,37 @@ public:
         // H1 step 2b (class W): freelancer/business revenue rides the
         // labor-income axis; the month's wage index turns the
         // calibration-year draws into era-correct nominal amounts.
-        wageScale_(synth::econ::wageScale(
-            time::toCalendarDate(monthStart).year)) {}
+        wageScale_(
+            synth::econ::wageScale(time::toCalendarDate(monthStart).year)) {}
 
   // -------- public verbs (one per flow type) --------
 
-  void clients(const CounterpartyRevenueProfile &profile, const Key &dst,
+  void clients(const MultiSource &profile, const Key &dst,
                std::span<const Key> sources) {
     counterparty(profile, dst, sources, detail::kClients);
   }
 
-  void platforms(const CounterpartyRevenueProfile &profile, const Key &dst,
+  void platforms(const MultiSource &profile, const Key &dst,
                  std::span<const Key> sources) {
     counterparty(profile, dst, sources, detail::kPlatforms);
   }
 
-  void settlements(const SingleSourceRevenueProfile &profile, const Key &dst,
+  void settlements(const SingleSource &profile, const Key &dst,
                    std::optional<Key> src) {
     singleSource(profile, dst, src, detail::kSettlements);
   }
 
-  void draws(const SingleSourceRevenueProfile &profile, const Key &dst,
+  void draws(const SingleSource &profile, const Key &dst,
              std::optional<Key> src) {
     singleSource(profile, dst, src, detail::kDraws);
   }
 
-  void investments(const SingleSourceRevenueProfile &profile, const Key &dst,
+  void investments(const SingleSource &profile, const Key &dst,
                    std::optional<Key> src) {
     singleSource(profile, dst, src, detail::kInvestments);
   }
 
-  void cashTakings(const SingleSourceRevenueProfile &profile, const Key &dst,
+  void cashTakings(const SingleSource &profile, const Key &dst,
                    std::optional<Key> src) {
     singleSource(profile, dst, src, detail::kCashTakings);
   }
@@ -176,7 +176,7 @@ public:
   }
 
 private:
-  void counterparty(const CounterpartyRevenueProfile &profile, const Key &dst,
+  void counterparty(const MultiSource &profile, const Key &dst,
                     std::span<const Key> sources, const detail::Rule &rule) {
     if (sources.empty()) {
       return;
@@ -196,7 +196,7 @@ private:
     }
   }
 
-  void singleSource(const SingleSourceRevenueProfile &profile, const Key &dst,
+  void singleSource(const SingleSource &profile, const Key &dst,
                     std::optional<Key> src, const detail::Rule &rule) {
     if (!src.has_value()) {
       return;

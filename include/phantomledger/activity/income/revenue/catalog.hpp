@@ -25,17 +25,17 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 // the household-econ-2026-07 student-employment ADJUST].
 // Retiree/HNW carry no cash profile BY CHOICE (net cash spenders).
 
-[[nodiscard]] inline constexpr RevenuePersonaProfile freelancerProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue freelancerProfile() {
   return {.client = {.activeP = 0.88,
-                     .counterpartiesMin = 2,
-                     .counterpartiesMax = 5,
+                     .minCount = 2,
+                     .maxCount = 5,
                      .paymentsMin = 1,
                      .paymentsMax = 4,
                      .median = 1400.0,
                      .sigma = 0.70},
           .platform = {.activeP = 0.42,
-                       .counterpartiesMin = 1,
-                       .counterpartiesMax = 2,
+                       .minCount = 1,
+                       .maxCount = 2,
                        .paymentsMin = 1,
                        .paymentsMax = 4,
                        .median = 425.0,
@@ -56,17 +56,17 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
           .quietMonth = {.probability = 0.12}};
 }
 
-[[nodiscard]] inline constexpr RevenuePersonaProfile smallBusinessProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue smallBusinessProfile() {
   return {.client = {.activeP = 0.55,
-                     .counterpartiesMin = 2,
-                     .counterpartiesMax = 6,
+                     .minCount = 2,
+                     .maxCount = 6,
                      .paymentsMin = 0,
                      .paymentsMax = 3,
                      .median = 2600.0,
                      .sigma = 0.75},
           .platform = {.activeP = 0.22,
-                       .counterpartiesMin = 1,
-                       .counterpartiesMax = 2,
+                       .minCount = 1,
+                       .maxCount = 2,
                        .paymentsMin = 0,
                        .paymentsMax = 3,
                        .median = 950.0,
@@ -94,7 +94,7 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
           .quietMonth = {.probability = 0.06}};
 }
 
-[[nodiscard]] inline constexpr RevenuePersonaProfile highNetWorthProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue highNetWorthProfile() {
   return {.ownerDraw = {.activeP = 0.55,
                         .paymentsMin = 1,
                         .paymentsMax = 2,
@@ -108,7 +108,7 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
           .quietMonth = {.probability = 0.02}};
 }
 
-[[nodiscard]] inline constexpr RevenuePersonaProfile retireeProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue retireeProfile() {
   return {.ownerDraw = {.activeP = 0.33,
                         .paymentsMin = 1,
                         .paymentsMax = 1,
@@ -124,7 +124,7 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 
 // Tipped workers (~2.5% of US employment, Yale Budget Lab 2024)
 // depositing cash tips — modest amounts, card tipping now dominates.
-[[nodiscard]] inline constexpr RevenuePersonaProfile salariedProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue salariedProfile() {
   return {.cashTakings = {.activeP = 0.03,
                           .paymentsMin = 2,
                           .paymentsMax = 4,
@@ -135,7 +135,7 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 // Employed students in tipped food-service jobs [Derived: student
 // employment .40 (L-4, household-econ-2026-07) x ~.4 tipped-job share
 // = .16 — the L-10 knock-on recompute the cash-split round queued].
-[[nodiscard]] inline constexpr RevenuePersonaProfile studentProfile() {
+[[nodiscard]] inline constexpr PersonaRevenue studentProfile() {
   return {.cashTakings = {.activeP = 0.16,
                           .paymentsMin = 1,
                           .paymentsMax = 3,
@@ -144,8 +144,7 @@ namespace enumTax = ::PhantomLedger::taxonomies::enums;
 }
 
 [[nodiscard]] inline constexpr auto buildCatalog() {
-  std::array<std::optional<RevenuePersonaProfile>, personas::kKindCount>
-      table{};
+  std::array<std::optional<PersonaRevenue>, personas::kKindCount> table{};
 
   table[enumTax::toIndex(personas::Type::retiree)] = retireeProfile();
   table[enumTax::toIndex(personas::Type::freelancer)] = freelancerProfile();
@@ -162,8 +161,8 @@ inline constexpr auto kCatalog = buildCatalog();
 
 } // namespace detail
 
-[[nodiscard]] inline constexpr const std::optional<RevenuePersonaProfile> &
-archetypeFor(personas::Type type) noexcept {
+[[nodiscard]] inline constexpr const std::optional<PersonaRevenue> &
+lookupProfile(personas::Type type) noexcept {
   return detail::kCatalog[detail::enumTax::toIndex(type)];
 }
 

@@ -20,7 +20,7 @@ namespace PhantomLedger::activity::income::revenue {
 namespace detail {
 
 [[nodiscard]] inline bool quietMonth(random::Rng &rng,
-                                     const QuietMonthProfile &profile) {
+                                     const QuietMonth &profile) {
   return rng.nextDouble() < profile.probability &&
          rng.nextDouble() < profile.skipProbability;
 }
