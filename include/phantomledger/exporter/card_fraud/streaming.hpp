@@ -469,8 +469,12 @@ private:
         ::PhantomLedger::infra::enumeration::kProbeAmount,
         kDeclinedLabelWithheld, probeUnix,
         merchants::name(records[slot].category),
-        /* Card-not-present: the operator is not holding the card. */
-        0, derive::kEnumerationError);
+        /* Card-not-present: the operator is not holding the card. MUST be one
+         * of the three declared strings — an integer here renders as "0" and
+         * invents a fourth category that identifies the probe population
+         * exactly, in a column the feature contract declares FEATURE-SAFE and
+         * documents as carrying entry mode alone. */
+        derive::kUseChipOnline, derive::kEnumerationError);
     cardSendW_->writer().writeRow(probeId, cardNumber, probeUnix);
     merchantReceiveW_->writer().writeRow(
         probeId, derive::merchantId(merchantKey), probeUnix);

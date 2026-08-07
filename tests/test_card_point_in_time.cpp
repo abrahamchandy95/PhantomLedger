@@ -477,6 +477,49 @@ int main() {
     check(prefixProbes <= fullProbes,
           "the score-time export wrote MORE probes than the full window");
 
+    /* THE use_chip VOCABULARY, CHECKED ON THE RENDERED COLUMN.
+     *
+     * `test_card_use_chip` asserts the value set over `derive::useChipFor`'s
+     * RETURN, walking world transactions — so it is green for any call site
+     * that bypasses that function, and it cannot see rows the ledger does not
+     * contain at all. Both decline populations and the card-testing probes are
+     * synthesised at export time, so all three were invisible to it, and a
+     * probe row shipped an integer `0` in this column for a whole round: a
+     * fourth category, outside the declared three, identifying exactly the
+     * population whose label is withheld.
+     *
+     * Substring rather than a comma split, deliberately — category names may
+     * contain commas and a naive split would test the parser instead of the
+     * column. */
+    const auto badUseChip = [](const Capture &c) {
+      std::size_t n = 0;
+      for (const auto &line : c.lines("Payment_Transaction")) {
+        /* The capture retains the CSV header, which names the column rather
+         * than carrying a value. Skipping it by prefix rather than by index
+         * keeps the check correct if the capture ever stops including it. */
+        if (line.rfind("id,", 0) == 0) {
+          continue;
+        }
+        const bool ok =
+            line.find(pl::exporter::card_fraud::derive::kUseChipOnline) !=
+                std::string::npos ||
+            line.find(pl::exporter::card_fraud::derive::kUseChipChip) !=
+                std::string::npos ||
+            line.find(pl::exporter::card_fraud::derive::kUseChipSwipe) !=
+                std::string::npos;
+        if (!ok) {
+          ++n;
+        }
+      }
+      return n;
+    };
+    check(badUseChip(full) == 0,
+          "Payment_Transaction rows carry a use_chip value outside the three "
+          "declared strings: " +
+              std::to_string(badUseChip(full)) +
+              " rows. An out-of-vocabulary category in a FEATURE-SAFE column "
+              "hands a model a marker for whichever population produced it");
+
     const auto fullDeclined = declinedLines(full);
     const auto prefixDeclined = declinedLines(prefix);
     std::printf("  funding declines exported: full %zu, score-time %zu\n",

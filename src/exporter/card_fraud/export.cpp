@@ -759,6 +759,13 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
       .pgMirror = options.pgMirror,
       .capture = options.capture,
       .window = options.window,
+      /* BOTH POINTERS, or the comment above is false. This is the batch
+       * engine's construction of the sink the windowed engine also builds
+       * (src/app/orchestrator.cpp), and leaving either null makes it export a
+       * table the binary does not write — the exact silent asymmetry backed
+       * out in 6de9c95 and then found twice more in test harnesses. */
+      .declined = &result.transfers.ledger.posted.declined,
+      .attackers = &result.infra.attackers,
   });
   sink.append(txns);
   sink.finish();
