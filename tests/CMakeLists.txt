@@ -32,6 +32,7 @@ pl_add_test(test_channels)
 pl_add_test(test_counterparties)
 pl_add_test(test_calendar)
 pl_add_test(test_app_options)
+pl_add_test(test_mule_temporal)
 # loc-accrual-perf-2026-08: sub-gate D is a COST gate — it fails if the LOC
 # billing sweep goes back to scanning every enabled slot per row, which made
 # the whole generator O(population^2).
@@ -52,6 +53,8 @@ pl_add_test(test_fingerprint)
 # ---------------------------------------------------------------------
 
 pl_add_test(test_spending)
+pl_add_test(test_cash_boundaries)
+set_tests_properties(test_cash_boundaries PROPERTIES TIMEOUT 600)
 pl_add_test(test_minhash_parity)
 
 # geo-causal-v1: the EMBEDDED world geography (no external file/CLI).

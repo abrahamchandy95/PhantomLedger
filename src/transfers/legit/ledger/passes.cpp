@@ -17,6 +17,8 @@
 #include "phantomledger/transfers/channels/government/retirement.hpp"
 #include "phantomledger/transfers/legit/ledger/seeded_screen.hpp"
 #include "phantomledger/transfers/legit/routines/atm.hpp"
+#include "phantomledger/transfers/legit/routines/crypto.hpp"
+#include "phantomledger/transfers/legit/routines/deposits.hpp"
 #include "phantomledger/transfers/legit/routines/internal.hpp"
 #include "phantomledger/transfers/legit/routines/paychecks.hpp"
 #include "phantomledger/transfers/legit/routines/relatives.hpp"
@@ -55,15 +57,6 @@ populationCount(const blueprints::LegitBlueprint &plan) {
       plan.personas().pack->table.byPerson.size());
 }
 
-[[nodiscard]] income::HubAccounts
-buildHubAccounts(const blueprints::LegitBlueprint &plan) {
-  income::HubAccounts hubs;
-  hubs.reserve(plan.counterparties().hubSet.size());
-  hubs.insert(plan.counterparties().hubSet.begin(),
-              plan.counterparties().hubSet.end());
-  return hubs;
-}
-
 [[nodiscard]] income::Timeframe
 buildTimeframe(const blueprints::LegitBlueprint &plan) {
   return income::Timeframe{
@@ -83,13 +76,11 @@ buildEntropy(const blueprints::LegitBlueprint &plan) {
 [[nodiscard]] income::Population
 buildPopulation(const blueprints::LegitBlueprint &plan,
                 const entity::account::Ownership &ownership,
-                const entity::account::Registry &registry,
-                income::HubAccounts hubs) {
+                const entity::account::Registry &registry) {
   return income::Population{
       registry,
       ownership,
       plan.personas().pack->assignment,
-      std::move(hubs),
       // The persona-timeline carrier — salary selection/spans and the
       // revenue month gate read persona-AT-DATE.
       &plan.personas().pack->timelines,
@@ -120,12 +111,13 @@ buildRevenueCounterparties(const blueprints::LegitBlueprint &plan,
                            const entity::counterparty::Directory *directory) {
   income::RevenueCounterparties out;
   out.directory = directory;
-  /* Cash takings deposits draw from the branch/ATM cash hub — the same
-   * infrastructure account ATM withdrawals pay into. Sentinel Key{} when no
-   * hub exists. */
-  if (!plan.counterparties().hubAccounts.empty()) {
-    out.cashHubAccount = plan.counterparties().hubAccounts.front();
-  }
+  out.cashDepositPoints = std::span<const entity::Key>(
+      plan.counterparties().cashDepositPoints.data(),
+      plan.counterparties().cashDepositPoints.size());
+  out.nearbyCashDepositPoints =
+      &plan.counterparties().nearbyCashDepositPoints;
+  out.homeAreas = plan.counterparties().homeAreas;
+  out.relocation = plan.counterparties().relocation;
   return out;
 }
 
@@ -137,8 +129,7 @@ buildPayroll(const blueprints::LegitBlueprint &plan,
   auto payroll = income::salary::Payroll{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
-      .population =
-          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .population = buildPopulation(plan, ownership, registry),
       .counterparties = buildPayrollCounterparties(plan),
       .rules = rules,
   };
@@ -155,8 +146,7 @@ buildRentRoll(const blueprints::LegitBlueprint &plan,
   auto rentRoll = income::rent::RentRoll{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
-      .population =
-          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .population = buildPopulation(plan, ownership, registry),
       .counterparties = buildRentCounterparties(plan),
       .rules = rules,
   };
@@ -173,8 +163,7 @@ buildRevenueBook(const blueprints::LegitBlueprint &plan,
   auto book = income::revenue::Book{
       .timeframe = buildTimeframe(plan),
       .entropy = buildEntropy(plan),
-      .population =
-          buildPopulation(plan, ownership, registry, buildHubAccounts(plan)),
+      .population = buildPopulation(plan, ownership, registry),
       .counterparties = buildRevenueCounterparties(plan, directory),
   };
 
@@ -248,8 +237,8 @@ void addSplitDeposits(const RoutinePass &pass,
    * (`merchant-churn-2026-07` rule 2); and a per-row stream would have broken
    * monolith/windowed lockstep, which is how the first version of this change
    * was caught. Draw-free removes both hazards at once. */
-  auto splitters = routines::paychecks::planSplitters(
-      plan, *accounts.ownership, *accounts.registry);
+  auto splitters = routines::paychecks::planSplitters(plan, *accounts.ownership,
+                                                      *accounts.registry);
 
   streams.add(routines::paychecks::emitSplitTransfers(
       routineTxf(pass), splitters,
@@ -270,6 +259,29 @@ void addRent(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
 
   streams.add(
       income::generateRentTxns(rentRoll, rng, routineTxf(pass), rentModel));
+}
+
+void addDeposits(const RoutinePass &pass,
+                 const blueprints::LegitBlueprint &plan, TxnStreams &streams,
+                 ScreenBook &screen) {
+  const auto accounts = routineAccounts(pass);
+  auto depositScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto deposits = routines::deposits::Generator{routineTxf(pass),
+                                                 depositScreen};
+  streams.add(deposits.generate(plan, *accounts.registry));
+}
+
+void addCrypto(const RoutinePass &pass, const blueprints::LegitBlueprint &plan,
+               TxnStreams &streams, ScreenBook &screen) {
+  const auto accounts = routineAccounts(pass);
+  auto cryptoScreen = SeededScreen::sorted(
+      screen.fresh(),
+      std::span<const transactions::Transaction>(streams.screened()));
+  auto crypto =
+      routines::crypto::Generator{routineTxf(pass), cryptoScreen};
+  streams.add(crypto.generate(plan, *accounts.registry));
 }
 
 void addSubscriptions(const RoutinePass &pass,
@@ -474,6 +486,15 @@ void addRoutinesWithoutSpending(const RoutinePass &pass,
    * it. Releasing here (and stopping collection) frees ~1.4 GB at 200k/730d
    * for the rest of the prologue and the whole fold. Output is unaffected. */
   streams.releasePaydayInbound();
+
+  // Boundary credits are generated before debits so every downstream soft
+  // screen sees cash/check deposits and crypto ramps at their true timestamps.
+  // Both modules use isolated RngFactory lanes and consume none of the shared
+  // routine RNG.
+  addDeposits(pass, plan, streams, screen);
+  memlog::log("routines:deposits", streams);
+  addCrypto(pass, plan, streams, screen);
+  memlog::log("routines:crypto", streams);
 
   addRent(pass, plan, streams);
   memlog::log("routines:rent", streams);

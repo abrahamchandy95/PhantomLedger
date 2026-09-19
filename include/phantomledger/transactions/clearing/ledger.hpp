@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/boundary.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/clearing/types.hpp"
@@ -68,7 +69,8 @@ public:
   void initialize(Index count);
 
   void addAccount(const entity::Key &id, Index idx);
-  void createHub(Index idx) noexcept;
+  void addAccount(const entity::Key &id, Index idx,
+                  entity::boundary::Policy boundaryPolicy);
 
   // --- Protection / tier / LOC setup ---
 
@@ -143,6 +145,18 @@ public:
 
   [[nodiscard]] TransferDecision transferAt(const Posting &posting) noexcept;
 
+  /// Timestamped posting whose endpoint keys retain the distinction between
+  /// an external boundary and an unregistered internal account.
+  struct KeyPosting {
+    entity::Key source{};
+    entity::Key destination{};
+    double amount = 0.0;
+    channels::Tag channel{};
+    std::int64_t timestamp = 0;
+  };
+
+  [[nodiscard]] TransferDecision transferAt(const KeyPosting &posting);
+
   // The pure decision half of applyTransfer: would this transfer be
   // accepted, given current balances, without mutating anything?
   [[nodiscard]] TransferDecision decide(Index srcIdx, Index dstIdx,
@@ -155,12 +169,6 @@ public:
   void restore(const Ledger &other);
 
 private:
-  enum Flags : std::uint8_t {
-    none = 0,
-    hub = 1U << 0U,
-  };
-
-  [[nodiscard]] bool isHub(Index idx) const noexcept;
   [[nodiscard]] bool isValid(Index idx) const noexcept;
   [[nodiscard]] double totalLiquidity(Index idx) const noexcept;
 
@@ -176,9 +184,11 @@ private:
   std::vector<double> overdrafts_;
   std::vector<double> linked_;
   std::vector<double> courtesy_;
-  std::vector<std::uint8_t> flags_;
 
+  // Only Bank::internal keys resolve to posting indices. External keys may be
+  // present in the entity registry/export surface, but are ledger boundaries.
   std::unordered_map<entity::Key, Index> internalAccounts_;
+  std::unordered_map<entity::Key, entity::boundary::Policy> externalAccounts_;
   std::vector<entity::Key> accountKeys_;
 
   std::vector<ProtectionType> protectionType_;

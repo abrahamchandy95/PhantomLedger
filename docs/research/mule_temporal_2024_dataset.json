@@ -1,0 +1,87 @@
+{
+  "days": 366,
+  "seed": 42,
+  "start": "2024-01-01",
+  "schema": "mule_temporal",
+  "tokens": 144910,
+  "database": "phantomledger_mule_temporal_2024_research",
+  "population": 200000,
+  "other_rails": {
+    "ach": 4163459,
+    "card": 60421728,
+    "cash": 6977290,
+    "check": 183319,
+    "unknown": 36079573,
+    "internal": 6690108
+  },
+  "run_manifest": {
+    "id": 1,
+    "days": 366,
+    "seed": "42",
+    "status": "complete",
+    "started": "2026-09-18T14:30:43.273709+05:30",
+    "finished": "2026-09-18T15:34:04.819286+05:30",
+    "txn_rows": 115741341,
+    "population": 200000,
+    "start_date": "2024-01-01",
+    "config_hash": "4e779fefa6e3337ae0383dbe6ce2bf3655b87f2735b9b29d9fa3834d04e73625",
+    "stream_digest": "c8c85f0e0530eba8be8c0645921a1f7a43b2fb1bdcc6e4a2af359712cf01ac14"
+  },
+  "database_size": "72 GB",
+  "zelle_max_usd": 3498.73,
+  "other_payments": 114515477,
+  "party_vertices": 200000,
+  "total_payments": 115741341,
+  "zelle_mean_usd": 117.22,
+  "zelle_payments": 1225864,
+  "person_vertices": 200000,
+  "zelle_total_usd": 143691534.58,
+  "account_vertices": 788283,
+  "zelle_directions": {
+    "external_to_internal": 43690,
+    "internal_to_external": 38098,
+    "internal_to_internal": 1144076
+  },
+  "zelle_median_usd": 66.11,
+  "last_payment_time": "2024-12-31 23:59:59",
+  "first_payment_time": "2024-01-01 00:00:00",
+  "mule_account_labels": {
+    "0": 788050,
+    "1": 233
+  },
+  "zelle_fraud_payments": 5036,
+  "closed_token_bindings": 1240,
+  "external_zelle_accounts": 5581,
+  "mule_accounts_with_zelle": 191,
+  "non_zelle_deposit_to_deposit": 24423034,
+  "zelle_business_involved": 14924,
+  "status": "complete",
+  "research_profile": "atlanta-fed-dcpc-2024-and-wells-fargo-dollar-limits",
+  "calibration_snapshot": "zelle_2024_calibration.json",
+  "zelle_percent_of_all_payments": 1.0591,
+  "mule_label_semantics": {
+    "1": "Explicit simulator account mule role; assigned to designated primary account.",
+    "0": "Other synthetic accounts under the closed-world role definition, including external accounts without generated mule roles.",
+    "-1": "Withheld under --temporal-labels unknown; absent from this run.",
+    "temporal_scope": "Static simulator role, without recruitment or adjudication availability time; supervision only."
+  },
+  "validation": {
+    "temporal_schema_checks": "passed",
+    "zelle_policy_checks": "passed",
+    "population_and_account_labels": "passed",
+    "unit_tests": [
+      "test_mule_temporal",
+      "test_app_options",
+      "test_pipeline_e2e",
+      "test_window_invariance"
+    ]
+  },
+  "code_sha256": {
+    "src/exporter/mule_temporal/streaming.cpp": "bf9ee4caa5fcd961a19ed502c59638362bb7daa1dd36bafe37362f10d96cbe2f",
+    "include/phantomledger/exporter/mule_temporal/zelle_policy.hpp": "0efa49741de3c05505c0d83ca0c134399ad6863c0a9985cf6b0d5cdb8fc130e2",
+    "include/phantomledger/exporter/mule_temporal/streaming.hpp": "916c0c50d3835e549a2f859b99375b641e242af1d35f6e2d88b9289208d3f638",
+    "include/phantomledger/exporter/mule_temporal/schema.hpp": "1ebd27568e0a50777d068262880249ae252c5dae5a5b4e241f21c6b2552c973b",
+    "schemas/mule_temporal.gsql": "d773c1a00b1b2fb7092255de16aeb74b036e91a76cacd5471a1d1643cf573f80",
+    "src/app/orchestrator.cpp": "5d11a4da4e88d04a5025c971c9f58643a0911dfc23d0160796900a57c72b9f3b"
+  }
+}

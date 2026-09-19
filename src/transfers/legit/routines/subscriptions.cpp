@@ -69,8 +69,7 @@ buildBundles(const blueprints::LegitBlueprint &plan,
   return builder.build(
       core::SubscriberAccounts{std::span<const core::SubscriberAccount>(
           subscribers.data(), subscribers.size())},
-      core::BillerDirectory{billers},
-      core::AccountExclusions{.hubAccounts = &plan.counterparties().hubSet});
+      core::BillerDirectory{billers}, core::AccountExclusions{});
 }
 
 // H3 part 3c-ii + H1 DEFECT FIX (authority U-8 addendum): the U-6 CPI
@@ -108,17 +107,16 @@ closeEpochByAccount(const blueprints::LegitBlueprint &plan,
         recordIx >= registry.records.size()) {
       continue;
     }
-    out.emplace(
-        registry.records[recordIx].id,
-        time::toEpochSeconds(pack->timelines[person - 1].death) +
-            static_cast<std::int64_t>(synth::pii::kSettlementDays) * 86'400);
+    out.emplace(registry.records[recordIx].id,
+                time::toEpochSeconds(pack->timelines[person - 1].death) +
+                    static_cast<std::int64_t>(synth::pii::kSettlementDays) *
+                        86'400);
   }
 
   return out;
 }
 
-[[nodiscard]] transactions::Draft draftFrom(const core::Sub &sub,
-                                            double amount,
+[[nodiscard]] transactions::Draft draftFrom(const core::Sub &sub, double amount,
                                             std::int64_t timestamp,
                                             channels::Tag channel) noexcept {
   return transactions::Draft{

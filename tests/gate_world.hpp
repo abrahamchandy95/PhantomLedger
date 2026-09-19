@@ -152,6 +152,10 @@ struct WorldSpec {
   // pass scaledFraudProfile().
   pl::synth::people::Fraud fraudProfile{};
 
+  // Defaults to production sizing. Cash-boundary tests override individual
+  // pools to exercise the registered external fallback contract.
+  pl::synth::counterparties::CounterpartyTargets counterpartyTargets{};
+
   bool withProducts = true;
 
   // Build the access infra and take the pristine router snapshots.
@@ -268,7 +272,8 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
       entityStage::buildMerchants(rng, spec.population, spec.seed, spec.window,
                                   {}, &pl::synth::econ::macroSeries());
   cps.landlords = entityStage::buildLandlords(rng, spec.population);
-  cps.counterparties = entityStage::buildCounterparties(rng, spec.population);
+  cps.counterparties = entityStage::buildCounterparties(
+      rng, spec.population, spec.counterpartyTargets, people.homeAreas);
   // H1 step 2b: like production (simulate.cpp), credit-limit stocks
   // anchor at the WINDOW-START year — arch-equivalence compares this
   // prefix against SimulationPipeline, so both must pass the year.
@@ -321,14 +326,12 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   };
 
   plan = legitBlueprints::buildLegitBlueprint(timeframe, census);
-  plan.addCounterparties(rng, census,
+  plan.addCounterparties(rng,
                          legitBlueprints::CounterpartyPools{
                              .directory = &cps.counterparties,
                              .landlords = &cps.landlords.roster,
-                         },
-                         legitBlueprints::HubSelectionRules{
-                             .populationCount = people.roster.roster.count,
-                             .fraction = 0.01,
+                             .homeAreas = people.homeAreas,
+                             .relocation = &people.relocation,
                          })
       .addPersonas(rng, timeframe,
                    legitBlueprints::PersonaCatalog{.pack = &people.personas});

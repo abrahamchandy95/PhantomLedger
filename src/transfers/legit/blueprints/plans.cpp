@@ -1,8 +1,10 @@
 #include "phantomledger/transfers/legit/blueprints/plans.hpp"
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/personas/dob.hpp"
 #include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/personas/make.hpp"
@@ -14,6 +16,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -21,65 +24,22 @@ namespace PhantomLedger::transfers::legit::blueprints {
 
 namespace {
 
-[[nodiscard]] std::size_t hubCountFor(const HubSelectionRules &hubs,
-                                      std::size_t personCount) noexcept {
+/*
+  Entropy compatibility for the retired customer-hub selector. The former
+  implementation consumed choiceIndices(population, floor(1%)) on the shared
+  stream before opening-balance and transaction generation. Burning that exact
+  operation contains this accounting repair to endpoint/boundary semantics;
+  no selected index is retained and no account receives special treatment.
+*/
+void burnRetiredCounterpartySelection(random::Rng &rng,
+                                      std::size_t personCount) {
   if (personCount == 0) {
-    return 0;
+    return;
   }
-
-  const auto populationCount =
-      hubs.populationCount == 0
-          ? personCount
-          : static_cast<std::size_t>(hubs.populationCount);
-
-  const double fraction = std::clamp(hubs.fraction, 0.0, 0.5);
-
   const auto requested =
-      static_cast<std::size_t>(static_cast<double>(populationCount) * fraction);
-
-  return std::clamp(requested, std::size_t{1}, personCount);
-}
-
-struct Population {
-  AccountCensus census{};
-  const std::vector<entity::PersonId> *persons = nullptr;
-
-  [[nodiscard]] bool empty() const noexcept {
-    return persons == nullptr || persons->empty();
-  }
-};
-
-[[nodiscard]] std::vector<entity::Key>
-selectHubAccounts(random::Rng &rng, const Population &pop,
-                  const HubSelectionRules &hubs) {
-  const auto &census = pop.census;
-  if (pop.empty() || census.accounts == nullptr ||
-      census.ownership == nullptr) {
-    return {};
-  }
-
-  const auto &persons = *pop.persons;
-  const auto count = hubCountFor(hubs, persons.size());
-  if (count == 0) {
-    return {};
-  }
-
-  const auto chosenIdx =
-      rng.choiceIndices(persons.size(), count, /*replace=*/false);
-
-  std::vector<entity::Key> out;
-  out.reserve(chosenIdx.size());
-
-  for (const auto idx : chosenIdx) {
-    const auto person = persons[idx];
-    const auto recordIx = census.ownership->primaryIndex(person);
-
-    if (recordIx < census.accounts->records.size()) {
-      out.push_back(census.accounts->records[recordIx].id);
-    }
-  }
-
-  return out;
+      static_cast<std::size_t>(static_cast<double>(personCount) * 0.01);
+  const auto count = std::clamp(requested, std::size_t{1}, personCount);
+  (void)rng.choiceIndices(personCount, count, /*replace=*/false);
 }
 
 [[nodiscard]] OwnedAccountSlices
@@ -151,9 +111,7 @@ struct LandlordResolution {
 };
 
 [[nodiscard]] LandlordResolution
-resolveLandlords(CounterpartyPools counterparties,
-                 const std::vector<entity::Key> &hubAccounts,
-                 entity::Key fallbackAcct) {
+resolveLandlords(CounterpartyPools counterparties, entity::Key fallbackAcct) {
   LandlordResolution out;
 
   if (counterparties.landlords != nullptr &&
@@ -169,69 +127,148 @@ resolveLandlords(CounterpartyPools counterparties,
     return out;
   }
 
-  if (!hubAccounts.empty()) {
-    out.ids = hubAccounts;
-  } else {
-    out.ids.push_back(fallbackAcct);
-  }
+  out.ids.push_back(fallbackAcct);
 
   return out;
 }
 
-[[nodiscard]] CounterpartyAccess
-buildCounterpartyAccess(random::Rng &rng, const Population &pop,
-                        CounterpartyPools counterparties,
-                        const HubSelectionRules &hubs) {
-  const auto *accounts = pop.census.accounts;
+using NearbyPoints =
+    std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>;
 
-  if (accounts == nullptr || accounts->records.empty()) {
-    throw std::invalid_argument("AccountCensus.accounts must be non-empty "
-                                "to build legit counterparties");
+/* Build a draw-free, event-time lookup from each observable customer area to
+ * its four nearest service points. The same helper is used for cash access,
+ * cash deposits, and check capture so no rail quietly falls back to a global
+ * hub. */
+[[nodiscard]] NearbyPoints buildNearbyPoints(
+    std::span<const entity::Key> points,
+    std::span<const entity::geography::GeoAreaId> pointAreas,
+    CounterpartyPools counterparties) {
+  NearbyPoints out;
+  if (points.empty() || points.size() != pointAreas.size()) {
+    return out;
   }
 
+  std::unordered_set<entity::geography::GeoAreaId> customerAreas;
+  customerAreas.reserve(counterparties.homeAreas.size());
+  for (const auto area : counterparties.homeAreas) {
+    if (entity::geography::validArea(area)) {
+      customerAreas.insert(area);
+    }
+  }
+  if (counterparties.relocation != nullptr) {
+    for (const auto area : counterparties.relocation->allAreas()) {
+      if (entity::geography::validArea(area)) {
+        customerAreas.insert(area);
+      }
+    }
+  }
+
+  const auto &catalog = ::PhantomLedger::synth::geo::geography();
+  constexpr std::size_t kNearbyCount = 4;
+  for (const auto home : customerAreas) {
+    if (!catalog.contains(home)) {
+      continue;
+    }
+
+    std::vector<std::pair<double, std::size_t>> ranked;
+    ranked.reserve(points.size());
+    for (std::size_t i = 0; i < points.size(); ++i) {
+      if (!catalog.contains(pointAreas[i])) {
+        continue;
+      }
+      ranked.emplace_back(entity::geography::distanceMiles(
+                              catalog.at(home), catalog.at(pointAreas[i])),
+                          i);
+    }
+
+    const auto take = std::min(kNearbyCount, ranked.size());
+    std::partial_sort(ranked.begin(), ranked.begin() + take, ranked.end(),
+                      [](const auto &lhs, const auto &rhs) {
+                        if (lhs.first != rhs.first) {
+                          return lhs.first < rhs.first;
+                        }
+                        return lhs.second < rhs.second;
+                      });
+    auto &nearby = out[home];
+    nearby.reserve(take);
+    for (std::size_t i = 0; i < take; ++i) {
+      nearby.push_back(points[ranked[i].second]);
+    }
+  }
+  return out;
+}
+
+[[nodiscard]] CounterpartyAccess
+buildCounterpartyAccess(CounterpartyPools counterparties) {
+  namespace cash = ::PhantomLedger::counterparties::cash;
   CounterpartyAccess plan;
-
-  plan.hubAccounts = selectHubAccounts(rng, pop, hubs);
-  plan.hubSet.reserve(plan.hubAccounts.size());
-  plan.hubSet.insert(plan.hubAccounts.begin(), plan.hubAccounts.end());
-
-  const auto fallbackAcct = !plan.hubAccounts.empty()
-                                ? plan.hubAccounts.front()
-                                : accounts->records.front().id;
 
   const auto *directory = counterparties.directory;
 
-  if (directory != nullptr && !directory->employers.accounts.all.empty()) {
-    plan.employers = directory->employers.accounts.all;
-  } else if (!plan.hubAccounts.empty()) {
-    const auto take = std::max<std::size_t>(1, plan.hubAccounts.size() / 5);
-    plan.employers.assign(plan.hubAccounts.begin(),
-                          plan.hubAccounts.begin() + take);
+  // Inbound funding that originates outside the modeled customer ledger must
+  // use an external counterparty. Internal ownerless business accounts do not
+  // get synthetic infinite liquidity.
+  if (directory != nullptr && !directory->employers.accounts.external.empty()) {
+    plan.employers = directory->employers.accounts.external;
   } else {
-    plan.employers.push_back(fallbackAcct);
+    plan.employers.push_back(cash::fallbackEmployer());
   }
 
-  if (directory != nullptr) {
-    plan.fundingHubs.reserve(directory->employers.accounts.all.size() +
-                             directory->clients.accounts.all.size());
-    plan.fundingHubs.insert(plan.fundingHubs.end(),
-                            directory->employers.accounts.all.begin(),
-                            directory->employers.accounts.all.end());
-    plan.fundingHubs.insert(plan.fundingHubs.end(),
-                            directory->clients.accounts.all.begin(),
-                            directory->clients.accounts.all.end());
-  }
-
-  auto landlords =
-      resolveLandlords(counterparties, plan.hubAccounts, fallbackAcct);
+  auto landlords = resolveLandlords(counterparties, cash::fallbackLandlord());
   plan.landlords = std::move(landlords.ids);
   plan.landlordTypeOf = std::move(landlords.typeOf);
 
-  plan.billerAccounts = !plan.hubAccounts.empty()
-                            ? plan.hubAccounts
-                            : std::vector<entity::Key>{fallbackAcct};
+  if (directory != nullptr) {
+    plan.cashWithdrawalPoints = directory->external.atmTerminals;
+    plan.cashDepositPoints = directory->external.cashDepositories;
+    plan.checkDepositPoints = directory->external.checkCapturePoints;
+    plan.cryptoVenues = directory->external.cryptoVenues;
+    plan.billerAccounts = directory->external.billers;
+    plan.issuerAcct = directory->external.cardIssuer;
+  }
 
-  plan.issuerAcct = fallbackAcct;
+  // Standalone blueprint callers may not provide the synthesized directory.
+  // Keep those paths realistic too: small fixed external pools, never a
+  // customer-account fallback.
+  if (plan.cashWithdrawalPoints.empty()) {
+    plan.cashWithdrawalPoints = {cash::atmTerminal(1), cash::atmTerminal(2)};
+  }
+  if (plan.cashDepositPoints.empty()) {
+    plan.cashDepositPoints = {cash::depository(1), cash::depository(2)};
+  }
+  if (plan.checkDepositPoints.empty()) {
+    plan.checkDepositPoints = {cash::checkCapture(1), cash::checkCapture(2)};
+  }
+  if (plan.cryptoVenues.empty()) {
+    plan.cryptoVenues = {cash::cryptoVenue(1), cash::cryptoVenue(2),
+                         cash::cryptoVenue(3), cash::cryptoVenue(4)};
+  }
+  if (plan.billerAccounts.empty()) {
+    plan.billerAccounts.reserve(8);
+    for (std::uint64_t ordinal = 1; ordinal <= 8; ++ordinal) {
+      plan.billerAccounts.push_back(cash::biller(ordinal));
+    }
+  }
+  if (!entity::valid(plan.issuerAcct)) {
+    plan.issuerAcct = cash::cardIssuer();
+  }
+
+  plan.homeAreas = counterparties.homeAreas;
+  plan.relocation = counterparties.relocation;
+
+  // Precompute small geographic choice sets for all physical service rails.
+  // Emission does no distance scan and remains deterministic at event time.
+  if (directory != nullptr) {
+    plan.nearbyWithdrawalPoints = buildNearbyPoints(
+        plan.cashWithdrawalPoints, directory->external.atmTerminalAreas,
+        counterparties);
+    plan.nearbyCashDepositPoints = buildNearbyPoints(
+        plan.cashDepositPoints, directory->external.cashDepositoryAreas,
+        counterparties);
+    plan.nearbyCheckDepositPoints = buildNearbyPoints(
+        plan.checkDepositPoints, directory->external.checkCaptureAreas,
+        counterparties);
+  }
 
   return plan;
 }
@@ -306,11 +343,10 @@ extractPersons(AccountCensus census) {
 } // namespace
 
 LegitBlueprint &
-LegitBlueprint::addCounterparties(random::Rng &rng, AccountCensus census,
-                                  CounterpartyPools counterparties,
-                                  HubSelectionRules hubs) {
-  const Population pop{.census = census, .persons = &accounts_.persons};
-  counterparties_ = buildCounterpartyAccess(rng, pop, counterparties, hubs);
+LegitBlueprint::addCounterparties(random::Rng &rng,
+                                  CounterpartyPools counterparties) {
+  burnRetiredCounterpartySelection(rng, accounts_.persons.size());
+  counterparties_ = buildCounterpartyAccess(counterparties);
   return *this;
 }
 

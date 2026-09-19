@@ -111,12 +111,27 @@ enum class Liquidity : std::uint8_t {
   locInterest = 0x91,
 };
 
+/* Settled deposit credits that are neither payroll nor physical currency.
+ * Paper-check returns can be added as a later, separately typed event; this
+ * tag represents the posted customer credit after capture/collection. */
+enum class Deposit : std::uint8_t {
+  checkDeposit = 0xA0,
+};
+
+/* Bank-visible fiat legs at the crypto boundary. These tags do not claim that
+ * the customer ledger models a blockchain asset: rampOut is USD leaving for an
+ * external venue, and rampIn is previously-ramped value returning from one. */
+enum class Crypto : std::uint8_t {
+  rampOut = 0xB0,
+  rampIn = 0xB1,
+};
+
 template <class T> using Bare = std::remove_cvref_t<T>;
 
 template <class T>
 concept ChannelEnum =
     enumTax::OneOf<Bare<T>, Legit, Rent, Family, Credit, Product, Government,
-                   Insurance, Fraud, Camouflage, Liquidity> &&
+                   Insurance, Fraud, Camouflage, Liquidity, Deposit, Crypto> &&
     enumTax::ByteEnum<Bare<T>>;
 
 template <ChannelEnum E> [[nodiscard]] constexpr Tag tag(E value) noexcept {

@@ -69,6 +69,14 @@ template <ChannelEnum E>
   return detail::inGroup(value, Liquidity::overdraftFee);
 }
 
+[[nodiscard]] constexpr bool isDeposit(Tag value) noexcept {
+  return detail::inGroup(value, Deposit::checkDeposit);
+}
+
+[[nodiscard]] constexpr bool isCrypto(Tag value) noexcept {
+  return detail::inGroup(value, Crypto::rampOut);
+}
+
 [[nodiscard]] constexpr bool isKnown(Tag value) noexcept {
   return detail::kKnown[value.value];
 }
@@ -110,7 +118,8 @@ template <ChannelEnum E>
          is(value, Credit::lateFee) || is(value, Credit::chargeback) ||
          is(value, Liquidity::overdraftFee) ||
          is(value, Liquidity::locInterest) || is(value, Insurance::claim) ||
-         is(value, Camouflage::salary);
+         is(value, Camouflage::salary) ||
+         is(value, Deposit::checkDeposit) || is(value, Crypto::rampIn);
 }
 
 } // namespace PhantomLedger::channels

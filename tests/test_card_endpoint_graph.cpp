@@ -178,9 +178,17 @@
 #include "phantomledger/entities/infra/attackers.hpp"
 #include "phantomledger/entities/infra/derived_endpoints.hpp"
 #include "phantomledger/entities/infra/enrollment.hpp"
+/* For `enumeration::probeFor` — K.6 reproduces the exporter's probe synthesis
+ * rather than re-deriving it, which is only sound because that resolver is
+ * draw-free and stateless. */
+#include "phantomledger/entities/infra/enumeration.hpp"
 #include "phantomledger/entities/infra/ipv4.hpp"
 #include "phantomledger/entities/infra/public_endpoints.hpp"
 #include "phantomledger/entities/infra/random_ips.hpp"
+/* For `derive::kEnumerationError` — K.6 identifies probe rows by the ONE
+ * constant the exporter writes them with, rather than re-spelling the literal
+ * here. `bls-citation-2026-07` rule 4: prefer one constant over four copies. */
+#include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/pipeline/simulate.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -440,13 +448,37 @@ constexpr double kModalityRatioLo = 0.32;
 constexpr double kModalityRatioHi = 1.72;
 
 /* I.3's CEILING. Sub-gate I.3 has always REQUIRED fraud on single-card
- * endpoints — the bimodal curve is real, since a card-not-present attacker
- * buys a fresh fingerprint per attempt and burns it, and a model that learns
- * "fan-out 1 is safe" has learned an artifact. But the check was a FLOOR with
- * no ceiling, and `bestPrecision` cannot cover the gap: that sweep is over
- * `degree >= k` thresholds, which at k = 1 is the entire view and scores the
- * base rate by construction. So "this endpoint was seen with exactly one
- * card" was an UNBOUNDED feature for the life of the file.
+ * endpoints, and a model that learns "fan-out 1 is safe" has learned an
+ * artifact. But the check was a FLOOR with no ceiling, and `bestPrecision`
+ * cannot cover the gap: that sweep is over `degree >= k` thresholds, which at
+ * k = 1 is the entire view and scores the base rate by construction. So "this
+ * endpoint was seen with exactly one card" was an UNBOUNDED feature for the
+ * life of the file.
+ *
+ * THE "BIMODAL CURVE" JUSTIFICATION THIS COMMENT USED TO CARRY IS WITHDRAWN,
+ * 2026-08-11, and it was withdrawn by measurement rather than by argument.
+ * It read: "the bimodal curve is real, since a card-not-present attacker buys
+ * a fresh fingerprint per attempt and burns it." The burner MECHANISM is
+ * real and cited (`derived_endpoints.hpp`). The bimodal SHAPE is not visible
+ * in the only public card-not-present data that can show it: on IEEE-CIS,
+ * whole-window degree 1 runs at lift 0.485 — HALF the base rate, the SAFEST
+ * bucket on the curve — rising to a single hump at 1.888 (6-10 cards) and
+ * decaying to 1.567 at 26+. Real single-card fingerprints are overwhelmingly
+ * ordinary first-time traffic, not burners.
+ *
+ * WHAT SURVIVES AND WHAT DOES NOT. The FLOOR survives, and is now anchored
+ * rather than asserted: 3.52% of IEEE-CIS's single-card-fingerprint rows are
+ * fraud, so the bucket is genuinely populated and "fan-out 1 is safe" would
+ * still be an artifact. The claim that degree 1 is a RISK PEAK does not
+ * survive. This corpus reads 1.96-2.46 against that 0.485, so the ceiling
+ * below admits a bucket roughly 4-5x more fraud-enriched than reality's.
+ * THE CEILING IS NOT TIGHTENED TO 0.485 HERE, deliberately: the gap's cause is
+ * that real fingerprints FRAGMENT (50.5% of IEEE-CIS rows sit on a
+ * single-card fingerprint against 6.5% of this corpus's), so degree 1 is the
+ * majority bucket there and a minority one here. That is a change to
+ * legitimate device synthesis, not a band on this file, and it is registered
+ * in `docs/fraud_model_audit.md` under `device-sharing-evidence-2026-08`
+ * rather than papered over with a tighter number nothing can currently reach.
  *
  * MEASURED row-level lift over four legs — device 2.30 / 1.86 / 2.30 / 2.27,
  * mean 2.183, sample SD 0.215; ip 2.91 / 2.18 / 3.22 / 2.90, mean 2.803,
@@ -457,6 +489,111 @@ constexpr double kModalityRatioHi = 1.72;
  * shortcut. Same two-sided shape as sub-gate C's not-on-file pair. */
 constexpr double kMaxDegreeOneLift = 2.95;
 constexpr double kMaxIpDegreeOneLift = 4.35;
+
+/* ====================== SUB-GATE K — AVERAGE PRECISION ======================
+ *
+ * `fanout-bimodality-2026-08` rule 4 asked for this and named it the natural
+ * next gate: "PREFER AN AP/AUC-PR BOUND OVER A LIFT BOUND when the question is
+ * 'will a model learn this'. Lift describes one bucket; AP describes what a
+ * ranker can actually extract." Sub-gate I bounds `bestPrecision` at the
+ * argmax, which is one bucket; nothing has ever bounded the whole curve.
+ *
+ * THE EXTERNAL ANCHOR, AND IT IS THE FIRST ONE THIS FILE HAS EVER HAD.
+ * Measured on the IEEE-CIS Fraud Detection corpus (Vesta Corporation, 2019),
+ * the only PUBLIC card-not-present transaction dataset carrying device
+ * columns. 118,666 rows bearing a non-empty `DeviceInfo`, base rate 0.07253,
+ * fingerprint = DeviceInfo|DeviceType|id_30|id_31|id_32|id_33|id_13|id_17|
+ * id_19|id_20 (61,050 groups). Recomputed from the raw Kaggle CSVs, and
+ * cross-checked against four independently published figures for the same
+ * files (590,540 rows / 20,663 fraud / 144,233 identity rows / 1,786 distinct
+ * DeviceInfo). Accessed 2026-08-11.
+ *
+ *   WHOLE-WINDOW degree, which is the estimator THIS FILE uses:
+ *     cards       1      2     3-5    6-10   11-25    26+
+ *     lift      0.485  1.080  1.756  1.888  1.719  1.567
+ *     AP ratio from distinct cards 1.455; from ROW COUNT 1.546
+ *
+ * TWO THINGS IN THAT TABLE MATTER MORE THAN THE LEVEL.
+ *
+ * (1) THE REAL CURVE IS UNIMODAL WITH A DEPRESSED LOW TAIL, NOT BIMODAL. A
+ *     fingerprint seen with exactly one card runs at HALF the base rate. The
+ *     "attackers burn a fresh fingerprint per attempt, so the curve is
+ *     bimodal" story that I.3 rests on is NOT visible in the only real card
+ *     data that can show it. I.3's floor stays — fraud genuinely does occur at
+ *     degree 1, at 3.5% of rows there — but the claim that degree 1 is a RISK
+ *     PEAK is withdrawn, and the corpus reads 1.96-2.46 against that 0.485.
+ *
+ * (2) DEGREE BUYS NOTHING OVER COUNTING, IN REALITY. 1.455 against 1.546 for a
+ *     plain per-endpoint row count means the graph feature is very slightly
+ *     WORSE than the non-graph baseline available to any counter. That is the
+ *     comparison K.3 makes, and it is the only band in this file whose LEVEL
+ *     has an external anchor rather than a declared one.
+ *
+ * CLASS: the anchor is a MEASUREMENT on an external corpus; the bands below
+ * are CHOICE, sized off THIS generator's four legs per the standing law that a
+ * band is measured on the construction it guards. The external number is a
+ * COMPARATOR, deliberately not imported as a CITED level of this generator —
+ * doing that would put `kMaxDegreeOneLift = 2.95` immediately into
+ * NONCONFORMING against a real 0.485 (`docs/fraud_model_audit.md` authority
+ * rule), which is a construction question this round does not answer.
+ *
+ * BASE RATES DIFFER 7.7x (corpus 0.0090-0.0098, IEEE-CIS 0.07253). AP ratio is
+ * base-rate normalised so the comparison is meaningful, but a ratio estimated
+ * at a ~1% base rate is noisier, which is part of why K.1 carries headroom
+ * above the anchor rather than sitting on it. */
+
+/* K.1 — CEILING on the AP a ranker extracts from device degree alone.
+ * Armed: 1.318 / 1.440 / 1.151 / 1.218, mean 1.2818, sample SD 0.1259,
+ * mean + 3.5 SD = 1.7223, rounded to 1.75.
+ *
+ * IT ADMITS 1.20x THE EXTERNAL ANCHOR AND THAT IS STATED, NOT HIDDEN. Sizing
+ * it ON the anchor (1.455) would leave leg-wide's 1.440 with 1.01x of margin,
+ * which is a flaky gate rather than a strict one. The band therefore catches
+ * gross leakage — the pre-`device-fanout` world scored `bestPrecision` 1.0000
+ * — and does NOT enforce parity with reality. Parity is the registered gap.
+ *
+ * NON-VACUITY, both existing ceiling disarms, and the separation is three
+ * orders of magnitude wider than the margin:
+ *   `kDisarmInstrumentCeiling`   AP ratio 24.39 / 36.91 (14-21x the ceiling)
+ *   `kDisarmFraudOffLowDegree`   AP ratio 11.48 / 9.65 / 8.10 (4.6-6.6x)
+ * so K.1 is not a timing race and not a knife-edge. */
+constexpr double kMaxDegreeApRatio = 1.75;
+
+/* K.2 — THE FLOOR, and it is 1.05 rather than 1.0 BECAUSE THE ANALYTIC VALUE
+ * SHIPS A CHECK THAT CANNOT FAIL. `merchant-selection-2026-08` rule 6, fifth
+ * instance. A noise ranker's AP ratio is 1.0 in expectation, so a floor AT 1.0
+ * is a coin flip on float error: measured under `kDisarmDegreeApNoise` the
+ * four legs read 1.0002 / 0.9998 / 1.0005 / 1.0013 and only ONE fell below,
+ * so the disarm reproduced pure noise and the check stayed green on three
+ * legs. Armed reads 1.151-1.440, so 1.05 separates noise from signal with
+ * 1.10x margin below the armed minimum and 1.05x above the noise maximum.
+ * Both margins are thin and are stated rather than hidden. */
+constexpr double kMinDegreeApRatio = 1.05;
+
+/* K.3 — CEILING on how much more a GRAPH feature extracts than the non-graph
+ * baseline on the same rows. Armed: 1.855 / 2.195 / 1.747 / 1.814, mean
+ * 1.9028, sample SD 0.1999, mean + 3.5 SD = 2.6023, rounded to 2.65.
+ *
+ * THE CORPUS SITS 2.0x ABOVE THE EXTERNAL ANCHOR (0.941) AND THIS BAND DOES
+ * NOT CLOSE THAT. Registered, with its cause: the corpus's per-endpoint ROW
+ * COUNT is ANTI-predictive (AP ratio 0.656-0.710, i.e. a busy endpoint is
+ * SAFER than average) where IEEE-CIS measures it as PREDICTIVE at 1.546. So
+ * the corpus concentrates its discriminating power in the graph axis and
+ * reality spreads it across both. A GNN trained here will lean on structure
+ * harder than a production model should. Closing it is a change to the
+ * endpoint ROW-MASS mix — POS terminals carry thousands of legitimate rows
+ * against a compromise case's 5-14 — and not a dial on this file.
+ *
+ * K.3 CATCHES ONE OF THE TWO LEAK DISARMS AND MISSES THE OTHER, which is
+ * `merchant-selection-2026-08` rule 6 again and is why K.1 ships BESIDE it
+ * rather than being replaced by it:
+ *   `kDisarmInstrumentCeiling`   40.09 / 60.89       RED, 15-23x the ceiling
+ *   `kDisarmFraudOffLowDegree`    1.15 / 1.21 / 2.10 GREEN, all inside
+ * The second escapes because piling fraud onto the single widest endpoint
+ * raises BOTH rankers together — row count reaches 9.99x there — so the RATIO
+ * barely moves while each half moves enormously. A ratio is blind to a leak
+ * common to its numerator and denominator. K.1 reds that one at 8-11x. */
+constexpr double kMaxDegreeOverVolumeApRatio = 2.65;
 
 struct Leg {
   const char *name;
@@ -661,7 +798,100 @@ struct DegreeReport {
    * `degree >= k` thresholds, which at k = 1 is the whole view. */
   std::size_t rowsAtDegreeOne = 0;
   double degreeOnePrecision = 0.0;
+
+  /* SUB-GATE I.4's QUANTITY — Average Precision of degree AS A RANKER, and the
+   * base rate OF THE RANKED SET so the ratio is self-consistent.
+   *
+   * `bestPrecision` describes ONE bucket at the argmax; AP describes what a
+   * model can actually extract from the whole curve, which is the question
+   * "will a GNN learn this" actually asks. A single bucket can look alarming
+   * while the ranker is nearly worthless — the 4.87x best-rule lift against a
+   * 1.4x AP ratio on the same leg is exactly that gap. */
+  double averagePrecision = 0.0;
+  double rankedBaseRate = 0.0;
+  double apRatio = 0.0;
+  /* Row precision in the IEEE-CIS comparison buckets, so the corpus curve can
+   * be read against the real-world one without a second harness. Indices are
+   * {1, 2, 3-5, 6-10, 11-25, 26+}. */
+  std::array<std::size_t, 6> bucketRowsOut{};
+  std::array<std::size_t, 6> bucketFraudOut{};
 };
+
+/* The IEEE-CIS comparison buckets. Held in one place because the real-world
+ * anchor is published in exactly these edges and a re-bucketed corpus curve is
+ * not comparable to it. */
+[[nodiscard]] constexpr std::size_t degreeBucketIndex(std::size_t degree) {
+  if (degree <= 1) {
+    return 0;
+  }
+  if (degree == 2) {
+    return 1;
+  }
+  if (degree <= 5) {
+    return 2;
+  }
+  if (degree <= 10) {
+    return 3;
+  }
+  if (degree <= 25) {
+    return 4;
+  }
+  return 5;
+}
+
+inline constexpr std::array<const char *, 6> kDegreeBucketNames{
+    "1", "2", "3-5", "6-10", "11-25", "26+"};
+
+struct ApReport {
+  double averagePrecision = 0.0;
+  double baseRate = 0.0;
+  double ratio = 0.0;
+  std::size_t rows = 0;
+  std::size_t fraud = 0;
+};
+
+/* Tie-aware Average Precision of "rank each row by SOME per-endpoint score",
+ * swept high to low. Rows sharing a score are one tie block, which is what
+ * makes this identical to `sklearn.metrics.average_precision_score` — the
+ * function the external IEEE-CIS anchor was computed with. Parameterised on
+ * the score so the SAME estimator can measure the graph feature (distinct
+ * cards) and the non-graph baseline (row count), because a difference between
+ * two AP numbers means nothing unless both were computed the same way. */
+template <typename ScoreFn>
+[[nodiscard]] ApReport averagePrecisionBy(const std::vector<DegreePoint> &pts,
+                                          ScoreFn score) {
+  ApReport out;
+  std::map<std::size_t, std::pair<std::size_t, std::size_t>> blocks;
+  for (const auto &p : pts) {
+    auto &[rows, fraud] = blocks[score(p)];
+    rows += p.rows;
+    fraud += p.fraudRows;
+  }
+  for (const auto &[key, cell] : blocks) {
+    out.rows += cell.first;
+    out.fraud += cell.second;
+  }
+  if (out.rows == 0 || out.fraud == 0) {
+    return out;
+  }
+  out.baseRate =
+      static_cast<double>(out.fraud) / static_cast<double>(out.rows);
+  std::size_t cumRows = 0;
+  std::size_t cumFraud = 0;
+  double previousRecall = 0.0;
+  for (auto it = blocks.rbegin(); it != blocks.rend(); ++it) {
+    cumRows += it->second.first;
+    cumFraud += it->second.second;
+    const double recall =
+        static_cast<double>(cumFraud) / static_cast<double>(out.fraud);
+    const double precision =
+        static_cast<double>(cumFraud) / static_cast<double>(cumRows);
+    out.averagePrecision += (recall - previousRecall) * precision;
+    previousRecall = recall;
+  }
+  out.ratio = out.baseRate > 0.0 ? out.averagePrecision / out.baseRate : 0.0;
+  return out;
+}
 
 /* The joint degree/label sweep. Precision is over ROWS, not endpoints,
  * because a threshold rule is applied to transactions; recall is against
@@ -726,6 +956,52 @@ struct DegreeReport {
       break;
     }
   }
+
+  /* ------------------------------------------------ AVERAGE PRECISION (I.4)
+   *
+   * AP of the ranker "score a row by its endpoint's fan-out", swept high to
+   * low. Every row inside one degree bucket carries the SAME score, so the
+   * buckets are tie blocks and the block form below is the tie-aware AP —
+   * identical to `sklearn.metrics.average_precision_score`, which is what the
+   * real-world anchor was computed with.
+   *
+   * THE DENOMINATOR IS THE RANKED SET, NOT THE CARD VIEW, and that is
+   * deliberate: AP is a property of a ranking over the rows it actually
+   * scores, so dividing by `viewFraudRows` (which includes rows carrying no
+   * endpoint at all) would report a recall no threshold on this feature can
+   * reach and silently deflate the ratio. `rankedBaseRate` is the AP of a
+   * RANDOM ranker over the same set, which is why `apRatio` is the clean
+   * "how much better than chance" number. */
+  std::size_t rankedRows = 0;
+  std::size_t rankedFraud = 0;
+  for (const auto &[k, rows] : bucketRows) {
+    rankedRows += rows;
+    rankedFraud += bucketFraud[k];
+    const auto b = degreeBucketIndex(k);
+    out.bucketRowsOut[b] += rows;
+    out.bucketFraudOut[b] += bucketFraud[k];
+  }
+  out.rankedBaseRate = rankedRows == 0 ? 0.0
+                                       : static_cast<double>(rankedFraud) /
+                                             static_cast<double>(rankedRows);
+  if (rankedFraud > 0) {
+    std::size_t apRows = 0;
+    std::size_t apFraud = 0;
+    double previousRecall = 0.0;
+    for (auto it = bucketRows.rbegin(); it != bucketRows.rend(); ++it) {
+      apRows += it->second;
+      apFraud += bucketFraud[it->first];
+      const double recall =
+          static_cast<double>(apFraud) / static_cast<double>(rankedFraud);
+      const double precision =
+          static_cast<double>(apFraud) / static_cast<double>(apRows);
+      out.averagePrecision += (recall - previousRecall) * precision;
+      previousRecall = recall;
+    }
+  }
+  out.apRatio = out.rankedBaseRate > 0.0
+                    ? out.averagePrecision / out.rankedBaseRate
+                    : 0.0;
 
   std::size_t cumRows = 0;
   std::size_t cumFraud = 0;
@@ -978,6 +1254,8 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
 
   // Sub-gate I. One rollup per endpoint over the card view, both keys.
   std::map<pl::devices::Identity, EndpointRollup> deviceRollup;
+  /* card key -> its first view-row timestamp, for K.6. */
+  std::map<pl::entity::Key, std::int64_t> probeAnchor;
   std::map<pl::network::Ipv4, EndpointRollup> ipRollup;
   std::map<pl::entity::PersonId, EndpointRollup> personRollup;
   std::map<pl::entity::Key, std::vector<pl::entity::card::reissue::Generation>>
@@ -1222,6 +1500,12 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
         scheduleIt->second, tx.timestamp);
     const auto dayIndex =
         static_cast<std::int32_t>((tx.timestamp - legStartEpoch) / 86'400);
+    /* K.6's anchor set: each card's FIRST view row, which is the only row the
+     * exporter attaches an enumeration probe to (`streaming.hpp`'s
+     * `firstRowForCard` guard). `txns` is timestamp-ordered — the export's
+     * byte-prefix law depends on it — so the first insert wins. */
+    probeAnchor.try_emplace(tx.source, tx.timestamp);
+
     auto &dev = deviceRollup[tx.session.deviceId];
     dev.accounts.insert(tx.source);
     dev.cards.emplace(tx.source, generation);
@@ -2129,6 +2413,173 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
     }
   }
 
+  /* ===== K.6 — THE CONSUMER-VISIBLE VIEW, WHICH NOTHING IN THIS FILE HAS
+   * EVER MEASURED, AND THE BLIND SPOT IS EXACTLY WHERE IT MATTERS MOST.
+   *
+   * Every rollup above is built from `posted.txns` — SETTLED rows only.
+   * Enumeration probes are DECLINED authorizations and live in
+   * `posted.declined`, so `grep -n declined` over this file returned nothing
+   * before this block existed. **The mechanism `device-fanout-2026-08` shipped
+   * specifically to flatten the high-degree tail was invisible to the three
+   * ceilings that bound the high-degree tail** (I.1's all-fraud bucket, I.2's
+   * best precision, K.1's AP), because the 47-92-card probe endpoints were not
+   * in the degree distribution at all. `device-fanout-2026-08` rule 1's shape,
+   * one layer up: a harness that never wired the thing under test.
+   *
+   * AND `posted.declined` IS NOT WHERE THEY ARE — THE FIRST VERSION OF THIS
+   * BLOCK LOOKED THERE AND MEASURED ZERO PROBES ON ALL FOUR LEGS. Probes are
+   * synthesized at EXPORT time by `streaming.hpp`'s `writeEnumerationProbe`,
+   * not decided by the ledger replay, so `posted.declined` carries only the
+   * FUNDING and non-funding declines (4,421-5,225 rows in view per leg, zero
+   * of them probes). **The dilution therefore exists in the exported CSV and
+   * in NO in-memory structure at all**, which is why every degree ceiling in
+   * this file has been blind to it since `device-fanout-2026-08` shipped.
+   *
+   * SO THIS RECONSTRUCTS THE EXPORTER'S OWN SYNTHESIS, which is possible only
+   * because `probeFor` is DRAW-FREE AND STATELESS by design — the property
+   * `enumeration.hpp` maintains for golden containment is what lets a second
+   * caller reproduce the same probes exactly. Mirrored from
+   * `writeEnumerationProbe`: one probe per card on its FIRST view row, the
+   * `backdatedRowIsObservable` window and membership guards, and the same
+   * `probeFor(attackers, cardKey, anchorTs)` call. The merchant pick and the
+   * row writers are irrelevant to degree and are not reproduced.
+   *
+   * THE PROBE ROWS ADD DEGREE AND NO LABEL, WHICH IS THE POINT. A probe's
+   * label is CENSORED, not negative (`cf_Ground_Truth_Label` withholds it and
+   * the withheld-label checks are NULL-safe), so `fraudRows` is deliberately
+   * NOT incremented here. What the merge changes is the DENOMINATOR and the
+   * DEGREE: a probe endpoint arrives carrying many cards and no fraud, which
+   * is precisely the dilution the enumeration operator exists to provide.
+   *
+   * IT IS MEASURED AND PRINTED, NOT BANDED, AND THAT IS DELIBERATE. Every band
+   * in sub-gates I and K was measured on the settled view; re-pointing them at
+   * a wider view would be `merchant-selection-2026-08` rule 13 — a band
+   * measured against a superseded construction is not a measurement. The
+   * settled readings stay authoritative until the merged ones have four legs
+   * of history behind them. */
+  auto mergedDeviceRollup = deviceRollup;
+  std::size_t declinedViewRows = 0;
+  std::size_t probeViewRows = 0;
+  std::size_t probesOnSettledDevice = 0;
+  std::size_t probesOnFraudDevice = 0;
+  std::set<pl::devices::Identity> probeDevices;
+  for (const auto &attempt : result.transfers.ledger.posted.declined) {
+    const auto &dtx = attempt.txn;
+    const auto dchannel = dtx.session.channel;
+    if (dchannel != kCardTag && dchannel != kMerchantTag) {
+      continue;
+    }
+    if (!membership.activeAt(ownerOfKey(dtx.source), dtx.timestamp) ||
+        !membership.activeAt(ownerOfKey(dtx.target), dtx.timestamp)) {
+      continue;
+    }
+    ++declinedViewRows;
+    auto &dev = mergedDeviceRollup[dtx.session.deviceId];
+    dev.accounts.insert(dtx.source);
+    ++dev.rows;
+  }
+  for (const auto &[cardKey, anchorTs] : probeAnchor) {
+    const auto probe =
+        pl::infra::enumeration::probeFor(attackers, cardKey, anchorTs);
+    if (!probe.has_value()) {
+      continue;
+    }
+    // `backdatedRowIsObservable`, reproduced: the probe precedes its anchor by
+    // `kProbeLeadSeconds`, so it can fall before the window or before its own
+    // Party existed, and the exporter SKIPS rather than clamps in both cases.
+    if (probe->timestamp < legStartEpoch ||
+        !membership.activeAt(ownerOfKey(cardKey), probe->timestamp)) {
+      continue;
+    }
+    ++probeViewRows;
+    /* IS THE PROBE DEVICE ALREADY A FRAUD-CARRYING DEVICE? This is the
+     * decisive question for whether enumeration dilutes anything. `probeFor`
+     * resolves its endpoint from the SAME `AttackerInfra` inventory the
+     * compromise planner uses — a different salt over the same operator lines —
+     * so a probe can land on a device that already carries settled fraud. When
+     * it does, the probe RAISES that device's degree without adding a
+     * negative, pushing a fraud-heavy endpoint UP the degree ranking. That is
+     * amplification, not dilution. */
+    if (const auto seen = deviceRollup.find(probe->device);
+        seen != deviceRollup.end()) {
+      ++probesOnSettledDevice;
+      if (seen->second.fraudRows > 0) {
+        ++probesOnFraudDevice;
+      }
+    }
+    probeDevices.insert(probe->device);
+    auto &dev = mergedDeviceRollup[probe->device];
+    dev.accounts.insert(cardKey);
+    ++dev.rows;
+  }
+  std::size_t probeDevicesCarryingFraud = 0;
+  for (const auto &id : probeDevices) {
+    if (const auto seen = deviceRollup.find(id);
+        seen != deviceRollup.end() && seen->second.fraudRows > 0) {
+      ++probeDevicesCarryingFraud;
+    }
+  }
+
+  /* DISARM SWITCH for K.2 — THE FLOOR HALF, and the only one of sub-gate K's
+   * three directions the two switches above cannot reach.
+   *
+   * `kDisarmInstrumentCeiling` and `kDisarmFraudOffLowDegree` both make degree
+   * MORE predictive, so they exercise K.1 and K.3. Neither can make it LESS
+   * predictive, and "the build replaced a shortcut with pure noise" is the
+   * opposite error this file guards against everywhere else (attacker-infra
+   * rule 5, sub-gate C's lift floor, I.2's `accountLift > 1.0`).
+   *
+   * This redistributes the SAME total fraud across endpoints in proportion to
+   * each endpoint's row count, which makes the label independent of degree by
+   * construction while holding the base rate exactly. Rounding residue is
+   * dropped onto the largest endpoint so the total is preserved.
+   *
+   * MEASURED with it on, all four legs: AP ratio 1.0002 / 0.9998 / 1.0005 /
+   * 1.0013 against 1.318 / 1.440 / 1.151 / 1.218 armed, and degree-over-volume
+   * 1.000 / 0.998 / 0.998 / 1.002 against 1.855 / 2.195 / 1.747 / 1.814. So
+   * the switch reproduces pure noise to four decimal places on BOTH rankers,
+   * which is what a correct noise disarm looks like. K.2 reds; K.1 and K.3
+   * correctly do NOT, because noise violates a floor and not a ceiling.
+   *
+   * IT ALSO REDS I.1, AND THAT IS AN ARTIFACT OF THE SWITCH RATHER THAN
+   * SOMETHING IT DEMONSTRATES. Spreading a ~0.94% label evenly leaves some
+   * low-degree endpoints holding one row that is fraud, so `firstAllFraudK`
+   * falls to 11-13 against its floor of 20. I.1's own disarm is
+   * `kDisarmInstrumentCeiling`; the red here should not be read as evidence
+   * about I.1 either way. */
+  constexpr bool kDisarmDegreeApNoise = false;
+  if (kDisarmDegreeApNoise) {
+    std::size_t totalRows = 0;
+    std::size_t totalFraud = 0;
+    for (const auto &[id, roll] : deviceRollup) {
+      totalRows += roll.rows;
+      totalFraud += roll.fraudRows;
+    }
+    if (totalRows > 0 && totalFraud > 0) {
+      /* CUMULATIVE apportionment, not per-endpoint rounding. Rounding each
+       * endpoint's own share independently truncates every endpoint holding
+       * fewer than 1/baseRate rows to ZERO fraud — at a ~0.94% base rate that
+       * is everything under ~107 rows — and dumps the whole label onto the
+       * large endpoints. The first version of this switch did exactly that and
+       * made ROW COUNT 25x predictive, i.e. it built a different, stronger
+       * leak instead of removing one. Accumulating the exact expectation and
+       * assigning the difference keeps the assignment size-unbiased. */
+      const double rate = static_cast<double>(totalFraud) /
+                          static_cast<double>(totalRows);
+      double cumulativeExact = 0.0;
+      std::size_t placed = 0;
+      for (auto &[id, roll] : deviceRollup) {
+        cumulativeExact += rate * static_cast<double>(roll.rows);
+        const auto target =
+            static_cast<std::size_t>(std::llround(cumulativeExact));
+        const std::size_t take =
+            std::min(roll.rows, target > placed ? target - placed : 0);
+        roll.fraudRows = take;
+        placed += take;
+      }
+    }
+  }
+
   std::vector<DegreePoint> deviceByAccount;
   std::vector<DegreePoint> deviceByCard;
   std::vector<std::size_t> legitDeviceDegrees;
@@ -2242,6 +2693,158 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
   std::printf("  I temporal: 'rows per active day >= 3' %zu rows, precision "
               "%.4f, lift %.2fx\n",
               burstRows, burstPrecision, burstLift);
+
+  /* SUB-GATE K's SECOND RANKER — the NON-GRAPH baseline. Same estimator, same
+   * rows, same tie handling; the only change is the score, from "distinct
+   * cards on this endpoint" to "rows on this endpoint". Volume is not a graph
+   * feature: a busy endpoint is visible to any per-endpoint counter without
+   * traversing an edge. The external anchor measures these two as
+   * INDISTINGUISHABLE (1.455 vs 1.453 point-in-time, 1.455 vs 1.546
+   * whole-window), i.e. degree buys nothing over counting. */
+  const auto apDegree =
+      averagePrecisionBy(deviceByAccount, [](const DegreePoint &p) {
+        return p.degree;
+      });
+  const auto apVolume =
+      averagePrecisionBy(deviceByAccount, [](const DegreePoint &p) {
+        return p.rows;
+      });
+  const double degreeOverVolume =
+      apVolume.ratio > 0.0 ? apDegree.ratio / apVolume.ratio : 0.0;
+
+  /* I.4's REPORT: the AP a ranker can extract from degree alone, beside the
+   * per-bucket curve in the real-world anchor's own buckets. Printed for both
+   * keys and the IP axis because the three are different rules. */
+  std::printf("  I.4 device AP(account key) %.4f, ranked base %.4f, ratio "
+              "%.3fx | card key %.4f ratio %.3fx | ip %.4f ratio %.3fx\n",
+              accountSweep.averagePrecision, accountSweep.rankedBaseRate,
+              accountSweep.apRatio, cardSweep.averagePrecision,
+              cardSweep.apRatio, ipSweep.averagePrecision, ipSweep.apRatio);
+  std::printf("  K degree-over-volume: AP(distinct cards) ratio %.3fx vs "
+              "AP(row count) ratio %.3fx = %.3fx (external anchor 1.455 / "
+              "1.546 = 0.941x)\n",
+              apDegree.ratio, apVolume.ratio, degreeOverVolume);
+
+  /* K.6's REPORT. Two views of the same corpus: the SETTLED one every band in
+   * this file is measured on, and the MERGED one a consumer actually reads. */
+  std::vector<DegreePoint> mergedByAccount;
+  mergedByAccount.reserve(mergedDeviceRollup.size());
+  for (const auto &[id, roll] : mergedDeviceRollup) {
+    mergedByAccount.push_back(DegreePoint{.degree = roll.accounts.size(),
+                                          .rows = roll.rows,
+                                          .fraudRows = roll.fraudRows});
+  }
+  const auto mergedSweep = degreeLabelSweep(mergedByAccount, viewFraud);
+  const auto apMergedDegree =
+      averagePrecisionBy(mergedByAccount, [](const DegreePoint &p) {
+        return p.degree;
+      });
+  std::printf("  K.6 CONSUMER view (settled + declined): %zu declined rows in "
+              "view of which %zu probes; endpoints %zu -> %zu, max degree %zu "
+              "-> %zu, firstAllFraudK %zu -> %zu\n",
+              declinedViewRows, probeViewRows, accountSweep.endpoints,
+              mergedSweep.endpoints, accountSweep.maxDegree,
+              mergedSweep.maxDegree, accountSweep.firstAllFraudK,
+              mergedSweep.firstAllFraudK);
+  std::printf("  K.6 probe devices %zu, of which %zu already carry SETTLED "
+              "fraud; %zu of %zu probe rows land on a device already in the "
+              "settled view, %zu of those on a FRAUD-carrying device\n",
+              probeDevices.size(), probeDevicesCarryingFraud,
+              probesOnSettledDevice, probeViewRows, probesOnFraudDevice);
+  std::printf("  K.6 AP ratio settled %.3fx -> merged %.3fx | best rule "
+              "precision %.4f -> %.4f | degree-1 lift %.3fx -> %.3fx\n",
+              apDegree.ratio, apMergedDegree.ratio, accountSweep.bestPrecision,
+              mergedSweep.bestPrecision,
+              accountSweep.rankedBaseRate > 0.0
+                  ? accountSweep.degreeOnePrecision / accountSweep.rankedBaseRate
+                  : 0.0,
+              mergedSweep.rankedBaseRate > 0.0
+                  ? mergedSweep.degreeOnePrecision / mergedSweep.rankedBaseRate
+                  : 0.0);
+
+  /* K.7 — THE PROBE-SHARE SWEEP. `kProbedBasisPoints` is CLASS S UNCITED and
+   * its own comment says it is "sized for fan-out, not for prevalence", with
+   * the stated intent that "the top enumeration device's degree land in the
+   * same order as a busy attacker's". K.6 shows it does not: probe endpoints
+   * reach ~8.6 cards against attacker compromise devices' 23-32 victims, and
+   * the merge makes degree MORE separable rather than less.
+   *
+   * So the level has to be chosen by MEASUREMENT over the merged view, which
+   * is what this sweep is for. It is a DIAGNOSTIC, printed and never banded:
+   * it reports what each candidate level would do to the quantities K.1 and
+   * K.6 measure, so the constant is set against evidence instead of intent.
+   * Sizing it off the intent alone is what produced the current value. */
+  for (const std::uint32_t candidate : {400U, 1000U, 2000U, 3000U, 4000U,
+                                        6000U}) {
+    auto sweepRollup = deviceRollup;
+    std::map<pl::devices::Identity, std::size_t> probeDegree;
+    std::size_t rows = 0;
+    for (const auto &[cardKey, anchorTs] : probeAnchor) {
+      const auto probe = pl::infra::enumeration::probeFor(attackers, cardKey,
+                                                          anchorTs, candidate);
+      if (!probe.has_value() || probe->timestamp < legStartEpoch ||
+          !membership.activeAt(ownerOfKey(cardKey), probe->timestamp)) {
+        continue;
+      }
+      ++rows;
+      auto &dev = sweepRollup[probe->device];
+      dev.accounts.insert(cardKey);
+      ++dev.rows;
+      probeDegree[probe->device] = sweepRollup[probe->device].accounts.size();
+    }
+    std::vector<DegreePoint> pts;
+    pts.reserve(sweepRollup.size());
+    for (const auto &[id, roll] : sweepRollup) {
+      pts.push_back(DegreePoint{.degree = roll.accounts.size(),
+                                .rows = roll.rows,
+                                .fraudRows = roll.fraudRows});
+    }
+    const auto swept = degreeLabelSweep(pts, viewFraud);
+    const auto sweptAp = averagePrecisionBy(
+        pts, [](const DegreePoint &p) { return p.degree; });
+    std::size_t topProbeDegree = 0;
+    for (const auto &[id, degree] : probeDegree) {
+      topProbeDegree = std::max(topProbeDegree, degree);
+    }
+    std::printf("      K.7 probedBp %5u: %5zu probe rows on %4zu endpoints, "
+                "top probe degree %4zu, AP ratio %.3fx, best precision %.4f, "
+                "firstAllFraudK %3zu\n",
+                candidate, rows, probeDegree.size(), topProbeDegree,
+                sweptAp.ratio, swept.bestPrecision, swept.firstAllFraudK);
+  }
+
+  /* K.6's ONE ASSERTION, and it is a non-vacuity check rather than a band: the
+   * merge must actually CONTAIN the probe population. If it reads zero the
+   * dilution mechanism is not reaching the consumer view at all, which is a
+   * defect in the generator or in the driver wiring rather than a realism
+   * question — and it is the failure mode this whole block was written to
+   * expose, so it must not be able to pass silently. */
+  check(probeViewRows > 0,
+        std::string(leg.name) +
+            ": the consumer-visible view must carry enumeration probes, got " +
+            std::to_string(probeViewRows) + " of " +
+            std::to_string(declinedViewRows) +
+            " declined rows. Zero means the card-testing dilution this corpus "
+            "relies on to keep high fan-out uninformative never reaches an "
+            "exported row, and every high-degree ceiling above is measuring a "
+            "corpus no consumer reads");
+  std::printf("  I.4 device degree curve (account key), against IEEE-CIS "
+              "whole-window 0.485 / 1.080 / 1.756 / 1.888 / 1.719 / 1.567:\n");
+  for (std::size_t b = 0; b < kDegreeBucketNames.size(); ++b) {
+    const auto rows = accountSweep.bucketRowsOut[b];
+    if (rows == 0) {
+      continue;
+    }
+    const double rate = static_cast<double>(accountSweep.bucketFraudOut[b]) /
+                        static_cast<double>(rows);
+    std::printf("      cards %-6s %9zu rows, fraud %6zu, rate %7.4f, lift "
+                "%6.3fx\n",
+                kDegreeBucketNames[b], rows, accountSweep.bucketFraudOut[b],
+                rate,
+                accountSweep.rankedBaseRate > 0.0
+                    ? rate / accountSweep.rankedBaseRate
+                    : 0.0);
+  }
 
   check(accountSweep.endpoints > 0 && ipSweep.endpoints > 0 && viewFraud > 0,
         std::string(leg.name) +
@@ -2358,10 +2961,70 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
         std::string(leg.name) +
             ": fraud must appear on SINGLE-CARD devices, got " +
             std::to_string(accountSweep.fraudAtDegreeOne) +
-            " rows. The highest-value card-not-present attackers buy a fresh "
-            "fingerprint per attempt and burn it, so the real curve is "
-            "bimodal; a model that learns 'fan-out 1 is safe' has learned an "
-            "artifact of the generator");
+            " rows. A model that learns 'fan-out 1 is safe' has learned an "
+            "artifact of the generator: IEEE-CIS puts 3.52% of its "
+            "single-card-fingerprint rows on fraud, so the bucket is "
+            "genuinely populated in the real world even though it runs BELOW "
+            "the base rate there");
+
+  // ================= SUB-GATE K — AP, AND AP AGAINST A NON-GRAPH BASELINE
+  //
+  // K.4 first: the NON-VACUITY PRECONDITION, and it is not decoration. Every
+  // quantity below is a double defaulting to 0.0, and 0.0 passes any ceiling
+  // silently — the exact shape of `device-fanout-2026-08` rule 1, where a NULL
+  // pointer in a harness produced five green prefix checks on a table the
+  // binary never wrote. The support checks are the other half: an AP over a
+  // feature that takes two values passes a ceiling trivially, so the ranker
+  // must be shown to actually span the anchor table's edges.
+  check(apDegree.rows > 0 && apDegree.fraud > 0 && apDegree.baseRate > 0.0 &&
+            apVolume.rows > 0 && apVolume.fraud > 0,
+        std::string(leg.name) +
+            ": sub-gate K's rankers must see rows AND fraud, or every ceiling "
+            "below passes on a default-constructed zero");
+  check(accountSweep.bucketRowsOut.front() > 0 &&
+            accountSweep.bucketRowsOut.back() > 0,
+        std::string(leg.name) +
+            ": the degree feature must span the anchor's buckets — got " +
+            std::to_string(accountSweep.bucketRowsOut.front()) +
+            " rows at degree 1 and " +
+            std::to_string(accountSweep.bucketRowsOut.back()) +
+            " at 26+. With either end empty the AP is computed over a feature "
+            "with no range and the ceiling cannot fail");
+
+  // K.1 --- THE CEILING THE PROJECT ASKED FOR.
+  check(apDegree.ratio <= kMaxDegreeApRatio,
+        std::string(leg.name) +
+            ": Average Precision from device degree ALONE has reached ratio " +
+            std::to_string(apDegree.ratio) + " against the ceiling " +
+            std::to_string(kMaxDegreeApRatio) +
+            ". This is the whole-curve form of sub-gate I.2 and the number a "
+            "GNN's structural head can actually extract; the external "
+            "IEEE-CIS anchor is 1.455");
+
+  // K.2 --- AND THE FLOOR, because replacing a shortcut with noise is the
+  // opposite error. DEVICE ONLY: the IP axis measures 0.741-0.796 and I.2
+  // already declines to floor it, since banding a quantity at its measured
+  // inversion pins the inversion rather than gating it.
+  check(apDegree.ratio >= kMinDegreeApRatio,
+        std::string(leg.name) +
+            ": device degree must retain real ranking power over random (got "
+            "AP ratio " +
+            std::to_string(apDegree.ratio) + ", floor " +
+            std::to_string(kMinDegreeApRatio) +
+            "). A high-fan-out endpoint IS riskier in production — IEEE-CIS "
+            "measures 1.455 — and scoring K.1 by making degree pure noise "
+            "would be the opposite error");
+
+  // K.3 --- THE ONE BAND IN THIS FILE WITH AN EXTERNALLY ANCHORED LEVEL.
+  check(degreeOverVolume <= kMaxDegreeOverVolumeApRatio,
+        std::string(leg.name) +
+            ": device degree now extracts " + std::to_string(degreeOverVolume) +
+            "x what a plain per-endpoint ROW COUNT extracts, against the "
+            "ceiling " +
+            std::to_string(kMaxDegreeOverVolumeApRatio) +
+            ". IEEE-CIS measures 0.941x — degree slightly WORSE than counting "
+            "— so a large ratio here means the graph axis is carrying "
+            "discriminating power that reality spreads across both axes");
 
   // I.4 --- DISPERSION, VIA THE FANO FACTOR.
   //

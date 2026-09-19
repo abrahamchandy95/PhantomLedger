@@ -89,6 +89,9 @@ void StreamOrchestrator::initializeSinks() {
       .cfMirror = {.conninfo = conn,
                    .schema = "card_fraud",
                    .tablePrefix = "cf_"},
+      .mtMirror = {.conninfo = conn,
+                   .schema = "mule_temporal",
+                   .tablePrefix = "mt_"},
   };
 
   if (isPgUp()) {
@@ -100,7 +103,8 @@ void StreamOrchestrator::initializeSinks() {
 }
 
 void StreamOrchestrator::bindStreams() {
-  exportPacksReleased_ = (opts_.usecase != UseCase::muleMl);
+  exportPacksReleased_ = (opts_.usecase != UseCase::muleMl &&
+                         opts_.usecase != UseCase::muleTemporal);
 
   switch (opts_.usecase) {
   case UseCase::standard:
@@ -125,6 +129,22 @@ void StreamOrchestrator::bindStreams() {
         .piiPools = &pools_,
         .pgMirror = isPgUp() ? &mirrors_.mlMirror : nullptr,
     });
+    break;
+
+  case UseCase::muleTemporal:
+    streams_.mtStream.emplace(
+        exporter::mule_temporal::StreamingMuleTemporalExport::Config{
+            .registry = &world_.holdings.accounts.registry,
+            .pii = &world_.people.pii,
+            .relocation = &world_.people.relocation,
+            .devices = &world_.infra.devices,
+            .ips = &world_.infra.ips,
+            .membership = synth::personas::join_cohort::membershipOf(
+                world_.people.personas, window_),
+            .window = window_,
+            .seed = opts_.seed,
+            .pgMirror = isPgUp() ? &mirrors_.mtMirror : nullptr,
+        });
     break;
 
   case UseCase::aml:
@@ -178,6 +198,9 @@ void StreamOrchestrator::streamTransfers() {
   case UseCase::muleMl:
     pumpTransfers(streams_.mlStream ? &*streams_.mlStream : nullptr);
     break;
+  case UseCase::muleTemporal:
+    pumpTransfers(streams_.mtStream ? &*streams_.mtStream : nullptr);
+    break;
   case UseCase::aml:
     pumpTransfers(streams_.amlStream ? &*streams_.amlStream : nullptr);
     break;
@@ -204,6 +227,11 @@ void StreamOrchestrator::pumpTransfers(StreamT *streamPtr) {
 
   pipeline::stages::transfers::WindowedRunOptions foldOpts{};
   foldOpts.declined = &declined_;
+  // Large temporal exports retain their graph census alongside the simulator.
+  // Monthly generation bounds transient batches; settlement and the simulated
+  // year stay unchanged (test_window_invariance pins 1 vs 3 months).
+  if (opts_.usecase == UseCase::muleTemporal && opts_.population >= 100'000)
+    foldOpts.generation.monthsPerChunk = 1;
 
   // pipeline execution
   auto runPipeline = [&](auto &finalSink) {

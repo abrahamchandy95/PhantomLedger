@@ -1,10 +1,11 @@
 #pragma once
 
-#include "phantomledger/entities/holdings/accounts.hpp"
-#include "phantomledger/entities/parties/behaviors.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/parties/behaviors.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -19,7 +20,6 @@
 #include <span>
 #include <stdexcept>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -35,8 +35,6 @@ using TimePoint = time::TimePoint;
 
 using LandlordTypes =
     std::unordered_map<Key, entity::landlord::Type, std::hash<Key>>;
-
-using HubAccounts = std::unordered_set<Key, std::hash<Key>>;
 
 // ---------------------------------------------------------------
 // Timeframe
@@ -75,12 +73,11 @@ public:
   Population(const entity::account::Registry &accounts,
              const entity::account::Ownership &ownership,
              const entity::behavior::Assignment &personas,
-             HubAccounts hubs = {},
-             const std::vector<synth::personas::timeline::Timeline>
-                 *timelines = nullptr) noexcept
+             const std::vector<synth::personas::timeline::Timeline> *timelines =
+                 nullptr) noexcept
       : count_(static_cast<std::uint32_t>(personas.byPerson.size())),
-        hubs_(std::move(hubs)), accounts_(accounts), ownership_(ownership),
-        personas_(personas), timelines_(timelines) {}
+        accounts_(accounts), ownership_(ownership), personas_(personas),
+        timelines_(timelines) {}
 
   [[nodiscard]] const entity::account::Registry &accounts() const noexcept {
     return accounts_;
@@ -90,8 +87,6 @@ public:
     return ownership_;
   }
   [[nodiscard]] std::uint32_t count() const noexcept { return count_; }
-
-  [[nodiscard]] const HubAccounts &hubs() const noexcept { return hubs_; }
 
   [[nodiscard]] const entity::behavior::Assignment &personas() const noexcept {
     return personas_;
@@ -127,12 +122,6 @@ public:
     assert(ix < accounts_.records.size());
 
     return accounts_.records[ix].id;
-  }
-
-  [[nodiscard]] bool isHub(PersonId person) const noexcept {
-    assert(hasAccount(person));
-
-    return hubs_.contains(primary(person));
   }
 
   [[nodiscard]] personas::Type persona(PersonId person) const noexcept {
@@ -174,7 +163,6 @@ public:
 
 private:
   std::uint32_t count_ = 0;
-  HubAccounts hubs_;
   const entity::account::Registry &accounts_;
   const entity::account::Ownership &ownership_;
   const entity::behavior::Assignment &personas_;
@@ -214,28 +202,53 @@ struct RentCounterparties {
 
 class RevenueCounterparties {
 public:
+  using NearbyDepositories = std::unordered_map<
+      entity::geography::GeoAreaId, std::vector<entity::Key>>;
+
   const entity::counterparty::Directory *directory = nullptr;
 
-  // The branch/ATM cash hub — the infrastructure account cash takings
-  // deposits are drawn FROM (the same hub ATM withdrawals pay into:
-  // cash out and cash in share one hub). Sentinel Key{} = absent
-  // (cash-deposits-2026-07).
-  Key cashHubAccount{};
+  // Registered external branch/depository endpoints. They identify where
+  // cash entered the modeled customer ledger; they do not supply a balance.
+  std::span<const Key> cashDepositPoints{};
+  const NearbyDepositories *nearbyCashDepositPoints = nullptr;
+  std::span<const entity::geography::GeoAreaId> homeAreas{};
+  const entity::parties::relocation::Schedule *relocation = nullptr;
 
   [[nodiscard]] bool available() const noexcept { return directory != nullptr; }
 
-  [[nodiscard]] std::optional<Key> cashHub() const noexcept {
-    if (cashHubAccount == Key{}) {
-      return std::nullopt;
+  [[nodiscard]] std::span<const Key> cashDepositories() const noexcept {
+    return cashDepositPoints;
+  }
+
+  [[nodiscard]] std::span<const Key>
+  cashDepositoriesFor(PersonId person, std::int64_t timestamp) const noexcept {
+    auto area = entity::geography::invalidGeoArea;
+    if (person != entity::invalidPerson && person <= homeAreas.size()) {
+      area = homeAreas[person - 1U];
     }
-    return cashHubAccount;
+    if (relocation != nullptr) {
+      const auto current = relocation->areaAt(person, timestamp);
+      if (entity::geography::validArea(current)) {
+        area = current;
+      }
+    }
+    if (nearbyCashDepositPoints != nullptr) {
+      if (const auto it = nearbyCashDepositPoints->find(area);
+          it != nearbyCashDepositPoints->end() && !it->second.empty()) {
+        return it->second;
+      }
+    }
+    return cashDepositPoints;
   }
 
   [[nodiscard]] std::span<const Key> clients() const noexcept {
     if (directory == nullptr) {
       return {};
     }
-    return view(directory->clients.accounts.all);
+    // Ownerless internal client accounts have no operating-balance model.
+    // Revenue entering this customer-ledger projection therefore originates
+    // from the explicitly external side of the directory.
+    return view(directory->clients.accounts.external);
   }
 
   [[nodiscard]] std::span<const Key> platforms() const noexcept {

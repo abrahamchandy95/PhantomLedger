@@ -57,10 +57,6 @@ public:
     const credit_cards::LifecycleRules *lifecycleRules = nullptr;
   };
 
-  struct HubSelection {
-    double fraction = 0.01;
-  };
-
   /* The synthesized world exactly as the legit assembly consumes it: the
    * consumer names what it needs and the pipeline adapts its bundles at
    * legitWorldInputs(). Every pointer is non-owning and must outlive the
@@ -68,7 +64,6 @@ public:
   struct WorldInputs {
     // Census
     const synth::personas::Pack *personas = nullptr;
-    std::uint32_t populationCount = 0;
 
     // Holdings
     const synth::accounts::Pack *accounts = nullptr;
@@ -101,8 +96,6 @@ public:
   LegitAssembly &openingBalances(OpeningBalances value) noexcept;
   LegitAssembly &cardLifecycle(CardLifecycle value) noexcept;
   LegitAssembly &familyTransfers(FamilyTransferScenario value) noexcept;
-  LegitAssembly &hubSelection(HubSelection value) noexcept;
-
   LegitAssembly &window(time::Window value) noexcept;
   LegitAssembly &seed(std::uint64_t value) noexcept;
 
@@ -128,10 +121,6 @@ public:
   [[nodiscard]] const IncomePrograms &incomePrograms() const noexcept {
     return income_;
   }
-  [[nodiscard]] HubSelection hubSelection() const noexcept {
-    return hubSelection_;
-  }
-
   void validate() const;
 
   [[nodiscard]] ledger::LegitTransferBuilder
@@ -143,7 +132,6 @@ private:
   OpeningBalances openingBalances_{};
   CardLifecycle cardLifecycle_{};
   FamilyTransferScenario familyTransfers_{};
-  HubSelection hubSelection_{};
 };
 
 } // namespace PhantomLedger::transfers::legit

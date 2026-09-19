@@ -108,8 +108,6 @@ SplitsByPrimary planSplitters(const blueprints::LegitBlueprint &plan,
   }
   splitsByPrimary.reserve(plan.persons().size() / 2);
 
-  const auto &hubSet = plan.counterparties().hubSet;
-
   for (const auto person : plan.persons()) {
     if (person == entity::invalidPerson ||
         static_cast<std::size_t>(person) >= ownership.byPersonOffset.size()) {
@@ -134,9 +132,6 @@ SplitsByPrimary planSplitters(const blueprints::LegitBlueprint &plan,
     for (auto idx = start; idx < end; ++idx) {
       const auto recordIx = ownership.byPersonIndex[idx];
       const auto &record = registry.records[recordIx];
-      if (hubSet.contains(record.id)) {
-        continue;
-      }
       if (!entity::valid(primary)) {
         primary = record.id;
         continue;

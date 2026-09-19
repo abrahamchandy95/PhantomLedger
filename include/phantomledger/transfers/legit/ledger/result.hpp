@@ -23,7 +23,6 @@ struct LegitOpeningBook {
 };
 
 struct LegitCounterparties {
-  std::vector<entity::Key> hubAccounts;
   std::vector<entity::Key> billerAccounts;
   std::vector<entity::Key> employers;
 

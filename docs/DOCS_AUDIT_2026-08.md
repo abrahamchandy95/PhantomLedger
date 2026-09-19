@@ -342,7 +342,10 @@ justification: the crypto-rail decline, the EIP deferral, and the shortened
 modern leg of `test_card_class_f`.
 
 **Correction:** state the real bound (1990-2024) and re-decide each on its
-merits. The EIP one is not academic — a `--start 2020-01-01 --days 1096` window
+merits. The legitimate side now has typed `crypto_ramp_out`/`crypto_ramp_in`
+USD boundary flows, while crypto as a scam-payment rail remains a separate
+fraud-calibration decision; the expired era argument is no longer used. The
+EIP one is not academic — a `--start 2020-01-01 --days 1096` window
 reaches all three payments while `realPceLevel` already carries the 2020 collapse
 (0.9698) and 2021 rebound (1.0471) around them, i.e. an internally inconsistent
 world rather than a neutral omission.

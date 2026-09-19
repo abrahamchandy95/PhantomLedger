@@ -1432,3 +1432,420 @@ inequality will not notice. The two other instances were `test_table_golden`'s
 silently-truncating divergence report and the `external_unknown` sentinel
 collision. **Disbelieve a number before believing the model defect it implies —
 and prefer one constant over four copies.**
+
+══════════════════════════════════════════════════════════════════
+# AMENDMENT — device-sharing-evidence-2026-08
+══════════════════════════════════════════════════════════════════
+
+RESEARCH + INSTRUMENT round. **Owner question: "is there research available
+online to support our logic that high device sharing is actually correlated
+with high transaction fraud?"** The answer is a qualified YES for the
+MECHANISM and a flat NO for the MAGNITUDE, and the first authority row this
+document has ever carried for device fan-out is below. It exists because the
+prior record lived only in `CLAUDE.md`, which is git-ignored (`.gitignore:94`)
+and therefore does not survive a clone: the Group-IB / fraud.net vendor
+glossary that `fanout-bimodality-2026-08` rested on appears **nowhere in the
+tracked repository.**
+
+## F-8. Device / endpoint fan-out vs the label
+
+| Parameter | PL value | Class | Real-world anchor & source | Status |
+|---|---|---|---|---|
+| Device fan-out is a fraud signal (DIRECTION) | Encoded: attacker devices reach 23–32 victims, enumeration probes 47–92 cards | MEASUREMENT (direction) | **Visa, "Anti-Enumeration and Account Testing Best Practices for Merchants" V1.2, April 2023 (Visa Public)** — names the trigger in as many words: multiple transactions with different payment accounts sharing one email address and one device ID may be a trigger for fraud classification or review. **Mastercard US 10552836 B2** (filed 2016-10-11, granted 2020) claims fraud risk scoring from the number of transaction accounts that have used a device. Both accessed 2026-08-11 | CONFORMS (direction only) |
+| P(fraud \| N cards per device) — THE LEVEL | Not declared; emergent from case-load division | **UNCITABLE** | **No published series exists for cards-per-device in any domain.** OpenAlex body-text search returns ZERO works for "cards per device" and 11 equivalent phrasings; forward-citation traversal over 968 citing works of Ianus, GEM, InfDetect, TitAnt, Cash-Out, Financial Defaulter and SynchroTrap returns ZERO. Structural cause, which is worth more than the null queries: the real-card-data literature has no endpoint layer at all — **TitAnt** (Ant Financial's own payment-fraud system) explicitly defers device to future work; **xFraud** (eBay, 1.1B nodes) has no device node type; **APATE** (Van Vlasselaer et al., *Decision Support Systems* 75, 2015, real European issuer data) contains zero occurrences of device, fingerprint, IP or terminal | UNCITED — and the absence is now EVIDENCED, not merely unsearched |
+| The nearest published series | — | MEASUREMENT (wrong population) | **Ianus** (Yuan, Miao, Gong, Yang, Li, Song, Wang, Liang; ACM CCS '19), Figure 3(b): P(Sybil \| device registered N accounts) = 44.6 / 57.7 / 73.7 / 81.8 / 88.0 / 91.8 / 97.6 / 91.8 / 94.7 / 98.9 % for N = 1…≥10, base rate 45.7% (647k Sybil / 1,417k registrations), max lift **2.16x**. Verified by pixel measurement at 600 dpi; the paper publishes no numeric table. **NOT card fraud** — WeChat account REGISTRATION on hard mobile identifiers, labels from WeChat's own detector. Not monotone (dips at N=8). The same paper's IP analogue is non-monotone with four of six buckets BELOW base rate, max lift 1.46x | DEVIATES — population is account abuse, not payments |
+| **The measured card anchor (this round's contribution)** | See sub-gate K | MEASUREMENT | **IEEE-CIS Fraud Detection (Vesta Corporation, 2019)** — the only PUBLIC card-not-present dataset with device columns. 118,666 rows bearing `DeviceInfo`, base rate 0.07253, fingerprint = `DeviceInfo\|DeviceType\|id_30\|id_31\|id_32\|id_33\|id_13\|id_17\|id_19\|id_20`, 61,050 groups. Recomputed from the raw Kaggle CSVs and cross-checked against four independently published figures for the same files. **Whole-window lift by cards {1, 2, 3-5, 6-10, 11-25, 26+} = 0.485 / 1.080 / 1.756 / 1.888 / 1.719 / 1.567. AP ratio from degree alone 1.455; from plain ROW COUNT 1.546.** Accessed 2026-08-11 | see the four deviations below |
+| Approved-probe → later fraud on that card | **ABSENT** — every probe this corpus emits is DECLINED (`Do Not Honor`, `kProbesPerCard = 1`) | KNOWN GAP | **Visa VAAI Score datasheet, 2025, VisaNet data**: "Globally, enumerated accounts have 22x higher fraud rates than regular accounts", and of enumerated accounts that saw fraud, **33% saw first fraud within 5 days of the enumeration transaction being APPROVED**. Denominator is the authorization network itself, so this is a census and NOT a reports database — it does not inherit the `giftcard-ratio-2026-08` rule 1 under-reporting factor. Accessed 2026-08-11 | KNOWN GAP — the corpus cannot express the strongest documented card-testing signal |
+| Fingerprint identity is not a device | Coordinates one device chain per person, serving all their cards | DEVIATES-BY-CHOICE | **Gómez-Boix, Laperdrix & Baudry (WWW 2018)**: 2,067,942 real fingerprints, only **33.6% unique**. **Berke et al. (PoPETs 2025)**: ~60% unique in a representative US panel. **Vastel et al. (IEEE S&P 2018, FP-Stalker)**: fingerprints churn within days. So a measured "device" node is partly collision and partly fragmentation — high degree can be an artifact with no attacker behind it, and one physical device presents as many fingerprints | DEVIATES — see gap (1) |
+
+### The four measured deviations, with sub-gate K's armed readings
+
+| # | Quantity | This corpus | IEEE-CIS | Disposition |
+|---|---|---|---|---|
+| 1 | Share of rows on a **single-card** fingerprint | **6.5%** | **50.5%** | **The root cause of every other row.** Real fingerprints fragment; this corpus gives one person one device chain serving all their cards, so degree 1 is a minority bucket here and the MAJORITY bucket in reality. REGISTERED, not fixed — the fix is fingerprint fragmentation in legitimate device synthesis, cited to Vastel et al., and it is draw-spending: it moves every golden. |
+| 2 | Degree-1 lift | 1.96 – 2.46 | **0.485** | Consequence of (1): a small bucket is dominated by victim-endpoint compromise, where a large one is dominated by ordinary first-time traffic. `kMaxDegreeOneLift = 2.95` is left ALONE and its "the bimodal curve is real" justification is WITHDRAWN in place. Tightening the band to 0.485 would pin a target no current construction can reach. |
+| 3 | Curve **shape** | U-shaped (hot at 1 and at 26+, trough at 2–5) | **Unimodal** hump at 6–10, gentle decay | PRINTED per leg beside the anchor, not banded. Banding a shape the construction cannot produce is `merchant-selection-2026-08` rule 5. |
+| 4 | AP(degree) ÷ AP(row count) | **1.75 – 2.20x** | **0.941x** | Corpus per-endpoint ROW COUNT is ANTI-predictive (AP ratio 0.656–0.710 — a busy endpoint is SAFER than average) where IEEE-CIS measures it PREDICTIVE at 1.546. So this corpus concentrates discriminating power in the graph axis and reality spreads it across both. **A GNN trained here will lean on structure harder than a production model should.** Bounded by K.3 at 2.65; closing it is a change to the endpoint row-mass mix (POS terminals carry thousands of legitimate rows against a compromise case's 5–14). |
+
+### What SHIPPED
+
+**Sub-gate K in `tests/test_card_endpoint_graph.cpp`** — the gate
+`fanout-bimodality-2026-08` rule 4 asked for by name ("PREFER AN AP/AUC-PR
+BOUND OVER A LIFT BOUND when the question is 'will a model learn this'").
+Test-only: **no golden moves and `kTableCount` does not move.**
+
+| Check | Band | Armed (4 legs) |
+|---|---|---|
+| K.1 ceiling, AP ratio from degree alone | ≤ **1.75** (mean + 3.5 SD of 1.318 / 1.440 / 1.151 / 1.218) | 1.151 – 1.440 |
+| K.2 floor, same quantity | ≥ **1.05** | 1.151 – 1.440 |
+| K.3 ceiling, AP(degree) ÷ AP(row count) | ≤ **2.65** (mean + 3.5 SD of 1.855 / 2.195 / 1.747 / 1.814) | 1.747 – 2.195 |
+| K.4 non-vacuity | rows > 0, fraud > 0, base rate > 0, **and** support spans both the degree-1 and 26+ buckets | — |
+| K.5 | the six-bucket corpus curve PRINTED beside the IEEE-CIS anchor | — |
+
+**NON-VACUITY PROVEN IN ALL THREE DIRECTIONS, and one honest miss recorded:**
+
+| Disarm | K.1 | K.2 | K.3 |
+|---|---|---|---|
+| `kDisarmInstrumentCeiling` (pre-round world) | RED 24.39 / 36.91 | — | RED 40.09 / 60.89 |
+| `kDisarmFraudOffLowDegree` (all fraud on shared infra) | RED 11.48 / 9.65 / 8.10 | — | **GREEN 1.15 / 1.21 / 2.10** |
+| `kDisarmDegreeApNoise` (NEW — label independent of degree) | — | RED 1.0002 / 0.9998 / 1.0005 / 1.0013 | — |
+
+**K.3 misses the second leak and that is stated rather than hidden**
+(`merchant-selection-2026-08` rule 6, fifth instance): piling fraud onto the
+single widest endpoint raises BOTH rankers together — row count reaches 9.99x
+— so the RATIO barely moves while each half moves enormously. **A ratio is
+blind to a leak common to its numerator and denominator.** K.1 catches it.
+
+**TWO INSTRUMENT DEFECTS FOUND WHILE BUILDING IT.**
+
+1. **K.2's floor cannot be the analytic 1.0.** A noise ranker's AP ratio is
+   1.0 in expectation, so a floor at 1.0 is a coin flip on float error — the
+   disarm reproduced pure noise and **three of four legs stayed green.** Banded
+   at 1.05 on the measurement. `merchant-selection-2026-08` rule 6 again.
+2. **The first noise disarm built a stronger leak than it removed.** Rounding
+   each endpoint's fraud share independently truncates every endpoint under
+   `1/baseRate` ≈ 107 rows to ZERO fraud and dumps the label onto the large
+   ones, which made ROW COUNT **25x** predictive. Fixed with cumulative
+   apportionment. **A disarm is a construction and needs checking like one.**
+
+### Registered, NOT closed
+
+- **Gap (1), fingerprint fragmentation** — the highest-value realism change
+  available on this axis, cited (Vastel et al. IEEE S&P 2018; Gómez-Boix et
+  al. WWW 2018), and draw-spending: it moves every golden and needs owner
+  sign-off. Predicted effect: moves legitimate mass into degree 1, which
+  simultaneously repairs deviations (2) and (3).
+- **Gap (4), volume anti-predictiveness** — a change to the endpoint row-mass
+  mix, not a dial.
+- **The approved-probe population** — adding one requires a new band on
+  `test_card_enumeration`'s straddle-1.0 requirement BEFORE it lands, because
+  that requirement is only correct for the declined tail.
+- **`cards per device` has no published analogue in any domain.** Every
+  positive finding located measures ACCOUNTS or USERS per device (Ianus, GEM,
+  InfDetect, iovation, ThreatMetrix). ThreatMetrix's five-card rule is cards
+  per ACCOUNT. This corpus's quantity is cards per DEVICE.
+
+### Counter-evidence located, recorded so the direction is not over-read
+
+Two Ant Financial production systems **DELETE** devices seen with only one
+account as low-risk (InfDetect measures the cost at <0.1% performance loss).
+**Rappi/UC Berkeley/UCSD (KDD-MLF '21)**, a real payment population with a
+user–device–card graph: pure graph structure scores AUC **0.5626–0.6538**, and
+device relation importance collapses **4.0970 → 0.1048 (~39x)** once
+behavioural features are added. **GEM** (Alipay, CIKM 2018): ranking accounts
+by device-linked component size scores AUC 0.665–0.694 against 0.916–0.936 for
+the full model. **PCI SSC / NCFTA (2020)**: attackers deliberately parallelise
+across sites (5 attempts × 12 sites; ~200 sites for CVV discovery) to keep
+per-site counts low, and Visa (2024) observed enumeration "distributed across
+hundreds of merchants" — i.e. the high-fan-out-on-one-endpoint assumption is
+itself what attackers evade. **Amazon FDB**: on the only public CNP set with a
+raw `device_id`, four of five AutoML frameworks cannot beat random (AUC
+0.515–0.636).
+
+CLASS: research + instrument. Status: CONFORMS (direction cited, level
+registered as uncitable, four deviations measured and registered). GOLDEN
+IMPACT: **NONE — no golden moves, `kTableCount` unmoved at 43.**
+
+## STEP 2 — THE CONSUMER-VISIBLE VIEW, AND THE DILUTION RUNS THE WRONG WAY
+
+**Registered item #2 of this amendment is now MEASURED, and it did not resolve
+the way the design predicted.** Sub-gate K.6 in
+`tests/test_card_endpoint_graph.cpp`. Test-only; no golden moves.
+
+### The blind spot was real, and worse than "the gate reads the wrong vector"
+
+The first attempt merged `posted.declined` into the degree rollup and measured
+**ZERO probes on all four legs** against 4,421–5,225 declined rows in view.
+Cause: enumeration probes are synthesized at EXPORT time by
+`streaming.hpp`'s `writeEnumerationProbe`, not decided by the ledger replay.
+**So the dilution exists in the exported CSV and in NO in-memory structure at
+all** — `posted.declined` carries only the funding and non-funding declines.
+Every degree ceiling in that file (I.1's all-fraud bucket, I.2's best
+precision, K.1's AP) has been blind to it since `device-fanout-2026-08`
+shipped, and no harness in the repository measured degree over the view a
+consumer actually reads.
+
+K.6 therefore reproduces the exporter's own synthesis — one probe per card on
+its FIRST view row, with the `backdatedRowIsObservable` window and membership
+guards. **That is only sound because `probeFor` is draw-free and stateless**;
+the property `enumeration.hpp` maintains for golden containment is exactly what
+lets a second caller reproduce the same probes.
+
+### Measured, four legs
+
+| leg | probes in view | AP ratio settled → merged | best precision | degree-1 lift |
+|---|---|---|---|---|
+| leg-long | 138 | 1.318 → **1.402** | 0.0383 → 0.0433 | 2.330 → 2.269 |
+| leg-wide | 272 | 1.440 → **1.597** | 0.0563 → 0.0559 | 1.960 → 1.838 |
+| leg-sizeA | 182 | 1.151 → **1.231** | 0.0254 → 0.0299 | 2.463 → 2.404 |
+| leg-sizeB | 220 | 1.218 → **1.331** | 0.0446 → 0.0441 | 2.337 → 2.192 |
+
+**THE DILUTION MAKES DEGREE MORE PREDICTIVE, NOT LESS — on every leg, by
++6.4% / +10.9% / +7.0% / +9.3%.** And leg-wide's merged **1.597 EXCEEDS the
+IEEE-CIS anchor of 1.455**, so the consumer-visible corpus is, on that leg,
+more degree-separable than real card data. A ceiling sized on the anchor would
+red there.
+
+The one thing it does help is the low tail: degree-1 lift falls 2.7–6.2% on
+every leg, because probes attach to cards whose settled rows are elsewhere.
+
+### Two standing claims corrected
+
+1. **`device-fanout-2026-08`'s "the top-degree endpoint in the corpus is no
+   longer a fraud endpoint" does not hold in this view.** Max degree is
+   UNMOVED by the merge (322→322, 324→325, 355→355, 418→418) because the top
+   endpoint is a public terminal at 322–418 cards, far above both the quoted
+   probe range (47–92) and the quoted compromise range (37–40). Those two
+   numbers were measured in `test_card_enumeration`'s own harness and do not
+   describe the endpoint-graph view.
+2. **"Probes dilute the high-degree tail" is not what the merge shows.** Probes
+   add only 7–16 new endpoints per leg at ~8.6 cards each — MID-degree,
+   zero-fraud — while `kProbedBasisPoints = 400` was sized so that "the top
+   enumeration device's degree land[s] in the same order as a busy attacker's".
+   At these legs it does not reach the top of the distribution at all.
+
+### Disposition
+
+**PRINTED, NOT BANDED, and only one assertion ships:** that the merged view
+CONTAINS probes at all (`probeViewRows > 0`), which is the non-vacuity check
+whose failure exposed the blind spot in the first place. The merged AP is not
+banded because every existing band in sub-gates I and K was measured on the
+settled view, and re-pointing them at a wider view would be
+`merchant-selection-2026-08` rule 13 — a band measured against a superseded
+construction is not a measurement.
+
+**OPEN, and this is now the highest-value question on this axis:** whether
+`kProbedBasisPoints` should rise so probe endpoints actually reach the top of
+the degree distribution, or whether the dilution premise should be withdrawn.
+The level is CLASS S UNCITED and explicitly "sized for fan-out, not for
+prevalence", so raising it needs no incidence estimate — but it must be sized
+against the MERGED view, which nothing has ever measured until now.
+
+## STEP 3 — THE PROBE SHARE WAS SWEPT, AND RAISING IT AMPLIFIES THE LEAK
+
+**Owner selected `kProbedBasisPoints` as the next lever. Measurement says do
+not pull it.** Sub-gate K.7. `kProbedBasisPoints` is UNCHANGED at 400.
+
+### The sweep
+
+Swept 400 / 1000 / 2000 / 3000 / 4000 / 6000 bp over the CONSUMER-VISIBLE view
+on all four legs. `probeFor` gained a defaulted `probedBasisPoints` parameter so
+the sweep uses the real resolver rather than a duplicated predicate.
+
+| bp | leg-wide AP ratio | leg-long best precision | leg-long top probe degree |
+|---|---|---|---|
+| 400 (shipped) | 1.598 | 0.0434 | 69 |
+| 1000 | 1.754 | 0.0526 | 151 |
+| 2000 | 1.839 | 0.0638 | 262 |
+| 3000 | 1.860 | **0.1667** | 390 |
+| 4000 | **1.881** | 0.1301 | 517 |
+| 6000 | 1.828 | 0.0899 | 778 |
+
+**Both quantities RISE with the share.** At 2000bp and above the AP ratio
+exceeds `kMaxDegreeApRatio = 1.75`, so raising this constant would RED the gate
+that bounds the quantity it was meant to protect.
+
+Incidentally this corrects the STEP 2 diagnosis: probe endpoints DO out-degree
+compromise devices already at 400bp — top probe degree 58–98 against attacker
+max 23–32. STEP 2's "~8.6 cards per probe endpoint" was the MEAN, not the max.
+The design intent on fan-out is met; the intent on dilution is not.
+
+### The cause, and it is logically forced rather than incidental
+
+`probeFor` resolves its endpoint from the **same `AttackerInfra` inventory the
+compromise planner draws from** — a different salt over the same operator
+lines. Measured, of probe rows landing on a device already present in the
+settled view:
+
+| leg | probe rows on a settled device | of those, on a FRAUD-carrying device |
+|---|---|---|
+| leg-long | 71 of 138 | **71 (100%)** |
+| leg-wide | 229 of 272 | **229 (100%)** |
+| leg-sizeA | 138 of 182 | **138 (100%)** |
+| leg-sizeB | 191 of 220 | **191 (100%)** |
+
+**No exceptions, and it cannot be otherwise.** Attacker inventory carries no
+legitimate traffic, so an attacker device is visible in the settled view only
+because a compromise case used it. Every probe stapled to one of those raises a
+fraud-carrying device's degree and pushes it UP the ranking with its fraud rows
+intact. **The diluent shares its device pool with the thing it is diluting.**
+7–16 of each leg's 16–24 probe devices already carry settled fraud.
+
+### Disposition
+
+**`kProbedBasisPoints` STAYS AT 400**, with the sweep and the cause recorded at
+the constant so the next reader does not repeat the attempt. Raising it is now
+a documented anti-fix.
+
+**WHAT WOULD ACTUALLY WORK, and it is the registered next step:** a probe
+endpoint pool DISJOINT from the compromise device lines, so a probe device
+carries probe rows only and its absent label is real. Containment is the cheap
+class — exporter-side synthesis, so `golden_run.b2sum` stays unmoved and only
+`golden_tables_card_fraud.md5` moves — but it is a resolver change to
+`probeFor` and `AttackerInfra`, and it has NOT been made here. It also needs
+`test_card_enumeration`'s bands re-measured, since probe endpoint identity
+moves.
+
+**THE GENERAL LESSON, and it is the round's most reusable:** an anti-shortcut
+population must be DISJOINT from the population it masks. A diluent drawn from
+the same pool as the signal does not dilute — it concentrates. This is the
+third construction in this repository to share a pool with the thing it was
+built to obscure, after the merchant-ownership register (kept keyed on the
+merchant key alone for exactly this reason) and the residential-proxy address
+(deliberately not marked as attacker inventory).
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT — cash-hub-defect-2026-08
+═══════════════════════════════════════════════════════════════════════
+
+**✅ CLOSED IN THE CUSTOMER-LEDGER PROJECTION.** The full pre-fix diagnosis,
+measurements, design alternatives, implemented disposition, and executable
+gates live in `docs/cash_hub_defect.md`. The historical measurements below are
+retained so this repair cannot silently regress.
+
+**The former defect in one sentence.** Every ATM withdrawal was credited to a
+single randomly chosen roster person's primary checking account; the account
+reported infinite liquidity and exported as `inf`. The implementation now uses
+multiple ownerless, area-local external cash endpoints and one-sided boundary
+posting, with no credited endpoint balance.
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| ATM withdrawal destination = an area-local registered `Bank::external` processor endpoint (`cash_points.hpp`, `plans.cpp`, `atm.cpp`) | A real on-us ATM withdrawal reduces the bank's currency-and-coin asset; an off-us withdrawal also creates network settlement. Neither is a depositor's account | MEASUREMENT (accounting) | Fed FR 2900 reporting instructions (vault cash includes currency in a bank's own ATMs); Oracle FLEXCUBE Core Banking ATM User Manual, screens ATM01/ATM02 (accessed 2026-08-18) [Certain on the mechanism] | **CONFORMS AS A DECLARED CUSTOMER-LEDGER PROJECTION**: only the internal customer leg is booked; the full GL is outside scope |
+| Centralized vault-cash / network-settlement GL | Real cores centralize or modestly shard these GLs; terminals are transaction context rather than customer accounts | MEASUREMENT (accounting) | Oracle FLEXCUBE ATM User Manual ATM02 (accessed 2026-08-18); Philadelphia Fed, *Clearing and Settlement of Interbank Card Transactions* (Oct 2013) [Certain] | **CONFORMS BY EXPLICIT OMISSION**: the GL is outside the projection and is not emitted as a global graph target |
+| Cash withdrawal points, cash-deposit points, card issuer, billers, employers, and landlord fallback use distinct external keys/pools | A real core carries distinct cash, settlement, issuer, and counterparty roles | TYPOLOGY | Oracle FLEXCUBE ATM User Manual ATM01/ATM02 field lists (accessed 2026-08-18) [Certain] | **CLOSED** |
+| Combined ATM terminal/acceptor endpoint, without dedicated DE41 and DE42 columns | The graph identity an issuer-side fraud model sees is the ISO 8583 **pair** DE 41 Card Acceptor Terminal Identification + DE 42 Card Acceptor Identification Code, one acceptor to many terminals, unique only as a pair | MEASUREMENT | Elavon Developer Portal field-41 description; Galileo/SoFi issuer data-elements map exposing DE41 as `terminal_id` and DE42 as `merchant_id`; Marqeta `card_acceptor` (all accessed 2026-08-18) [Certain] | **PARTIALLY CLOSED — EXPLICIT CARRIER GAP** |
+| Distributed, geographically resolved cash-point endpoints; no customer or system-wide target | ZERO of five published AML/fraud datasets use one monolithic customer cash node. AMLSim shards onto `Branch`; PaySim shards onto merchants; IBM AMLworld makes cash an edge attribute; the Neo4j reference reifies the transaction; Sparkov omits cash | TYPOLOGY | AMLSim `Branch.java`/`CashOutModel.java`; PaySim `Client.java`; NeurIPS 2023 D&B *Realistic Synthetic Financial Transactions for AML* Table 5; Neo4j `fraud-detection.adoc`; Sparkov README (all accessed 2026-08-18) [Certain] | **CUSTOMER-GRAPH DEFECT CLOSED**; downstream consumers must retain external type/channel |
+| Interchange fee direction on ATM rows | On a PURCHASE the acquirer pays the issuer; on a CASH WITHDRAWAL the ISSUER pays the acquirer. The sign inverts | INVARIANT (accounting) | Philadelphia Fed, *Clearing and Settlement of Interbank Card Transactions* (Oct 2013) (accessed 2026-08-18) [Certain] | **NOT MODELLED** (PL has no ATM interchange leg; recorded so nobody adds one with the purchase sign) |
+| US ATM density, if a terminal layer is ever sized | There is NO current official US ATMs-per-capita statistic. IMF FAS via World Bank reports the US only through 2009 (425,010 ATMs, 172.76 per 100k adults) and is null 2010 onward. Only current count is commercial: 451,500 (2022), down from a 470,000 peak (2019). The WITHDRAWAL count IS official: 3.7 billion in 2021, average value $156 (2018) → $198 (2021) | MEASUREMENT | World Bank `FB.ATM.TOTL.P5`; Euromonitor via Payments Dive 2023-06-23; Federal Reserve Payments Study 2022 triennial (all accessed 2026-08-18) [Certain on the withdrawal count; the 451,500 is trade press, not a statistical release] | **CLASS S UNCITED for density**; the two candidate anchors disagree ~8x |
+
+## Pre-fix measurements, retained as the regression baseline
+
+On the 23,866,506-row production export (499,409 distinct accounts): **ONE** ATM
+destination account, `A0000247513`, receiving **1,823,332 rows = 7.64% of the
+corpus** (1,230,944 `atm_withdrawal` + 352,271 `cc_interest` + 239,313
+`cc_late_fee`) from **344,576 distinct counterparties = 69.0% of all accounts**.
+It is the highest-degree vertex in the graph and the only one in the top eight
+that is not `X`-prefixed. Next highest is `XM00000001` at 176,196.
+
+**Money conservation is broken by +$36,248,870.40, or +42.31% of gross applied
+value** (pop 900, 731d, seed `0xC0FFEE`, 668,247 rows, gross $85,682,895.37).
+The larger contributor is a SEPARATE bug: 30 `fundingHubs` are `createHub`'d but
+never covered by `seedHubAccounts`, so they sit at cash 0.00 with a bypassed
+funding screen and source **$33,260,807.20**.
+
+**`kHubCash = 1e18` has a $128 ulp**, so every credit at or below $64 vanishes.
+That is **7 of the 18 `kAtmAmounts` entries** ($20, $40×3, $60×3) crediting
+$0.00 forever, and **89.7% of hub-credit rows ($2,376,059.08 of $3,697,214.85)
+disappearing** on the real corpus.
+
+**The `inf` is reproduced, not inferred.** `docs/cash_hub_inf_repro.cpp` drives
+the real `clearing::Ledger` and the real `exporter::csv::Writer` and emits
+`A0000000012,inf`. Through `aml::exportAll` at pop 400 it is 4 of 1,674
+`Account` rows, scaling to **700 rows at the shipped default
+`--population 70000`**.
+
+## Why the pre-fix suite could not see it
+
+`grep -rn 'isfinite|isinf|std::isnan' tests/*.cpp` returns **zero hits** in a
+68-test suite. `test_pipeline_e2e` renders the `inf` rows today and passes,
+because `expectTable` checks only presence. The plain `aml` use case is covered
+by **no golden section at all**. And `tests/golden_tables_aml.md5` line 35
+digests `aml_txn_edges_vertices_Account`, whose column 7 is `balance`, so **the
+pinned md5 already encodes the `inf` and the correct fix will RED a green
+golden.**
+
+## Rules this produced
+
+1. **A DIGEST GOLDEN PINS WHATEVER IT WAS GIVEN, INCLUDING AN ABSURDITY.** A
+   byte pin answers "has this changed", never "is this sane". Pair every digest
+   pin with at least one predicate on the value's DOMAIN; finiteness is the
+   cheapest one there is. This is the sibling of `bls-citation-2026-07` rule 4
+   ("a lower bound is not a count").
+2. **A SYNTHETIC SINK MUST NOT BE DRAWN FROM THE POPULATION IT SERVES.** Fourth
+   instance of the disjointness rule, after the merchant-ownership register, the
+   residential-proxy address and the enumeration probe pool, and the worst of
+   the four: the sink is a CUSTOMER, still eligible for victim and mule
+   selection, with 69% of accounts as its 1-hop neighbours.
+3. **AN INFINITY IS A SENTINEL AND MUST NOT CROSS AN EXPORT BOUNDARY.** Infinite
+   liquidity is a legitimate in-simulation device for "never rejects"; it became
+   a defect only when an exporter read the sentinel as a quantity. Same shape as
+   `loc-accrual-perf-2026-08` rule 5 (`ts == 0` is a sentinel, not an instant)
+   and the card-fraud `device_risk_score = -1` convention. **Give the ledger a
+   separate reporting accessor so the sentinel cannot be read as data.**
+4. **`std::to_chars` SUCCEEDS ON INFINITY, SO AN `errc` CHECK IS NOT A VALIDITY
+   CHECK.** `csv.cpp`'s throw was never going to fire, and its trailing-zero
+   fixup probes for `.eEnN`, which matches the `n` in `inf`, so the one piece of
+   code that inspected the rendered text waved it through. A formatter's error
+   code tells you it COULD format the value, not that the value should exist.
+5. **A SEEDING WALK AND A FLAGGING WALK OVER DIFFERENT KEY SETS IS A SILENT
+   HOLE.** `createHub` covered `fundingHubs`; `seedHubAccounts` did not, and the
+   resulting 30 zero-balance accounts created more money than the documented
+   hubs did. When two passes configure the same concept, assert they cover the
+   same set.
+6. **`1e18` IS NOT A LARGE NUMBER, IT IS A NUMBER WITH A $128 QUANTUM.** A
+   saturating balance needs a FLAG, not a magnitude.
+7. **CENTRALISED IS RIGHT, CUSTOMER-OWNED IS WRONG, AND THE TWO GOT
+   CONFLATED.** Real cores do centralise the ATM cash GL, so sharding per
+   machine at the LEDGER level models something no core system does. The key
+   that carries the fraud signal is the ISO 8583 terminal/acceptor pair, which
+   lives on the TRANSACTION. **Separate the money leg from the context leg
+   before choosing a cardinality.**
+8. **HUB SELECTION VIOLATES `merchant-churn-2026-07` RULE 2 AS WRITTEN**, and
+   that is why the fix is expensive: its draw COUNT depends on `populationCount`
+   and it sits FIRST on the SHARED sequential stream, ahead of the opening book,
+   every routine and fraud planning. Floyd's sampler runs `j` over `[n-k, n)`
+   with `range = j+1`, so changing the hub count changes the value of the FIRST
+   draw. **Move hub selection to its own `RngFactory` lane and re-pin ONCE,
+   before changing the hub model**. Otherwise the work costs two full re-pins
+   and two full band re-measurements.
+
+## Implemented disposition and residual work
+
+1. **Implemented:** removed `createHub`, hub flags, `kHubCash`, all hub seeding,
+   customer selection, hub exclusions, and customer-account fallbacks.
+2. **Implemented:** all replay/screening paths post by key; external keys are
+   boundary markers rather than internal ledger indices, while unknown internal
+   keys reject as unbooked. CSV rejects non-finite doubles.
+3. **Implemented:** population-scaled ATM and cash-depository pools, home-area
+   placement, event-time relocation, nearest-point selection, and stable
+   draw-free customer affinity. Billers and the card issuer use separate pools.
+4. **Implemented:** typed clearing contracts now bind endpoint kind, direction,
+   and channel for ATM withdrawals, cash deposits, settled check deposits, and
+   crypto USD ramps. Household cash/check deposits have a dedicated isolated
+   routine; crypto ramp-in is capped by prior accepted per-account ramp-out
+   inventory. See `docs/customer_ledger_boundaries.md`.
+5. **Residual:** dedicated DE41 + DE42 carriers/edges, cash-point geography and
+   on-us/off-us export, and an ATM interchange leg with the withdrawal sign.
+6. **Residual:** downstream customer-flow queries must filter external boundary
+   nodes or use a typed/reified cash-access edge; terminal-density calibration
+   remains class S.
+
+## Also found
+
+- **Closed:** the 30 unseeded `fundingHubs` and their funding bypass no longer
+  exist.
+- **Closed:** `LegitCounterparties::hubAccounts`,
+  `CounterpartyAccess::isHub`, and `CounterpartyAccess::firstHub` were removed.
+- **Contained in production, still an API hardening item:** the biller pool now
+  has a non-empty external fallback, but `unauthorized.cpp` still assumes a
+  caller-provided `billerAccounts` span is non-empty.
+
+## Downstream, and it is why the generator fix alone is not enough
+
+The customer-owned `A…` supernode and its `inf` balance are gone. However,
+`MulePatternLearner`'s pre-graph aggregator requires only
+`src_acct, dst_acct, amount, ts` and **discards the `channel` column the export
+already provides**, and `mule_ml`'s `Transfer_Transaction.csv` has no channel
+column at all, so an ATM withdrawal is byte-indistinguishable from a P2P
+transfer. Its GSQL feature queries carry **no `is_external` guard**, so WCC
+merges the population into one component (making `com_size`, a live model
+feature, meaningless) and PageRank can still mishandle shared external
+endpoints if type/channel is discarded. The former super-node harm is
+documented rather than speculative: SALT-GNN (arXiv:2607.10131)
+measures degree-stratified AML GNN degradation on these exact datasets and
+states that aggregate F1 HIDES it; GCNs are biased TOWARD high-degree nodes
+(Tang et al., CIKM 2020, arXiv:2006.15643), so a super-node earns flattering
+metrics while distorting everything around it.

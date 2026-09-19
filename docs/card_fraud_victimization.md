@@ -255,9 +255,9 @@ the pre-tilt world in the same round.
   (truer, needs a new carrier through the legit stage) or the cheaper
   credit-card-ownership × persona-at-date proxy?
 - **D-Q2.** Scope of V3's payment methods: keep it to wire/P2P added to
-  the existing gift-card rail, or model the full FTC method mix
-  including crypto (which would need a crypto counterparty class that
-  does not exist)?
+  the existing gift-card rail, or extend it to the legitimate bank-visible
+  `crypto_ramp_out` boundary now present in the model? Native-token/wallet
+  transfer semantics still do not exist and must not be implied by that rail.
 - **D-Q3.** Do the per-persona multipliers ship as declared CHOICEs now,
   or do you want the FTC/BJS tables verified first so they can ship as
   MEASUREMENT? The former is faster; the latter is stronger and is what
@@ -278,7 +278,11 @@ What shipped:
    AUTHORIZES a push to the attacker's payee account, 50/50 over a
    wire-shaped `externalUnknown` transfer and a `p2p` app push. Both
    channels carry heavy legitimate volume, so the rail cannot label the
-   row. Crypto stays DECLINED — the era lock ends the window in 2020.
+   row. Crypto stayed out of this delivered fraud round. The old rationale
+   that the era lock ended in 2020 is retired: coverage now reaches 2024, and
+   the legitimate model has a bank-visible USD crypto-ramp boundary. Adding it
+   to the scam method mix still requires an explicit prevalence/severity and
+   labeling decision; it is not a side effect of the legitimate module.
 3. THE PICKER IS PER RAIL. card/ato keep the v2 exposure CDF
    (date-independent, built once); the two authorized rails draw on a
    persona x age susceptibility hazard rebuilt AT THE CASE DATE; ATO

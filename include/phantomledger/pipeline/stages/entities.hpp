@@ -25,6 +25,7 @@
 #include "phantomledger/synth/pii/sharing.hpp"
 
 #include <cstdint>
+#include <span>
 
 namespace PhantomLedger::pipeline::stages::entities {
 
@@ -114,7 +115,8 @@ issueCreditCards(const sy::personas::Pack &personas,
 
 [[nodiscard]] entity::counterparty::Directory buildCounterparties(
     pl::random::Rng &rng, std::int32_t population,
-    const sy::counterparties::CounterpartyTargets &targets = {});
+    const sy::counterparties::CounterpartyTargets &targets = {},
+    std::span<const entity::geography::GeoAreaId> homeAreas = {});
 
 void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
                              const pl::pipeline::Counterparties &cps,

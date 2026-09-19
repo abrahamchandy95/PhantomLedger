@@ -145,7 +145,7 @@ same seed and config rewrite byte-identical content.
 
 | Option | Default | Description |
 |---|---|---|
-| `--usecase {standard,mule-ml,aml,aml-txn-edges,card-fraud}` | `standard` | Exporter to run. |
+| `--usecase {standard,mule-ml,aml,aml-txn-edges,card-fraud,mule-temporal}` | `standard` | Exporter to run. |
 | `--days N` | `365` | Simulation length in days. |
 | `--population N` | `70000` | Total population. |
 | `--seed N` | `0xDEADBEEF` | Top-level RNG seed. |
@@ -170,13 +170,14 @@ coverage (the era lock).
 
 Each `--usecase` writes into its own schema, so runs with the same `--seed` against the same
 database compose into a coherent multi-format dataset without colliding (identifiers are canonical
-across use cases):
+across use cases; `mule-temporal` pseudonymizes entity IDs):
 
 - `standard` → `public` (unprefixed tables, next to the shared `transactions` stream)
 - `mule-ml` → `mule_ml.ml_ready_*`
 - `aml` → `aml.aml_*`
 - `aml-txn-edges` → `aml_txn_edges.aml_txn_edges_*`
 - `card-fraud` → `card_fraud.cf_*`
+- `mule-temporal` → `mule_temporal.mt_*` (opaque entity IDs; temporal schema)
 
 ## Pipeline
 
@@ -189,7 +190,7 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
 3. **PII.** Deterministic phone and email derived from person ID.
 4. **Merchants.** A core merchant pool (density per 10k people) plus a sparse long tail of external-only merchants; core merchants are split into internal (on-us) vs external based on `inBankP`.
 5. **Landlords.** Typed pool (individual / small LLC / corporate) drawn from the RHFS 2021 unit-weighted distribution; each landlord independently assigned in-bank or external by type.
-6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages. Employers and clients are split internal/external.
+6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages, billers, the card issuer, geographically placed cash/check service points, and crypto fiat-ramp venues. Employers and clients are split internal/external. Boundary points are typed, external, ownerless transaction contexts rather than customer accounts.
 7. **Institutional externals.** SSA, disability, insurance carriers, lenders, IRS, and bank fee books are registered from a fixed catalog.
 8. **Planned external family accounts.** Deterministic `XF…` accounts for family members who bank elsewhere.
 9. **Personas.** Each person gets an archetype, a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity), a membership interval (a BEA-sized join cohort joins mid-window; accounts close after death — see [Personas](#personas)), a birth date drawn on an isolated lane at the person's own anchor (the single age axis every exporter renders), and a lifecycle timeline including a death date.
@@ -209,7 +210,7 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
 
 1. The legit-transfer builder produces the candidate ledger in semantic order:
    - **Income pass.** Salary (payroll cadences, job tenure, compound raises), government benefits (SSA Wednesday cohorting, disability), non-payroll revenue (client ACH, platform payouts, card settlements, owner draws, investment inflows). Every income stream ends at death.
-   - **Routines pass.** Direct-deposit splits, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution). Behavioral flows stop at death; contractual flows stop at account closure.
+   - **Routines pass.** Direct-deposit splits, household cash/check deposits, bank-visible crypto USD ramps, rent (with landlord-type-aware channel routing), subscriptions, ATM withdrawals, intra-person self-transfers, and day-to-day discretionary spending (market simulator with AR(1) momentum, dormancy, paycheck-cycle boost, seasonality, counterparty evolution). Behavioral flows stop at death; contractual flows stop at account closure.
    - **Family pass.** Allowances, tuition, retiree support, spouse transfers, parent gifts, sibling transfers, grandparent gifts, funerals, and death-caused estates.
    - **Credit pass.** Credit-card lifecycle (purchase → refund/chargeback, interest, late fees, payments), serviced until account closure.
 
@@ -245,6 +246,13 @@ All IDs are fixed-width prefixed strings:
 | `XGOV…` / `XINS…` / `XLND…` / `XIRS…` / `XBNK…` | Government / insurance / lender / IRS / bank servicing | fixed |
 
 **Leading `X` signals external.** `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
+
+The high-range `XS…` identities include ATM terminal/acceptor, cash-depository,
+and check-capture endpoints; `XP…` includes crypto fiat-ramp venues. They are
+registered so transaction references remain valid, but they are not customer
+accounts and never resolve to a balance-bearing posting index. Clearing also
+enforces the channel, endpoint kind, and allowed direction. See
+[Customer-ledger boundary flows](docs/customer_ledger_boundaries.md).
 
 These prefixed strings are the export-time rendering only. Internally, every account and counterparty is a 16-byte plain-old-data `entity::Key` `{role, bank, number}`; the simulation core never allocates or compares ID strings.
 
@@ -516,6 +524,15 @@ Stats anchors: 82% of US adults have ≥1 card (Fed SHED 2023); average balance 
 Card servicing stops with the owner's account: the statement-close ladder truncates 50 days before ACCOUNT CLOSURE (death + 120 days), so the final cycle's payment and late-fee tail settle against the estate strictly before the accounts close.
 
 ## Banking Mechanics
+
+The clearing book is an internal-customer-ledger projection. A `Bank::external`
+source credits only the internal destination; an external destination debits
+only the internal source. External keys remain in the entity registry for
+referential integrity but are deliberately absent from the ledger's internal
+account map, so no salary source, merchant, ATM, biller, or other boundary
+counterparty can acquire a synthetic balance. External-to-external and unknown
+internal postings are rejected as unbooked. CSV export also rejects every
+non-finite numeric cell.
 
 ### Balances
 
@@ -815,7 +832,43 @@ Each person gets 4–8 subscription "intents" with 55% actual debit probability.
 
 ### ATM
 
-88% of people are ATM users. Monthly withdrawals uniform [1, 6]. Amounts drawn from a pool weighted toward round multiples of 20/40/60/100 (matches real ATM UX), scaled to the event year's price level and RE-SNAPPED to the $20 note lattice — a 1991 withdrawal is fewer $20s. 75% of withdrawals bias to days 0–18 of the month, 25% to days 18–28. Destination is the bank's ATM network hub account. Withdrawals stop at death.
+88% of people are ATM users. Monthly withdrawals uniform [1, 6]. Amounts drawn from a pool weighted toward round multiples of 20/40/60/100 (matches real ATM UX), scaled to the event year's price level and RE-SNAPPED to the $20 note lattice — a 1991 withdrawal is fewer $20s. 75% of withdrawals bias to days 0–18 of the month, 25% to days 18–28. Withdrawals stop at death.
+
+Cash access uses a population-scaled catalog (13.5 points per 10,000 people,
+minimum two) placed over the generated home-area distribution. At each event,
+the customer's current area—including relocation—is resolved first; the
+withdrawal then uses a stable primary point 82% of the time and one of up to
+three nearby alternatives otherwise. The selected `XS…` key is a combined
+terminal/acceptor endpoint in the transaction graph and an external boundary
+in clearing: the customer is debited, the endpoint is never credited, and no
+single customer or system-wide node joins the population. The bank's physical
+vault-cash and interbank-settlement GLs are intentionally outside this
+customer-ledger projection.
+
+The current row schema does not yet split that combined endpoint into the ISO
+8583 terminal/acceptor pair (DE41/DE42), classify on-us versus off-us, model an
+ATM interchange-fee leg, or export cash-point coordinates. Those are explicit
+follow-ons rather than hidden balance proxies.
+
+### Cash and Check Deposits
+
+Household cash and settled paper-check deposits are generated by a dedicated
+boundary routine on isolated deterministic lanes. Both credit only the
+customer account. Physical capture points are resolved from the customer's
+event-time, relocation-aware area; the registered external context never
+supplies or receives a ledger balance. Business cash takings remain in the
+non-payroll revenue plan, but use the same local depository routing. Check rows
+represent posted credits after capture/collection; holds and later returns are
+not yet separate events.
+
+### Crypto Fiat Ramps
+
+`crypto_ramp_out` is a USD debit from the customer account to an external
+service venue; `crypto_ramp_in` is a USD credit back. This is not a blockchain
+asset ledger. The routine starts no earlier than 2013, uses a conservative
+modern adopter cohort, and caps every ramp-in by that account's remaining prior
+accepted ramp-out inventory. Token quantities, wallet-to-wallet recipients,
+market gains/losses, fees, and transaction hashes remain out of scope.
 
 ### Self-Transfers
 
@@ -1056,6 +1109,28 @@ band-shaped draws — e.g. retired: Beta-weighted across 65–99; student:
 timelines. Joiners' ages anchor at their join date. Addresses use `faker-cxx`
 together with deterministic zip-code lookups so addresses resolve to real US
 cities, with a fallback list.
+
+### Mule-Temporal — TigerGraph Mule_Pattern_Learner
+
+`--usecase mule-temporal` exports the temporal mule-detection schema in
+[schemas/mule_temporal.gsql](schemas/mule_temporal.gsql): eight vertex tables,
+seven association tables with discriminated half-open tenures, and twelve
+payment-participation tables. Payments and association changes share one
+chronological sequence. Zelle payments occur only in `Zelle_Transfer`; other
+payments occur only in `Payment_Transaction`.
+
+```sh
+PL_PG='dbname=phantomledger' make run ARGS="--usecase mule-temporal --start 2024-01-01 --days 366 --population 200000 --seed 42"
+```
+
+The Zelle scenario uses [Federal Reserve survey estimates and published bank limits](docs/research/zelle_model.md), with separate sending-user and payment-choice probabilities. External-bank consumers and eligible businesses can participate. The ledger has no source-confirmed Zelle rail or investigation-arrival feed, so rail assignments and immediate oracle labels remain synthetic. Selecting
+`mule-temporal` includes Zelle activity, token relationships and simulator labels
+automatically. Output uses the `mule_temporal` schema inside the existing
+`phantomledger` database. Entity metadata is immutable;
+labels, source fraud typologies and whole-history aggregates are excluded
+from features. `Account.is_mule` supplies integer account-role supervision (1 mule, 0 other synthetic account); Zelle `fraud_label` remains a separate payment target.
+See [the temporal contract](docs/mule_temporal.md) for mappings, chronological
+sampling rules, supervision boundaries and current modeling limitations.
 
 ### AML — TigerGraph AML_Schema_V1
 

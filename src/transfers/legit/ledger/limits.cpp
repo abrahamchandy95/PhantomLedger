@@ -10,7 +10,6 @@
 
 #include <span>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace PhantomLedger::transfers::legit::ledger {
 
@@ -19,21 +18,6 @@ namespace {
 [[nodiscard]] bool
 hasCreditCards(const entity::card::Registry *cards) noexcept {
   return cards != nullptr && !cards->records.empty();
-}
-
-[[nodiscard]] std::unordered_set<clearing::Ledger::Index>
-hubIndicesFromKeys(const blueprints::LegitBlueprint &plan,
-                   const entity::account::Lookup &lookup) {
-  std::unordered_set<clearing::Ledger::Index> out;
-  out.reserve(plan.counterparties().hubAccounts.size());
-
-  for (const auto &key : plan.counterparties().hubAccounts) {
-    const auto it = lookup.byId.find(key);
-    if (it != lookup.byId.end()) {
-      out.insert(static_cast<clearing::Ledger::Index>(it->second));
-    }
-  }
-  return out;
 }
 
 void applyCreditCardLimits(clearing::Ledger &ledger,
@@ -98,12 +82,11 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
   ledger->initialize(count);
 
   for (clearing::Ledger::Index idx = 0; idx < count; ++idx) {
-    ledger->addAccount(accounts_.registry->records[idx].id, idx);
+    const auto &record = accounts_.registry->records[idx];
+    ledger->addAccount(record.id, idx, record.boundaryPolicy);
   }
 
-  const auto hubIndices = hubIndicesFromKeys(plan, *accounts_.lookup);
-  const auto ownedNonHubIndices =
-      clearing::ownedNonHubAccountIndices(*accounts_.registry, hubIndices);
+  const auto ownedIndices = clearing::ownedAccountIndices(*accounts_.registry);
 
   clearing::requireLedgerSlots(*ledger, *accounts_.registry);
 
@@ -113,23 +96,11 @@ OpeningBook::build(const blueprints::LegitBlueprint &plan) const {
   const double stockScale = ::PhantomLedger::synth::econ::priceScale(
       ::PhantomLedger::time::toCalendarDate(plan.startDate()).year);
 
-  clearing::OpeningBalanceSeeder seeder{
-      *ledger, *rng_, *protections_.balanceRules, stockScale};
-  clearing::seedHubAccounts(seeder, *accounts_.registry, hubIndices);
+  clearing::OpeningBalanceSeeder seeder{*ledger, *rng_,
+                                        *protections_.balanceRules, stockScale};
   clearing::seedOwnedAccounts(
       seeder, *accounts_.registry, plan.personas().pack->table,
-      std::span<const clearing::Ledger::Index>{ownedNonHubIndices});
-
-  for (const auto idx : hubIndices) {
-    ledger->createHub(idx);
-  }
-
-  for (const auto &key : plan.counterparties().fundingHubs) {
-    const auto it = accounts_.lookup->byId.find(key);
-    if (it != accounts_.lookup->byId.end()) {
-      ledger->createHub(static_cast<clearing::Ledger::Index>(it->second));
-    }
-  }
+      std::span<const clearing::Ledger::Index>{ownedIndices});
 
   if (protections_.portfolios != nullptr) {
     const auto personCount = static_cast<std::uint32_t>(plan.persons().size());

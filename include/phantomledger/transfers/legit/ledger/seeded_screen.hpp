@@ -21,11 +21,10 @@ struct KeyedTransfer {
   channels::Tag channel{};
   std::int64_t timestamp = 0;
 
-  [[nodiscard]] clearing::Ledger::Posting
-  resolve(const clearing::Ledger &book) const {
-    return clearing::Ledger::Posting{
-        .srcIdx = book.findAccount(source),
-        .dstIdx = book.findAccount(destination),
+  [[nodiscard]] clearing::Ledger::KeyPosting posting() const {
+    return clearing::Ledger::KeyPosting{
+        .source = source,
+        .destination = destination,
         .amount = amount,
         .channel = channel,
         .timestamp = timestamp,
@@ -106,7 +105,7 @@ public:
     if (book_ == nullptr) {
       return true;
     }
-    return book_->transferAt(transfer.resolve(*book_)).accepted();
+    return book_->transferAt(transfer.posting()).accepted();
   }
 
 private:

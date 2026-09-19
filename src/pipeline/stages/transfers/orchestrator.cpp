@@ -62,7 +62,6 @@ legitWorldInputs(const pipeline::People &people,
                  const pipeline::Counterparties &cps) noexcept {
   return legit::LegitAssembly::WorldInputs{
       .personas = &people.personas,
-      .populationCount = people.roster.roster.count,
       .accounts = &holdings.accounts,
       .creditCards = &holdings.creditCards,
       .portfolios = &holdings.portfolios,

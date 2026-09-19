@@ -12,12 +12,20 @@
 // one device and one address across many unrelated cards.
 //
 // WHY IT IS WORTH MODELLING
-// It is the one legitimate source of very high device-to-card fan-out that is
-// NOT fraud. Without it, every high-degree endpoint in this corpus is an
+// It is the one source of very high device-to-card fan-out in this corpus that
+// does not carry a fraud label. Without it, every high-degree endpoint is an
 // attacker running compromises, so degree alone separates the label and a
 // model learns the shortcut instead of the graph. `attacker-infra-2026-07`
 // closed the opposite defect — fan-out that did not exist — and this closes
 // the one that closing it opened.
+//
+// "LEGITIMATE" WAS THE WRONG WORD AND IS CORRECTED HERE, 2026-08-11. Card
+// testing is a crime, not benign traffic; what makes it usable as a diluent is
+// that its rows are DECLINED AUTHORIZATIONS whose label this corpus WITHHOLDS
+// (see the closing paragraph), not that the activity is innocent. Anyone
+// reading this file to justify "high fan-out is not a fraud signal in the real
+// world" is reading it wrong — see the citation block at
+// `kProbedBasisPoints`, which now records the opposite.
 //
 // THE SELECTION IS LABEL-BLIND BY CONSTRUCTION, AND THAT IS THE POINT.
 // Whether a card is probed is a hash of the CARD KEY and nothing else. It does
@@ -72,8 +80,76 @@ inline constexpr std::uint64_t kEndpointSaltDomain = 0x454E'554D'0000'0003ULL;
  * description. The quantity this exists to produce is a device that touches
  * many cards; the level is what makes the top enumeration device's degree land
  * in the same order as a busy attacker's, so degree stops separating them.
- * Deliberately larger than the unauthorized-fraud victim rate, because a
- * probed card is overwhelmingly a card nothing ever happens to. */
+ *
+ * ⚠️ DO NOT RAISE THIS TO IMPROVE THE DILUTION. IT WAS MEASURED AND IT MAKES
+ * THE LEAK WORSE, 2026-08-11 (`device-sharing-evidence-2026-08`, sub-gates K.6
+ * and K.7). Swept over 400 / 1000 / 2000 / 3000 / 4000 / 6000 bp on all four
+ * `test_card_endpoint_graph` legs, measured on the CONSUMER-VISIBLE view:
+ *
+ *   leg-wide  AP ratio from degree alone   1.598 -> 1.754 -> 1.839 -> 1.860
+ *                                          -> 1.881 -> 1.828
+ *   leg-long  best 'degree >= k' precision 0.043 -> 0.053 -> 0.064 -> 0.167
+ *
+ * Both RISE with the share. At 2000bp and above the AP ratio exceeds
+ * `kMaxDegreeApRatio = 1.75`, i.e. raising this constant REDS the gate that
+ * bounds the very quantity it was supposed to protect.
+ *
+ * THE CAUSE, MEASURED AND LOGICALLY FORCED: probes DO NOT ADD AN INNOCENT
+ * HIGH-DEGREE POPULATION, because `probeFor` resolves its endpoint from the
+ * SAME `AttackerInfra` inventory the compromise planner draws from — a
+ * different salt over the same operator lines. Of the probe rows that land on
+ * a device already present in the settled view, **100% land on a device that
+ * already carries settled FRAUD** — 71/71, 229/229, 138/138, 191/191 over the
+ * four legs, no exceptions. It cannot be otherwise: attacker inventory carries
+ * no legitimate traffic, so such a device is visible in the settled view only
+ * because a compromise case used it. Every probe stapled to one of those RAISES
+ * a fraud-carrying device's degree and pushes it UP the ranking with its fraud
+ * intact. **That is amplification wearing the name dilution.**
+ *
+ * WHAT WOULD ACTUALLY WORK is a probe endpoint pool DISJOINT from the
+ * compromise device lines, so a probe device carries probe rows only and its
+ * label really is absent. Registered in `docs/fraud_model_audit.md`; the
+ * containment class is the cheap one (exporter-side, `golden_run.b2sum`
+ * unmoved) but it is a resolver change and has not been made here.
+ *
+ * THE MECHANISM IS NOW CITED TO THE CARD NETWORKS, AND THE DIRECTION IS
+ * AGAINST THIS FILE'S DILUENT ROLE. Both must be recorded together or the next
+ * reader repeats the error this paragraph corrects.
+ *
+ *  * Visa, "Anti-Enumeration and Account Testing Best Practices for
+ *    Merchants" V1.2, April 2023 (Visa Public), names device fan-out a fraud
+ *    trigger in as many words: multiple transactions with different payment
+ *    accounts sharing one email address and one device ID may be a trigger for
+ *    fraud classification or review. DIRECTION ONLY — the document contains no
+ *    rate, probability or denominator anywhere. Accessed 2026-08-11.
+ *  * Mastercard, US patent 10552836 B2 (filed 2016-10-11, granted 2020),
+ *    claims fraud risk scoring from the NUMBER OF TRANSACTION ACCOUNTS that
+ *    have used a device. A patent is a method claim, not evidence of efficacy:
+ *    no threshold, no worked example, no measured rate. Accessed 2026-08-11.
+ *
+ * AND THE SENTENCE THAT USED TO END THIS COMMENT IS WITHDRAWN. It read:
+ * "Deliberately larger than the unauthorized-fraud victim rate, because a
+ * probed card is overwhelmingly a card nothing ever happens to." The sizing
+ * rationale stands; the justification does not. Visa's VAAI Score datasheet
+ * (2025, VisaNet data — the authorization network itself, so a census
+ * denominator and NOT a reports database) measures: "Globally, enumerated
+ * accounts have 22x higher fraud rates than regular accounts", and of the
+ * enumerated accounts that saw fraud, 33% saw their first fraud within 5 days
+ * of the enumeration transaction being APPROVED. Accessed 2026-08-11.
+ *
+ * WHY THIS CORPUS IS STILL DEFENSIBLE, AND THE ARGUMENT IS NARROWER THAN THE
+ * OLD ONE. Visa's 22x is anchored on probes that were APPROVED — an operator
+ * confirming a live card, which is why the clock starts there. Every probe this
+ * file emits is DECLINED (`Do Not Honor`, one attempt, `kProbesPerCard = 1`),
+ * so the population Visa measures does not exist in this corpus at all. The
+ * `test_card_enumeration` requirement that probe-to-fraud lift straddle 1.0 is
+ * therefore a statement about the DECLINED tail only, and it is correct for
+ * that tail. It would be wrong the moment an approved probe branch is added,
+ * and anyone adding one owes that gate a new band before they do.
+ *
+ * REGISTERED, NOT CLOSED: this corpus has no approved-probe population, so it
+ * cannot express the strongest documented card-testing signal there is. See
+ * `docs/fraud_model_audit.md`, `device-sharing-evidence-2026-08`. */
 inline constexpr std::uint32_t kProbedBasisPoints = 400;
 
 /* A probe is one authorization, not a session: the operator learns what it
@@ -123,8 +199,19 @@ struct Probe {
  * those is a legitimate answer rather than a failure — `deviceAt` thins the
  * candidate set near a replacement boundary, the same way it does for the
  * compromise planner — and it simply means no probe row is written. */
+/* `probedBasisPoints` DEFAULTS to the shipped level and exists so a gate can
+ * SWEEP the level without recompiling the world or duplicating this resolver's
+ * logic. `device-sharing-evidence-2026-08` needed exactly that: the level is
+ * declared "sized for fan-out, not for prevalence", and until K.6 nothing had
+ * ever measured the fan-out it actually produces in the view a consumer reads,
+ * so choosing a value required measuring several. Duplicating the predicate in
+ * the test instead would let the two drift, which is the failure
+ * `onSomeList`'s "kept beside `probeFor` so the two cannot drift" comment
+ * already guards against. Passing anything but the default in PRODUCTION code
+ * is a bug. */
 [[nodiscard]] inline std::optional<Probe>
-probeFor(const AttackerInfra &attackers, entity::Key card, std::int64_t ts) {
+probeFor(const AttackerInfra &attackers, entity::Key card, std::int64_t ts,
+         std::uint32_t probedBasisPoints = kProbedBasisPoints) {
   if (attackers.empty()) {
     return std::nullopt;
   }
@@ -139,7 +226,7 @@ probeFor(const AttackerInfra &attackers, entity::Key card, std::int64_t ts) {
       derived::splitmix(static_cast<std::uint64_t>(card.role) << 8U ^
                         static_cast<std::uint64_t>(card.bank));
 
-  if (derived::splitmix(keyMix ^ kProbeDomain) % 10'000U >= kProbedBasisPoints) {
+  if (derived::splitmix(keyMix ^ kProbeDomain) % 10'000U >= probedBasisPoints) {
     return std::nullopt;
   }
 

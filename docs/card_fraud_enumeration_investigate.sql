@@ -74,7 +74,10 @@ LIMIT 20;
 
 \echo ''
 \echo '[3/4] THE HEADLINE: fraud rate of the cards a device touches, by degree.'
-\echo '      A rising fraud rate with degree is the shortcut. It must be flat.'
+\echo '      FLAT IS NOT THE TARGET. The real curve rises to a hump then decays'
+\echo '      -- IEEE-CIS whole-window lifts 0.485 / 1.080 / 1.756 / 1.888 /'
+\echo '      1.719 / 1.567 over cards 1 / 2 / 3-5 / 6-10 / 11-25 / 26+.'
+\echo '      What must not appear is a MONOTONE rise to a high-degree cliff.'
 WITH card_truth AS (
   -- Card-level truth from SETTLED rows only: a withheld decline must not
   -- decide whether its card counts as a victim.
@@ -147,6 +150,19 @@ COMMIT;
 
 \echo ''
 \echo 'Enumeration investigation complete.'
-\echo 'READ [3/4] FIRST. fraud_rate_of_touched_cards should be roughly FLAT'
-\echo 'across degree buckets. A monotone rise means device degree is a fraud'
-\echo 'feature and the corpus will teach a GNN to use it instead of structure.'
+\echo 'READ [3/4] FIRST -- BUT NOT AGAINST A FLAT EXPECTATION. That expectation'
+\echo 'was withdrawn 2026-08-11 (device-sharing-evidence-2026-08): flat is not'
+\echo 'what the world does. On IEEE-CIS -- the only public card-not-present set'
+\echo 'with device columns -- the whole-window curve is UNIMODAL, running BELOW'
+\echo 'the base rate at degree 1 (lift 0.485), peaking at 6-10 cards (1.888)'
+\echo 'and decaying to 1.567 at 26+. Real high-fan-out devices ARE riskier;'
+\echo 'Visa V1.2 (Apr 2023) names device fan-out a fraud trigger outright.'
+\echo ''
+\echo 'What would be a defect is a MONOTONE rise ending in a high-degree cliff,'
+\echo 'or any bucket approaching precision 1.0 -- that is a threshold rule a GNN'
+\echo 'learns instead of structure. The gated form of this question is sub-gate'
+\echo 'K in tests/test_card_endpoint_graph.cpp, which bounds the AVERAGE'
+\echo 'PRECISION extractable from degree alone (ceiling 1.75 against an external'
+\echo '1.455) and, more tellingly, bounds it RELATIVE to a plain per-endpoint'
+\echo 'row count -- because on real data degree buys nothing over counting'
+\echo '(1.455 vs 1.546), while this corpus reads 1.75-2.20x.'

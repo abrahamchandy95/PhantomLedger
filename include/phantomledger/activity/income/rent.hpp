@@ -158,7 +158,7 @@ struct RentPayer {
                                     PersonId person,
                                     const HomeownerCheck &isHomeowner) {
   return population.exists(person) && population.hasAccount(person) &&
-         !population.isHub(person) && !isHomeowner(person);
+         !isHomeowner(person);
 }
 
 [[nodiscard]] inline double baseProbability(const Population &population,

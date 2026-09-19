@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
@@ -10,6 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 namespace PhantomLedger::synth::counterparties {
@@ -53,11 +55,25 @@ struct ExternalPoolTargets {
   ScaledCount ownerBusinesses{.perTenK = 200.0, .minCount = 25};
   ScaledCount brokerages{.perTenK = 40.0, .minCount = 5};
 
+  // 13.5 per 10k = 135 terminals per 100k people (about one per 741
+  // residents). This is a declared synthetic density, not a claim that the
+  // represented roster is a literal municipal population.
+  ScaledCount atmTerminals{.perTenK = 13.5, .minCount = 2};
+  ScaledCount cashDepositories{.perTenK = 2.5, .minCount = 2};
+  ScaledCount checkCapturePoints{.perTenK = 2.5, .minCount = 2};
+  ScaledCount cryptoVenues{.perTenK = 0.25, .minCount = 4};
+  ScaledCount billers{.perTenK = 8.0, .minCount = 8};
+
   void validate(::PhantomLedger::primitives::validate::Report &r) const {
     platforms.validate(r);
     processors.validate(r);
     ownerBusinesses.validate(r);
     brokerages.validate(r);
+    atmTerminals.validate(r);
+    cashDepositories.validate(r);
+    checkCapturePoints.validate(r);
+    cryptoVenues.validate(r);
+    billers.validate(r);
   }
 };
 
@@ -92,6 +108,44 @@ inline void appendExternal(std::vector<entity::Key> &out, Role role,
   }
 }
 
+template <typename MakeKey>
+inline void appendExternal(std::vector<entity::Key> &out, int count,
+                           MakeKey makeKey) {
+  out.reserve(out.size() + static_cast<std::size_t>(count));
+  for (int i = 1; i <= count; ++i) {
+    out.push_back(makeKey(static_cast<std::uint64_t>(i)));
+  }
+}
+
+[[nodiscard]] inline std::vector<entity::geography::GeoAreaId>
+representativeAreas(std::span<const entity::geography::GeoAreaId> customerAreas,
+                    std::size_t count) {
+  std::vector<entity::geography::GeoAreaId> valid;
+  valid.reserve(customerAreas.size());
+  for (const auto area : customerAreas) {
+    if (entity::geography::validArea(area)) {
+      valid.push_back(area);
+    }
+  }
+  std::ranges::sort(valid);
+
+  std::vector<entity::geography::GeoAreaId> out;
+  out.reserve(count);
+  if (valid.empty()) {
+    out.assign(count, entity::geography::invalidGeoArea);
+    return out;
+  }
+
+  // Population quantiles over the sorted home-area multiset: duplicates carry
+  // their natural residential weight, while construction spends no RNG.
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto numerator = (2U * i + 1U) * valid.size();
+    const auto pos = std::min(valid.size() - 1U, numerator / (2U * count));
+    out.push_back(valid[pos]);
+  }
+  return out;
+}
+
 inline void fillBankSplit(random::Rng &rng, Role role, int total,
                           double internalBankP,
                           entity::counterparty::BankSplit &out) {
@@ -123,8 +177,8 @@ inline void fillBankSplit(random::Rng &rng, Role role, int total,
 
 /// Build all counterparty directories scaled to population size.
 [[nodiscard]] inline entity::counterparty::Directory
-make(random::Rng &rng, int population,
-     const CounterpartyTargets &targets = {}) {
+make(random::Rng &rng, int population, const CounterpartyTargets &targets = {},
+     std::span<const entity::geography::GeoAreaId> customerAreas = {}) {
   entity::counterparty::Directory out;
 
   const int employerCount = targets.employers.count.forPopulation(population);
@@ -148,6 +202,43 @@ make(random::Rng &rng, int population,
 
   detail::appendExternal(out.external.brokerages, Role::brokerage,
                          targets.external.brokerages.forPopulation(population));
+
+  detail::appendExternal(
+      out.external.atmTerminals,
+      targets.external.atmTerminals.forPopulation(population),
+      [](std::uint64_t ordinal) {
+        return ::PhantomLedger::counterparties::cash::atmTerminal(ordinal);
+      });
+  out.external.atmTerminalAreas = detail::representativeAreas(
+      customerAreas, out.external.atmTerminals.size());
+  detail::appendExternal(
+      out.external.cashDepositories,
+      targets.external.cashDepositories.forPopulation(population),
+      [](std::uint64_t ordinal) {
+        return ::PhantomLedger::counterparties::cash::depository(ordinal);
+      });
+  out.external.cashDepositoryAreas = detail::representativeAreas(
+      customerAreas, out.external.cashDepositories.size());
+  detail::appendExternal(
+      out.external.checkCapturePoints,
+      targets.external.checkCapturePoints.forPopulation(population),
+      [](std::uint64_t ordinal) {
+        return ::PhantomLedger::counterparties::cash::checkCapture(ordinal);
+      });
+  out.external.checkCaptureAreas = detail::representativeAreas(
+      customerAreas, out.external.checkCapturePoints.size());
+  detail::appendExternal(
+      out.external.cryptoVenues,
+      targets.external.cryptoVenues.forPopulation(population),
+      [](std::uint64_t ordinal) {
+        return ::PhantomLedger::counterparties::cash::cryptoVenue(ordinal);
+      });
+  detail::appendExternal(
+      out.external.billers, targets.external.billers.forPopulation(population),
+      [](std::uint64_t ordinal) {
+        return ::PhantomLedger::counterparties::cash::biller(ordinal);
+      });
+  out.external.cardIssuer = ::PhantomLedger::counterparties::cash::cardIssuer();
 
   return out;
 }

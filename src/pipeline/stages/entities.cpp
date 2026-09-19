@@ -1,5 +1,6 @@
 #include "phantomledger/pipeline/stages/entities.hpp"
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/entities/counterparties/merchant_ownership.hpp"
 #include "phantomledger/pipeline/data.hpp"
@@ -192,10 +193,11 @@ issueCreditCards(const sy::personas::Pack &personas,
 
 [[nodiscard]] entity::counterparty::Directory
 buildCounterparties(pl::random::Rng &rng, std::int32_t population,
-                    const sy::counterparties::CounterpartyTargets &targets) {
+                    const sy::counterparties::CounterpartyTargets &targets,
+                    std::span<const entity::geography::GeoAreaId> homeAreas) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(targets);
-  return sy::counterparties::make(rng, population, targets);
+  return sy::counterparties::make(rng, population, targets, homeAreas);
 }
 
 namespace {
@@ -219,17 +221,73 @@ void registerExternal(AccountsPack &accounts, std::span<const Key> keys) {
   sy::accounts::addAccounts(accounts, keys, /*external=*/true);
 }
 
+void registerBoundary(AccountsPack &accounts, std::span<const Key> keys,
+                      entity::boundary::Kind kind,
+                      std::uint8_t allowedFlows) {
+  sy::accounts::addAccounts(
+      accounts, keys,
+      entity::boundary::Policy{.kind = kind, .allowedFlows = allowedFlows});
+}
+
 void registerInternal(AccountsPack &accounts, std::span<const Key> keys) {
   sy::accounts::addAccounts(accounts, keys, /*external=*/false);
 }
 
 void registerSystemAccounts(AccountsPack &accounts) {
+  namespace cash = ::PhantomLedger::counterparties::cash;
   const auto keys = std::to_array<Key>({
       legit_ldg::bankFeeCollectionKey(),
       legit_ldg::bankOdLocKey(),
       entity::makeKey(entity::Role::merchant, entity::Bank::external, 1ULL),
+      cash::cardIssuer(),
+      cash::fallbackEmployer(),
+      cash::fallbackLandlord(),
   });
   registerExternal(accounts, keys);
+}
+
+void registerCashServiceFallbacks(AccountsPack &accounts) {
+  namespace cash = ::PhantomLedger::counterparties::cash;
+  const auto withdrawals = std::to_array<Key>({
+      cash::atmTerminal(1),
+      cash::atmTerminal(2),
+  });
+  const auto cashDeposits = std::to_array<Key>({
+      cash::depository(1),
+      cash::depository(2),
+  });
+  const auto checkDeposits = std::to_array<Key>({
+      cash::checkCapture(1),
+      cash::checkCapture(2),
+  });
+  const auto cryptoVenues = std::to_array<Key>({
+      cash::cryptoVenue(1),
+      cash::cryptoVenue(2),
+      cash::cryptoVenue(3),
+      cash::cryptoVenue(4),
+  });
+  const auto billers = std::to_array<Key>({
+      cash::biller(1),
+      cash::biller(2),
+      cash::biller(3),
+      cash::biller(4),
+      cash::biller(5),
+      cash::biller(6),
+      cash::biller(7),
+      cash::biller(8),
+  });
+  registerBoundary(accounts, withdrawals, entity::boundary::Kind::atmTerminal,
+                   entity::boundary::bit(entity::boundary::Flow::outbound));
+  registerBoundary(accounts, cashDeposits,
+                   entity::boundary::Kind::cashDepository,
+                   entity::boundary::bit(entity::boundary::Flow::inbound));
+  registerBoundary(accounts, checkDeposits,
+                   entity::boundary::Kind::checkCapture,
+                   entity::boundary::bit(entity::boundary::Flow::inbound));
+  registerBoundary(accounts, cryptoVenues,
+                   entity::boundary::Kind::cryptoVenue,
+                   entity::boundary::kBothFlows);
+  registerExternal(accounts, billers);
 }
 
 void registerTaxonomyCounterparties(AccountsPack &accounts) {
@@ -259,6 +317,25 @@ void registerCounterpartyDirectory(AccountsPack &accounts,
   registerExternal(accounts,
                    std::span<const Key>{cps.external.ownerBusinesses});
   registerExternal(accounts, std::span<const Key>{cps.external.brokerages});
+  registerBoundary(accounts, std::span<const Key>{cps.external.atmTerminals},
+                   entity::boundary::Kind::atmTerminal,
+                   entity::boundary::bit(entity::boundary::Flow::outbound));
+  registerBoundary(
+      accounts, std::span<const Key>{cps.external.cashDepositories},
+      entity::boundary::Kind::cashDepository,
+      entity::boundary::bit(entity::boundary::Flow::inbound));
+  registerBoundary(
+      accounts, std::span<const Key>{cps.external.checkCapturePoints},
+      entity::boundary::Kind::checkCapture,
+      entity::boundary::bit(entity::boundary::Flow::inbound));
+  registerBoundary(accounts, std::span<const Key>{cps.external.cryptoVenues},
+                   entity::boundary::Kind::cryptoVenue,
+                   entity::boundary::kBothFlows);
+  registerExternal(accounts, std::span<const Key>{cps.external.billers});
+  if (entity::valid(cps.external.cardIssuer)) {
+    const std::array<Key, 1> issuer{cps.external.cardIssuer};
+    registerExternal(accounts, issuer);
+  }
 }
 
 void registerCreditCards(AccountsPack &accounts,
@@ -291,6 +368,10 @@ void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
   registerMerchants(accounts, cpsData.merchants);
   registerLandlords(accounts, cpsData.landlords);
   registerCounterpartyDirectory(accounts, cpsData.counterparties);
+  // Register after the configured pools so production keeps their natural
+  // registry order, while a deliberately empty/custom pool still satisfies
+  // the standalone blueprint's external fallback contract.
+  registerCashServiceFallbacks(accounts);
   registerCreditCards(accounts, holdings.creditCards);
   registerPerPersonPayees(accounts, peopleData.roster.roster);
 }

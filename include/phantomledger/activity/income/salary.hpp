@@ -182,8 +182,7 @@ struct NumText {
 
 [[nodiscard]] inline bool candidate(const Population &population,
                                     PersonId person) {
-  return population.exists(person) && population.hasAccount(person) &&
-         !population.isHub(person);
+  return population.exists(person) && population.hasAccount(person);
 }
 
 [[nodiscard]] inline double baseProbability(const Population &population,
@@ -218,8 +217,8 @@ public:
     const auto &tl = payroll_.population.timeline(person);
     const auto activeStart =
         std::max(payroll_.timeframe.startDate, tlx::payrollStart(tl));
-    const auto activeEnd = std::min(
-        {payroll_.timeframe.end(), tl.retirement, tl.death});
+    const auto activeEnd =
+        std::min({payroll_.timeframe.end(), tl.retirement, tl.death});
     if (activeEnd <= activeStart) {
       return;
     }

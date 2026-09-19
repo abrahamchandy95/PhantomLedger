@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <vector>
@@ -25,6 +26,23 @@ struct ExternalParties {
   std::vector<entity::Key> processors;
   std::vector<entity::Key> ownerBusinesses;
   std::vector<entity::Key> brokerages;
+
+  // Observable cash-service locations. They are registered counterparties,
+  // never customer-owned or balance-bearing ledger accounts.
+  std::vector<entity::Key> atmTerminals;
+  std::vector<entity::geography::GeoAreaId> atmTerminalAreas;
+  std::vector<entity::Key> cashDepositories;
+  std::vector<entity::geography::GeoAreaId> cashDepositoryAreas;
+  std::vector<entity::Key> checkCapturePoints;
+  std::vector<entity::geography::GeoAreaId> checkCaptureAreas;
+
+  // Bank-visible fiat ramps at crypto service providers. Native-token wallet
+  // activity remains outside this USD customer-ledger projection.
+  std::vector<entity::Key> cryptoVenues;
+
+  // Separate service roles that previously fell back to customer accounts.
+  std::vector<entity::Key> billers;
+  entity::Key cardIssuer{};
 };
 
 struct Directory {

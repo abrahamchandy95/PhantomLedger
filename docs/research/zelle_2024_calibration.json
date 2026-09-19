@@ -1,0 +1,40 @@
+{
+  "source": "https://www.atlantafed.org/-/media/Project/Atlanta/FRBA/Documents/banking/consumer-payments/survey-diary-consumer-payment-choice/2024/2024-diary-of-consumer-payment-choice.zip",
+  "sha256": "9d79244687794da4755494dcf763ddcdb805888ca70ead6edc4fa055717c0a50",
+  "period": "October 2024 diary; adoption question refers to preceding 12 months",
+  "banked_past_year_zelle_senders": {
+    "n": 4968,
+    "positive_n": 1482,
+    "weighted_numerator": 1562.042401716113,
+    "weighted_denominator": 4956.295527875423,
+    "probability": 0.3151632893823225
+  },
+  "electronic_p2p_choice_given_banked_sender": {
+    "n": 186,
+    "positive_n": 98,
+    "weighted_numerator": 122.7706903219223,
+    "weighted_denominator": 220.72145253419876,
+    "probability": 0.556224548689485
+  },
+  "definitions": {
+    "pi": [
+      6,
+      7,
+      10,
+      11
+    ],
+    "p2p_type": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "mobile_app_zelle": 2,
+    "diary_days": [
+      1,
+      2,
+      3
+    ],
+    "excluded": "missing national weights; day 0; nonpayments; missing adoption; nonbanked"
+  }
+}

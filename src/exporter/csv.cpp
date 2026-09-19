@@ -2,6 +2,7 @@
 
 #include <array>
 #include <charconv>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -42,6 +43,10 @@ template <class T> void writeIntegerTo(std::ostream &out, T v) {
 }
 
 void writeDoubleTo(std::ostream &out, double v) {
+  if (!std::isfinite(v)) {
+    throw std::runtime_error{"csv::Writer: refusing non-finite double"};
+  }
+
   // 32 chars is enough for any normal double in shortest-round-trip form.
   std::array<char, 32> buf{};
   const auto [end, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);

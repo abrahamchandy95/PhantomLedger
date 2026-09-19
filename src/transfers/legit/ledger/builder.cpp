@@ -71,12 +71,6 @@ LegitTransferBuilder::personas(blueprints::PersonaCatalog value) noexcept {
   return *this;
 }
 
-LegitTransferBuilder &LegitTransferBuilder::hubSelection(
-    blueprints::HubSelectionRules value) noexcept {
-  hubSelection_ = value;
-  return *this;
-}
-
 LegitTransferBuilder &
 LegitTransferBuilder::openingBook(OpeningBook value) noexcept {
   openingBook_ = std::move(value);
@@ -167,7 +161,7 @@ LegitTransferResult LegitTransferBuilder::build() const {
       router_ != nullptr ? *router_ : ::PhantomLedger::infra::Router{};
 
   auto plan = blueprints::buildLegitBlueprint(timeframe_, census_);
-  plan.addCounterparties(*rng_, census_, counterparties_, hubSelection_)
+  plan.addCounterparties(*rng_, counterparties_)
       .addPersonas(*rng_, timeframe_, personas_);
 
   auto initialBook = openingBook_.build(plan);
@@ -198,7 +192,6 @@ LegitTransferResult LegitTransferBuilder::build() const {
 
   LegitTransferResult result;
   auto counterparties = std::move(plan).takeCounterparties();
-  result.counterparties.hubAccounts = std::move(counterparties.hubAccounts);
   result.counterparties.billerAccounts =
       std::move(counterparties.billerAccounts);
   result.counterparties.employers = std::move(counterparties.employers);
@@ -230,7 +223,7 @@ WindowedPrologue LegitTransferBuilder::buildWindowedPrologue() const {
   out.streams.deferReplayView();
 
   auto plan = blueprints::buildLegitBlueprint(timeframe_, census_);
-  plan.addCounterparties(*rng_, census_, counterparties_, hubSelection_)
+  plan.addCounterparties(*rng_, counterparties_)
       .addPersonas(*rng_, timeframe_, personas_);
 
   out.initialBook = openingBook_.build(plan);

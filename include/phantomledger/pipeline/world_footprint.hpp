@@ -135,7 +135,15 @@ directoryBytes(const entity::counterparty::Directory &d) noexcept {
          vectorBytes(d.external.platforms) +
          vectorBytes(d.external.processors) +
          vectorBytes(d.external.ownerBusinesses) +
-         vectorBytes(d.external.brokerages);
+         vectorBytes(d.external.brokerages) +
+         vectorBytes(d.external.atmTerminals) +
+         vectorBytes(d.external.atmTerminalAreas) +
+         vectorBytes(d.external.cashDepositories) +
+         vectorBytes(d.external.cashDepositoryAreas) +
+         vectorBytes(d.external.checkCapturePoints) +
+         vectorBytes(d.external.checkCaptureAreas) +
+         vectorBytes(d.external.cryptoVenues) +
+         vectorBytes(d.external.billers);
 }
 
 [[nodiscard]] inline std::size_t

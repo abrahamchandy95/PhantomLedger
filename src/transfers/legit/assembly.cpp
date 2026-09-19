@@ -30,12 +30,6 @@ namespace counterparties = ::PhantomLedger::counterparties;
   return out;
 }
 
-void validateHubFraction(double value) {
-  validate::Report report;
-  report.check([&] { validate::unit("hubFraction", value); });
-  report.throwIfFailed();
-}
-
 [[nodiscard]] legit_ledger::OpeningBook makeOpeningBook(
     ::PhantomLedger::random::Rng &rng, const LegitAssembly::WorldInputs &world,
     const ::PhantomLedger::clearing::BalanceRules *balanceRules) noexcept {
@@ -82,11 +76,6 @@ LegitAssembly &LegitAssembly::cardLifecycle(CardLifecycle value) noexcept {
 LegitAssembly &
 LegitAssembly::familyTransfers(FamilyTransferScenario value) noexcept {
   familyTransfers_ = value;
-  return *this;
-}
-
-LegitAssembly &LegitAssembly::hubSelection(HubSelection value) noexcept {
-  hubSelection_ = value;
   return *this;
 }
 
@@ -163,9 +152,7 @@ LegitAssembly &LegitAssembly::disabilityBenefits(
   return *this;
 }
 
-void LegitAssembly::validate() const {
-  validateHubFraction(hubSelection_.fraction);
-}
+void LegitAssembly::validate() const {}
 
 legit_ledger::LegitTransferBuilder
 LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
@@ -191,13 +178,11 @@ LegitAssembly::builder(::PhantomLedger::random::Rng &rng,
   out.counterparties(blueprints::CounterpartyPools{
                          .directory = world.counterparties,
                          .landlords = &world.landlords->roster,
+                         .homeAreas = world.homeAreas,
+                         .relocation = world.relocation,
                      })
       .personas(blueprints::PersonaCatalog{
           .pack = world.personas,
-      })
-      .hubSelection(blueprints::HubSelectionRules{
-          .populationCount = world.populationCount,
-          .fraction = hubSelection_.fraction,
       })
       .income(legit_ledger::passes::IncomePass{
           &rng,

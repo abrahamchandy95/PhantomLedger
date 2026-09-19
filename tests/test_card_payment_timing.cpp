@@ -216,7 +216,6 @@ void testFuturePostingDoesNotTimeTravel() {
   ledger.addAccount(kIssuer, 2);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 1'000.0;
-  ledger.createHub(2);
 
   transactions::Transaction purchase{};
   purchase.source = kCard;
@@ -301,7 +300,6 @@ void testRejectedPaymentDoesNotReduceStatement() {
   ledger.addAccount(kIssuer, 2);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 0.0;
-  ledger.createHub(2);
 
   transactions::Transaction purchase{};
   purchase.source = kCard;
@@ -397,13 +395,13 @@ void testAcceptedRefundRestoresLedgerAndStatement() {
                                               factory, kIssuer};
 
   clearing::Ledger ledger;
-  ledger.initialize(3);
+  ledger.initialize(4);
   ledger.addAccount(kCard, 0);
   ledger.addAccount(kFunding, 1);
   ledger.addAccount(kIssuer, 2);
+  ledger.addAccount(kMerchant, 3);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 1'000.0;
-  ledger.createHub(2);
 
   transactions::Transaction purchase{};
   purchase.source = kCard;
