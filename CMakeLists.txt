@@ -236,6 +236,8 @@ set(PL_TRANSFERS_LEGIT_SOURCES
     src/transfers/legit/ledger/streams.cpp
     src/transfers/legit/routines/atm.cpp
     src/transfers/legit/routines/credit_cards.cpp
+    src/transfers/legit/routines/crypto.cpp
+    src/transfers/legit/routines/deposits.cpp
     src/transfers/legit/routines/family/allowances.cpp
     src/transfers/legit/routines/family/grandparent_gifts.cpp
     src/transfers/legit/routines/family/inheritance.cpp
@@ -272,6 +274,10 @@ set(PL_EXPORTER_STANDARD_SOURCES
 set(PL_EXPORTER_MULE_ML_SOURCES
     src/exporter/mule_ml/canonical.cpp
     src/exporter/mule_ml/export.cpp
+)
+
+set(PL_EXPORTER_MULE_TEMPORAL_SOURCES
+    src/exporter/mule_temporal/streaming.cpp
 )
 
 set(PL_EXPORTER_AML_SOURCES
@@ -338,6 +344,7 @@ set(PL_ALL_SOURCES
     ${PL_EXPORTER_CORE_SOURCES}
     ${PL_EXPORTER_STANDARD_SOURCES}
     ${PL_EXPORTER_MULE_ML_SOURCES}
+    ${PL_EXPORTER_MULE_TEMPORAL_SOURCES}
     ${PL_EXPORTER_AML_SOURCES}
     ${PL_EXPORTER_CARD_FRAUD_SOURCES}
     ${PL_EXPORTER_ECON_SOURCES}
@@ -532,6 +539,7 @@ pl_add_job_library(pl_export
     ${PL_EXPORTER_CORE_SOURCES}
     ${PL_EXPORTER_STANDARD_SOURCES}
     ${PL_EXPORTER_MULE_ML_SOURCES}
+    ${PL_EXPORTER_MULE_TEMPORAL_SOURCES}
     ${PL_EXPORTER_AML_SOURCES}
     ${PL_EXPORTER_CARD_FRAUD_SOURCES}
     ${PL_EXPORTER_ECON_SOURCES}

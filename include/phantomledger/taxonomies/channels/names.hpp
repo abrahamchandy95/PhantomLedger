@@ -83,6 +83,11 @@ inline constexpr auto kEntries = std::to_array<lookup::Entry<Tag>>({
 
     {"overdraft_fee", tag(Liquidity::overdraftFee)},
     {"loc_interest", tag(Liquidity::locInterest)},
+
+    {"check_deposit", tag(Deposit::checkDeposit)},
+
+    {"crypto_ramp_out", tag(Crypto::rampOut)},
+    {"crypto_ramp_in", tag(Crypto::rampIn)},
 });
 
 inline constexpr auto kSorted = lookup::sorted(kEntries);

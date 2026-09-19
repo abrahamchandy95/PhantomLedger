@@ -31,7 +31,7 @@ inline constexpr std::int64_t kEstateDayMaxExcl = 91;
 inline constexpr std::int64_t kPostingHourMin = 10;
 inline constexpr std::int64_t kPostingHourMaxExcl = 16;
 
-// The external service-merchant hub (the same destination the spending
+// The external service merchant (the same destination the spending
 // router's external_unknown flow uses). A dedicated funeral-home
 // counterparty + channel is a registered upgrade; the funeral rides
 // the `bill` channel (a household service payment).
@@ -55,8 +55,8 @@ public:
                 random::Rng &rng,
                 std::vector<transactions::Transaction> &out) noexcept
       : run_(run), cfg_(cfg), rng_(rng), out_(out),
-        windowStartEpochSec_(::PhantomLedger::time::toEpochSeconds(
-            run.posting().start())),
+        windowStartEpochSec_(
+            ::PhantomLedger::time::toEpochSeconds(run.posting().start())),
         windowEndEpochSec_(run.posting().endEpochSec()) {}
 
   EstateEmitter(const EstateEmitter &) = delete;
@@ -65,8 +65,7 @@ public:
   void processPerson(entity::PersonId person) {
     const auto &tl = run_.kinship().timeline(person);
     const auto deathEpoch = ::PhantomLedger::time::toEpochSeconds(tl.death);
-    if (deathEpoch < windowStartEpochSec_ ||
-        deathEpoch >= windowEndEpochSec_) {
+    if (deathEpoch < windowStartEpochSec_ || deathEpoch >= windowEndEpochSec_) {
       return;
     }
 
@@ -75,10 +74,10 @@ public:
     // decedent's stream.
     const auto funeralRaw =
         dist::lognormalByMedian(rng_, cfg_.funeralMedian, cfg_.funeralSigma);
-    const auto funeralTs = offsetTimestamp(deathEpoch, kFuneralDayMin,
-                                           kFuneralDayMaxExcl);
-    const auto estateRaw = dist::lognormalByMedian(rng_, cfg_.median,
-                                                   cfg_.sigma);
+    const auto funeralTs =
+        offsetTimestamp(deathEpoch, kFuneralDayMin, kFuneralDayMaxExcl);
+    const auto estateRaw =
+        dist::lognormalByMedian(rng_, cfg_.median, cfg_.sigma);
     const auto estateTs =
         offsetTimestamp(deathEpoch, kEstateDayMin, kEstateDayMaxExcl);
 
@@ -143,8 +142,7 @@ private:
         continue;
       }
 
-      const auto amount =
-          fhelp::sanitizeAmount(perHeir, kPerHeirAmountFloor);
+      const auto amount = fhelp::sanitizeAmount(perHeir, kPerHeirAmountFloor);
       if (amount == 0.0) {
         continue;
       }

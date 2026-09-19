@@ -213,7 +213,7 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
   cps.landlords =
       entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(
-      rng, cfg.population, cfg.counterpartyTargets);
+      rng, cfg.population, cfg.counterpartyTargets, people.homeAreas);
 
   /* Credit limits are a class P STOCK: they anchor at the window-start
    * year's price level (authority U-6). */

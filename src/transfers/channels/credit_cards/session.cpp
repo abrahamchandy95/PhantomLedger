@@ -312,36 +312,23 @@ bool Session::postToLedger(const transactions::Transaction &txn) {
   }
 
   const auto channel = txn.session.channel;
-  bool externalSourceAllowed = false;
-  ::PhantomLedger::clearing::Ledger::Index srcIdx =
-      ::PhantomLedger::clearing::Ledger::invalid;
-  ::PhantomLedger::clearing::Ledger::Index dstIdx =
-      ::PhantomLedger::clearing::Ledger::invalid;
-
-  if (channel == channels::tag(channels::Credit::payment)) {
-    srcIdx = ledger_.fundingIdx;
-    dstIdx = ledger_.cardIdx;
-  } else if (channel == channels::tag(channels::Credit::interest) ||
-             channel == channels::tag(channels::Credit::lateFee)) {
-    srcIdx = ledger_.cardIdx;
-    dstIdx = ledger_.issuerIdx;
-  } else if (channel == channels::tag(channels::Credit::refund) ||
-             channel == channels::tag(channels::Credit::chargeback)) {
-    srcIdx = ledger_.ledger->findAccount(txn.source);
-    dstIdx = ledger_.cardIdx;
-    externalSourceAllowed = txn.source.bank == entity::Bank::external;
-  } else {
+  const bool supported = channel == channels::tag(channels::Credit::payment) ||
+                         channel == channels::tag(channels::Credit::interest) ||
+                         channel == channels::tag(channels::Credit::lateFee) ||
+                         channel == channels::tag(channels::Credit::refund) ||
+                         channel == channels::tag(channels::Credit::chargeback);
+  if (!supported) {
     return false;
   }
 
-  const bool sourceInvalid =
-      srcIdx == ::PhantomLedger::clearing::Ledger::invalid;
-  if ((sourceInvalid && !externalSourceAllowed) ||
-      dstIdx == ::PhantomLedger::clearing::Ledger::invalid) {
-    return false;
-  }
-
-  return ledger_.ledger->transfer(srcIdx, dstIdx, txn.amount, channel)
+  return ledger_.ledger
+      ->transferAt(::PhantomLedger::clearing::Ledger::KeyPosting{
+          .source = txn.source,
+          .destination = txn.target,
+          .amount = txn.amount,
+          .channel = channel,
+          .timestamp = txn.timestamp,
+      })
       .accepted();
 }
 

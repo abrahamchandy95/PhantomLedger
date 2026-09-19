@@ -7,6 +7,7 @@
 #include "phantomledger/exporter/aml_txn_edges/streaming.hpp"
 #include "phantomledger/exporter/card_fraud/streaming.hpp"
 #include "phantomledger/exporter/mule_ml/streaming.hpp"
+#include "phantomledger/exporter/mule_temporal/streaming.hpp"
 #include "phantomledger/exporter/sinks/golden.hpp"
 #include "phantomledger/exporter/sinks/table_mirror.hpp"
 #include "phantomledger/exporter/standard/streaming.hpp"
@@ -30,6 +31,7 @@ struct PgMirrors {
   exporter::sinks::PgMirror amlMirror;
   exporter::sinks::PgMirror amlTxnMirror;
   exporter::sinks::PgMirror cfMirror;
+  exporter::sinks::PgMirror mtMirror;
 };
 
 struct ExporterStreams {
@@ -39,6 +41,7 @@ struct ExporterStreams {
   std::optional<exporter::aml_txn_edges::StreamingAmlTxnEdgesExport>
       amlTxnStream;
   std::optional<exporter::card_fraud::StreamingCardFraudExport> cfStream;
+  std::optional<exporter::mule_temporal::StreamingMuleTemporalExport> mtStream;
 };
 
 class StreamOrchestrator {

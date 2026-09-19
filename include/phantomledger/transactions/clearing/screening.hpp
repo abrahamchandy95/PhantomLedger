@@ -30,8 +30,13 @@ advanceBookThrough(Ledger *ledger,
   auto idx = startIdx;
   while (idx < baseTxns.size() && bound.includes(baseTxns[idx].timestamp)) {
     const auto &txn = baseTxns[idx];
-    (void)ledger->transfer(txn.source, txn.target, txn.amount,
-                           txn.session.channel);
+    (void)ledger->transferAt(Ledger::KeyPosting{
+        .source = txn.source,
+        .destination = txn.target,
+        .amount = txn.amount,
+        .channel = txn.session.channel,
+        .timestamp = txn.timestamp,
+    });
     ++idx;
   }
 

@@ -311,7 +311,7 @@ void partB_anchors(const pl::synth::pii::PoolSet &pools) {
   }
   check(closedInWindow > 0, "the 29-year window closes some accounts");
 
-  // Out-of-range owners (counterparties, hubs) are always active.
+  // Out-of-range owners (external counterparties) are always active.
   check(membership.activeAt(0, startEpoch) &&
             membership.activeAt(static_cast<pl::entity::PersonId>(n + 50),
                                 startEpoch),
@@ -412,7 +412,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
   // its own year's price scale, must land back on the kPricePool
   // lattice the contract's price was drawn from. Keying by
   // (source,target) would NOT work here: the biller pool is tiny (the
-  // hub accounts), so one pair carries several different-priced
+  // external counterparties), so one pair carries several different-priced
   // contracts. Tolerance covers cent rounding at 1991 scale (~0.53).
   const auto onPricePool = [](double deflated) {
     for (const double price : pl::transfers::subscriptions::kPricePool) {
@@ -641,16 +641,14 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
     };
 
     pl::transfers::legit::ledger::LegitCounterparties legitCps;
-    legitCps.hubAccounts = world.plan.counterparties().hubAccounts;
     legitCps.billerAccounts = world.plan.counterparties().billerAccounts;
     legitCps.employers = world.plan.counterparties().employers;
 
-    const auto injected =
-        injector.inject(spec.window, world.streams.screened().size(),
-                        xfer::FraudEmission::legitCounterparties(
-                            legitCps, &world.cps.merchants,
-                            world.people.homeAreas, &world.people.personas,
-                            &world.people.relocation));
+    const auto injected = injector.inject(
+        spec.window, world.streams.screened().size(),
+        xfer::FraudEmission::legitCounterparties(
+            legitCps, &world.cps.merchants, world.people.homeAreas,
+            &world.people.personas, &world.people.relocation));
 
     const auto &roster = world.people.roster.roster;
     const auto &joinDays = world.people.personas.joinDays;
@@ -888,8 +886,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
     // for the key to render at all — the point of the fixture is an
     // UNREGISTERED owner, not a malformed key.
     orphan.source = pl::entity::makeKey(pl::entity::Role::account,
-                                        pl::entity::Bank::internal,
-                                        0xD00Du);
+                                        pl::entity::Bank::internal, 0xD00Du);
     orphan.target = pl::entity::makeKey(pl::entity::Role::merchant,
                                         pl::entity::Bank::internal, 1u);
     orphan.amount = 25.0;

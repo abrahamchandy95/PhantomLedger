@@ -157,7 +157,10 @@ PrefixedCustomerId prefixedCustomerId(
 bool isCreditChannel(ch::Tag tag) noexcept {
   return ch::isPaydayInbound(tag) || ch::is(tag, ch::Insurance::claim) ||
          ch::is(tag, ch::Product::taxRefund) ||
-         ch::is(tag, ch::Credit::refund) || ch::is(tag, ch::Credit::chargeback);
+         ch::is(tag, ch::Credit::refund) ||
+         ch::is(tag, ch::Credit::chargeback) ||
+         ch::is(tag, ch::Deposit::checkDeposit) ||
+         ch::is(tag, ch::Crypto::rampIn);
 }
 
 std::string_view ruleName(Rule r) noexcept {

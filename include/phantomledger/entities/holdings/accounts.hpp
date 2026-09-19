@@ -1,4 +1,5 @@
 #pragma once
+#include "phantomledger/entities/counterparties/boundary.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <cstdint>
@@ -27,6 +28,7 @@ struct Record {
   Key id;
   PersonId owner = invalidPerson;
   std::uint8_t flags = 0;
+  boundary::Policy boundaryPolicy{};
 };
 
 struct Registry {

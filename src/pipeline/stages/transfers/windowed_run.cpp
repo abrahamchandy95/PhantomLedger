@@ -269,7 +269,6 @@ WindowedRunResult TransferStage::runWindowedErased(
   const auto injector = makeFraudInjector(rng, people, holdings);
 
   legit_ledger::LegitCounterparties legitCps;
-  legitCps.hubAccounts = prologue.plan.counterparties().hubAccounts;
   legitCps.billerAccounts = prologue.plan.counterparties().billerAccounts;
   legitCps.employers = prologue.plan.counterparties().employers;
 

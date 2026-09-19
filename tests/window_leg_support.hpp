@@ -391,7 +391,6 @@ struct LegResult {
     };
 
     legitLedger::LegitCounterparties legitCps;
-    legitCps.hubAccounts = world.plan.counterparties().hubAccounts;
     legitCps.billerAccounts = world.plan.counterparties().billerAccounts;
     legitCps.employers = world.plan.counterparties().employers;
 

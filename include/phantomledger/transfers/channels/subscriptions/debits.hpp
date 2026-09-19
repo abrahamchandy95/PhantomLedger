@@ -36,11 +36,11 @@ struct BillerDirectory {
 };
 
 struct AccountExclusions {
-  const std::unordered_set<entity::Key, std::hash<entity::Key>> *hubAccounts =
+  const std::unordered_set<entity::Key, std::hash<entity::Key>> *accounts =
       nullptr;
 
   [[nodiscard]] bool contains(const entity::Key &account) const {
-    return hubAccounts != nullptr && hubAccounts->contains(account);
+    return accounts != nullptr && accounts->contains(account);
   }
 };
 

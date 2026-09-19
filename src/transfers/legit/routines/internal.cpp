@@ -56,9 +56,6 @@ eligibleAccountsFor(entity::PersonId person,
     }
 
     const auto &record = plan.allAccounts()->records[recordIx];
-    if (plan.counterparties().hubSet.contains(record.id)) {
-      continue;
-    }
     out.push_back(record.id);
   }
   return out;
@@ -106,8 +103,7 @@ struct AmountDraw {
 // just re-round to cents (their $10 floor scales with the amount).
 [[nodiscard]] double nominalTransferAmount(const AmountDraw &draw,
                                            std::int64_t epochSec) {
-  const auto year =
-      time::toCalendarDate(time::fromEpochSeconds(epochSec)).year;
+  const auto year = time::toCalendarDate(time::fromEpochSeconds(epochSec)).year;
   const double scaled =
       draw.amount * ::PhantomLedger::synth::econ::priceScale(year);
   if (draw.roundLattice) {

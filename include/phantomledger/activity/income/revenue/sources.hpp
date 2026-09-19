@@ -4,6 +4,7 @@
 #include "phantomledger/activity/income/revenue/draw.hpp"
 #include "phantomledger/activity/income/revenue/profiles.hpp"
 #include "phantomledger/activity/income/types.hpp"
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -196,10 +197,6 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
   }
 
   const auto personal = population.primary(person);
-  if (population.hubs().contains(personal)) {
-    return std::nullopt;
-  }
-
   const auto persona = population.persona(person);
 
   // C++23 monadic transform: perfectly flat pipeline
@@ -230,12 +227,13 @@ inline void Sources::applyFallback(personas::Type persona, random::Rng &rng,
         }),
     };
 
-    // Cash-takings source draws LAST so its addition leaves every
-    // pre-existing per-person source draw unchanged
-    if (const auto hub = counterparties.cashHub();
-        hub.has_value() && profile.cashTakings.activeP > 0.0 &&
+    // Cash-takings activation draws LAST so the pre-existing source draws are
+    // unchanged. Endpoint choice itself is draw-free and stable per business.
+    const auto depositories = counterparties.cashDepositories();
+    if (!depositories.empty() && profile.cashTakings.activeP > 0.0 &&
         rng.nextDouble() < profile.cashTakings.activeP) {
-      sources.cashSrc = hub;
+      sources.cashSrc = ::PhantomLedger::counterparties::cash::depositoryFor(
+          depositories, accounts.revenueDst);
     }
 
     sources.applyFallback(persona, rng, counterparties, accounts);

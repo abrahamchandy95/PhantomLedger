@@ -239,7 +239,6 @@ void testCollectiveDayOversubscriptionIsFiltered() {
   ledger.addAccount(card, 0);
   ledger.addAccount(merchant, 1);
   ledger.setOverdraftOnly(0, 100.0);
-  ledger.createHub(1);
 
   transactions::Transaction later{};
   later.source = card;

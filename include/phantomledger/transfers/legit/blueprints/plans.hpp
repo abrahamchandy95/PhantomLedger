@@ -1,9 +1,11 @@
 #pragma once
 
-#include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
-#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
+#include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/identifiers.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
@@ -26,16 +28,6 @@ struct LegitTimeframe {
   std::uint64_t seed = 0;
 };
 
-struct HubSelectionRules {
-  std::uint32_t populationCount = 0;
-  double fraction = 0.01;
-
-  void validate(primitives::validate::Report &r) const {
-    namespace v = primitives::validate;
-    r.check([&] { v::unit("hubSelection.fraction", fraction); });
-  }
-};
-
 struct AccountCensus {
   const entity::account::Registry *accounts = nullptr;
   const entity::account::Ownership *ownership = nullptr;
@@ -52,6 +44,8 @@ struct AccountCensus {
 struct CounterpartyPools {
   const entity::counterparty::Directory *directory = nullptr;
   const entity::landlord::Roster *landlords = nullptr;
+  std::span<const entity::geography::GeoAreaId> homeAreas{};
+  const entity::parties::relocation::Schedule *relocation = nullptr;
 };
 
 struct PersonaCatalog {
@@ -139,26 +133,75 @@ struct AccountAccess {
 };
 
 struct CounterpartyAccess {
-  std::vector<entity::Key> hubAccounts;
-  std::unordered_set<entity::Key> hubSet;
-
   std::vector<entity::Key> employers;
-
-  std::vector<entity::Key> fundingHubs;
 
   std::vector<entity::Key> landlords;
   std::unordered_map<entity::Key, entity::landlord::Type> landlordTypeOf;
 
+  // External, ownerless context endpoints. They cross the modeled customer
+  // ledger boundary and therefore never carry a ledger balance.
+  std::vector<entity::Key> cashWithdrawalPoints;
+  std::vector<entity::Key> cashDepositPoints;
+  std::vector<entity::Key> checkDepositPoints;
+  std::vector<entity::Key> cryptoVenues;
+  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
+      nearbyWithdrawalPoints;
+  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
+      nearbyCashDepositPoints;
+  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
+      nearbyCheckDepositPoints;
+  std::span<const entity::geography::GeoAreaId> homeAreas{};
+  const entity::parties::relocation::Schedule *relocation = nullptr;
+
   std::vector<entity::Key> billerAccounts;
   entity::Key issuerAcct{};
 
-  [[nodiscard]] bool isHub(const entity::Key &key) const {
-    return hubSet.contains(key);
+  [[nodiscard]] std::span<const entity::Key>
+  withdrawalPointsFor(entity::PersonId person,
+                      std::int64_t timestamp) const noexcept {
+    return localPointsFor(nearbyWithdrawalPoints, cashWithdrawalPoints, person,
+                          timestamp);
   }
 
-  [[nodiscard]] const entity::Key *firstHub() const noexcept {
-    return hubAccounts.empty() ? nullptr : &hubAccounts.front();
+  [[nodiscard]] std::span<const entity::Key>
+  depositPointsFor(entity::PersonId person,
+                   std::int64_t timestamp) const noexcept {
+    return localPointsFor(nearbyCashDepositPoints, cashDepositPoints, person,
+                          timestamp);
   }
+
+  [[nodiscard]] std::span<const entity::Key>
+  checkDepositPointsFor(entity::PersonId person,
+                        std::int64_t timestamp) const noexcept {
+    return localPointsFor(nearbyCheckDepositPoints, checkDepositPoints, person,
+                          timestamp);
+  }
+
+private:
+  [[nodiscard]] std::span<const entity::Key> localPointsFor(
+      const std::unordered_map<entity::geography::GeoAreaId,
+                               std::vector<entity::Key>> &nearby,
+      const std::vector<entity::Key> &fallback, entity::PersonId person,
+      std::int64_t timestamp) const noexcept {
+    auto area = entity::geography::invalidGeoArea;
+    if (person != entity::invalidPerson && person <= homeAreas.size()) {
+      area = homeAreas[person - 1U];
+    }
+    if (relocation != nullptr) {
+      const auto atDate = relocation->areaAt(person, timestamp);
+      if (entity::geography::validArea(atDate)) {
+        area = atDate;
+      }
+    }
+
+    if (const auto it = nearby.find(area);
+        it != nearby.end() && !it->second.empty()) {
+      return it->second;
+    }
+    return fallback;
+  }
+
+public:
 };
 
 struct PersonaAccess {
@@ -235,9 +278,8 @@ public:
     return std::move(counterparties_);
   }
 
-  LegitBlueprint &addCounterparties(random::Rng &rng, AccountCensus census,
-                                    CounterpartyPools counterparties,
-                                    HubSelectionRules hubs);
+  LegitBlueprint &addCounterparties(random::Rng &rng,
+                                    CounterpartyPools counterparties);
   LegitBlueprint &addPersonas(random::Rng &rng, LegitTimeframe timeframe,
                               PersonaCatalog personas);
 

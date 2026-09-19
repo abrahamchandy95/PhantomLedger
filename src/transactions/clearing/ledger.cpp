@@ -11,8 +11,58 @@ namespace PhantomLedger::clearing {
 
 namespace {
 
+namespace boundary = ::PhantomLedger::entity::boundary;
+
 [[nodiscard]] constexpr bool isExternalAccount(const entity::Key &id) noexcept {
   return id.bank == entity::Bank::external;
+}
+
+struct BoundaryRequirement {
+  boundary::Kind kind = boundary::Kind::genericCounterparty;
+  boundary::Flow flow = boundary::Flow::inbound;
+};
+
+[[nodiscard]] constexpr std::optional<BoundaryRequirement>
+boundaryRequirement(channels::Tag channel) noexcept {
+  if (channels::is(channel, channels::Legit::atm)) {
+    return BoundaryRequirement{boundary::Kind::atmTerminal,
+                               boundary::Flow::outbound};
+  }
+  if (channels::is(channel, channels::Legit::cashDeposit)) {
+    return BoundaryRequirement{boundary::Kind::cashDepository,
+                               boundary::Flow::inbound};
+  }
+  if (channels::is(channel, channels::Deposit::checkDeposit)) {
+    return BoundaryRequirement{boundary::Kind::checkCapture,
+                               boundary::Flow::inbound};
+  }
+  if (channels::is(channel, channels::Crypto::rampOut)) {
+    return BoundaryRequirement{boundary::Kind::cryptoVenue,
+                               boundary::Flow::outbound};
+  }
+  if (channels::is(channel, channels::Crypto::rampIn)) {
+    return BoundaryRequirement{boundary::Kind::cryptoVenue,
+                               boundary::Flow::inbound};
+  }
+  return std::nullopt;
+}
+
+[[nodiscard]] constexpr bool
+allowsTypedBoundary(boundary::Policy policy, channels::Tag channel,
+                    boundary::Flow actualFlow) noexcept {
+  const auto required = boundaryRequirement(channel);
+  if (!boundary::typed(policy)) {
+    // Generic counterparties retain their legacy one-sided semantics only for
+    // channels that do not declare a stricter boundary contract. A generic
+    // key must not be able to impersonate an ATM, check-capture point, or
+    // crypto venue.
+    return !required.has_value();
+  }
+
+  // Conversely, a typed service endpoint may not escape its contract by
+  // riding an unrelated generic channel.
+  return required.has_value() && required->kind == policy.kind &&
+         required->flow == actualFlow && boundary::allows(policy, actualFlow);
 }
 
 struct OverdraftFeeAssessment {
@@ -61,10 +111,11 @@ void Ledger::initialize(Index count) {
   overdrafts_.assign(count, 0.0);
   linked_.assign(count, 0.0);
   courtesy_.assign(count, 0.0);
-  flags_.assign(count, none);
 
   internalAccounts_.clear();
   internalAccounts_.reserve(count);
+  externalAccounts_.clear();
+  externalAccounts_.reserve(count);
   accountKeys_.assign(count, entity::Key{});
 
   protectionType_.assign(count, ProtectionType::none);
@@ -78,19 +129,18 @@ void Ledger::initialize(Index count) {
 }
 
 void Ledger::addAccount(const entity::Key &id, Index idx) {
+  addAccount(id, idx, entity::boundary::kGenericPolicy);
+}
+
+void Ledger::addAccount(const entity::Key &id, Index idx,
+                        entity::boundary::Policy boundaryPolicy) {
   assert(idx < size_);
-  internalAccounts_.insert_or_assign(id, idx);
   accountKeys_[idx] = id;
-}
-
-void Ledger::createHub(Index idx) noexcept {
-  assert(idx < size_);
-  flags_[idx] = static_cast<std::uint8_t>(flags_[idx] | hub);
-}
-
-bool Ledger::isHub(Index idx) const noexcept {
-  assert(idx < size_);
-  return (flags_[idx] & hub) != 0;
+  if (isExternalAccount(id)) {
+    externalAccounts_.insert_or_assign(id, boundaryPolicy);
+  } else {
+    internalAccounts_.insert_or_assign(id, idx);
+  }
 }
 
 bool Ledger::isValid(Index idx) const noexcept {
@@ -126,18 +176,12 @@ double Ledger::liquidity(Index idx) const noexcept {
   if (!isValid(idx)) {
     return 0.0;
   }
-  if (isHub(idx)) {
-    return std::numeric_limits<double>::infinity();
-  }
   return totalLiquidity(idx);
 }
 
 double Ledger::availableCash(Index idx) const noexcept {
   if (!isValid(idx)) {
     return 0.0;
-  }
-  if (isHub(idx)) {
-    return std::numeric_limits<double>::infinity();
   }
   return cash_[idx];
 }
@@ -253,7 +297,7 @@ TransferDecision Ledger::decide(Index srcIdx, Index dstIdx, double amount,
     return TransferDecision::accept();
   }
 
-  if (!isHub(srcIdx) && !channels::isLiquidity(channel)) {
+  if (!channels::isLiquidity(channel)) {
     const bool selfTransfer =
         channels::is(channel, channels::Legit::selfTransfer);
     const double spendable =
@@ -284,12 +328,9 @@ TransferDecision Ledger::applyTransfer(const Posting &posting,
     return decision;
   }
 
-  const bool srcHub = isHub(posting.srcIdx);
   srcCashBefore = cash_[posting.srcIdx];
 
-  if (!srcHub) {
-    cash_[posting.srcIdx] -= posting.amount;
-  }
+  cash_[posting.srcIdx] -= posting.amount;
   if (!dstExternal) {
     cash_[posting.dstIdx] += posting.amount;
   }
@@ -310,11 +351,43 @@ TransferDecision Ledger::transfer(Index srcIdx, Index dstIdx, double amount,
 TransferDecision Ledger::transfer(const entity::Key &src,
                                   const entity::Key &dst, double amount,
                                   channels::Tag channel) {
-  const bool srcExternal = isExternalAccount(src);
-  const bool dstExternal = isExternalAccount(dst);
+  return transferAt(KeyPosting{
+      .source = src,
+      .destination = dst,
+      .amount = amount,
+      .channel = channel,
+      .timestamp = 0,
+  });
+}
 
-  const Index srcIdx = srcExternal ? invalid : findAccount(src);
-  const Index dstIdx = dstExternal ? invalid : findAccount(dst);
+TransferDecision Ledger::transferAt(const KeyPosting &posting) {
+  if (!entity::valid(posting.source) || !entity::valid(posting.destination)) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+
+  const bool srcExternal = isExternalAccount(posting.source);
+  const bool dstExternal = isExternalAccount(posting.destination);
+
+  const auto srcBoundary = srcExternal ? externalAccounts_.find(posting.source)
+                                       : externalAccounts_.end();
+  const auto dstBoundary = dstExternal
+                               ? externalAccounts_.find(posting.destination)
+                               : externalAccounts_.end();
+
+  if ((srcExternal && srcBoundary == externalAccounts_.end()) ||
+      (dstExternal && dstBoundary == externalAccounts_.end())) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+
+  if ((srcExternal && !allowsTypedBoundary(srcBoundary->second, posting.channel,
+                                           entity::boundary::Flow::inbound)) ||
+      (dstExternal && !allowsTypedBoundary(dstBoundary->second, posting.channel,
+                                           entity::boundary::Flow::outbound))) {
+    return TransferDecision::reject(RejectReason::unbooked);
+  }
+
+  const Index srcIdx = srcExternal ? invalid : findAccount(posting.source);
+  const Index dstIdx = dstExternal ? invalid : findAccount(posting.destination);
 
   if (!srcExternal && srcIdx == invalid) {
     return TransferDecision::reject(RejectReason::unbooked);
@@ -323,7 +396,13 @@ TransferDecision Ledger::transfer(const entity::Key &src,
     return TransferDecision::reject(RejectReason::unbooked);
   }
 
-  return transfer(srcIdx, dstIdx, amount, channel);
+  return transferAt(Posting{
+      .srcIdx = srcIdx,
+      .dstIdx = dstIdx,
+      .amount = posting.amount,
+      .channel = posting.channel,
+      .timestamp = posting.timestamp,
+  });
 }
 
 void Ledger::debitAndEmit(Index idx, double amount, channels::Tag channel,

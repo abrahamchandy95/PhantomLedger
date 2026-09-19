@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/legit/routines/atm.hpp"
 
 #include "phantomledger/encoding/external.hpp"
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
@@ -29,8 +30,14 @@ inline constexpr std::array<double, 18> kAtmAmounts{
 
 struct Candidate {
   std::int64_t timestamp = 0;
+  entity::PersonId person = entity::invalidPerson;
   entity::Key depositAcct{};
   double amount = 0.0;
+};
+
+struct ActiveUser {
+  entity::PersonId person = entity::invalidPerson;
+  entity::Key depositAcct{};
 };
 
 // H1 step 2b (class P + S lattice): the withdrawal scales to the event
@@ -57,11 +64,11 @@ struct Candidate {
   return available >= amount + reserve;
 }
 
-[[nodiscard]] std::vector<entity::Key>
+[[nodiscard]] std::vector<ActiveUser>
 selectActiveUsers(random::Rng &rng, const blueprints::LegitBlueprint &plan,
                   const entity::account::Registry &registry,
                   const Config &cfg) {
-  std::vector<entity::Key> activeUsers;
+  std::vector<ActiveUser> activeUsers;
   activeUsers.reserve(plan.persons().size());
 
   for (const auto person : plan.persons()) {
@@ -71,9 +78,6 @@ selectActiveUsers(random::Rng &rng, const blueprints::LegitBlueprint &plan,
     }
 
     const auto &record = registry.records[it->second];
-    if (plan.counterparties().hubSet.contains(record.id)) {
-      continue;
-    }
     if (encoding::isExternal(record.id)) {
       continue;
     }
@@ -81,7 +85,7 @@ selectActiveUsers(random::Rng &rng, const blueprints::LegitBlueprint &plan,
       continue;
     }
 
-    activeUsers.push_back(record.id);
+    activeUsers.push_back(ActiveUser{person, record.id});
   }
 
   return activeUsers;
@@ -122,7 +126,7 @@ deathEpochByAccount(const blueprints::LegitBlueprint &plan,
 
 [[nodiscard]] Candidate sampleCandidate(random::Rng &rng,
                                         std::int64_t monthAnchorEpoch,
-                                        const entity::Key &depositAcct) {
+                                        const ActiveUser &user) {
   const double amount = kAtmAmounts[rng.choiceIndex(kAtmAmounts.size())];
 
   std::int32_t dayOffset;
@@ -141,12 +145,12 @@ deathEpochByAccount(const blueprints::LegitBlueprint &plan,
           ::PhantomLedger::time::kSecondsPerDay +
       ::PhantomLedger::time::secondsInDay(hour, minute);
 
-  return Candidate{timestamp, depositAcct, amount};
+  return Candidate{timestamp, user.person, user.depositAcct, amount};
 }
 
 [[nodiscard]] std::vector<Candidate>
 makeCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
-               std::span<const entity::Key> activeUsers, const Config &cfg) {
+               std::span<const ActiveUser> activeUsers, const Config &cfg) {
   std::vector<Candidate> candidates;
   candidates.reserve(static_cast<std::size_t>(plan.monthStarts().size()) *
                      activeUsers.size() *
@@ -160,14 +164,13 @@ makeCandidates(random::Rng &rng, const blueprints::LegitBlueprint &plan,
   for (const auto &monthAnchor : plan.monthStarts()) {
     const std::int64_t monthAnchorEpoch = time::toEpochSeconds(monthAnchor);
 
-    for (const auto &depositAcct : activeUsers) {
+    for (const auto &user : activeUsers) {
       const auto nWithdrawals = static_cast<std::int32_t>(rng.uniformInt(
           cfg.withdrawalsPerMonthMin,
           static_cast<std::int64_t>(cfg.withdrawalsPerMonthMax) + 1));
 
       for (std::int32_t i = 0; i < nWithdrawals; ++i) {
-        const auto candidate =
-            sampleCandidate(rng, monthAnchorEpoch, depositAcct);
+        const auto candidate = sampleCandidate(rng, monthAnchorEpoch, user);
         if (candidate.timestamp < startEpoch ||
             candidate.timestamp >= endExclEpoch) {
           continue;
@@ -206,7 +209,8 @@ std::vector<transactions::Transaction>
 Generator::generate(const blueprints::LegitBlueprint &plan,
                     const entity::account::Registry &registry) {
   std::vector<transactions::Transaction> out;
-  if (plan.monthStarts().empty() || plan.counterparties().hubAccounts.empty()) {
+  const auto &terminals = plan.counterparties().cashWithdrawalPoints;
+  if (plan.monthStarts().empty() || terminals.empty()) {
     return out;
   }
 
@@ -217,7 +221,6 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
 
   const auto candidates = makeCandidates(rng_, plan, activeUsers, cfg_);
   const auto deathEpoch = deathEpochByAccount(plan, registry);
-  const auto atmNetworkAcct = plan.counterparties().hubAccounts.front();
   const auto channel = channels::tag(channels::Legit::atm);
 
   out.reserve(candidates.size());
@@ -234,6 +237,10 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
     const double scale = ::PhantomLedger::synth::econ::priceScale(
         time::toCalendarDate(time::fromEpochSeconds(cand.timestamp)).year);
     const double amount = nominalAtmAmount(cand.amount, scale);
+    const auto localTerminals =
+        plan.counterparties().withdrawalPointsFor(cand.person, cand.timestamp);
+    const auto terminal = ::PhantomLedger::counterparties::cash::terminalFor(
+        localTerminals, cand.depositAcct, cand.timestamp);
 
     if (!canAffordAtm(screen_, cand.depositAcct, amount, scale)) {
       continue;
@@ -241,7 +248,7 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
 
     if (!screen_.acceptTransfer(ledger::KeyedTransfer{
             .source = cand.depositAcct,
-            .destination = atmNetworkAcct,
+            .destination = terminal,
             .amount = amount,
             .channel = channel,
             .timestamp = cand.timestamp,
@@ -251,7 +258,7 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
 
     out.push_back(txf_.make(transactions::Draft{
         .source = cand.depositAcct,
-        .destination = atmNetworkAcct,
+        .destination = terminal,
         .amount = amount,
         .timestamp = cand.timestamp,
         .isFraud = 0,

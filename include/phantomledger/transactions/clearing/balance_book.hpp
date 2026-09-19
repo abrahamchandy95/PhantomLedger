@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <span>
 #include <stdexcept>
-#include <unordered_set>
 #include <vector>
 
 namespace PhantomLedger::clearing {
@@ -137,8 +136,6 @@ struct BalanceRules {
 inline constexpr BalanceRules kDefaultBalanceRules{};
 
 namespace detail {
-
-inline constexpr double kHubCash = 1e18;
 
 static_assert(kBankTiers.size() == kBankTierCount);
 
@@ -265,12 +262,6 @@ public:
                        double stockScale = 1.0) noexcept
       : ledger_{&ledger}, rng_{&rng}, rules_{rules}, stockScale_{stockScale} {}
 
-  void seedHubAccount(Ledger::Index idx) const {
-    ledger().cash(idx) = detail::kHubCash;
-    ledger().setProtection(idx, ProtectionType::none, 0.0);
-    ledger().setBankTier(idx, BankTier::zeroFee, 0.0);
-  }
-
   void seedOwnedAccount(Ledger::Index idx,
                         const entity::behavior::Persona &persona) {
     const auto profile = bufferProfile(persona.archetype.type);
@@ -330,8 +321,7 @@ inline void requireLedgerSlots(const Ledger &ledger,
 }
 
 [[nodiscard]] inline std::vector<Ledger::Index>
-ownedNonHubAccountIndices(const entity::account::Registry &registry,
-                          const std::unordered_set<Ledger::Index> &hubIndices) {
+ownedAccountIndices(const entity::account::Registry &registry) {
   std::vector<Ledger::Index> out;
   out.reserve(registry.records.size());
 
@@ -342,33 +332,10 @@ ownedNonHubAccountIndices(const entity::account::Registry &registry,
     if (record.owner == entity::invalidPerson) {
       continue;
     }
-    if (hubIndices.contains(idx)) {
-      continue;
-    }
-
     out.push_back(idx);
   }
 
   return out;
-}
-
-inline void
-seedHubAccounts(OpeningBalanceSeeder &seeder,
-                const entity::account::Registry &registry,
-                const std::unordered_set<Ledger::Index> &hubIndices) {
-  const auto count = static_cast<Ledger::Index>(registry.records.size());
-  for (Ledger::Index idx = 0; idx < count; ++idx) {
-    const auto &record = registry.records[idx];
-
-    if (record.owner == entity::invalidPerson) {
-      continue;
-    }
-    if (!hubIndices.contains(idx)) {
-      continue;
-    }
-
-    seeder.seedHubAccount(idx);
-  }
 }
 
 inline void seedOwnedAccounts(OpeningBalanceSeeder &seeder,

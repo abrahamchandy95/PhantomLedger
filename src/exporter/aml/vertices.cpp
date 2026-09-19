@@ -501,7 +501,9 @@ namespace {
          channels::is(tag, channels::Product::taxRefund) ||
          channels::is(tag, channels::Insurance::claim) ||
          channels::is(tag, channels::Credit::refund) ||
-         channels::is(tag, channels::Credit::chargeback);
+         channels::is(tag, channels::Credit::chargeback) ||
+         channels::is(tag, channels::Deposit::checkDeposit) ||
+         channels::is(tag, channels::Crypto::rampIn);
 }
 inline constexpr auto kPurposeEntries =
     std::to_array<lookup::Entry<channels::Tag>>({
@@ -513,6 +515,9 @@ inline constexpr auto kPurposeEntries =
         {"wire_transfer", channels::tag(channels::Legit::externalUnknown)},
         {"cash_withdrawal", channels::tag(channels::Legit::atm)},
         {"cash_deposit", channels::tag(channels::Legit::cashDeposit)},
+        {"check_deposit", channels::tag(channels::Deposit::checkDeposit)},
+        {"crypto_purchase", channels::tag(channels::Crypto::rampOut)},
+        {"crypto_liquidation", channels::tag(channels::Crypto::rampIn)},
         {"internal_transfer", channels::tag(channels::Legit::selfTransfer)},
         {"subscription", channels::tag(channels::Legit::subscription)},
         {"business_income", channels::tag(channels::Legit::clientAchCredit)},

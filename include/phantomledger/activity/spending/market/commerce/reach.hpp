@@ -177,8 +177,12 @@ calibrateReachModel(const std::vector<double> &weights, double meanSetSize,
   out.gamma = gamma;
   out.membership.assign(weights.size(), 0.0);
 
+  // Indexed rather than `std::views::enumerate`: that view is C++23 P2164 and
+  // neither Apple Clang 21's libc++ nor Homebrew LLVM's ships it yet, so the
+  // range form does not compile on the toolchain this repo is built with.
   double qSum = 0.0;
-  for (auto [i, w] : std::views::enumerate(weights)) {
+  for (std::size_t i = 0; i < weights.size(); ++i) {
+    const double w = weights[i];
     if (!isValid(w)) {
       continue;
     }

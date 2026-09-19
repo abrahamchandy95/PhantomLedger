@@ -27,6 +27,12 @@ void testParseKnownChannels() {
               channels::tag(channels::Government::disability));
   PL_CHECK_EQ(requireParsedTag("cash_deposit"),
               channels::tag(channels::Legit::cashDeposit));
+  PL_CHECK_EQ(requireParsedTag("check_deposit"),
+              channels::tag(channels::Deposit::checkDeposit));
+  PL_CHECK_EQ(requireParsedTag("crypto_ramp_out"),
+              channels::tag(channels::Crypto::rampOut));
+  PL_CHECK_EQ(requireParsedTag("crypto_ramp_in"),
+              channels::tag(channels::Crypto::rampIn));
 
   std::printf("  PASS: parse known channels\n");
 }
@@ -54,6 +60,12 @@ void testNameRoundTrip() {
               std::string_view("atm_withdrawal"));
   PL_CHECK_EQ(channels::name(channels::Legit::cashDeposit),
               std::string_view("cash_deposit"));
+  PL_CHECK_EQ(channels::name(channels::Deposit::checkDeposit),
+              std::string_view("check_deposit"));
+  PL_CHECK_EQ(channels::name(channels::Crypto::rampOut),
+              std::string_view("crypto_ramp_out"));
+  PL_CHECK_EQ(channels::name(channels::Crypto::rampIn),
+              std::string_view("crypto_ramp_in"));
   PL_CHECK_EQ(channels::name(channels::Credit::payment),
               std::string_view("cc_payment"));
   PL_CHECK_EQ(channels::name(channels::Product::mortgage),
@@ -92,6 +104,8 @@ void testPaydayInboundMembership() {
   PL_CHECK(!channels::isPaydayInbound(requireParsedTag("p2p")));
   PL_CHECK(!channels::isPaydayInbound(requireParsedTag("merchant")));
   PL_CHECK(!channels::isPaydayInbound(requireParsedTag("fraud_classic")));
+  PL_CHECK(!channels::isPaydayInbound(requireParsedTag("check_deposit")));
+  PL_CHECK(!channels::isPaydayInbound(requireParsedTag("crypto_ramp_in")));
   PL_CHECK(!channels::isPaydayInbound(channels::none));
 
   std::printf("  PASS: isPaydayInbound\n");
@@ -110,6 +124,9 @@ void testCurrencyMembership() {
   PL_CHECK(!channels::isCurrency(requireParsedTag("p2p")));
   PL_CHECK(!channels::isCurrency(requireParsedTag("external_unknown")));
   PL_CHECK(!channels::isCurrency(requireParsedTag("rent_check")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("check_deposit")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("crypto_ramp_out")));
+  PL_CHECK(!channels::isCurrency(requireParsedTag("crypto_ramp_in")));
   PL_CHECK(!channels::isCurrency(requireParsedTag("inheritance")));
   PL_CHECK(!channels::isCurrency(requireParsedTag("fraud_layering_in")));
   PL_CHECK(!channels::isCurrency(requireParsedTag("fraud_funnel_in")));
@@ -146,6 +163,8 @@ void testKnown() {
   PL_CHECK(channels::isKnown(requireParsedTag("rent")));
   PL_CHECK(channels::isKnown(requireParsedTag("fraud_classic")));
   PL_CHECK(channels::isKnown(requireParsedTag("cash_deposit")));
+  PL_CHECK(channels::isKnown(requireParsedTag("check_deposit")));
+  PL_CHECK(channels::isKnown(requireParsedTag("crypto_ramp_out")));
   PL_CHECK(!channels::isKnown(channels::none));
 
   std::printf("  PASS: isKnown\n");
@@ -162,6 +181,12 @@ void testByteLayout() {
               std::uint8_t{0x70});
   PL_CHECK_EQ(channels::tag(channels::Camouflage::salary).value,
               std::uint8_t{0x82});
+  PL_CHECK_EQ(channels::tag(channels::Deposit::checkDeposit).value,
+              std::uint8_t{0xA0});
+  PL_CHECK_EQ(channels::tag(channels::Crypto::rampOut).value,
+              std::uint8_t{0xB0});
+  PL_CHECK_EQ(channels::tag(channels::Crypto::rampIn).value,
+              std::uint8_t{0xB1});
 
   std::printf("  PASS: byte layout\n");
 }

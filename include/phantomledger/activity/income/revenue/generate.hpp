@@ -3,6 +3,7 @@
 #include "phantomledger/activity/income/revenue/flows.hpp"
 #include "phantomledger/activity/income/revenue/sources.hpp"
 #include "phantomledger/activity/income/types.hpp"
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
@@ -103,8 +104,19 @@ private:
                       plan.sources.investmentSrc);
     // Last verb, so the month stream's draws for the flows above are
     // unchanged by this source's addition (cash-deposits-2026-07).
+    auto cashSource = plan.sources.cashSrc;
+    if (cashSource.has_value()) {
+      const auto monthEpoch = time::toEpochSeconds(monthStart);
+      const auto local = book_.counterparties.cashDepositoriesFor(
+          plan.person, monthEpoch);
+      const auto endpoint =
+          ::PhantomLedger::counterparties::cash::depositoryFor(
+              local, plan.accounts.revenueDst);
+      cashSource = entity::valid(endpoint) ? std::optional{endpoint}
+                                           : std::nullopt;
+    }
     cycle.cashTakings(profile.cashTakings, plan.accounts.revenueDst,
-                      plan.sources.cashSrc);
+                      cashSource);
 
     std::move(cycle).drainInto(txns_);
   }

@@ -62,6 +62,8 @@ const char *schemaName(UseCase uc) noexcept {
     return "schema aml_txn_edges";
   case UseCase::cardFraud:
     return "schema card_fraud";
+  case UseCase::muleTemporal:
+    return "schema mule_temporal";
   }
   return "";
 }

@@ -47,8 +47,6 @@ public:
   LegitTransferBuilder &
   counterparties(blueprints::CounterpartyPools value) noexcept;
   LegitTransferBuilder &personas(blueprints::PersonaCatalog value) noexcept;
-  LegitTransferBuilder &
-  hubSelection(blueprints::HubSelectionRules value) noexcept;
   LegitTransferBuilder &openingBook(OpeningBook value) noexcept;
 
   LegitTransferBuilder &income(passes::IncomePass value) noexcept;
@@ -89,7 +87,6 @@ private:
   blueprints::AccountCensus census_{};
   blueprints::CounterpartyPools counterparties_{};
   blueprints::PersonaCatalog personas_{};
-  blueprints::HubSelectionRules hubSelection_{};
 
   OpeningBook openingBook_{};
 

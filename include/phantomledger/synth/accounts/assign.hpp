@@ -39,6 +39,43 @@ inline void addAccounts(Pack &pack, std::span<const entity::Key> ids,
   }
 }
 
+// Register external endpoints with a clearing-boundary contract.  Repeated
+// registration upgrades the record's generic policy to the supplied typed
+// policy; the ordinary bool overload above deliberately never downgrades a
+// policy installed here.
+inline void addAccounts(Pack &pack, std::span<const entity::Key> ids,
+                        entity::boundary::Policy policy) {
+  pack.registry.records.reserve(pack.registry.records.size() + ids.size());
+  pack.lookup.byId.reserve(pack.lookup.byId.size() + ids.size());
+
+  const auto externalFlag =
+      entity::account::bit(entity::account::Flag::external);
+
+  for (const auto id : ids) {
+    if (id.bank != entity::Bank::external) {
+      throw std::invalid_argument(
+          "addAccounts: boundary policy requires an external key");
+    }
+
+    const auto found = pack.lookup.byId.find(id);
+    if (found != pack.lookup.byId.end()) {
+      auto &record = pack.registry.records[found->second];
+      record.flags |= externalFlag;
+      record.boundaryPolicy = policy;
+      continue;
+    }
+
+    const auto recIx = static_cast<std::uint32_t>(pack.registry.records.size());
+    pack.registry.records.push_back(entity::account::Record{
+        .id = id,
+        .owner = entity::invalidPerson,
+        .flags = externalFlag,
+        .boundaryPolicy = policy,
+    });
+    pack.lookup.byId.emplace(id, recIx);
+  }
+}
+
 inline void
 assignOwners(Pack &pack,
              std::span<const std::vector<entity::Key>> ownedByPerson,
