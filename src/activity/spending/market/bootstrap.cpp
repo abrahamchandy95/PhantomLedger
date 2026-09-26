@@ -510,7 +510,7 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
   Cards cards = normalizeCards(std::move(sources.cards), sources.census.count);
 
   return Market(sources.bounds, std::move(popView), std::move(commerceView),
-                std::move(cards));
+                std::move(cards), sources.baseSeed);
 }
 
 } // namespace PhantomLedger::activity::spending::market

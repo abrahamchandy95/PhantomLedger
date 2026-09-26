@@ -44,6 +44,18 @@
 //      new outlet of the same brand, and incumbent outlets survive at the
 //      mature hazard.
 //
+//   G. THE MONTHLY EVOLVER DRAWS NOTHING FROM THE SESSION RNG
+//      (evolver-lanes-2026-09). The session rng draws every day frame and
+//      population-dynamics multiplier, and the evolver's passes retry, so an
+//      evolver on that rng moved every later day whenever a biller or
+//      favourite set changed. At the run-golden gate world the session rng
+//      must end the window at the same position with every customer handed a
+//      biller and a favourite that close in January (the evolver then
+//      replaces or drops one of each for all 2,000 people) as without. The
+//      stress must reach the corpus and the evolver, and a disarm that puts
+//      one session draw per closed biller slot back at the boundary (the
+//      retired coupling's shape) must separate the two runs.
+//
 // E IS THE LOAD-BEARING CHECK. A/B/C/D are properties of the assignment; E
 // is the only one that fails if the CDF rebuild or the fraud-rail filter is
 // removed.
@@ -63,13 +75,17 @@
 #include "phantomledger/taxonomies/channels/names.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
 
+#include <algorithm>
 #include <array>
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <map>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 
@@ -587,6 +603,228 @@ void runBurstScalingGate() {
             std::to_string(probes[0].expectedPerPerson) + ")");
 }
 
+// ------------------------------------------------------------ SUB-GATE G
+//
+// The run-golden gate world, the one test_bank_ledger leg A builds: the
+// coupling was measured there (13 customers hold a biller that closes in
+// January, 45 by March), and the production world holds none, which is why
+// the run golden never showed a biller-lane flip.
+constexpr std::uint64_t kGoldenSeed = 3405691582ULL;
+constexpr int kGoldenDays = 60;
+constexpr int kFirstBoundaryDay = 31; // 2025-02-01
+constexpr std::int32_t kGoldenPopulation = 2'000;
+
+struct EvolverSessionRun {
+  std::uint64_t sessionNextBefore = 0; // session rng, before the first day
+  std::uint64_t sessionNextAfter = 0;  // and after the last
+  std::uint64_t rowDigest = 0;         // order-free
+  std::size_t rows = 0;
+  std::size_t closedBillerSlots = 0; // held at the first boundary
+  std::size_t stressedBillerHeldAfter = 0;
+  std::size_t stressedFavouriteHeldAfter = 0;
+  bool stressAvailable = true;
+};
+
+[[nodiscard]] std::uint64_t mix64(std::uint64_t value) {
+  value += 0x9E3779B97F4A7C15ULL;
+  value = (value ^ (value >> 30U)) * 0xBF58476D1CE4E5B9ULL;
+  value = (value ^ (value >> 27U)) * 0x94D049BB133111EBULL;
+  return value ^ (value >> 31U);
+}
+
+// `stressed` hands every customer a biller and a favourite that are live at
+// window start and closed at the first boundary. `retiredCoupling` is the
+// disarm: one session draw per closed biller slot, spent at the boundary
+// before the evolver runs, which is where the retired evolver spent its
+// data-dependent draws.
+[[nodiscard]] EvolverSessionRun
+runEvolverSession(const pl::synth::pii::PoolSet &poolSet, bool stressed,
+                  bool retiredCoupling) {
+  namespace spending = pl::activity::spending;
+
+  pltest::WorldSpec spec;
+  spec.seed = kGoldenSeed;
+  spec.window = pl::time::Window{.start = pl::time::makeTime({2025, 1, 1}),
+                                 .days = kGoldenDays};
+  spec.population = kGoldenPopulation;
+  spec.fraudProfile = pltest::scaledFraudProfile();
+  pltest::GateWorld world(poolSet, spec);
+
+  EvolverSessionRun out;
+  auto &commerce = world.market.commerceMutable();
+  const auto *catalog = commerce.catalog();
+  PL_CHECK(catalog != nullptr);
+  const auto persons = world.market.population().count();
+  const auto startTs = pl::time::toEpochSeconds(spec.window.start);
+  const auto boundaryTs = pl::time::toEpochSeconds(
+      pl::time::addDays(spec.window.start, kFirstBoundaryDay));
+
+  constexpr auto kNone = std::numeric_limits<std::uint32_t>::max();
+  std::uint32_t closingBiller = kNone;
+  std::uint32_t closingFavourite = kNone;
+  for (std::uint32_t i = 0; i < catalog->records.size(); ++i) {
+    const auto &record = catalog->records[i];
+    if (!record.liveAt(startTs) || record.liveAt(boundaryTs)) {
+      continue;
+    }
+    const bool biller = spending::market::isBillerCategory(record.category);
+    if (biller && closingBiller == kNone) {
+      closingBiller = i;
+    } else if (!biller && closingFavourite == kNone) {
+      closingFavourite = i;
+    }
+  }
+
+  if (stressed) {
+    out.stressAvailable = closingBiller != kNone && closingFavourite != kNone;
+    if (!out.stressAvailable) {
+      return out;
+    }
+    auto &billers = commerce.billersMutable();
+    auto &favorites = commerce.favoritesMutable();
+    const auto holds = [](std::span<const std::uint32_t> row,
+                          std::uint32_t idx) {
+      return std::find(row.begin(), row.end(), idx) != row.end();
+    };
+    for (std::uint32_t p = 0; p < persons; ++p) {
+      if (!holds(billers.rowOf(p), closingBiller) &&
+          !billers.rowOf(p).empty()) {
+        billers.rowOfMutable(p)[0] = closingBiller;
+      }
+      if (!holds(favorites.rowOf(p), closingFavourite) &&
+          !favorites.rowOf(p).empty()) {
+        favorites.rowOfMutable(p)[0] = closingFavourite;
+      }
+    }
+  }
+
+  const auto &billers = commerce.billers();
+  for (std::uint32_t p = 0; p < persons; ++p) {
+    for (const auto idx : billers.rowOf(p)) {
+      out.closedBillerSlots += !catalog->records[idx].liveAt(boundaryTs);
+    }
+  }
+
+  pltest::routineSpending::SessionInputs inputs;
+  inputs.cardLifecycle = world.cardCfg;
+  inputs.threadCount = 1;
+  const auto bundle = pltest::routineSpending::SessionBundle::make(
+      spec.seed, world.rng, *world.txf, world.market, world.obligations,
+      world.screenBook, std::move(inputs));
+  auto &session = bundle->session();
+
+  const auto nextOf = [](pl::random::Rng rng) { return rng.nextU64(); };
+  out.sessionNextBefore = nextOf(world.rng);
+
+  const auto absorb = [&out](const auto &batch) {
+    for (const auto &row : batch.txns) {
+      std::uint64_t h = mix64(row.source.number);
+      h = mix64(h ^ row.target.number);
+      h = mix64(h ^ std::bit_cast<std::uint64_t>(row.amount));
+      h = mix64(h ^ static_cast<std::uint64_t>(row.timestamp));
+      out.rowDigest += h;
+      ++out.rows;
+    }
+  };
+
+  absorb(session.advance(
+      pl::time::Window{.start = spec.window.start, .days = kFirstBoundaryDay}));
+  if (retiredCoupling) {
+    for (std::size_t i = 0; i < out.closedBillerSlots; ++i) {
+      (void)world.rng.nextU64();
+    }
+  }
+  absorb(session.advance(pl::time::Window{
+      .start = pl::time::addDays(spec.window.start, kFirstBoundaryDay),
+      .days = kGoldenDays - kFirstBoundaryDay}));
+  absorb(session.finish());
+
+  out.sessionNextAfter = nextOf(world.rng);
+
+  if (stressed) {
+    const auto &favorites = commerce.favorites();
+    for (std::uint32_t p = 0; p < persons; ++p) {
+      const auto b = commerce.billers().rowOf(p);
+      const auto f = favorites.rowOf(p);
+      out.stressedBillerHeldAfter +=
+          std::find(b.begin(), b.end(), closingBiller) != b.end();
+      out.stressedFavouriteHeldAfter +=
+          std::find(f.begin(), f.end(), closingFavourite) != f.end();
+    }
+  }
+  return out;
+}
+
+void runEvolverLaneGate() {
+  std::printf("\n=== G: the monthly evolver draws nothing from the session "
+              "rng (run-golden gate world) ===\n");
+  const auto poolSet = pltest::buildPoolSet(kGoldenSeed);
+
+  const auto shipped = runEvolverSession(poolSet, false, false);
+  const auto stressed = runEvolverSession(poolSet, true, false);
+  check(stressed.stressAvailable,
+        "G: no biller and non-biller record closes in January at the gate "
+        "world, so the stress cannot be built and G would pass on no data");
+  if (!stressed.stressAvailable) {
+    return;
+  }
+  const auto disarmShipped = runEvolverSession(poolSet, false, true);
+  const auto disarmStressed = runEvolverSession(poolSet, true, true);
+
+  const auto hex = [](std::uint64_t v) {
+    char buf[20];
+    std::snprintf(buf, sizeof(buf), "%016llx",
+                  static_cast<unsigned long long>(v));
+    return std::string(buf);
+  };
+  std::printf("  closed biller slots at 2025-02-01: shipped %zu, stressed "
+              "%zu\n",
+              shipped.closedBillerSlots, stressed.closedBillerSlots);
+  std::printf("  rows: shipped %zu, stressed %zu; stressed payees still held "
+              "after the window: billers %zu, favourites %zu\n",
+              shipped.rows, stressed.rows, stressed.stressedBillerHeldAfter,
+              stressed.stressedFavouriteHeldAfter);
+  std::printf("  session rng next u64 after the window: shipped %s, stressed "
+              "%s (before the first day %s)\n",
+              hex(shipped.sessionNextAfter).c_str(),
+              hex(stressed.sessionNextAfter).c_str(),
+              hex(shipped.sessionNextBefore).c_str());
+  std::printf("  DISARM (one session draw per closed biller slot at the "
+              "boundary): shipped %s, stressed %s\n",
+              hex(disarmShipped.sessionNextAfter).c_str(),
+              hex(disarmStressed.sessionNextAfter).c_str());
+
+  // G1.
+  check(shipped.sessionNextAfter == stressed.sessionNextAfter,
+        "G1: the session rng ends the window at a different position when "
+        "the biller and favourite sets change, so something on it spends a "
+        "number of draws that depends on catalogue state (the monthly "
+        "evolver must draw on its own lanes)");
+  check(shipped.sessionNextBefore == stressed.sessionNextBefore,
+        "G1: the two worlds hand the session different rng positions, so G1 "
+        "compares two different streams");
+  check(shipped.sessionNextAfter != shipped.sessionNextBefore,
+        "G1: the session drew nothing from the rng it was handed, so G1 "
+        "would pass on no data");
+
+  // G2: the stress reached the evolver and the corpus.
+  check(stressed.closedBillerSlots >=
+                static_cast<std::size_t>(kGoldenPopulation) &&
+            stressed.closedBillerSlots != shipped.closedBillerSlots,
+        "G2: the stress did not put a closing biller on every customer");
+  check(stressed.stressedBillerHeldAfter == 0 &&
+            stressed.stressedFavouriteHeldAfter == 0,
+        "G2: a customer still holds the closed biller or favourite after "
+        "the window, so the evolver never ran on the stressed sets");
+  check(stressed.rowDigest != shipped.rowDigest,
+        "G2: the stress left the corpus unchanged, so it tested nothing");
+
+  // G3.
+  check(disarmShipped.sessionNextAfter != disarmStressed.sessionNextAfter,
+        "G3: the disarm (session draws that depend on closed biller slots) "
+        "did not separate the two runs, so G1 cannot fail");
+}
+
 } // namespace
 
 int main() {
@@ -602,6 +840,7 @@ int main() {
       runChurnLeg(leg);
     }
     runBurstScalingGate();
+    runEvolverLaneGate();
   } catch (const std::exception &e) {
     std::fprintf(stderr, "FAIL: exception: %s\n", e.what());
     return 2;

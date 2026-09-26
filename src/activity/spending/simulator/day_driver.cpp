@@ -92,7 +92,11 @@ void DayDriver::runDay(const PreparedRun &run, RunState &state,
   auto &market = boundMarket();
   auto &rng = boundRng();
 
-  commerce_.evolveIfNeeded(market, rng, dayIndex);
+  // Draws nothing from `rng` (evolver-lanes-2026-09): the monthly evolver
+  // is on its own lanes, so the session rng's draws per day are the day
+  // frame and the dynamics multipliers alone, whatever the biller and
+  // favourite sets hold.
+  commerce_.evolveIfNeeded(market, dayIndex);
 
   const auto frame = days_.build(market.bounds(), rng, dayIndex);
 
