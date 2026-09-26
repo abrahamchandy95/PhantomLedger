@@ -31,6 +31,18 @@ schema may omit that context when the source data did not observe it; using an
 invalid key today would break validation, sorting, CSV/PostgreSQL readback, and
 the graph exporters.
 
+## The bank's income ledgers
+
+Fee and interest postings are the one place the projection books a bank-side
+leg. The contra of a charge or of debit interest is fully determined (the
+bank's income GL for that posting kind), so the book carries four internal,
+ownerless `Role::ledger` accounts (`entities/holdings/general_ledger.hpp`):
+card interest income, card fee income, deposit fee income and credit-line
+interest income. They are never seeded and never debited, so each one's
+balance is the income posted to it. They are not boundary contexts: they are
+bank-owned accounts, typed as such by every exporter (see the bank-gl-2026-09
+amendment in `docs/fraud_model_audit.md`).
+
 ## Enforced contracts
 
 Each boundary record carries a `boundary::Policy` with a kind and allowed flow
@@ -54,9 +66,16 @@ inside each generator.
 
 ATM behavior retains its round-note amount lattice and affordability screen.
 Terminals are geographically distributed. At event time the customer's
-relocation-aware area resolves to at most four nearby points; a stable primary
-is used most of the time. No customer account is ever selected as cash
-infrastructure.
+relocation-aware area resolves to that customer's own nearest four points; a
+stable primary is used most of the time. Every resident of an area sits at its
+centroid, so all of the area's own points tie on distance. Points in strictly
+nearer distance groups are always kept, and the group that straddles the
+four-point cut is split by a draw-free window keyed by (person, area, rail),
+so every point in a city is used instead of the four lowest-numbered ones.
+A world with four or fewer points per rail selects exactly the former list.
+The same selection serves cash deposits and check capture, each rail on its
+own hash domain (amendment atm-spread-2026-09 in `docs/fraud_model_audit.md`).
+No customer account is ever selected as cash infrastructure.
 
 ### Cash and check deposits
 

@@ -1,7 +1,9 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/parties/behaviors.hpp"
@@ -169,20 +171,22 @@ private:
   const std::vector<synth::personas::timeline::Timeline> *timelines_ = nullptr;
 };
 
+// Both pools are borrowed from the blueprint and carry their size law
+// (counterparty-sizes-2026-09).
 struct PayrollCounterparties {
-  std::span<const Key> employers;
+  const entity::counterparty::SizedKeys *employers = nullptr;
 
   [[nodiscard]] bool hasEmployers() const noexcept {
-    return !employers.empty();
+    return employers != nullptr && !employers->empty();
   }
 };
 
 struct RentCounterparties {
-  std::span<const Key> landlords;
+  const entity::counterparty::SizedKeys *landlords = nullptr;
   const LandlordTypes *landlordTypes = nullptr;
 
   [[nodiscard]] bool hasLandlords() const noexcept {
-    return !landlords.empty();
+    return landlords != nullptr && !landlords->empty();
   }
 
   [[nodiscard]] std::optional<entity::landlord::Type>
@@ -202,8 +206,7 @@ struct RentCounterparties {
 
 class RevenueCounterparties {
 public:
-  using NearbyDepositories = std::unordered_map<
-      entity::geography::GeoAreaId, std::vector<entity::Key>>;
+  using NearbyDepositories = ::PhantomLedger::counterparties::cash::NearbyIndex;
 
   const entity::counterparty::Directory *directory = nullptr;
 
@@ -220,7 +223,9 @@ public:
     return cashDepositPoints;
   }
 
-  [[nodiscard]] std::span<const Key>
+  // The owner's own nearest depositories, by value (the same per-person
+  // selection as household cash deposits). Bind it to a named local.
+  [[nodiscard]] ::PhantomLedger::counterparties::cash::LocalPoints
   cashDepositoriesFor(PersonId person, std::int64_t timestamp) const noexcept {
     auto area = entity::geography::invalidGeoArea;
     if (person != entity::invalidPerson && person <= homeAreas.size()) {
@@ -233,12 +238,11 @@ public:
       }
     }
     if (nearbyCashDepositPoints != nullptr) {
-      if (const auto it = nearbyCashDepositPoints->find(area);
-          it != nearbyCashDepositPoints->end() && !it->second.empty()) {
-        return it->second;
-      }
+      return nearbyCashDepositPoints->select(area, person, cashDepositPoints);
     }
-    return cashDepositPoints;
+    return NearbyDepositories{
+        ::PhantomLedger::counterparties::cash::kDepositSetDomain}
+        .select(area, person, cashDepositPoints);
   }
 
   [[nodiscard]] std::span<const Key> clients() const noexcept {

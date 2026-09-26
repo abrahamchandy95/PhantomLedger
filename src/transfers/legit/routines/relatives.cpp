@@ -256,6 +256,8 @@ generateFamilyTxns(const blueprints::LegitBlueprint &plan,
       makeAccounts(sources, transferModel->routing), makePosting(plan),
       emission);
   run.education(makeEducation(sources));
+  run.funeralHomes(family_rt::FuneralHomes{plan.counterparties().homeAreas,
+                                           plan.counterparties().relocation});
 
   return generateFamilyTxns(run, *transferModel);
 }

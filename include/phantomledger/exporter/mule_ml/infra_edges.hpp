@@ -100,10 +100,14 @@ inline void accumulateDeviceEdge(EdgeMap &edges, const txns::Transaction &tx) {
 }
 
 inline void accumulateIpEdge(EdgeMap &edges, const txns::Transaction &tx) {
-  const auto ipBuf = network::format(tx.session.ipAddress);
-  if (ipBuf.empty()) {
+  // `format` renders the unassigned sentinel as 0.0.0.0, never empty, so the
+  // sentinel is tested on the value: a row with no session (a bank posting,
+  // an externally initiated credit) must not link its source to one shared
+  // 0.0.0.0 vertex.
+  if (tx.session.ipAddress.value == 0) {
     return;
   }
+  const auto ipBuf = network::format(tx.session.ipAddress);
   AccountItemKey key{tx.source, std::string{ipBuf.view()}};
   touchEdge(edges[std::move(key)], tx.timestamp, /*incrementCount=*/true);
 }

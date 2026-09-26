@@ -115,11 +115,19 @@ set(PL_SYNTH_PRODUCTS_SOURCES
     src/synth/products/sampling/dates.cpp
     src/synth/products/installments.cpp
     src/synth/products/obligations.cpp
+    src/synth/products/providers.cpp
     src/synth/products/terms/auto_loan.cpp
     src/synth/products/terms/insurance.cpp
     src/synth/products/terms/mortgage.cpp
     src/synth/products/terms/student_loan.cpp
     src/synth/products/terms/tax.cpp
+)
+
+# unknown-counterparty-2026-09: the check-payee banks, P2P platforms and
+# funeral homes that replaced the external-unknown catch-all, with the cited
+# FDIC SOD share table they draw from.
+set(PL_SYNTH_COUNTERPARTIES_SOURCES
+    src/synth/counterparties/remote_payees.cpp
 )
 
 set(PL_SYNTH_INFRA_SOURCES
@@ -333,6 +341,7 @@ set(PL_ALL_SOURCES
     ${PL_SYNTH_GEO_SOURCES}
     ${PL_SYNTH_ECON_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
+    ${PL_SYNTH_COUNTERPARTIES_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
     ${PL_ACTIVITY_SPENDING_SOURCES}
@@ -497,6 +506,7 @@ pl_add_job_library(pl_world
     ${PL_SYNTH_GEO_SOURCES}
     ${PL_SYNTH_ECON_SOURCES}
     ${PL_SYNTH_PRODUCTS_SOURCES}
+    ${PL_SYNTH_COUNTERPARTIES_SOURCES}
     ${PL_SYNTH_INFRA_SOURCES}
     ${PL_RELATIONSHIPS_SOURCES}
 )

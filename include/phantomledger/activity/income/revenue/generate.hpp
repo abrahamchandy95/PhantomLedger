@@ -111,7 +111,7 @@ private:
           plan.person, monthEpoch);
       const auto endpoint =
           ::PhantomLedger::counterparties::cash::depositoryFor(
-              local, plan.accounts.revenueDst);
+              local.span(), plan.accounts.revenueDst);
       cashSource = entity::valid(endpoint) ? std::optional{endpoint}
                                            : std::nullopt;
     }

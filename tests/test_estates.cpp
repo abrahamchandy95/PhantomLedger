@@ -18,7 +18,9 @@
 //   * FUNERALS — every decedent whose funeral window fits inside the
 //     run has EXACTLY ONE bill-channel payment from their account in
 //     [death+3d, death+11d], amount >= the floor; the family pass
-//     emits no other bill rows.
+//     emits no other bill rows. The payee is the registered funeral home
+//     of the decedent's city at the death date (unknown-counterparty-
+//     2026-09), and no home takes half the funerals.
 //   * DEAD-PARTY FILTER — no gift row (any non-estate, non-funeral
 //     channel) has a party whose owner is dead at its timestamp.
 //   * EXISTENCE — the world carries in-window deaths, >=1 funeral,
@@ -28,6 +30,8 @@
 #include "phantomledger/relationships/family/links.hpp"
 #include "phantomledger/relationships/family/partition.hpp"
 #include "phantomledger/relationships/family/support.hpp"
+#include "phantomledger/entities/counterparties/remote_payees.hpp"
+#include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transfers/legit/routines/family/inheritance.hpp"
@@ -35,6 +39,7 @@
 
 #include "gate_world.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <string>
 #include <unordered_map>
@@ -178,6 +183,8 @@ int main() {
   std::size_t deadPartyViolations = 0;
   std::unordered_map<pl::entity::Key, std::size_t, std::hash<pl::entity::Key>>
       funeralsByAccount;
+  std::unordered_map<pl::entity::Key, std::size_t, std::hash<pl::entity::Key>>
+      funeralHomes;
 
   for (const auto &t : txns) {
     if (t.session.channel.value == inheritTag.value) {
@@ -207,6 +214,21 @@ int main() {
         check(t.amount >= 500.0,
               "the funeral amount is substantive (" +
                   std::to_string(t.amount) + ")");
+        // unknown-counterparty-2026-09: the funeral pays a funeral home in
+        // the decedent's city at the death date, never the retired
+        // catch-all (which paid every funeral before the round).
+        const auto owner = ownerOf.at(t.source);
+        const auto area = pl::synth::counterparties::remote::homeAreaAt(
+            world.people.homeAreas, &world.people.relocation, owner,
+            it->second.deathEpoch);
+        check(t.target == pl::synth::counterparties::remote::funeralHomeFor(
+                              area, owner),
+              "the funeral pays the funeral home of the decedent's city");
+        check(pl::counterparties::remote::funeralHomeArea(t.target) == area,
+              "the funeral home sits in the decedent's area at death");
+        check(world.holdings.accounts.lookup.byId.contains(t.target),
+              "the funeral home is a registered account");
+        ++funeralHomes[t.target];
         ++funeralsByAccount[t.source];
       }
       continue;
@@ -224,6 +246,16 @@ int main() {
     check(count == 1, "exactly one funeral per decedent (got " +
                           std::to_string(count) + ")");
   }
+  // No global funeral payee: with a few dozen funerals spread over the
+  // funeral homes of the decedents' cities, no home takes most of them.
+  std::size_t busiestHome = 0;
+  for (const auto &[home, count] : funeralHomes) {
+    busiestHome = std::max(busiestHome, count);
+  }
+  check(funeralRows < 4 || 2 * busiestHome < funeralRows,
+        "no funeral home takes half the funerals (busiest " +
+            std::to_string(busiestHome) + " of " +
+            std::to_string(funeralRows) + ")");
 
   std::printf("[diag] funerals %zu (eligible %zu), estate rows %zu, gift "
               "rows %zu, dead-party violations %zu\n",

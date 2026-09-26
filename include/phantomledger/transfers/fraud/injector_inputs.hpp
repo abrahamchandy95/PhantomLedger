@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -44,6 +45,12 @@ struct InjectorServices {
   const infra::AttackerInfra *attackers = nullptr;
 
   std::uint64_t fraudSeed = 0;
+
+  // The run seed legitimate generation keys its lanes on, which every site
+  // also derives fraudSeed from. Read only to derive a camouflage salary
+  // employer's own pay schedule (counterparty-sizes-2026-09), so a mule's
+  // salary lands on the dates that employer pays its legitimate payees.
+  std::uint64_t payrollSeed = 0;
 };
 
 struct InjectorRingView {
@@ -65,7 +72,10 @@ struct InjectorAccountView {
 
 struct InjectorLegitCounterparties {
   std::span<const entity::Key> billerAccounts{};
-  std::span<const entity::Key> employers{};
+  // Borrowed with its size law (counterparty-sizes-2026-09), so camouflage
+  // salary draws its employer from the law legitimate payroll uses. Null
+  // means no employers, and camouflage salary stands down.
+  const entity::counterparty::SizedKeys *employers = nullptr;
 
   /* THE MERCHANT ACCEPTANCE POPULATION and the geographic axis that selects
    * within it (docs/card_fraud_v2_roadmap.md, gate 1 of

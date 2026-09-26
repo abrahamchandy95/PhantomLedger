@@ -48,12 +48,16 @@
 // silently describe a population production does not generate.
 //
 
+#include "phantomledger/activity/spending/market/bootstrap.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/merchants/names.hpp"
+#include "phantomledger/taxonomies/merchants/types.hpp"
 
 #include "window_leg_support.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <iterator>
 #include <limits>
@@ -72,6 +76,23 @@ namespace {
 
 constexpr std::uint64_t kSeed = 1234567;
 constexpr std::int32_t kPopulation = 300;
+
+// outlets-frequency-2026-09. MEASURED over the four seeds below: this build
+// 0.0090 / 0 / 0 / 0 (mean 0.0023); the disarm (no outlets, legacy frequency),
+// whole fraud-only share, 0.0143 / 0 / 0 / 0 (mean 0.0036); before venue reuse
+// 0.0079 at the main seed; the audit's original defect about 1.0. The ceiling
+// is the design's 0.01, four times the armed mean.
+constexpr double kMaxMeanFraudOnlyPhysicalShare = 0.01;
+
+// outlets-frequency-2026-09, the fraud/legit category gate below. MEASURED,
+// pooled over its four seeds (pop 2,000, 2019, 365 days): shipped 1.018
+// (per seed 0.781 / 1.155 / 0.940 / 1.207); DISARM, the fraud pool without
+// `kCategoryVisitLift`, 1.617; the legacy frequency law with the factor,
+// 0.491; outlets alone (no category law anywhere) 0.791; the pre-round world
+// 0.737. The band sits about three pooled standard errors either side of the
+// shipped value and excludes both disarms.
+constexpr double kMinBillerFraudLift = 0.60;
+constexpr double kMaxBillerFraudLift = 1.30;
 
 struct Counts {
   std::size_t fraud = 0;
@@ -95,6 +116,114 @@ void check(bool cond, const std::string &what) {
   return t.session.channel.value ==
          channels::tag(channels::Legit::cardPurchase).value;
 }
+
+// Fraud card rows landing on a merchant with no legitimate card row, over all
+// fraud card rows, split by whether that merchant is a PHYSICAL catalogue
+// record (an outlet or an independent storefront) or anything else (online
+// records).
+struct FraudOnly {
+  double physical = 0.0;
+  double other = 0.0;
+};
+
+[[nodiscard]] FraudOnly fraudOnlyRowShareOf(const LegResult &leg) {
+  std::map<pl::entity::Key, bool> physicalKey;
+  for (const auto &rec : leg.merchants.records) {
+    physicalKey.emplace(rec.counterpartyId,
+                        rec.footprint !=
+                            pl::entity::merchant::Footprint::online);
+  }
+  std::map<pl::entity::Key, Counts> byMerchant;
+  std::size_t fraudRows = 0;
+  for (const auto &t : leg.rows) {
+    if (!isCardRail(t)) {
+      continue;
+    }
+    auto &cell = byMerchant[t.target];
+    if (t.fraud.flag == 1) {
+      ++cell.fraud;
+      ++fraudRows;
+    } else {
+      ++cell.legit;
+    }
+  }
+  std::size_t physical = 0;
+  std::size_t other = 0;
+  for (const auto &[key, cell] : byMerchant) {
+    if (cell.legit != 0) {
+      continue;
+    }
+    const auto it = physicalKey.find(key);
+    (it != physicalKey.end() && it->second ? physical : other) += cell.fraud;
+  }
+  if (fraudRows == 0) {
+    return {};
+  }
+  const double n = static_cast<double>(fraudRows);
+  return {static_cast<double>(physical) / n, static_cast<double>(other) / n};
+}
+
+// Card rows by merchant category, fraud and legitimate, pooled over legs.
+struct CategoryMix {
+  std::array<double, pl::merchants::kCategoryCount> fraud{};
+  std::array<double, pl::merchants::kCategoryCount> legit{};
+  double fraudRows = 0.0;
+  double legitRows = 0.0;
+
+  void add(const LegResult &leg) {
+    std::map<pl::entity::Key, std::size_t> categoryOf;
+    for (const auto &rec : leg.merchants.records) {
+      categoryOf.emplace(rec.counterpartyId,
+                         static_cast<std::size_t>(rec.category));
+    }
+    for (const auto &t : leg.rows) {
+      const auto it = categoryOf.find(t.target);
+      if (!isCardRail(t) || it == categoryOf.end()) {
+        continue;
+      }
+      if (t.fraud.flag == 1) {
+        fraud[it->second] += 1.0;
+        fraudRows += 1.0;
+      } else {
+        legit[it->second] += 1.0;
+        legitRows += 1.0;
+      }
+    }
+  }
+
+  // Fraud share over legitimate share: 1 when category carries no label.
+  [[nodiscard]] double lift(std::size_t c) const {
+    return legit[c] > 0.0 ? (fraud[c] / fraudRows) / (legit[c] / legitRows)
+                          : 0.0;
+  }
+
+  [[nodiscard]] double billerLift() const {
+    double f = 0.0;
+    double l = 0.0;
+    for (const auto c : pl::activity::spending::market::kBillerCategories) {
+      f += fraud[static_cast<std::size_t>(c)];
+      l += legit[static_cast<std::size_t>(c)];
+    }
+    return l > 0.0 && fraudRows > 0.0 ? (f / fraudRows) / (l / legitRows) : 0.0;
+  }
+
+  // AUC of a score that knows only the merchant category (its in-sample
+  // fraud rate), so 0.5 means category alone separates nothing.
+  [[nodiscard]] double categoryAuc() const {
+    const auto rate = [&](std::size_t c) {
+      const double n = fraud[c] + legit[c];
+      return n > 0.0 ? fraud[c] / n : 0.0;
+    };
+    double auc = 0.0;
+    for (std::size_t i = 0; i < fraud.size(); ++i) {
+      for (std::size_t j = 0; j < legit.size(); ++j) {
+        const double w = (fraud[i] / fraudRows) * (legit[j] / legitRows);
+        auc += rate(i) > rate(j) ? w : rate(i) == rate(j) ? 0.5 * w : 0.0;
+      }
+    }
+    return auc;
+  }
+};
 
 } // namespace
 
@@ -388,6 +517,116 @@ int main() {
   std::printf("  POWER: %zu co-victim pairs — %s\n", coPairs,
               coPairs >= 25 ? "bandable"
                             : "UNDER-POWERED, lift is printed only");
+
+  // ===================================================================
+  // outlets-frequency-2026-09: FRAUD-ONLY PHYSICAL MERCHANTS, NOW BOUNDED.
+  //
+  // Chain outlets add low-traffic physical endpoints near victims, and
+  // card-present fraud weights them exactly as legitimate exploration does,
+  // which is the mechanism that could manufacture storefronts only fraud
+  // ever pays. So the PHYSICAL share is bounded as a MEAN over four seeds
+  // (one leg's reading moves in steps of one merchant's rows: 2 of 222 is
+  // 0.0090).
+  //
+  // The rest (online records) is PRINTED and registered, not bounded here:
+  // it is a separate, pre-existing mechanism. At 1991 the legitimate CNP
+  // share is 0.010, so an online record born inside the window can collect
+  // card-not-present fraud before any legitimate cardholder favours it.
+  // Seed 7777777 does exactly that on this build (28 of 238 fraud rows on
+  // three online churn births, none an outlet; 32 before the fraud pool
+  // carried the category law), because the larger base catalogue re-keys the
+  // churn cohort. See the audit row.
+  // ===================================================================
+  {
+    const std::uint64_t seeds[] = {kSeed, 99887766, 424242, 7777777};
+    double physicalSum = 0.0;
+    double otherSum = 0.0;
+    std::printf("  fraud-only row share by seed (physical / online):");
+    for (const auto seed : seeds) {
+      FraudOnly share{};
+      if (seed == kSeed) {
+        share = fraudOnlyRowShareOf(leg);
+      } else {
+        LegOptions extra = opt;
+        extra.seed = seed;
+        share = fraudOnlyRowShareOf(
+            pltest::runLeg(pltest::buildPoolSet(seed), extra));
+      }
+      std::printf("  %llu %.4f / %.4f", static_cast<unsigned long long>(seed),
+                  share.physical, share.other);
+      physicalSum += share.physical;
+      otherSum += share.other;
+    }
+    const double physicalMean = physicalSum / 4.0;
+    std::printf("\n  FRAUD-ONLY PHYSICAL ROW SHARE, 4-seed mean %.4f (ceiling "
+                "%.3f); online part %.4f (PRINTED, registered)\n",
+                physicalMean, kMaxMeanFraudOnlyPhysicalShare, otherSum / 4.0);
+    check(physicalMean <= kMaxMeanFraudOnlyPhysicalShare,
+          "the 4-seed mean share of fraud card rows on physical merchants no "
+          "legitimate card pays is " +
+              std::to_string(physicalMean) + ", above " +
+              std::to_string(kMaxMeanFraudOnlyPhysicalShare));
+  }
+
+  // ===================================================================
+  // outlets-frequency-2026-09: MERCHANT CATEGORY MUST NOT BECOME A LABEL.
+  //
+  // The favourite pick made legitimate card visits category-dependent
+  // (grocery and restaurants about twice their favourite share, the four
+  // biller categories under half), while the fraud venue pool draws from the
+  // catalogue by weight. Blind to category, it kept the old mix, so the
+  // biller categories went from under-represented in fraud to
+  // over-represented: card-present fraud at an insurer, which is not a known
+  // pattern, and a category-only score that separates better. The pool now
+  // carries `kCategoryVisitLift`; this reads the consequence on the corpus,
+  // as the pooled fraud/legit lift of the biller categories over four seeds
+  // at a leg with both modalities in play (2019, dated CNP share 0.271). One
+  // seed's fraud rows are a few hundred cases with three venues each, so a
+  // single leg moves by 0.2 either way; the band is on the pooled value.
+  // Per-category lifts and the category-only AUC are printed.
+  // ===================================================================
+  {
+    const std::uint64_t seeds[] = {kSeed, 99887766, 424242, 7777777};
+    CategoryMix pooled;
+    std::printf("  fraud/legit biller lift by seed (pop 2000, 2019, 365d):");
+    for (const auto seed : seeds) {
+      LegOptions leg2019 = opt;
+      leg2019.seed = seed;
+      leg2019.population = 2000;
+      leg2019.window.start =
+          pl::time::makeTime(pl::time::CalendarDate{2019, 1, 1});
+      leg2019.window.days = 365;
+      CategoryMix one;
+      one.add(pltest::runLeg(pltest::buildPoolSet(seed), leg2019));
+      std::printf("  %.3f", one.billerLift());
+      for (std::size_t c = 0; c < pl::merchants::kCategoryCount; ++c) {
+        pooled.fraud[c] += one.fraud[c];
+        pooled.legit[c] += one.legit[c];
+      }
+      pooled.fraudRows += one.fraudRows;
+      pooled.legitRows += one.legitRows;
+    }
+    std::printf("\n  per-category lift, pooled (%.0f fraud rows):",
+                pooled.fraudRows);
+    for (const auto c : pl::merchants::kCategories) {
+      const auto label = pl::merchants::name(c);
+      std::printf(" %.*s %.2f", static_cast<int>(label.size()), label.data(),
+                  pooled.lift(static_cast<std::size_t>(c)));
+    }
+    const double billerLift = pooled.billerLift();
+    std::printf("\n  BILLER-CATEGORY FRAUD LIFT, pooled %.3f (band [%.2f, "
+                "%.2f]); category-only AUC %.3f (PRINTED)\n",
+                billerLift, kMinBillerFraudLift, kMaxBillerFraudLift,
+                pooled.categoryAuc());
+    check(pooled.fraudRows > 0.0 && pooled.legitRows > 0.0,
+          "the 2019 legs must carry fraud and legitimate card rows");
+    check(billerLift >= kMinBillerFraudLift &&
+              billerLift <= kMaxBillerFraudLift,
+          "the biller categories' pooled fraud/legit card-row lift is " +
+              std::to_string(billerLift) +
+              ", outside [0.60, 1.30]: the fraud venue pool and the "
+              "favourite pick no longer carry the same category law");
+  }
 
   if (g_failures != 0) {
     std::fprintf(stderr, "%d check(s) failed\n", g_failures);

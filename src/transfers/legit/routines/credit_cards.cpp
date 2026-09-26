@@ -57,7 +57,6 @@ generateLifecycle(const LifecycleRunRequest &request,
   ::PhantomLedger::transfers::credit_cards::LedgerView view{
       .cards = *request.cards,
       .primaryAccounts = primaryByPerson,
-      .issuerAccount = plan.counterparties().issuerAcct,
   };
 
   const random::RngFactory rngFactory{plan.seed()};

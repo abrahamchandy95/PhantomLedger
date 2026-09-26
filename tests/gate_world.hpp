@@ -271,7 +271,10 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   cps.merchants =
       entityStage::buildMerchants(rng, spec.population, spec.seed, spec.window,
                                   {}, &pl::synth::econ::macroSeries());
-  cps.landlords = entityStage::buildLandlords(rng, spec.population);
+  // counterparty-sizes-2026-09: PRODUCTION PARITY, spec.seed as the run seed
+  // for the landlord type lanes, the buildMerchants convention above.
+  cps.landlords =
+      entityStage::buildLandlords(rng, spec.population, spec.seed);
   cps.counterparties = entityStage::buildCounterparties(
       rng, spec.population, spec.counterpartyTargets, people.homeAreas);
   // H1 step 2b: like production (simulate.cpp), credit-limit stocks
@@ -280,7 +283,7 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   holdings.creditCards = entityStage::issueCreditCards(
       people.personas, people.roster, spec.seed, {},
       pl::time::toCalendarDate(spec.window.start).year);
-  entityStage::finalizeAccountRegistry(holdings, cps, people);
+  entityStage::finalizeAccountRegistry(holdings, cps, people, spec.window);
   entityStage::synthesizeBusinessOwners(holdings, people, rng);
   // merchant-ownership-2026-07: PRODUCTION PARITY. buildEntities() stamps
   // the beneficial-owner register here, so a gate world that skipped it
@@ -451,7 +454,6 @@ inline GateWorld::GateWorld(const pl::synth::pii::PoolSet &poolSet,
   // Mirrors passes.cpp's buildCardLifecycleConfig().
   cardCfg.cards = &holdings.creditCards;
   cardCfg.rules = &pl::transfers::credit_cards::kDefaultLifecycleRules;
-  cardCfg.issuerAccount = plan.counterparties().issuerAcct;
   cardCfg.window = spec.window;
   cardCfg.seed = spec.seed;
   // H3 3c-ii: like production — card servicing stops at account closure.

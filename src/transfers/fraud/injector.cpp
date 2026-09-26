@@ -147,18 +147,22 @@ void requireInjectorPointers(const InjectorRingView &rings,
 makeAccountPools(const entity::account::Registry &registry,
                  const InjectorLegitCounterparties &counterparties) {
   AccountPools pools{
-      .allAccounts = {},
+      .depositAccounts = {},
       .billerAccounts =
           std::vector<entity::Key>(counterparties.billerAccounts.begin(),
                                    counterparties.billerAccounts.end()),
-      .employers = std::vector<entity::Key>(counterparties.employers.begin(),
-                                            counterparties.employers.end()),
+      .employers = counterparties.employers,
   };
 
-  pools.allAccounts.reserve(registry.records.size());
+  pools.depositAccounts.reserve(registry.records.size());
 
+  // Filtering here, rather than re-picking on the per-ring lanes, adds no
+  // draw (see camouflageEligible for what is kept and why).
   for (const auto &record : registry.records) {
-    pools.allAccounts.push_back(record.id);
+    if (!camouflageEligible(record.id)) {
+      continue;
+    }
+    pools.depositAccounts.push_back(record.id);
   }
 
   return pools;
@@ -1040,6 +1044,17 @@ buildCompromisePlans(
 
 } // namespace
 
+// The camouflage P2P pool is the customer deposit accounts, the only
+// destination a legitimate P2P row pays (bank-gl-2026-09, restricted at
+// review). The role is internal only and every such record is person-owned.
+// Anything else would hand the detector a destination only fraud uses. The
+// exclusion list this replaced (lenders, insurers, check-payee banks, P2P
+// platforms, funeral homes, the bank's income GLs) still admitted other
+// people's credit-card accounts, which took most cover transfers.
+bool camouflageEligible(entity::Key account) noexcept {
+  return account.role == entity::Role::account;
+}
+
 Injector::Injector(InjectorServices services, InjectorRingView rings,
                    InjectorAccountView accounts,
                    const Behavior &behavior) noexcept
@@ -1090,10 +1105,14 @@ Injector::inject(time::Window window, std::size_t realizedBaseCount,
 
   AccountPools pools = makeAccountPools(*accounts_.registry, counterparties);
 
+  // Draw-free: only the per-employer schedule lanes are derived from it.
+  const random::RngFactory payrollFactory{services_.payrollSeed};
+
   CamouflageContext camouflageCtx{
       .execution = execution,
       .window = window,
       .accounts = &pools,
+      .payrollFactory = &payrollFactory,
   };
 
   IllicitContext illicitCtx{

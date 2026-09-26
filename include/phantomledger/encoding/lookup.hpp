@@ -67,6 +67,8 @@ inline constexpr auto kIdentityLayoutEntries =
         {Role::brokerage, Bank::external, kBrokerageExternal},
 
         {Role::card, Bank::internal, kCardLiability},
+
+        {Role::ledger, Bank::internal, kGeneralLedger},
     });
 
 [[nodiscard]] consteval bool entriesAreValid() {

@@ -13,12 +13,17 @@
   population-scaled processor/business pools, whose serials start at one.
 */
 
+#include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 namespace PhantomLedger::counterparties::cash {
 
@@ -28,7 +33,6 @@ inline constexpr std::uint64_t kCheckCaptureBaseSerial = 4'000'000'000ULL;
 inline constexpr std::uint64_t kCryptoVenueBaseSerial = 4'000'000'000ULL;
 inline constexpr std::uint64_t kBillerBaseSerial = 2'000'000'000ULL;
 
-inline constexpr std::uint64_t kIssuerSerial = 3'000'000'001ULL;
 inline constexpr std::uint64_t kFallbackEmployerSerial = 2'000'000'001ULL;
 inline constexpr std::uint64_t kFallbackLandlordSerial = 2'000'000'001ULL;
 
@@ -62,11 +66,6 @@ biller(std::uint64_t oneBasedOrdinal) noexcept {
                          kBillerBaseSerial + oneBasedOrdinal);
 }
 
-[[nodiscard]] constexpr entity::Key cardIssuer() noexcept {
-  return entity::makeKey(entity::Role::business, entity::Bank::external,
-                         kIssuerSerial);
-}
-
 [[nodiscard]] constexpr entity::Key fallbackEmployer() noexcept {
   return entity::makeKey(entity::Role::employer, entity::Bank::external,
                          kFallbackEmployerSerial);
@@ -89,8 +88,6 @@ namespace detail {
 inline constexpr std::uint64_t kHomeTerminalDomain = 0x4154'4D48'4F4D'4501ULL;
 inline constexpr std::uint64_t kVisitTerminalDomain = 0x4154'4D56'4953'4954ULL;
 inline constexpr std::uint64_t kDepositoryDomain = 0x4341'5348'494E'0001ULL;
-inline constexpr std::uint64_t kCheckCaptureDomain = 0x4348'4543'4B49'4E01ULL;
-inline constexpr std::uint64_t kCryptoVenueDomain = 0x4352'5950'544F'0001ULL;
 
 [[nodiscard]] constexpr std::uint64_t accountWord(entity::Key account) {
   return splitmix(account.number) ^
@@ -99,6 +96,118 @@ inline constexpr std::uint64_t kCryptoVenueDomain = 0x4352'5950'544F'0001ULL;
 }
 
 } // namespace detail
+
+/* A person's local choice set holds at most this many service points. */
+inline constexpr std::size_t kNearbyCount = 4;
+
+/* One domain per rail, so a person's ATM, cash-deposit and check-capture
+ * windows are independent. The depository and check pools have identical
+ * counts and placement, so a shared domain would give every person the same
+ * ordinals on both. */
+inline constexpr std::uint64_t kWithdrawalSetDomain = 0x4154'4D53'4554'0001ULL;
+inline constexpr std::uint64_t kDepositSetDomain = 0x4445'5053'4554'0001ULL;
+inline constexpr std::uint64_t kCheckSetDomain = 0x4348'4B53'4554'0001ULL;
+
+/* The nearest kNearbyCount points of one area, split at the distance cut.
+ * `fixed` holds every point of the distance groups that fit wholly inside the
+ * cut; `boundary` holds the one group that straddles it, in ascending pool
+ * index, and each person takes `need` of its points. Residents sit at the
+ * area centroid, so every point of their own area ties at distance zero: the
+ * boundary is usually the area's own points. */
+struct NearbyTiers {
+  std::vector<entity::Key> fixed;
+  std::vector<entity::Key> boundary;
+  std::uint8_t need = 0;
+};
+
+/* One person's local choice set, owned by value. Only an lvalue hands out a
+ * span, so no span to a temporary can escape. It is deliberately not a range:
+ * std::span<const Key> converts implicitly from any contiguous range,
+ * temporaries included, which would reopen that hole. */
+class LocalPoints {
+public:
+  [[nodiscard]] std::span<const entity::Key> span() const & noexcept {
+    return {keys_.data(), count_};
+  }
+  std::span<const entity::Key> span() const && = delete;
+
+  [[nodiscard]] std::size_t size() const noexcept { return count_; }
+  [[nodiscard]] bool empty() const noexcept { return count_ == 0U; }
+
+  void push(entity::Key key) noexcept {
+    if (count_ < keys_.size()) {
+      keys_[count_++] = key;
+    }
+  }
+
+private:
+  std::array<entity::Key, kNearbyCount> keys_{};
+  std::size_t count_ = 0;
+};
+
+/*
+  Draw-free per-person nearest-point selection. Every person's set is still
+  their area's nearest kNearbyCount points: groups nearer than the cut are
+  kept whole, and only the tie at the cut is broken. It is broken by a window
+  of consecutive boundary points starting at a (person, area, rail) hash, not
+  by pool index, which gave every resident of a city the same lowest-numbered
+  points. The set follows the person's event-time area, and nothing is stored
+  per person.
+*/
+class NearbyIndex {
+public:
+  NearbyIndex() = default;
+  explicit NearbyIndex(std::uint64_t domain) noexcept : domain_{domain} {}
+
+  void assign(entity::geography::GeoAreaId area, NearbyTiers tiers) {
+    areas_.insert_or_assign(area, std::move(tiers));
+  }
+
+  /* An area missing from the index uses the fallback pool: a pool of at most
+   * kNearbyCount points is returned whole and in order, and a larger one is
+   * treated as a single tie group. */
+  [[nodiscard]] LocalPoints
+  select(entity::geography::GeoAreaId area, entity::PersonId person,
+         std::span<const entity::Key> fallback) const noexcept {
+    LocalPoints out;
+    if (const auto it = areas_.find(area); it != areas_.end()) {
+      for (const auto key : it->second.fixed) {
+        out.push(key);
+      }
+      appendWindow(out, it->second.boundary, it->second.need, area, person);
+      return out;
+    }
+    if (fallback.size() <= kNearbyCount) {
+      for (const auto key : fallback) {
+        out.push(key);
+      }
+      return out;
+    }
+    appendWindow(out, fallback, kNearbyCount, area, person);
+    return out;
+  }
+
+private:
+  void appendWindow(LocalPoints &out, std::span<const entity::Key> group,
+                    std::size_t need, entity::geography::GeoAreaId area,
+                    entity::PersonId person) const noexcept {
+    if (group.empty()) {
+      return;
+    }
+    const auto start = static_cast<std::size_t>(
+        detail::splitmix(
+            detail::splitmix(static_cast<std::uint64_t>(person) ^ domain_) ^
+            static_cast<std::uint64_t>(area)) %
+        group.size());
+    const auto take = std::min(need, group.size());
+    for (std::size_t k = 0; k < take; ++k) {
+      out.push(group[(start + k) % group.size()]);
+    }
+  }
+
+  std::unordered_map<entity::geography::GeoAreaId, NearbyTiers> areas_;
+  std::uint64_t domain_ = 0;
+};
 
 /*
   Draw-free terminal selection.  A customer has a stable primary terminal;
@@ -145,30 +254,6 @@ depositoryFor(std::span<const entity::Key> depositories,
   const auto mixed = detail::splitmix(detail::accountWord(account) ^
                                       detail::kDepositoryDomain);
   return depositories[static_cast<std::size_t>(mixed % depositories.size())];
-}
-
-/* A customer keeps stable check-capture and crypto-service relationships.
- * These select an observed service context, not a balance-bearing account. */
-[[nodiscard]] inline entity::Key
-checkCaptureFor(std::span<const entity::Key> captures,
-                entity::Key account) noexcept {
-  if (captures.empty()) {
-    return {};
-  }
-  const auto mixed = detail::splitmix(detail::accountWord(account) ^
-                                      detail::kCheckCaptureDomain);
-  return captures[static_cast<std::size_t>(mixed % captures.size())];
-}
-
-[[nodiscard]] inline entity::Key
-cryptoVenueFor(std::span<const entity::Key> venues,
-               entity::Key account) noexcept {
-  if (venues.empty()) {
-    return {};
-  }
-  const auto mixed = detail::splitmix(detail::accountWord(account) ^
-                                      detail::kCryptoVenueDomain);
-  return venues[static_cast<std::size_t>(mixed % venues.size())];
 }
 
 } // namespace PhantomLedger::counterparties::cash

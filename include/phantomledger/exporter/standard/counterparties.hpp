@@ -5,6 +5,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/counterparties/remote_payees.hpp"
 #include "phantomledger/exporter/csv.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
@@ -164,6 +165,15 @@ inline void writeExternalAccountRows(
       if (it != merchantsById.end()) {
         const auto category = ::PhantomLedger::merchants::name(it->second);
         w.writeRow(view, std::string_view{"merchant_external"}, category);
+        continue;
+      }
+
+      // A funeral home (MCC 7261, unknown-counterparty-2026-09) is a merchant
+      // with no catalogue record; without this it would print as an unknown
+      // external account.
+      if (::PhantomLedger::counterparties::remote::isFuneralHome(id)) {
+        w.writeRow(view, std::string_view{"merchant_external"},
+                   std::string_view{"funeral_services"});
         continue;
       }
     }

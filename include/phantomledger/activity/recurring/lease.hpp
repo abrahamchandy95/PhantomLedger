@@ -11,7 +11,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -80,14 +79,14 @@ struct LeaseRules {
 struct LeaseInitInput {
   std::string_view payerKey;
   time::TimePoint startDate;
-  std::span<const entity::Key> landlords;
+  const entity::counterparty::SizedKeys *landlords = nullptr;
   RentSource rentSource;
 };
 
 struct LeaseAdvanceInput {
   std::string_view payerKey;
   time::TimePoint now;
-  std::span<const entity::Key> landlords;
+  const entity::counterparty::SizedKeys *landlords = nullptr;
   const Lease &previous;
   RentSource resetRentSource;
 };
@@ -103,6 +102,12 @@ namespace internal {
 inline void requireKey(std::string_view key, std::string_view field) {
   if (key.empty()) {
     throw std::invalid_argument(std::string(field) + " is required");
+  }
+}
+
+inline void requireLandlords(const entity::counterparty::SizedKeys *pool) {
+  if (pool == nullptr) {
+    throw std::invalid_argument("landlords is required");
   }
 }
 
@@ -147,7 +152,9 @@ inline void requireRentAmount(double amount, std::string_view field) {
 
   auto initRng = factory.rng({"lease_init", input.payerKey});
 
-  const auto landlord = growth::pickOne(initRng, input.landlords);
+  internal::requireLandlords(input.landlords);
+  // The first draw on the lane, as the uniform pick it replaced was.
+  const auto landlord = growth::pickSized(initRng, *input.landlords);
 
   const auto interval =
       growth::sampleBackdatedInterval(initRng, input.startDate, rules.tenure);
@@ -176,8 +183,9 @@ inline void requireRentAmount(double amount, std::string_view field) {
   primitives::validate::require(input.previous);
   internal::requireKey(input.payerKey, "payerKey");
 
-  const auto landlord =
-      growth::pickDifferent(rng, input.landlords, input.previous.landlordAcct);
+  internal::requireLandlords(input.landlords);
+  const auto landlord = growth::pickSizedDifferent(
+      rng, *input.landlords, input.previous.landlordAcct);
 
   const auto interval =
       growth::sampleForwardInterval(rng, input.now, rules.tenure);

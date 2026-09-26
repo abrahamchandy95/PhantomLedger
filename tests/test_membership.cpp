@@ -563,7 +563,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
       for (int i = 0; i < 6; ++i) {
         Txn t{};
         t.source = rec.key;
-        t.target = world.plan.counterparties().issuerAcct;
+        t.target = world.cps.merchants.records.front().counterpartyId;
         t.amount = 150.0 + 10.0 * i;
         t.timestamp = startEpoch + (30LL + 3 * i) * 86'400 + 12 * 3'600;
         t.session.channel = purchaseTag;
@@ -575,7 +575,6 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
       pl::transfers::credit_cards::DriverInputs inputs{
           .cards = &world.holdings.creditCards,
           .primaryAccounts = &world.cardCfg.primaryAccounts,
-          .issuerAccount = world.cardCfg.issuerAccount,
           .window = spec.window,
           .timelines = timelines,
       };
@@ -632,6 +631,7 @@ void partC_worldGates(const pl::synth::pii::PoolSet &pools) {
             .ringInfra = &world.infra.ringInfra,
             .attackers = &world.infra.attackers,
             .fraudSeed = kSeed ^ 0x9E3779B97F4A7C15ULL,
+            .payrollSeed = kSeed,
         },
         fraudEmission.ringView(world.people.roster.topology,
                                world.people.personas.timelines),

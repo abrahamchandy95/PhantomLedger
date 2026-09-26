@@ -59,6 +59,18 @@ namespace detail {
 
 } // namespace detail
 
+// The core (chain-capable) record count for `population`. Arithmetic only:
+// `makeCatalog` sizes its core from it, and `expandOutlets` reads it because a
+// Record carries no tier and `serial <= coreCountFor(...)` is what identifies
+// a core record.
+[[nodiscard]] inline int coreCountFor(int population,
+                                      const GenerationPlan &plan) {
+  return std::max(plan.core.coreFloor,
+                  static_cast<int>(std::round(
+                      plan.core.corePerTenK *
+                      (static_cast<double>(population) / 10000.0))));
+}
+
 // SIZING IS POPULATION-ONLY AND ITS DRAW COUNT IS LOAD-BEARING.
 //
 // merchant-churn-2026-07 first tried to add churn headroom HERE, scaling
@@ -79,11 +91,7 @@ namespace detail {
 // to the lifecycle mechanism instead of desynchronising the world.
 [[nodiscard]] inline entity::merchant::Catalog
 makeCatalog(random::Rng &rng, int population, const GenerationPlan &plan = {}) {
-  const int coreCount =
-      std::max(plan.core.coreFloor,
-               static_cast<int>(
-                   std::round(plan.core.corePerTenK *
-                              (static_cast<double>(population) / 10000.0))));
+  const int coreCount = coreCountFor(population, plan);
 
   const int tailCount = std::max(
       0, static_cast<int>(std::round(

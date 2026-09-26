@@ -412,11 +412,16 @@ Market buildMarket(MarketSources sources, PayeeSelectionRules payees,
                         : 0));
     favOffsets.push_back(static_cast<std::uint32_t>(favFlat.size()));
 
+    /* Own lane (outlets-frequency-2026-09): the favourite pick above retries
+     * on duplicates, so its draw count depends on the catalogue. Drawn after
+     * it on "payees", the biller set moved whenever merchants did, for no
+     * biller reason. This pick retries too, and is last on its lane. */
+    auto billerRng = makeLaneRng(factory, "payee-billers", i);
     const std::uint16_t billK = static_cast<std::uint16_t>(
-        rng.uniformInt(payees.billerMin, payees.billerMax + 1));
+        billerRng.uniformInt(payees.billerMin, payees.billerMax + 1));
 
     rowScratch.clear();
-    picker.pick(rng,
+    picker.pick(billerRng,
                 startLiveBillerCdf.empty() ? billerCdf : startLiveBillerCdf,
                 billK, rowScratch);
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/transactions/record.hpp"
@@ -11,6 +12,11 @@
 #include <span>
 
 namespace PhantomLedger::transfers::fraud {
+
+// Whether a registry account may be the destination of a ring's camouflage
+// P2P cover transfer. The injector builds its camouflage pool with exactly
+// this predicate, so a gate can test the pool without a world.
+[[nodiscard]] bool camouflageEligible(entity::Key account) noexcept;
 
 class Injector {
 public:

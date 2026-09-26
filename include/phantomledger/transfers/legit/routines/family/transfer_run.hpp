@@ -3,12 +3,15 @@
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/geography/area.hpp"
+#include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/relationships/family/network.hpp"
+#include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
 #include "phantomledger/taxonomies/merchants/types.hpp"
@@ -235,6 +238,33 @@ private:
   const entity::merchant::Catalog *catalog_ = nullptr;
 };
 
+/* WHERE a decedent's funeral is paid (unknown-counterparty-2026-09): a
+ * funeral home in the city they lived in on the day they died, resolved from
+ * the same home carriers the cash-point rails read. A view without carriers
+ * (a hand-built harness with no geography) resolves area 0, which holds one
+ * home; the entity-stage registration resolves the same way, so the row is
+ * still registered. Production always binds both carriers. */
+class FuneralHomes {
+public:
+  FuneralHomes() = default;
+
+  FuneralHomes(std::span<const entity::geography::GeoAreaId> homeAreas,
+               const entity::parties::relocation::Schedule *relocation) noexcept
+      : homeAreas_(homeAreas), relocation_(relocation) {}
+
+  [[nodiscard]] entity::Key payeeFor(entity::PersonId decedent,
+                                     std::int64_t deathEpoch) const {
+    namespace remote = ::PhantomLedger::synth::counterparties::remote;
+    return remote::funeralHomeFor(
+        remote::homeAreaAt(homeAreas_, relocation_, decedent, deathEpoch),
+        decedent);
+  }
+
+private:
+  std::span<const entity::geography::GeoAreaId> homeAreas_;
+  const entity::parties::relocation::Schedule *relocation_ = nullptr;
+};
+
 class PostingWindow {
 public:
   PostingWindow() = default;
@@ -318,6 +348,11 @@ public:
     return *this;
   }
 
+  TransferRun &funeralHomes(FuneralHomes value) noexcept {
+    funeralHomes_ = value;
+    return *this;
+  }
+
   [[nodiscard]] bool ready() const noexcept {
     return kinship_.ready() && accounts_.ready() && emission_.ready();
   }
@@ -332,6 +367,10 @@ public:
     return education_;
   }
 
+  [[nodiscard]] const FuneralHomes &funeralHomes() const noexcept {
+    return funeralHomes_;
+  }
+
   [[nodiscard]] const PostingWindow &posting() const noexcept {
     return posting_;
   }
@@ -344,6 +383,7 @@ private:
   KinshipView kinship_{};
   FamilyAccountDirectory accounts_{};
   EducationPayees education_{};
+  FuneralHomes funeralHomes_{};
   PostingWindow posting_{};
   TransferEmission emission_{};
 };

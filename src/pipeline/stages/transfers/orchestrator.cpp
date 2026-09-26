@@ -161,6 +161,9 @@ TransferStage::makeFraudInjector(::PhantomLedger::random::Rng &rng,
            * resolve different sessions for the same case. */
           .attackers = &infra.attackers,
           .fraudSeed = legit_.runScope().seed ^ 0x9E3779B97F4A7C15ULL,
+          /* The seed legitimate payroll's employer schedules derive from,
+           * for camouflage salary. Both engines build their injector here. */
+          .payrollSeed = legit_.runScope().seed,
       },
       /* The timeline carrier gives each ring plan its alive horizon: ring
        * scheduling never recruits the dead. */

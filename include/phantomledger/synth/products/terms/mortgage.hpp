@@ -5,6 +5,7 @@
 #include "phantomledger/entities/products/obligation_stream.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/products/providers.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
 #include <cstdint>
@@ -58,7 +59,7 @@ class MortgageEmitter {
 public:
   MortgageEmitter(::PhantomLedger::random::Rng &rng,
                   ::PhantomLedger::time::Window window,
-                  MortgageTerms terms = {});
+                  const ProviderPicker &providers, MortgageTerms terms = {});
 
   [[nodiscard]] bool
   emit(::PhantomLedger::entity::PersonId person, personaTax::Type persona,
@@ -68,6 +69,7 @@ public:
 private:
   ::PhantomLedger::random::Rng *rng_;
   ::PhantomLedger::time::Window window_;
+  const ProviderPicker *providers_;
   MortgageTerms terms_;
 };
 

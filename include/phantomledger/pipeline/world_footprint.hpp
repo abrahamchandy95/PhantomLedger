@@ -121,8 +121,8 @@ landlordsBytes(const synth::landlords::Pack &pack) noexcept {
   for (const auto &cls : pack.index.byClass) {
     index += vectorBytes(cls);
   }
-  return vectorBytes(pack.roster.records) + index +
-         vectorBytes(pack.internals) + vectorBytes(pack.externals);
+  return vectorBytes(pack.roster.records) + pack.roster.pool.heapBytes() +
+         index + vectorBytes(pack.internals) + vectorBytes(pack.externals);
 }
 
 [[nodiscard]] inline std::size_t
@@ -131,7 +131,8 @@ directoryBytes(const entity::counterparty::Directory &d) noexcept {
     return vectorBytes(s.internal) + vectorBytes(s.external) +
            vectorBytes(s.all);
   };
-  return splitBytes(d.employers.accounts) + splitBytes(d.clients.accounts) +
+  return splitBytes(d.employers.accounts) + d.employers.pool.heapBytes() +
+         splitBytes(d.clients.accounts) +
          vectorBytes(d.external.platforms) +
          vectorBytes(d.external.processors) +
          vectorBytes(d.external.ownerBusinesses) +

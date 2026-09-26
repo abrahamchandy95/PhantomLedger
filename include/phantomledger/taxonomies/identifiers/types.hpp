@@ -18,6 +18,10 @@ enum class Role : std::uint8_t {
   business,
   brokerage,
   card,
+  // A bank-owned general-ledger account (bank-gl-2026-09). Appended last so
+  // every existing role keeps its numeric value and every existing key its
+  // hash.
+  ledger,
 };
 
 inline constexpr auto kRoles = std::to_array<Role>({
@@ -33,6 +37,7 @@ inline constexpr auto kRoles = std::to_array<Role>({
     Role::business,
     Role::brokerage,
     Role::card,
+    Role::ledger,
 });
 
 inline constexpr std::size_t kRoleCount = kRoles.size();

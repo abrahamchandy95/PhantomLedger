@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <array>
 #include <functional>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -221,13 +220,14 @@ public:
     primitives::validate::require(payrollRules_);
   }
 
-  [[nodiscard]] Employment operator()(std::string_view personId,
-                                      time::TimePoint startDate,
-                                      std::span<const entity::Key> employers,
-                                      const SalarySource &salarySource) const {
+  [[nodiscard]] Employment
+  operator()(std::string_view personId, time::TimePoint startDate,
+             const entity::counterparty::SizedKeys &employers,
+             const SalarySource &salarySource) const {
     auto rng = factory_.rng({"employment_init", personId});
 
-    const auto employer = growth::pickOne(rng, employers);
+    // The first draw on the lane, as the uniform pick it replaced was.
+    const auto employer = growth::pickSized(rng, employers);
     const auto payroll =
         samplePayrollProfile(payrollRules_, factory_, employer);
 
@@ -264,15 +264,14 @@ public:
     primitives::validate::require(payrollRules_);
   }
 
-  [[nodiscard]] Employment operator()(random::Rng &rng,
-                                      std::string_view personId,
-                                      time::TimePoint now,
-                                      std::span<const entity::Key> employers,
-                                      const Employment &previous) const {
+  [[nodiscard]] Employment
+  operator()(random::Rng &rng, std::string_view personId, time::TimePoint now,
+             const entity::counterparty::SizedKeys &employers,
+             const Employment &previous) const {
     detail::requireSalaryAmount(previous.annualSalary, "previous.annualSalary");
 
     const auto employer =
-        growth::pickDifferent(rng, employers, previous.employerAcct);
+        growth::pickSizedDifferent(rng, employers, previous.employerAcct);
 
     const auto payroll =
         samplePayrollProfile(payrollRules_, factory_, employer);

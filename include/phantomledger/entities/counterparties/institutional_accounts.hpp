@@ -3,12 +3,17 @@
 // phantomledger/entities/counterparties/institutional_accounts.hpp
 //
 // The institutional account catalog: fixed entity::Key constants for
-// the external counterparties every simulation shares — government
-// benefit payers (SSA/disability), insurance carriers, lenders and the
-// IRS — with enum-keyed constexpr lookup. Lives in entities because it
-// IS entity-key vocabulary (untangling round, 2026-07-19: the former
-// home under taxonomies/ made the lowest vocabulary layer depend on
-// entities above it).
+// the external counterparties every simulation shares (the government
+// benefit payers SSA and disability, and the IRS), with enum-keyed
+// constexpr lookup. Lives in entities because it IS entity-key vocabulary
+// (untangling round, 2026-07-19: the former home under taxonomies/ made
+// the lowest vocabulary layer depend on entities above it).
+//
+// Lenders and insurers are NOT here any more. They were one key per
+// product for the whole population; they are now per-contract provider
+// pools (providers.hpp, institutional-providers-2026-09). The same round
+// gave the external-unknown catch-all its own reserved key below, and
+// unknown-counterparty-2026-09 retired it (remote_payees.hpp).
 //
 
 #include "phantomledger/entities/identifiers.hpp"
@@ -28,7 +33,7 @@ template <class T> using Bare = std::remove_cvref_t<T>;
 
 template <class T>
 concept AccountEnum =
-    enumTax::OneOf<Bare<T>, Government, Insurance, Lending, Tax> &&
+    enumTax::OneOf<Bare<T>, Government, Tax> &&
     enumTax::ByteEnum<Bare<T>>;
 
 namespace detail {
@@ -62,45 +67,56 @@ inline constexpr std::array<::PhantomLedger::entity::Key,
         /* [Government::disability] */ detail::governmentEmployer(9'000'002ULL),
     }};
 
-inline constexpr std::array<::PhantomLedger::entity::Key,
-                            kInsuranceAccountCount>
-    kInsurance{{
-        /* [Insurance::autoCarrier] */ detail::institutional(5),
-        /* [Insurance::homeCarrier] */ detail::institutional(6),
-        /* [Insurance::lifeCarrier] */ detail::institutional(7),
-    }};
-
-inline constexpr std::array<::PhantomLedger::entity::Key, kLendingAccountCount>
-    kLending{{
-        /* [Lending::mortgage] */ detail::institutional(1),
-        /* [Lending::autoLoan] */ detail::institutional(2),
-        /* [Lending::studentServicer] */ detail::institutional(3),
-    }};
-
+// Institutional offsets 1, 2, 3, 5, 6 and 7 are RETIRED and must never be
+// reused. They were the population-wide mortgage (1), auto-loan (2),
+// student-servicer (3), auto-carrier (5), home-carrier (6) and life-carrier
+// (7) keys before institutional-providers-2026-09. An export written before
+// that round still carries them, and a reused offset would make it misread.
 inline constexpr std::array<::PhantomLedger::entity::Key, kTaxAccountCount>
     kTax{{
         /* [Tax::irsTreasury] */ detail::institutional(4),
     }};
 
 static_assert(kGovernment.size() == kGovernmentAccountCount);
-static_assert(kInsurance.size() == kInsuranceAccountCount);
-static_assert(kLending.size() == kLendingAccountCount);
 static_assert(kTax.size() == kTaxAccountCount);
 
 inline constexpr std::array<::PhantomLedger::entity::Key,
-                            kGovernmentAccountCount + kInsuranceAccountCount +
-                                kLendingAccountCount + kTaxAccountCount>
+                            kGovernmentAccountCount + kTaxAccountCount>
     kAll{{
         kGovernment[enumTax::toIndex(Government::ssa)],
         kGovernment[enumTax::toIndex(Government::disability)],
-        kLending[enumTax::toIndex(Lending::mortgage)],
-        kLending[enumTax::toIndex(Lending::autoLoan)],
-        kLending[enumTax::toIndex(Lending::studentServicer)],
         kTax[enumTax::toIndex(Tax::irsTreasury)],
-        kInsurance[enumTax::toIndex(Insurance::autoCarrier)],
-        kInsurance[enumTax::toIndex(Insurance::homeCarrier)],
-        kInsurance[enumTax::toIndex(Insurance::lifeCarrier)],
     }};
+
+// --- The RETIRED external-unknown catch-all ---------------------------
+//
+// Until unknown-counterparty-2026-09 this was the one destination for the
+// spending router's external-unknown slot, for P2P with no usable contact,
+// and for every funeral: 3.8M payments from 62% of deposit accounts on the
+// 200,000-person corpus. Each flow now pays the counterparty a bank records
+// for it (remote_payees.hpp). The key is kept, never registered, so the gates
+// can assert that no row names it, and validateTransactionAccounts throws if
+// one ever does. Never reuse the serial: an export written before the round
+// still carries it.
+//
+// It was makeKey(merchant, external, 1) before institutional-providers-2026-09,
+// which IS catalogue merchant serial 1 whenever that merchant banks externally
+// (merchant-churn-2026-07 rule 6), so that key is retired from this role too.
+inline constexpr std::uint64_t kRetiredExternalUnknownSerial =
+    1'000'000'001ULL;
+
+[[nodiscard]] constexpr ::PhantomLedger::entity::Key
+retiredExternalUnknown() noexcept {
+  return ::PhantomLedger::entity::makeKey(
+      ::PhantomLedger::entity::Role::merchant,
+      ::PhantomLedger::entity::Bank::external, kRetiredExternalUnknownSerial);
+}
+
+static_assert(retiredExternalUnknown() !=
+                  ::PhantomLedger::entity::makeKey(
+                      ::PhantomLedger::entity::Role::merchant,
+                      ::PhantomLedger::entity::Bank::external, 1ULL),
+              "the retired catch-all never shared catalogue merchant 1's key");
 
 // --- Enum-keyed lookup -------------------------------------------------
 
@@ -111,18 +127,6 @@ template <class Enum> struct Tables;
 template <> struct Tables<Government> {
   [[nodiscard]] static constexpr const auto &keys() noexcept {
     return kGovernment;
-  }
-};
-
-template <> struct Tables<Insurance> {
-  [[nodiscard]] static constexpr const auto &keys() noexcept {
-    return kInsurance;
-  }
-};
-
-template <> struct Tables<Lending> {
-  [[nodiscard]] static constexpr const auto &keys() noexcept {
-    return kLending;
   }
 };
 

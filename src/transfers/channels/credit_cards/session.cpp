@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/channels/credit_cards/detail/session.hpp"
 
+#include "phantomledger/entities/holdings/general_ledger.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
 #include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
@@ -164,9 +165,10 @@ void Session::accrueInterest(double averageBalance, Cycle cycle) {
     return;
   }
 
+  // The credit leg is the bank's card interest income GL (bank-gl-2026-09).
   book(transactions::Draft{
       .source = account_.card,
-      .destination = env_.issuerAccount,
+      .destination = entity::gl::account(entity::gl::Income::cardInterest),
       .amount = *interest,
       .timestamp = time::toEpochSeconds(cycle.endExcl + kInterestPostOffset),
       .channel = channels::tag(channels::Credit::interest),
@@ -230,9 +232,10 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl,
   }
   const double roundedFee = primitives::utils::roundMoney(fee);
 
+  // The credit leg is the bank's card fee income GL (bank-gl-2026-09).
   book(transactions::Draft{
       .source = account_.card,
-      .destination = env_.issuerAccount,
+      .destination = entity::gl::account(entity::gl::Income::cardFees),
       .amount = roundedFee,
       .timestamp = time::toEpochSeconds(fallback),
       .channel = channels::tag(channels::Credit::lateFee),

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/infra/attackers.hpp"
@@ -77,15 +78,22 @@ struct Execution {
 
 /* Pre-materialized account pools used by the camouflage layer. */
 struct AccountPools {
-  std::vector<entity::Key> allAccounts;
+  std::vector<entity::Key> depositAccounts;
   std::vector<entity::Key> billerAccounts;
-  std::vector<entity::Key> employers;
+  // Borrowed from InjectorLegitCounterparties for the injection's lifetime.
+  const entity::counterparty::SizedKeys *employers = nullptr;
 };
 
 struct CamouflageContext {
   Execution execution;
   time::Window window;
   const AccountPools *accounts = nullptr;
+
+  // The LEGITIMATE run's factory (InjectorServices::payrollSeed), not the
+  // fraud one: camouflage salary pays on the picked employer's own schedule,
+  // derived from the lane legitimate payroll reads. Null stands camouflage
+  // salary down, as a null employer pool does.
+  const random::RngFactory *payrollFactory = nullptr;
 };
 
 struct IllicitContext {

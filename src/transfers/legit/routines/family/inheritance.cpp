@@ -31,14 +31,6 @@ inline constexpr std::int64_t kEstateDayMaxExcl = 91;
 inline constexpr std::int64_t kPostingHourMin = 10;
 inline constexpr std::int64_t kPostingHourMaxExcl = 16;
 
-// The external service merchant (the same destination the spending
-// router's external_unknown flow uses). A dedicated funeral-home
-// counterparty + channel is a registered upgrade; the funeral rides
-// the `bill` channel (a household service payment).
-[[nodiscard]] entity::Key funeralPayee() noexcept {
-  return entity::makeKey(entity::Role::merchant, entity::Bank::external, 1ULL);
-}
-
 [[nodiscard]] std::span<const entity::PersonId>
 resolveHeirs(entity::PersonId decedent, const TransferRun &run) {
   const auto &direct = run.kinship().childrenOf(decedent);
@@ -86,7 +78,9 @@ public:
       return;
     }
 
-    emitFuneral(*decedentAcct, funeralRaw, funeralTs);
+    emitFuneral(*decedentAcct,
+                run_.funeralHomes().payeeFor(person, deathEpoch), funeralRaw,
+                funeralTs);
     emitEstate(person, *decedentAcct, estateRaw, estateTs);
   }
 
@@ -101,7 +95,13 @@ private:
            ::PhantomLedger::time::secondsInDay(hour, minute);
   }
 
-  void emitFuneral(entity::Key decedentAcct, double raw, std::int64_t ts) {
+  // The payee is a funeral home (MCC 7261) in the decedent's city at the
+  // death date (unknown-counterparty-2026-09; it used to be the global
+  // external-unknown catch-all). Draw-free, so the decedent stream above is
+  // untouched. The funeral still rides the `bill` channel (a household
+  // service payment); a dedicated funeral channel stays a registered upgrade.
+  void emitFuneral(entity::Key decedentAcct, entity::Key funeralHome,
+                   double raw, std::int64_t ts) {
     if (ts >= windowEndEpochSec_) {
       return; // the window closed before the funeral posted (declared)
     }
@@ -112,7 +112,7 @@ private:
     // price level (class P), like every family amount.
     out_.push_back(run_.emission().make(transactions::Draft{
         .source = decedentAcct,
-        .destination = funeralPayee(),
+        .destination = funeralHome,
         .amount = fhelp::nominalAt(primitives::utils::roundMoney(amount), ts),
         .timestamp = ts,
         .isFraud = 0,

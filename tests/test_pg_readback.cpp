@@ -107,6 +107,7 @@ void checkParseKeyPins() {
   checkRoundTrip(entity::Role::brokerage, entity::Bank::internal, 4);
   checkRoundTrip(entity::Role::brokerage, entity::Bank::external, 4);
   checkRoundTrip(entity::Role::card, entity::Bank::internal, 987654321);
+  checkRoundTrip(entity::Role::ledger, entity::Bank::internal, 4);
 
   // The L/LI prefix family must resolve by the digits-only remainder.
   {
@@ -132,7 +133,7 @@ void checkParseKeyPins() {
   assert(!encoding::parseKey("A00x1").has_value());
   assert(!encoding::parseKey("A0000000000").has_value()); // zero, !allowZero
 
-  std::printf("pg-readback: parseKey pins hold (18 layouts)\n");
+  std::printf("pg-readback: parseKey pins hold (19 layouts)\n");
   std::fflush(stdout);
 }
 

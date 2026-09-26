@@ -1,5 +1,6 @@
 #include "phantomledger/transfers/fraud/typologies/unauthorized.hpp"
 
+#include "phantomledger/activity/spending/market/commerce/affinity.hpp"
 #include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
 #include "phantomledger/entities/geography/area.hpp"
@@ -197,6 +198,17 @@ struct MerchantPool {
  *                     exactly the population legitimate online purchases
  *                     reach.
  *
+ * Both branches also carry the CATEGORY LAW legitimate visits follow
+ * (outlets-frequency-2026-09): each candidate's weight is scaled by
+ * `commerce::kCategoryVisitLift`, the visit-to-favourite ratio the favourite
+ * pick produces per category. Legitimate card rows put grocery and restaurants
+ * at about twice their favourite share and the biller categories at under
+ * half; a pool blind to that keeps the old mix, which makes the biller
+ * categories over-represented in fraud (card-present fraud at an insurer is
+ * not a known pattern) and makes category alone a better fraud score. The
+ * factor is positive for every category, so the candidate set and the one
+ * uniform per slot are unchanged; only the weights move.
+ *
  * Degradation matches the session's own fallback: no catalogue (unit callers),
  * no eligible merchant, or an unknown home area falls back to the caller's
  * pool / the national weighting rather than inventing geography. */
@@ -239,12 +251,14 @@ buildMerchantPool(const IllicitContext &ctx,
     }
     const bool online =
         rec.footprint == ::PhantomLedger::entity::merchant::Footprint::online;
+    const double categoryLift =
+        commerce::kCategoryVisitLift[static_cast<std::size_t>(rec.category)];
 
     if (cardPresent) {
       if (online || !geo.contains(rec.location)) {
         continue;
       }
-      double w = rec.weight;
+      double w = rec.weight * categoryLift;
       if (localAnchor && scaleMiles > 0.0) {
         const double miles =
             geography::distanceMiles(geo.at(homeArea), geo.at(rec.location));
@@ -258,7 +272,7 @@ buildMerchantPool(const IllicitContext &ctx,
       if (!online || !(rec.weight > 0.0)) {
         continue;
       }
-      weights.push_back(rec.weight);
+      weights.push_back(rec.weight * categoryLift);
       candidates.push_back(i);
     }
   }

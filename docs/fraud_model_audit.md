@@ -124,6 +124,9 @@ flag-1 rows. Fraud density on the flag axis is unchanged.
 ### F-5. Camouflage
 
 Small P2P p .03/day; monthly bill p .35; salary inbound p .12 — CHOICE.
+Small P2P pays a uniformly drawn customer deposit account, the only
+destination legitimate P2P pays (AMENDMENT bank-gl-2026-09, "The camouflage
+pool, restricted at review").
 Camouflage amounts scale with the index of the flow they MIMIC (bill/p2p
 × priceScale, salary-mimic × wageScale): a camouflage row that scaled
 differently from its cover class would be a detectable artifact.
@@ -277,7 +280,8 @@ primary residence (UNCITED).
 | Parameter | PL value | Class | Real-world anchor & source | Status |
 |---|---|---|---|---|
 | Employment probability | EFFECTIVE per-persona: salaried .98, student .40, retiree .02, freelancer .08, smallBiz .04, HNW .12. Fit target `paidFraction` = **.65** = the table's weighted mean under the L-1 shares (Σ share × p = .6508), so the fitted scale ≈ 1.0, nothing clamps, and **the table IS the effective rate** | MEASUREMENT | BLS employment-population ratios; NCES Condition of Education (40% of full-time undergraduates employed); BLS USDL-25-0563 (student LFP 44.6%, Oct 2024) [Certain]. Retiree .02 is deliberate: the persona is FULLY retired and its income is the L-4b SSA stream, so the BLS 65+ ratio (~19%) lives implicitly in the salaried persona | CONFORMS |
-| Pay cadences | weekly .20 / biweekly .55 / semimonthly .15 / monthly .10 | CHOICE | BLS CES Feb 2023 ESTABLISHMENT shares: biweekly 43.0%, weekly 27.0%, semimonthly 19.8%, monthly ~10%; 72.9% of 1,000+ employee establishments pay biweekly [Certain]. **AXIS: PL needs WORKER-weighted shares and workers concentrate in large biweekly employers** | DEVIATES-BY-CHOICE (cannot claim conformance to a published number) |
+| Pay cadences | weekly .20 / biweekly .55 / semimonthly .15 / monthly .10, one draw per EMPLOYER (so the worker-weighted mix rests on the size law's largest payers, and at small populations on few draws) | CHOICE | BLS CES Feb 2023 ESTABLISHMENT shares: biweekly 43.0%, weekly 27.0%, semimonthly 19.8%, monthly ~10%; 72.9% of 1,000+ employee establishments pay biweekly [Certain]. **AXIS: PL needs WORKER-weighted shares and workers concentrate in large biweekly employers** | DEVIATES-BY-CHOICE (cannot claim conformance to a published number) |
+| Employer roster and pick | `sizes::employerLaw`: 17 size classes (13 SUSB 2022 enterprise rows, the 20,000+ row as a rank-size tail, federal, state and local government), N_c = clamp(round(P x 0.74 x m_c), 1, F_c); every job and job switch picks through the class law (`growth::pickSized`, `pickSizedDifferent`) | MEASUREMENT (tables) + CHOICE (thinning) | Census SUSB 2022 [Certain]; BLS QCEW 2022 [Certain]; Census of Governments 2022 [Likely]. Authority rows: AMENDMENT counterparty-sizes-2026-09 | CONFORMS on the tables; the thinning to a national sample is a declared CHOICE |
 | Payday mechanics | Friday default (25% Thu↔Fri); semimonthly {15,31} (35% {1,15}); monthly ∈ {28,30,31}; roll to previous business day; posting lag 0–1 d; salary posts 06:00–12:00 same day. Weekly/biweekly lattices are ERA-AGNOSTIC — biweekly aligns to the anchor's FORTNIGHT PARITY (the anchor is a lattice PHASE, not a start bound) | MEASUREMENT | payroll-industry conventions | CONFORMS |
 | Job tenure | 1.5–4.0 y/job | MEASUREMENT | BLS median employee tenure 3.9 years (2024) [Likely]. PL's per-job range tops out at the national median, so PL workers churn faster | DEVIATES-BY-CHOICE (short sim windows need job-change events) |
 | Wage growth | real raise N(1.5%, 2.0%) floor −2% ON TOP of the AWI index; switch bump N(+8%, 6%) floor −5% | MEASUREMENT | Atlanta Fed Wage Growth Tracker ~4–4.5% nominal median recently [Likely]. The flat 2.5% inflation constant is RETIRED — the AWI index IS the economy-wide nominal path (PART III) | base CONFORMS; switch bump UNCITED |
@@ -306,13 +310,34 @@ low); BLS continuing-tenant work (new-tenant share ~15% recently) ⇒
 renters turn over at ~15–22%/yr, implying mean stays of ~4.5–7 years
 [Certain on rates, Derived on the implication]. **CONFORMS.**
 
+**Landlord roster (counterparty-sizes-2026-09).** `sizes::landlordLaw`: the
+seven RHFS 2021 property-size columns (CRS R47332 Tables 1 and 3 [Certain])
+plus the NMHC 2024 Top-50 owners as a rank-size row carved out of the 150+
+column [Likely], N_c = clamp(round(P x 0.35 x m_c), 1, F_c). Each landlord's
+type is drawn from ITS CLASS's unit mix: individual = individual investor +
+trustee + tenant in common; small LLC = LLC/LP/LLP + general partnership
+below 25 units; corporate = every other reported form. The renter-weighted
+mix is **.433 / .138 / .429** (reported-only aggregate .447 / .141 / .412);
+the retired population-wide .38 / .15 / .47 mix is gone. Authority rows and
+the verification corrections: AMENDMENT counterparty-sizes-2026-09.
+
 **Renter SHARE:** `rent::Rules::paidFraction` = **.35** against the ACS
-renter share of households ~.34–.36 [Likely]. Effective persona shares:
+renter share of households ~.34–.36 [Likely]. **AXIS MISMATCH, REGISTERED
+(counterparty-sizes-2026-09):** the PL value is a share of PEOPLE, each on
+their own lease, and the anchor is a share of HOUSEHOLDS. The round research
+puts a 200,000-person region at about 25,000 to 30,000 renter households
+(.125 to .15 per person), so PL emits about 2.3 to 2.8 times as many rent
+payers as there are renter households. Changing it moves every rent row and
+balance, so it is an owner decision; the landlord roster is sized against the
+payers PL actually draws. Effective persona shares:
 student ≈ .33, retiree ≈ .12, freelancer ≈ .38, smallBusiness ≈ .23, HNW
 ≈ .07, salaried ≈ .41. **Aggregate reconciliation** [Derived]: PL
 per-capita rent outflow ≈ .35 × $1,500 = $525/person-month vs real ≈ .35
-× $1,487 ≈ $520 — the amount and share calibrations reconcile an
-aggregate that either alone would have broken.
+× $1,487 ≈ $520. **SUPERSEDED (counterparty-sizes-2026-09): the real side
+multiplies a HOUSEHOLD share by a per-household rent and calls it per
+person.** At .125 to .15 renter households per person the real figure is
+about $186 to $223 per person-month, so PL runs about 2.4 to 2.8 times high
+on this aggregate (the axis mismatch above).
 
 **KNOWN SIMPLIFICATION (logged):** homeowner/renter overlap — the
 `RentRoll.isHomeowner` hook exists but is unwired, so a mortgage payer
@@ -368,6 +393,11 @@ filing refund 65% LN($2,500,.55) / balance due 20% LN($1,100,.65).
 
 Monthly payments are ORIGINATION-ANCHORED and fixed-nominal thereafter
 (PART III class D); tax scales at the DUE year (brackets index annually).
+
+**Counterparties.** Each loan and policy pays a provider drawn per contract
+from a national market-share table (mortgage, auto-loan and student-loan
+servicers; auto, home and life insurers). Tax pays the one IRS account. Rows
+and limitations: the institutional-providers-2026-09 amendment below.
 
 | Row | Real-world anchor & source | Status |
 |---|---|---|
@@ -443,11 +473,19 @@ type exists in `entity::account`. Anchor: S-DCPC Table 1 (bank account
 95.4%, checking 94.7%, savings 77.2%); no official accounts-per-person
 count is published. **CONFORMS** under the checking-only scope.
 
-Merchants core 120/10k + tail 400/10k; landlords 12/10k; per 10k (floor):
-platforms 2 (2), processors 1 (2), owner businesses 200 (25), brokerages
-40 (5), employers 25 (floor 5, 4% internal-bank), clients 250 (floor 25,
-2% internal-bank). **Densities re-classed CHOICE** — no public
+Merchants core 120/10k + tail 400/10k; per 10k (floor): platforms 2 (2),
+processors 1 (2), owner businesses 200 (25), brokerages 40 (5), clients 250
+(floor 25, 2% internal-bank). **Densities re-classed CHOICE**: no public
 per-10k-customer source exists and likely never will.
+
+**Employers and landlords are no longer densities (counterparty-sizes-2026-09).**
+The retired 25 per 10k employers (floor 5, 4% internal-bank) and 12 per 10k
+landlords (floor 3) are replaced by the thinning law N_c = clamp(round(P x s x
+m_c), 1, F_c) over cited size tables: SUSB 2022 plus government for
+employers (all external), RHFS 2021 plus the NMHC Top-50 for landlords. At
+200,000 people that is 89,231 employers and 66,658 landlords (was 500 and
+240); at 500,000, 200,556 and 155,581. Authority rows: AMENDMENT
+counterparty-sizes-2026-09.
 
 Government cohort: SSA payment cohort derives from the REAL birth
 day-of-month (1–10 / 11–20 / 21–31 → 0/1/2), per the SSA payment
@@ -634,6 +672,7 @@ corrected row would re-propose the error.
 | Per-year deflated card fraud amounts flat < 2.5× is "the only gate proving class F reaches the card rail" | The card view mixes two FIXED-NOMINAL lattices (M-3 class F-lattice) with one CPI-scaled sampler, so deflating the combined mean asserts the OPPOSITE of U-6 — and the ring-rail gate already excluded that rail for that reason, so the two gates contradicted each other. Independently under-powered: 42–92 lognormal(σ1.2) draws give CV 19–28% on a per-year mean. Purging the resolvable lattice made the spread WORSE (2.69× → 3.11×), the signature of noise | **A flatness gate over an aggregate mixing era-scaled and fixed-nominal families measures the MIXTURE WEIGHTS, not the scaling.** Withdrawn and replaced by a cross-era deflated-QUANTILE gate that sizes its own band from realized n and fails as UNDER-POWERED unless that band excludes the fixed-nominal null. **Prefer an effect you can see over a null you must resolve** |
 | Population 900 exercises both solo and ring card spends | The gate's own first run printed `ring 0` in both legs. `buildCompromisePlans` excludes ring participants and victims, so the unauthorized card rail is ring-free BY DESIGN at every population | **Audit the justification you wrote against the gate's own printed output** before calling a round done. The ring counter is retained as a TRIPWIRE, and is documented as one |
 | The TEST-NET attacker-IP claim is stale (grep found nothing) | The defect was written in INTEGER OCTET form: `Ipv4::pack(198, 51, 100, …)` | **Grep the constructor, not the rendered literal**, before calling an audit claim stale |
+| Fee and interest postings pay external business counterparties (the card issuer, fee-collection and OD LOC keys, `Role::business` on `Bank::external`; cash-hub-defect-2026-08 lists the card issuer among the distinct external keys) | Every documented core types the contra as a bank-owned internal income GL (FLEXCUBE internal leaf GL of category Income, Temenos ledger categories with no customer, Fiserv DNA GL majors with the customer number blank), and the card accounts the issuer key charged were themselves `Bank::internal` (bank-gl-2026-09) | **Internal is not the same as customer.** The bank's own ledgers need a role of their own, or every exporter types them as a deposit account or an external party |
 
 ═══════════════════════════════════════════════════════════════════════
 # OPEN ITEMS
@@ -650,7 +689,11 @@ BLS Employee Tenure 2024; OEWS May 2025 refresh; Atlanta Fed tracker
 current print; the Diary cash-WITHDRAWAL (not payment) supplement for the
 ATM amount row; BLS CPI-U and U-3 direct reads (bls.gov timed out during
 the audit session — values remain standard published annual averages).
-*Cash split:* IRS Cash Intensive Businesses ATG; Census SUSB/CBP; Square
+*Providers (institutional-providers-2026-09):* the FSA Data Center
+"Portfolio by Loan Servicer" table (the EdFinancial and CRI split); NAIC
+individual-life ranks 11-125; auto-lender ranks 6-25; mortgage servicer
+shares by loan count over all 1-4 family loans. *Cash split:* IRS Cash
+Intensive Businesses ATG; Census SUSB/CBP; Square
 "Making Change"; Yale Budget Lab (Jun 2024); Fed SHED gig + EIWA 2015;
 BLS student-employment industry mix. *Scam/fraud:* FTC gift-card Data
 Spotlights; FTC CSN payment-method mix (the rail split); retailer $500
@@ -687,8 +730,9 @@ CLOSED by the victim-session amendment below and needs no new carrier.
 
 **5. Registered model upgrades.** Per-cohort SSA claiming shares;
 historical-period mortality tables and SES gradients; survivor benefits;
-an SCF-anchored estate-size re-derivation; a dedicated funeral
-counterparty/channel; repeat founders; surfacing latent sex to PII with a
+an SCF-anchored estate-size re-derivation; a dedicated funeral channel
+(the funeral-home counterparty shipped in the unknown-counterparty-2026-09
+amendment); repeat founders; surfacing latent sex to PII with a
 measured population ratio; a cash-share era model; labor-market
 separation spells and within-year NBER recession shading; the EIP
 statutory table; a monthly unemployment path; an MCC taxonomy; the
@@ -1090,7 +1134,10 @@ DEFECTS, and both were found by disbelieving a number.** (1) `external_unknown`
 measured 85% out of tenure; `PaymentRouter::emitExternal` routes the
 unmodelled-merchant catch-all to a HARDCODED `makeKey(merchant, external, 1)`
 which collides with catalogue serial 1, so the gate's key join was counting a
-sentinel as merchant #1. (2) `test_table_golden`'s divergence report
+sentinel as merchant #1. (The collision itself is closed by the
+institutional-providers-2026-09 amendment: the catch-all now has a reserved
+key. The catch-all itself is retired by the unknown-counterparty-2026-09
+amendment.) (2) `test_table_golden`'s divergence report
 TRUNCATED SILENTLY at ten lines shared across both lists, so the card-fraud
 section printed ten `changed-or-new` rows, emitted ZERO `was-in-baseline`
 rows, and hid six further moved tables — making `cf_Merchant_Location` look
@@ -1713,13 +1760,13 @@ posting, with no credited endpoint balance.
 
 | The value | The claim about the world | Class | Citation | Status |
 |---|---|---|---|---|
-| ATM withdrawal destination = an area-local registered `Bank::external` processor endpoint (`cash_points.hpp`, `plans.cpp`, `atm.cpp`) | A real on-us ATM withdrawal reduces the bank's currency-and-coin asset; an off-us withdrawal also creates network settlement. Neither is a depositor's account | MEASUREMENT (accounting) | Fed FR 2900 reporting instructions (vault cash includes currency in a bank's own ATMs); Oracle FLEXCUBE Core Banking ATM User Manual, screens ATM01/ATM02 (accessed 2026-08-18) [Certain on the mechanism] | **CONFORMS AS A DECLARED CUSTOMER-LEDGER PROJECTION**: only the internal customer leg is booked; the full GL is outside scope |
+| ATM withdrawal destination = a registered `Bank::external` processor endpoint among the customer's own nearest four at the event-time area, ties at the four-point cut broken by a per-(person, area, rail) hash window (`cash_points.hpp`, `plans.cpp`, `atm.cpp`; amended by atm-spread-2026-09, which replaced the per-area pool-index tie-break) | A real on-us ATM withdrawal reduces the bank's currency-and-coin asset; an off-us withdrawal also creates network settlement. Neither is a depositor's account | MEASUREMENT (accounting) | Fed FR 2900 reporting instructions (vault cash includes currency in a bank's own ATMs); Oracle FLEXCUBE Core Banking ATM User Manual, screens ATM01/ATM02 (accessed 2026-08-18) [Certain on the mechanism] | **CONFORMS AS A DECLARED CUSTOMER-LEDGER PROJECTION**: only the internal customer leg is booked; the full GL is outside scope |
 | Centralized vault-cash / network-settlement GL | Real cores centralize or modestly shard these GLs; terminals are transaction context rather than customer accounts | MEASUREMENT (accounting) | Oracle FLEXCUBE ATM User Manual ATM02 (accessed 2026-08-18); Philadelphia Fed, *Clearing and Settlement of Interbank Card Transactions* (Oct 2013) [Certain] | **CONFORMS BY EXPLICIT OMISSION**: the GL is outside the projection and is not emitted as a global graph target |
 | Cash withdrawal points, cash-deposit points, card issuer, billers, employers, and landlord fallback use distinct external keys/pools | A real core carries distinct cash, settlement, issuer, and counterparty roles | TYPOLOGY | Oracle FLEXCUBE ATM User Manual ATM01/ATM02 field lists (accessed 2026-08-18) [Certain] | **CLOSED** |
 | Combined ATM terminal/acceptor endpoint, without dedicated DE41 and DE42 columns | The graph identity an issuer-side fraud model sees is the ISO 8583 **pair** DE 41 Card Acceptor Terminal Identification + DE 42 Card Acceptor Identification Code, one acceptor to many terminals, unique only as a pair | MEASUREMENT | Elavon Developer Portal field-41 description; Galileo/SoFi issuer data-elements map exposing DE41 as `terminal_id` and DE42 as `merchant_id`; Marqeta `card_acceptor` (all accessed 2026-08-18) [Certain] | **PARTIALLY CLOSED — EXPLICIT CARRIER GAP** |
 | Distributed, geographically resolved cash-point endpoints; no customer or system-wide target | ZERO of five published AML/fraud datasets use one monolithic customer cash node. AMLSim shards onto `Branch`; PaySim shards onto merchants; IBM AMLworld makes cash an edge attribute; the Neo4j reference reifies the transaction; Sparkov omits cash | TYPOLOGY | AMLSim `Branch.java`/`CashOutModel.java`; PaySim `Client.java`; NeurIPS 2023 D&B *Realistic Synthetic Financial Transactions for AML* Table 5; Neo4j `fraud-detection.adoc`; Sparkov README (all accessed 2026-08-18) [Certain] | **CUSTOMER-GRAPH DEFECT CLOSED**; downstream consumers must retain external type/channel |
 | Interchange fee direction on ATM rows | On a PURCHASE the acquirer pays the issuer; on a CASH WITHDRAWAL the ISSUER pays the acquirer. The sign inverts | INVARIANT (accounting) | Philadelphia Fed, *Clearing and Settlement of Interbank Card Transactions* (Oct 2013) (accessed 2026-08-18) [Certain] | **NOT MODELLED** (PL has no ATM interchange leg; recorded so nobody adds one with the purchase sign) |
-| US ATM density, if a terminal layer is ever sized | There is NO current official US ATMs-per-capita statistic. IMF FAS via World Bank reports the US only through 2009 (425,010 ATMs, 172.76 per 100k adults) and is null 2010 onward. Only current count is commercial: 451,500 (2022), down from a 470,000 peak (2019). The WITHDRAWAL count IS official: 3.7 billion in 2021, average value $156 (2018) → $198 (2021) | MEASUREMENT | World Bank `FB.ATM.TOTL.P5`; Euromonitor via Payments Dive 2023-06-23; Federal Reserve Payments Study 2022 triennial (all accessed 2026-08-18) [Certain on the withdrawal count; the 451,500 is trade press, not a statistical release] | **CLASS S UNCITED for density**; the two candidate anchors disagree ~8x |
+| US ATM density, if a terminal layer is ever sized | There is NO current official US ATMs-per-capita statistic. IMF FAS via World Bank reports the US only through 2009 (425,010 ATMs, 172.76 per 100k adults) and is null 2010 onward. Only current count is commercial: 451,500 (2022), down from a 470,000 peak (2019). The WITHDRAWAL count IS official: 3.7 billion in 2021, average value $156 (2018) → $198 (2021) | MEASUREMENT | World Bank `FB.ATM.TOTL.P5`; Euromonitor via Payments Dive 2023-06-23; Federal Reserve Payments Study 2022 triennial (all accessed 2026-08-18) [Certain on the withdrawal count; the 451,500 is trade press, not a statistical release] | **CLASS S UNCITED for density**; the two candidate anchors disagree ~8x. **Amended by atm-spread-2026-09:** 451,500 / 333.3M people = 13.5 per 10,000, which is the declared `atmTerminals` density (`synth/counterparties/make.hpp`); ATMIA's 520,000 to 540,000 (ATM Marketplace, 12 Sep 2023 [S]) gives 15.6 to 16.2. The density CONFORMS on the trade-press count; the ~8x disagreement was the throughput anchor, which that amendment registers against the ATM withdrawal frequency |
 
 ## Pre-fix measurements, retained as the regression baseline
 
@@ -1849,3 +1896,1547 @@ measures degree-stratified AML GNN degradation on these exact datasets and
 states that aggregate F1 HIDES it; GCNs are biased TOWARD high-degree nodes
 (Tang et al., CIKM 2020, arXiv:2006.15643), so a super-node earns flattering
 metrics while distorting everything around it.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: institutional-providers-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** Three defects that made a handful of external accounts
+population-wide hubs (measured on the 200,000-person mule-temporal corpus in
+`docs/research/counterparty_hubs_2026-09.md`):
+
+1. **Bug A, closed.** Every mortgage paid the STUDENT-LOAN servicer
+   (`mortgage.cpp` routed to `Lending::studentServicer`, flagged "SUSPECTED
+   DEFECT" since 2026-07-19), so one account took 1.43M payments.
+2. **Bug B, closed.** The external-unknown catch-all was
+   `makeKey(merchant, external, 1)`, which IS catalogue merchant serial 1
+   whenever that merchant banks externally (98% of seeds), so the catch-all
+   and a real merchant were one registry record and one exported node. The
+   catch-all now has its own reserved key, `XM1000000001`. Only the key moved:
+   the flow itself (the 5% unattributed spending share, P2P with no usable
+   contact, and funerals) is unchanged here and is retired by the next stage.
+3. **Change 3, shipped.** The six population-wide lender and insurer keys are
+   replaced by six provider markets (mortgage, auto loan, student loan, auto,
+   home and life insurance). Each contract draws its provider once, at
+   issuance, from the tables below, with one uniform on its own
+   `{"product-provider", market, person}` lane
+   (`synth/products/providers.hpp`, `entities/counterparties/providers.hpp`).
+   SSA, disability and the IRS stay single accounts.
+
+Bank-originated postings (card interest and fees, overdraft fees, the overdraft
+line of credit) are untouched by this amendment.
+
+## The authority rows
+
+Shares are normalized within the pool. [P] = primary document read,
+[S] = secondary summary, both as reported by the round's research pass
+(summarized in `docs/research/counterparty_hubs_2026-09.md`, section "Lenders
+and insurers are many firms, not one") and by the design's parameter pass,
+which read the NAIC, FSOC and Big Wheels tables for the per-rank values.
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Mortgage servicers: ranks 1-20 = .073 .067 .067 .061 .060 .054 .052 .052 .031 .025 .024 .024 .023 .018 .017 .015 .014 .011 .011 .010, then a 1/rank tail to a pool of 300 | Agency servicing is spread: largest 7.3%, top 10 54.1%, top 20 70.9%, HHI about 350. Mr. Cooper served 6.7M customers in Dec 2024 (about 13% of 50.8M mortgages, subservicing included) | MEASUREMENT | FSOC 2024 Nonbank Mortgage Servicing Report, Table 1 (Inside Mortgage Finance, agency UPB, Q4 2023) [P]; Mr. Cooper 2024 [P] | **CONFORMS** on ranks 1-20 (value-weighted: see the value-weighting limitation below); built table HHI 351 |
+| Auto insurers: ranks 1-25 = .1864 .1860 .1156 .1015 .0619 .0357 .0281 .0193 .0190 .0153 .0142 .0139 .0137 .0110 .0096 .0083 .0080 .0071 .0062 .0047 .0044 .0043 .0042 .0042 .0041, tail to 100 | State Farm 18.64%, Progressive 18.60%, top 10 76.88%, top 21 87.0%, HHI about 1,000 | MEASUREMENT | NAIC Property and Casualty market share report (2025), Private Passenger Auto Total [P]. The research note's 2024 read (State Farm 18.87%, Progressive 16.73%, top 10 76.15%) is [S] and is superseded by the primary 2025 table | **CONFORMS**; built table HHI 1,012 |
+| Home insurers: ranks 1-25 = .1869 .0942 .0702 .0551 .0546 .0515 .0457 .0250 .0219 .0197 .0185 .0177 .0107 .0103 .0101 .0095 .0091 .0089 .0080 .0078 .0070 .0069 .0068 .0066 .0065, tail to 150 | State Farm 18.69%, Allstate 9.42%, USAA 7.02%; top 5 46.11%, top 10 62.48%, HHI about 620 | MEASUREMENT | NAIC Property and Casualty market share report (2025), Homeowners Multiple Peril [P] | **CONFORMS**; built table HHI 631 |
+| Life insurers: ranks 1-10 = .0866 .0576 .0552 .0508 .0408 .0373 .0349 .0328 .0318 .0302; anchors top 25 = .7283 and top 125 = .9924; pool of 125 renormalized by .9924 | Northwestern Mutual 8.66%, New York Life 5.76%, MassMutual 5.52%; top 10 45.79%, top 25 72.83%, top 125 99.24%, HHI about 300 | MEASUREMENT | NAIC market share report for life/fraternal groups (2024), individual life [P] | **CONFORMS** on ranks 1-10 and both anchors. Ranks 11-125 are the 1/rank shape between the anchors (the NAIC table lists them; they were not transcribed). Built table HHI 302 |
+| Auto lenders: ranks 1-5 = .054 .054 .050 .046 .044 (Toyota Financial, GM Financial, Ally, Chase, Capital One), tail to 200 | Largest about 5.4% of about $1.9T outstanding, top 5 about 25%; the research note gives Toyota Financial about 6% of $1.8T and top 5 about 25% | MEASUREMENT | Auto Finance News, "Big Wheels" 2025 outstandings ranking [S]; research note [S] | **CONFORMS [Likely]**: secondary source only. Ranks 6-200 are the declared tail (see the auto-lender tail limitation below) |
+| Student servicers, federal part (92.4% of the pool): Nelnet .31, Aidvantage .19, MOHELA .15, EdFinancial .175, CRI .175, each times .924 | Five federal servicers. Nelnet 14.0M of about 45M borrowers (about 31%); MOHELA 6.7M (about 15%); Aidvantage 8.4M to 9M (about 19%) | MEASUREMENT for Nelnet, MOHELA and Aidvantage; CHOICE for EdFinancial and CRI | Nelnet 10-K 2024 [P]; MOHELA [P]; Aidvantage [S]; all via the research note. The design pass found MOHELA 6.8M accounts in Feb 2025 (consistent with 15%) and a 2021 Aidvantage figure of 5.6M (stale, not adopted) | **PROVISIONAL**. EdFinancial and CRI are uncited and split the federal remainder equally, which also absorbs the Default Resolution Group (see that limitation below). Replace with the FSA Data Center "Portfolio by Loan Servicer" table when it is pulled (it timed out in both research passes) |
+| Student lenders, private part (7.6% of the pool): Sallie Mae .63 of it, then nine lenders on a 1/rank tail (pool of 15 in all) | Private loans are 7.6% of student-loan balances; Sallie Mae holds about 63% of private originations | MEASUREMENT | MeasureOne via PR Newswire [S]; Sallie Mae share [S]; both from the design pass, not the research note | **CONFORMS [Likely]**: secondary sources; the nine-lender tail is a CHOICE |
+| SSA, disability and the IRS stay one account each | SSA and IRS are single originators in ACH data: Treasury uses fixed descriptors ("SOC SEC", "TAX REF") and the company name "IRS TREAS 310" | MEASUREMENT | Bureau of the Fiscal Service Green Book; Treasury tax-refund direct-deposit FAQ [P] | **CONFORMS** |
+| Pool sizes: mortgage 300, auto loan 200, student 15, auto 100, home 150, life 125 | Real markets run to thousands of servicers and carriers: most banks and credit unions service their own loans (the CFPB small-servicer exemption) | CHOICE | Butler Snow summary of the small-servicer rule [S] | **DEVIATES-BY-CHOICE**: the pool is large enough that no tail provider approaches a hub (the smallest pool's last share is 0.2%), and each market is one 99,999-serial key block, so a pool can grow without a layout change |
+| The tail past the named ranks is 1/rank, scaled to the residual mass | The research reports each market's HHI independently of the rank tables | CHOICE | HHI figures as stated in the research pass (FSOC and NAIC rows) | **CONFORMS AS A DECLARED SHAPE**: the built tables reproduce the research HHI (auto 1,012 vs about 1,000, home 631 vs 620, life 302 vs 300, mortgage 351 vs 350); `test_product_providers` A0 pins it within 10% |
+| One uniform per contract, drawn at issuance on `{"product-provider", market, person}`; the per-person portfolio stream, the shared entity stream and `makeCatalog` are untouched | A person holds at most one contract per market, so the lane is unique per contract | INVARIANT | none needed | **ENFORCED** by three checks in `test_product_providers`. A1 compares production against the draw-free singleton tables at pop 200,000 (0 field diffs over 2,947,290 events, 232,651 loans, 181,290 policy holders). A1 alone proves only that no draw depends on the table, because both of its legs run the same binary and a draw both make passes it. A7 therefore pins a digest of every key-free product value (events without the counterparty key, loan terms, policies without the carrier) at that pop and seed to the pre-round build: `da72a2306ca4622e` on HEAD 843f447 and on this build, paired with a domain predicate (0 events or policies outside their domain). B5 pins the next u64 of the gate world's shared stream after the build at the run-golden config: `498e4bde6c6f83ea` on both builds, which also covers `makeCatalog`'s draw count. DISARMS: a mortgage emitter that spends one portfolio draw on half the providers moves 3.67M event fields in A1; one extra portfolio draw on every issued mortgage passes A1 with 0 diffs and reds A7; one extra shared draw in `buildLandlords` reds B5 |
+| Only providers some contract uses are registered, external and ownerless, in (market, ordinal) order after every entity-stage record | A small population must not export providers nothing pays | INVARIANT | none needed | **ENFORCED**: A5 (registered set equals the set re-picked from the loan and policy ledgers; no existing index moves); leg B (682 providers from record 9,246 at pop 2,000) |
+| The camouflage P2P pool excludes providers | A ring's cover transfer to a mortgage servicer or insurer is a shape no legitimate customer produces, so it would be a label shortcut | TYPOLOGY | none needed | **ENFORCED**: leg B3 counts 0 camouflage rows on a provider. DISARM: without the filter, 15 of 440 camouflage rows land on one |
+| Bug A predicate | Mortgages and student loans never share a servicer | INVARIANT | none needed | **CLOSED**: A2 counts 0 mortgage events on a student-market key and 0 student events on a mortgage key, and every loan event, policy, product row, premium and claim is on its own market (A2, B1) |
+| External-unknown catch-all = `makeKey(merchant, external, 1'000'000'001)` (`XM1000000001`) | The catch-all is a bucket, not a merchant, and must never share a catalogue key | INVARIANT | merchant-churn-2026-07 rule 6 | **CLOSED, then SUPERSEDED** by the unknown-counterparty-2026-09 amendment, which retires the catch-all: the key stays reserved and unregistered, and no row may name it. At this amendment `test_merchant_churn` counted 0 external-unknown rows on a catalogue key (the old key scored 156,259 and 86,150 on its two legs), `test_counterparties` built a 500,000-person catalogue with 20 years of churn births (max serial 51,688) and found no collision, and `test_estates` and leg B2 required the funeral and every legit external-unknown row to pay the reserved key; those checks now require the opposite |
+| Institutional offsets 1, 2, 3, 5, 6 and 7 are retired and never reused | An export written before this round still carries the old singleton keys | INVARIANT | none needed | **ENFORCED**: `test_counterparties`; leg B finds no row touching a retired key |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Shares are value-weighted (servicing UPB, written premium, outstanding balances) but assigned per contract | Count shares differ from value shares; banks' portfolio mortgages make the real tail by loan count fatter than agency UPB suggests | CHOICE | FSOC 2024 Table 1 is UPB-weighted [P] | **REGISTERED**: needs mortgage shares over all 1-4 family loans by count |
+| The markets are era-flat: the 2023-2025 structure applies to every window year | Market structure moves: Rocket closed its acquisition of Mr. Cooper in October 2025 (about 1 in 6 mortgages), and Navient left federal servicing in 2021 | CHOICE | Rocket Companies press release on closing the Mr. Cooper acquisition; Maximus notice on the completed novation of Navient's federal servicing contract [S] | **REGISTERED** (the same era-flat declaration as the attacker-technology mix) |
+| No servicing transfers and no carrier switching during a loan or policy | Servicing rights are sold and policyholders switch carriers | CHOICE | none pulled | **REGISTERED** |
+| Subservicing is not modelled | The customer-facing servicer can be a subservicer of the owner of the servicing rights (Mr. Cooper's 6.7M includes subservicing) | CHOICE | Mr. Cooper 2024 [P] | **REGISTERED** |
+| Regional carriers are drawn nationally, whatever the customer's home area | Carrier shares vary by state | CHOICE | NAIC publishes state tables [P, not read] | **REGISTERED** |
+| No on-us lending or servicing | A real on-us loan payment goes to the customer's own loan account at the bank, which PhantomLedger does not model; one shared internal "bank lender" account would recreate a hub and break `cash-hub-defect-2026-08` rule 2; the on-us share is uncited (the only figure found: 48% of consumers look beyond their primary bank for a mortgage) | CHOICE | PYMNTS 2024 [S] | **REGISTERED** |
+| No home and auto bundling: each market is its own key block, so State Farm auto, home and life are three accounts | 47% of home and auto holders report a bundle; independent draws with a shared insurer identity would give only about 6% same-carrier, and separate key blocks give 0% | CHOICE | NerdWallet [S] | **REGISTERED**: candidate follow-up is a shared insurer identity keyed by NAIC group code, with a bundling draw |
+| Defaulted federal loans (the Default Resolution Group) are not modelled | Defaulted federal loans are served by the Default Resolution Group, not by the five servicers | CHOICE | none pulled (the FSA servicer table would size it) | **REGISTERED**: their borrowers are absorbed by the EdFinancial and CRI split |
+| The federal servicer split for EdFinancial and CRI is uncited | FSA publishes recipients per servicer each quarter | UNCITED | FSA Data Center "Portfolio by Loan Servicer" (not retrieved) | **REGISTERED** (see the student row above) |
+| Auto lender ranks 6-25 are the declared tail; no count-versus-balance adjustment | Ford Credit and American Honda rank 6th and 7th; values not retrieved | CHOICE | Big Wheels 2025 [S] | **REGISTERED** |
+| Pre-existing: products are seeded by the constant `kDefaultProductsSeed` (0xB0A7F00D), not `--seed`, so a person gets the same provider in every run seed | The provider lane inherits the portfolio stream's seed | CHOICE | none needed | **REGISTERED, out of scope** (true of every product draw since before this round) |
+| Pre-existing: the camouflage pool still contains SSA, the IRS, billers and cash endpoints | Camouflage P2P to a government payer or a biller is as unrealistic as to a lender | CHOICE | none needed | **REGISTERED, then CLOSED** by AMENDMENT bank-gl-2026-09 at review: the pool is now the customer deposit accounts alone (that amendment, "The camouflage pool, restricted at review") |
+| `generateWindow` replays every `emitPerson`, so the lane's seed derivation runs once per contract per replay | Cost, not realism | INVARIANT | measured | **REGISTERED**: about 0.27 s per 200,000-person replay (2.37 s draw-free against 2.64 s with the lane, +11%). If profiling objects, switch the lane to a draw-free splitmix hash; the isolation is identical |
+
+## Measured (pop 200,000, one year, leg A of `test_product_providers`)
+
+| Market | Contracts | Providers used | Largest share (declared) | Top 10 (declared) | HHI |
+|---|---:|---:|---|---|---:|
+| Mortgage | 92,857 | 300 | 0.0719 (0.0730) | 0.5398 (0.5420) | 348 |
+| Auto loan | 75,787 | 200 | 0.0541 (0.0540) | 0.3816 (0.3831) | 200 |
+| Student loan | 63,718 | 15 | 0.2833 (0.2864) | 0.9862 (0.9874) | 1,856 |
+| Auto insurance | 166,083 | 100 | 0.1870 (0.1864) | 0.7701 (0.7688) | 1,018 |
+| Home insurance | 93,767 | 150 | 0.1866 (0.1869) | 0.6222 (0.6248) | 626 |
+| Life insurance | 93,131 | 125 | 0.0872 (0.0873) | 0.4649 (0.4615) | 305 |
+
+Before this round every one of those markets scored 1.0 on the largest-share
+column (the singleton disarm in A3 still does, and must fail the check). The
+largest provider hubs left are the top auto insurers, about 31,000 policies
+each at this population, so roughly 370,000 premiums a year: still above the
+MulePatternLearner hub threshold of 2,048 visible payments, so its hub
+registry and history-withheld stubs remain necessary.
+
+**Corpus movement.** `tests/golden_run.b2sum` moves (a30c535d... to
+42c5c164..., 231,731 rows at both ends: the tie-order and camouflage cascades
+moved bytes, not the row count). A re-pinned digest cannot tell that movement
+from a stream shift, so `test_product_providers` A7 and B5 (the invariant row
+above) carry that proof against the pre-round build. The three PostgreSQL
+table goldens need the owner's re-pin. `kTableCount` stays 43. The
+mule-temporal 2024 corpus, its TigerGraph snapshot and the MulePatternLearner
+hub registry must be regenerated under a new dataset id.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: unknown-counterparty-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** The external-unknown catch-all is retired. Before this
+amendment three flows paid one account, `XM1000000001` (and before the
+institutional-providers amendment, catalogue merchant 1): the spending
+router's external-unknown slot (5% of spending events), P2P payments whose
+contact was missing or unusable, and every funeral. On the 200,000-person
+mule-temporal corpus that one account took 3,814,933 payments from 62% of
+deposit accounts (`docs/research/counterparty_hubs_2026-09.md`). Owner
+decision: realistic by channel. Each flow now pays the kind of counterparty a
+bank actually records for it, and no row may land on one global account.
+
+## The design (written before the code)
+
+Read from `PaymentRouter::emitExternal` and `emitP2p`
+(`activity/spending/routing/payments.cpp`), `prepareRouting`
+(`simulator/run_planner.cpp`), `funeralPayee`
+(`transfers/legit/routines/family/inheritance.cpp`),
+`registerSystemAccounts` (`pipeline/stages/entities.cpp`) and the
+mule-temporal exporter's rail mapping (`exporter/mule_temporal/streaming.cpp`).
+
+1. **Only the destination changes.** Every retired row keeps its channel
+   (`external_unknown` for the two spending flows, `bill` for the funeral), its
+   amount draw, its timestamp and its source. No new draw is taken from any RNG
+   stream: every new choice is a draw-free splitmix hash of the person id (and,
+   per row, the row's timestamp), the construction `market/commerce/affinity.hpp`
+   and `actors/instruments.hpp` already use. Every new destination is an
+   EXTERNAL registered account, so `Ledger::decide` sees the same
+   `dstIdx == invalid` it saw for the catch-all and no balance, decline or
+   retry can move. The channel is deliberately unchanged: the impostor-scam
+   rail pushes on `external_unknown` too, and a legit-only relabel would make
+   the channel a fraud marker.
+2. **The external-unknown slot splits into checks and identified remote
+   payees.** A row is a paid check with probability
+   `min(1, checkShare(year) / slotShare)`, where `slotShare` is the slot's
+   probability mass in the configured channel CDF (0.05 by default) and
+   `checkShare` is the DCPC check share of consumer payments by number
+   (7% in 2016, 3% in 2024, linear between, flat outside). At the default slot
+   that is 0.6 of the slot from 2024 on and the whole slot through 2020.
+   The rest pays an identified remote merchant (step 4).
+3. **A paid check is keyed by the payee's bank.** The only structured payee
+   key on a paid check is the bank-of-first-deposit routing number, so each
+   external bank is one account (`Role::business`, external, serials
+   1,001,000,001 to 1,001,001,000). Each person has 4 check payees; each payee
+   banks at a bank drawn once from the FDIC Summary of Deposits share table
+   (hash of person and payee slot); each check picks one of the person's payees
+   (hash of person and row timestamp). The pool is the 1,000 largest
+   institutions by 2024 deposits: the top 25 at their exact shares, then a
+   1/rank shape between the SOD cumulative anchors at ranks 50, 100, 250, 500
+   and 1,000, renormalized by the top-1,000 mass.
+4. **Identified remote payees are catalogue merchants.** The candidates are
+   the EXTERNAL catalogue records whose footprint is `online` or
+   `nationalService` (the ecommerce, telecom, utility and insurance outlets a
+   customer pays remotely by ACH or bill pay), weighted by their volume
+   weight. A row takes a hash-derived uniform per attempt and accepts the first
+   candidate live at the row's timestamp, up to 8 attempts; a row that finds
+   none (a catalogue with no remote external merchant) takes the check route.
+   Internal (on-us) merchants are excluded because crediting them would move a
+   customer balance, which step 1 forbids.
+5. **P2P with no usable contact goes to a named P2P platform.** Zelle cannot
+   carry such a payment (it needs an enrolled email or US mobile number, and an
+   unclaimed payment expires after 14 days), so the platform set is Venmo and
+   Cash App, which the bank sees as a named ACH counterparty
+   (`Role::platform`, external, serials 1,000,000,001 and 1,000,000,002). Each
+   person uses one platform, chosen once by a hash of the person id and
+   weighted by the platforms' monthly active accounts. Measured after the
+   code landed: this fallback does not fire at any configuration the gates
+   or the owner run, because every person holds at least three
+   in-population contacts (`Social::effectiveDegree` clamps the degree to
+   3..24). The research's "P2P with no usable contact" was a code-path
+   finding; the 3.8M catch-all rows were the slot and the funerals.
+6. **A funeral pays a funeral home in the decedent's city.** Funeral homes
+   (MCC 7261) are `Role::merchant`, external, serial
+   `1,100,000,000 + area * 10,000 + ordinal`. Each geo area holds
+   `max(1, round(area population * 15,375 / 334,017,321))` of them (Census CBP
+   2022 establishments per resident), and a decedent's funeral pays the one
+   their person id hashes to in their home area at the death date (the
+   relocation schedule, as the cash-point rails read it).
+7. **Registration.** The retired key is no longer registered, so
+   `validateTransactionAccounts` throws on any row that still names it (its
+   removal from the system block shifts every later record up by one). The
+   new accounts are appended after every other entity-stage record: the
+   banks some person's payee slots use (rank order), both platforms, and the
+   funeral homes of every decedent who dies inside the window (key order). All
+   three pools are excluded from the camouflage P2P pool, like the providers:
+   a ring's cover transfer to a funeral home or a check-payee bank is a shape no
+   customer produces.
+8. **Exporters are unchanged except one label.** The mule-temporal exporter
+   maps rails from the channel, so the retired rows keep the `unknown` rail
+   (see the rail limitation below). The standard exporter labels a funeral home
+   `merchant_external` / `funeral_services` instead of the unknown external
+   account it would otherwise print for a `Role::merchant` key with no
+   catalogue record.
+
+## The degree gate (added at review, written before its code)
+
+The first anti-hub gate bounded a destination's share of the retired ROWS.
+Rows are not what made the catch-all harmful downstream: its DEGREE was
+(196,989 distinct payers, 62% of deposit accounts), and degree is what merges
+MulePatternLearner's weakly connected components and sinks PageRank. A
+per-bank check hub is small in rows and large in degree, so the row bound
+passed a population-scale hub without printing it, and the row bound's
+authority row cited the research's degree-sanity target as support when the
+build breaks that target by about ten times.
+
+1. **Degree is measured per destination** as the share of the retired rows'
+   distinct source accounts that pay it. At the gate every paying customer
+   pays these flows from one account, so it is also the share of paying
+   customers.
+2. **The check-payee banks and the funeral homes are bounded.** A person
+   reaches a bank's check hub only through their own 4 payees, so on any
+   window the share of payers who pay the largest bank's hub cannot exceed
+   the share whose payee slots include it: `1 - (1 - 0.1221)^4 = 0.406`,
+   where 0.1221 is the largest bank's pool-normalized SOD share. The ceiling
+   is that value plus 4 binomial sigma over the payers. Unlike the row share,
+   it does not depend on the era. Funeral homes sit far below it (C5 bounds
+   their rows).
+3. **Named counterparties are printed, not bounded.** The research's
+   degree-sanity target exempts named platforms and big billers ("can
+   legitimately be hubs, and they are named"), and a remote merchant's degree
+   moves with the window (see its limitation row), so an absolute band would
+   fail a correct long window or pass anything on a short one.
+4. **The disarms are scored on the same rows.** One catch-all per flow puts
+   every check writer on one account. Drawing a fresh payee bank for every
+   check (the research's per-check payee under the corrected per-bank key)
+   lets the largest bank's degree grow with the number of checks a person
+   writes. The ceiling must reject both.
+5. **The per-bank hub itself is not a defect.** It is the owner decision and
+   the reading the research's verification pass reached ("every check
+   deposited at the same large bank collapses onto one key"). It is
+   registered as a deviation from the degree-sanity target instead of being
+   cited as conforming to it.
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Check share of consumer payments: 0.07 in 2016, 0.03 in 2024, linear between, flat outside | By count, 2024 consumer payments were 14% cash, 3% check, 35% credit, 30% debit, 13% ACH, 5% mobile app and other; the check share was 7% in 2016 | MEASUREMENT (the two anchors); CHOICE (the linear shape between them) | Federal Reserve Financial Services and Atlanta Fed, 2025 Findings from the Diary of Consumer Payment Choice, Figure 2 [P], confirmed in the research pass | **CONFORMS** on both anchors. Converted to a share of the slot by the configured slot mass, capped at 1 |
+| A paid check is keyed by the bank of first deposit, one account per external bank | The X9.37 Check Detail Addendum A carries a mandatory 9-digit BOFD routing number; no payee-name field is specified, and the payee is identified only by OCR of the image | MEASUREMENT | FRB adoption of DSTU X9.37, standards reference [P]; Stellar Bank, Payee Positive Pay Best Practices [P] ("OCR is not an exact science"); Plaid returns a null merchant for checks [P] | **CONFORMS**: the verification pass corrected the research's per-payee key (the Fed specification lists no BOFD account number), so the key is per bank, as specified here. The addendum is conditional (required when the BOFD is the truncating bank) |
+| Check payee banks: ranks 1-25 = .11541 .10926 .08062 .04271 .03029 .02429 .02283 .02140 .02050 .01667 .01287 .01188 .01161 .01083 .01035 .01031 .00989 .00988 .00940 .00915 .00894 .00870 .00858 .00854 .00741; cumulative anchors top 50 = .7251, top 100 = .7931, top 250 = .8651, top 500 = .9079, top 1,000 = .9451; pool of 1,000 renormalized by .9451 | JPMorgan Chase holds 11.54% of US deposits, Bank of America 10.93%, Wells Fargo 8.06%; 4,548 institutions hold $17.405T across 76,727 offices; HHI 388 | MEASUREMENT | FDIC Summary of Deposits, June 30, 2024, summed by institution (`banks.data.fdic.gov/api/sod`, `YEAR:2024`, `agg_by=CERT`, `agg_sum_fields=DEPSUMBR`, read 25 September 2026) [P] | **CONFORMS** on ranks 1-25 and all five anchors; the ranks between anchors are the 1/rank shape |
+| Check payee bank pool truncated at 1,000 institutions | The 3,548 smallest institutions hold 5.49% of deposits | CHOICE | FDIC SOD 2024 [P] | **DEVIATES-BY-CHOICE**: the truncated mass is spread over the pool by renormalization; the smallest pooled bank is still low-degree |
+| 4 check payees per person | People write checks repeatedly to a few payees (landlord, contractor, relatives, a church) | CHOICE | none found | **REGISTERED**: bounds a person's distinct check-payee banks at 4 |
+| Identified remote payees are external `online` and `nationalService` catalogue merchants, weighted by volume weight | Deposit-funded remote payments (ACH debit, online bill pay) carry a company name or ID; card spending never lacks a descriptor | MEASUREMENT (that the payee is named); CHOICE (which catalogue records stand in for it) | Nacha Operations Bulletin 2-2024 [P] (the name field is required); Visa Merchant Data Standards Manual, April 2026 [P]; the verification pass's correction that the slot is deposit-funded remote spending, not card spending | **CONFORMS** on the claim; the candidate set is declared |
+| P2P platforms: Venmo 64/121 = .529, Cash App 57/121 = .471; one platform per person | Venmo had more than 64 million monthly active accounts in Q4 2024; Cash App had 57 million monthly transacting actives in December 2024 | MEASUREMENT | PayPal Holdings Q4 2024 earnings call transcript [P]; Block, Inc. Form 10-K FY2024, "Our Cash App Customers" [P] | **CONFORMS [Likely]**: the two metrics are both monthly but defined differently (active accounts versus transacting actives) |
+| Zelle is not a destination for a P2P payment with no usable contact | Zelle needs the recipient's email or US mobile number, and a payment to an unenrolled recipient expires after 14 days | MEASUREMENT | Zelle FAQ, "What if the person I'm sending money to hasn't enrolled with Zelle?" [P] | **CONFORMS** |
+| A platform appears at the bank as a named ACH counterparty | Venmo standard transfers post with the note "VENMO-0 CASHOUT" | MEASUREMENT | Venmo Help Center, bank transfer timeline [P] | **CONFORMS**: the page covers cash-outs; the outgoing debit is inferred |
+| Funeral homes: MCC 7261, `max(1, round(area population * 15,375 / 334,017,321))` per geo area, 0.460 per 10,000 residents | 15,375 funeral-home establishments (NAICS 812210) in 2022; funeral homes carry their own merchant category, 7261 Funeral Services and Crematories | MEASUREMENT | Census County Business Patterns 2022, US file `cbp22us.txt`, NAICS 812210 [P]; the 334,017,321 denominator is the 2022 population merchant-selection-2026-08 uses with the same CBP vintage; Visa Merchant Data Standards Manual [P] | **CONFORMS**: 2,431 homes across the 71 US cities of the geo catalogue (New York 390, the smallest cities 2 or 3) |
+| The funeral pays a home in the decedent's area at the death date | Funerals are arranged locally | CHOICE | none needed | **ENFORCED** by the gate |
+| Draw-free selection, every destination external, channel unchanged | Only the destination of a retired row may change | INVARIANT | none needed | **ENFORCED** by `test_remote_payees` (see the measured section) |
+| The retired key `XM1000000001` is never registered and receives no row | Nothing lands on one global account | INVARIANT | none needed | **ENFORCED** by `test_remote_payees`, `test_product_providers` B2, `test_merchant_churn` and `test_estates` |
+| No single external account receives more than 15% of the retired rows | A single global vertex receiving millions of payments has no real analogue. The largest destination a correct build produces is the largest payee bank: its SOD share, 0.1221 of the slot, when every slot row is a check (through 2020), and 0.6 x 0.1221 = 0.073 at 2024 on | INVARIANT (the bound is a CHOICE sized by that arithmetic and by measurement) | FDIC SOD 2024 [P] (the arithmetic); the owner decision (nothing lands on one global account). The research's degree-sanity target is NOT authority here: it bounds degree, not rows, and the check hubs break it (the two rows below) | **ENFORCED** by `test_remote_payees` C6 (measured 0.0747). The design pass wrote 25% before the P2P fallback was measured at zero rows; 15% is the tightened value. A row bound cannot see a hub that is small in rows and large in degree, so it is paired with the degree bound below |
+| No check-payee bank or funeral home is paid by more than `1 - (1 - 0.1221)^4 = 0.406` of the retired rows' payers, plus 4 binomial sigma over the payers | A person's checks reach a bank only through their own 4 payees, so on any window a check hub's payers are at most the people whose payee slots include that bank | INVARIANT (derived from the SOD share and the registered 4-payee CHOICE) | FDIC SOD 2024 [P] (the largest bank's pool-normalized share, 0.1221) | **ENFORCED** by `test_remote_payees` C6: measured 0.3749 (JPMorgan Chase's hub, 3,685 of 9,830 payers) against a 0.4259 ceiling. The same rows score 0.9888 under one catch-all per flow and 0.7455 under a fresh payee bank per check, and paying every check to the largest bank (a code disarm) scores 0.9888; all three red the check. Named counterparties are printed, not bounded (the limitation rows) |
+| The per-bank check hubs are population-scale: the largest bank's hub is paid by about 40% of the customers who make a retired-flow payment (0.3749 over one year in leg C, 0.4067 over five years in a scratch probe, against its 0.406 payee-slot reach), the second by 0.3578 and the third by 0.2702 over one year | "No single non-platform counterparty should connect more than a few percent of deposit accounts"; the verification pass found that on a paid check "every check deposited at the same large bank collapses onto one key" | CHOICE (owner decision: one hub per external bank, like the bank-of-first-deposit routing-number key) | the unknown-counterparty research note's degree-sanity target (in its recommended parameters) and its verification pass's counter-evidence on checks; DSTU X9.37 [P] | **DEVIATES-BY-CHOICE** (owner decision) from the degree-sanity target, by about ten times. Not a defect: the hubs are what the BOFD key produces, they are bounded by the row above, and they are named for the MulePatternLearner hub registry (see the corpus movement) |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Deposit share is the payee-bank weight | SOD deposits include custody and wholesale balances (BNY Mellon, State Street, Goldman Sachs, Morgan Stanley, Schwab), which receive few consumer check deposits; a branch-count or retail-account weighting would move them down | CHOICE | FDIC SOD 2024 [P] | **REGISTERED** |
+| No on-us checks: every check payee banks elsewhere | A payee who banks at the simulated bank would be an on-us item | CHOICE | none needed | **REGISTERED**: the simulated bank's own share is negligible at simulated population sizes |
+| The DCPC denominator is all consumer payments; the router's is spending-slot events | Rent, subscriptions, loans and insurance run on their own rails and are not in the slot's denominator | CHOICE | DCPC 2025 [P] | **REGISTERED**: the check share of the slot is an approximation of the check share of payments |
+| The slot's size stays era-flat at 5% | Checks were far more than 5% of payments before about 2016, so the slot cannot carry their full historical share | CHOICE | DCPC 2025 [P] | **REGISTERED**: the fraction saturates at 1, so every slot row is a check through 2020 |
+| The check payee's bank is era-flat | Bank shares move (mergers, failures) | CHOICE | none pulled | **REGISTERED** |
+| Two P2P platforms only | PayPal P2P and Apple Cash also carry P2P; PayPal's 10-K reports no US P2P user count comparable to the two above | CHOICE | PayPal Holdings Form 10-K FY2024 [P] | **REGISTERED** |
+| One platform per person, forever | Many people use more than one app | CHOICE | none pulled | **REGISTERED** |
+| The platform shares are era-flat | Venmo launched in 2009 and Cash App in 2013, so a pre-2013 window still routes these rows to the 2024 platforms | CHOICE | the platforms' own histories | **REGISTERED**: a pre-2009 row has no real P2P app; the event count is unchanged by design (only the destination moves) |
+| US funeral-home density applied to every area, the 15 international cities included | Density differs by country | CHOICE | none pulled | **REGISTERED** |
+| Area populations are approximate municipal populations | The geo catalogue's population column is order-of-magnitude correct | CHOICE | `synth/geo/geo_data.hpp` [Likely] | **REGISTERED**: moves the home count per city, not the placement rule |
+| A funeral home is registered for every in-window death, including a death whose funeral posts after the window closes | The funeral date is drawn inside the family routine and is not known at registration | CHOICE | none needed | **REGISTERED**: at most the deaths in a window's last 11 days add an unused external account |
+| The selection hashes are unseeded | The same person id keeps the same check payee banks and platform across run seeds, like the favourite-affinity and instrument hashes | CHOICE | none needed | **REGISTERED** (the precedent in `market/commerce/affinity.hpp`) |
+| The mule-temporal rail stays `unknown` for every retired row, and the AML exporter still maps `external_unknown` to the purpose `wire_transfer` | A paid check is a check, and a platform debit is ACH; the research calls the wire label wrong on volume and amount | CHOICE | Fedwire 2024 annual statistics [P] (209,916,835 transfers, $5.40M average) | **REGISTERED**: a destination-derived label is a follow-up. The impostor-scam rail shares the channel, so any relabel must cover both labels together or it becomes a fraud marker |
+| The funeral keeps the `bill` channel | A funeral home is paid by card, check or ACH | CHOICE | none needed | **REGISTERED** (the same channel as before; a dedicated funeral channel stays a registered upgrade) |
+| Both P2P platforms are always registered | The no-contact fallback does not fire at any measured configuration, so the two accounts carry no row there | CHOICE | none needed | **REGISTERED**: two unused external accounts; the mule-temporal exporter emits a vertex only when a row observes it, so only the standard exporter's external-account table lists them |
+| A world with no home carriers sends every funeral to the one area-0 home | Production always binds both home carriers; only a hand-built harness has neither | CHOICE | none needed | **REGISTERED**: registration resolves area 0 the same way, so the row is still booked |
+| The no-contact P2P fallback is unreachable | Every person holds 3 to 24 in-population contacts, so the three fallback conditions (no contact row, an out-of-population contact, an invalid or self destination) never hold | MEASUREMENT | `relationships/social/builder.hpp` | **REGISTERED**: 0 fallback rows in both legs of `test_remote_payees`; the platform route is checked at the selection function instead (C3) |
+| An identified remote merchant's degree grows with the window | The remote route picks a merchant per row by volume weight, so a person with n remote rows pays merchant i with probability about `1 - (1 - w_i)^n`: the volume-as-membership amplification merchant-selection-2026-08 removed from the card favourites. Leg C: the three largest (a utility, an online retailer, an insurer) are paid by 0.5737, 0.5322 and 0.3967 of the payers in one year. A scratch probe at pop 2,000 over five years from 2020: 0.8169 for the largest, and an online outlet opened in April 2023, which 9 people pay on every other row, is paid by 1,261 of the 1,999 payers (0.6308) | CHOICE | the research's degree-sanity target exempts named counterparties ("can legitimately be hubs, and they are named") | **REGISTERED**: printed by C6, not bounded, because the level moves with the window. The utility and the insurer add little degree (in a scratch probe of leg C, 86% and 74% of the leg's people already pay them on other rows); the online retailer rises from 14% to 59% of the leg's people. A per-person remote payee set, like the 4 check payees, would bound it; that is the registered upgrade, and it moves the golden |
+
+## Where the design deviates from the research note
+
+- **Checks are keyed per bank, not per payee.** The research recommended a
+  distinct counterparty per check keyed by a synthetic BOFD routing number and
+  account; its own verification pass found that the Fed specification lists
+  no BOFD account number, so a paid check's structured key identifies the
+  payee's bank only. The owner decision (one hub per external bank) follows
+  the corrected reading.
+- **The rest of the slot pays identified catalogue merchants, not the
+  external tail pool alone.** The counterparty-hubs note proposed the tail
+  pool; the candidates here are every external online or national-service
+  outlet (tail and external core), because on-us merchants would move a
+  customer balance and local outlets are not paid remotely.
+- **No-contact P2P goes to named platforms, not to the external family pool
+  or nowhere.** Owner decision. It is measured unreachable (see the design
+  and the limitation row), so the choice moves no row today.
+- **The exporter labels are unchanged** (rail `unknown`, AML purpose
+  `wire_transfer`); see the rail limitation. Relabelling only the legit rows
+  would make the label a fraud marker, because the impostor-scam rail shares
+  the channel.
+- **The check hubs break the research's degree-sanity target.** It asks that
+  no single non-platform counterparty connect more than a few percent of
+  deposit accounts; the largest bank's check hub is paid by about 40% of the
+  customers who make a retired-flow payment, about ten times that. This is
+  the owner decision (one hub per external bank) and the key the
+  verification pass says a paid check actually carries, so it is registered
+  as a deviation, bounded at its payee-slot reach, and named for the
+  downstream hub registry rather than cited as conforming.
+
+## Measured (`test_remote_payees`)
+
+**Only the destination moved.** On the run-golden gate world (pop 2,000,
+60 days from 2025-01-01, seed 3405691582) the shared entity stream's next u64
+after the build is `498e4bde6c6f83ea` on the pre-round build and on this one,
+and the order-free digest of every legit row with the target masked on the
+retired flows is `255b9e814eea12cc` on both, with 191,721 rows, 190,275 legit
+rows and 7,902 retired rows on both. Paired domain predicate: 0 retired rows
+outside a finite positive amount, an in-window timestamp, an internal source
+and an external destination in one of the four families.
+
+**The one other movement is the camouflage pool, and a bisect attributes it.**
+The retired key was IN the camouflage P2P pool; removing it shrinks the pool
+by one, which re-points ring cover transfers and cascades through balances.
+At the golden configuration that reaches no legit row (the digest above is
+unchanged; the all-row digest moves). At pop 10,000 over 365 days it moves
+rows 5,254,299 to 5,254,057, legit rows 5,223,524 to 5,223,265 and retired rows
+218,650 to 218,644. Putting the retired key back into the camouflage pool at
+its old position, as a diagnostic only, reproduces the pre-round all-row and
+legit digests exactly at both scales (`091eb9fa16f044d1` / `255b9e814eea12cc`
+and `b43bbafc0e6453cd` / `f228e44897b54871`), so nothing else moved. Keeping
+the key in the pool was not an option: after the retirement a cover transfer
+to it would be a fraud-only shape.
+
+| Leg C (pop 10,000, 365 days from 2025) | Value | Expected |
+|---|---:|---:|
+| Retired rows | 218,644 | |
+| Slot rows paid as checks | 0.5999 (131,121) | 0.6000 (DCPC 3% over the 5% slot) |
+| Slot rows paid to remote merchants | 87,440 | |
+| No-contact P2P rows | 0 | (unreachable, see above) |
+| Person payee slots at the largest bank | 0.1235 | 0.1221 (SOD, pool-normalized) |
+| Person payee slots at the top 10 banks | 0.5119 | 0.5121 |
+| People on Venmo | 0.5311 | 0.5289 |
+| Funerals / homes they pay / busiest home | 83 / 83 / 1 | every funeral in the decedent's city at death: 0 wrong |
+| Distinct destinations of the retired rows | 1,295 | the pre-round build: 1 |
+| Largest destination | 0.0747 (JPMorgan Chase's check hub) | ceiling 0.15 |
+| Next four | 0.0699, 0.0502 (banks 2 and 3), 0.0421, 0.0368 (remote merchants) | |
+| Payers (distinct source accounts of the retired rows) | 9,830 | one account per paying person |
+| Degree of the largest check hub (JPMorgan Chase) | 0.3749 (3,685 payers) | payee-slot reach 0.4060, ceiling 0.4259 |
+| Degree of check hubs 2 and 3 | 0.3578, 0.2702 | |
+| Degree of the largest named counterparties | 0.5737, 0.5322, 0.3967 (remote merchants: a utility, an online retailer, an insurer) | printed, not bounded |
+| Largest check writer's distinct banks | at most 4 | 4 payees |
+
+Leg B registers 653 remote payees from record 9,081 (647 banks, 2 platforms,
+4 funeral homes for 3 posted funerals), external and ownerless in one block;
+0 of 441 camouflage rows land on one.
+
+**DISARMS, each run against this build:** drawing the check-or-merchant
+uniform from the spending stream instead of the hash reds B2 (rows 191,721 to
+142,713); dropping the camouflage filter reds B4 (16 of 440 camouflage rows on
+a remote payee) and B2; paying every check to the largest bank reds C6 on
+both ceilings (0.5997 of the rows and 0.9888 of the payers on one account);
+ignoring the decedent's city reds C5 (3 funerals in the wrong city, and the
+unregistered homes drop 71 of 83 funerals) and 47 checks in `test_estates`.
+The in-gate disarms for C6, scored on the same rows: one catch-all per flow
+scores 0.5997 against the 0.15 row ceiling and 0.9888 against the 0.4259
+degree ceiling, and a fresh payee bank per check scores 0.7455 on degree.
+
+**Corpus movement.** `tests/golden_run.b2sum` moves again (the staged
+institutional-providers digest `42c5c164...` to `dd0363aa...`), with the row
+count unchanged at 231,731; the digest is re-pinned once at the end of the
+round. `test_remote_payees` B1 and B2 carry the pre-round proof a re-pinned
+digest cannot. The three PostgreSQL table goldens need the owner's re-pin:
+the external-account table loses the catch-all and gains the check-payee
+banks, both platforms and the funeral homes (the standard exporter labels a
+funeral home `merchant_external` / `funeral_services`). `kTableCount` stays 43.
+The mule-temporal 2024 corpus, its TigerGraph snapshot and the
+MulePatternLearner hub registry must be regenerated under a new dataset id.
+`XM1000000001` disappears from the hub registry, and its replacements must be
+read by DEGREE, not rows. None takes more than 7.5% of the former
+catch-all's rows, but the three largest check-payee hubs (JPMorgan Chase,
+Bank of America, Wells Fargo) are each paid by 27% to 37% of the customers
+who make a retired-flow payment in a year, and the largest reaches its 41%
+payee-slot reach on longer windows. The largest identified remote merchants
+reach more (57% in a year, over 80% across five years); most are billers
+that customers already pay on other rows, but one online retailer, which 14%
+of customers pay on other rows, is paid by 59% once the retired rows are
+added. These are customer shares; the corpus holds about
+1.6 deposit accounts per customer, so the deposit-account shares are lower.
+None is a placeholder to exclude from traversal: each is a named hub, and the
+downstream hub handling (the registry and the history-withheld stubs) must
+cover them, because at population scale they are the vertices that merge
+weakly connected components and draw PageRank.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: bank-gl-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** Every fee and interest posting is kept, and its contra is
+retyped as a bank-owned income ledger account. Before this amendment the
+four bank-originated posting kinds paid three accounts typed as external
+business deposits (`Role::business` on `Bank::external`, registered
+external): card interest and card late fees paid the card issuer key
+`cash::cardIssuer()` (`XO3000000001`), overdraft fees paid
+`bankFeeCollectionKey()` (`XO4294967041`) and overdraft line-of-credit
+interest paid `bankOdLocKey()` (`XO4294967042`). On the 200,000-person
+mule-temporal corpus they took 2,316,826, 361,991 and 113,386 payments, the
+issuer from 73% of card accounts (`docs/research/counterparty_hubs_2026-09.md`).
+Owner decision: retype as bank GL. The posting is real core-banking data (a
+double-entry charge whose credit leg is an income GL), and its contra is
+neither a customer nor an external party.
+
+## The design (written before the code)
+
+Read from `Session::accrueInterest` and `Session::postLateFee`
+(`transfers/channels/credit_cards/session.cpp`), `bankFeeCollectionKey`,
+`bankOdLocKey` and `ChronoReplayAccumulator::onLiquidityEvent`
+(`transfers/legit/ledger/posting.cpp`), `Ledger::debitAndEmit` and
+`Ledger::accrueLocInterestThrough` (`transactions/clearing/ledger.cpp`),
+`cash::cardIssuer` (`entities/counterparties/cash_points.hpp`),
+`registerSystemAccounts` (`pipeline/stages/entities.cpp`), the camouflage
+pool in `makeAccountPools` (`transfers/fraud/injector.cpp`), and every
+exporter typing path: `exporter::common::accountType` (AML and
+aml-txn-edges), `writeAccountNumberRows` and `writeExternalAccountRows`
+(standard), the account plan in `exporter/mule_temporal/streaming.cpp`, the
+mule-ml party and IP-edge writers, and the card-fraud view filter.
+
+1. **One new role, `Role::ledger`, internal only.** It is the role for an
+   account the bank itself owns, rendered `GL` plus 8 digits. It is appended
+   last to the role enum, so every existing key keeps its numeric role and
+   its hash. Reusing `Role::account` or `Role::business` on `Bank::internal`
+   was rejected: both are customer deposit roles, and every exporter would
+   type the GL as a checking or business-checking account.
+2. **Four income GLs, one per posting kind**
+   (`entities/holdings/general_ledger.hpp`):
+
+   | GL | Key | Posting kind (channel) |
+   |---|---|---|
+   | card interest income | `GL00000001` | `cc_interest` |
+   | card fee income | `GL00000002` | `cc_late_fee` |
+   | deposit fee income | `GL00000003` | `overdraft_fee` |
+   | credit-line interest income | `GL00000004` | `loc_interest` |
+
+   One function maps a posting channel to its GL. Both posting sites and the
+   gates use it, so the mapping cannot drift between them.
+3. **Only the destination and the copied session change.** No draw is added
+   to or removed from any stream. The card session posts interest and late
+   fees to their GLs instead of `env.issuerAccount`, and `onLiquidityEvent`
+   posts the overdraft fee and the LOC interest to theirs. Amounts,
+   timestamps, sources, channels and every clearing decision are unchanged:
+   for these channels `Ledger::decide` reads only the source (liquidity
+   channels skip the funding screen; card interest and late fees screen the
+   card), so booking the credit leg cannot flip an accept or a decline.
+   The one ordering effect is the replay sort's tie-break on the target key
+   (the GL role sorts after every existing role), which reorders a posting
+   against another row of the same source at the same second; the gate
+   measures whether that reaches any row.
+4. **What `bankOdLocKey` actually received: interest, never principal.**
+   `Ledger::accrueLocInterestThrough` emits matured `loc_interest` through
+   `debitAndEmit`, and `onLiquidityEvent` sent every event that was not an
+   overdraft fee to that key; the liquidity family has only those two
+   members. No principal was ever posted to it. An LOC draw is the deposit
+   account's cash going negative inside its `overdrafts_` capacity, and a
+   repayment is any inbound credit to the same account. So the interest
+   goes to the credit-line interest income GL, and the per-customer LOC
+   credit account (Regulation Z) is registered as a limitation below rather
+   than built.
+5. **Booked, ownerless, never seeded.** The GLs are `Bank::internal`, so
+   every clearing book built from the registry gives each one a slot. The
+   opening book seeds only owned records (`ownedAccountIndices`), so a GL
+   opens at 0.00 with protection `none` and no seeding draw is spent. Only
+   the credit leg posts; nothing ever debits a GL. In the posted book (the
+   post-fraud replay the AML exporters read the balance from) a GL's balance
+   is exactly the sum of the rows booked to it, which the gate checks. The
+   pre-fraud authoritative replay debits the payer of an overdraft fee or LOC
+   interest inside `debitAndEmit` and emits the row without a credit leg, so
+   in that book the GL slots carry only the card postings. Nothing reads
+   that book's GL slots.
+6. **Registration.** The four GLs replace the three retired keys in the
+   system block of `registerSystemAccounts`, registered internal. The card
+   issuer key, `Directory::external.cardIssuer`, the blueprint's
+   `issuerAcct` and the `issuerAccount` plumbing through the card lifecycle
+   (whose only use was these two postings) are deleted rather than left as
+   write-only fields. The block grows by one record, so every later record
+   shifts up by one. That moves indices only, never a draw.
+7. **Never a fraud or mule role.** Victims and mules are drawn over persons,
+   and account flags follow the owner, so an ownerless GL can hold neither.
+   The camouflage P2P pool is every registry record less the providers and
+   remote payees; it now also excludes the GLs, because no customer can push
+   a transfer into a bank income ledger. The three retired keys were in that
+   pool, so it shrinks by three and ring cover transfers re-point (the same
+   camouflage cascade the unknown-counterparty amendment measured and
+   attributed). Superseded at review: the pool is now the customer deposit
+   accounts alone (see "The camouflage pool, restricted at review" below).
+8. **No customer device or IP on a system posting.** `onLiquidityEvent`
+   copied the triggering row's device and IP onto the fee row. It no longer
+   does, and the `currentTxn_` pointer it read is deleted. Card interest and
+   late fees already carried none (`channels::isExternallyInitiated`).
+9. **Exporters, typed truthfully.**
+   - mule-temporal: the GL is an `Account` with `account_type` `gl`,
+     `is_external` False and `is_mule` 0, no `Party_Owns_Account`, never a
+     Zelle endpoint (it is not a deposit role). The rail stays
+     `internal`/`bank`. The postings stay as ordinary payments with a
+     `Transaction_To_Account` edge on the GL, the Oracle BD "Account plus
+     Offset Account" shape, so a consumer that wants to drop or separate
+     them filters on `account_type`.
+   - AML and aml-txn-edges: the GL is an internal `Account` row with account
+     type `general_ledger`, no customer edge and no counterparty vertex; its
+     balance is the posted book's (the income posted in the window).
+   - standard: `accountnumber.csv` carries the GL with `is_external` 0; it
+     has no `HAS_ACCOUNT` row and is no longer in `external_accounts.csv`.
+     The `GL` prefix names the type.
+   - card-fraud: unchanged. The card view carries only the purchase channels,
+     so no posting reaches it.
+   - mule-ml: the GL is an ownerless party row with a blank identity. The
+     account IP edges and the canonical IP histogram now skip the unassigned
+     address (`0.0.0.0`): without that guard, removing the copied IP from the
+     fee rows would add an edge from every overdrafting deposit account to one
+     shared `0.0.0.0` vertex, a new artifact hub (card accounts already had
+     one through their interest and fee rows).
+
+The gate is `tests/test_bank_ledger.cpp`. On the run-golden gate world it
+pins the shared entity stream (which also covers `makeCatalog`'s draw count)
+and an order-free digest of every legit row with the target masked on the
+four posting kinds and the device and IP masked on the two liquidity kinds,
+both to the pre-round build; checks that every fee and interest row targets
+the GL of its kind and that nothing else touches a GL; that the GLs are
+internal, ownerless, unflagged, one registry block, absent from camouflage
+and every fraud row; that no posting carries a device or IP; and that each
+GL opens at zero and closes at the sum of its rows in a replayed posted book.
+
+## The authority rows
+
+[P] = primary document read, [S] = secondary summary, as reported by the
+round's research and verification passes (the bank-postings research note,
+summarized in `docs/research/counterparty_hubs_2026-09.md`, section "Fees and
+interest have no counterparty").
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Every fee and interest posting is kept: the customer account is debited and a bank-owned income GL credited | A charge or debit-interest liquidation is a double-entry posting. FLEXCUBE's CLIQ event debits CHG_BOOK and credits CHG_INCOME for every charge basis (ad hoc statement, cheque issue and return, stop payment, statements, item count, turnover); its ILIQ event debits ICDB-BOOK and credits ICDB-PNL | MEASUREMENT (accounting) | Oracle FLEXCUBE Universal Banking Interest and Charges User Guide 14.5.3.0.0 (Nov 2021) [P], confirmed by the verification pass; Temenos Transact CATEG journal entries hit the institution's P&L category [P] | **CONFORMS** |
+| Four GLs, one per posting kind: card interest income, card fee income, deposit fee income, credit-line interest income | FLEXCUBE maps each accounting role to its own GL head per product and event, with the interest PNL role separate from CHG_INCOME, and its example calls the credit GL "a commission income GL for the branch". Banks also pool kinds (Fiserv sells an app that moves Premium Overdraft fees off the NSF fee GL) or split further by branch or currency | CHOICE | FLEXCUBE 14.5.3 [P] (the per-branch split rests on that one example); Fiserv DNA Premium OD GL Transfer app [P]; Jack Henry jXchange balanced-transaction tutorial, where a separate $25 fee-income GL is one of two options [P, corrected by the verification pass] | **DEVIATES-BY-CHOICE**: the research's suggested set, one GL per kind, with no branch, product or currency split |
+| The GL is a bank-owned internal account: `Role::ledger`, `Bank::internal`, ownerless, rendered `GL` | FLEXCUBE allows direct postings only to internal leaf GLs, and its GL categories include Income; the verification pass corrected that FLEXCUBE "internal" GLs also hold customer loan and deposit balances, so the discriminator is internal leaf plus category Income, not "internal" alone. Temenos ledger accounts sit in categories 10000 to 19999 and internal accounts carry no customer. Fiserv DNA's FCRM extract space-fills Customer_Number on a GL account | TYPOLOGY | FLEXCUBE General Ledger 14.1 [P, corrected]; Temenos developer portal, accounting journal entries and Accounting Events Lifecycle Guide (22 May 2023) [P]; Fiserv DNA FCRM extract specification (Oct 2023) [P] | **CONFORMS**: the role is the income discriminator (the model holds no customer-owned GL), and the key sits outside every customer and external role. Supersedes the card-issuer part of the cash-hub-defect-2026-08 row on distinct external keys |
+| The GL is booked: credited, never seeded, never debited | A GL carries a balance, the income posted to it | INVARIANT | none needed | **ENFORCED** by `test_bank_ledger` B2 (opens at 0.00 with no buffer) and B5 (closes at the sum of its rows in the replayed posted book) |
+| The postings are exported as ordinary payments whose recipient is the GL, typed `gl` (mule-temporal) and `general_ledger` (AML), not dropped | Oracle Behavior Detection models a back-office transaction as exactly two parties, the Account and the Offset Account. The FLEXCUBE-to-Mantas feed sends internal movements as back-office transaction data, while sending only Nostro, Savings, Current and Deposit accounts as account records. Fiserv DNA's FCRM extract keeps GL-leg transactions in AML profiling by default (Exclude_From_Profile N). Verafin monitors customer-to-GL transfers as an insider-fraud indicator | TYPOLOGY | Oracle BD User Guide 8.1.2.10 and Administration Guide G27520-09 (Jan 2026) [P]; FLEXCUBE Mantas Interface 12.0 (May 2012) [P]; Fiserv DNA FCRM (Oct 2023) [P, the verification pass's correction]; Nasdaq Verafin, 2 Aug 2019 [P] | **CONFORMS**: kept and typed, so a consumer may drop or separate them by account type. The research's first verdict leaned toward dropping them; its verification pass found that real feeds keep these legs, and that dropping them by default is not supported |
+| The postings carry no device or IP | A bank-posted entry has no customer session | CHOICE (inference) | the research marks this as inference, not a sourced claim | **ENFORCED** by B4. The pre-round build copied the triggering row's session onto every overdraft fee (346 rows at the gate configuration, 11,788 at pop 10,000 over a year) |
+| The GLs are never a victim, mule, fraud or camouflage account | Victims and mules are persons. A customer cannot direct a payment into a bank income ledger; the FFIEC's controls on internal concentration accounts include barring customer access (it does not address income GLs) | INVARIANT | FFIEC BSA/AML Examination Manual, Concentration Accounts (2024 web build via Wayback) [P], by analogy only | **ENFORCED** by B2 (no flag on the record) and B3 (no fraud or camouflage row touches a GL, and the camouflage pool's predicate `fraud::camouflageEligible` rejects every GL) |
+| Camouflage P2P pays only customer deposit accounts (`Role::account`) | A cover row must match the legitimate flow it mimics, and the model's legitimate P2P pays nothing else: 11,889 of 11,889 legit P2P rows at the gate configuration and 335,953 of 335,953 at pop 10,000 over 365 days. A cover transfer into another person's credit-card account, a biller, a government payer or an external family, client or business account was a destination only fraud used | INVARIANT | none needed (measured on the model's own legitimate P2P) | **ENFORCED** by `test_bank_ledger` B3 (added at review): the predicate admits exactly the registry's `Role::account` records, and 0 of 261 camouflage P2P rows land elsewhere. DISARM: the exclusion-list predicate it replaced reds both (6,229 of 10,581 records disagree; 177 of 261 rows off a deposit account) |
+| Only a posting's destination and a liquidity posting's session move; no draw is added; the shared entity stream and `makeCatalog`'s draw count are unchanged | Retyping the contra must not move any other row | INVARIANT | none needed | **ENFORCED** by A1 (shared stream next u64 `498e4bde6c6f83ea` on both builds) and A2 (the fraud-free masked digest `cf3b75546c4c76da` over 190,402 rows, posting counts 1,397 / 412 / 346 / 41, on both builds) |
+| The retired keys `XO3000000001`, `XO4294967041` and `XO4294967042` are never registered and receive no row | An export written before this round still carries them | INVARIANT | none needed | **ENFORCED** by B1 |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| No per-customer overdraft line-of-credit account | Regulation E excludes from "overdraft service" a line of credit subject to Regulation Z, an overdraft line of credit included, so an OD LOC is the consumer's own credit account: draws run LOC to deposit account, repayments the other way, and interest debits the LOC and credits the interest income GL | CHOICE | 12 CFR 1005.17(a) [P]; the per-customer reading is the research's inference, which the verification pass called sound | **REGISTERED**. The retired `bankOdLocKey` only ever received interest (see "What `bankOdLocKey` actually received" in the design). The LOC principal is the deposit account's negative cash inside its `overdrafts_` capacity, so draws and repayments are not postings and the interest debits the deposit account |
+| No NSF or returned-item fee | A declined item can carry an NSF fee at a bank that still charges one | CHOICE | CFPB overdraft and NSF report (Dec 2023) [P], via the counterparty-hubs note | **REGISTERED**: the deposit fee income GL carries overdraft fees only; a declined attempt charges nothing |
+| Card fee income carries late fees only | Annual, cash-advance, balance-transfer and foreign-transaction fees exist | CHOICE | none pulled | **REGISTERED** |
+| No deposit interest credited and no monthly statement or service fee | These are the two kinds that reach nearly every Berka account: interest credited (UROK) on 99.0% and the statement fee (SLUZBY) on 97.7% of 4,500 accounts | CHOICE | Berka PKDD'99 trans table, tallies recomputed by the verification pass [P] | **REGISTERED**: PL posts only debit interest and penalty fees, so its GLs reach fewer accounts than Berka's. Credited interest would need an interest-expense GL as the source leg |
+| The income GLs are population-scale hubs | At pop 10,000 over one year the card interest GL is paid by 54.1% of card accounts and the card fee GL by 40.5%; the deposit fee GL by 16.3% and the credit-line interest GL by 5.0% of deposit accounts. The research measured 73% of card accounts on the card issuer (both card kinds together) on the 200,000-person corpus and did not verify the real share of card accounts that incur interest or late fees | CHOICE (owner decision: retype, keep) | the counterparty-hubs note; the research's "not verified" list | **REGISTERED**: a per-kind income GL is a hub in the bank's own books (the Berka row above); the GLs are typed so the MulePatternLearner hub handling can drop or separate them (see the corpus movement) |
+| The GL balance is window income, not a running ledger balance | A real income GL carries a year-to-date balance and closes to retained earnings at year end | CHOICE | none needed | **REGISTERED**: every GL opens at 0.00 at window start |
+| The pre-fraud replay book's GL slots carry only the card postings | `debitAndEmit` debits the payer of an overdraft fee or LOC interest and emits the row without a credit leg | CHOICE | none needed | **REGISTERED**: nothing reads that book's GL slots; the posted book the exporters read books both legs (B5) |
+| Camouflage P2P draws a uniform deposit account per row, not a payee the ring account knows | Legitimate P2P pays the sender's contacts, so payees repeat: 54.7% of legit P2P rows repeat an earlier (sender, payee) pair at the gate configuration and 86.6% at pop 10,000 over 365 days, against 0.0% and 0.03% for camouflage P2P. The gap predates this round; the review fix changed only the destination type | CHOICE | none needed (measured) | **REGISTERED, out of scope**: closing it needs a per-ring payee set drawn on the ring's own lane, a separate round that re-points every cover transfer again |
+| Cards are on-us | Cards are often hosted on a separate processor, and Fiserv DNA treats processor-hosted cards as external-major accounts; whether card interest reaches a deposit-core AML feed at all was not verified | CHOICE | the research's "not verified" list | **REGISTERED**: PL books cards on-us (`Role::card`, internal), so its card income GLs are on-us too |
+
+## Where the design deviates from the research note
+
+- **No new account-class, GL-category or bank-party fields.** The research
+  recommended `account_class = INTERNAL_GL`, `gl_category = INCOME`, an ORG
+  owner record for the home bank and `is_customer = false`. The role carries
+  the class and category (`Role::ledger` exists only for income GLs), the
+  exporters carry it as an account type, and the GL is ownerless rather than
+  owned by a synthetic bank party, the same convention every other ownerless
+  account uses. Adding columns would change four exporter schemas for no
+  information the type does not already carry.
+- **No `txn_kind`, `initiated_by` or `counterparty_class` columns.** The
+  channel (`cc_interest`, `cc_late_fee`, `overdraft_fee`, `loc_interest`)
+  already names the kind, the mule-temporal rail is already `internal`/`bank`,
+  and the recipient's account type flags the GL leg.
+- **The per-customer OD LOC credit account is not built.** Code reading shows
+  the retired key never received principal (the design's "What
+  `bankOdLocKey` actually received"), so the interest
+  goes to the credit-line interest GL and the Regulation Z account is a
+  registered limitation.
+- **The mule-model switch is downstream.** The export carries the type; the
+  switch that drops or separates GL edges belongs in MulePatternLearner.
+
+## Also fixed, because this round would otherwise have made it worse
+
+The mule-ml exporter wrote an account IP edge for every row, including rows
+with no session, whose address renders as `0.0.0.0` (`network::format` never
+returns empty, so the old emptiness guard could not fire), and counted the
+sentinel in the canonical IP histogram. Removing the copied IP from the fee
+rows would have linked every overdrafting deposit account to one shared
+`0.0.0.0` vertex and could have made the sentinel an account's canonical IP.
+Both now skip the sentinel (`infra_edges.hpp`, `canonical.cpp`). This also
+removes the existing `0.0.0.0` edges from card accounts (their interest and
+late-fee rows) and from external sources of externally initiated rows. Part C
+of the gate pins it.
+
+## Measured (`test_bank_ledger`, run-golden gate world: pop 2,000, 60 days from 2025-01-01, seed 3405691582)
+
+**Only the destination and the copied session moved.** Leg A (fraud off):
+the shared stream's next u64 after the build is `498e4bde6c6f83ea` on the
+pre-round build (the staged unknown-counterparty tree, exported with
+`git checkout-index` and built separately) and on this one. The masked
+digest of every row is `cf3b75546c4c76da` on both, over 190,402 rows on
+both, with 1,397 card interest, 412 card fee, 346 overdraft fee and 41 LOC
+interest rows on both. Paired domain predicate: 0 posting rows outside a
+finite positive amount, an in-window timestamp, a source of the right kind
+and the GL of their kind. The replay sort's new tie-break on the GL target (see "Only
+the destination and the copied session change" in the design) therefore
+reaches no row at this configuration, and the diagnostic below shows it
+reaches none at pop 10,000 either.
+
+**The one other movement is the camouflage pool, and a bisect attributes
+it.** The three retired keys were in the camouflage P2P pool; the GLs are
+not, so the pool shrinks by three, which re-points ring cover transfers and
+cascades through balances. With fraud on at the gate configuration it moves
+rows 191,721 to 191,722 and legit rows 190,275 to 190,276. At pop 10,000 over
+365 days it moves rows 5,254,057 to 5,253,962 and legit rows 5,223,265 to
+5,223,210 (card interest 85,672 to 85,668, card fees 22,932 to 22,928).
+Restoring the pre-round pool as a diagnostic only (the three retired keys
+re-registered and re-inserted at their old pool position) reproduces the
+pre-round masked digests exactly at both scales (`35f81eb8a5ac1c7a` over
+190,275 legit rows at the gate configuration, `b96634da5e626522` over
+5,223,265 at pop 10,000), so nothing else moved. Keeping the retired keys in
+the pool was not an option: they no longer exist.
+
+| Leg B (fraud on) | Rows | Distinct payers | Share of accounts | Closing balance |
+|---|---:|---:|---:|---:|
+| `GL00000001` card interest income | 1,396 | 1,390 | 0.2655 of 5,236 card accounts | $27,061.15 |
+| `GL00000002` card fee income | 412 | 411 | 0.0785 of card accounts | $16,175.12 |
+| `GL00000003` deposit fee income | 346 | 208 | 0.0655 of 3,177 deposit accounts | $13,619.87 |
+| `GL00000004` credit-line interest income | 41 | 41 | 0.0129 of deposit accounts | $170.76 |
+
+The GLs are records 3,013 to 3,016, internal, ownerless and unflagged; 0 of
+1,005 fraud rows and 0 of 441 camouflage rows touch one; 0 of 2,195 postings
+carry a device or IP; each GL closes at exactly the sum of its booked rows.
+
+| Scratch leg (pop 10,000, 365 days from 2025) | Rows | Distinct payers | Share of accounts |
+|---|---:|---:|---:|
+| card interest income | 85,668 | 14,234 | 0.5406 of 26,330 card accounts |
+| card fee income | 22,928 | 10,675 | 0.4054 |
+| deposit fee income | 11,788 | 2,594 | 0.1631 of 15,909 deposit accounts |
+| credit-line interest income | 5,884 | 803 | 0.0505 |
+
+0 of 16,359 camouflage rows touch a GL at that scale.
+
+**DISARMS, each run against this build:** copying the triggering row's session
+back onto liquidity postings reds B4 (387 rows, because the disarm also
+reaches LOC interest, which the pre-round build left bare); sending LOC
+interest to the deposit fee GL reds A2, B1 and B5; sending late fees to the
+card interest GL reds A2, B1 and B5; registering the GLs with the external
+flag reds B2; dropping the GL clause from the camouflage predicate (the
+exclusion-list form the review fix below replaced) reds B3
+(the row count alone passed that disarm: about 440 camouflage rows put well
+under one expected row on four GLs, which is why the predicate is checked
+directly); removing the mule-ml sentinel guards reds all three Part C checks
+(the canonical IP becomes `0.0.0.0`); dropping the `gl` type from the
+mule-temporal exporter reds `test_mule_temporal`.
+
+**Corpus movement.** `tests/golden_run.b2sum` moves again (the staged
+unknown-counterparty digest `dd0363aa...` to `754ab129...`), with the row
+count unchanged at 231,731; the digest is re-pinned once at the end of the
+round. `test_remote_payees` B2, which pins every legit row but its own
+retired flows, now also masks this round's two fields and is re-pinned once
+(`255b9e814eea12cc` over 190,275 legit rows to `dbfdd62a2aca2846` over
+190,276); under the extended mask the pre-round build and the diagnostic pool
+both score `815871576f03eef2` over 190,275, so its movement is the camouflage
+cascade alone. The three PostgreSQL table goldens need the owner's re-pin:
+the standard exporter's `external_accounts` loses the three retired keys and
+its `accountnumber` gains the four GLs (`is_external` 0); the AML Account
+table gains four `general_ledger` rows and the counterparty tables lose three;
+mule-ml loses its `0.0.0.0` IP edges and some canonical IPs change.
+`kTableCount` stays 43. The mule-temporal 2024 corpus, its TigerGraph
+snapshot and the MulePatternLearner hub registry must be regenerated under a
+new dataset id: the card issuer, fee-collection and LOC keys disappear, and
+four `account_type = gl` accounts appear in their place (`is_external`
+False), which the hub handling should drop or treat as a separate edge type
+rather than as customer neighbours.
+
+## The camouflage pool, restricted at review (design written before the code)
+
+**The finding.** The predicate this round created,
+`fraud::camouflageEligible`, said the camouflage P2P pool leaves out
+destinations no legitimate P2P row pays, yet it admitted every other registry
+record, credit-card accounts included, and the re-pick loop in
+`camouflage::generate` re-drew only merchants. On the run-golden gate world
+(pop 2,000, 60 days from 2025-01-01, seed 3405691582, fraud on) 162 of 263
+camouflage P2P rows (62%) paid another person's `Role::card` account, while
+all 11,890 legitimate P2P rows paid a customer deposit account
+(`Role::account`); every row in which an owned internal account paid someone
+else's card was camouflage, so the destination alone marked the row. At pop
+10,000 over 365 days it was 5,644 of 9,538 (59%) on cards, 3,202 on deposit
+accounts and 692 on external family, business, client, brokerage, employer
+and landlord accounts, none of which legitimate P2P pays either. HEAD's pool
+held every registry record, so the leak predates this round. The review
+proposed a separate round, because the fix re-points cover transfers and moves
+legitimate rows. It ships in this one instead: this round already moves
+`tests/golden_run.b2sum` and re-pins it once, and the movement is the same
+camouflage cascade this series has measured and attributed twice.
+
+1. **The predicate becomes positive.** An account is eligible exactly when it
+   is a customer deposit account, `Role::account`. The role is internal only,
+   and `synth::accounts::makePack` is its only producer, so every such record
+   is owned. That is the destination set of `Legit::p2p`, the flow the
+   channel mimics. It subsumes the named exclusions (providers, remote payees,
+   GLs) and closes the institutional-providers limitation that the pool still
+   held SSA, the IRS, billers and cash endpoints.
+2. **The merchant re-pick loop is deleted.** No merchant is in the pool, so
+   the loop can no longer fire. It spent a draw only when a pick landed on a
+   merchant, so deleting it moves nothing under the new pool; the gate
+   configuration is run with and without it to show that.
+3. **No draw is added and none leaves the per-ring lane.** The pool is still
+   built draw-free from the registry after the entity stage, each P2P row
+   still spends one `choiceIndex` on `{"fraud", "ring", ring, "camo"}`, and
+   the shared entity stream is not read (`test_bank_ledger` A1 keeps its
+   pin). What moves: each ring's P2P destinations, the later draws on the same
+   ring lane (a destination equal to the source is skipped at a different
+   rate), and, through balances, the replay's accept or decline of later rows,
+   legitimate ones included. That is the camouflage cascade the two earlier
+   amendments of this series measured and attributed.
+4. **The gate.** `test_bank_ledger` B3 gains two checks: the predicate admits
+   exactly the registry's `Role::account` records, and every camouflage P2P
+   row targets one. DISARM: the exclusion-list predicate reds both.
+5. **Re-pins.** `test_remote_payees` B2 pins a fraud-on legit digest, so it
+   moves with the cascade and is re-pinned once, attributed by a bisect;
+   `tests/golden_run.b2sum` moves and is re-pinned once at the end of the
+   round.
+
+**Measured (a scratch probe runs the gate world's leg and hashes every row
+order-free; the pre-fix numbers come from the staged tree, rebuilt from the
+index).** At the gate configuration camouflage P2P goes from 263 rows (89 on
+deposit accounts, 162 on cards, 12 on external client and family accounts and
+on business accounts) to 261, all on deposit accounts, and the pool from
+9,242 records to 3,013. At pop 10,000 over 365 days it goes from 9,538 (3,202
+on deposit accounts, 5,644 on cards, 692 elsewhere) to 9,544, all on deposit
+accounts, and the pool from 45,225 to 14,943. The domain moves toward the
+legitimate rows, not past them: camouflage P2P to an owner already dead goes
+from 50 to 81 rows (0.52% to 0.85%) and to an owner not yet joined from 29 to
+41 (0.30% to 0.43%), against 0.76% and 0.42% for legitimate P2P (2,539 and
+1,412 of 335,953).
+
+**The loop deletion is byte-neutral, so the movement is the predicate.** The
+fix scores the same with the re-pick loop kept and deleted: all-row digest
+`d86a257b719200d2` and legit digest `c8ffaaa5db6a50b3` at the gate
+configuration, `d70316fb523b8639` and `9191afb392a10e4c` at pop 10,000. The
+fraud-free legs keep their pins (`test_bank_ledger` A1 `498e4bde6c6f83ea`, A2
+`cf3b75546c4c76da` over 190,402 rows), so the shared entity stream and
+`makeCatalog`'s draw count are unchanged.
+
+**What cascades.** At the gate configuration rows go from 191,722 to 191,725,
+legit rows from 190,276 to 190,273, camouflage rows from 441 to 447 (bills
+109 to 108, salary 69 to 78) and fraud rows stay at 1,005; the four GLs keep
+their row counts and closing balances. At pop 10,000 rows go from 5,253,962
+to 5,253,975, legit rows from 5,223,210 to 5,223,454, camouflage rows from
+16,359 to 16,106 (P2P +6, bills +11, salary -270) and fraud rows from 14,393
+to 14,415. The salary mimic moves most because its coin runs after the P2P
+branch on the same ring lane, so it re-rolls which ring accounts receive a
+payroll stream, and one stream carries 12 to 52 rows a year. Fraud rows move
+because the illicit budget counts camouflage rows (`illicitBudgetBase` in
+`injector.cpp`).
+
+**Re-pins.** `test_remote_payees` B2 goes from `dbfdd62a2aca2846` over 190,276
+legit rows and 7,902 retired rows to `75d7339bc4b70b82` over 190,273 and
+7,900. The staged pre-fix build scores the old values (the suite passed on
+it), and the fix scores the new ones with and without the loop, so the
+movement is the pool alone. `tests/golden_run.b2sum` moves from the staged
+`754ab129...` to `0642235c...`, with the row count unchanged at 231,731, and
+is re-pinned once at the end of the round. The three PostgreSQL table goldens
+move with the camouflage destinations (the owner re-pins them). In
+mule-temporal, camouflage P2P no longer exports as an unknown-rail payment
+into a credit-card account: it is a deposit-to-deposit P2P row, Zelle-eligible
+under the same sender and payment draws as a legitimate one.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: atm-spread-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** A selection bug is fixed; the model is not changed. Every
+resident of an area sits at its centroid, so all of the area's own ATMs,
+depositories and check-capture points tie at distance zero. `buildNearbyPoints`
+(`transfers/legit/blueprints/plans.cpp`) broke that tie by pool index and
+stored one four-point list per area, so a whole city shared its four
+lowest-numbered points: at pop 200,000 New York had 41 terminals and used 4,
+and the busiest terminal took about 300,000 withdrawals a year
+(`docs/research/counterparty_hubs_2026-09.md`, proposed change 4). Now every
+person gets their own nearest four. Points in strictly nearer distance groups
+are kept whole, as before; the group that straddles the four-point cut is
+stored whole, and each person takes a window of consecutive points in it that
+starts at `splitmix(splitmix(person ^ railDomain) ^ area) % groupSize`
+(`cash::NearbyIndex::select`, `entities/counterparties/cash_points.hpp`).
+Nothing is sampled, no parameter changes (4 nearby points, the 82% home
+terminal, 13.5 ATMs and 2.5 depositories and check-capture points per 10,000
+people), and nothing is stored per person or per account: the index holds at
+most three fixed keys and one tie group per area and rail. The set is still
+resolved at event time, so it follows relocation. The revenue book's copy of
+the area lookup (`RevenueCounterparties::cashDepositoriesFor`, business cash
+takings) switched with it. The pickers are unchanged: `terminalFor`,
+`depositoryFor` and `stableExternalPoint` now pick inside the person's own
+set. `checkCaptureFor` and `cryptoVenueFor`, which had no callers, are
+deleted.
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Each person's cash points are their own nearest four; ties at the cut are broken by a per-(person, area, rail) hash window, not by pool index | A city's customers use all of its terminals, each customer a small, spatially tight set of nearby ones | CHOICE (mechanism) | Diebold Nixdorf Advisory Services blog (Weston, 2021): consumers use about 2.5 different locations a year [P, a consultant's observation with no dataset]; Burra and Lokanathan, arXiv 2011.08721 (UN Global Pulse, 2020): median yearly distance between a customer's ATMs 0.66 to 7.21 km by income group [S, abstract only]; Ueda, CIGS WP 22-003E (2022): Mizuho customers are habitually attached to specific sites [P, corrected: about 1,300 to 2,000 repeat users per terminal, not 4,000] | **CLOSED** (the concentration defect): at pop 200,000 all 270 ATMs are used (181 before) and New York's busiest own terminal carries 1.08 times its fair share of New York's rows (10.29 before); measured table below |
+| 4 nearby points per person (`cash::kNearbyCount`), 82% of withdrawals at a stable home terminal, the rest at one of up to three neighbours (`terminalFor`) | Research recommends picking among the 3 to 5 nearest terminals, 2 to 4 distinct ATMs a year, and a primary ATM taking 50 to 70% of withdrawals, and marks the share as an assumption with only indirect evidence | CHOICE | Round research note (atm-employer-landlord), recommended parameters and gaps; Diebold Nixdorf 2021 [P] | **REGISTERED, unchanged**: 4 sits inside 3 to 5; 82% is above the assumed 50 to 70% and is not tuned here |
+| 13.5 ATMs per 10,000 people | 451,500 US ATMs (2022) over 333.3M people is 13.5 per 10,000; ATMIA's 520,000 to 540,000 is 15.6 to 16.2 | MEASUREMENT | Euromonitor via Payments Dive 2023-06-23 [trade press]; ATM Marketplace reporting ATMIA, 12 Sep 2023 [S] | **CONFORMS** on the trade-press count (the cash-hub-defect-2026-08 density row is amended to match) |
+| Withdrawals per terminal a year: generator mean about 27,400 (0.88 users x 3.5 a month x 12 = 37 per person-year, over 13.5 terminals per 10,000); measured p50 28,150 at pop 200,000, before the affordability screen and deaths | 3.4 billion US ATM withdrawals in 2024 (average $210) over 451,500 to 540,000 terminals is 6,296 to 7,530 a year each, or 10.2 per person-year; Cardtronics averaged 757 a month (9,084 a year); active debit cardholders made 1.9 ATM transactions a month in 2023 | MEASUREMENT | Federal Reserve Payments Study, top-line data CY2015-24 [P, verified 2026-09-25]; Cardtronics 10-K 2019 [P]; PULSE 2024 Debit Issuer Study [P] (all via the round research note and `docs/research/counterparty_hubs_2026-09.md`) | **DEVIATES, REGISTERED, NOT TUNED**: the 3.6x gap in the mean is the ATM withdrawal frequency (`atm::Config` userP 0.88 and U{1..6} a month, UNCITED: 37 per person-year against the Payments Study's 10.2), not the selection. `docs/cash_hub_defect.md` forbids tuning ATM volume to close a throughput gap in a selection round |
+| Busiest terminal at most 50,000 withdrawals a year (scale gate G6, before the screen) | A realistic busiest terminal is about 5 to 10 times a mean of about 7,000, so about 20,000 to 50,000 a year, not 250,000; the average Australian bank-owned ATM handled about 128 transactions a day (withdrawals plus balance enquiries) against about 29 at independents | MEASUREMENT (derived) | Round research note, recommended parameters, from the Payments Study mean above; RBA Bulletin March 2016, Table 2 [P, corrected: 130 a day includes balance enquiries and is the bank-owned average, not a busy terminal] | **CONFORMS**: 44,136 at pop 200,000 and 44,622 at pop 500,000 (298,157 and 721,489 before). The hubs note's own proposal (at or below about 40,000) sits below the gate's pre-screen figure; whether production rows meet it needs the regenerated corpus (see the scale-gate limitation) |
+| Distinct accounts per terminal (printed, not banded) | Bank of America has 14,893 ATMs for about 69 million clients, about 4,600 clients per ATM; Mizuho saw about 1,300 to 2,000 repeat users per closed terminal | MEASUREMENT | Bank of America 10-K 2024 [P]; Ueda 2022 [P, corrected] (both via the research notes) | **CONFORMS in order of magnitude**: p50 2,541 and max 3,888 at pop 200,000 (max 26,780 before) |
+| No draw is added: the window start is a pure hash of (person, event-time area, rail); `buildCounterpartyAccess` draws nothing; `burnRetiredCounterpartySelection` still runs first with the same count; `synth::counterparties::make` and `makeCatalog` are untouched | The shared entity stream and every lane are where they were | INVARIANT | none needed | **ENFORCED**: every blueprint the unit test and the scale gate build checks that `addCounterparties` left its stream where it found it, including worlds with 12 tied points; `test_product_providers` B5 (`498e4bde6c6f83ea`) and `test_bank_ledger` A1 keep their shared-stream pins (both re-pinned later by counterparty-sizes-2026-09 for its salary-jitter cascade; that round's income-free pin `ddfd735e74a97cd2` in `test_counterparty_sizes` sub-gate A was measured on the tree this amendment left and on its own build, and agrees) |
+| Where every distance group fits inside the cut (every world with four or fewer points per rail), the selection is exactly the former list | Pools that could not express the defect do not move | INVARIANT | none needed | **ENFORCED**: unit test A3 compares element by element against the former (distance, pool index) list for four points in four areas, seven points whose groups end at the cut, the directory-less two-point fallback and a person with no home area. At pop 2,000 (3 ATMs, 2 depositories and 2 check-capture points) nothing moves; see the corpus movement note |
+| One hash domain per rail (`kWithdrawalSetDomain`, `kDepositSetDomain`, `kCheckSetDomain`) | Depositories and check capture have identical counts and placement, so one domain would give every person the same ordinals on both | INVARIANT | none needed | **ENFORCED**: A6, 1,835 of 2,000 persons get different depository and check windows (a shared domain scores 0) |
+| Business cash takings use the same per-person set as household deposits | The revenue book resolves the owner's area itself; missing it would leave takings on the old concentrated set | INVARIANT | none needed | **ENFORCED**: the scale gate requires `cashDepositoriesFor` to equal `depositPointsFor` for every person at every leg and drives the depository rail through `cashDepositoriesFor` |
+| Every emitted ATM, cash-deposit and check-deposit endpoint lies in its owner's own set (the domain predicate paired with the `golden_tables_aml.md5` re-pin) | The real emitters (`atm.cpp`, `deposits.cpp` and the revenue book's cash takings) pick inside the per-person set, neither over the pool nor over the former list | INVARIANT | none needed | **ENFORCED** by three gate-harness corpus legs in `test_cash_boundaries`: pop 300 over 730 days (2 points per rail, so each set is the whole pool and membership cannot exclude a point), pop 10,000 over 60 days from 1991-01-01 with seed 7 (the AML golden's population, window and seed: 14 ATMs, 3 depositories, 3 check-capture points) and pop 20,000 on the same window (27, 5 and 5). Every row's set has size min(4, pool) and holds the endpoint, and every ATM row is exactly `terminalFor` over its owner's set. The pop 10,000 leg requires ATM rows whose set is smaller than the pool (all 58,899) and rows outside the former list (66); the pop 20,000 leg requires rows whose set is smaller than the pool on all three rails (118,243 ATM, 13,703 cash-deposit, 1,857 check-deposit rows) |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Out-of-area fill points are taken whole | An area with one or two terminals beside several small areas absorbs their fill, so ATM busiest over mean is about 1.6 and depository about 2.6 at pop 500,000; a resident's home terminal can sit in a neighbouring city, because home is uniform over the four | CHOICE | none needed | **REGISTERED**: restricting the home terminal to the nearest distance group is a separate model change. It is also why G5 is banded for ATMs only (depositories score 5.70 armed against 6.47 before) |
+| Load is flatter than reality: every terminal has the same weight | Bank-owned terminals carry most withdrawals (58% of US ATM withdrawals are on-us; Australian bank ATMs were 45% of the fleet and carried 75% of withdrawals); research recommends a busiest terminal about 5 to 10 times the mean and 3 to 4 times the weight for bank-branch terminals | CHOICE | PULSE 2024 [P]; RBA Bulletin March 2016 [P]; round research note | **REGISTERED**: ATM busiest over mean is 1.61 at pop 200,000. The scale gate's G4 ceiling (2.5) must be re-measured if terminal weighting is ever added |
+| No distance decay inside the four | Research suggests distance decay at about 1 to 1.5 km urban and 4 to 6 km rural; residents here sit at area centroids, so the within-area choice has no distance to decay on | CHOICE | Bank of Canada SDP 2023-28 [P]; round research note | **REGISTERED** |
+| The window is keyed by person, not household | Coresidents do not share a nearby set | CHOICE | none needed | **REGISTERED** |
+| Ring order is pool order inside an area | Points carry no coordinates of their own, so neighbouring windows overlap in a banded pattern | CHOICE | none needed | **REGISTERED** |
+| Terminals are placed only by initial home-area quantiles (`representativeAreas`, `synth/counterparties/make.hpp`) | Movers into an area with no initial residents use fill from other areas | CHOICE | none needed | **REGISTERED** (unchanged) |
+| The ATM withdrawal frequency (0.88 users, U{1..6} a month) | 37 per person-year against the Payments Study's 10.2 and PULSE's 1.9 a month per active debit cardholder | UNCITED | Federal Reserve Payments Study CY2024 [P]; PULSE 2024 [P] | **REGISTERED, NOT TUNED** (see the throughput row) |
+| A person whose area is missing from the index with a pool of more than four now gets a hashed window of four, not the whole pool | Production cannot reach it: `buildNearbyPoints` covers every home and relocation area, and every `usBankDefault` country has catalogue rows; pools of four or fewer (the standalone two-point fallbacks included) are returned whole, as before | INVARIANT | none needed | **REGISTERED** |
+| Business cash takings resolve the owner's set once a month, at the month start (`activity/income/revenue/generate.hpp`, unchanged by this amendment) | A business owner who moves mid-month deposits that month's takings at the former area's points | CHOICE | none needed | **REGISTERED**: the corpus check accepts the month-start set for a cash deposit that its event-time set does not hold; 0 such rows at all three corpus legs |
+| The scale gate is not a corpus | Homes are drawn per person (not per household), users by a 0.88 hash coin, 42 withdrawals a year each, and no affordability screen or deaths, so its rows run above production's; the check rail picks with `depositoryFor` as a stand-in for `deposits.cpp`'s `stableExternalPoint` (both a stable per-account hash modulo the local set) | CHOICE | none needed | **REGISTERED**: the production-rows figure for the busiest terminal at pop 200,000 needs a regenerated mule-temporal corpus |
+
+## Where the implementation deviates from the design
+
+1. **`LocalPoints` is not a range.** The design gave it `begin`, `end` and
+   `data`. `std::span<const Key>` converts implicitly from any contiguous
+   range, temporaries included, so a range would let a span to a temporary
+   escape through an implicit conversion. It hands out a span only through
+   `span() const &`, and `span() const &&` is deleted; the compiler rejected
+   two such calls in this round's own test.
+2. **G5 is banded for ATMs only**, and **G6 (busiest ATM rows a year) is
+   added.** A depository G5 band could not fail (see the fill limitation).
+3. **The scale gate checks the revenue lookup against the household one for
+   every person** and a second build against the first (A4 at scale), rather
+   than only the design's order-independence check on the unit fixture.
+4. **The dead pickers are deleted** (the design's optional delete-first).
+5. **An area whose ranking is empty gets no entry**, so it falls back to the
+   pool. The former builder stored an empty list and fell back the same way.
+6. **The corpus check runs at three legs, not one.** The design tightened
+   the pop 300 checks and named them the domain predicates for the AML
+   re-pin, but at two points per rail each set is the whole pool, so an
+   emitter reverted to the pool passed them. Review found this; the pop
+   10,000 and 20,000 legs are the ones that can fail, and each ATM row is
+   also checked against `terminalFor`'s exact pick.
+
+## Measured (`test_cash_boundaries`, scale gate; the reference arm is the former selection computed in-test from the same directory)
+
+| Rail, pop | Arm | Used / pool (G1) | G2 within area | G3 own coverage | G4 max / mean | G5 resident ratio | Busiest rows a year | Max distinct accounts |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| ATM, 10,000 (printed) | armed | 14/14 | no area over 4 | 1.000 | 1.36 | 20.96 | 36,002 | 3,251 |
+| | reference | 14/14 | no area over 4 | 1.000 | 1.45 | 20.96 | 38,303 | 3,319 |
+| ATM, 200,000 | armed | 270/270 | 1.08 | 1.000 | 1.61 | 2.34 | 44,136 | 3,888 |
+| | reference | 181/270 | 10.29 | 0.098 | 10.88 | 10.79 | 298,157 | 26,780 |
+| ATM, 500,000 | armed | 675/675 | 1.10 | 1.000 | 1.63 | 2.42 | 44,622 | 3,839 |
+| | reference | 265/675 | 26.13 | 0.038 | 26.35 | 26.46 | 721,489 | 64,911 |
+| Depository, 200,000 (printed) | armed | 50/50 | 1.02 | 1.000 | 1.68 | 4.62 | | |
+| | reference | 46/50 | 2.02 | 0.500 | 3.31 | 4.62 | | |
+| Depository, 500,000 | armed | 125/125 | 1.03 | 1.000 | 2.56 | 5.70 | | |
+| | reference | 102/125 | 4.78 | 0.211 | 6.53 | 6.47 | | |
+| Check capture, 500,000 | armed | 125/125 | 1.04 | 1.000 | 2.56 | 5.70 | | |
+| | reference | 102/125 | 4.78 | 0.211 | 6.53 | 6.47 | | |
+
+Bands (armed side): G1 at least 0.99, G2 at most 1.5, G3 equal to 1, G4 at
+most 2.5 (ATM) and 4.0 (depository and check), G5 at most 3.5 (ATM), G6 at
+most 50,000. Preconditions: at least one area with more than four own points,
+and a reference G2 of at least 5.0 (ATM) or 3.0 (depository and check), so a
+leg that cannot express the defect fails instead of passing on no data. At
+pop 10,000 no area holds more than four ATMs; its differences come from
+small areas whose cut straddles a neighbouring group.
+
+**DISARM.** Forcing the window start to 0 (every person takes the lowest
+indices of the tied group) reproduces the former selection exactly: unit test
+A1 reds (4 of 12 tied points used), and with A skipped the scale gate's armed
+line equals its reference line at every leg and G1 reds at the first bounded
+leg (ATM, pop 200,000, 181 of 270).
+The same disarm reds the pop 10,000 corpus leg, which then finds no row
+outside the former list. Each emitter reverted to its whole pool also reds a
+corpus leg that the pop 300 leg alone would pass: `atm.cpp` reds the pop
+10,000 leg on membership (and the pop 300 leg on the exact pick, because the
+set is in distance order and the pool is not), and household cash deposits,
+check deposits and business cash takings, whose pop 10,000 pools of 3 still
+fit the cut, each red the pop 20,000 leg on membership.
+
+**Corpus movement.** `tests/golden_run.b2sum` (pop 2,000, 3 ATMs and 2 each
+of depositories and check-capture points, so every distance group fits the
+cut): the stream after this change is `0642235c...` over 231,731 rows, the
+digest the bank-gl-2026-09 amendment recorded for the tree before this
+change, so this change moves no byte of the run golden. The pin file still
+holds the pre-round `a30c535d...` and is re-pinned once at the end of the
+round. `golden_tables.md5` (standard, pop 2,000) should not move, for the
+same reason. `golden_tables_aml.md5` (pop 10,000, 14 ATMs) should move: the
+scale gate's pop 10,000 leg shows armed and former sets differ (busiest
+terminal 36,002 against 38,303 rows a year), so ATM endpoint ids move for
+residents of areas whose cut straddles a group, while row counts and amounts
+do not. In the gate harness's copy of that world (pop 10,000, 60 days from
+1991-01-01, seed 7) 66 of 58,899 ATM rows reach a terminal the former list
+could not, so the move should be small. Its re-pin needs PostgreSQL (the
+owner's) and is paired with the corpus membership predicate registered above,
+at the pop 10,000 and pop 20,000 legs (the pop 300 leg cannot express the
+change), and with the scale gate above. `golden_tables_card_fraud.md5` keeps
+only card and merchant rows and should not move; that was not verified here.
+In mule-temporal every cash point is now observed (at pop 200,000, 270 ATMs
+instead of 181 and all 50 depositories and 50 check-capture points), the
+busiest ATM falls from about 298,000 to about 44,000 withdrawals a year
+before the screen, and its distinct payers from about 26,800 to about 3,900.
+The median terminal, about 28,000 a year, is still far above
+MulePatternLearner's 2,048-payment hub threshold, so the hub registry keeps
+cash hubs, more and smaller ones. The 2024 corpus, its snapshot and the hub
+registry must be regenerated under a new dataset id.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: counterparty-sizes-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** Payroll picked one of `25 per 10,000 people` employers and
+rent one of `12 per 10,000` landlords, both uniformly, so at pop 200,000 about
+480 external employers each paid about 308 people and 240 landlords each
+collected from about 292 tenants, the "individual" ones included
+(`docs/research/counterparty_hubs_2026-09.md`, proposed change 5). Both
+rosters are now published size distributions thinned to the population
+(`synth/counterparties/size_law.hpp`):
+
+    N_c = clamp(round(P x s x m_c), 1, F_c)
+
+for population P, payer share s (0.74 workers, 0.35 renters), the class's
+share m_c of jobs or rental units and its real member count F_c. Employers
+take 17 classes (13 SUSB 2022 enterprise rows, the 20,000+ row as a rank-size
+tail, federal, state and local government) and are all external. Landlords
+take 8 (the seven RHFS 2021 property-size columns, the 150+ column less the
+NMHC 2024 Top-50 owners, and those owners as a rank-size row); each
+landlord's type is drawn from its own class's unit mix on a
+`{"landlord_type", serial}` lane, with the in-bank coin last. Every pick goes
+through a draw-free class-then-member pool (`entity::counterparty::SizedPool`,
+`SizedKeys`): `growth::pickSized` and `pickSizedDifferent` replace the
+uniform `pickOne` and `pickDifferent` on the same lanes with the same draw
+counts, and the O(N) `std::find` on every job switch and lease move is an
+O(1) serial lookup. Camouflage salary picks through the same pool and pays
+on the picked employer's own schedule. At pop
+200,000 the rosters hold 89,231 employers and 66,658 landlords (was 500 and
+240); at pop 500,000, 200,556 and 155,581. The payroll and rent amount laws,
+the cadence law, tenure and every draw on the per-person lanes are
+unchanged; the shared stream after the income pass moves, because salary
+posting jitter draws on it per payday (see the corpus movement below).
+
+## The research tension: a metro count against a national sample
+
+The round research, after verification, puts a single-metro bank of 200,000
+residents at about 3,000 to 6,000 employer firms (the national SUSB density,
+188 firms per 10,000 residents, gives 3,760) and 3,000 to 7,000 rent payees.
+This law gives 89,231 employers and 66,658 landlords at the same population.
+Both are right, for different sampling frames, and the decision is to keep
+the thinning law:
+
+1. **The metro figure counts the firms that exist.** A bank that serves a
+   whole metro sees every firm there, each with its full local workforce.
+2. **PhantomLedger's 200,000 people are a thin national sample.** They live
+   in 71 US home areas (merchant-selection-2026-08 step 2), about 2,800 per
+   area, a small fraction of each city. Two sampled workers rarely share a
+   small employer, so the number of distinct employers such a sample meets
+   is about min(sampled workers in the class, firms in the class). Measured:
+   148,000 workers use 58,611 of the 89,231 employers.
+3. **The metro count would rebuild the defect this round removes.** 3,760
+   employers under the same size law would give the 3,361 firms below 20
+   employees about 148,000 x 0.139 / 3,361 = 6.1 payees each, above the real
+   mean of 3.8 for that class (21,950,184 / 5,720,093), and those six payees
+   would live in different cities. 5,000 rent payees for PhantomLedger's
+   70,000 leases would give every landlord 14 tenants, where the IRS count
+   puts about two units behind an individual landlord.
+4. **Concentration follows the frame.** The research's local figures (the
+   largest employer 4 to 8% of jobs, the top 10 at 20 to 30%, managers with
+   100 to 3,000 households) are metro facts. In the national sample the
+   largest payer is the federal government at 1.9% of workers (2,829
+   payees), the largest private employer takes 1,737, the top 10 take 6.4%,
+   and the largest landlord is a Top-50 owner with 148 tenants.
+
+A regional-bank mode (employers and landlords with a home area, co-located
+with their payees) would reproduce the metro figures; it is registered below,
+not built.
+
+## Renters per household against renters per person
+
+`rent::Rules::paidFraction = 0.35` is a share of PEOPLE, each on their own
+lease; the L-5 anchor (ACS, about 35%) is a share of HOUSEHOLDS. The round
+research puts a 200,000-person region at 25,000 to 30,000 renter households,
+0.125 to 0.15 per person, so PhantomLedger emits 2.3 to 2.8 times as many rent
+payers as real renter households, and the L-5 per-capita rent reconciliation
+multiplied a household share by a per-household rent (now marked SUPERSEDED
+there). The landlord roster is sized against the 0.35 PhantomLedger actually
+draws, because the size law allocates PhantomLedger's own leases: sizing it
+to households while emitting 0.35P leases would put 2.3 to 2.8 times as many
+tenants on each landlord as it has units. The tenants-per-landlord law is
+therefore right relative to the lease count, and the lease count itself
+inherits the L-5 overstatement. Changing the renter share moves every rent
+row and every balance: an owner decision, registered below.
+
+## The verification's four parameter corrections
+
+| Correction | Disposition |
+|---|---|
+| (a) Processor-originated payroll is about 17 to 20% of WORKERS (ADP alone is about 8% of payer FIRMS), not 17 to 20% of payers | Not modelled: every salary row names its employer. Nacha keeps the originator's Company Name readily recognizable when a processor sends the file, so an employer-keyed payer is right for payer identity; whether processor files share one Company ID across employers was not verified (research gap). **REGISTERED**, with the corrected axis for whoever models it |
+| (b) At most 55% of 5-49 unit tenants route to a manager payee (Terner's 55% not owner-managed includes owner-employed superintendents) | PhantomLedger has no separate manager payee; the corporate type (95% portal rent, `RentRouter`) is the professionally-managed proxy. Its share of 5-49 unit tenants is **0.345**, under the bound (`test_counterparties`, RHFS check). The 25-49 column alone is 0.796, because LLC and general-partnership owners type as corporate from 25 units; the bound applies to the 5-49 aggregate, Terner's survey population. **CONFORMS** |
+| (c) The owner-type mix: only the 0.38 individual share was supported; the 0.15 / 0.47 split needed its types redefined against RHFS | Redefined per size column from CRS R47332 Table 3: individual = individual investor + trustee + tenant in common; small LLC = LLC/LP/LLP + general partnership below 25 units; corporate = every other reported form. Renter-weighted **0.433 / 0.138 / 0.429**; reported-only aggregate 0.447 / 0.141 / 0.412 (not-reported units sit mostly in large corporate-held properties, so imputing them within each column lowers the individual share). The individual type exceeds the 37.6% individual-investor share because it includes trustees (2.1%) and tenants in common (1.2%). **CONFORMS** |
+| (d) Portal rent may show a processor, not the manager, as the counterparty in bank data (AppFolio settles through its clearing bank and processors) | Not modelled: a portal rent row names the landlord. A processor hub across landlords is a further source of hubs the research leaves out. **REGISTERED** |
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| SUSB 2022 enterprise size table, 13 uniform rows plus the 20,000+ row: 6,395,635 firms, 135,748,407 employees | Firms under 20 employees hold 16.17% of private jobs; firms of 10,000 or more hold 30.59% | MEASUREMENT | Census SUSB 2022, `us_state_naics_detailedsizes_2022.xlsx` and `us_naicssector_large_emplsize_2022.xlsx` (release 2025-04-10) [Certain, read by the round design; the verification recomputed under-20 16.17%, 500+ 54.14%, 5,000+ 36.32% from the xlsx; the 20,000+ row itself was not re-checked] | **CONFORMS** (`test_counterparties`, SUSB check) |
+| Government is 14.0% of payroll: federal 2.9M, state 4.5M, local 13.6M of 150.0M covered jobs; private rows scaled by 0.86 | Government employs about 14 to 15% of US workers | MEASUREMENT | BLS QCEW 2022 annual averages [Certain]; BLS Employment Situation Table B-1, Aug 2026: 14.66% of nonfarm jobs [Certain, via the verification] | **CONFORMS**. Axis: QCEW covered jobs against CES nonfarm payroll, which explains 14.0 against 14.7 |
+| 90,837 local-government payers | Census of Governments 2022 counts 90,837 local governments | MEASUREMENT | census.gov `govtorg2225` [Likely: a search snippet in the round design] | **UNCITED, verify** at the owner's pass |
+| Federal civilian payroll is ONE payer; the 50 states are equal payers; local governments are uniform in their class | Federal agencies originate payroll separately; state and local payrolls differ in size | CHOICE | ASPEP 2022 would weight states and give local government a tail (not read) | **REGISTERED** |
+| The 20,000+ row as a rank-size tail, s_r = 20,000 x (546 / r)^b, b = 0.7201 (Pareto alpha 1.3886) solved so the row sums; rank 1 is 1.87M | The largest US employers follow a heavy upper tail; Walmart has about 1.6M US associates | TYPOLOGY + CHOICE | SUSB 20,000+ row [Certain]; Walmart figure [Guessing: recalled, not verified, the Walmart FY2023 10-K would settle it] | **REGISTERED**: an unfitted check bands rank 1 in [1.2M, 2.4M]; ranks 3 to 6 (0.85M to 0.52M) run heavy against real firms of about 0.5M |
+| RHFS 2021 (2020 stock): units by property size 16,550 / 6,065 / 5,470 / 2,725 / 1,055 / 1,296 / 16,387k; properties 16,550 / 2,215 / 419 / 75 / 15 / 11 / 45k; units by ownership and size | Individual investors own 37.6% of units and 70.2% of units in 1-4 unit properties; LLC/LP/LLPs own 40.4% of units and 67.8% of units in 100+ unit properties; 85.6% of properties are single-unit; 37.8% of units are in 50+ unit properties | MEASUREMENT | CRS R47332 (Keightley, 2022) Tables 1 and 3 [Certain: the report PDF was read this round, and the tables reproduce every summary sentence above]; HUD/Census RHFS 2021 infographic [Certain, via the verification] | **CONFORMS** (`test_counterparties`, RHFS check) |
+| Landlord type per size column (individual / small LLC / corporate as defined above); renter-weighted 0.433 / 0.138 / 0.429 | The ownership mix changes with property size: individuals dominate 1-4 unit properties, partnerships and corporations the large ones | MEASUREMENT (derived) | CRS R47332 Table 3 [Derived]; verification correction (c) | **CONFORMS**. Replaces the population-wide 0.38 / 0.15 / 0.47 mix, which assigned a landlord COUNT from a UNIT share |
+| NMHC Top-50 owners: 2.4M units, rank 1 108k (Greystar), s_r = 108k x r^-b with b = 0.2850; carved out of the 150+ column (units, and properties in proportion: 45,000 to 38,409), all corporate | The 50 largest apartment owners hold more than 2.4M units | MEASUREMENT + CHOICE | NMHC 2024 Top Owners list [Likely: a search snippet in the round design; the verification could not render the NMHC pages] | **UNCITED, verify**. The fit undershoots ranks 2 to 4 by 12 to 14% (design); each owner collects into one account |
+| The thinning law, with one counterparty per expected payer in every class below its real size (occupancy lambda = 1) | A national sample meets about one payee per small employer or landlord | CHOICE | Reconciled with the verification's metro counts in the section above | **REGISTERED**: P(one payee given used) is 0.532 at pop 200,000; pure national thinning would give about 1.0 |
+| Worker share 0.74 and renter share 0.35 | The rosters are sized against the payers the generator draws | INVARIANT | none needed | **ENFORCED**: tied by test to `salary::Rules{}.paidFraction` and `rent::Rules{}.paidFraction` |
+| In-bank landlord probability 0.06 / 0.04 / 0.01 by type (unchanged), now applied to the class-drawn type | Small landlords bank locally; corporate owners use national commercial banks | CHOICE | none (unchanged) | **REGISTERED**: 2,487 ownerless in-bank landlords at pop 200,000, against about 8 before |
+| The retired roster draws are burnt at their original positions: `max(5, round(25P/1e4))` coins at 0.04 in `make()`, `2 x max(3, round(12P/1e4))` u64 in `buildLandlords`, frozen constants | The shared entity stream does not move; `makeCatalog`'s draw count is untouched | INVARIANT | none needed | **ENFORCED**: `test_counterparty_sizes` sub-gate A matches the verbatim retired loops at pop 1, 300, 2,000, 20,791 and 200,000 (clients identical) and pins the run-golden world's income-free shared stream at `ddfd735e74a97cd2`, measured on the tree before this round and on this build |
+| `pickSized` spends one uniform for a pool of two or more and none for one; `pickSizedDifferent` none when the rest is one member | Every later draw on the employment and lease lanes keeps its value | INVARIANT | none needed | **ENFORCED**: `test_counterparties` draw contract against `choiceIndex`; sub-gate C, 146,105 job switches with 0 intervals off the retired lane and 0 repeats |
+| Camouflage salary picks its employer through the payroll size law, same single u64 on the camo lane | Cover salary comes from employers the size of legitimate ones | INVARIANT (pool sharing) | none needed | **ENFORCED**: sub-gate B drives the real generator at pop 200,000; mean legitimate headcount of camouflage employers is 1.023 of legitimate payees', and a uniform pool scores 0.0150 |
+| Camouflage salary pays on the picked employer's own schedule: `samplePayrollProfile` on `{employer_payroll_profile, number}` off `RngFactory{payrollSeed}` (the run seed, carried in `InjectorServices`), posted through `timestamps::jittered` with the salary jitter (the posting lag, no day offset, 06:00 to 11:59). The per-mule schedule draw on the camo lane is retired, which moves that isolated lane only | A mule's cover salary posts on the dates, and in the hours, its employer pays every other payee | INVARIANT (schedule sharing) | none needed | **ENFORCED**: sub-gate B, 15,807 camouflage pairs with a legitimate co-payee, 0 of their 80,369 rows off the schedule EmploymentInitializer handed that employer's payees; the disarm (schedules from the fraud factory, the retired draw's law) puts 13,158 of 15,701 pairs (0.838) and 59,588 of 79,196 rows off. Sub-gate D, both corpus legs: 0 legitimate salary rows off the derived schedule (the instrument check), 0 of 49 (60 days) and 0 of 356 (365 days) camouflage rows off it, against 36 and 294 on fraud-factory schedules. Before the fix the review measured 11,303 of 15,758 pairs (71.7%) with a row off, counting either the lagged or the unlagged pay date as on schedule; the old minute draw could also post at 12:00, which legitimate payroll never does |
+| Camouflage salary derives the schedule under `PayrollRules{}` | Legitimate payroll reads `salary::Rules::employment.payroll`, the same defaults | CHOICE | none needed | **REGISTERED**: none of `LegitAssembly::incomePrograms`, `salaryRules` and `employmentRules` has a caller, so both sides run on the defaults. A caller that sets non-default payroll rules must carry them to the injector beside `payrollSeed`, or the two schedules part |
+| Camouflage P2P never pays an employer or a landlord | Legitimate P2P pays only customer deposit accounts | INVARIANT | none needed | **ENFORCED**: `fraud::camouflageEligible` (the bank-gl-2026-09 review fix) admits only `Role::account`, so none of the 2,157 employer and landlord records (16.9% of the pop 2,000 registry) is admitted; sub-gate D finds 0 of 258 (60 days) and 0 of 1,572 (365 days) camouflage P2P rows on either |
+| Employer serials 1..N stay below the SSA and disability keys (9,000,001 and 9,000,002); the landlord roster stays below 10^7 (the seven-digit internal layouts) | Keys never collide or overflow their rendering | INVARIANT | none needed | **ENFORCED**: `static_assert` on the sum of real members (6,486,523) and a throw in `makePack` (binds only above about 28M people) |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Employers and landlords have no location | A small employer's or landlord's payees live near it | CHOICE | none needed | **REGISTERED**: co-payees can live in different cities; there is no regional-bank mode (see the reconciliation) |
+| Job switches are size-weighted | New hires follow firm hiring rates, which differ by firm size and age (BDS) | CHOICE | BDS (not read) | **REGISTERED** |
+| No firm or landlord births or deaths | Firms and landlords enter and exit | CHOICE | none needed | **REGISTERED**: over 20 years job churn stacks about 7.5 distinct payees onto a small employer (design estimate) |
+| Relocation ends neither the job nor the lease | A cross-state mover changes both | CHOICE | none needed | **REGISTERED** (pre-existing; a mover can keep paying the old landlord for up to 8 years) |
+| Pay cadence is one draw per employer and does not depend on size | 72.9% of 1,000+ employee establishments pay biweekly (L-4); federal pay is biweekly | CHOICE | BLS CES Feb 2023 (L-4) | **REGISTERED**: the worker-weighted mix now rests on a few giant draws (about 7% of workers take their cadence from about 11 employers, design estimate) |
+| Registered but never-paid employers and landlords are exported as isolated vertices in aml and mule_ml | A bank's counterparty table holds counterparties it has seen | CHOICE | none needed | **REGISTERED, owner decision** (filter to observed accounts, as card-fraud does): never paid at pop 2,000 are 44.9% of employers and 43.1% of landlords over 60 days, 33.6% and 33.3% over 365 days |
+| In-bank landlords are ownerless internal accounts, and the standard exporter labels them `landlord_external` / `landlord` (its `landlordIndex` holds external landlords only) | An in-bank landlord is a customer | CHOICE | none needed | **REGISTERED, owner decision** (set inBankP to 0 or give them an owner); pre-existing, now about 300 times more visible |
+| The renter share is per person | About 35% of HOUSEHOLDS rent | MEASUREMENT | ACS [Likely] (L-5); round research: 25,000 to 30,000 renter households per 200,000 people | **NONCONFORMING, REGISTERED, owner decision**: about 2.3 to 2.8 times as many rent payers as renter households (see above) |
+| Processor-originated payroll is not modelled | About 17 to 20% of paychecks are processor-originated (ADP alone) | CHOICE | ADP Research 2025 [P, via the verification] | **REGISTERED** (correction a) |
+| 1-4 unit tenants are under-routed to managers | About 22% of 1-4 unit properties and 84% of 150+ unit properties are professionally managed | MEASUREMENT | RHFS 2021 via Multifamily Executive [S, via the verification] | **DEVIATES, REGISTERED**: the corporate share is 3.6% (1 unit) and 4.8% (2-4 units), because individual owners who hire a manager still type as individual; 150+ is 0.93 to 0.94 (conforms on a property-against-unit axis) |
+| Portal rent names the landlord | Portal rent can settle through a processor | CHOICE | AppFolio 10-K FY2024 [P, via the verification] | **REGISTERED** (correction d) |
+| Spending volume is sensitive to pay cadence on short windows | none | CHOICE | none needed | **REGISTERED, not tuned**: at the run-golden configuration the realized cadence moved from 38% weekly / 62% biweekly (the 5 retired employers) to the law's mix (16 / 65 / 10 / 8% of 1,207 workers), and fraud-free gate-leg rows fell 190,402 to 146,901. Forcing the retired mix back into this build restores 189,767 (a diagnostic, not shipped), so the drop is the cadence law being realized, not a regression. It is a pre-existing engine property (the paycheck boost and a monthly worker's liquidity before the first in-window payday), exposed here |
+| The hubs note's "38,000 to 41,000 payroll credits per employer" and "about 1,500 employees each" | The code can emit about 308 payees and 9,100 credits a year per employer at pop 200,000 | UNCITED | `docs/research/counterparty_hubs_2026-09.md` | **UNRECONCILED**: 4.3 times the code arithmetic; no exporter or routine multiplies salary rows (split deposits are self-transfers), and the note's graph could not be queried here. Do not quote it as the baseline |
+
+## Where the implementation deviates from the design
+
+1. **Landlord totals.** Class masses divide by the Table 3 class sum
+   (49,548k), not the published total (49,547k), so they sum to exactly 1;
+   the design's 66,662 at pop 200,000 is 66,658 here. The design's
+   155,585 at pop 500,000 is 155,581: the carve-out keeps round(45,000 x
+   13,987 / 16,387) = 38,409 properties in the 150+ column, which binds at
+   that population.
+2. **The type mix is the renter-weighted 0.433 / 0.138 / 0.429**, beside
+   the design's reported-only 0.447 / 0.141 / 0.412. Both are tested.
+3. **The camouflage P2P predicate change ships as a gate, not as code.**
+   The bank-gl-2026-09 review fix had already replaced the merchant re-pick
+   with a pool of customer deposit accounts only, which excludes employers
+   and landlords; the re-pick loop the design names no longer exists.
+4. **The camouflage headcount band runs through the real generator at pop
+   200,000 (sub-gate B), not on the corpus.** At pop 2,000 the roster holds
+   more employers than workers, so a uniform pick already scores about 0.3,
+   and the corpus has about 20 camouflage salary pairs (measured ratios
+   0.435 at 60 days and 0.471 at 365). The corpus legs print it.
+5. **The corpus rent-type band is 4 sigma over the payer count**, because a
+   payer's landlord is fixed within a lease and rows cluster by payer; the
+   design's plus or minus 3 points is banded at scale in sub-gate B (70,000
+   leases).
+6. **The optional salary-jitter lane move was not taken.** The shared stream
+   after the income pass moves, so three in-test pins were re-pinned
+   (`test_bank_ledger` A1/A2, `test_remote_payees` B1/B2,
+   `test_product_providers` B5) with the attribution in each, and sub-gate A
+   adds the income-free pin that shows nothing before the income pass moved.
+7. **`AccountPools::employers` borrows the pool** rather than copying it;
+   `SizedKeys::indexOf` also answers for a one-key fallback pool whose serial
+   is not 1; the landlord burn spends `nextU64` twice per retired landlord
+   (the same count, proven by sub-gate A) instead of replaying the draws.
+8. **Added:** sub-gate B bounds the most tenants at an individual landlord
+   (at most 12; 7 measured) with the retired 240-landlord roster as its
+   disarm (329); `test_pipeline_e2e` checks the production pipeline's salary,
+   benefit and rent rows against the pools at pop 100.
+9. **Added at review: camouflage salary pays on its employer's schedule.**
+   The design changed only the pick, and the generator still drew its own
+   cadence, weekday, fortnight parity and posting lag on the camo lane, so a
+   mule's salary from a shared employer usually landed on dates that
+   employer paid nobody else. The schedule is now derived from the lane
+   legitimate payroll reads. The legitimate run seed reaches the injector
+   as `InjectorServices::payrollSeed` rather than through
+   `LegitCounterparties`: both production engines build their injector in
+   `TransferStage::makeFraudInjector`, beside `fraudSeed`, so one production
+   line covers both, and the three harness injectors set it the same way.
+   The injector's own factory is keyed on `fraudSeed`, which is why the
+   camouflage context carries a second, legitimate factory. The re-dated
+   camouflage rows move three legit rows and one retired row in post-fraud
+   settlement, so `test_remote_payees` B2 was re-pinned once more; the same
+   build with the per-mule schedule restored (a diagnostic, not shipped)
+   scores the previous pin exactly, and the shared stream is unmoved.
+
+## Measured (`test_counterparty_sizes`; `test_counterparties` for the pure law)
+
+| Quantity | Measured | Band or design figure |
+|---|---:|---:|
+| Employers at pop 0 / 300 / 2,000 / 10,000 / 200,000 / 500,000 | 17 / 218 / 1,453 / 6,068 / 89,231 / 200,556 | exact |
+| Landlords at the same populations | 8 / 106 / 700 / 3,380 / 66,658 / 155,581 | exact |
+| Federal share of 148,000 workers (pop 200,000) | 0.01911 (2,829 payees) | 0.01933 +- 0.00143 (4 sigma) |
+| Workers at employers with 100+ payees | 0.1177 | [0.08, 0.16]; design Monte Carlo 0.117 |
+| P(one payee given used) | 0.5324 | [0.45, 0.62]; MC 0.53 |
+| Employers used | 58,611 | at least 50,000; MC 58,606 |
+| Under-20 classes' share of workers | 0.1385 | 0.139 +- 0.005 |
+| Largest private employer; top 10 share | 1,737 payees; 0.0637 | printed |
+| Employers with 79+ payees (about MulePatternLearner's 2,048 payments a year) | 127 | printed; about 480 before |
+| Uniform-pick disarm: federal share, 100+ share | 0.0000, 0.0000 | red |
+| Camouflage salary headcount ratio; uniform disarm | 0.953; 0.0156 | [0.5, 2.0]; below 0.1 |
+| Landlords used by 70,000 renters; most tenants; at an individual landlord | 42,152; 148; 7 | at least 100; at most 12 |
+| Top-50 owners' share of renters | 0.0491 | 0.0484 +- 0.004 |
+| Renter type mix against the roster | 0.428 / 0.140 / 0.432 against 0.432 / 0.138 / 0.430 | +- 0.03 |
+| Retired 240-landlord disarm: most tenants at an individual landlord | 329 | red |
+| Job switches over 20,000 chains and 20 years; repeats; intervals off the retired lane | 146,105; 0; 0 | 0; 0 |
+| `pickSizedDifferent` at 1,453 and 200,556 employers | 38 ns and 38 ns | printed |
+| Corpus, pop 2,000 x 60 days: salary, benefit and rent rows off their pools | 0 of 6,021; 0 of 489; 0 of 1,218 | 0 |
+| Corpus: busiest employer over the mean payees (60 / 365 days) | 29 / 1.594 = 18.2; 37 / 1.804 = 20.5 | at least 5 |
+| Corpus: camouflage P2P rows on an employer or landlord (60 / 365 days) | 0 of 258; 0 of 1,570 | 0 |
+| Registry at pop 2,000 | 12,726 records (10,581 before) | printed |
+| Pop 500,000: registry growth; resident bytes of the new rosters | +354,287 records; 55.4 MB (registry and lookup 24.3, directory 6.9, landlord pack 8.6, blueprint and fold copies 15.6); the two size laws 5.0 KB | below 128 MB; the design estimated about 84 MB |
+
+**Corpus movement.** `tests/golden_run.b2sum` (pop 2,000, 60 days): the tree
+before this change streams `0642235c...` over 231,731 rows; this change
+streams `a1824bb5d32e71f1b94b2fb0bf4c7ffadd53dd66b97727a5a37e44b1066411c9`
+over 164,833 rows (-28.9%). The pin still holds the pre-round `a30c535d...`
+and is re-pinned once at the end of the round. The drop is the cadence law
+(registered above); the domain predicates beside the digest are sub-gate D.
+`golden_tables.md5`, `golden_tables_aml.md5` and
+`golden_tables_card_fraud.md5` all move (every salary source, rent
+destination and the shared-stream cascade; the AML counterparty tables grow
+by about 2,150 rows at pop 2,000 and about 9,450 at pop 10,000): the owner
+re-pins them against PostgreSQL. `kTableCount = 43` does not move. Gate
+bands exposed to the cascade still pass unchanged: `test_econ_wiring` drift
+parity 1.113 (0.80 floor) and fraud-rides-L mean 0.914 over 12 seeds,
+`test_card_merchant_graph`, `test_card_baselines`.
+
+**For MulePatternLearner.** Employer payer degree is now heavy-tailed: at
+pop 200,000 about 127 employers clear the 2,048-payment hub threshold
+(federal about 2,830 payees, the largest private about 1,740), against about
+480 uniform ones before, and 53% of paying employers pay one person.
+Landlord hubs disappear: the largest owner collects about 148 x 12 = 1,776
+rents a year. The 2024 corpus, its snapshot and the hub registry must be
+regenerated under a new dataset id.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: outlets-frequency-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** The last of the proposed changes in
+`docs/research/counterparty_hubs_2026-09.md`, outlets and category frequency,
+in four steps measured one at a time (the fourth found by the round review).
+
+1. **Biller picks on their own lane.** `buildMarket`
+   (`activity/spending/market/bootstrap.cpp`) drew each person's biller count
+   and biller set on the `{"payees", person}` lane AFTER the favourite pick,
+   whose retry count depends on the catalogue. They now draw on
+   `{"payee-billers", person}`, so the favourite pick is last on its lane and
+   no merchant change can move a biller set again.
+2. **Chain outlets.** A catalogue Record was already an acceptance endpoint,
+   so the research's "brand-level accounts misuse the citation" was
+   overstated (the round verification says so); what was missing was the
+   grouping.
+   `synth::merchants::expandOutlets` (new, `synth/merchants/outlets.hpp`),
+   called by `buildMerchants` between `placeGeography` and
+   `appendChurnReplacements`, turns each eligible core record (grocery, fuel,
+   restaurant, pharmacy or retailOther; local or regional footprint; placed)
+   of weight w into n = max(1, round(w / unit)) outlets, unit being the median
+   eligible core weight. The weight is split equally, the n - 1 new outlets
+   take population-weighted US areas on a `{"merchant-outlet", serial}` lane,
+   keep the brand's bank, and carry `Record::brand` (new; 0 for every record
+   that is its own organization). Churn replacements inherit the donor's
+   brand. At pop 500,000 this adds 3,346 records (+12.9%) in 1,068 chains.
+3. **Category-dependent frequency.** The favourite pick
+   (`commerce::sampleFavoriteSlot` with a catalogue, `commerce/affinity.hpp`)
+   keeps each row's Zipf rank multiset, {1 + floor(F x unitFor(p, m))}, and
+   lets the category decide which favourite holds which rank: favourites are
+   ordered by a Plackett-Luce race key -ln(1 - v) / w_category (v a hash in
+   its own domain) and the sorted rank uniforms are handed out in race order.
+   The pick still spends the one uniform the router hands it.
+4. **Fraud venues carry the same category law.** The fraud venue pool
+   (`buildMerchantPool`, `transfers/fraud/typologies/unauthorized.cpp`) draws
+   from the catalogue by weight, not from a favourite row, so step 3 left it
+   on the category-blind mix while legitimate visits moved, and the biller
+   categories went from under-represented in fraud card rows to
+   over-represented. Each candidate's weight, card-present and
+   card-not-present, is now scaled by `commerce::kCategoryVisitLift`
+   (`commerce/affinity.hpp`), the race's visit-to-favourite ratio per
+   category, which sub-gate K10 asserts against the reading. The factor is
+   positive everywhere, so the candidate set and the one uniform per venue
+   slot are unchanged.
+
+No draw is added to the shared entity stream, `makeCatalog`'s draw count is
+unchanged (`coreCountFor` is the same arithmetic, extracted), and nothing
+already stored is re-derived. The favourite set is not enlarged: the round
+verification corrects the research here, because the Alessandretti set of
+about 25 is a CURRENT set, while Circana's 20 restaurant chains a year and
+Krumme's 64 merchants in six months are cumulative counts, which come from
+exploration and monthly turnover.
+
+## The visit-rate weights, derived
+
+The targets are shares of card-present favourite visits, from the Diary of
+Consumer Payment Choice 2022 in-person non-cash payments a month (SF Fed 2023
+Findings, Figure 5, confirmed by the round verification):
+
+    grocery and convenience            5.5
+    restaurants = fast food 3.4 + sit-down 2.0 = 5.4
+    general merchandise and department 3.1
+    gas                                2.6
+    sum                                16.6
+
+These types are about 80% of in-person payments: the 2026 Findings count 30
+in-person payments a month, 16 of them at grocery, convenience and
+restaurants and 8 at gas and general merchandise, so (16 + 8) / 30 = 0.80
+(the 2024 Findings' footnote 13 gives the same 80% of non-bill payments).
+The base is therefore 16.6 / 0.80 = 20.75 and the shares are grocery
+5.5 / 20.75 = 0.265, restaurant 5.4 / 20.75 = 0.260, general merchandise
+3.1 / 20.75 = 0.149 and gas 2.6 / 20.75 = 0.125. The remaining 0.20 is a
+CHOICE: retailOther takes general merchandise plus 0.10 (0.249), pharmacy
+0.05, and the four biller categories 0.05 (0.0125 each). Each target is that
+share times the physical visit share P = 1 - 0.3798 = 0.6202 (the online
+visit share the membership law gives at 2022, which the solve holds):
+grocery 0.164, restaurant 0.161, retailOther 0.154, gas 0.078, pharmacy
+0.031, billers 0.031 together.
+
+The weights were then solved on the production construction (outlets
+included) at pop 500,000, 2022, F = 30 (the saturated set size,
+merchant-selection-2026-08), over 24,000 sampled residents: damped
+proportional fitting, factor (target ratio / realized ratio)^0.7 relative to
+grocery, 100 iterations, with the ecommerce weight solved so the online visit
+share does not move. Pharmacy and the billers cannot reach their targets
+(even the bottom ranks give them more), so the solve drives them to zero and
+they ship at a floor. Result, in `Category` order: grocery 1, fuel 0.173,
+utilities 0.001, telecom 0.001, ecommerce 0.144, restaurant 0.792, pharmacy
+0.001, retailOther 0.307, insurance 0.001, education 0.001.
+
+**The design's table (fuel 0.134, ecommerce 0.0957, restaurant 0.773,
+retailOther 0.226, floors 0.01) was solved on the catalogue without outlets
+and is superseded.** Its note that "any floor below about 0.05 gives the same
+result" is wrong: at 0.01 a biller outraces an ecommerce favourite about 6% of
+the time, and the biller share rises from 0.121 to 0.131 (0.149 at 0.03). At
+the shipped 0.001, a tenfold lower floor moves no category share by more than
+0.0007 (sub-gate K4).
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Biller count and set drawn on `{"payee-billers", person}` | A draw whose count depends on data is last on its own lane (merchant-churn-2026-07) | INVARIANT | none needed | **ENFORCED** by construction; the favourite `pickFrom` is now last on `{"payees", person}`. Run-golden rows did not move (164,830), the digest did (biller destinations) |
+| Outlet count n = max(1, round(w / median eligible core weight)); equal weight split | A chain is a brand whose volume takes several typical stores to carry; firms with 500+ employees hold 63.2% of retail receipts and 31.3% of establishments | DERIVED (no free constant), validated UNFITTED | SUSB 2022 `us_naicssector_large_emplsize_2022.xlsx` (released 2025-04-10), Retail Trade: 645,404 firms, 1,045,890 establishments, $6,850.9B receipts; firms under 500 employees 718,945 establishments and $2,523.6B [round design, read from the xlsx] | **CONFORMS**: chain volume share 0.652 and establishment share 0.279 at pop 500,000 (`test_card_merchant_graph` J4, bands +-0.10; the catalogue without outlets scores 0 and 0, J5) |
+| Only core records expand; the tail stays single | Firms under 500 employees average 1.12 establishments | MEASUREMENT | SUSB 2022, as above | **CONFORMS** (J3: no tail record has siblings) |
+| Online records, ecommerce, nationalService records and the four biller categories stay single endpoints | Card-absent merchants use one principal place of business; a utility or insurer is paid as one account | CHOICE | Visa Merchant Data Standards Manual, April 2026 [P, via the round verification, which corrects the research: the rule sets a LOCATION, not the number of merchant IDs] | **REGISTERED**: how many merchant IDs an online brand uses was not verified, so single accounts are a choice, not a finding |
+| Outlet areas drawn i.i.d. by population, with replacement, on `{"merchant-outlet", serial}` off the geo seed | The acquirer assigns each outlet its own location | CHOICE (placement law) | Visa Merchant Data Standards Manual [P] | **REGISTERED**: no regional clustering; the largest chain (51 outlets) spans 28 areas with at most 10 in one |
+| Outlets are stored as Records; the plan (count, areas) is derived | Every sampler, the favourite CSR and the ledger address merchants by catalogue index, and every endpoint is a registered account | INVARIANT | `docs/ram_derive_dont_store.md` | **ENFORCED**: O(outlets), +3,346 records at pop 500,000; the local pools grow 0.731 to 0.824 MiB (sub-gate H) |
+| Outlet ownership stays keyed on the outlet's own counterparty key | A franchised outlet is its own proprietor's business; a brand-keyed owner would make one Party the owner of a 51-outlet chain, and ownerless chain outlets would correlate the register with footprint | INVARIANT (leak rule) | merchant-ownership-2026-07 | **ENFORCED**: `test_card_endpoint_graph` G' and G'' pass unchanged (G'' ratios 1.027 / 0.874 / 1.261 / 0.774) |
+| The register-shape check is "as spread as a uniform key hash over the business-owner cohort": distinct proprietors at least 0.9 of the uniform expectation, and no Party at or above the load a uniform hash reaches one time in a thousand; the absolute claim is bounded at production scale | Most proprietors hold one outlet, a few hold several | CHOICE (instrument) | Multi-unit operators exist but are the minority: 7 in 10 restaurants are single-unit operations (National Restaurant Association [P]), about 55% of fuel-selling stores are single-store operators (NACS 2025 [P]) and 63% of convenience stores belong to companies with 10 or fewer stores (NACS 2026 [P]), all confirmed by the round verification | **ENFORCED**: the retired bands (at least owned/3 proprietors, at most 6 each) were uncited and sized on core-floor legs; the mean is coverage x catalogue / cohort, so outlets took leg-long to 4.07 per proprietor (max 9; uniform expectation 55.1 proprietors, ceiling 16), where "at least owned/3" asks for 76 proprietors from a cohort of 56 and cannot pass at all. A five-Party register reads CONCENTRATED at every leg; at pop 500,000 the derived mean is 0.31 to 0.42 per proprietor (bound: at most 1) |
+| Churn replacements inherit `brand`; births are sized on the enlarged base count | BLS BED Table 7 is ESTABLISHMENT survival, so every outlet is an establishment | CITED (unchanged hazards) | BLS BED Table 7, NAICS 44 (bls-citation-2026-07) | **CONFORMS**: `test_merchant_churn` F1, 144 and 43 branded births, 0 off their donor's brand; F2, incumbent outlets survive 0.4808 and 0.7935 against 0.4677 and 0.7763 |
+| Visit-rate weights, in `Category` order: grocery 1, fuel 0.173, utilities 0.001, telecom 0.001, ecommerce 0.144, restaurant 0.792, pharmacy 0.001, retailOther 0.307, insurance 0.001, education 0.001 | Card-present visits split as the DCPC 2022 non-cash in-person payments per consumer a month. Arithmetic: grocery 5.5; restaurant = fast food 3.4 + sit-down 2.0 = 5.4; general merchandise 3.1; gas 2.6; sum 16.6. Those types are (16 + 8) / 30 = 0.80 of in-person payments, so the base is 16.6 / 0.80 = 20.75 and the shares are grocery 5.5 / 20.75 = 0.265, restaurant 5.4 / 20.75 = 0.260, general merchandise 3.1 / 20.75 = 0.149 (retailOther 0.249 with the CHOICE row below) and gas 2.6 / 20.75 = 0.125. Times the physical visit share 1 - 0.3798 = 0.6202 the targets are 0.164, 0.161, 0.154 and 0.078. The weights are the damped proportional fit of each target's ratio to grocery, factor (target ratio / realized ratio)^0.7 for 100 iterations, at pop 500,000, 2022, F = 30, outlets included, with ecommerce solved to hold the online share and pharmacy and the billers driven to the floor | DERIVED | DCPC 2022, SF Fed 2023 Findings, Figure 5 [P, confirmed by the round verification]; DCPC 2026 Findings, 30 in person with 16 at grocery, convenience and restaurants and 8 at gas and general merchandise [P, confirmed by the round verification]; DCPC 2024 Findings footnote 13, about 80% of non-bill payments at those types [P, round design] | **CONFORMS** at 2022 / F = 30: realized grocery 0.166, restaurant 0.163, retailOther 0.155, fuel 0.078; restaurant/grocery 0.982 (DCPC 5.4 / 5.5 = 0.982), fuel/grocery 0.470 (DCPC 2.6 / 5.5 = 0.473), grocery visits 2.07 times its favourite share (K3); the all-ones disarm scores 1.069, 0.924 and 1.01 and fails K3 (K5) |
+| retailOther +0.10, pharmacy 0.05, billers 0.05 of the remaining 0.20 | The 20% of in-person payments outside the five DCPC types | CHOICE | none (DCPC gives no split) | **REGISTERED**. Pharmacy frequency has only a biased anchor (Medicare median 13 visits a year, JAMA Network Open 2020, an older-adult upper bound), so it stays floored |
+| The rank multiset is unchanged; only the assignment moves | Within-card top-1 visit share stays on Krumme's 13-22% band | INVARIANT | Krumme et al. 2013 (alpha 0.80, already cited) | **ENFORCED**: K1, 0 mismatched multisets over 76,000 rows at four (year, F) points; expected top-1 identical (0.1500 at F = 30, 0.1777 at F = 19) |
+| The multiplicative alternative, w_c x rank^-0.80, rejected | Solved to the same targets it breaks the within-card law | MEASUREMENT (negative result) | none needed | **RECORDED**: within-card top-1 0.2059 at F = 30 and 0.2498 at F = 19 (K7 and the round probe), the second above Krumme's 0.22 |
+| Floor 0.001 for pharmacy and the biller categories | A floored category is ranked last | CHOICE | none needed | **ENFORCED**: K4, floor 1e-4 moves no share by more than 0.0007 |
+| Weights are era-flat, solved at 2022 | The DCPC split is a 2022 measurement | CHOICE | DCPC 2025 and 2026 Findings (16 a month at grocery, convenience and restaurants and 8 at gas and general merchandise in both 2024 and 2025) [P] | **REGISTERED**: at 2005 / F = 30 restaurant/grocery is 0.954 and fuel/grocery 0.503, but retailOther/grocery is 0.542 against 0.94, because the CNP share (0.059) leaves retailOther's online records in the physical race. K3 is bounded at 2022 only |
+| Online visit share held on the dated CNP series | Remote card payments follow the Fed Payments Study anchor (merchant-selection-2026-08) | INVARIANT | Fed Payments Study 2022 [already cited] | **ENFORCED**: K2 within 0.02 at every point (0.3798 to 0.3792 at 2022 / F = 30; largest move +0.0088 at 2022 / F = 19) |
+| Card rows put grocery plus restaurant at least 1.5 times the biller categories (the domain predicate paired with the `golden_run.b2sum` re-pin) | Everyday merchants, not billers, carry card frequency | INVARIANT | none needed | **ENFORCED**: K9 on both corpus legs, 0.4551 / 0.0992 (4.59) and 0.4499 / 0.1516 (2.97); the pre-round world scores 0.48 and 0.57 |
+| The domain predicates paired with the three table goldens the owner re-pins: AML Counterparty vertices are exactly the external registry, every chain outlet is exported as a Counterparty or an Account, every Account balance is finite; every card-fraud `Merchant_Assigned` category is one of the ten names and no online record has a `Merchant_Location` (the existing coordinate gate pins each location to its own domestic centroid) | A digest pins whatever it is given (cash-hub-defect-2026-08) | INVARIANT | none needed | **ENFORCED**: `test_pipeline_e2e`, 864 counterparties against 864 external accounts, 132 outlets all exported, 0 non-finite balances; 181 assigned merchants, 0 off the names, 0 online with a location, 67 outlets observed |
+| Physical fraud-only merchants: the 4-seed mean share of fraud card rows on a physical merchant no legitimate card pays is at most 0.01 | Outlets add low-traffic storefronts near victims and must not manufacture fraud-only endpoints | INVARIANT | none needed | **ENFORCED**: `test_card_merchant_overlap`, 0.0090 / 0 / 0 / 0 (mean 0.0023); the design's single-seed bound on the WHOLE fraud-only share could not hold (see the limitations) |
+| Fraud venue weights scaled by `commerce::kCategoryVisitLift`, in `Category` order: grocery 2.07, fuel 1.04, utilities 0.45, telecom 0.45, ecommerce 0.98, restaurant 1.89, pharmacy 0.45, retailOther 1.30, insurance 0.45, education 0.45, in the card-present and the card-not-present pool alike | Fraud card rows carry each merchant category in the same proportion to legitimate rows as they did before the category law, so category alone scores fraud no better than it did | CHOICE (the principle); DERIVED (the values: visit share over favourite share under the race at pop 500,000, 2022, F = 30) | none: the round research has no series on card fraud by merchant category, so following the legitimate law is a declared neutral choice, not a finding (real card fraud concentrates on resellable goods, which ten categories cannot express) | **ENFORCED**: `test_card_merchant_graph` K10, worst gap 0.0030 against the reading (the legacy law reads 1.0738); `test_card_merchant_overlap`, pooled biller-category fraud/legit card-row lift over four seeds at pop 2,000, 2019, 365 days 1.018 in [0.60, 1.30] (per seed 0.781 / 1.155 / 0.940 / 1.207). Disarms, both red: the pool without the factor 1.617, the legacy frequency law with the factor 0.491. Outlets alone read 0.791 and the pre-round world 0.737. Category-only AUC 0.613 (0.669 without the factor, 0.606 outlets alone, 0.586 before the round) |
+| The shared entity stream and every base record's lanes are untouched | `makeCatalog`'s draw count is load-bearing (merchant-churn-2026-07) | INVARIANT | none needed | **ENFORCED**: J1 (next u64 equal with and without outlets; 0 of 26,000 base records moved); `test_bank_ledger` A1 and `test_remote_payees` B1 keep `9e0a89591a4d861f`; `test_membership` green |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Typical outlet bank volume: expected payments a year per PHYSICAL record at pop 500,000, 2022, F = 30, at the 236.6 card payments per person-year the 6,000 x 731d acceptance corpus measured (K8). Medians grocery / restaurant / fuel / pharmacy: before the round 621 / 607 / 591 / 618; outlets alone 1,146 / 1,215 / 953 / 1,187; the category law alone 1,320 / 1,196 / 662 / 270; shipped 2,344 / 2,232 / 982 / 523 | A typical restaurant or gas outlet takes a few hundred payments a year from one bank's customers, not low thousands: Visa sees about 8,000 transactions per restaurant per quarter, about 150 to 250 a year at a 0.38% bank share, and gas about 300 | MEASUREMENT | Dev and Hamooni, arXiv 2009.02461 [P]; NACS, 2,500 gallons a day [P]; the round verification's correction of the research's hub sizes | **NONCONFORMING, REGISTERED, NOT TUNED.** The MEAN is set by catalogue density per customer, which neither step changes in kind: 3,348 physical restaurant records at pop 500,000 each serve about 150 customers making 0.163 x 236.6 = 38.5 restaurant payments a year, a mean near 5,750. A real restaurant serves about 550 residents (608,144 restaurants and eating places, 18.3 per 10,000 at 333 million, 2022 Economic Census [P, via the round research]), of whom a bank of 500,000 among the 71 areas' 52.9 million residents holds about 5, so about 200 a year. Few hundred therefore needs the areas' real outlets, about 96,600 restaurants and 1.3 million employer establishments at CBP density whatever the population: 29 times the restaurant records at pop 500,000 and about 26,000 records per 10,000 customers, far above the Nilson ceiling J4 bounds. The round moves the MEDIAN up because both steps compress the spread: outlets replace heavy brands with median-weight stores (grocery p90 9,228 to 7,218, max 54,438 to 37,449), and the category law hands grocery and restaurant favourites the head ranks. Closing it is the CBP-driven supply the research leaves open (resident-sized, on its own lane), not a retuned outlet unit |
+| Supercenters and online brands stay above MulePatternLearner's 2,048 cap | A supercenter outlet takes about 5,000 a year and an online brand millions | MEASUREMENT (derived) | Round research, expected hub sizes, as corrected | **CONFORMS in kind**: ecommerce median 3,467, max 486,354; 51% of grocery and restaurant records exceed 2,048 a year (see the row above) |
+| Reassignment cannot push the biller categories below about 11.5% of card visits | The DCPC-derived target is 0.031 | CHOICE | none needed | **REGISTERED**: shipped 0.1214 (0.2695 before), floor 0.1149 with billers always last (K4). Whether 12% is realistic depends on the share of card payments that are bills to these four categories, which the research did not find |
+| Category supply is uniform, one tenth each | Real establishment supply is far from uniform (restaurants 19.3 per 10,000 residents, gas stations 3.41, supermarkets 1.98) | MEASUREMENT | 2022 Economic Census EC2244BASIC and EC2272BASIC [P, via the round research] | **REGISTERED**: `makeCatalog`'s category draw is a rejection-sampled `choiceIndex` on the shared stream, so its draw count depends on data; supply must be changed post-hoc on an isolated lane |
+| Grocery and general-merchandise physical favourites per row: 4.18 at F = 30 | FMI: 5.4 separate grocery banners a month | MEASUREMENT | FMI U.S. Grocery Shopper Trends 2026 press release [P, via the round verification, which also corrects the research's 3 to 6 a year] | **REGISTERED**: no small banner count is imposed (membership is unchanged); the set sits below FMI's monthly count, a membership question, not a frequency one |
+| One person may favour several outlets of one chain, with no cap | A person uses one primary outlet per chain plus 0 to 2 secondary ones | UNCITED | Round research, labelled a judgment (no source measures outlets of one chain per customer) | **REGISTERED** |
+| No correlated brand-wide closure | A chain bankruptcy closes many outlets at once | CHOICE | none needed | **REGISTERED**: each outlet draws its own interval on its own `merchant-life` lane |
+| No brand column is exported | The TigerGraph `Merchant` id identifies the acceptance endpoint until a Brand vertex exists | CHOICE | `data/commerce/README.md` | **REGISTERED**: `brand` is in world state only |
+| nationalService records are single-centroid and card-present | A national biller has no storefront | CHOICE | none needed | **REGISTERED** (pre-existing) |
+| The biller categories stay somewhat over-represented in card-present fraud at gate-leg populations | The category factor corrects the frequency law, not the membership law: the fraud pool weighs candidates by volume (`Record::weight`) while legitimate favourites are drawn by reach (a power of the weight below 1), and outlets widen that gap because a split brand gains reach mass that unsplit billers do not | MEASUREMENT | none needed | **REGISTERED, pre-existing mechanism widened by outlets**: inside card-present rows the four billers read a pooled lift of 1.68 on the 2019 gate legs above (utilities 2.71), against 1.06 before the round. In expectation at pop 500,000 in 2019 (a probe outside the repo over the real pool kernel and membership sampler) the card-present biller lift is 1.20 with the factor, 1.15 with outlets alone and 2.49 without the factor, so at production scale the factor restores the outlets-alone mix. Weighting the pool by reach would change the card-present kernel legitimate exploration shares, so it is its own round |
+| Merchant category separates fraud strongly at 1991 | The stolen-card CNP share is era-flat at 0.70 (`kCardNotPresentShare`) while the legitimate CNP share is dated (0.010 in 1991), so online, mostly ecommerce, merchants carry fraud at several times their legitimate share | CHOICE (pre-existing) | none needed | **REGISTERED, pre-existing, measured this round**: pooled over the four pop-300 1991 legs of `test_card_merchant_overlap` (a probe outside the repo), ecommerce lift 5.01 and category-only AUC 0.787 (0.742 before the round, 0.807 without the factor); the biller lift is 0.726 (0.564 before, 1.572 without the factor). Dating the fraud modality split is the registered per-era payment-method item |
+| Fraud card amounts do not follow the venue's category | `amounts::cardFraudSpend` draws a ticket independent of the venue, while the category law lowered the legitimate median card ticket from about $69 to $54 (the everyday categories carry cheaper baskets) | CHOICE (pre-existing) | none: the round research has no fraud ticket series by merchant category | **REGISTERED, measured by the round review** (pop 2,000, 2019, 365 days, two seeds): amount-only AUC 0.468 / 0.500 before the round and 0.513 / 0.552 after; the fraud median ($62 / $72) did not move, and the venue step cannot move it |
+| The CNP explore branch samples the national CDF over every record, physical outlets included | A remote purchase pays a remote endpoint | CHOICE | none needed | **REGISTERED** (pre-existing; outlets make a far physical landing slightly more frequent) |
+| Enumeration probes pick uniformly over live records, outlets included, while writing use_chip Online | A card-testing probe hits online merchants | CHOICE | none needed | **REGISTERED** (pre-existing) |
+| Online fraud-only merchants in the 1991 overlap leg | At 1991 the legitimate CNP share is 0.010, so an online record born in-window can take card-not-present fraud before any cardholder favours it | CHOICE | none needed | **REGISTERED, pre-existing, surfaced**: seed 7777777 puts 28 of 238 fraud rows (0.1176; 32 before the fraud pool carried the category law) on three online churn births (none an outlet), because the larger base catalogue re-keys the churn cohort; the pre-round world scored 0 at that seed and 0.0143 at the main seed. Printed, not bounded |
+| The gift-card share's "eligible categories carry about 40% of card payments" | Measured 0.569 before the category law and 0.638 after (pop 500,000, 2022), so 500 bp implies about 7.6 cards per person a year against the cited 5 | UNCITED input | `commerce/gift_cards.hpp` | **STALE, REGISTERED**: re-deriving (about 330 bp) moves the $500 precision gates, so it is its own round |
+| A re-presented deposit debit can post after its remote merchant closed | The remote pick reads liveness at emission; the funding replay re-presents an unfunded debit up to two times, at most 108.5 hours later | CHOICE | none needed | **REGISTERED, instrument corrected**: `test_remote_payees` C4 now reads liveness at emission (live at the row, or closed within the retry horizon derived from `ReplayFundingBehavior`); 1 of 85,966 rows posts 37.5 hours after its merchant closed |
+| The run-golden gate world's row count swings widely under any biller or favourite re-randomization | The monthly commerce evolver spends a data-dependent number of draws (`churnBillers` retries, `evolveFavorites` retries) on the session rng that then draws every day frame and population-dynamics multiplier | CHOICE (pre-existing coupling) | none needed | **REGISTERED, pre-existing, found this round**: in the gate harness (pop 2,000, 60 days, 2025) January's daily counts are byte-identical across the biller-lane step and diverge from day 31; two re-randomizations of the biller lane alone give 145,906 and 180,226 rows, and on the shipped tree renaming the biller lane moves the leg from 155,131 to 149,115 rows with January again byte-identical (a probe outside the repo). The production binary does not show it (183,820 rows under three biller lanes, and burning 1 to 3 draws at the month boundary moves rows by at most 0.024%). Fixing it moves every harness pin, so it is its own round |
+
+## Where the implementation deviates from the design
+
+1. **The weight table was re-solved on the catalogue with outlets**, and
+   the floor is 0.001, not 0.01 (see the derivation). The design's online
+   share drift (0.393 to 0.381) becomes 0.3798 to 0.3792.
+2. **K3's grocery check is "at least 1.6 times the favourite share", not
+   2x.** With outlets the grocery favourite share rises (0.070 to 0.080), and
+   the measured lift is 2.07; the disarm scores 1.01. The DCPC ratio checks
+   are the design's.
+3. **The overlap bound is on PHYSICAL fraud-only rows, as a 4-seed mean.**
+   The design's "fraudOnlyRowShare <= 0.01, 0.0000 today" was stale: the
+   staged tree already read 0.0136 at the main seed, and the whole share
+   includes an online mechanism outlets do not touch (registered above).
+4. **`test_card_endpoint_graph` G's absolute register bands were replaced**
+   by the uniform-spread check (see the authority row). The design allowed
+   re-measuring and forbade the two tempting repairs; neither was taken.
+5. **`test_econ_wiring`'s CPI band reads a mix-adjusted ticket ratio.** The
+   raw ratio is 2.292 against 1.928 before, because the category law makes
+   the category mix era-dependent (1991 physical visits shift toward
+   grocery and restaurant baskets far more than 2019's, whose online share is
+   27%). Weighting each category's ratio by its 1991 share reads 1.849
+   against CPI 1.877, inside the unchanged band; the raw ratio is printed.
+6. **`test_remote_payees` C4 reads liveness at emission** (see the
+   limitation row). The one failing row was a retry, not a pick defect.
+7. **`test_counterparties`** now builds the key-clearance catalogue with
+   outlets, so the reserved-serial check covers them (58,891 records, max
+   serial 58,891).
+8. **Added:** J's disarm is computed in-file (the catalogue without outlets
+   must fail J4), K8 prints outlet volume, K9 pairs the run digest with a
+   corpus predicate, and `test_pipeline_e2e` carries the design's AML and
+   card-fraud predicates for the three table digests.
+9. **The design's "physical-chain hubs shrink roughly by outlet count" holds
+   for outlets alone, and only at the head.** In expected payments a year
+   per physical record (pop 500,000, 2022, F = 30), outlets alone take the
+   largest grocery record from 54,438 to 37,449 and the largest restaurant
+   from 118,267 to 61,804, and lower every outlet category's p90, but they
+   RAISE the median. The category law then hands grocery and restaurant the
+   head ranks, so the shipped maxima are 65,472 and 114,674. The
+   verification's few-hundred figure for a typical restaurant or gas outlet
+   is therefore not met, and the reason is catalogue density, not the outlet
+   rule (the limitation row above). The outlet unit was not retuned to chase
+   it, and a probe outside the repo shows it could not be: at half the unit
+   the chain shares leave J4's band (0.757 / 0.487) and the restaurant median
+   RISES to 4,252; at a tenth (1,567 records per 10,000, past the Nilson
+   ceiling; shares 0.821 / 0.849) it is back to only 1,164.
+10. **The fraud venue pool carries the category law (step 4), which the
+    design did not cover.** The round review measured the gap the design
+    left: with step 3 alone the biller categories' fraud/legit lift went from
+    0.70 / 0.75 to 1.27 / 1.71 on two pop-2,000 2019 seeds. The factor is
+    the race's own reading rather than a new constant, and the fraud/legit
+    category gate carries a disarm on each side (see the authority row).
+
+## Measured
+
+`test_card_merchant_graph` (pop 500,000 unless stated):
+
+| Quantity | Before | After |
+|---|---:|---:|
+| Records; chains; added outlets | 26,000; 0; 0 | 29,346; 1,068; 3,346 |
+| Chain volume / establishment share (J4) | 0 / 0 | 0.652 / 0.279 |
+| Largest chain: outlets, areas, most in one area | none | 51, 28, 10 |
+| Pops 300 / 2,000 / 8,000: added outlets (printed) | 0 | 150 / 91 / 127 |
+| Top-1 reach; hubs above 25% / 50% (G) | 0.0823; 0 / 0 | 0.0799; 0 / 0 |
+| Mean home-to-favourite miles; P(within 50) (H) | 3.8; 0.9730 | 3.9; 0.9724 |
+| Top physical OUTLET's home-area span | 1 | 8 (its brand 8) |
+| Local pools; cutoff discard | 0.731 MiB; 2.74e-08 | 0.824 MiB; 2.22e-08 |
+| Visit share at 2022 / F = 30: grocery, restaurant, fuel, retailOther | 0.080, 0.086, 0.075, 0.119 | 0.166, 0.163, 0.078, 0.155 |
+| Visit share: pharmacy; ecommerce; four billers | 0.087; 0.284; 0.270 | 0.039; 0.278; 0.121 |
+| Within-card top-1 (K1, expected) | 0.1500 | 0.1500 |
+| Corpus legs: sub-gate D ratio; within-card top-1 | 2.669 / 2.637; 0.2454 / 0.2352 | 2.990 / 2.841; 0.2040 / 0.2166 |
+| Corpus legs: grocery+restaurant over billers (K9) | 0.48 / 0.57 | 4.59 / 2.97 |
+| 2019 overlap legs, 4 seeds pooled: biller fraud/legit lift; category-only AUC | 0.737; 0.586 | 1.018; 0.613 |
+
+`test_merchant_churn`: live ratio 0.842 and 0.961 (0.832 and 0.955 before),
+incumbent survival 0.4674 and 0.7755, traversal 1.67x and 1.22x (floor 1.10),
+out-of-tenure 0.197% and 0.223% (ceiling 1%). `test_card_endpoint_graph` G'
+lifts 0.982 / 1.043 / 1.034 / 0.925 (0.974 / 0.988 / 1.023 / 0.958 before
+the fraud venue step, band unchanged). `test_econ_wiring` drift parity 1.071
+(1.113 before), volume ratio 0.635, fraud-rides-L 12-seed mean 0.915.
+
+**Corpus movement.** `tests/golden_run.b2sum` (pop 2,000, 60 days): the tree
+before this round streams `b8b5cb01...` over 164,830 rows; the biller lane
+gives `8c343ee2...` over 164,830 (rows unchanged); outlets give `3e821ce4...`
+over 193,302 (+17.3%); the category law gives
+`c5b502f0c272cfa194fdc81f27952b8d4d2f6587ace0ba93e010bfe4e8fafcbc` over
+183,820 (-4.9%); the fraud venue step gives
+`5b6ec79229b1f7fc05129d73c77756dd41308ee5bf117e712ffa854780c98336` over
+183,820 (rows unchanged; the step moves fraud destinations and the
+chargeback credits sourced from them). Diagnostics, not shipped: with a category-independent amount
+law the outlet step still moves +16.5% and the category step +1.2%, so the
+category step's move is the amount mix and the outlet step's is not; it is
+the core-floor regime (330 base records gain 91 outlets at pop 2,000). At pop
+20,000 over the same 60 days the three steps give 2,039,577, 1,976,176
+(-3.1%) and 2,238,916 (+13.3%, the cheaper-ticket direction the design
+predicted). The pin still holds the older `a30c535d...` and is re-pinned once
+at the end of the round. In-test pins re-pinned with the per-step values in
+their comments: `test_bank_ledger` A2 and `test_remote_payees` B2 (their
+shared-stream pins hold; B2 moves again at the fraud venue step, on its 109
+chargeback credits only). `golden_tables.md5`, `golden_tables_aml.md5` and
+`golden_tables_card_fraud.md5` all move (merchants, card rows, counterparty and
+Account vertices gain the outlet accounts): the owner re-pins them against
+PostgreSQL and re-runs `docs/card_fraud_postgres_acceptance.sql` and
+`docs/card_fraud_device_ip_investigate.sql`. `kTableCount = 43` does not move.
+
+**For MulePatternLearner.** Physical chain hubs split: the largest chain is
+51 outlet nodes, not one. Online brands and billers stay single hubs, and
+card-merchant hubs remain above 2,048 payments a year (the outlet-volume row
+above). They become MORE numerous, not fewer: at pop 500,000 in 2022 the
+records expected above 2,048 a year go from 8,974 of 26,000 (0.345) to
+10,964 of 29,346 (0.374), because the typical grocery and restaurant outlet
+now sits near 2,300, so the hub registry grows. Per-payer frequency is now category-dependent: grocery and
+restaurant visits roughly double and biller-category card visits fall by half,
+replacing the flat 4.7 payments per payer a year. The 2024 corpus must be
+regenerated and reloaded under a new dataset id before the hub registry is
+rebuilt.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: hub-realism-2026-09 round close
+═══════════════════════════════════════════════════════════════════════
+
+**The run golden is re-pinned once, for the whole round.**
+`tests/golden_run.b2sum` moves from the pre-round `a30c535d...` over 231,731
+rows to `5b6ec79229b1f7fc05129d73c77756dd41308ee5bf117e712ffa854780c98336`
+over 183,820 rows (-20.7%), the digest the outlets-frequency-2026-09
+amendment recorded for its last step. Every link of the chain was recorded by
+its own amendment above: institutional-providers `42c5c164...`,
+unknown-counterparty `dd0363aa...`, bank-gl `754ab129...` and its
+camouflage-pool review fix `0642235c...` (all at 231,731 rows), atm-spread
+(no byte moved), counterparty-sizes `a1824bb5...` over 164,833 and its
+camouflage-schedule review fix `b8b5cb01...` over 164,830 (three legit rows
+re-settled), then outlets-frequency `8c343ee2...` (164,830), `3e821ce4...`
+(193,302), `c5b502f0...` (183,820) and `5b6ec792...` (183,820). The row count
+moved at three steps only, each attributed where it happened: the payroll
+cadence law (-28.9%), outlets (+17.3%) and the category law (-4.9%). A
+scratch probe outside the repository that replays the binary's construction
+in-process (the pipeline's `buildWorld` and `runWindowedTransfers` behind the
+same CLI parse and setup) reproduces both ends exactly: the pre-round tree
+streams `a30c535d...` over 231,731 rows and this tree `5b6ec792...` over
+183,820. The pin was captured the way `tests/test_run_golden.cpp` documents
+(the baseline deleted and the test re-run, which reports the capture as a
+skip), and the full non-PostgreSQL suite then passed: 68 of 74 tests pass,
+the five PostgreSQL tests skip with code 77 and `test_scale_soak` skips
+because it is opt-in (`PL_SOAK`).
+
+## The authority row
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| `test_run_golden` reads the run's own summary lines and checks them before it compares or captures the digest: the pinned population (2,000 people), at least one account per person, the summary's row count equal to the rows the Golden sink digested, and 0 < fraud rows < rows. A failing predicate fails the capture run too | A digest pins whatever it is given, an absurd corpus included (cash-hub-defect-2026-08), so a re-pin must not be able to record an empty or fraud-free stream, or a run whose summary disagrees with its digest line | INVARIANT | none needed | **ENFORCED**: 2,000 people, 12,893 accounts, 183,820 rows, 502 fraud rows. Disarm, red: a predicate that rejects the observed fraud count fails the test before the baseline is read. The content predicates for this corpus stay where the stages put them (K9 in `test_card_merchant_graph`, sub-gate D in `test_counterparty_sizes`, the leg checks in `test_product_providers`, `test_remote_payees` and `test_bank_ledger`) |
+
+## Hub sizes at scale, measured without PostgreSQL
+
+A scratch probe outside the repository (the same in-process replay that
+reproduces the run golden above) ran the mule-temporal 2024 corpus's own
+generation configuration, pop 200,000 from 2024-01-01 for 366 days at seed 42,
+on this tree: 123,362,638 stream rows in 633 s at an 18.2 GB peak RSS. It
+counts, per account, every stream row that names it as source or target, so
+it reads the generator's stream, not the exporter's vertices; compare classes,
+not exact figures. Counts are per year (366-day counts times 365/366). The
+baseline column is the pre-round corpus read in TigerGraph (the round
+research's measured table).
+
+| Counterparty class | Records (with a row) | Busiest five a year | Above 2,048 a year | Pre-round corpus, full year |
+|---|---:|---|---:|---|
+| External-unknown catch-all | retired | no row | 0 | 3,814,933 |
+| Bank GL, card interest | 1 | 1,743,705 | 1 | card issuer 2,316,826 (interest and late fees together) |
+| Bank GL, card fees | 1 | 537,614 | 1 | (in the card issuer) |
+| Bank GL, deposit fees | 1 | 368,463 | 1 | fee collection 361,991 |
+| Bank GL, credit-line interest | 1 | 119,898 | 1 | overdraft line 113,386 |
+| Auto insurers | 100 (100) | 339,498; 337,019; 213,195; 184,806; 111,098 | 74 | one insurer, 1,808,916 |
+| Home insurers | 150 (150) | 4,350; 2,204; 1,365; 1,295; 1,096 | 2 | (in the insurer's key set) |
+| Life insurers | 125 (125) | 92,864; 63,937; 59,334; 55,407; 44,847 | 88 | one insurer, 1,074,202 |
+| Mortgage servicers | 300 (300) | 62,459; 57,474; 57,263; 54,384; 52,951 | 46 | on the student servicer |
+| Student-loan servicers | 15 (15) | 157,498; 97,071; 90,653; 88,984; 77,282 | 8 | one servicer with every mortgage, 1,430,365 |
+| Auto lenders | 200 (200) | 38,329; 37,946; 35,987; 32,481; 31,863 | 72 | one lender, 714,971 |
+| ATM terminals | 270 (270) | 42,865; 42,018; 32,800; 32,788; 32,474 | 270 | busiest four about 250,000 each |
+| Cash depositories | 50 (50) | 25,491; 24,372; 24,191; 23,978; 23,561 | 50 | (with the ATMs, 227 cash-point hubs) |
+| Check-capture points | 50 (50) | 3,701; 3,490; 3,406; 3,395; 3,394 | 25 | (with the ATMs) |
+| Card merchants, online records | 1,423 (1,417) | 355,252; 322,638; 300,776; 268,225; 240,174 | 1,017 | busiest merchant 341,126 |
+| Card merchants, chain outlets | 1,831 (1,831) | 35,830; 32,694; 31,327; 30,058; 26,743 | 1,721 | no outlets |
+| Card merchants, independent physical | 4,735 (4,644) | 120,860; 70,624; 66,103; 62,814; 53,987 | 1,400 | |
+| Card merchants, biller categories | 4,333 (4,313) | 230,067; 156,108; 149,633; 132,422; 130,396 | 1,258 | |
+| Card merchant brands (outlets summed; 404 chains) | 10,778 active | 718,791 (53 outlets); 369,781 (21); 363,037 (26); 355,252 (1); 322,638 (1) | 4,078 | 4,384 card-merchant hubs |
+| Check-payee banks | 1,000 (1,000) | 302,960; 286,521; 209,781; 111,916; 78,843 | 103 | on the catch-all |
+| Funeral homes | 1,785 (948) | 5; 4; 3; 3; 3 | 0 | on the catch-all |
+| P2P platforms | 2 (0) | no row | 0 | on the catch-all |
+| Employers | 89,232 (63,762) | 60,360; 37,805; 21,854; 17,139; 13,454 | 76 | about 480 at 38,000 to 41,000 each |
+| Landlords | 66,659 (44,379) | 1,202; 989; 965; 922; 856 | 0 | 240 at about 2,300 each |
+| Subscription billers | 160 (160) | 47,777; 47,707; 47,121; 47,036; 46,979 | 160 | 160 at about 47,000 each |
+| SSA | 1 | 207,023 | 1 | a hub |
+| Disability payer | 1 | 73,780 | 1 | a hub |
+| IRS | 1 | 262,063 | 1 | a hub |
+| Every account | | | 6,443 (one a customer account at 2,084) | 5,602 |
+
+The busiest external account falls from 3,814,933 rows (the catch-all) to
+355,252 (an online merchant); the only accounts above that are three of the
+bank's own income GLs, which are internal and typed `gl`. Accounts above
+2,048 a year rise from 5,602 to 6,443: the provider pools (290 of them), the
+check-payee banks (103) and every ATM (the busiest now about 43,000 a year)
+are new hubs, employer hubs fall to 76 and landlord hubs to 0, and the card
+merchant records above the cap grow to 5,396, as the outlets-frequency
+amendment predicted. MulePatternLearner's hub registry and history-withheld
+stubs stay necessary.
+
+**The instrument, checked against the baseline.** The same probe over the
+pre-round tree (60 days from 2024-01-01, annualized; that run alone peaked
+at 14.9 GB, so a pre-round full year was not attempted) reads the
+catch-all at 4,182,444, the one auto insurer at 1,902,210, the student
+servicer at 1,525,566, the life insurer at 1,108,858, the auto lender at
+825,089, fee collection at 302,542, the busiest four ATMs at 261,291 to
+273,555, the busiest card merchant at 385,172 and 5,825 accounts above 2,048,
+all within 17% of the TigerGraph figures. Two classes do not: the card
+issuer reads 1,319,335 (card balances build through the year, and this tree's
+own January and February annualize the two card GLs to 1,138,532 against
+2,281,319 over the full year), and the pre-round employers read at most
+15,683 a year, the gap the research already registered as unreconciled.
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Every tuition installment pays one education merchant: `tuition::generate` (`transfers/legit/routines/family/tuition.cpp`) draws the payee once per run with `run.education().pick(rng)` | A population's students attend many schools; the Tuition row of the Family transfers table defines tuition as paid parent to STUDENT account, not a university payment | MEASUREMENT | the Tuition row of the Family transfers table in this document | **NONCONFORMING, REGISTERED, NOT FIXED** (pre-existing; found by this measurement, not moved by the round): 32,398 tuition rows in 2024 at pop 200,000, all on one biller-category merchant, the only flow outside the government payers and the GLs whose every row names one external account. Code and definition disagree, so the fix starts by deciding which is right; a per-student payee must draw on its own lane |
+| Accounts above 2,048 payments a year rise from 5,602 to 6,443 | Realistic card merchants, ATMs, providers, large employers, SSA and the IRS are hubs at a bank of 200,000 customers | MEASUREMENT | the round research's hub section | **RECORDED**: the round removes the artifacts (the catch-all, the singleton providers, the ATM tie-break, the uniform rosters), not the hubs; the card-merchant growth is the density limitation the outlets-frequency amendment registered |
+
+## Owner must do
+
+Re-pin `tests/golden_tables.md5`, `tests/golden_tables_aml.md5` and
+`tests/golden_tables_card_fraud.md5` against PostgreSQL (each amendment of
+this round lists what moves), then re-run
+`docs/card_fraud_postgres_acceptance.sql` and
+`docs/card_fraud_device_ip_investigate.sql`. Regenerate the mule-temporal 2024
+corpus under a new dataset id, load a new TigerGraph snapshot and rebuild
+MulePatternLearner's hub registry, dropping or separating the four GL
+accounts' edges. `kTableCount = 43` does not move.

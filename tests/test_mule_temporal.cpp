@@ -1,5 +1,6 @@
 #include "phantomledger/app/options.hpp"
 #include "phantomledger/encoding/render.hpp"
+#include "phantomledger/entities/holdings/general_ledger.hpp"
 #include "phantomledger/exporter/mule_temporal/schema.hpp"
 #include "phantomledger/exporter/mule_temporal/streaming.hpp"
 #include "phantomledger/exporter/mule_temporal/zelle_policy.hpp"
@@ -266,8 +267,69 @@ void checkZellePolicy() {
   PL_CHECK(excluded.read("Zelle_Transfer").empty());
 }
 
+// bank-gl-2026-09: the bank's income GLs are internal, ownerless accounts of
+// their own type. Each fee and interest posting is an ordinary payment on the
+// internal/bank rail whose recipient is the GL of its kind, with no session.
+void checkBankLedgerAccounts() {
+  namespace gl = pl::entity::gl;
+  Fixture f;
+  const auto card = pl::entity::makeKey(pl::entity::Role::card,
+                                        pl::entity::Bank::internal, 9);
+  f.registry.records.push_back({card, 1, 0});
+  for (const auto account : gl::kIncomeAccounts)
+    f.registry.records.push_back({account, 0, 0});
+
+  const std::pair<pl::entity::Key, pl::channels::Tag> postings[] = {
+      {card, pl::channels::tag(pl::channels::Credit::interest)},
+      {card, pl::channels::tag(pl::channels::Credit::lateFee)},
+      {f.a, pl::channels::tag(pl::channels::Liquidity::overdraftFee)},
+      {f.b, pl::channels::tag(pl::channels::Liquidity::locInterest)}};
+  std::vector<pl::transactions::Transaction> txns;
+  for (std::size_t i = 0; i < std::size(postings); ++i) {
+    pl::transactions::Transaction tx;
+    tx.source = postings[i].first;
+    tx.target = gl::incomeAccountFor(postings[i].second);
+    tx.timestamp = f.start + 3 * 86400 + static_cast<std::int64_t>(i);
+    tx.amount = 12.5;
+    tx.session.channel = postings[i].second;
+    txns.push_back(tx);
+  }
+
+  Capture out;
+  mt::StreamingMuleTemporalExport sink{f.config(out)};
+  sink.append(txns);
+  sink.finish();
+
+  std::set<std::string> glIds;
+  for (const auto &r : out.read("Account"))
+    if (r[1] == "gl") {
+      glIds.insert(r[0]);
+      PL_CHECK_EQ(r[2], "False"); // is_external
+      PL_CHECK_EQ(r[5], "0");     // is_mule
+    }
+  PL_CHECK_EQ(glIds.size(), gl::kIncomeAccounts.size());
+  const auto payments = out.read("Payment_Transaction");
+  PL_CHECK_EQ(payments.size(), std::size(postings));
+  for (const auto &r : payments) {
+    PL_CHECK_EQ(r[3], "internal");
+    PL_CHECK_EQ(r[4], "bank");
+  }
+  PL_CHECK(out.read("Zelle_Transfer").empty());
+  std::set<std::string> recipients;
+  for (const auto &r : out.read("Transaction_To_Account"))
+    recipients.insert(r[1]);
+  PL_CHECK(recipients == glIds);
+  for (const auto &r : out.read("Transaction_From_Account"))
+    PL_CHECK(!glIds.contains(r[1]));
+  for (const auto &r : out.read("Party_Owns_Account"))
+    PL_CHECK(!glIds.contains(r[1]));
+  PL_CHECK(out.read("Transaction_Used_Device").empty());
+  PL_CHECK(out.read("Transaction_Used_IP").empty());
+}
+
 int main() {
   checkZellePolicy();
+  checkBankLedgerAccounts();
   PL_CHECK(pl::app::parseUseCase("mule-temporal") ==
            pl::app::UseCase::muleTemporal);
   PL_CHECK(pl::app::name(pl::app::UseCase::muleTemporal) == "mule-temporal");

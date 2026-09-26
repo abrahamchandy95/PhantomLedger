@@ -76,8 +76,10 @@ Every in-window death produces, in a FIXED per-decedent draw order on
 the `{"family","inheritance"}` lane:
 
 - **FUNERAL** at death+3-10d: one bill-channel payment from the
-  decedent's account to the external service-merchant hub (dedicated
-  counterparty/channel = registered), lognormal median **$6,300
+  decedent's account to a funeral home in the decedent's city at the
+  death date (unknown-counterparty-2026-09 amendment in
+  `docs/fraud_model_audit.md`; a dedicated channel stays registered),
+  lognormal median **$6,300
   calibration dollars** — the NFDA 2019 GPL blend (burial $7,640 /
   cremation-with-viewing $5,150 at the ~55% 2019 cremation rate),
   sigma .40, floor $1,000, CPI-realized.

@@ -40,6 +40,7 @@ inline constexpr Layout kBusinessInternal{"BOP", 7};
 inline constexpr Layout kBusinessExternal{"XO", 8};
 inline constexpr Layout kBrokerageInternal{"BRK", 7};
 inline constexpr Layout kBrokerageExternal{"XB", 8};
+inline constexpr Layout kGeneralLedger{"GL", 8};
 
 /* Device identifiers are rendered through one role-neutral namespace. The
  * numeric token is a stable opaque digest of the in-memory identity; OWNER

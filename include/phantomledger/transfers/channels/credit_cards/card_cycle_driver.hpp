@@ -33,7 +33,6 @@ struct DriverInputs {
   const entity::card::Registry *cards = nullptr;
   const std::unordered_map<entity::PersonId, entity::Key> *primaryAccounts =
       nullptr;
-  entity::Key issuerAccount{};
   time::Window window{};
 
   // H3 part 3c-ii: the persona-timeline carrier (PersonId-1 indexed).

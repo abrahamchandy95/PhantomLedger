@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/taxonomies/landlords/types.hpp"
 
@@ -20,8 +21,11 @@ struct Record {
   Type type = Type::individual;
 };
 
+// Records are class-contiguous and serial == ordinal + 1 across both banks,
+// so `pool` (the size law, counterparty-sizes-2026-09) indexes them directly.
 struct Roster {
   std::vector<Record> records;
+  counterparty::SizedPool pool;
 };
 
 struct Index {

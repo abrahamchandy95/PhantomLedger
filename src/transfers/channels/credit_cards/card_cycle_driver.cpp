@@ -83,7 +83,6 @@ CardCycleDriver::CardCycleDriver(const LifecycleRules &rules,
         rules_->payments,
         rules_->disputes,
         *factory_,
-        inputs_.issuerAccount,
     });
   }
 }
@@ -171,7 +170,6 @@ void CardCycleDriver::ensureSession(const entity::Key &cardKey, PerCard &card) {
       .ledger = ledger_,
       .cardIdx = indexOf(ledger_, account.card),
       .fundingIdx = indexOf(ledger_, account.funding),
-      .issuerIdx = indexOf(ledger_, inputs_.issuerAccount),
   };
 
   card.cycleDay = cardTerms->cycleDay;

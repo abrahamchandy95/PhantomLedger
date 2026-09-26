@@ -1,6 +1,5 @@
 #include "phantomledger/synth/products/terms/student_loan.hpp"
 
-#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
@@ -15,7 +14,6 @@ namespace {
 
 namespace product = ::PhantomLedger::entity::product;
 namespace counterparties = ::PhantomLedger::counterparties;
-using enum counterparties::Lending;
 
 [[nodiscard]] std::int32_t
 sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
@@ -64,8 +62,10 @@ sampleStudentTermMonths(::PhantomLedger::random::Rng &rng,
 
 StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
                                        ::PhantomLedger::time::Window window,
+                                       const ProviderPicker &providers,
                                        StudentLoanTerms terms)
-    : rng_{&rng}, window_{window}, terms_{std::move(terms)} {}
+    : rng_{&rng}, window_{window}, providers_{&providers},
+      terms_{std::move(terms)} {}
 
 [[nodiscard]] bool StudentLoanEmitter::emit(
     ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
@@ -100,7 +100,7 @@ StudentLoanEmitter::StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
       InstallmentIssue{
           .person = person,
           .productType = product::ProductType::studentLoan,
-          .counterparty = counterparties::key(studentServicer),
+          .counterparty = providers_->pick(counterparties::Market::studentLoan),
           .start = repaymentStart,
           .termMonths = termMonths,
           .paymentDay = samplePaymentDay(*rng_),

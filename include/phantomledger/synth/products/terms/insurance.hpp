@@ -3,6 +3,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/entities/products/insurance_ledger.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
+#include "phantomledger/synth/products/providers.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
 namespace PhantomLedger::synth::products {
@@ -110,7 +111,7 @@ class InsuranceEmitter {
 public:
   InsuranceEmitter(::PhantomLedger::random::Rng &rng,
                    ::PhantomLedger::entity::product::InsuranceLedger &insurance,
-                   InsuranceTerms terms = {});
+                   const ProviderPicker &providers, InsuranceTerms terms = {});
 
   [[nodiscard]] bool emit(::PhantomLedger::entity::PersonId person,
                           personaTax::Type persona, LoanAnchors anchors);
@@ -118,6 +119,7 @@ public:
 private:
   ::PhantomLedger::random::Rng *rng_;
   ::PhantomLedger::entity::product::InsuranceLedger *insurance_;
+  const ProviderPicker *providers_;
   InsuranceTerms terms_;
 };
 

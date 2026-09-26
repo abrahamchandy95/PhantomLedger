@@ -101,8 +101,12 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
                const sy::merchants::GenerationPlan &plan = {},
                const pl::synth::econ::MacroSeries *macro = nullptr);
 
+/* `rng` pays only the retired roster's burn; `seed` (the run seed) drives
+ * each landlord's {"landlord_type", serial} lane (counterparty-sizes-2026-09),
+ * the buildMerchants convention. */
 [[nodiscard]] sy::landlords::Pack
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
+               std::uint64_t seed,
                const sy::landlords::GenerationPlan &plan = {});
 
 /* `startYear` is the WINDOW-START year for the credit-limit stock scale
@@ -118,9 +122,12 @@ issueCreditCards(const sy::personas::Pack &personas,
     const sy::counterparties::CounterpartyTargets &targets = {},
     std::span<const entity::geography::GeoAreaId> homeAreas = {});
 
+/* `window` sizes the funeral-home registration (unknown-counterparty-2026-09):
+ * a home is registered for every decedent who dies inside it. */
 void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
                              const pl::pipeline::Counterparties &cps,
-                             const pl::pipeline::People &people);
+                             const pl::pipeline::People &people,
+                             pl::time::Window window);
 
 void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,
                               const pl::pipeline::People &people,

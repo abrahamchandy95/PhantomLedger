@@ -45,11 +45,12 @@ inline constexpr std::int64_t kEpochMax =
     std::numeric_limits<std::int64_t>::max();
 
 // A merchant's commercial reach (geo-causal-v1). A Merchant record is a
-// merchant ACCEPTANCE LOCATION / OUTLET, not an abstract nationwide
-// brand — so a physical outlet has a real GeoArea and online commerce
-// is explicitly geography-free. Footprint (with category) governs which
-// customers can plausibly reach it during causal selection (G2); it is
-// NOT a fake "local HQ" for an online-only merchant.
+// merchant ACCEPTANCE LOCATION / OUTLET (the ISO 8583 DE42 card acceptor),
+// not an abstract nationwide brand, so a physical outlet has a real GeoArea
+// and online commerce is explicitly geography-free. Outlets of one chain
+// share a `Record::brand` (outlets-frequency-2026-09). Footprint (with
+// category) governs which customers can plausibly reach it during causal
+// selection (G2); it is NOT a fake "local HQ" for an online-only merchant.
 enum class Footprint : std::uint8_t {
   localOutlet,     // reached mostly by nearby residents (grocery, fuel, …)
   regionalOutlet,  // metro/region reach (larger retail, some healthcare)
@@ -100,6 +101,22 @@ struct Record {
   // kEpochMin/kEpochMax note above for why the default is always-live.
   std::int64_t firstEpoch = kEpochMin;
   std::int64_t lastEpochExcl = kEpochMax;
+
+  // outlets-frequency-2026-09: the chain this outlet belongs to (the
+  // MerchantOrganization of data/commerce/README.md), as the label of the
+  // chain's first record. 0 means the record is its own organization, which
+  // is every independent, online brand, national service and biller. Set by
+  // `synth::merchants::expandOutlets` and inherited by churn replacements.
+  //
+  // GROUPING ONLY. Ownership stays keyed on the outlet's own counterparty
+  // key (a franchisee reading), never on the brand: a brand-keyed owner
+  // would make one Party the proprietor of every outlet of a 50-outlet
+  // chain. Nothing exports it yet.
+  Label brand{};
+
+  [[nodiscard]] constexpr Label brandOf() const noexcept {
+    return brand.value != 0 ? brand : label;
+  }
 
   [[nodiscard]] constexpr bool liveAt(std::int64_t ts) const noexcept {
     return ts >= firstEpoch && ts < lastEpochExcl;

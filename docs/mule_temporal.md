@@ -31,7 +31,7 @@ load additional reverse copies.
 | Schema element | Source and interpretation |
 |---|---|
 | `Party` | Modeled account owners, separate from accounts; no fraud or mule flags. |
-| `Account` | Registry accounts, including external or ownerless counterparties. Owned accounts become visible on bank enrollment; other accounts on their first payment or immediately preceding Zelle registration. Account type uses only stable product roles. `is_mule` is integer supervision from the explicit simulator account role, never a feature. |
+| `Account` | Registry accounts, including external or ownerless counterparties. Owned accounts become visible on bank enrollment; other accounts on their first payment or immediately preceding Zelle registration. Account type uses only stable product roles: `deposit`, `credit`, `brokerage`, `gl` for the bank's own income ledgers, otherwise `unknown`. A `gl` account is internal (`is_external` False), ownerless and never a Zelle endpoint. `is_mule` is integer supervision from the explicit simulator account role, never a feature. |
 | `Token` | One opaque `synthetic_handle` per participating internal or external deposit/family/business/landlord account, registered at first observed Zelle use. This is a modeled network handle, not a source-confirmed phone/email registration. |
 | `Device`, `IP` | Enrolled endpoints or endpoints actually observed in payments. Shared, public and attacker endpoints use the same opaque ID format. |
 | `Address` | Tokenized normalized street, home area and country. The existing relocation schedule closes the previous tenure and opens a new one. No raw address is exported. |
@@ -67,7 +67,13 @@ using a single bank-policy profile. This is a fixed behavioral scenario,
 not a historical reconstruction or a global percentage of all payments.
 
 Cash, checks, card activity, internal postings and explicitly tagged ACH
-retain their broad rails. Other non-Zelle rails remain `unknown`. The
+retain their broad rails. Fee and interest postings (card interest, card late
+fees, overdraft fees, overdraft line-of-credit interest) are payments on the
+`internal`/`bank` rail from the charged account to the bank's income GL of
+their kind, an `Account` with `account_type` `gl`, and carry no device or IP.
+Each GL collects postings from a large share of the charged accounts, so a
+consumer modelling customer relationships should drop or separate those edges
+by account type rather than treat a GL as a neighbour. Other non-Zelle rails remain `unknown`. The
 exported channel is a broad access category; raw fraud/camouflage typology
 names never enter the feature graph. Seeded draws and rolling budgets are
 isolated from the simulation RNG and use no future events or fraud verdicts.

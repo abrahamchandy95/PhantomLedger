@@ -1,7 +1,9 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/directory.hpp"
 #include "phantomledger/entities/counterparties/landlords.hpp"
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/holdings/accounts.hpp"
 #include "phantomledger/entities/identifiers.hpp"
@@ -133,9 +135,11 @@ struct AccountAccess {
 };
 
 struct CounterpartyAccess {
-  std::vector<entity::Key> employers;
+  // Both carry their size law (counterparty-sizes-2026-09): payroll and
+  // leases pick through it, never uniformly over the keys.
+  entity::counterparty::SizedKeys employers;
 
-  std::vector<entity::Key> landlords;
+  entity::counterparty::SizedKeys landlords;
   std::unordered_map<entity::Key, entity::landlord::Type> landlordTypeOf;
 
   // External, ownerless context endpoints. They cross the modeled customer
@@ -144,33 +148,31 @@ struct CounterpartyAccess {
   std::vector<entity::Key> cashDepositPoints;
   std::vector<entity::Key> checkDepositPoints;
   std::vector<entity::Key> cryptoVenues;
-  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
-      nearbyWithdrawalPoints;
-  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
-      nearbyCashDepositPoints;
-  std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>
-      nearbyCheckDepositPoints;
+  ::PhantomLedger::counterparties::cash::NearbyIndex nearbyWithdrawalPoints;
+  ::PhantomLedger::counterparties::cash::NearbyIndex nearbyCashDepositPoints;
+  ::PhantomLedger::counterparties::cash::NearbyIndex nearbyCheckDepositPoints;
   std::span<const entity::geography::GeoAreaId> homeAreas{};
   const entity::parties::relocation::Schedule *relocation = nullptr;
 
   std::vector<entity::Key> billerAccounts;
-  entity::Key issuerAcct{};
 
-  [[nodiscard]] std::span<const entity::Key>
+  // Each returns the person's own nearest points at the event-time area, by
+  // value: bind the result to a named local before taking its span().
+  [[nodiscard]] ::PhantomLedger::counterparties::cash::LocalPoints
   withdrawalPointsFor(entity::PersonId person,
                       std::int64_t timestamp) const noexcept {
     return localPointsFor(nearbyWithdrawalPoints, cashWithdrawalPoints, person,
                           timestamp);
   }
 
-  [[nodiscard]] std::span<const entity::Key>
+  [[nodiscard]] ::PhantomLedger::counterparties::cash::LocalPoints
   depositPointsFor(entity::PersonId person,
                    std::int64_t timestamp) const noexcept {
     return localPointsFor(nearbyCashDepositPoints, cashDepositPoints, person,
                           timestamp);
   }
 
-  [[nodiscard]] std::span<const entity::Key>
+  [[nodiscard]] ::PhantomLedger::counterparties::cash::LocalPoints
   checkDepositPointsFor(entity::PersonId person,
                         std::int64_t timestamp) const noexcept {
     return localPointsFor(nearbyCheckDepositPoints, checkDepositPoints, person,
@@ -178,9 +180,9 @@ struct CounterpartyAccess {
   }
 
 private:
-  [[nodiscard]] std::span<const entity::Key> localPointsFor(
-      const std::unordered_map<entity::geography::GeoAreaId,
-                               std::vector<entity::Key>> &nearby,
+  [[nodiscard]] ::PhantomLedger::counterparties::cash::LocalPoints
+  localPointsFor(
+      const ::PhantomLedger::counterparties::cash::NearbyIndex &nearby,
       const std::vector<entity::Key> &fallback, entity::PersonId person,
       std::int64_t timestamp) const noexcept {
     auto area = entity::geography::invalidGeoArea;
@@ -194,11 +196,7 @@ private:
       }
     }
 
-    if (const auto it = nearby.find(area);
-        it != nearby.end() && !it->second.empty()) {
-      return it->second;
-    }
-    return fallback;
+    return nearby.select(area, person, fallback);
   }
 
 public:

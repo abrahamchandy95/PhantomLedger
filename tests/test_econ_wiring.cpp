@@ -137,9 +137,11 @@
 
 #include "window_leg_support.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pl = ::PhantomLedger;
@@ -193,6 +195,26 @@ struct Stat {
     return count == 0 ? 0.0 : total / static_cast<double>(count);
   }
 };
+
+// The ticket's destination category, or kCategoryCount for a destination
+// outside the catalogue. The CPI band compares like with like: see
+// mixAdjustedRatio.
+using CategoryIndex = std::unordered_map<pl::entity::Key, std::size_t>;
+
+[[nodiscard]] CategoryIndex
+categoriesOf(const pl::entity::merchant::Catalog &catalog) {
+  CategoryIndex out;
+  for (const auto &rec : catalog.records) {
+    out.emplace(rec.counterpartyId, static_cast<std::size_t>(rec.category));
+  }
+  return out;
+}
+
+[[nodiscard]] std::size_t bucketOf(const CategoryIndex &index,
+                                   const pl::entity::Key &target) {
+  const auto it = index.find(target);
+  return it == index.end() ? pl::merchants::kCategoryCount : it->second;
+}
 
 int g_failures = 0;
 
@@ -275,6 +297,10 @@ int main() {
   Stat salary19;
   Stat ticket91;
   Stat ticket19;
+  std::array<Stat, pl::merchants::kCategoryCount + 1> byCategory91{};
+  std::array<Stat, pl::merchants::kCategoryCount + 1> byCategory19{};
+  const auto categories91 = categoriesOf(leg91.merchants);
+  const auto categories19 = categoriesOf(leg19.merchants);
   Stat fraud91;
   Stat fraud19;
   Stat struct91;
@@ -311,6 +337,7 @@ int main() {
     if (isLegitTicket(t)) {
       if (year == 1991) {
         ticket91.add(t.amount);
+        byCategory91[bucketOf(categories91, t.target)].add(t.amount);
         spend1991.add(t.amount);
       } else if (year == 1992) {
         spend1992.add(t.amount);
@@ -344,6 +371,7 @@ int main() {
     if (isLegitTicket(t)) {
       if (year == 2019) {
         ticket19.add(t.amount);
+        byCategory19[bucketOf(categories19, t.target)].add(t.amount);
         spend2019.add(t.amount);
       } else if (year == 2020) {
         spend2020.add(t.amount);
@@ -404,9 +432,36 @@ int main() {
   // eras (scaled stocks vs scaled flows); +/-15% band. H4's channel-
   // separation pin: the count modulation must NOT move this ratio off
   // the CPI axis.
-  const double ticketRatio = ticket19.mean() / ticket91.mean();
+  //
+  // MIX-ADJUSTED since outlets-frequency-2026-09, same band. The raw mean
+  // also moves with the CATEGORY MIX, and that round made the mix
+  // era-dependent on purpose: card-present visits now follow the DCPC
+  // category rates while the online share follows the dated CNP series
+  // (0.010 in 1991, 0.271 in 2019), so 1991 tickets shift toward $28-$50
+  // grocery and restaurant baskets far more than 2019 tickets do. Measured
+  // raw 2.292 against the 1.928 before, with the per-category ratios on the
+  // CPI axis. The claim here is the price scaling, so each category's mean
+  // ratio is weighted by its 1991 ticket share (a Laspeyres index), and the
+  // raw ratio is printed.
+  const double rawTicketRatio = ticket19.mean() / ticket91.mean();
+  double ticketRatio = 0.0;
+  {
+    double weight = 0.0;
+    for (std::size_t b = 0; b < byCategory91.size(); ++b) {
+      if (byCategory91[b].count == 0 || byCategory19[b].count == 0) {
+        continue;
+      }
+      const double w = static_cast<double>(byCategory91[b].count);
+      ticketRatio += w * byCategory19[b].mean() / byCategory91[b].mean();
+      weight += w;
+    }
+    ticketRatio = weight > 0.0 ? ticketRatio / weight : 0.0;
+  }
+  std::printf("  ticket ratio 2019/1991: mix-adjusted %.4f, raw %.4f (CPI "
+              "%.4f)\n",
+              ticketRatio, rawTicketRatio, expectedPriceRatio);
   checkBand(ticketRatio, expectedPriceRatio * 0.85, expectedPriceRatio * 1.15,
-            "ticket mean ratio 2019/1991 vs CPI " +
+            "mix-adjusted ticket mean ratio 2019/1991 vs CPI " +
                 std::to_string(expectedPriceRatio));
 
   // ---- H4 VOLUME band: session counts ride the real level ----------

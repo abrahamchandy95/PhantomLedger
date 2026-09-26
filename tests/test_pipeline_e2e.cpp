@@ -24,8 +24,13 @@
 // only tell us the bytes CHANGED.
 //
 
+#include "phantomledger/entities/counterparties/cash_points.hpp"
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/exporter/aml/export.hpp"
+#include "phantomledger/exporter/card_fraud/derive.hpp"
 #include "phantomledger/exporter/card_fraud/export.hpp"
+#include "phantomledger/exporter/common/render.hpp"
 #include "phantomledger/exporter/common/table.hpp"
 #include "phantomledger/exporter/mule_ml/export.hpp"
 #include "phantomledger/exporter/standard/export.hpp"
@@ -35,12 +40,17 @@
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
 #include "phantomledger/synth/pii/samplers.hpp"
+#include "phantomledger/taxonomies/channels/predicates.hpp"
+#include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/taxonomies/enums.hpp"
 #include "phantomledger/taxonomies/locale/types.hpp"
+#include "phantomledger/taxonomies/merchants/names.hpp"
+#include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/transactions/clearing/balance_book.hpp"
 #include "phantomledger/transfers/channels/credit_cards/lifecycle.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -337,6 +347,72 @@ runSmallSim(const pl::synth::pii::PoolSet &poolSet, std::uint64_t seed) {
   return pipeline.run();
 }
 
+// counterparty-sizes-2026-09: the production pipeline's own domain
+// predicates beside the corpus digests. Salary is paid by the sized employer
+// roster (never by a benefit payer), SSA and disability by the two
+// government keys, and rent reaches a rostered landlord. The roster and its
+// law must agree on the member count, or picks would index past the keys.
+void testCounterpartyPools(const pl::pipeline::SimulationResult &result) {
+  namespace cash = pl::counterparties::cash;
+  const auto &directory = result.counterparties.counterparties;
+  const auto &roster = result.counterparties.landlords.roster;
+  const pl::entity::counterparty::SizedKeys employers{
+      .keys = directory.employers.accounts.external,
+      .law = directory.employers.pool};
+  pl::entity::counterparty::SizedKeys landlords{.keys = {},
+                                                .law = roster.pool};
+  for (const auto &record : roster.records) {
+    landlords.keys.push_back(record.accountId);
+  }
+  check(employers.law.size() == employers.size() && employers.size() >= 17,
+        "the employer roster and its size law disagree (or the roster is "
+        "below its 17 classes)");
+  check(landlords.law.size() == landlords.size() && landlords.size() >= 8,
+        "the landlord roster and its size law disagree (or the roster is "
+        "below its 8 classes)");
+
+  const auto isGovernment = [](const pl::entity::Key &key) {
+    return std::ranges::find(pl::counterparties::kGovernment, key) !=
+           pl::counterparties::kGovernment.end();
+  };
+  const auto npos = pl::entity::counterparty::SizedPool::npos;
+  std::size_t salary = 0, salaryBad = 0, benefits = 0, benefitsBad = 0;
+  std::size_t rent = 0, rentBad = 0;
+  for (const auto &row : result.transfers.ledger.posted.txns) {
+    const auto channel = row.session.channel;
+    if (channel == pl::channels::tag(pl::channels::Legit::salary)) {
+      ++salary;
+      const bool pooled = employers.indexOf(row.source) != npos ||
+                          row.source == cash::fallbackEmployer();
+      salaryBad += pooled && !isGovernment(row.source) ? 0U : 1U;
+    } else if (channel == pl::channels::tag(
+                              pl::channels::Government::socialSecurity) ||
+               channel ==
+                   pl::channels::tag(pl::channels::Government::disability)) {
+      ++benefits;
+      benefitsBad += isGovernment(row.source) ? 0U : 1U;
+    } else if (pl::channels::isRent(channel)) {
+      ++rent;
+      const bool rostered = landlords.indexOf(row.target) != npos ||
+                            row.target == cash::fallbackLandlord();
+      rentBad += rostered ? 0U : 1U;
+    }
+  }
+  std::printf("  counterparty pools: %zu employers, %zu landlords; salary "
+              "%zu rows (off pool %zu), benefits %zu (off government %zu), "
+              "rent %zu (off roster %zu)\n",
+              employers.size(), landlords.size(), salary, salaryBad, benefits,
+              benefitsBad, rent, rentBad);
+  check(salary > 0 && rent > 0,
+        "no salary or no rent rows at pop 100 x 7 days, so the pool checks "
+        "would pass on no data");
+  check(salaryBad == 0, "a salary row is paid by something outside the "
+                        "employer roster, or by a benefit payer");
+  check(benefitsBad == 0,
+        "an SSA or disability row is paid by a non-government key");
+  check(rentBad == 0, "a rent row pays something outside the landlord roster");
+}
+
 void testStandardExport(const pl::pipeline::SimulationResult &result) {
   Capture capture;
   pl::exporter::standard::Options opts{};
@@ -434,6 +510,55 @@ void testAmlExport(const pl::pipeline::SimulationResult &result,
   check(summary.customerCount == 100,
         "AML summary customerCount == 100, got " +
             std::to_string(summary.customerCount));
+
+  // outlets-frequency-2026-09: THE DOMAIN PREDICATES PAIRED WITH
+  // golden_tables_aml.md5 (cash-hub-defect-2026-08: a digest pins whatever
+  // it is given). Chain outlets are registry accounts of their own, so the
+  // Counterparty vertices must be exactly the external registry, every
+  // outlet must surface as a Counterparty or an internal Account, and no
+  // exported balance may be non-finite.
+  {
+    std::set<std::string> external;
+    for (const auto &rec : result.holdings.accounts.registry.records) {
+      if ((rec.flags & pl::entity::account::bit(
+                           pl::entity::account::Flag::external)) != 0) {
+        external.emplace(pl::exporter::common::renderKey(rec.id).view());
+      }
+    }
+    const auto counterparties = columnValues(capture, "Counterparty", 0);
+    const auto accounts = columnValues(capture, "Account", 0);
+    std::size_t outlets = 0;
+    std::size_t outletsMissing = 0;
+    for (const auto &rec : result.counterparties.merchants.records) {
+      if (rec.brand.value == 0 || rec.brand == rec.label) {
+        continue;
+      }
+      ++outlets;
+      const std::string id{
+          pl::exporter::common::renderKey(rec.counterpartyId).view()};
+      outletsMissing +=
+          counterparties.contains(id) || accounts.contains(id) ? 0U : 1U;
+    }
+    std::size_t nonFinite = 0;
+    for (const auto &balance : columnValues(capture, "Account", 2)) {
+      nonFinite += std::isfinite(std::stod(balance)) ? 0U : 1U;
+    }
+    std::printf("  aml: %zu counterparty vertices (external registry %zu); "
+                "%zu chain outlets, %zu unexported; %zu non-finite "
+                "balances\n",
+                counterparties.size(), external.size(), outlets,
+                outletsMissing, nonFinite);
+    check(counterparties == external,
+          "the AML Counterparty vertices must be exactly the external "
+          "registry accounts");
+    check(outlets > 0 && outletsMissing == 0,
+          "every chain outlet must be exported as a Counterparty or an "
+          "Account (" +
+              std::to_string(outletsMissing) + " of " +
+              std::to_string(outlets) + " missing)");
+    check(nonFinite == 0, "every exported Account balance must be finite (" +
+                              std::to_string(nonFinite) + " are not)");
+  }
 }
 
 // The card-fraud exporter's complete 39-table set (the 34-table
@@ -520,6 +645,53 @@ void testCardFraudExport(const pl::pipeline::SimulationResult &result,
   // card-fraud-realism-v2: the investigative overlay. Rendered always,
   // header included, even when the window produced no positives.
   expectTable(capture, "Ground_Truth_Label");
+
+  // outlets-frequency-2026-09: THE DOMAIN PREDICATES PAIRED WITH
+  // golden_tables_card_fraud.md5 (cash-hub-defect-2026-08: a digest pins
+  // whatever it is given). Each observed outlet is its own Merchant vertex,
+  // so its category must be one of the ten catalogue names, and no online
+  // record may carry a location. The coordinate gate below pins every
+  // location to its own domestic area centroid.
+  {
+    std::set<std::string> names;
+    for (const auto category : pl::merchants::kCategories) {
+      names.emplace(pl::merchants::name(category));
+    }
+    const auto assigned = columnPairs(capture, "Merchant_Assigned", 0, 1);
+    std::size_t badCategory = 0;
+    for (const auto &[merchantId, category] : assigned) {
+      (void)merchantId;
+      badCategory += names.contains(category) ? 0U : 1U;
+    }
+    const auto merchantIds = columnValues(capture, "Merchant", 0);
+    const auto located = columnValues(capture, "Merchant_Location", 0);
+    std::size_t onlineLocated = 0;
+    std::size_t outletsSeen = 0;
+    for (const auto &rec : result.counterparties.merchants.records) {
+      const auto id =
+          pl::exporter::card_fraud::derive::merchantId(rec.counterpartyId);
+      onlineLocated +=
+          rec.footprint == pl::entity::merchant::Footprint::online &&
+                  located.contains(id)
+              ? 1U
+              : 0U;
+      outletsSeen += rec.brand.value != 0 && rec.brand != rec.label &&
+                             merchantIds.contains(id)
+                         ? 1U
+                         : 0U;
+    }
+    std::printf("  card-fraud merchants: %zu assigned, %zu off the ten "
+                "category names, %zu online with a location, %zu chain "
+                "outlets observed\n",
+                assigned.size(), badCategory, onlineLocated, outletsSeen);
+    check(!assigned.empty() && badCategory == 0,
+          "every Merchant_Assigned category must be one of the ten catalogue "
+          "category names (" +
+              std::to_string(badCategory) + " are not)");
+    check(onlineLocated == 0,
+          "no online catalogue record may carry a Merchant_Location (" +
+              std::to_string(onlineLocated) + " do)");
+  }
 
   check(!capture.has("transactions"),
         "the 'transactions' stem is the streamed corpus table and must "
@@ -971,6 +1143,7 @@ int main() {
     const auto poolSet = buildPoolSet(seed);
     const auto result = runSmallSim(poolSet, seed);
 
+    testCounterpartyPools(result);
     testStandardExport(result);
     testMuleMlExport(result, poolSet);
     testAmlExport(result, poolSet);

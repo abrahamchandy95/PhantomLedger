@@ -90,18 +90,14 @@ buildPopulation(const blueprints::LegitBlueprint &plan,
 [[nodiscard]] income::PayrollCounterparties
 buildPayrollCounterparties(const blueprints::LegitBlueprint &plan) {
   return income::PayrollCounterparties{
-      .employers =
-          std::span<const entity::Key>(plan.counterparties().employers.data(),
-                                       plan.counterparties().employers.size()),
+      .employers = &plan.counterparties().employers,
   };
 }
 
 [[nodiscard]] income::RentCounterparties
 buildRentCounterparties(const blueprints::LegitBlueprint &plan) {
   return income::RentCounterparties{
-      .landlords =
-          std::span<const entity::Key>(plan.counterparties().landlords.data(),
-                                       plan.counterparties().landlords.size()),
+      .landlords = &plan.counterparties().landlords,
       .landlordTypes = &plan.counterparties().landlordTypeOf,
   };
 }
@@ -344,7 +340,6 @@ buildCardLifecycleConfig(const blueprints::LegitBlueprint &plan,
   cfg.rules = resources.cardLifecycle != nullptr
                   ? resources.cardLifecycle
                   : &pl_credit::kDefaultLifecycleRules;
-  cfg.issuerAccount = plan.counterparties().issuerAcct;
   cfg.window = windowFromPlan(plan);
   cfg.seed = plan.seed();
 

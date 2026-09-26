@@ -1,6 +1,5 @@
 #include "phantomledger/synth/products/terms/insurance.hpp"
 
-#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/entities/products/insurance.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
 #include "phantomledger/synth/products/sampling/dates.hpp"
@@ -46,8 +45,9 @@ namespace counterparties = ::PhantomLedger::counterparties;
 InsuranceEmitter::InsuranceEmitter(
     ::PhantomLedger::random::Rng &rng,
     ::PhantomLedger::entity::product::InsuranceLedger &insurance,
-    InsuranceTerms terms)
-    : rng_{&rng}, insurance_{&insurance}, terms_{std::move(terms)} {}
+    const ProviderPicker &providers, InsuranceTerms terms)
+    : rng_{&rng}, insurance_{&insurance}, providers_{&providers},
+      terms_{std::move(terms)} {}
 
 [[nodiscard]] bool
 InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
@@ -65,9 +65,12 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.autoPolicy.median,
         terms_.premiums.autoPolicy.sigma, terms_.premiums.autoPolicy.floor);
-    autoPol = product::autoPolicy(
-        counterparties::key(counterparties::Insurance::autoCarrier), premium,
-        samplePaymentDay(*rng_), terms_.claims.autoAnnualP);
+    // The carrier pick spends nothing from rng_ (its own lane), so taking
+    // it into a local first only makes the draw order explicit.
+    const auto carrier =
+        providers_->pick(counterparties::Market::autoInsurance);
+    autoPol = product::autoPolicy(carrier, premium, samplePaymentDay(*rng_),
+                                  terms_.claims.autoAnnualP);
   }
 
   const double homeAnchorPolicyP =
@@ -83,9 +86,10 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.homePolicy.median,
         terms_.premiums.homePolicy.sigma, terms_.premiums.homePolicy.floor);
-    homePol = product::homePolicy(
-        counterparties::key(counterparties::Insurance::homeCarrier), premium,
-        samplePaymentDay(*rng_), terms_.claims.homeAnnualP);
+    const auto carrier =
+        providers_->pick(counterparties::Market::homeInsurance);
+    homePol = product::homePolicy(carrier, premium, samplePaymentDay(*rng_),
+                                  terms_.claims.homeAnnualP);
   }
 
   std::optional<product::InsurancePolicy> lifePol;
@@ -93,9 +97,9 @@ InsuranceEmitter::emit(::PhantomLedger::entity::PersonId person,
     const double premium = samplePaymentAmount(
         *rng_, terms_.premiums.lifePolicy.median,
         terms_.premiums.lifePolicy.sigma, terms_.premiums.lifePolicy.floor);
-    lifePol = product::lifePolicy(
-        counterparties::key(counterparties::Insurance::lifeCarrier), premium,
-        samplePaymentDay(*rng_));
+    const auto carrier =
+        providers_->pick(counterparties::Market::lifeInsurance);
+    lifePol = product::lifePolicy(carrier, premium, samplePaymentDay(*rng_));
   }
 
   if (!autoPol.has_value() && !homePol.has_value() && !lifePol.has_value()) {

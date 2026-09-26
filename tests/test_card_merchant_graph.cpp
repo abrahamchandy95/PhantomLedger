@@ -59,6 +59,7 @@
 // — a pass earned by having no data.
 //
 
+#include "phantomledger/activity/spending/market/bootstrap.hpp"
 #include "phantomledger/activity/spending/market/commerce/affinity.hpp"
 #include "phantomledger/activity/spending/market/commerce/local_pools.hpp"
 #include "phantomledger/activity/spending/market/commerce/reach.hpp"
@@ -66,11 +67,15 @@
 #include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/merchants/outlets.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
+#include "phantomledger/taxonomies/merchants/names.hpp"
 
 #include "window_leg_support.hpp"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <map>
@@ -278,18 +283,36 @@ struct ScaleShape {
   double within50 = 0.0;
   double onlineShare = 0.0;
   std::size_t topPhysicalAreas = 0;
+  std::size_t topPhysicalBrandAreas = 0;
   double worstDiscarded = 0.0;
   double poolMiB = 0.0;
 };
+
+constexpr std::uint64_t kCatalogSeed = 0xDEADBEEFULL;
+constexpr std::uint64_t kGeoSeed = 0xC0FFEEULL;
+
+// The catalogue exactly as `buildMerchants` builds it before churn: a gate
+// that rebuilt it without the outlet expansion would measure a construction
+// production no longer ships (merchant-selection-2026-08: a band measured
+// against a superseded construction is not a measurement).
+[[nodiscard]] pl::entity::merchant::Catalog productionCatalog(int population,
+                                                              bool outlets) {
+  auto rng = pl::random::Rng::fromSeed(kCatalogSeed);
+  auto catalog = pl::synth::merchants::makeCatalog(rng, population);
+  pl::synth::merchants::placeGeography(catalog, kGeoSeed);
+  if (outlets) {
+    pl::synth::merchants::expandOutlets(
+        catalog, pl::synth::merchants::coreCountFor(population, {}), kGeoSeed);
+  }
+  return catalog;
+}
 
 [[nodiscard]] ScaleShape measureAtScale(int population, int people, int year) {
   namespace ge = pl::entity::geography;
   const auto &geo = pl::synth::geo::geography();
   const pl::synth::geo::ResidenceSampler residence{geo};
 
-  auto rng = pl::random::Rng::fromSeed(0xDEADBEEFULL);
-  auto catalog = pl::synth::merchants::makeCatalog(rng, population);
-  pl::synth::merchants::placeGeography(catalog, 0xC0FFEEULL);
+  const auto catalog = productionCatalog(population, true);
 
   std::vector<double> volume;
   volume.reserve(catalog.records.size());
@@ -361,11 +384,692 @@ struct ScaleShape {
   out.topPhysicalAreas = holderAreas.count(topPhysicalIdx)
                              ? holderAreas[topPhysicalIdx].size()
                              : 0;
+  // The same outlet's BRAND: every home area holding any outlet of it.
+  {
+    const auto brand = catalog.records[topPhysicalIdx].brandOf();
+    std::set<ge::GeoAreaId> brandAreas;
+    for (const auto &[idx, areas] : holderAreas) {
+      if (catalog.records[idx].brandOf() == brand) {
+        brandAreas.insert(areas.begin(), areas.end());
+      }
+    }
+    out.topPhysicalBrandAreas = brandAreas.size();
+  }
   out.meanMiles = physical ? milesSum / static_cast<double>(physical) : 0.0;
   out.within50 =
       physical ? static_cast<double>(within50) / static_cast<double>(physical)
                : 0.0;
   return out;
+}
+
+// ===================================================================
+// SUB-GATE J: CHAIN OUTLETS (outlets-frequency-2026-09), production scale.
+//
+// `expandOutlets` turns each physical chain brand into outlet records. What
+// this bounds, and why each part is here:
+//   J1  the shared entity stream and every base record's placement lanes are
+//       untouched (`makeCatalog`'s draw count is load-bearing,
+//       merchant-churn-2026-07);
+//   J2  a brand's outlet weights sum to its pre-expansion weight, so every
+//       volume law reads the same totals;
+//   J3  domain predicates on every outlet and every brand;
+//   J4  the UNFITTED check: the rule has no free constant, and its chain
+//       shares land on SUSB 2022 Retail Trade, where firms with 500+
+//       employees hold 0.632 of receipts and 0.313 of establishments;
+//   J5  the disarm (no expansion, the pre-round catalogue) scores 0 on both
+//       shares, so J4 cannot pass on a catalogue without outlets;
+//   J6  printed only: the largest chain and the small-population legs, which
+//       are not the production regime (the core floor binds there, so their
+//       shares cannot be bounded; merchant-selection-2026-08).
+// ===================================================================
+struct ChainShape {
+  std::size_t records = 0;
+  std::size_t chains = 0;
+  std::size_t added = 0;
+  double volumeShare = 0.0;
+  double establishmentShare = 0.0;
+  double recordsPer10k = 0.0;
+  std::size_t maxOutlets = 0;
+  std::size_t maxAreas = 0;
+  std::size_t maxPerArea = 0;
+};
+
+// A card-present retail establishment: the SUSB comparison population.
+[[nodiscard]] bool physicalRetail(const pl::entity::merchant::Record &r) {
+  using F = pl::entity::merchant::Footprint;
+  return pl::synth::merchants::isOutletCategory(r.category) &&
+         (r.footprint == F::localOutlet || r.footprint == F::regionalOutlet) &&
+         pl::entity::geography::validArea(r.location);
+}
+
+[[nodiscard]] ChainShape chainShape(const pl::entity::merchant::Catalog &c,
+                                    int population) {
+  ChainShape out;
+  out.records = c.records.size();
+  out.recordsPer10k = static_cast<double>(out.records) * 10000.0 /
+                      static_cast<double>(population);
+  double volAll = 0.0;
+  double volChain = 0.0;
+  std::size_t estAll = 0;
+  std::size_t estChain = 0;
+  std::map<std::uint64_t, std::map<pl::entity::geography::GeoAreaId,
+                                   std::size_t>>
+      byBrand;
+  for (const auto &r : c.records) {
+    if (r.brand.value != 0) {
+      ++byBrand[r.brand.value][r.location];
+    }
+    if (!physicalRetail(r)) {
+      continue;
+    }
+    volAll += r.weight;
+    ++estAll;
+    if (r.brand.value != 0) {
+      volChain += r.weight;
+      ++estChain;
+    }
+  }
+  out.chains = byBrand.size();
+  for (const auto &[brand, areas] : byBrand) {
+    (void)brand;
+    std::size_t n = 0;
+    for (const auto &[area, count] : areas) {
+      (void)area;
+      n += count;
+      out.maxPerArea = std::max(out.maxPerArea, count);
+    }
+    out.added += n - 1;
+    out.maxOutlets = std::max(out.maxOutlets, n);
+    out.maxAreas = std::max(out.maxAreas, areas.size());
+  }
+  out.volumeShare = volAll > 0.0 ? volChain / volAll : 0.0;
+  out.establishmentShare =
+      estAll > 0 ? static_cast<double>(estChain) / static_cast<double>(estAll)
+                 : 0.0;
+  return out;
+}
+
+// SUSB 2022 Retail Trade (NAICS 44-45), firms with 500+ employees:
+// receipts 0.632 and establishments 0.313 (645,404 firms, 1,045,890
+// establishments, $6,850.9B receipts; <500 firms 718,945 establishments and
+// $2,523.6B). Bands +-0.10 around each: the rule is unfitted, so the bands
+// say "the right regime", not "a calibrated value".
+constexpr double kSusbChainReceipts = 0.632;
+constexpr double kSusbChainEstablishments = 0.313;
+constexpr double kChainShareBand = 0.10;
+// CBP 2022 employer establishments 248.4 per 10k and Nilson YE2024
+// card-accepting locations 999.7 per 10k (merchant-selection-2026-08).
+constexpr double kMinRecordsPer10k = 248.0;
+constexpr double kMaxRecordsPer10k = 1000.0;
+
+[[nodiscard]] bool chainSharesInBand(const ChainShape &s) {
+  return std::abs(s.volumeShare - kSusbChainReceipts) <= kChainShareBand &&
+         std::abs(s.establishmentShare - kSusbChainEstablishments) <=
+             kChainShareBand &&
+         s.recordsPer10k >= kMinRecordsPer10k &&
+         s.recordsPer10k <= kMaxRecordsPer10k;
+}
+
+void subGateJ() {
+  namespace sm = pl::synth::merchants;
+  namespace ge = pl::entity::geography;
+  using F = pl::entity::merchant::Footprint;
+  const auto &geo = pl::synth::geo::geography();
+  constexpr int kPop = 500000;
+  const int core = sm::coreCountFor(kPop, {});
+
+  // J1: two streams from one seed; only one catalogue is expanded.
+  auto rngA = pl::random::Rng::fromSeed(kCatalogSeed);
+  auto rngB = pl::random::Rng::fromSeed(kCatalogSeed);
+  auto armed = sm::makeCatalog(rngA, kPop);
+  auto plain = sm::makeCatalog(rngB, kPop);
+  sm::placeGeography(armed, kGeoSeed);
+  sm::placeGeography(plain, kGeoSeed);
+  sm::expandOutlets(armed, core, kGeoSeed);
+  const auto nextA = rngA.nextU64();
+  const auto nextB = rngB.nextU64();
+  std::size_t baseMoved = 0;
+  for (std::size_t i = 0; i < plain.records.size(); ++i) {
+    const auto &a = armed.records[i];
+    const auto &b = plain.records[i];
+    baseMoved += (a.label != b.label || a.counterpartyId != b.counterpartyId ||
+                  a.category != b.category || a.footprint != b.footprint ||
+                  a.location != b.location)
+                     ? 1U
+                     : 0U;
+  }
+  std::printf("\nsub-gate J (outlets, pop %d):\n", kPop);
+  std::printf("  J1 shared stream next u64 %016llx / %016llx; base records "
+              "moved %zu of %zu\n",
+              static_cast<unsigned long long>(nextA),
+              static_cast<unsigned long long>(nextB), baseMoved,
+              plain.records.size());
+  check(nextA == nextB,
+        "J1: expandOutlets must not touch the shared entity stream");
+  check(baseMoved == 0,
+        "J1: a base record's serial, key, category, footprint or area moved; "
+        "outlets must be appended on their own lanes");
+
+  // J2: conservation per brand and in total.
+  std::map<std::uint64_t, double> brandMass;
+  double total = 0.0;
+  for (const auto &r : armed.records) {
+    total += r.weight;
+    if (r.brand.value != 0) {
+      brandMass[r.brand.value] += r.weight;
+    }
+  }
+  double worstRel = 0.0;
+  for (const auto &[brand, mass] : brandMass) {
+    const double before = plain.records[brand - 1].weight;
+    worstRel = std::max(worstRel, std::abs(mass - before) / before);
+  }
+  std::printf("  J2 brand mass worst relative error %.2e; catalogue total "
+              "%.15f\n",
+              worstRel, total);
+  check(worstRel <= 1e-14, "J2: a brand's outlet weights must sum to its "
+                           "pre-expansion weight");
+  check(std::abs(total - 1.0) <= 1e-12,
+        "J2: the catalogue's volume weights must still sum to 1");
+
+  // J3: domain predicates.
+  std::set<pl::entity::Key> keys;
+  std::size_t duplicateKeys = 0;
+  std::size_t badOutlet = 0;
+  std::size_t badBrand = 0;
+  std::size_t outlets = 0;
+  for (const auto &r : armed.records) {
+    duplicateKeys += keys.insert(r.counterpartyId).second ? 0U : 1U;
+    if (r.brand.value == 0) {
+      continue;
+    }
+    if (r.brand.value > plain.records.size()) {
+      ++badBrand;
+      continue;
+    }
+    const auto &head = armed.records[r.brand.value - 1];
+    // The brand is an ELIGIBLE CORE record heading its own chain: no online,
+    // nationalService, biller-category or tail record ever has siblings.
+    badBrand += (head.brand != head.label ||
+                 !sm::isOutletEligible(head, core))
+                    ? 1U
+                    : 0U;
+    if (r.label == head.label) {
+      continue;
+    }
+    ++outlets;
+    const bool domestic = ge::validArea(r.location) &&
+                          geo.contains(r.location) &&
+                          geo.at(r.location).country == pl::locale::Country::us;
+    badOutlet += (!domestic ||
+                  (r.footprint != F::localOutlet &&
+                   r.footprint != F::regionalOutlet) ||
+                  r.footprint != head.footprint ||
+                  r.category != head.category ||
+                  !sm::isOutletCategory(r.category) ||
+                  r.counterpartyId.role != head.counterpartyId.role ||
+                  r.counterpartyId.bank != head.counterpartyId.bank ||
+                  r.label.value <= plain.records.size())
+                     ? 1U
+                     : 0U;
+  }
+  std::printf("  J3 %zu outlets: %zu off-domain, %zu bad brand references, "
+              "%zu duplicate keys\n",
+              outlets, badOutlet, badBrand, duplicateKeys);
+  check(outlets > 0, "J3: the production catalogue must carry outlets");
+  check(badOutlet == 0, "J3: every outlet must be a domestic, physical "
+                        "outlet-category record on its brand's bank");
+  check(badBrand == 0, "J3: every brand must be an eligible core record "
+                       "heading its own chain");
+  check(duplicateKeys == 0, "J3: every record must keep a unique key");
+
+  // J4 / J5: the unfitted validation and its disarm.
+  const auto armedShape = chainShape(armed, kPop);
+  const auto plainShape = chainShape(plain, kPop);
+  std::printf("  J4 chain volume share %.3f (SUSB 500+ receipts %.3f), "
+              "establishment share %.3f (SUSB %.3f), records per 10k %.0f\n",
+              armedShape.volumeShare, kSusbChainReceipts,
+              armedShape.establishmentShare, kSusbChainEstablishments,
+              armedShape.recordsPer10k);
+  std::printf("  J5 DISARM (no expansion): volume %.3f, establishments %.3f, "
+              "records per 10k %.0f\n",
+              plainShape.volumeShare, plainShape.establishmentShare,
+              plainShape.recordsPer10k);
+  check(chainSharesInBand(armedShape),
+        "J4: chain shares must sit within 0.10 of SUSB 2022 retail (0.632 "
+        "receipts, 0.313 establishments) and records per 10k inside the "
+        "CBP-Nilson band");
+  check(!chainSharesInBand(plainShape),
+        "J5: the catalogue without outlets must fail J4, or J4 is vacuous");
+
+  // J6: printed only.
+  std::printf("  J6 pop %d: %zu chains, +%zu outlets (+%.1f%% records); "
+              "largest chain %zu outlets over %zu areas, at most %zu in one "
+              "area\n",
+              kPop, armedShape.chains, armedShape.added,
+              100.0 * static_cast<double>(armedShape.added) /
+                  static_cast<double>(plain.records.size()),
+              armedShape.maxOutlets, armedShape.maxAreas,
+              armedShape.maxPerArea);
+  for (const int pop : {300, 2000, 8000}) {
+    const auto small = chainShape(productionCatalog(pop, true), pop);
+    std::printf("  J6 pop %d (PRINTED, coreFloor binds): %zu chains, +%zu "
+                "outlets, volume %.3f, establishments %.3f, records per 10k "
+                "%.0f\n",
+                pop, small.chains, small.added, small.volumeShare,
+                small.establishmentShare, small.recordsPer10k);
+  }
+}
+
+// ===================================================================
+// SUB-GATE K: CATEGORY FREQUENCY (outlets-frequency-2026-09).
+//
+// The favourite pick keeps each row's Zipf rank MULTISET and lets the
+// category decide which favourite holds which rank. Driven over the real
+// MembershipSampler at pop 500,000 (with outlets), 2005 and 2022, F = 19 and
+// F = 30 (the seeded mean and the saturated set size):
+//   K1  the multiset is bit-identical to the legacy law's, so within-card
+//       top-1 is unchanged (Krumme's band is untouched by construction);
+//   K2  the online visit share stays on the dated CNP series;
+//   K3  the card-present split lands on the Diary of Consumer Payment Choice
+//       2022 ratios (restaurant/grocery 5.4/5.5, gas/grocery 2.6/5.5);
+//   K4  the four biller categories fall well below their legacy share;
+//   K5  the disarm (every weight 1, the legacy frequency) fails K3;
+//   K6  a merchant's weight is a property of the SET, not the slot;
+//   K7  printed: the multiplicative alternative, a recorded negative result;
+//   K8  printed: typical outlet volume a year, against the research figure;
+//   K10 the fraud venue pool's `kCategoryVisitLift` is the measured
+//       visit-to-favourite ratio (K9 is the corpus predicate further down).
+// ===================================================================
+struct FavRow {
+  std::uint32_t person = 0;
+  std::vector<std::uint32_t> merchants;
+};
+
+[[nodiscard]] std::vector<FavRow>
+sampleRows(const commerce::MembershipSampler &sampler, int people,
+           std::size_t setSize) {
+  const pl::synth::geo::ResidenceSampler residence{pl::synth::geo::geography()};
+  auto prng = pl::random::Rng::fromSeed(4242ULL);
+  std::vector<FavRow> rows;
+  rows.reserve(static_cast<std::size_t>(people));
+  for (int p = 0; p < people; ++p) {
+    const auto home = residence.sample(prng, pl::locale::Country::us);
+    FavRow row{static_cast<std::uint32_t>(p), {}};
+    for (int t = 0; t < 250 && row.merchants.size() < setSize; ++t) {
+      const auto idx = sampler.sample(home, prng.nextDouble());
+      if (std::find(row.merchants.begin(), row.merchants.end(), idx) ==
+          row.merchants.end()) {
+        row.merchants.push_back(idx);
+      }
+    }
+    rows.push_back(std::move(row));
+  }
+  return rows;
+}
+
+struct VisitMix {
+  std::array<double, pl::merchants::kCategoryCount> visit{};
+  std::array<double, pl::merchants::kCategoryCount> fav{};
+  double online = 0.0;
+  double top1 = 0.0;
+  [[nodiscard]] double share(pl::merchants::Category c) const {
+    return visit[static_cast<std::size_t>(c)];
+  }
+  [[nodiscard]] double billers() const {
+    double b = 0.0;
+    for (const auto c : pl::activity::spending::market::kBillerCategories) {
+      b += share(c);
+    }
+    return b;
+  }
+};
+
+// Per-slot weights of `row` under `rates`, or under the legacy law when
+// `rates` is null.
+double rowWeights(const pl::entity::merchant::Catalog &catalog,
+                  const FavRow &row, const commerce::VisitRateTable *rates,
+                  std::vector<double> &w) {
+  const auto n = row.merchants.size();
+  w.assign(n, 0.0);
+  if (rates != nullptr) {
+    return commerce::affinity::rankedWeights(row.merchants, row.person,
+                                             catalog, *rates,
+                                             commerce::kVisitZipfAlpha, w);
+  }
+  double total = 0.0;
+  for (std::size_t i = 0; i < n; ++i) {
+    w[i] = commerce::affinity::weightFor(row.person, row.merchants[i], n);
+    total += w[i];
+  }
+  return total;
+}
+
+[[nodiscard]] VisitMix measureMix(const pl::entity::merchant::Catalog &catalog,
+                                  const std::vector<FavRow> &rows,
+                                  const commerce::VisitRateTable *rates) {
+  VisitMix out;
+  double favTotal = 0.0;
+  std::vector<double> w;
+  for (const auto &row : rows) {
+    const double total = rowWeights(catalog, row, rates, w);
+    if (!(total > 0.0)) {
+      continue;
+    }
+    double top = 0.0;
+    for (std::size_t i = 0; i < row.merchants.size(); ++i) {
+      const auto &rec = catalog.records[row.merchants[i]];
+      const auto c = static_cast<std::size_t>(rec.category);
+      const double v = w[i] / total;
+      out.visit[c] += v;
+      out.fav[c] += 1.0;
+      favTotal += 1.0;
+      out.online += rec.footprint == pl::entity::merchant::Footprint::online
+                        ? v
+                        : 0.0;
+      top = std::max(top, v);
+    }
+    out.top1 += top;
+  }
+  const double n = static_cast<double>(rows.size());
+  for (auto &v : out.visit) {
+    v /= n;
+  }
+  for (auto &f : out.fav) {
+    f /= favTotal;
+  }
+  out.online /= n;
+  out.top1 /= n;
+  return out;
+}
+
+// DCPC 2022 non-cash in-person payments a month (SF Fed 2023 Findings,
+// Figure 5): grocery and convenience 5.5, fast food 3.4 + sit-down 2.0, gas
+// 2.6. The bands are the design's, +-0.2 around each DCPC ratio.
+constexpr double kDcpcRestaurantOverGrocery = 5.4 / 5.5;
+constexpr double kDcpcFuelOverGrocery = 2.6 / 5.5;
+
+[[nodiscard]] bool dcpcSplitHolds(const VisitMix &m) {
+  using C = pl::merchants::Category;
+  const double g = m.share(C::grocery);
+  const double groceryLift = g / m.fav[static_cast<std::size_t>(C::grocery)];
+  const double rest = m.share(C::restaurant) / g;
+  const double fuel = m.share(C::fuel) / g;
+  return rest >= 0.80 && rest <= 1.15 && fuel >= 0.35 && fuel <= 0.60 &&
+         groceryLift >= 1.6;
+}
+
+void subGateK() {
+  using C = pl::merchants::Category;
+  const auto &geo = pl::synth::geo::geography();
+  constexpr int kPop = 500000;
+  const auto catalog = productionCatalog(kPop, true);
+
+  std::vector<double> volume;
+  volume.reserve(catalog.records.size());
+  for (const auto &r : catalog.records) {
+    volume.push_back(r.weight);
+  }
+  const auto model = commerce::calibrateReachModel(volume, 30.0);
+  std::vector<pl::entity::geography::GeoAreaId> homes;
+  for (std::size_t a = 1; a <= geo.size(); ++a) {
+    homes.push_back(static_cast<pl::entity::geography::GeoAreaId>(a));
+  }
+
+  std::printf("\nsub-gate K (category frequency, pop %d with outlets):\n",
+              kPop);
+  commerce::VisitRateTable ones{};
+  ones.fill(1.0);
+
+  for (const int year : {2022, 2005}) {
+    const auto sampler = commerce::MembershipSampler::build(
+        catalog, geo, homes, model.membership, 30.0,
+        commerce::cnpShareForYear(year));
+    for (const std::size_t setSize : {std::size_t{30}, std::size_t{19}}) {
+      const bool primary = year == 2022 && setSize == 30;
+      const auto rows = sampleRows(sampler, primary ? 40000 : 12000, setSize);
+      const auto legacy = measureMix(catalog, rows, nullptr);
+      const auto ranked =
+          measureMix(catalog, rows, &commerce::kVisitRateWeight);
+
+      // K1: the rank multiset, bit for bit.
+      std::size_t mismatched = 0;
+      std::vector<double> a;
+      std::vector<double> b;
+      for (const auto &row : rows) {
+        rowWeights(catalog, row, nullptr, a);
+        rowWeights(catalog, row, &commerce::kVisitRateWeight, b);
+        std::sort(a.begin(), a.end());
+        std::sort(b.begin(), b.end());
+        mismatched += a == b ? 0U : 1U;
+      }
+      const std::string tag = "year " + std::to_string(year) + " F=" +
+                              std::to_string(setSize);
+      std::printf("  %s: K1 multiset mismatches %zu of %zu rows, top-1 "
+                  "legacy %.4f / ranked %.4f; K2 online visit %.4f -> %.4f\n",
+                  tag.c_str(), mismatched, rows.size(), legacy.top1,
+                  ranked.top1, legacy.online, ranked.online);
+      check(mismatched == 0,
+            "K1 " + tag + ": the ranked law must keep each row's legacy rank "
+                          "multiset bit for bit");
+      check(legacy.top1 == ranked.top1 ||
+                std::abs(legacy.top1 - ranked.top1) <= 1e-12,
+            "K1 " + tag + ": within-card top-1 must be unchanged");
+      check(std::abs(ranked.online - legacy.online) <= 0.02,
+            "K2 " + tag + ": the online visit share must stay within 0.02 of "
+                          "the dated CNP membership law");
+
+      std::printf("    %-12s %-7s %-7s %s\n", "category", "fav", "legacy",
+                  "ranked");
+      for (const auto c : pl::merchants::kCategories) {
+        const auto i = static_cast<std::size_t>(c);
+        const auto label = pl::merchants::name(c);
+        std::printf("    %-12.*s %.4f  %.4f  %.4f\n",
+                    static_cast<int>(label.size()), label.data(),
+                    legacy.fav[i], legacy.visit[i], ranked.visit[i]);
+      }
+      const double g = ranked.share(C::grocery);
+      std::printf("    restaurant/grocery %.3f (DCPC %.3f)  fuel/grocery %.3f "
+                  "(DCPC %.3f)  retailOther/grocery %.3f  grocery visit/fav "
+                  "%.2f  billers %.4f (legacy %.4f)\n",
+                  ranked.share(C::restaurant) / g, kDcpcRestaurantOverGrocery,
+                  ranked.share(C::fuel) / g, kDcpcFuelOverGrocery,
+                  ranked.share(C::retailOther) / g,
+                  g / ranked.fav[static_cast<std::size_t>(C::grocery)],
+                  ranked.billers(), legacy.billers());
+      if (!primary) {
+        continue; // K3-K8 are bounded at the solve point only (era drift is
+                  // registered; the 2005 and F=19 splits are printed above)
+      }
+
+      // K3 / K5: the DCPC split and its disarm.
+      const auto disarm = measureMix(catalog, rows, &ones);
+      check(dcpcSplitHolds(ranked),
+            "K3: the card-present split must land on the DCPC 2022 ratios "
+            "(restaurant/grocery in [0.80, 1.15], fuel/grocery in [0.35, "
+            "0.60], grocery visits at least 1.6x its favourite share)");
+      check(!dcpcSplitHolds(disarm),
+            "K5: with every weight 1 the split must fail K3, or K3 is "
+            "vacuous");
+      std::printf("  K5 DISARM (all weights 1): restaurant/grocery %.3f, "
+                  "fuel/grocery %.3f, grocery visit/fav %.2f\n",
+                  disarm.share(C::restaurant) / disarm.share(C::grocery),
+                  disarm.share(C::fuel) / disarm.share(C::grocery),
+                  disarm.share(C::grocery) /
+                      disarm.fav[static_cast<std::size_t>(C::grocery)]);
+
+      // K4: the biller share, and the floor reassignment cannot go below.
+      commerce::VisitRateTable last = ones;
+      for (const auto c : pl::activity::spending::market::kBillerCategories) {
+        last[static_cast<std::size_t>(c)] = 1e-12;
+      }
+      const auto floorMix = measureMix(catalog, rows, &last);
+      std::printf("  K4 biller-category visits %.4f (legacy %.4f); rank floor "
+                  "with billers always last %.4f\n",
+                  ranked.billers(), legacy.billers(), floorMix.billers());
+      check(ranked.billers() <= 0.20,
+            "K4: the four biller categories must carry at most 0.20 of "
+            "card visits (legacy " +
+                std::to_string(legacy.billers()) + ")");
+
+      // The floor value: well below the smallest solved weight, so it reads
+      // as "ranked last". 1e-4 against the shipped 1e-3 must move nothing.
+      commerce::VisitRateTable deeper = commerce::kVisitRateWeight;
+      for (auto &r : deeper) {
+        r = r <= 0.001 ? 1e-4 : r;
+      }
+      const auto deeperMix = measureMix(catalog, rows, &deeper);
+      double worstFloorMove = 0.0;
+      for (std::size_t i = 0; i < pl::merchants::kCategoryCount; ++i) {
+        worstFloorMove = std::max(
+            worstFloorMove, std::abs(deeperMix.visit[i] - ranked.visit[i]));
+      }
+      std::printf("  floor 1e-4 against 1e-3: worst category move %.4f\n",
+                  worstFloorMove);
+      check(worstFloorMove <= 0.002,
+            "K4: the floor must read as 'ranked last'; lowering it tenfold "
+            "moved a category share by " +
+                std::to_string(worstFloorMove));
+
+      // K6: a property of the set. Reverse each row (swapRemove reorders
+      // slots) and compare each merchant's weight; the pick is deterministic.
+      std::size_t slotDependent = 0;
+      std::size_t nondeterministic = 0;
+      for (std::size_t k = 0; k < 2000 && k < rows.size(); ++k) {
+        const auto &row = rows[k];
+        FavRow reversed{row.person,
+                        {row.merchants.rbegin(), row.merchants.rend()}};
+        rowWeights(catalog, row, &commerce::kVisitRateWeight, a);
+        rowWeights(catalog, reversed, &commerce::kVisitRateWeight, b);
+        const auto n = row.merchants.size();
+        for (std::size_t i = 0; i < n; ++i) {
+          slotDependent += a[i] == b[n - 1 - i] ? 0U : 1U;
+        }
+        for (const double u : {0.1, 0.5, 0.9}) {
+          nondeterministic +=
+              commerce::sampleFavoriteSlot(row.merchants, row.person, u,
+                                           catalog) ==
+                      commerce::sampleFavoriteSlot(row.merchants, row.person,
+                                                   u, catalog)
+                  ? 0U
+                  : 1U;
+        }
+      }
+      check(slotDependent == 0,
+            "K6: a merchant's weight must not depend on its slot");
+      check(nondeterministic == 0, "K6: the pick must be deterministic");
+
+      // K7: the multiplicative alternative w_c * rank^-0.80, with its weights
+      // solved offline to the same DCPC targets on this catalogue
+      // (docs/fraud_model_audit.md, outlets-frequency-2026-09).
+      const commerce::VisitRateTable multiplicative{
+          1.0, 0.4587, 0.04613, 0.05208, 0.3558, 0.8917, 0.1505, 0.5884,
+          0.05054, 0.04183};
+      double multTop1 = 0.0;
+      for (const auto &row : rows) {
+        rowWeights(catalog, row, nullptr, a);
+        double total = 0.0;
+        for (std::size_t i = 0; i < a.size(); ++i) {
+          a[i] *= multiplicative[static_cast<std::size_t>(
+              catalog.records[row.merchants[i]].category)];
+          total += a[i];
+        }
+        multTop1 += total > 0.0
+                        ? *std::max_element(a.begin(), a.end()) / total
+                        : 0.0;
+      }
+      std::printf("  K7 (PRINTED, rejected) multiplicative weights: "
+                  "within-card top-1 %.4f against %.4f\n",
+                  multTop1 / static_cast<double>(rows.size()), ranked.top1);
+
+      // K10: the fraud venue pool's category factor is this reading. Fraud
+      // draws venues from the catalogue by weight, not from a favourite row,
+      // so it carries the law as `kCategoryVisitLift`; a table that no longer
+      // matches the race would put fraud card rows back on a different
+      // category mix from legitimate ones (the fraud/legit category gate in
+      // `test_card_merchant_overlap` reads the corpus consequence).
+      double worstLiftGap = 0.0;
+      double legacyLiftGap = 0.0;
+      std::printf("  K10 visit/favourite ratio against kCategoryVisitLift:");
+      for (const auto c : pl::merchants::kCategories) {
+        const auto i = static_cast<std::size_t>(c);
+        const double lift = commerce::kCategoryVisitLift[i];
+        const double ratio = ranked.visit[i] / ranked.fav[i];
+        worstLiftGap = std::max(worstLiftGap, std::abs(ratio - lift));
+        legacyLiftGap = std::max(
+            legacyLiftGap, std::abs(legacy.visit[i] / legacy.fav[i] - lift));
+        const auto label = pl::merchants::name(c);
+        std::printf(" %.*s %.3f/%.2f", static_cast<int>(label.size()),
+                    label.data(), ratio, lift);
+      }
+      std::printf("\n  K10 worst gap %.4f (the legacy law reads %.4f)\n",
+                  worstLiftGap, legacyLiftGap);
+      check(worstLiftGap <= 0.05,
+            "K10: kCategoryVisitLift must be the race's visit-to-favourite "
+            "ratio at the solve point (worst gap " +
+                std::to_string(worstLiftGap) +
+                "); re-read it whenever kVisitRateWeight is re-solved");
+
+      // K8: expected bank payments a year per outlet, at the 236.6 card
+      // payments per person-year the 6,000 x 731d acceptance corpus measured
+      // (merchant-selection-2026-08). Printed: the research's corrected
+      // figure is a few hundred for a typical restaurant or gas outlet, and
+      // the gap is registered, not tuned.
+      std::vector<double> expected(catalog.records.size(), 0.0);
+      for (const auto &row : rows) {
+        const double total =
+            rowWeights(catalog, row, &commerce::kVisitRateWeight, a);
+        for (std::size_t i = 0; i < a.size(); ++i) {
+          expected[row.merchants[i]] += a[i] / total;
+        }
+      }
+      const double scale =
+          236.6 * static_cast<double>(kPop) / static_cast<double>(rows.size());
+      std::printf("  K8 (PRINTED) expected bank payments a year per record:\n");
+      for (const auto c : {C::grocery, C::fuel, C::restaurant, C::pharmacy,
+                           C::retailOther, C::ecommerce}) {
+        std::vector<double> v;
+        for (std::size_t m = 0; m < catalog.records.size(); ++m) {
+          if (catalog.records[m].category == c &&
+              physicalRetail(catalog.records[m]) == (c != C::ecommerce)) {
+            v.push_back(expected[m] * scale);
+          }
+        }
+        if (v.empty()) {
+          continue;
+        }
+        std::sort(v.begin(), v.end());
+        const auto above = static_cast<std::size_t>(
+            v.end() - std::upper_bound(v.begin(), v.end(), 2048.0));
+        const auto label = pl::merchants::name(c);
+        std::printf("    %-12.*s n %5zu  median %7.0f  p90 %8.0f  max %9.0f  "
+                    "above 2,048 %.3f\n",
+                    static_cast<int>(label.size()), label.data(), v.size(),
+                    v[v.size() / 2],
+                    v[static_cast<std::size_t>(0.9 * (v.size() - 1))],
+                    v.back(),
+                    static_cast<double>(above) /
+                        static_cast<double>(v.size()));
+      }
+
+      // FMI 2026: 5.4 separate grocery banners a month. Grocery and general
+      // merchandise favourites per row, printed: membership is unchanged by
+      // this round, so the frequency law imposes no small banner count.
+      double banners = 0.0;
+      for (const auto &row : rows) {
+        for (const auto m : row.merchants) {
+          const auto &rec = catalog.records[m];
+          banners += physicalRetail(rec) && (rec.category == C::grocery ||
+                                             rec.category == C::retailOther)
+                         ? 1.0
+                         : 0.0;
+        }
+      }
+      std::printf("  grocery + general-merchandise physical favourites per "
+                  "row %.2f (FMI: 5.4 grocery banners a month)\n",
+                  banners / static_cast<double>(rows.size()));
+    }
+  }
 }
 
 } // namespace
@@ -511,8 +1215,9 @@ int main() {
                   "online share %.4f\n",
                   shape.top1, shape.above25, shape.above50, shape.onlineShare);
       std::printf("    home->merchant  mean %.1f mi   P(<=50mi) %.4f   "
-                  "top physical spans %zu areas\n",
-                  shape.meanMiles, shape.within50, shape.topPhysicalAreas);
+                  "top physical OUTLET spans %zu home areas (its brand %zu)\n",
+                  shape.meanMiles, shape.within50, shape.topPhysicalAreas,
+                  shape.topPhysicalBrandAreas);
       std::printf("    pools %.3f MiB   cutoff discarded %.2e\n", shape.poolMiB,
                   shape.worstDiscarded);
 
@@ -555,6 +1260,9 @@ int main() {
                                     std::to_string(shape.above25) + ")");
     }
   }
+
+  subGateJ();
+  subGateK();
 
   const auto pools = pltest::buildPoolSet(1234567);
 
@@ -629,6 +1337,52 @@ int main() {
                                   std::to_string(shape.above50) + ")");
 
     // --------------------------------------------------------------
+    // SUB-GATE K9, THE CORPUS PREDICATE PAIRED WITH tests/golden_run.b2sum
+    // (cash-hub-defect-2026-08: a digest pins whatever it is given). The
+    // card rows themselves must carry the category-dependent frequency:
+    // grocery plus restaurant at least 1.5x the four biller categories. The
+    // pre-round world put 0.166 against 0.269 on this split at scale
+    // (sub-gate K, legacy column), a ratio near 0.6.
+    {
+      std::map<pl::entity::Key, pl::merchants::Category> categoryOf;
+      for (const auto &rec : result.merchants.records) {
+        categoryOf.emplace(rec.counterpartyId, rec.category);
+      }
+      std::size_t cardRows = 0;
+      std::size_t everyday = 0;
+      std::size_t billers = 0;
+      for (const auto &t : result.rows) {
+        if (!isCardRail(t) || t.fraud.flag != 0) {
+          continue;
+        }
+        const auto it = categoryOf.find(t.target);
+        if (it == categoryOf.end()) {
+          continue;
+        }
+        ++cardRows;
+        everyday += it->second == pl::merchants::Category::grocery ||
+                            it->second == pl::merchants::Category::restaurant
+                        ? 1U
+                        : 0U;
+        billers +=
+            pl::activity::spending::market::isBillerCategory(it->second) ? 1U
+                                                                         : 0U;
+      }
+      const double everydayShare =
+          cardRows ? static_cast<double>(everyday) / static_cast<double>(cardRows) : 0.0;
+      const double billerShare =
+          cardRows ? static_cast<double>(billers) / static_cast<double>(cardRows) : 0.0;
+      std::printf("  K9 card rows %zu: grocery+restaurant %.4f, biller "
+                  "categories %.4f, ratio %.2f\n",
+                  cardRows, everydayShare, billerShare,
+                  billerShare > 0.0 ? everydayShare / billerShare : 0.0);
+      check(cardRows > 0 && everydayShare >= 1.5 * billerShare,
+            std::string(leg.name) +
+                ": card rows must put grocery plus restaurant at least 1.5x "
+                "the biller categories (the category-frequency law)");
+    }
+
+    // --------------------------------------------------------------
     // SUB-GATE D — WITHIN-CARD VISIT CONCENTRATION, AS A RATIO AGAINST THE
     // UNIFORM BASELINE MEASURED ON THE SAME CARDS.
     //
@@ -660,6 +1414,12 @@ int main() {
     // share to the Fed's dated anchor changed the row composition, so both ends
     // moved down together and the old floor would have failed a correct build.
     // A band measured against a superseded construction is not a measurement.
+    //
+    // RE-MEASURED AGAIN (outlets-frequency-2026-09), and the floor holds:
+    // armed 2.990 (leg-A) / 2.841 (leg-B) with within-card top-1 0.2040 /
+    // 0.2166, against 2.669 / 2.637 and 0.2454 / 0.2352 on the build before.
+    // The rank multiset is unchanged (sub-gate K1), so the move is outlets
+    // and the category mix reshaping which rows the legs emit.
     //
     // The absolute share is still asserted, but only against the loose
     // plausibility envelope — it is the ratio that carries the claim.

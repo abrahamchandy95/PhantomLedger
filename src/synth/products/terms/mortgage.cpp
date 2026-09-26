@@ -1,6 +1,5 @@
 #include "phantomledger/synth/products/terms/mortgage.hpp"
 
-#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
 #include "phantomledger/synth/products/sampling/amounts.hpp"
@@ -49,8 +48,10 @@ sampleMortgageAgeDays(::PhantomLedger::random::Rng &rng) {
 
 MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
                                  ::PhantomLedger::time::Window window,
+                                 const ProviderPicker &providers,
                                  MortgageTerms terms)
-    : rng_{&rng}, window_{window}, terms_{std::move(terms)} {}
+    : rng_{&rng}, window_{window}, providers_{&providers},
+      terms_{std::move(terms)} {}
 
 [[nodiscard]] bool MortgageEmitter::emit(
     ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
@@ -77,23 +78,23 @@ MortgageEmitter::MortgageEmitter(::PhantomLedger::random::Rng &rng,
       payment * ::PhantomLedger::synth::econ::priceScale(
                     ::PhantomLedger::time::toCalendarDate(loanStart).year);
 
-  // SUSPECTED DEFECT (flagged 2026-07-19, owner-gated): mortgage
-  // payments route to Lending::studentServicer, not Lending::mortgage.
-  // Correcting it changes corpus bytes (counterparty key on every
-  // mortgage row), so it is a model round with golden re-pins — kept
-  // verbatim here; test_counterparties pins the key table itself.
-  addInstallmentProduct(loans, obligations, window_,
-                        InstallmentIssue{
-                            .person = person,
-                            .productType = product::ProductType::mortgage,
-                            .counterparty = counterparties::key(
-                                counterparties::Lending::studentServicer),
-                            .start = loanStart,
-                            .termMonths = kMortgageTermMonths,
-                            .paymentDay = paymentDay,
-                            .monthlyPayment = nominalPayment,
-                            .terms = installmentTerms(terms_.delinquency),
-                        });
+  // The servicer comes from the mortgage market on its own lane
+  // (providers.hpp), so it spends nothing from rng_. Until
+  // institutional-providers-2026-09 every mortgage paid the student-loan
+  // servicer; test_product_providers carries the predicate that keeps it
+  // closed.
+  addInstallmentProduct(
+      loans, obligations, window_,
+      InstallmentIssue{
+          .person = person,
+          .productType = product::ProductType::mortgage,
+          .counterparty = providers_->pick(counterparties::Market::mortgage),
+          .start = loanStart,
+          .termMonths = kMortgageTermMonths,
+          .paymentDay = paymentDay,
+          .monthlyPayment = nominalPayment,
+          .terms = installmentTerms(terms_.delinquency),
+      });
 
   return true;
 }

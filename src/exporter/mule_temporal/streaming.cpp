@@ -258,6 +258,10 @@ struct StreamingMuleTemporalExport::Impl {
         type = "credit";
       if (key.role == entity::Role::brokerage)
         type = "brokerage";
+      // A bank-owned income GL (bank-gl-2026-09): internal, ownerless, never
+      // a deposit, so it is neither external nor a Zelle endpoint.
+      if (key.role == entity::Role::ledger)
+        type = "gl";
       const auto a =
           node(Kind::account, opaque("a", encoding::format(key).view()), type,
                key.bank == entity::Bank::external ||
