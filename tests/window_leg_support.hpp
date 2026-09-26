@@ -382,6 +382,7 @@ struct LegResult {
             .ringInfra = &world.infra.ringInfra,
             .attackers = &world.infra.attackers,
             .fraudSeed = opt.seed ^ 0x9E3779B97F4A7C15ULL,
+            .payrollSeed = opt.seed,
         },
         fraudEmission.ringView(world.people.roster.topology,
                                world.people.personas.timelines),

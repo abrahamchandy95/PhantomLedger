@@ -252,7 +252,7 @@ private:
       return salaryModel_() * 12.0;
     };
 
-    return init_(personId, anchor, payroll_.counterparties.employers,
+    return init_(personId, anchor, *payroll_.counterparties.employers,
                  annualSalary);
   }
 
@@ -295,7 +295,7 @@ private:
         {"employment_advance", personId, switchId.str()});
 
     return advance_(advRng, personId, state.end,
-                    payroll_.counterparties.employers, state);
+                    *payroll_.counterparties.employers, state);
   }
 
   const Payroll &payroll_;
@@ -315,7 +315,7 @@ private:
 generateSalaryTxns(const salary::Payroll &payroll, random::Rng &rng,
                    const transactions::Factory &txf,
                    const std::function<double()> &salaryModel) {
-  if (payroll.counterparties.employers.empty()) {
+  if (!payroll.counterparties.hasEmployers()) {
     return {};
   }
 

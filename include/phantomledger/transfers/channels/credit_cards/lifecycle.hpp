@@ -20,7 +20,6 @@ namespace PhantomLedger::transfers::credit_cards {
 struct LedgerView {
   const entity::card::Registry &cards;
   const std::unordered_map<entity::PersonId, entity::Key> &primaryAccounts;
-  entity::Key issuerAccount;
 };
 
 struct LifecycleRules {

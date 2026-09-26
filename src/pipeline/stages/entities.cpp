@@ -3,6 +3,7 @@
 #include "phantomledger/entities/counterparties/cash_points.hpp"
 #include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/entities/counterparties/merchant_ownership.hpp"
+#include "phantomledger/entities/holdings/general_ledger.hpp"
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
 #include "phantomledger/synth/accounts/assign.hpp"
@@ -11,12 +12,14 @@
 #include "phantomledger/synth/cards/issue.hpp"
 #include "phantomledger/synth/cards/seeds.hpp"
 #include "phantomledger/synth/counterparties/make.hpp"
+#include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/synth/geo/catalog.hpp"
 #include "phantomledger/synth/geo/residence.hpp"
 #include "phantomledger/synth/landlords/make.hpp"
 #include "phantomledger/synth/merchants/lifecycle.hpp"
 #include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/merchants/outlets.hpp"
 #include "phantomledger/synth/merchants/place.hpp"
 #include "phantomledger/synth/people/make.hpp"
 #include "phantomledger/synth/personas/dob.hpp"
@@ -26,7 +29,6 @@
 #include "phantomledger/synth/pii/correlate.hpp"
 #include "phantomledger/synth/pii/make.hpp"
 #include "phantomledger/synth/pii/relocation_build.hpp"
-#include "phantomledger/transfers/legit/ledger/posting.hpp"
 #include "phantomledger/transfers/legit/routines/family/transfer_run.hpp"
 
 #include <algorithm>
@@ -164,6 +166,12 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
    * from perturbing any other entity-stage value; it does NOT make either
    * corpus-neutral, because selection sees a time-varying live set. */
   sy::merchants::placeGeography(catalog, geoSeed);
+  /* Chain brands become outlets here, after placement (it reads footprint and
+   * area) and before churn (a replacement's donor may be an outlet). This is
+   * the only catalogue build path: production and every harness call
+   * buildMerchants, so all of them see outlets. Isolated lanes off geoSeed. */
+  sy::merchants::expandOutlets(
+      catalog, sy::merchants::coreCountFor(population, plan), geoSeed);
   /* This order, for this reason: the BASE catalogue is the incumbent cohort
    * (live when the window opens), and the replacements appended next are the
    * births that keep the live count from decaying as incumbents die. Both the
@@ -176,10 +184,11 @@ buildMerchants(pl::random::Rng &rng, std::int32_t population,
 
 [[nodiscard]] sy::landlords::Pack
 buildLandlords(pl::random::Rng &rng, std::int32_t population,
+               std::uint64_t seed,
                const sy::landlords::GenerationPlan &plan) {
   pl::primitives::validate::nonNegative("population", population);
   pl::primitives::validate::require(plan);
-  return sy::landlords::makePack(rng, population, plan);
+  return sy::landlords::makePack(rng, population, seed, plan);
 }
 
 [[nodiscard]] entity::card::Registry
@@ -205,7 +214,6 @@ namespace {
 namespace cps_tax = ::PhantomLedger::counterparties;
 namespace family_synth = pl::synth::family;
 namespace family_rt = pl::transfers::legit::routines::family;
-namespace legit_ldg = pl::transfers::legit::ledger;
 
 using Key = entity::Key;
 using AccountsPack = sy::accounts::Pack;
@@ -233,13 +241,16 @@ void registerInternal(AccountsPack &accounts, std::span<const Key> keys) {
   sy::accounts::addAccounts(accounts, keys, /*external=*/false);
 }
 
+// The retired external-unknown catch-all is deliberately NOT registered
+// (unknown-counterparty-2026-09), so validateTransactionAccounts throws on
+// any row that still names it. The bank's four income GLs (bank-gl-2026-09)
+// open the block, internal and ownerless: they replace the card issuer, fee
+// collection and overdraft line-of-credit keys, which were registered
+// external and are retired with the same throw.
 void registerSystemAccounts(AccountsPack &accounts) {
   namespace cash = ::PhantomLedger::counterparties::cash;
+  registerInternal(accounts, std::span<const Key>{entity::gl::kIncomeAccounts});
   const auto keys = std::to_array<Key>({
-      legit_ldg::bankFeeCollectionKey(),
-      legit_ldg::bankOdLocKey(),
-      entity::makeKey(entity::Role::merchant, entity::Bank::external, 1ULL),
-      cash::cardIssuer(),
       cash::fallbackEmployer(),
       cash::fallbackLandlord(),
   });
@@ -332,10 +343,6 @@ void registerCounterpartyDirectory(AccountsPack &accounts,
                    entity::boundary::Kind::cryptoVenue,
                    entity::boundary::kBothFlows);
   registerExternal(accounts, std::span<const Key>{cps.external.billers});
-  if (entity::valid(cps.external.cardIssuer)) {
-    const std::array<Key, 1> issuer{cps.external.cardIssuer};
-    registerExternal(accounts, issuer);
-  }
 }
 
 void registerCreditCards(AccountsPack &accounts,
@@ -356,11 +363,34 @@ void registerPerPersonPayees(AccountsPack &accounts,
   registerExternal(accounts, keys);
 }
 
+/* The counterparties that replaced the external-unknown catch-all
+ * (unknown-counterparty-2026-09), appended after every other entity-stage
+ * record: the check-payee banks some person's payee slots use, both P2P
+ * platforms, and the funeral home of every decedent who dies inside the
+ * window. Only the retired key's own removal from the system block moves an
+ * existing record (every later one shifts up by one). DRAW-FREE: every choice
+ * is a hash of the person id, so registering them spends nothing on the
+ * shared stream. */
+void registerRemotePayees(AccountsPack &accounts,
+                          const pl::pipeline::People &peopleData,
+                          pl::time::Window window) {
+  namespace remote = ::PhantomLedger::synth::counterparties::remote;
+  const auto banks = remote::checkBanksInUse(peopleData.roster.roster.count);
+  registerExternal(accounts, banks);
+  const auto platforms = remote::p2pPlatforms();
+  registerExternal(accounts, platforms);
+  const auto funeralHomes = remote::funeralHomesInUse(
+      peopleData.personas.timelines, peopleData.homeAreas,
+      &peopleData.relocation, window);
+  registerExternal(accounts, funeralHomes);
+}
+
 } // namespace
 
 void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
                              const pl::pipeline::Counterparties &cpsData,
-                             const pl::pipeline::People &peopleData) {
+                             const pl::pipeline::People &peopleData,
+                             pl::time::Window window) {
   auto &accounts = holdings.accounts;
 
   registerSystemAccounts(accounts);
@@ -374,6 +404,7 @@ void finalizeAccountRegistry(pl::pipeline::Holdings &holdings,
   registerCashServiceFallbacks(accounts);
   registerCreditCards(accounts, holdings.creditCards);
   registerPerPersonPayees(accounts, peopleData.roster.roster);
+  registerRemotePayees(accounts, peopleData, window);
 }
 
 void synthesizeBusinessOwners(pl::pipeline::Holdings &holdings,

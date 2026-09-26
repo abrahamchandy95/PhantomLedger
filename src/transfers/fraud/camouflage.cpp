@@ -1,8 +1,10 @@
 #include "phantomledger/transfers/fraud/camouflage.hpp"
 
+#include "phantomledger/activity/income/timestamps.hpp"
+#include "phantomledger/activity/recurring/employment.hpp"
+#include "phantomledger/activity/recurring/growth.hpp"
 #include "phantomledger/activity/recurring/payroll.hpp"
 #include "phantomledger/math/amounts.hpp"
-#include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
@@ -10,7 +12,6 @@
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
-#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -19,6 +20,7 @@ namespace PhantomLedger::transfers::fraud::camouflage {
 namespace {
 
 namespace recur = activity::recurring;
+namespace timestamps = activity::income::timestamps;
 
 // H1 step 2b (authority U-6): camouflage traffic scales with the index
 // of the flow it MIMICS — bills/p2p ride the CPI (class P), the salary
@@ -27,67 +29,6 @@ namespace recur = activity::recurring;
 [[nodiscard]] double nominalPrice(double amount, time::TimePoint ts) {
   return primitives::utils::roundMoney(
       amount * synth::econ::priceScale(time::toCalendarDate(ts).year));
-}
-
-[[nodiscard]] recur::PayrollSchedule
-sampleCamouflagePayrollProfile(random::Rng &rng) {
-  static constexpr recur::PayrollRules kRules{};
-
-  const std::array<double, recur::kPayCadenceCount> cadenceWeights{
-      kRules.cadences.weekly,
-      kRules.cadences.biweekly,
-      kRules.cadences.semimonthly,
-      kRules.cadences.monthly,
-  };
-
-  const auto cdf = probability::distributions::buildCdf(cadenceWeights);
-  const auto cadence =
-      recur::kPayCadences[probability::distributions::sampleIndex(
-          cdf, rng.nextDouble())];
-
-  int weekday = kRules.weekday.defaultWeekday;
-  if ((cadence == recur::Cadence::weekly ||
-       cadence == recur::Cadence::biweekly) &&
-      rng.coin(0.25)) {
-    weekday = (weekday == 4) ? 3 : 4;
-  }
-
-  auto anchor = recur::nextWeekdayOnOrAfter(time::makeTime(time::CalendarDate{
-                                                .year = 2025,
-                                                .month = 1,
-                                                .day = 1,
-                                            }),
-                                            weekday);
-
-  if (cadence == recur::Cadence::biweekly && rng.coin(0.5)) {
-    anchor = time::addDays(anchor, 7);
-  }
-
-  const int lagMax = kRules.postingLag.maxDays;
-  const int postingLagDays =
-      (lagMax == 0) ? 0
-                    : static_cast<int>(rng.uniformInt(
-                          0, static_cast<std::int64_t>(lagMax) + 1));
-
-  recur::PayrollSchedule profile;
-  profile.cadence = cadence;
-  profile.anchorDate = anchor;
-  profile.weekday = weekday;
-  profile.postingLagDays = postingLagDays;
-
-  if (cadence == recur::Cadence::semimonthly) {
-    profile.semimonthlyDays =
-        rng.coin(0.35) ? std::array<int, 2>{1, 15} : std::array<int, 2>{15, 31};
-  }
-
-  if (cadence == recur::Cadence::monthly) {
-    static constexpr std::array<int, 3> kMonthlyDayChoices{28, 30, 31};
-    profile.monthlyDay =
-        kMonthlyDayChoices[rng.choiceIndex(kMonthlyDayChoices.size())];
-  }
-
-  primitives::validate::require(profile);
-  return profile;
 }
 
 } // namespace
@@ -150,7 +91,7 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
   }
 
   // ---- 2. Small daily P2P --------------------------------------------
-  if (!ctx.accounts->allAccounts.empty() && rates.smallP2pPerDayP > 0.0) {
+  if (!ctx.accounts->depositAccounts.empty() && rates.smallP2pPerDayP > 0.0) {
     for (std::int32_t day = 0; day < days; ++day) {
       const auto dayStart = startDate + time::Days{day};
 
@@ -159,35 +100,14 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
           continue;
         }
 
-        // merchant-churn-2026-07: RE-PICK rather than skip.
-        //
-        // `allAccounts` mixes person deposit accounts with counterparty
-        // accounts, so a uniform pick could land a CAMOUFLAGE P2P transfer on
-        // a merchant sink. That was wrong twice over: this channel exists to
-        // mimic person-to-person traffic (the bill branch above is the one
-        // that pays merchants), and once merchants gained a lifecycle it was
-        // also a liveness hole, since there is no catalogue in scope here to
-        // test `liveAt` against.
-        //
-        // The first fix simply skipped those rows, and the table goldens
-        // showed why that was wrong: it deleted ~9,700 camouflage rows and
-        // dropped AML `ALERT_ON` by 17%. **Camouflage VOLUME is the whole
-        // point of camouflage** — thinning it makes ring accounts stand out
-        // and silently re-tunes a different use case. Re-picking keeps the
-        // row, so the only thing that changes is where it lands.
-        //
-        // Bounded attempts, then accept whatever came last: a merchant
-        // destination on one camouflage row is a far smaller error than a
-        // spin, and at any realistic person-to-counterparty ratio the loop
-        // exits on the first or second try.
-        entity::Key dst = ctx.accounts->allAccounts[rng.choiceIndex(
-            ctx.accounts->allAccounts.size())];
-        for (int attempt = 0; attempt < 6 &&
-                              dst.role == entity::Role::merchant;
-             ++attempt) {
-          dst = ctx.accounts->allAccounts[rng.choiceIndex(
-              ctx.accounts->allAccounts.size())];
-        }
+        // The pool holds only customer deposit accounts, the destinations
+        // legitimate P2P pays (fraud::camouflageEligible), so one pick is
+        // final. The filter replaced a bounded re-pick of merchant
+        // destinations (merchant-churn-2026-07) and, like it, removes a
+        // destination rather than the row: camouflage VOLUME is the whole
+        // point of camouflage. Only a pick of the sender's own account skips.
+        const entity::Key dst = ctx.accounts->depositAccounts[rng.choiceIndex(
+            ctx.accounts->depositAccounts.size())];
 
         if (dst == acct) {
           continue;
@@ -215,30 +135,38 @@ generate(CamouflageContext &ctx, const Plan &plan, const Rates &rates) {
   }
 
   // ---- 3. Recurring inbound salary -----------------------------------
-  if (!ctx.accounts->employers.empty() && rates.salaryInboundP > 0.0) {
+  if (ctx.accounts->employers != nullptr && !ctx.accounts->employers->empty() &&
+      ctx.payrollFactory != nullptr && rates.salaryInboundP > 0.0) {
     for (const auto &acct : ringAccounts) {
       if (!rng.coin(rates.salaryInboundP)) {
         continue;
       }
 
-      const auto &src =
-          ctx.accounts
-              ->employers[rng.choiceIndex(ctx.accounts->employers.size())];
+      // The payroll size law, not a uniform pick (counterparty-sizes-2026-09):
+      // a uniform pick over a roster that is mostly one-payee firms would put
+      // almost every mule salary on an employer nobody else is paid by. Same
+      // single u64 on the camo lane as the choiceIndex it replaced.
+      const auto &src = recur::growth::pickSized(rng, *ctx.accounts->employers);
 
-      const auto profile = sampleCamouflagePayrollProfile(rng);
+      // The picked employer's OWN schedule, derived from the lane legitimate
+      // payroll reads ({employer_payroll_profile, number} on the run seed's
+      // factory, under the default rules it also runs on) and posted the way
+      // its rows are: the posting lag, no day jitter, 06:00 to 11:59. A
+      // schedule drawn here instead put 72% of the mule salary streams from
+      // an employer with legitimate payees on at least one date that
+      // employer pays nobody else. The derivation spends nothing on the camo
+      // lane, where the independent schedule spent three or four draws.
+      const auto profile = recur::samplePayrollProfile(
+          recur::PayrollRules{}, *ctx.payrollFactory, src);
       const double annualSalary = math::amounts::kSalary.sample(rng) * 12.0;
 
       const auto payDates =
           recur::paydatesForProfile(profile, startDate, windowEndExcl);
 
       for (const auto &payDate : payDates) {
-        const auto offsetHours =
-            static_cast<std::int32_t>(rng.uniformInt(6, 12));
-        const auto offsetMinutes =
-            static_cast<std::int32_t>(rng.uniformInt(0, 61));
-
         const auto ts =
-            payDate + time::Hours{offsetHours} + time::Minutes{offsetMinutes};
+            timestamps::jittered(payDate, profile.postingLagDays,
+                                 timestamps::kSalaryTimestampJitter, rng);
 
         if (ts < startDate || ts >= windowEndExcl) {
           continue;

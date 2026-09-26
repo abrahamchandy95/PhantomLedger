@@ -40,8 +40,6 @@ std::unique_ptr<SessionBundle> SessionBundle::make(
         // for the complete CardCycleDriver lifetime.
         .primaryAccounts = &cardConfig.primaryAccounts,
 
-        .issuerAccount = cardConfig.issuerAccount,
-
         .window = cardConfig.window,
 
         // H3 part 3c-ii: card servicing stops at account closure —

@@ -1,3 +1,4 @@
+#include "phantomledger/entities/holdings/general_ledger.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/clearing/ledger.hpp"
@@ -29,11 +30,12 @@ inline constexpr entity::Key kFunding{
     identifiers::Bank::internal,
     2,
 };
-inline constexpr entity::Key kIssuer{
-    identifiers::Role::processor,
-    identifiers::Bank::external,
-    3,
-};
+// The bank's card income GLs (bank-gl-2026-09). A ledger that must post a
+// card's interest or late fee books both, like every registry-built book.
+inline constexpr entity::Key kInterestGl =
+    entity::gl::account(entity::gl::Income::cardInterest);
+inline constexpr entity::Key kFeeGl =
+    entity::gl::account(entity::gl::Income::cardFees);
 inline constexpr entity::Key kMerchant{
     identifiers::Role::merchant,
     identifiers::Bank::external,
@@ -80,7 +82,7 @@ runCardSession(entity::card::Autopay autopay,
   auto factoryRng = random::Rng::fromSeed(91);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, payments, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   transactions::Transaction purchase{};
   purchase.source = kCard;
@@ -207,13 +209,14 @@ void testFuturePostingDoesNotTimeTravel() {
   auto factoryRng = random::Rng::fromSeed(808);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, payments, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   clearing::Ledger ledger;
-  ledger.initialize(3);
+  ledger.initialize(4);
   ledger.addAccount(kCard, 0);
   ledger.addAccount(kFunding, 1);
-  ledger.addAccount(kIssuer, 2);
+  ledger.addAccount(kInterestGl, 2);
+  ledger.addAccount(kFeeGl, 3);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 1'000.0;
 
@@ -242,7 +245,6 @@ void testFuturePostingDoesNotTimeTravel() {
           .ledger = &ledger,
           .cardIdx = 0,
           .fundingIdx = 1,
-          .issuerIdx = 2,
       });
 
   session.run(
@@ -291,13 +293,14 @@ void testRejectedPaymentDoesNotReduceStatement() {
   auto factoryRng = random::Rng::fromSeed(1'414);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, payments, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   clearing::Ledger ledger;
-  ledger.initialize(3);
+  ledger.initialize(4);
   ledger.addAccount(kCard, 0);
   ledger.addAccount(kFunding, 1);
-  ledger.addAccount(kIssuer, 2);
+  ledger.addAccount(kInterestGl, 2);
+  ledger.addAccount(kFeeGl, 3);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 0.0;
 
@@ -329,7 +332,6 @@ void testRejectedPaymentDoesNotReduceStatement() {
           .ledger = &ledger,
           .cardIdx = 0,
           .fundingIdx = 1,
-          .issuerIdx = 2,
       });
 
   session.run(purchaseView, {
@@ -376,6 +378,29 @@ void testRejectedPaymentDoesNotReduceStatement() {
   PL_CHECK(countChannel(emitted, channels::tag(channels::Credit::interest)) >
            0);
 
+  // bank-gl-2026-09: interest and the late fee credit the card income GL of
+  // their kind, with no customer session, and each GL's balance is exactly
+  // the postings booked to it (both open at zero; nothing debits them).
+  double interestPosted = 0.0;
+  double feesPosted = 0.0;
+  for (const auto &row : emitted) {
+    if (row.session.channel == channels::tag(channels::Credit::interest)) {
+      PL_CHECK(row.target == kInterestGl);
+      interestPosted += row.amount;
+    }
+    if (row.session.channel == channels::tag(channels::Credit::lateFee)) {
+      PL_CHECK(row.target == kFeeGl);
+      feesPosted += row.amount;
+    }
+    if (entity::gl::isPosting(row.session.channel)) {
+      PL_CHECK(!row.session.deviceId.assigned());
+      PL_CHECK_EQ(row.session.ipAddress.value, 0U);
+    }
+  }
+  PL_CHECK(interestPosted > 0.0 && feesPosted > 0.0);
+  PL_CHECK_EQ(ledger.cash(2), interestPosted);
+  PL_CHECK_EQ(ledger.cash(3), feesPosted);
+
   std::puts("  PASS: a funding-rejected payment is absent, loses grace, and "
             "posts its late fee into the next statement");
 }
@@ -392,14 +417,15 @@ void testAcceptedRefundRestoresLedgerAndStatement() {
   auto factoryRng = random::Rng::fromSeed(1'616);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, payments, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   clearing::Ledger ledger;
-  ledger.initialize(4);
+  ledger.initialize(5);
   ledger.addAccount(kCard, 0);
   ledger.addAccount(kFunding, 1);
-  ledger.addAccount(kIssuer, 2);
+  ledger.addAccount(kInterestGl, 2);
   ledger.addAccount(kMerchant, 3);
+  ledger.addAccount(kFeeGl, 4);
   ledger.setOverdraftOnly(0, 1'000.0);
   ledger.cash(1) = 1'000.0;
 
@@ -432,7 +458,6 @@ void testAcceptedRefundRestoresLedgerAndStatement() {
           .ledger = &ledger,
           .cardIdx = 0,
           .fundingIdx = 1,
-          .issuerIdx = 2,
       });
 
   session.run(
@@ -474,7 +499,7 @@ void testLatePaymentStaysOutOfEarlierStatement() {
   auto factoryRng = random::Rng::fromSeed(1'010);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, payments, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   std::array<transactions::Transaction, 2> purchases{};
   purchases[0].source = kCard;
@@ -546,7 +571,7 @@ void testOutOfWindowLateFeeIsNotBackdated() {
   auto factoryRng = random::Rng::fromSeed(1'212);
   const transactions::Factory factory(factoryRng);
   const credit_cards::detail::Environment env{billing, missed, disputes,
-                                              factory, kIssuer};
+                                              factory};
 
   transactions::Transaction purchase{};
   purchase.source = kCard;

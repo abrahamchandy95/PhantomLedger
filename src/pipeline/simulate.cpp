@@ -211,7 +211,7 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
       entityStage::buildMerchants(rng, cfg.population, seed_, window_,
                                   cfg.merchants, &synth::econ::macroSeries());
   cps.landlords =
-      entityStage::buildLandlords(rng, cfg.population, cfg.landlords);
+      entityStage::buildLandlords(rng, cfg.population, seed_, cfg.landlords);
   cps.counterparties = entityStage::buildCounterparties(
       rng, cfg.population, cfg.counterpartyTargets, people.homeAreas);
 
@@ -221,7 +221,7 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
       people.personas, people.roster, seed_, cfg.cards,
       time::toCalendarDate(window_.start).year);
 
-  entityStage::finalizeAccountRegistry(holdings, cps, people);
+  entityStage::finalizeAccountRegistry(holdings, cps, people, window_);
   entityStage::synthesizeBusinessOwners(holdings, people, rng,
                                         cfg.businessOwners);
 

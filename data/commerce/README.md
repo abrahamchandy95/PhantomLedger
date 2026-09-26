@@ -33,7 +33,31 @@ rows using population alone. `localOutlet`, `regionalOutlet`, and
 `nationalService` are distinct enum values, but the card-present geographic
 pool currently applies the same distance kernel to all records with a valid
 location. The catalogue therefore has causal geography, but not an empirical
-local supply surface or a brand/outlet/channel hierarchy.
+local supply surface.
+
+Since outlets-frequency-2026-09 it has a first brand/outlet split. Every
+catalogue record is an acceptance endpoint, and each physical chain brand (a
+core record in grocery, fuel, restaurant, pharmacy or general retail whose
+weight rounds to at least two median-weight stores) is expanded by
+`synth::merchants::expandOutlets` into outlet records that share
+`Record::brand`, the MerchantOrganization above; each outlet has its own
+counterparty account and area. Online records, national services and the four
+biller categories stay single endpoints. Visit frequency now depends on
+category (Diary of Consumer Payment Choice rates). What remains open:
+
+- outlet counts come from the catalogue's own weights, not from CBP
+  establishment cells, and category supply is still uniform, so the catalogue
+  is sized per customer rather than per resident (a typical grocery or
+  restaurant outlet takes about 2,300 of the bank's payments a year where a
+  real bank of that size would see a few hundred);
+- outlets are placed by population nationally, with no regional clustering,
+  and `regionalOutlet` has no kernel of its own;
+- an omnichannel brand has no remote endpoint beside its outlets;
+- `brand` lives in world state only: the exported `Merchant` id is still the
+  acceptance endpoint and no Brand vertex exists.
+
+The authority rows are in the `outlets-frequency-2026-09` amendment of
+`docs/fraud_model_audit.md`.
 
 Those 71 US rows sum to only about 52.9 million residents, so normalizing their
 weights represents selected city cores rather than the US population.

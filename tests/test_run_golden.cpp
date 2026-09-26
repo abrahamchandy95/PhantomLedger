@@ -22,6 +22,15 @@
 // (test_table_golden); this gate keeps the corpus pinned even with no
 // server anywhere.
 //
+// A digest pins whatever it is given, an absurd corpus included
+// (cash-hub-defect-2026-08), so the run's own summary lines must pass a
+// domain predicate BEFORE the digest is compared or captured: the world
+// holds the pinned population and at least one account per person, the
+// summary counts the rows the sink digested, and the corpus carries both
+// classes (0 < fraud rows < rows). A failing predicate is a failure even
+// on the capture run, so a re-pin can never record an empty or fraud-free
+// stream.
+//
 
 #include <cstdio>
 #include <cstdlib>
@@ -41,6 +50,7 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr const char *kDigestPrefix = "Stream digest: ";
+constexpr unsigned long long kPopulation = 2000;
 
 } // namespace
 
@@ -51,8 +61,8 @@ int main() {
                                       "PL_PG='host=127.0.0.1 port=9 "
                                       "dbname=pl_disabled' \""} +
                           PL_BIN_PATH +
-                          "\" --population 2000 --days 60"
-                          " --seed 3405691582 > \"" +
+                          "\" --population " + std::to_string(kPopulation) +
+                          " --days 60 --seed 3405691582 > \"" +
                           logPath.string() + "\" 2>&1";
   if (const int rc = std::system(cmd.c_str()); rc != 0) {
     std::fprintf(stderr, "binary exited %d; log: %s\n", rc, logPath.c_str());
@@ -60,12 +70,28 @@ int main() {
   }
 
   std::string digestLine;
+  unsigned long long people = 0;
+  unsigned long long accounts = 0;
+  unsigned long long summaryRows = 0;
+  unsigned long long fraudRows = 0;
+  int summaryFields = 0;
   {
     std::ifstream in{logPath};
     std::string line;
     while (std::getline(in, line)) {
       if (line.rfind(kDigestPrefix, 0) == 0) {
         digestLine = line;
+      }
+      if (const auto at = line.find("People: "); at != std::string::npos) {
+        summaryFields += std::sscanf(line.c_str() + at,
+                                     "People: %llu  Accounts: %llu", &people,
+                                     &accounts);
+      }
+      if (const auto at = line.find("Transactions: ");
+          at != std::string::npos) {
+        summaryFields += std::sscanf(line.c_str() + at,
+                                     "Transactions: %llu  Fraud rows: %llu",
+                                     &summaryRows, &fraudRows);
       }
     }
   }
@@ -74,6 +100,27 @@ int main() {
                  kDigestPrefix, logPath.c_str());
     return 1;
   }
+
+  unsigned long long digestRows = 0;
+  const auto rowsAt = digestLine.find("rows: ");
+  const bool digestRowsRead =
+      rowsAt != std::string::npos &&
+      std::sscanf(digestLine.c_str() + rowsAt, "rows: %llu", &digestRows) == 1;
+  if (summaryFields != 4 || !digestRowsRead || people != kPopulation ||
+      accounts < people || summaryRows != digestRows || fraudRows == 0 ||
+      fraudRows >= summaryRows) {
+    std::fprintf(stderr,
+                 "golden-run: DOMAIN PREDICATE FAILED (summary fields %d of "
+                 "4; people %llu, want %llu; accounts %llu; summary rows %llu "
+                 "against %llu digested; fraud rows %llu, want 0 < fraud < "
+                 "rows); log: %s\n",
+                 summaryFields, people, kPopulation, accounts, summaryRows,
+                 digestRows, fraudRows, logPath.c_str());
+    return 1;
+  }
+  std::printf("golden-run: domain predicate holds (people %llu, accounts "
+              "%llu, rows %llu, fraud rows %llu)\n",
+              people, accounts, summaryRows, fraudRows);
 
   const fs::path baseline{PL_GOLDEN_BASELINE};
   if (!fs::exists(baseline)) {

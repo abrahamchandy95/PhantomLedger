@@ -323,8 +323,9 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
                                    candidate.person, candidate.timestamp)
                              : plan.counterparties().checkDepositPointsFor(
                                    candidate.person, candidate.timestamp);
-    const auto source = stableExternalPoint(
-        points, candidate.account, cash ? kCashPointDomain : kCheckPointDomain);
+    const auto source =
+        stableExternalPoint(points.span(), candidate.account,
+                            cash ? kCashPointDomain : kCheckPointDomain);
     if (!source.has_value()) {
       continue;
     }

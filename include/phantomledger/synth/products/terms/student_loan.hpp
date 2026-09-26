@@ -5,6 +5,7 @@
 #include "phantomledger/entities/products/obligation_stream.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/products/providers.hpp"
 #include "phantomledger/taxonomies/personas/table.hpp"
 
 #include <cstdint>
@@ -84,6 +85,7 @@ class StudentLoanEmitter {
 public:
   StudentLoanEmitter(::PhantomLedger::random::Rng &rng,
                      ::PhantomLedger::time::Window window,
+                     const ProviderPicker &providers,
                      StudentLoanTerms terms = {});
 
   [[nodiscard]] bool
@@ -94,6 +96,7 @@ public:
 private:
   ::PhantomLedger::random::Rng *rng_;
   ::PhantomLedger::time::Window window_;
+  const ProviderPicker *providers_;
   StudentLoanTerms terms_;
 };
 

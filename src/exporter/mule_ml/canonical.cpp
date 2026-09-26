@@ -148,7 +148,11 @@ void CanonicalAccumulator::observe(
   if (tx.session.deviceId.assigned()) {
     ++hist.deviceCounts[tx.session.deviceId];
   }
-  ++hist.ipCounts[tx.session.ipAddress];
+  // 0.0.0.0 is the unassigned sentinel (a system posting or an externally
+  // initiated row), not an address the account used.
+  if (tx.session.ipAddress.value != 0) {
+    ++hist.ipCounts[tx.session.ipAddress];
+  }
 }
 
 CanonicalMap CanonicalAccumulator::resolve(

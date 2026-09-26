@@ -68,7 +68,15 @@ inline constexpr std::uint64_t kDenomDomain = 0x4749'4654'0000'0002ULL;
  * about 237 card payments per person per year, and the eligible categories
  * below carry roughly 40% of them, so 5 / (237 * 0.40) ~= 5.3%. Rounded to
  * 500 bp. The realized overall share is PRINTED by the gate rather than
- * asserted, because it moves with the category mix. */
+ * asserted, because it moves with the category mix.
+ *
+ * STALE INPUT, REGISTERED (outlets-frequency-2026-09). The 40% was never
+ * measured: at pop 500,000 in 2022 the eligible categories carried 0.569 of
+ * expected favourite visits before the category-frequency law and carry 0.638
+ * after it (`test_card_merchant_graph` sub-gate K), so 500 bp now implies
+ * about 237 * 0.638 * 0.05 = 7.6 cards per person a year against the cited
+ * 5. Re-deriving (about 330 bp) moves the $500 precision gates, so it is left
+ * to its own round; docs/fraud_model_audit.md carries the row. */
 inline constexpr std::uint32_t kGiftCardShareBasisPoints = 500;
 
 /* Where gift cards are actually sold: supermarket and pharmacy racks, general

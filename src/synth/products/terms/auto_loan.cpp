@@ -1,6 +1,5 @@
 #include "phantomledger/synth/products/terms/auto_loan.hpp"
 
-#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/synth/econ/nominal.hpp"
 #include "phantomledger/synth/products/installments.hpp"
@@ -35,8 +34,10 @@ sampleAutoTermMonths(::PhantomLedger::random::Rng &rng,
 
 AutoLoanEmitter::AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
                                  ::PhantomLedger::time::Window window,
+                                 const ProviderPicker &providers,
                                  AutoLoanTerms terms)
-    : rng_{&rng}, window_{window}, terms_{std::move(terms)} {}
+    : rng_{&rng}, window_{window}, providers_{&providers},
+      terms_{std::move(terms)} {}
 
 [[nodiscard]] bool AutoLoanEmitter::emit(
     ::PhantomLedger::entity::PersonId person, personaTax::Type persona,
@@ -70,18 +71,18 @@ AutoLoanEmitter::AutoLoanEmitter(::PhantomLedger::random::Rng &rng,
       payment * ::PhantomLedger::synth::econ::priceScale(
                     ::PhantomLedger::time::toCalendarDate(loanStart).year);
 
-  addInstallmentProduct(loans, obligations, window_,
-                        InstallmentIssue{
-                            .person = person,
-                            .productType = product::ProductType::autoLoan,
-                            .counterparty = counterparties::key(
-                                counterparties::Lending::autoLoan),
-                            .start = loanStart,
-                            .termMonths = termMonths,
-                            .paymentDay = samplePaymentDay(*rng_),
-                            .monthlyPayment = nominalPayment,
-                            .terms = installmentTerms(terms_.delinquency),
-                        });
+  addInstallmentProduct(
+      loans, obligations, window_,
+      InstallmentIssue{
+          .person = person,
+          .productType = product::ProductType::autoLoan,
+          .counterparty = providers_->pick(counterparties::Market::autoLoan),
+          .start = loanStart,
+          .termMonths = termMonths,
+          .paymentDay = samplePaymentDay(*rng_),
+          .monthlyPayment = nominalPayment,
+          .terms = installmentTerms(terms_.delinquency),
+      });
 
   return true;
 }

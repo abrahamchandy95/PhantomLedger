@@ -56,7 +56,9 @@ public:
 
     std::vector<clearing::Ledger::Index> personPrimaryIdx;
     std::vector<clearing::Ledger::Index> merchantCounterpartyIdx;
-    clearing::Ledger::Index externalUnknownIdx = clearing::Ledger::invalid;
+    ::PhantomLedger::synth::counterparties::remote::RemoteMerchantTable
+        remoteMerchants;
+    double unattributedSlotShare = 0.0;
 
     [[nodiscard]] routing::ResolvedAccounts resolvedAccounts() const noexcept {
       return routing::ResolvedAccounts{
@@ -64,7 +66,8 @@ public:
               std::span<const clearing::Ledger::Index>(personPrimaryIdx),
           .merchantCounterpartyIdx =
               std::span<const clearing::Ledger::Index>(merchantCounterpartyIdx),
-          .externalUnknownIdx = externalUnknownIdx,
+          .remoteMerchants = &remoteMerchants,
+          .unattributedSlotShare = unattributedSlotShare,
       };
     }
   };

@@ -189,14 +189,14 @@ The top-level orchestrator (`PhantomLedger::pipeline::SimulationPipeline`) runs 
 2. **Accounts.** One to N accounts per person (binomial, `maxPerPerson` default 3); the first account is always the primary deposit account.
 3. **PII.** Deterministic phone and email derived from person ID.
 4. **Merchants.** A core merchant pool (density per 10k people) plus a sparse long tail of external-only merchants; core merchants are split into internal (on-us) vs external based on `inBankP`.
-5. **Landlords.** Typed pool (individual / small LLC / corporate) drawn from the RHFS 2021 unit-weighted distribution; each landlord independently assigned in-bank or external by type.
-6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages, billers, the card issuer, geographically placed cash/check service points, and crypto fiat-ramp venues. Employers and clients are split internal/external. Boundary points are typed, external, ownerless transaction contexts rather than customer accounts.
-7. **Institutional externals.** SSA, disability, insurance carriers, lenders, IRS, and bank fee books are registered from a fixed catalog.
+5. **Landlords.** A roster sized by the RHFS 2021 property-size distribution plus the NMHC Top-50 owners, thinned to the population (see [Landlords](#landlords)); each landlord's type (individual / small LLC / corporate) comes from its size class's unit mix, and it is independently assigned in-bank or external by type.
+6. **Counterparty pools.** Employers, client payers, platforms, processors, owner businesses, brokerages, billers, geographically placed cash/check service points, and crypto fiat-ramp venues. Employers are sized by the SUSB 2022 firm-size distribution plus government payrolls and are all external; clients are split internal/external. Boundary points are typed, external, ownerless transaction contexts rather than customer accounts.
+7. **Institutional externals and the bank's own ledgers.** SSA, disability and the IRS are registered from a fixed catalog. The bank's four income GLs (card interest, card fees, deposit fees, credit-line interest) are registered as internal, ownerless, bank-owned accounts; every fee and interest posting credits the GL of its kind (see [Banking Mechanics](#banking-mechanics)). Lenders and insurers are not singletons: see step 12. The retired external-unknown catch-all is never registered; its flows pay check-payee banks, identified remote merchants, P2P platforms and funeral homes instead, appended after the per-person payees (see [Day-to-Day Spending](#day-to-day-spending) and [Funerals and Estates](#funerals-and-estates-death-caused)).
 8. **Planned external family accounts.** Deterministic `XF…` accounts for family members who bank elsewhere.
 9. **Personas.** Each person gets an archetype, a per-person perturbed `Persona` (lognormal noise around archetype values, beta-distributed paycheck sensitivity), a membership interval (a BEA-sized join cohort joins mid-window; accounts close after death — see [Personas](#personas)), a birth date drawn on an isolated lane at the person's own anchor (the single age axis every exporter renders), and a lifecycle timeline including a death date.
 10. **Planned owned income accounts.** Freelancers/smallbiz get a `BOP…` business operating account; HNW gets a `BRK…` brokerage/custody account. These are **internal**, same-customer accounts, not externals.
 11. **Credit cards.** Each eligible person draws card approval (persona-dependent); issued cards get APR, credit limit, cycle day, autopay mode.
-12. **Portfolios.** Mortgage / auto loan / student loan / tax profile / insurance holdings are assigned by persona priors; insurance rates for non-financed collateral owners are back-calculated so the overall persona-level rate stays close to target.
+12. **Portfolios.** Mortgage / auto loan / student loan / tax profile / insurance holdings are assigned by persona priors; insurance rates for non-financed collateral owners are back-calculated so the overall persona-level rate stays close to target. Each loan or policy draws its servicer or carrier once, at issuance, from a national market-share table (NAIC for auto, home and life insurers, FSOC for mortgage servicers; see the institutional-providers amendment in `docs/fraud_model_audit.md`) on its own RNG lane, and only the providers some contract uses are registered, as external ownerless accounts.
 
 ### Stage 2: infra
 
@@ -243,9 +243,16 @@ All IDs are fixed-width prefixed strings:
 | `XB` | Brokerage (external) | 8 |
 | `XF…` | External family account | hash-derived |
 | `BOP…` / `BRK…` | Same-customer business operating / brokerage (internal) | hash-derived |
-| `XGOV…` / `XINS…` / `XLND…` / `XIRS…` / `XBNK…` | Government / insurance / lender / IRS / bank servicing | fixed |
+| `XE09000001` / `XE09000002` / `XO1000000004` | SSA / disability / IRS | fixed |
+| `XO1000100001` to `XO1000699999` | Lender and insurer provider pools, one 100,000-serial block per market (mortgage, auto loan, student loan, auto, home, life insurance) | fixed layout |
+| `XM1000000001` | RETIRED external-unknown catch-all: never registered, receives no row | fixed |
+| `XO1001000001` to `XO1001001000` | Check-payee banks (bank of first deposit), one per external bank, ranked by FDIC Summary of Deposits share | fixed layout |
+| `XP1000000001` / `XP1000000002` | P2P platforms (Venmo / Cash App) | fixed |
+| `XM1100000001` onward | Funeral homes (MCC 7261): `1,100,000,000 + area * 10,000 + ordinal` | fixed layout |
+| `GL00000001` to `GL00000004` | Bank-owned income GLs: card interest, card fees (late fees), deposit fees (overdraft fees), credit-line interest. Internal and ownerless | fixed |
+| `XO3000000001` / `XO4294967041` / `XO4294967042` | RETIRED card issuer / fee collection / overdraft line of credit: never registered, receive no row | fixed |
 
-**Leading `X` signals external.** `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
+**Leading `X` signals external.** `GL` is internal: the account belongs to the bank itself, not to a customer or another bank. `BOP`/`BRK` are intentionally non-`X` because a freelancer's business account at the same bank is an internal book-to-book transfer destination, not an interbank counterparty (NFIB 2023: 56% of small business owners keep personal and business at the same bank).
 
 The high-range `XS…` identities include ATM terminal/acceptor, cash-depository,
 and check-capture endpoints; `XP…` includes crypto fiat-ramp venues. They are
@@ -269,13 +276,15 @@ round rather than a documentation inference from deposit share.
 
 ### Landlords
 
-Unit-weighted shares from the 2021 Rental Housing Finance Survey (HUD/Census):
+The roster is a size distribution, not a density (`synth/counterparties/size_law.hpp`). Eight classes: the seven property-size columns of the 2021 Rental Housing Finance Survey (1, 2-4, 5-24, 25-49, 50-99, 100-149 and 150+ units; CRS R47332 Tables 1 and 3), with the NMHC 2024 Top-50 owners carved out of the 150+ column as a rank-size row. Class c keeps `clamp(round(P x 0.35 x m_c), 1, F_c)` landlords, where m_c is its share of rental units and F_c its real property count, so a small class gets about one landlord per expected renter and a large one stops at its real size. A lease picks its landlord through the same law (one uniform, class then member). At 200,000 people that is 66,658 landlords, the largest a Top-50 owner with about 150 tenants.
 
-| Type | Share | Rationale |
-|------|-------|-----------|
-| Individual | 38% | RHFS "Individual investors" (37.6%). |
-| Small LLC | 15% | The "mom-and-pop-in-LLC-wrapper" slice of the RHFS LLP/LP/LLC bucket (CRS R47332, Harvard JCHS "LLC gray zone"). |
-| Corporate | 47% | Remainder of RHFS LLC bucket + institutional / REIT / trustee / real-estate-corporation share. |
+Each landlord's type comes from its own class's unit mix (renter-weighted 43.3% / 13.8% / 42.9%):
+
+| Type | RHFS owners | Rationale |
+|------|-------------|-----------|
+| Individual | Individual investor, trustee for estate, tenant in common | Individuals hold 72.5% of single-unit rental units and 4.9% of 150+ unit ones. |
+| Small LLC | LLC/LP/LLP and general partnership, below 25 units | The "mom-and-pop-in-LLC-wrapper" slice (CRS R47332, Harvard JCHS "LLC gray zone"). |
+| Corporate | Every other reported form, including LLCs and partnerships at 25+ units | The professionally managed, portal-paying stock. |
 
 **Payment channel mix** (Baselane 2024, TurboTenant, and the documented pattern that individual landlords rely on Zelle/check while corporate property management uses portal ACH):
 
@@ -289,11 +298,12 @@ Unit-weighted shares from the 2021 Rental Housing Finance Survey (HUD/Census):
 
 ### Counterparty Pools
 
-Densities per 10k people:
+Employers are sized, not a density: 17 classes (13 SUSB 2022 enterprise-size rows, the 20,000+ row as a rank-size tail, and federal, state and local government payrolls from QCEW 2022), each keeping `clamp(round(P x 0.74 x m_c), 1, F_c)` employers for its share m_c of jobs and its real firm count F_c. Every job and job switch picks through that law. At 200,000 people that is 89,231 employers, all external, of which the 148,000 workers use about 58,600; the federal payroll pays about 2,800 of them and the largest private employer about 1,700. The law and its reconciliation with metro firm counts are in the counterparty-sizes-2026-09 amendment of `docs/fraud_model_audit.md`.
+
+Densities per 10k people for the remaining pools:
 
 | Pool | Default density | In-bank p |
 |------|----------------|-----------|
-| Employers | 25 | 4% (large employers use ADP/Paychex; smaller ones bank locally) |
 | Client payers | 250 | 2% (geographically diverse businesses) |
 | Owner businesses | 200 | — (always external by design) |
 | Brokerages | 40 | — |
@@ -517,9 +527,9 @@ Stats anchors: 82% of US adults have ≥1 card (Fed SHED 2023); average balance 
 **Lifecycle generator** processes each billing cycle:
 1. Purchases accumulate on the card.
 2. Each purchase probabilistically produces a refund (0.6%, 1–14 day delay) or chargeback (0.1%, 7–45 day delay) **from the same merchant that received the charge** — no synthetic refund counterparty.
-3. Cycle-end: compute average balance via piecewise-constant integration; if out of grace and there is a debt integral, charge interest at `APR × interval_days / 365`.
+3. Cycle-end: compute average balance via piecewise-constant integration; if out of grace and there is a debt integral, charge interest at `APR × interval_days / 365`, posted to the card interest income GL `GL00000001`.
 4. Minimum due = max(2% of statement, $25). Autopay mode drives payment amount (full / min / manual). Manual splits into pay-full (35%), partial Beta(2, 5) (30%), minimum (25%), miss (10%). Late by cycle has 8% probability with 1–20 day delay.
-5. Late fee $32 fires if not paid by due date (+grace_days default 25). ($32 is the CARD Act safe-harbor level restored when the CFPB's $8 cap was vacated in April 2025; real schedules step to ~$43 for repeat violations, which the model simplifies to a flat fee.) The $25 minimum-due floor and the $32 fee are calibration-year dollars, realized at each cycle date's price level.
+5. Late fee $32 fires if not paid by due date (+grace_days default 25), posted to the card fee income GL `GL00000002`. ($32 is the CARD Act safe-harbor level restored when the CFPB's $8 cap was vacated in April 2025; real schedules step to ~$43 for repeat violations, which the model simplifies to a flat fee.) The $25 minimum-due floor and the $32 fee are calibration-year dollars, realized at each cycle date's price level.
 
 Card servicing stops with the owner's account: the statement-close ladder truncates 50 days before ACCOUNT CLOSURE (death + 120 days), so the final cycle's payment and late-fee tail settle against the estate strictly before the accounts close.
 
@@ -533,6 +543,17 @@ account map, so no salary source, merchant, ATM, biller, or other boundary
 counterparty can acquire a synthetic balance. External-to-external and unknown
 internal postings are rejected as unbooked. CSV export also rejects every
 non-finite numeric cell.
+
+The one bank-side leg the book carries is the bank's own income. Every fee
+and interest posting debits the customer's account and credits a bank-owned
+income GL of its kind (`GL00000001` card interest, `GL00000002` card fees,
+`GL00000003` deposit fees, `GL00000004` credit-line interest), the
+double-entry shape core systems post (FLEXCUBE CHG_BOOK debit / CHG_INCOME
+credit). The GLs are internal and ownerless, never seeded and never debited,
+so a GL's balance is the income posted to it in the window. They are never a
+fraud, mule, victim or camouflage account, and a posting carries no device or
+IP, because the bank's core posts it, not a customer session. Exporters type
+them as `gl` (mule-temporal) or `general_ledger` (AML).
 
 ### Balances
 
@@ -579,11 +600,11 @@ $$
 \text{interest} = \frac{\text{integral\_seconds} \times \text{APR}}{365.25 \times 86400}
 $$
 
-Interest is debited directly from cash (bypassing the funding check so the fee always posts even over-limit) and emitted as a `LOC_INTEREST` transaction to `XBNK00000002`. The integral is reset to zero and `lastBillingTs` is advanced to `now`. On the very first sweep for an account, `lastBillingTs = 0` triggers a silent anchor — the clock starts but no interest is emitted.
+Interest is debited directly from cash (bypassing the funding check so the fee always posts even over-limit) and emitted as a `loc_interest` transaction to the credit-line interest income GL `GL00000004`. The line of credit itself is not a separate account: a draw is the deposit account going negative inside its LOC capacity (a per-customer Regulation Z credit account is a registered limitation). The integral is reset to zero and `lastBillingTs` is advanced to `now`. On the very first sweep for an account, `lastBillingTs = 0` triggers a silent anchor: the clock starts but no interest is emitted.
 
 #### Overdraft Fees
 
-After any accepted debit that leaves a COURTESY-protected account negative, the replay emits a fee transaction to `XBNK00000001` (BANK_FEE_COLLECTION). The amount comes from the per-account lognormal sampled at init:
+After any accepted debit that leaves a COURTESY-protected account negative, the replay emits a fee transaction to the deposit fee income GL `GL00000003`, with no device or IP. The amount comes from the per-account lognormal sampled at init:
 
 | Tier | Median | σ | Example banks |
 |------|--------|---|---------------|
@@ -631,7 +652,7 @@ Channel-level lognormals (median, σ, floor):
 | rent (all variants) | Γ(k=2, θ=400)+$50 | — | — | Census AHS 2023 |
 | P2P | $45 | 0.80 | $1 | Fed Diary 2024 |
 | bill | Γ(k=2, θ=400)+$50 | — | — | BLS CPI housing |
-| external_unknown | $120 | 0.95 | $5 | Fed Payments Study 2024 (non-card remote) |
+| external_unknown | $120 | 0.95 | $5 | Fed Payments Study 2024 (non-card remote); destination by channel, see Day-to-Day Spending |
 | ATM | $80 | 0.30 | $20 | Fed Payments Study, ATM Marketplace |
 | self_transfer | $250 | 0.80 | $10 | |
 | subscription | $15 | 0.40 | $5 | |
@@ -789,7 +810,7 @@ are clipped to the working span — students start at their career onset,
 post-close owners at the business end, and everyone stops at their claiming
 date or their death, whichever comes first.
 
-Each recipient gets an employer, a payroll cadence (20% weekly, 55% biweekly, 15% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. The base salary is a calibration-year draw; paychecks realize at the pay-date year's WAGE index (SSA AWI), so nominal pay follows the measured economy-wide path. Idiosyncratic career progression compounds ON TOP as seeded annual real raises `Normal(0.015, 0.02)`; job switches trigger a `Normal(0.08, 0.06)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `payPeriodsInYear` gives the per-paycheck amount at any cadence. The weekly/biweekly pay lattices exist in EVERY era — the fixed 2025 anchor date is a weekday/fortnight-parity reference only, so a 1991 window pays exactly as many paychecks as a 2025 one (this repaired a defect where 75% of employer cadences were silent before 2025).
+Each recipient gets an employer drawn through the employer size law (see [Counterparty Pools](#counterparty-pools)), that employer's payroll cadence (drawn once per employer: 20% weekly, 55% biweekly, 15% semimonthly, 10% monthly), and a job tenure drawn from uniform [2, 10] years. The base salary is a calibration-year draw; paychecks realize at the pay-date year's WAGE index (SSA AWI), so nominal pay follows the measured economy-wide path. Idiosyncratic career progression compounds ON TOP as seeded annual real raises `Normal(0.015, 0.02)`; job switches trigger a `Normal(0.08, 0.06)` bump. Semimonthly pay days are 1/15 or 15/31; monthly is day 28/30/31. Weekend falls roll to previous business day. Posting lag is 0–1 days. The salary amount model is interpreted as one monthly paycheck; annualizing and dividing by `payPeriodsInYear` gives the per-paycheck amount at any cadence. The weekly/biweekly pay lattices exist in EVERY era: the fixed 2025 anchor date is a weekday/fortnight-parity reference only, so a 1991 window pays exactly as many paychecks as a 2025 one (this repaired a defect where 75% of employer cadences were silent before 2025).
 
 ### Rent
 
@@ -812,7 +833,7 @@ A day-by-day market simulator drives discretionary spending:
 
 1. **Market build.** Each person gets `favK` ∈ [8, 30] favorite merchants (weighted by global merchant CDF) and `billK` ∈ [2, 6] billers. Exploration propensity ~ Beta(1.6, 9.5). Burst windows (optional) ~ 8% of people get a 3–9 day high-spending burst at a random point in the window.
 2. **Per-day.** Build seasonal × momentum × dormancy × paycheck × weekday × day-shock × liquidity × era-level multiplier — the last is H4's measured real consumption index (see [Counts](#counts--gamma-poisson-mixture)). Target count per person-day is back-calculated from the monthly target, inverting the suppressors; that target is a CALIBRATION-LEVEL quantity, so realized volume is target × the year's real level. Dead spenders' person-days are skipped — the dead spend nothing.
-3. **Per-transaction.** Sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknownOutflowP = 0.05` carved out). Ticket draws realize at the day's CPI level.
+3. **Per-transaction.** Sample channel from `(merchant, bill, P2P, external_unknown)` CDF (weights: 0.82/0.10/0.08 of the non-unknown split, plus `unknownOutflowP = 0.05` carved out). Ticket draws realize at the day's CPI level. An `external_unknown` row is deposit-funded remote spending, and it no longer pays one catch-all account: at the DCPC check share of consumer payments for its year (7% in 2016, 3% in 2024, so 60% of the slot from 2024 on and all of it through 2020) it is a paid check keyed by the payee's bank (each person has 4 payees, each banking at a bank drawn from the FDIC Summary of Deposits 2024 share table), and otherwise it pays an identified remote merchant (an external online or national-service catalogue outlet live at the row's timestamp). A P2P payment whose contact is missing or unusable goes to the person's P2P platform (Venmo or Cash App, split by monthly actives), since Zelle cannot carry a payment with no enrolled contact. Every choice is a draw-free hash, so only the destination differs from the catch-all build.
 4. **Merchant routing.** 82% of the time pick from favorites; else explore (with rejection if the explored merchant is already a favorite). Payment method is card (if the person holds one and `ccShare` rolls) or deposit account.
 5. **Monthly boundary.** The commerce evolver adds/drops a merchant favorite and shuffles P2P contacts per the evolution config.
 
@@ -966,8 +987,11 @@ HRS longitudinal data: 35% of parents 51+ transfer to adult children over a two-
 
 Every in-window death produces, on the isolated family-inheritance lane:
 
-- **A funeral**: one bill-channel payment from the decedent's account to the
-  external service-merchant hub at death+3–10 days. Amount is lognormal,
+- **A funeral**: one bill-channel payment from the decedent's account to a
+  funeral home (MCC 7261) in the decedent's city at the death date, at
+  death+3–10 days. Each city holds `max(1, round(population * 15,375 /
+  334,017,321))` homes (Census CBP 2022 funeral-home establishments per
+  resident) and a decedent's person id picks one. Amount is lognormal,
   median $6,300 calibration dollars — the NFDA 2019 General Price List blend
   of a funeral with viewing and burial ($7,640) and cremation with viewing
   ($5,150) at the ~55% 2019 cremation rate — σ = 0.40, floor $1,000,
@@ -1032,8 +1056,8 @@ Each ring is assigned one typology by weighted choice (defaults: 30% classic, 15
 
 Each participating ring account receives additional **legitimate-looking** transactions to raise the noise floor:
 - Monthly bill payments: 35% probability per account per month.
-- Daily small P2P: 3% per account per day.
-- Recurring salary: 12% of ring accounts receive a plausible payroll stream.
+- Daily small P2P: 3% per account per day, to a customer deposit account (the only destination legitimate P2P pays).
+- Recurring salary: 12% of ring accounts receive a plausible payroll stream, from an employer drawn through the employer size law and on that employer's own schedule (the pay dates, posting lag and posting hours its legitimate payees are paid on).
 
 Camouflage events fire with `isFraud = 0` and `ringId = -1` so they blend into the legitimate population for anyone looking only at flags. Camouflage scales with the index of the flow it mimics (bills/P2P ride the price index, the salary mimic rides the wage index) — a cover row scaled differently from its cover class would be a detectable artifact.
 
@@ -1267,7 +1291,11 @@ Three guarantees are enforced at compile time rather than at validation time:
 - CFPB 2024 — consumer opt-in rates for courtesy overdraft.
 - Consumer Reports 2024 — bank overdraft fee composition.
 - FDIC 2023 Survey of Household Use of Banking Services — family cross-institution rates.
-- FDIC Summary of Deposits 2024 — national bank deposit market share.
+- FDIC Summary of Deposits 2024: national bank deposit market share; the June 30, 2024 deposits by institution also size the check-payee bank pool (top 25 exact, anchors to rank 1,000).
+- Fed Diary of Consumer Payment Choice, 2025 Findings: check share of consumer payments by number (7% in 2016, 3% in 2024), the paid-check share of the external-unknown slot.
+- FRB adoption of DSTU X9.37: the paid check's only structured payee key is the bank-of-first-deposit routing number.
+- Zelle FAQ; Venmo Help Center: Zelle needs an enrolled email or US mobile number (unclaimed payments expire after 14 days); Venmo posts to the bank as a named ACH counterparty.
+- Block, Inc. Form 10-K FY2024 (Cash App 57M monthly transacting actives); PayPal Holdings Q4 2024 earnings call (Venmo more than 64M monthly active accounts): the P2P platform split.
 - Fed Diary of Consumer Payment Choice 2024 — P2P, ATM distributions.
 - Federal Reserve G.19 Q4 2024 — credit card APR (21.5%).
 - Federal Reserve Payments Study 2024 — non-card remote payment medians, transaction frequency distributions.
@@ -1275,6 +1303,8 @@ Three guarantees are enforced at compile time rather than at validation time:
 - Federal Reserve Bank of New York Q4 2024 — 60+ day auto-loan delinquency (2.1%).
 - NFIB 2023 Small Business Survey — 56% of small businesses bank personal+business at same bank.
 - SoFi / NerdWallet 2025 — overdraft LOC prevalence.
+- Oracle FLEXCUBE Universal Banking Interest and Charges User Guide 14.5.3 (2021): a charge debits CHG_BOOK and credits CHG_INCOME, debit interest debits ICDB-BOOK and credits ICDB-PNL; Temenos Transact accounting events (CATEG entries to P&L categories, internal accounts with no customer); Fiserv DNA FCRM extract (2023, GL accounts with the customer number blank, GL legs kept in AML profiling); Oracle Behavior Detection (a back-office transaction is an Account plus an Offset Account): the bank-owned income GLs.
+- 12 CFR 1005.17(a) (Regulation E): an overdraft line of credit is a Regulation Z credit account, not overdraft service.
 
 **Macro History (era-correct dollars, activity levels, lifecycles & mortality)**
 - FRED CPIAUCNS (BLS CUUR0000SA0 mirror) — CPI-U annual averages 1990–2024, verified exact.
@@ -1288,6 +1318,7 @@ Three guarantees are enforced at compile time rather than at validation time:
 - BLS Business Employment Dynamics — establishment survival (~50% at five years; the business-close hazard).
 - Aguiar & Hurst 2005, *Journal of Political Economy* 113(5) — the retirement consumption drop (the ~−12% spending step at the claim).
 - NFDA 2019 General Price List survey; NFDA/CANA cremation rate — the funeral cost blend (burial $7,640 / cremation-with-viewing $5,150 at ~55% cremation → $6,300 median).
+- Census County Business Patterns 2022, NAICS 812210: 15,375 funeral-home establishments, the funeral homes per city (MCC 7261 per the Visa Merchant Data Standards Manual).
 - 31 CFR 1010.311 — the $10,000 CTR threshold, statutory and unindexed (class S).
 - Provenance and refresh contract: [docs/era_data_provenance.md](docs/era_data_provenance.md); wiring contracts: [docs/h1_nominal_scale_wiring.md](docs/h1_nominal_scale_wiring.md), [docs/h2_persona_timeline.md](docs/h2_persona_timeline.md), [docs/h3_mortality_estate.md](docs/h3_mortality_estate.md), [docs/h4_macro_modulation.md](docs/h4_macro_modulation.md).
 

@@ -7,6 +7,7 @@
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/utils/rounding.hpp"
+#include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/taxonomies/channels/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 
@@ -155,10 +156,16 @@ EmissionResult PaymentRouter::emitBill(const actors::Event &event) {
   return result;
 }
 
-EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
-  const entity::Key dst =
-      entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
-
+/* THE RETIRED CATCH-ALL'S TWO SPENDING FLOWS (unknown-counterparty-2026-09).
+ * Both used to pay one global account. Now only the DESTINATION is chosen
+ * here, draw-free, and everything else is exactly what it was: the one
+ * `kExternalUnknown` uniform below, the channel, the timestamp and the
+ * source. Every destination is an external account, so `dstIdx` stays
+ * invalid and the ledger decision cannot move. The channel stays
+ * `external_unknown` on purpose: the impostor-scam rail pushes on it too, so
+ * a legit-only relabel would turn the channel into a fraud marker. */
+EmissionResult PaymentRouter::externalDraft(const actors::Event &event,
+                                            entity::Key dst) {
   const double raw = math::amounts::kExternalUnknown.sample(rng_) *
                      event.amountFactor * event.priceScale *
                      event.consumptionScale;
@@ -175,8 +182,47 @@ EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
       .channel = kExternalChannel,
   };
   result.srcIdx = event.spender->instruments.primaryDepositIndex();
-  result.dstIdx = resolved_.externalUnknownIdx;
+  result.dstIdx = clearing::Ledger::invalid;
   return result;
+}
+
+/* The external-unknown SLOT: deposit-funded remote spending. At the DCPC
+ * check share for the row's year it is a PAID CHECK, keyed by the payee's
+ * bank (the only structured payee key a paid check carries); otherwise it
+ * pays an identified remote merchant, falling back to the check route when
+ * no remote candidate is live. */
+EmissionResult PaymentRouter::emitExternal(const actors::Event &event) {
+  namespace remote = ::PhantomLedger::synth::counterparties::remote;
+
+  const auto person = event.spender->person;
+  const auto ts = time::toEpochSeconds(event.ts);
+  const int year = time::toCalendarDate(event.ts).year;
+
+  const bool check =
+      remote::checkRouteUniform(person, ts) <
+      remote::checkFractionOfSlot(year, resolved_.unattributedSlotShare);
+
+  if (!check && resolved_.remoteMerchants != nullptr) {
+    const auto *catalog = market_.commerce().catalog();
+    if (catalog != nullptr) {
+      if (const auto index =
+              resolved_.remoteMerchants->pick(*catalog, person, ts)) {
+        return externalDraft(event, catalog->records[*index].counterpartyId);
+      }
+    }
+  }
+  return externalDraft(event, remote::checkPayeeBank(person, ts));
+}
+
+/* P2P WITH NO USABLE CONTACT. Zelle cannot carry it (an enrolled email or US
+ * mobile number is required, and an unclaimed payment expires after 14
+ * days), so it goes through the person's P2P app, which the bank sees as a
+ * named ACH counterparty. The amount law is the one this fallback always
+ * used. */
+EmissionResult PaymentRouter::emitNoContactP2p(const actors::Event &event) {
+  return externalDraft(
+      event, ::PhantomLedger::synth::counterparties::remote::p2pPlatformFor(
+                 event.spender->person));
 }
 
 std::optional<EmissionResult>
@@ -185,14 +231,14 @@ PaymentRouter::emitP2p(const actors::Event &event) {
   const auto contactRow = commerce.contacts().rowOf(event.spender->personIndex);
 
   if (contactRow.empty()) {
-    return emitExternal(event);
+    return emitNoContactP2p(event);
   }
 
   const auto slot = rng_.choiceIndex(contactRow.size());
   const auto contactPersonIndex = contactRow[slot];
 
   if (contactPersonIndex >= market_.population().count()) {
-    return emitExternal(event);
+    return emitNoContactP2p(event);
   }
 
   const auto contactPerson =
@@ -201,7 +247,7 @@ PaymentRouter::emitP2p(const actors::Event &event) {
 
   if (!entity::valid(dst) ||
       dst == event.spender->instruments.primaryDeposit()) {
-    return emitExternal(event);
+    return emitNoContactP2p(event);
   }
 
   const double raw = math::amounts::kP2P.sample(rng_) *
@@ -242,12 +288,20 @@ std::uint32_t PaymentRouter::pickMerchantIndex(const actors::Spender &spender,
      * index.
      *
      * MUST STAY AT ONE UNIFORM: `sampleFavoriteSlot` consumes the draw
-     * handed to it and derives the weights draw-free.
+     * handed to it and derives the weights draw-free. With a catalogue, the
+     * category decides which favourite holds which rank
+     * (outlets-frequency-2026-09); the rank multiset is unchanged.
      *
      * Fully qualified because the local `commerce` binding above shadows the
      * namespace of the same name. */
-    const auto slot = market::commerce::sampleFavoriteSlot(
-        favRow, spender.personIndex, rng_.nextDouble());
+    const double u = rng_.nextDouble();
+    const auto *catalog = commerce.catalog();
+    const auto slot =
+        catalog != nullptr
+            ? market::commerce::sampleFavoriteSlot(favRow, spender.personIndex,
+                                                   u, *catalog)
+            : market::commerce::sampleFavoriteSlot(favRow, spender.personIndex,
+                                                   u);
     return favRow[slot];
   }
 

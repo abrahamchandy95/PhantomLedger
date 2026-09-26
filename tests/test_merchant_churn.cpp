@@ -39,6 +39,11 @@
 //      recorded on the record. Without it, A-D can all pass while every
 //      merchant still receives transactions for the whole window.
 //
+//   F. CHAIN OUTLETS INHERIT AND DIE LIKE ESTABLISHMENTS
+//      (outlets-frequency-2026-09): a replacement drawn from an outlet is a
+//      new outlet of the same brand, and incumbent outlets survive at the
+//      mature hazard.
+//
 // E IS THE LOAD-BEARING CHECK. A/B/C/D are properties of the assignment; E
 // is the only one that fails if the CDF rebuild or the fraud-rail filter is
 // removed.
@@ -50,7 +55,9 @@
 #include "phantomledger/activity/spending/market/bootstrap.hpp"
 #include "phantomledger/primitives/random/factory.hpp"
 
+#include "phantomledger/entities/counterparties/institutional_accounts.hpp"
 #include "phantomledger/entities/counterparties/merchants.hpp"
+#include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/synth/merchants/lifecycle.hpp"
 #include "phantomledger/taxonomies/channels/names.hpp"
@@ -283,28 +290,104 @@ void runChurnLeg(const Leg &leg) {
     }
   }
 
+  // ------------------ F. chain outlets (outlets-frequency-2026-09)
+  //
+  // F1: a replacement inherits its donor's BRAND. The donor is found by its
+  // economic signature (weight, category, footprint, area), which the
+  // replacement copies exactly; outlets of one brand share a weight, and no
+  // two brands do, so the signature pins the brand without replaying the
+  // churn lane.
+  //
+  // F2: outlets are ESTABLISHMENTS (BLS BED Table 7 is establishment
+  // survival), so the added incumbent outlets die at the mature hazard like
+  // every other incumbent. Their intervals come from their own
+  // "merchant-life" lanes, so no brand-wide closure is modelled
+  // (registered in docs/fraud_model_audit.md).
+  {
+    std::size_t bornOutlets = 0;
+    std::size_t brandMismatch = 0;
+    std::size_t unmatched = 0;
+    std::size_t addedOutlets = 0;
+    std::size_t addedSurvivors = 0;
+    for (const auto &rec : records) {
+      const bool incumbent = rec.firstEpoch == pl::entity::merchant::kEpochMin;
+      if (incumbent) {
+        if (rec.brand.value != 0 && rec.brand != rec.label) {
+          ++addedOutlets;
+          addedSurvivors += rec.liveAt(endEpoch - 1) ? 1U : 0U;
+        }
+        continue;
+      }
+      bornOutlets += rec.brand.value != 0 ? 1U : 0U;
+      bool found = false;
+      bool agrees = false;
+      for (const auto &donor : records) {
+        if (donor.firstEpoch != pl::entity::merchant::kEpochMin ||
+            donor.weight != rec.weight || donor.category != rec.category ||
+            donor.footprint != rec.footprint ||
+            donor.location != rec.location) {
+          continue;
+        }
+        found = true;
+        agrees = agrees || donor.brand == rec.brand;
+      }
+      unmatched += found ? 0U : 1U;
+      brandMismatch += found && !agrees ? 1U : 0U;
+    }
+    const double outletSurvival =
+        addedOutlets > 0 ? static_cast<double>(addedSurvivors) /
+                               static_cast<double>(addedOutlets)
+                         : 0.0;
+    std::printf("  outlets: %zu added incumbent outlets (survival %.4f against "
+                "%.4f), %zu births carry a brand, %zu births with no donor "
+                "signature, %zu with a brand off their donor's\n",
+                addedOutlets, outletSurvival, expected, bornOutlets, unmatched,
+                brandMismatch);
+    check(addedOutlets > 0,
+          "the production catalogue must carry chain outlets, or F2 measures "
+          "nothing");
+    check(unmatched == 0 && brandMismatch == 0,
+          "F1: every churn replacement must inherit its donor's brand (" +
+              std::to_string(brandMismatch) + " disagree, " +
+              std::to_string(unmatched) + " have no donor signature)");
+    check(std::abs(outletSurvival - expected) <= kSurvivalTolerance,
+          "F2: incumbent outlets must survive at the mature establishment "
+          "hazard (expected ~" +
+              std::to_string(expected) + ", got " +
+              std::to_string(outletSurvival) + ")");
+  }
+
   // --------- D/E. what the corpus actually transacted with, and when
   std::map<pl::entity::Key, const pl::entity::merchant::Record *> byKey;
   for (const auto &rec : records) {
     byKey.emplace(rec.counterpartyId, &rec);
   }
 
-  // THE SENTINEL, and excluding it is a correctness fix to THIS GATE rather
-  // than a concession about the model.
+  // THE RETIRED SENTINEL. `PaymentRouter::emitExternal` used to route the
+  // "external merchant we do not model" slot to one catch-all key: a bucket,
+  // not a modelled merchant, with no lifecycle.
   //
-  // `PaymentRouter::emitExternal` routes the "external merchant we do not
-  // model" slot to a HARDCODED key: makeKey(merchant, external, 1). That is
-  // a catch-all bucket, not a modelled merchant, and it has no lifecycle —
-  // but it COLLIDES with catalogue serial 1, so a naive key join counts
-  // every external-unknown row as belonging to merchant #1 and reports them
-  // all out of tenure the moment #1 closes.
+  // Until institutional-providers-2026-09 that key was
+  // makeKey(merchant, external, 1), which COLLIDED with catalogue serial 1:
+  // the first version of this gate read 85% out of tenure on the
+  // external-unknown channel, which looked like a missing liveness filter and
+  // was really a key join counting the catch-all as merchant #1.
   //
-  // The first version of this gate did exactly that and read 85% out of
-  // tenure on that channel, which looked like a missing liveness filter and
-  // was really a join defect. The channel breakdown below is what separated
-  // the two, which is why it prints unconditionally.
-  const auto externalSentinel = pl::entity::makeKey(
-      pl::entity::Role::merchant, pl::entity::Bank::external, 1u);
+  // unknown-counterparty-2026-09 retired the catch-all. The slot now pays a
+  // check-payee bank or an IDENTIFIED remote merchant: an external online or
+  // national-service catalogue outlet, chosen live at the row's own
+  // timestamp. Those rows are real merchant rows, so they join the tenure
+  // measure below, and the predicate after the loop is a HARD zero on them
+  // (the pick reads exact liveness, not the monthly CDF): no external-unknown
+  // row may land on a closed, internal or local catalogue merchant, and no row
+  // may name the retired key.
+  const auto retiredSentinel = pl::counterparties::retiredExternalUnknown();
+  const auto externalUnknownTag =
+      pl::channels::tag(pl::channels::Legit::externalUnknown).value;
+  std::size_t externalUnknownRows = 0;
+  std::size_t externalUnknownOnCatalogue = 0;
+  std::size_t externalUnknownOffDomain = 0;
+  std::size_t onRetiredSentinel = 0;
 
   std::set<pl::entity::Key> touched;
   std::size_t outOfTenure = 0;
@@ -316,10 +399,22 @@ void runChurnLeg(const Leg &leg) {
   std::map<std::uint8_t, std::size_t> leakByChannel;
   std::map<std::uint8_t, std::size_t> rowsByChannel;
   for (const auto &row : result.rows) {
-    if (row.target == externalSentinel) {
-      continue; // the unmodelled-merchant catch-all; see above
-    }
     const auto it = byKey.find(row.target);
+    onRetiredSentinel +=
+        row.source == retiredSentinel || row.target == retiredSentinel ? 1U
+                                                                        : 0U;
+    if (row.session.channel.value == externalUnknownTag &&
+        row.fraud.flag == 0) {
+      ++externalUnknownRows;
+      if (it != byKey.end()) {
+        ++externalUnknownOnCatalogue;
+        const bool inDomain =
+            pl::synth::counterparties::remote::RemoteMerchantTable::eligible(
+                *it->second) &&
+            it->second->liveAt(row.timestamp);
+        externalUnknownOffDomain += inDomain ? 0U : 1U;
+      }
+    }
     if (it == byKey.end()) {
       continue; // non-catalogue destination (biller fallback, transfers)
     }
@@ -332,6 +427,25 @@ void runChurnLeg(const Leg &leg) {
     }
   }
   check(merchantRows > 0, "the leg produced no catalogue-merchant rows");
+
+  // Domain predicate paired with the golden re-pin of the retirement. Both
+  // legs open before 2016, where the DCPC check share (7%) exceeds the slot
+  // (5%), so every slot row is a paid check and the remote-merchant count is
+  // zero by design; test_remote_payees C4 covers that domain on a 2025 leg.
+  // The retired-key check below has every row as data.
+  check(externalUnknownRows > 0,
+        "the leg produced no external-unknown rows, so the checks below "
+        "would pass on no data");
+  std::printf("  external-unknown rows %zu, on a remote merchant %zu\n",
+              externalUnknownRows, externalUnknownOnCatalogue);
+  check(externalUnknownOffDomain == 0,
+        "every external-unknown row on a catalogue key must pay an external "
+        "online or national-service merchant live at the row's timestamp (" +
+            std::to_string(externalUnknownOffDomain) + " of " +
+            std::to_string(externalUnknownOnCatalogue) + " do not)");
+  check(onRetiredSentinel == 0,
+        "no row may name the retired external-unknown catch-all (" +
+            std::to_string(onRetiredSentinel) + " do)");
 
   const double traversalRatio =
       static_cast<double>(touched.size()) / static_cast<double>(liveStart);

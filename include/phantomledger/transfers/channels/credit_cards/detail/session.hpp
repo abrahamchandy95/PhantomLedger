@@ -58,8 +58,6 @@ struct Environment {
   const DisputeBehavior &disputes;
 
   const transactions::Factory &factory;
-
-  entity::Key issuerAccount;
 };
 
 struct LedgerBinding {
@@ -69,9 +67,6 @@ struct LedgerBinding {
       ::PhantomLedger::clearing::Ledger::invalid;
 
   ::PhantomLedger::clearing::Ledger::Index fundingIdx =
-      ::PhantomLedger::clearing::Ledger::invalid;
-
-  ::PhantomLedger::clearing::Ledger::Index issuerIdx =
       ::PhantomLedger::clearing::Ledger::invalid;
 };
 

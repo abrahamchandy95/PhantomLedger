@@ -74,7 +74,6 @@ public:
     const entity::card::Registry *cards = nullptr;
     const ::PhantomLedger::transfers::credit_cards::LifecycleRules *rules =
         nullptr;
-    entity::Key issuerAccount{};
     std::unordered_map<entity::PersonId, entity::Key> primaryAccounts{};
     ::PhantomLedger::time::Window window{};
     std::uint64_t seed = 0;

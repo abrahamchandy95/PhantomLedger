@@ -106,7 +106,7 @@ primaryAcctRecordIxByPerson(AccountCensus census) {
 }
 
 struct LandlordResolution {
-  std::vector<entity::Key> ids;
+  entity::counterparty::SizedKeys ids;
   std::unordered_map<entity::Key, entity::landlord::Type> typeOf;
 };
 
@@ -116,34 +116,36 @@ resolveLandlords(CounterpartyPools counterparties, entity::Key fallbackAcct) {
 
   if (counterparties.landlords != nullptr &&
       !counterparties.landlords->records.empty()) {
-    out.ids.reserve(counterparties.landlords->records.size());
-    out.typeOf.reserve(counterparties.landlords->records.size());
+    const auto &roster = *counterparties.landlords;
+    out.ids.keys.reserve(roster.records.size());
+    out.typeOf.reserve(roster.records.size());
 
-    for (const auto &record : counterparties.landlords->records) {
-      out.ids.push_back(record.accountId);
+    for (const auto &record : roster.records) {
+      out.ids.keys.push_back(record.accountId);
       out.typeOf.emplace(record.accountId, record.type);
     }
+    out.ids.law = roster.pool;
 
     return out;
   }
 
-  out.ids.push_back(fallbackAcct);
+  out.ids = entity::counterparty::SizedKeys::single(fallbackAcct);
 
   return out;
 }
 
-using NearbyPoints =
-    std::unordered_map<entity::geography::GeoAreaId, std::vector<entity::Key>>;
-
 /* Build a draw-free, event-time lookup from each observable customer area to
- * its four nearest service points. The same helper is used for cash access,
- * cash deposits, and check capture so no rail quietly falls back to a global
- * hub. */
-[[nodiscard]] NearbyPoints buildNearbyPoints(
-    std::span<const entity::Key> points,
-    std::span<const entity::geography::GeoAreaId> pointAreas,
-    CounterpartyPools counterparties) {
-  NearbyPoints out;
+ * its nearest service points. The same helper is used for cash access, cash
+ * deposits, and check capture so no rail quietly falls back to a global hub.
+ * Distance groups nearer than the kNearbyCount cut are kept whole; the group
+ * that straddles the cut is stored whole too, and NearbyIndex::select breaks
+ * that tie per person. */
+[[nodiscard]] ::PhantomLedger::counterparties::cash::NearbyIndex
+buildNearbyPoints(std::span<const entity::Key> points,
+                  std::span<const entity::geography::GeoAreaId> pointAreas,
+                  CounterpartyPools counterparties, std::uint64_t domain) {
+  namespace cash = ::PhantomLedger::counterparties::cash;
+  cash::NearbyIndex out{domain};
   if (points.empty() || points.size() != pointAreas.size()) {
     return out;
   }
@@ -164,7 +166,6 @@ using NearbyPoints =
   }
 
   const auto &catalog = ::PhantomLedger::synth::geo::geography();
-  constexpr std::size_t kNearbyCount = 4;
   for (const auto home : customerAreas) {
     if (!catalog.contains(home)) {
       continue;
@@ -180,20 +181,40 @@ using NearbyPoints =
                               catalog.at(home), catalog.at(pointAreas[i])),
                           i);
     }
-
-    const auto take = std::min(kNearbyCount, ranked.size());
-    std::partial_sort(ranked.begin(), ranked.begin() + take, ranked.end(),
-                      [](const auto &lhs, const auto &rhs) {
-                        if (lhs.first != rhs.first) {
-                          return lhs.first < rhs.first;
-                        }
-                        return lhs.second < rhs.second;
-                      });
-    auto &nearby = out[home];
-    nearby.reserve(take);
-    for (std::size_t i = 0; i < take; ++i) {
-      nearby.push_back(points[ranked[i].second]);
+    if (ranked.empty()) {
+      continue;
     }
+
+    // (distance, pool index) order, the same order the former partial sort
+    // produced for its first kNearbyCount entries.
+    std::ranges::sort(ranked);
+
+    cash::NearbyTiers tiers;
+    for (std::size_t first = 0; first < ranked.size();) {
+      auto last = first + 1;
+      while (last < ranked.size() &&
+             ranked[last].first == ranked[first].first) {
+        ++last;
+      }
+      const auto need = cash::kNearbyCount - tiers.fixed.size();
+      if (last - first <= need) {
+        for (auto i = first; i < last; ++i) {
+          tiers.fixed.push_back(points[ranked[i].second]);
+        }
+      } else {
+        tiers.boundary.reserve(last - first);
+        for (auto i = first; i < last; ++i) {
+          tiers.boundary.push_back(points[ranked[i].second]);
+        }
+        tiers.need = static_cast<std::uint8_t>(need);
+        break;
+      }
+      if (tiers.fixed.size() == cash::kNearbyCount) {
+        break;
+      }
+      first = last;
+    }
+    out.assign(home, std::move(tiers));
   }
   return out;
 }
@@ -209,14 +230,24 @@ buildCounterpartyAccess(CounterpartyPools counterparties) {
   // use an external counterparty. Internal ownerless business accounts do not
   // get synthetic infinite liquidity.
   if (directory != nullptr && !directory->employers.accounts.external.empty()) {
-    plan.employers = directory->employers.accounts.external;
+    plan.employers.keys = directory->employers.accounts.external;
+    plan.employers.law = directory->employers.pool;
   } else {
-    plan.employers.push_back(cash::fallbackEmployer());
+    plan.employers =
+        entity::counterparty::SizedKeys::single(cash::fallbackEmployer());
   }
 
   auto landlords = resolveLandlords(counterparties, cash::fallbackLandlord());
   plan.landlords = std::move(landlords.ids);
   plan.landlordTypeOf = std::move(landlords.typeOf);
+
+  // A roster handed over without its law would pick from a pool of the wrong
+  // size, so the pair must agree.
+  if (plan.employers.law.size() != plan.employers.size() ||
+      plan.landlords.law.size() != plan.landlords.size()) {
+    throw std::invalid_argument(
+        "counterparty roster and its size law disagree on the member count");
+  }
 
   if (directory != nullptr) {
     plan.cashWithdrawalPoints = directory->external.atmTerminals;
@@ -224,7 +255,6 @@ buildCounterpartyAccess(CounterpartyPools counterparties) {
     plan.checkDepositPoints = directory->external.checkCapturePoints;
     plan.cryptoVenues = directory->external.cryptoVenues;
     plan.billerAccounts = directory->external.billers;
-    plan.issuerAcct = directory->external.cardIssuer;
   }
 
   // Standalone blueprint callers may not provide the synthesized directory.
@@ -249,9 +279,6 @@ buildCounterpartyAccess(CounterpartyPools counterparties) {
       plan.billerAccounts.push_back(cash::biller(ordinal));
     }
   }
-  if (!entity::valid(plan.issuerAcct)) {
-    plan.issuerAcct = cash::cardIssuer();
-  }
 
   plan.homeAreas = counterparties.homeAreas;
   plan.relocation = counterparties.relocation;
@@ -261,13 +288,13 @@ buildCounterpartyAccess(CounterpartyPools counterparties) {
   if (directory != nullptr) {
     plan.nearbyWithdrawalPoints = buildNearbyPoints(
         plan.cashWithdrawalPoints, directory->external.atmTerminalAreas,
-        counterparties);
+        counterparties, cash::kWithdrawalSetDomain);
     plan.nearbyCashDepositPoints = buildNearbyPoints(
         plan.cashDepositPoints, directory->external.cashDepositoryAreas,
-        counterparties);
+        counterparties, cash::kDepositSetDomain);
     plan.nearbyCheckDepositPoints = buildNearbyPoints(
         plan.checkDepositPoints, directory->external.checkCaptureAreas,
-        counterparties);
+        counterparties, cash::kCheckSetDomain);
   }
 
   return plan;

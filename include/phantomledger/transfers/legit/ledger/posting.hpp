@@ -17,9 +17,6 @@
 
 namespace PhantomLedger::transfers::legit::ledger {
 
-[[nodiscard]] entity::Key bankFeeCollectionKey() noexcept;
-[[nodiscard]] entity::Key bankOdLocKey() noexcept;
-
 namespace drop_reasons {
 
 inline constexpr std::string_view kInsufficientFunds = "insufficient_funds";
@@ -350,8 +347,6 @@ private:
     std::size_t operator()(const FeeKey &k) const noexcept;
   };
   std::unordered_map<FeeKey, std::int32_t, FeeKeyHash> feeTapsToday_;
-
-  const transactions::Transaction *currentTxn_ = nullptr;
 };
 
 [[nodiscard]] bool isCureInbound(const transactions::Transaction &txn) noexcept;

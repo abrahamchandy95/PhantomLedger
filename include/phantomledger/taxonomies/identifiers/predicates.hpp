@@ -31,6 +31,7 @@ inline constexpr auto kBankModeEntries = std::to_array<RoleBankMode>({
     {Role::business, BankMode::either},
     {Role::brokerage, BankMode::either},
     {Role::card, BankMode::internalOnly},
+    {Role::ledger, BankMode::internalOnly},
 });
 
 static_assert(enumTax::isIndexable(kRoles));

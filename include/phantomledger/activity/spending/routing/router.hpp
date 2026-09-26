@@ -33,6 +33,12 @@ private:
   [[nodiscard]] std::uint32_t pickMerchantIndex(const actors::Spender &spender,
                                                 double exploreP);
 
+  // The shared tail of the retired catch-all flows: one amount uniform, the
+  // external-unknown channel, and the destination the caller chose.
+  [[nodiscard]] EmissionResult externalDraft(const actors::Event &event,
+                                             entity::Key dst);
+  [[nodiscard]] EmissionResult emitNoContactP2p(const actors::Event &event);
+
   random::Rng &rng_;
   const market::Market &market_;
   const PaymentRoutingRules &policy_;

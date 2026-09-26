@@ -57,7 +57,7 @@ fraud::InjectorLegitCounterparties FraudEmission::legitCounterparties(
    * it. */
   return fraud::InjectorLegitCounterparties{
       .billerAccounts = counterparties.billerView(),
-      .employers = counterparties.employerView(),
+      .employers = &counterparties.employers,
       .merchants = merchants,
       .homeAreas = homeAreas,
       /* The history the unauthorized planner resolves at each case date. */

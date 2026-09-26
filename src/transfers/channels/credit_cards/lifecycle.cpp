@@ -109,8 +109,7 @@ Lifecycle::generate(const time::Window &window,
   out.reserve(txns.size() / 8);
 
   const detail::Environment env{rules_.billing, rules_.payments,
-                                rules_.disputes, factory_,
-                                ledger_.issuerAccount};
+                                rules_.disputes, factory_};
 
   std::vector<entity::Key> activeCards;
   activeCards.reserve(purchasesByCard.size());

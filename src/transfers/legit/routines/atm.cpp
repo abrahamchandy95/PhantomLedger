@@ -240,7 +240,7 @@ Generator::generate(const blueprints::LegitBlueprint &plan,
     const auto localTerminals =
         plan.counterparties().withdrawalPointsFor(cand.person, cand.timestamp);
     const auto terminal = ::PhantomLedger::counterparties::cash::terminalFor(
-        localTerminals, cand.depositAcct, cand.timestamp);
+        localTerminals.span(), cand.depositAcct, cand.timestamp);
 
     if (!canAffordAtm(screen_, cand.depositAcct, amount, scale)) {
       continue;

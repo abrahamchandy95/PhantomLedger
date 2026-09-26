@@ -394,7 +394,6 @@ SpendingRoutine::run(Execution execution, plMarket::Market &market,
     plCredit::DriverInputs inputs{
         .cards = cards_.cards,
         .primaryAccounts = &cards_.primaryAccounts,
-        .issuerAccount = cards_.issuerAccount,
         .window = cards_.window,
         // Card servicing stops at account closure.
         .timelines = cards_.timelines,

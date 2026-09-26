@@ -1,5 +1,6 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
 #include "phantomledger/entities/geography/area.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 
@@ -15,6 +16,9 @@ struct BankSplit {
 
 struct Employers {
   BankSplit accounts;
+  // The size law over accounts.external, in roster order
+  // (counterparty-sizes-2026-09). Employers are all external.
+  SizedPool pool;
 };
 
 struct ClientPayers {
@@ -42,7 +46,6 @@ struct ExternalParties {
 
   // Separate service roles that previously fell back to customer accounts.
   std::vector<entity::Key> billers;
-  entity::Key cardIssuer{};
 };
 
 struct Directory {

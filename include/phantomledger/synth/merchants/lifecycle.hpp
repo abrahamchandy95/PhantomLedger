@@ -179,8 +179,12 @@ makeReplacementKey(const entity::merchant::Record &donor,
  *
  * ORDERING. Must run AFTER `placeGeography`, which only walks the records
  * present when it runs — replacements take their footprint and location from
- * their donor instead. Must run BEFORE `assignLifecycle`, which reads
- * `firstEpoch` to tell a replacement from an incumbent.
+ * their donor instead. Must run AFTER `expandOutlets` too: the base count
+ * then counts every ESTABLISHMENT, outlets included, which is the right
+ * denominator because BLS BED Table 7 is establishment survival, and a
+ * replacement drawn from an outlet is a new outlet of the same brand in the
+ * same city. Must run BEFORE `assignLifecycle`, which reads `firstEpoch` to
+ * tell a replacement from an incumbent.
  *
  * ISOLATED LANE, which is why this exists rather than sizing `makeCatalog` by
  * the window: `makeCatalog` spends one shared-entity-stream draw per core
@@ -188,8 +192,8 @@ makeReplacementKey(const entity::merchant::Record &donor,
  * once at 51,079 account-closure violations in a gate that has nothing to do
  * with merchants. Everything below draws off `churnSeed` only.
  *
- * Each replacement inherits the ECONOMIC SHAPE of its donor — weight,
- * category and footprint — because a merchant that opens in 2012 is not
+ * Each replacement inherits the ECONOMIC SHAPE of its donor (weight,
+ * category, footprint and brand), because a merchant that opens in 2012 is not
  * systematically bigger or smaller than one that opened in 2000. Anything
  * else would make merchant age a proxy for size, and size drives selection.
  *
@@ -253,6 +257,7 @@ inline void appendChurnReplacements(entity::merchant::Catalog &catalog,
     born.weight = donor.weight;
     born.location = donor.location;
     born.footprint = donor.footprint;
+    born.brand = donor.brand;
     // Ownership is stamped later by `assignMerchantOwners`, which is
     // draw-free and reads the key alone — replacements go through the same
     // predicate as incumbents, so merchant age cannot correlate with

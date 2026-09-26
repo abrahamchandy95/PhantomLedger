@@ -197,6 +197,9 @@
 #include "phantomledger/synth/infra/ips.hpp"
 #include "phantomledger/synth/infra/public_pool.hpp"
 #include "phantomledger/synth/infra/tenure_table.hpp"
+#include "phantomledger/synth/merchants/make.hpp"
+#include "phantomledger/synth/merchants/outlets.hpp"
+#include "phantomledger/synth/merchants/place.hpp"
 #include "phantomledger/synth/personas/join.hpp"
 #include "phantomledger/synth/pii/membership.hpp"
 #include "phantomledger/synth/pii/pools.hpp"
@@ -2142,18 +2145,122 @@ void measure(const Leg &leg, const pl::pipeline::SimulationResult &result) {
         std::string(leg.name) +
             ": the merchant ownership register must be non-empty, or "
             "cf_Is_Merchant is empty and the downstream loader aborts");
-  check(merchantsPerOwner.size() >= ownerByMerchant.size() / 3,
+
+  /* THE REGISTER MUST BE AS SPREAD AS A UNIFORM KEY HASH OVER THE COHORT
+   * ALLOWS, and that replaced two absolute bands (outlets-frequency-2026-09).
+   *
+   * The retired checks were "at least owned/3 proprietors" and "at most 6
+   * merchants each", both uncited, sized on legs whose catalogue was the
+   * 250-record core floor. The mean is an identity, coverage x catalogue /
+   * cohort, so it grows with the catalogue at a fixed cohort: chain outlets
+   * add 57% records at these populations (13% at pop 500,000), and leg-long
+   * went from 2.67 to 4.07 merchants per proprietor with a max of 9, exactly
+   * what uniform hashing of 228 merchants over 56 Parties gives, with the
+   * hash reading the key alone (G' and G'' unchanged). Neither forbidden
+   * repair was taken: brand-keyed owners (one Party behind a 50-outlet
+   * chain) or ownerless chain outlets (the footprint leak G'' catches).
+   *
+   * What a degenerate register looks like is CONCENTRATION: fewer Parties
+   * than the hash would reach, or one Party far above the hash's max load.
+   * Both are bounded against the uniform law on the leg's own cohort, at any
+   * catalogue size. The absolute claim (most proprietors hold one outlet) is
+   * bounded at production scale, where it is coherent, below. */
+  std::vector<pl::entity::PersonId> cohort;
+  for (const auto &record : result.holdings.accounts.registry.records) {
+    if (record.id.role == pl::entity::Role::business &&
+        record.owner != pl::entity::invalidPerson) {
+      cohort.push_back(record.owner);
+    }
+  }
+  std::sort(cohort.begin(), cohort.end());
+  cohort.erase(std::unique(cohort.begin(), cohort.end()), cohort.end());
+  const auto registerSpread = [&](std::size_t owned, std::size_t distinct,
+                                  std::size_t maxLoad, const char *label) {
+    const double m = static_cast<double>(cohort.size());
+    const double n = static_cast<double>(owned);
+    const double expectedDistinct =
+        m > 0.0 ? m * (1.0 - std::pow(1.0 - 1.0 / m, n)) : 0.0;
+    // The smallest load k with m * P(Binomial(n, 1/m) >= k) <= 0.001: no
+    // Party of a uniform hash reaches it one time in a thousand.
+    std::size_t ceiling = 0;
+    if (m > 0.0 && owned > 0) {
+      const double p = 1.0 / m;
+      double pmf = std::pow(1.0 - p, n);
+      double tail = 1.0;
+      for (std::size_t k = 0; k <= owned; ++k) {
+        if (m * tail <= 0.001) {
+          ceiling = k;
+          break;
+        }
+        tail -= pmf;
+        pmf *= (n - static_cast<double>(k)) / (static_cast<double>(k) + 1.0) *
+               p / (1.0 - p);
+        ceiling = k + 1;
+      }
+    }
+    const bool spread =
+        static_cast<double>(distinct) >= 0.9 * expectedDistinct &&
+        maxLoad < ceiling;
+    std::printf("  G. %s: %zu owned over a cohort of %zu, %zu proprietors "
+                "(uniform hash %.1f), max %zu (uniform 0.1%% ceiling %zu) -> "
+                "%s\n",
+                label, owned, cohort.size(), distinct, expectedDistinct,
+                maxLoad, ceiling, spread ? "spread" : "CONCENTRATED");
+    return spread;
+  };
+  check(registerSpread(ownerByMerchant.size(), merchantsPerOwner.size(),
+                       maxPerOwner, "register spread"),
         std::string(leg.name) +
-            ": the register must spread over MANY proprietors — got " +
-            std::to_string(merchantsPerOwner.size()) + " owners for " +
-            std::to_string(ownerByMerchant.size()) +
-            " merchants. A register concentrated on a few Parties is one hub "
-            "vertex wearing an ownership table");
-  check(maxPerOwner <= 6,
-        std::string(leg.name) +
-            ": no proprietor should hold an implausible number of outlets; "
-            "max " +
-            std::to_string(maxPerOwner));
+            ": the register must spread over the business-owner cohort as a "
+            "uniform key hash does. A register concentrated on a few Parties "
+            "is one hub vertex wearing an ownership table");
+  // The disarm, on the same owned set: every merchant on one of five
+  // Parties. It must read CONCENTRATED, or the check above cannot fail.
+  if (cohort.size() > 5) {
+    std::map<pl::entity::PersonId, std::size_t> concentrated;
+    std::size_t k = 0;
+    for (const auto &[merchantKey, owner] : ownerByMerchant) {
+      (void)merchantKey;
+      (void)owner;
+      ++concentrated[cohort[k++ % 5]];
+    }
+    std::size_t concentratedMax = 0;
+    for (const auto &[owner, count] : concentrated) {
+      (void)owner;
+      concentratedMax = std::max(concentratedMax, count);
+    }
+    check(!registerSpread(ownerByMerchant.size(), concentrated.size(),
+                          concentratedMax, "DISARM five-Party register"),
+          std::string(leg.name) +
+              ": a five-Party register must fail the spread check");
+  }
+  // Production scale, derived: the pop 500,000 catalogue with outlets (the
+  // real construction, before churn) over this leg's cohort share of the
+  // population. Most proprietors hold one outlet there.
+  {
+    namespace sm = pl::synth::merchants;
+    constexpr int kScalePop = 500000;
+    auto scaleRng = pl::random::Rng::fromSeed(0xDEADBEEFULL);
+    auto scaleCatalog = sm::makeCatalog(scaleRng, kScalePop);
+    sm::placeGeography(scaleCatalog, 0xC0FFEEULL);
+    sm::expandOutlets(scaleCatalog, sm::coreCountFor(kScalePop, {}),
+                      0xC0FFEEULL);
+    const double cohortShare = static_cast<double>(cohort.size()) /
+                               static_cast<double>(leg.population);
+    const double scaleMean =
+        pl::entity::merchant::ownership::kBeneficialOwnerCoverage *
+        static_cast<double>(scaleCatalog.records.size()) /
+        (cohortShare * static_cast<double>(kScalePop));
+    std::printf("  G. production scale (derived): %zu records over %.0f "
+                "business owners, mean %.2f merchants per proprietor\n",
+                scaleCatalog.records.size(),
+                cohortShare * static_cast<double>(kScalePop), scaleMean);
+    check(scaleMean <= 1.0,
+          std::string(leg.name) +
+              ": at production scale the mean proprietor must hold at most "
+              "one merchant; derived " +
+              std::to_string(scaleMean));
+  }
   check(viewOwnedMerchant > 0,
         std::string(leg.name) +
             ": card-view rows must reach owned merchants, or sub-gate G "

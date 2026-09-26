@@ -5,6 +5,7 @@
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/rng.hpp"
 #include "phantomledger/primitives/validate/checks.hpp"
+#include "phantomledger/synth/counterparties/size_law.hpp"
 #include "phantomledger/taxonomies/identifiers/types.hpp"
 
 #include <algorithm>
@@ -77,11 +78,21 @@ struct ExternalPoolTargets {
   }
 };
 
+/// Employer roster sizing (counterparty-sizes-2026-09). The roster is the
+/// SUSB 2022 + government size law thinned to this population; the worker
+/// share is the payer share that thinning divides, and a test ties it to
+/// salary::Rules{}.paidFraction.
+struct EmployerSizing {
+  double workerShare = 0.74;
+  void validate(::PhantomLedger::primitives::validate::Report &r) const {
+    r.check([&] {
+      ::PhantomLedger::primitives::validate::unit("workerShare", workerShare);
+    });
+  }
+};
+
 struct CounterpartyTargets {
-  BankedPoolTargets employers{
-      .count = {.perTenK = 25.0, .minCount = 5},
-      .internalBankP = 0.04,
-  };
+  EmployerSizing employers{};
 
   BankedPoolTargets clients{
       .count = {.perTenK = 250.0, .minCount = 25},
@@ -146,6 +157,46 @@ representativeAreas(std::span<const entity::geography::GeoAreaId> customerAreas,
   return out;
 }
 
+/*
+  Entropy compatibility for the retired employer roster. It spent one
+  rng.coin(internalBankP) per employer on the SHARED entity stream, first in
+  make(), with max(5, round(25 * pop / 1e4)) employers at 0.04. Burning that
+  exact loop keeps every later entity value (clients, business owners, infra
+  and the transfer fold) on its pre-round PCG state; the new roster is
+  draw-free. The constants are frozen here, not config, so a later edit to
+  the size law cannot move the burn.
+*/
+inline constexpr double kLegacyEmployersPerTenK = 25.0;
+inline constexpr int kLegacyEmployerFloor = 5;
+inline constexpr double kLegacyEmployerInternalP = 0.04;
+
+inline void burnLegacyEmployerCoins(random::Rng &rng, int population) {
+  const double scaled = kLegacyEmployersPerTenK *
+                        (static_cast<double>(population) / 10'000.0);
+  const int legacy =
+      std::max(kLegacyEmployerFloor, static_cast<int>(std::round(scaled)));
+  for (int i = 0; i < legacy; ++i) {
+    (void)rng.coin(kLegacyEmployerInternalP);
+  }
+}
+
+/// The class-contiguous employer roster: every employer is external (the
+/// payroll ACH originator, outside the modeled ledger) at serial ordinal + 1.
+inline void fillEmployers(int population, const EmployerSizing &sizing,
+                          entity::counterparty::Employers &out) {
+  const auto law = sizes::employerLaw(population, sizing.workerShare);
+  const auto total = law.total();
+
+  auto &external = out.accounts.external;
+  external.reserve(external.size() + total);
+  for (std::size_t i = 0; i < total; ++i) {
+    external.push_back(entity::makeKey(Role::employer, Bank::external,
+                                       static_cast<std::uint64_t>(i + 1)));
+  }
+  out.accounts.all = external;
+  out.pool = law.pool();
+}
+
 inline void fillBankSplit(random::Rng &rng, Role role, int total,
                           double internalBankP,
                           entity::counterparty::BankSplit &out) {
@@ -181,10 +232,8 @@ make(random::Rng &rng, int population, const CounterpartyTargets &targets = {},
      std::span<const entity::geography::GeoAreaId> customerAreas = {}) {
   entity::counterparty::Directory out;
 
-  const int employerCount = targets.employers.count.forPopulation(population);
-  detail::fillBankSplit(rng, Role::employer, employerCount,
-                        targets.employers.internalBankP,
-                        out.employers.accounts);
+  detail::burnLegacyEmployerCoins(rng, population);
+  detail::fillEmployers(population, targets.employers, out.employers);
 
   const int clientCount = targets.clients.count.forPopulation(population);
   detail::fillBankSplit(rng, Role::client, clientCount,
@@ -238,7 +287,6 @@ make(random::Rng &rng, int population, const CounterpartyTargets &targets = {},
       [](std::uint64_t ordinal) {
         return ::PhantomLedger::counterparties::cash::biller(ordinal);
       });
-  out.external.cardIssuer = ::PhantomLedger::counterparties::cash::cardIssuer();
 
   return out;
 }

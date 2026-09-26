@@ -214,7 +214,7 @@ generateRentTxns(const rent::RentRoll &rentRoll, random::Rng &rng,
   namespace recur = ::PhantomLedger::activity::recurring;
   namespace tlx = ::PhantomLedger::synth::personas::timeline;
 
-  if (rentRoll.counterparties.landlords.empty()) {
+  if (!rentRoll.counterparties.hasLandlords()) {
     return {};
   }
 

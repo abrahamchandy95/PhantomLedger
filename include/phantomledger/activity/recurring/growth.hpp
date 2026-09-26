@@ -1,5 +1,7 @@
 #pragma once
 
+#include "phantomledger/entities/counterparties/sized_pool.hpp"
+#include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/random/distributions/lognormal.hpp"
 #include "phantomledger/primitives/random/distributions/normal.hpp"
 #include "phantomledger/primitives/random/distributions/uniform.hpp"
@@ -11,8 +13,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <iterator>
-#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -162,45 +162,44 @@ struct AnnualRaiseInput {
 // Counterparty selection
 // ---------------------------------------------------------------
 
-/// Pick one item uniformly from a span.
-template <typename T>
-[[nodiscard]] inline const T &pickOne(random::Rng &rng,
-                                      std::span<const T> items) {
-  if (items.empty()) {
-    throw std::invalid_argument("pickOne requires non-empty items");
+/// Pick one counterparty through the pool's size law. One uniform when the
+/// pool has two or more members and none for a single member: the draw
+/// count of the uniform choiceIndex this replaced, so every later draw on
+/// the caller's lane keeps its value (counterparty-sizes-2026-09).
+[[nodiscard]] inline const entity::Key &
+pickSized(random::Rng &rng, const entity::counterparty::SizedKeys &pool) {
+  if (pool.empty()) {
+    throw std::invalid_argument("pickSized requires a non-empty pool");
   }
-
-  return items[rng.choiceIndex(items.size())];
+  if (pool.size() == 1) {
+    return pool.keys.front();
+  }
+  return pool.keys[pool.law.pick(rng.nextDouble())];
 }
 
-/// Pick one item different from `current`. Falls back to a uniform
-/// pick if `current` is not present. If the pool has only one item,
-/// returns that item.
-template <typename T>
-[[nodiscard]] inline const T &
-pickDifferent(random::Rng &rng, std::span<const T> items, const T &current) {
-  if (items.empty()) {
-    throw std::invalid_argument("pickDifferent requires non-empty items");
+/// Pick one counterparty other than `current`, from the size law
+/// renormalised over the rest. No draw when the pool has one member or the
+/// rest is one member, one uniform otherwise; a `current` outside the pool
+/// is a plain pickSized. The lookup is O(1) (serials are ordinal + 1).
+[[nodiscard]] inline const entity::Key &
+pickSizedDifferent(random::Rng &rng,
+                   const entity::counterparty::SizedKeys &pool,
+                   const entity::Key &current) {
+  if (pool.empty()) {
+    throw std::invalid_argument("pickSizedDifferent requires a non-empty pool");
+  }
+  if (pool.size() == 1) {
+    return pool.keys.front();
   }
 
-  if (items.size() == 1) {
-    return items[0];
+  const auto x = pool.indexOf(current);
+  if (x == entity::counterparty::SizedPool::npos) {
+    return pool.keys[pool.law.pick(rng.nextDouble())];
   }
-
-  const auto it = std::find(items.begin(), items.end(), current);
-  if (it == items.end()) {
-    return items[rng.choiceIndex(items.size())];
+  if (pool.size() == 2) {
+    return pool.keys[1 - x];
   }
-
-  const auto currentIndex =
-      static_cast<std::size_t>(std::distance(items.begin(), it));
-
-  auto pickIndex = rng.choiceIndex(items.size() - 1);
-  if (pickIndex >= currentIndex) {
-    ++pickIndex;
-  }
-
-  return items[pickIndex];
+  return pool.keys[pool.law.pickExcluding(rng.nextDouble(), x)];
 }
 
 // ---------------------------------------------------------------

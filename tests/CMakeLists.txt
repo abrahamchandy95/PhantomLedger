@@ -193,6 +193,53 @@ pl_add_test(test_lifespan)
 # existence. MODEL-MOVING: the family lane's rows change wholesale.
 pl_add_test(test_estates)
 
+# institutional-providers-2026-09: PER-CONTRACT LENDERS AND INSURERS. Every
+# mortgage, auto loan, student loan and auto/home/life policy used to pay one
+# population-wide key (and every mortgage the STUDENT servicer). Each contract
+# now draws its provider from a cited market-share table on its own
+# {"product-provider", market, person} lane. Leg A (products only, pop
+# 200,000) pins lane isolation against a draw-free singleton disarm, the
+# market domain and the Bug A predicate, anti-hub and top-10 shape bands, exact
+# registration and windowed parity; leg B (the run-golden world) checks the
+# corpus rows, the external-unknown re-key and the camouflage exclusion.
+# MODEL-MOVING: every product, premium and claim row's counterparty moves.
+pl_add_test(test_product_providers)
+set_tests_properties(test_product_providers PROPERTIES TIMEOUT 900)
+
+# unknown-counterparty-2026-09: THE EXTERNAL-UNKNOWN CATCH-ALL IS RETIRED.
+# The spending slot, no-contact P2P and every funeral paid one account (3.8M
+# payments from 62% of deposit accounts at corpus scale). Paid checks are now
+# keyed by the payee's bank (FDIC SOD shares), the rest of the slot pays
+# identified remote merchants, no-contact P2P goes to a named platform, and a
+# funeral pays a funeral home in the decedent's city. Leg B (the run-golden
+# world) pins the shared stream and a destination-masked digest of every
+# legit row to the pre-round build, so only a retired row's destination may
+# move; leg C (pop 10,000, one year) bands the check share, the SOD table,
+# the platform split and the funeral placement, and bounds the largest
+# destination at 15% of the retired rows with a one-hub-per-flow disarm.
+# MODEL-MOVING: every retired row's destination moves.
+pl_add_test(test_remote_payees)
+set_tests_properties(test_remote_payees PROPERTIES TIMEOUT 900)
+
+# counterparty-sizes-2026-09: employer and landlord rosters sized by the
+# SUSB 2022 + government and RHFS 2021 laws. Burn parity on the shared entity
+# stream, the real samplers at pop 200,000, job churn, the corpus predicates
+# beside the run golden, and the memory at pop 500,000.
+pl_add_test(test_counterparty_sizes)
+set_tests_properties(test_counterparty_sizes PROPERTIES TIMEOUT 900)
+
+# bank-gl-2026-09: FEES AND INTEREST POST TO BANK-OWNED INCOME GLs. Card
+# interest, card late fees, overdraft fees and overdraft line-of-credit
+# interest paid three accounts typed as external business deposits. Each now
+# posts to an internal, ownerless income ledger of its kind (Role::ledger).
+# The run-golden world pins the shared stream and a digest of every legit row
+# with the posting target and the liquidity session masked, so only those may
+# move; the gate also checks the per-kind routing, the GL typing and roles,
+# the absent device/IP and each GL's balance in a replayed posted book.
+# MODEL-MOVING: every fee and interest row's destination moves.
+pl_add_test(test_bank_ledger)
+set_tests_properties(test_bank_ledger PROPERTIES TIMEOUT 900)
+
 # macro-history-v1 H3 part 3c-ii (CLOSES H3): MEMBERSHIP
 # [joinTs, closeTs) — the BEA-sized join cohort on the isolated
 # {"join-cohort", personId} lane, the joiner AGE-AXIS repair (ages

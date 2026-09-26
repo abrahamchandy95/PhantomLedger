@@ -1,6 +1,7 @@
 #include "phantomledger/transfers/legit/ledger/posting.hpp"
 
 #include "phantomledger/encoding/external.hpp"
+#include "phantomledger/entities/holdings/general_ledger.hpp"
 #include "phantomledger/entities/identifiers.hpp"
 #include "phantomledger/primitives/time/constants.hpp"
 #include "phantomledger/taxonomies/channels/predicates.hpp"
@@ -81,16 +82,6 @@ std::int32_t ReplayFundingBehavior::blindDelayHoursFor(
   return retryCount == 0 ? retry.firstBlindHours : retry.secondBlindHours;
 }
 
-entity::Key bankFeeCollectionKey() noexcept {
-  return entity::makeKey(entity::Role::business, entity::Bank::external,
-                         /*number=*/0xFFFF'FF01ULL);
-}
-
-entity::Key bankOdLocKey() noexcept {
-  return entity::makeKey(entity::Role::business, entity::Bank::external,
-                         /*number=*/0xFFFF'FF02ULL);
-}
-
 void ReplayDropLedger::record(std::string_view reason, channels::Tag channel) {
   if (auto it = byReason_.find(reason); it != byReason_.end()) {
     ++it->second;
@@ -134,7 +125,6 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
   }
 
   installLiquiditySink();
-  currentTxn_ = &txn;
 
   const auto decision = book_->transferAt(clearing::Ledger::KeyPosting{
       .source = txn.source,
@@ -144,7 +134,6 @@ bool ChronoReplayAccumulator::append(const transactions::Transaction &txn) {
       .timestamp = txn.timestamp,
   });
 
-  currentTxn_ = nullptr;
   uninstallLiquiditySink();
 
   if (decision.accepted()) {
@@ -229,8 +218,6 @@ void ChronoReplayAccumulator::drainPending(std::int64_t emitBoundExcl) {
       continue;
     }
 
-    currentTxn_ = &item.txn;
-
     const auto decision = book_->transferAt(clearing::Ledger::KeyPosting{
         .source = item.txn.source,
         .destination = item.txn.target,
@@ -238,8 +225,6 @@ void ChronoReplayAccumulator::drainPending(std::int64_t emitBoundExcl) {
         .channel = item.txn.session.channel,
         .timestamp = item.txn.timestamp,
     });
-
-    currentTxn_ = nullptr;
 
     if (decision.accepted()) {
       txns_.push_back(item.txn);
@@ -507,14 +492,12 @@ void ChronoReplayAccumulator::onLiquidityEvent(
     return;
   }
 
-  const auto target =
-      (event.channel == channels::tag(channels::Liquidity::overdraftFee))
-          ? bankFeeCollectionKey()
-          : bankOdLocKey();
-
+  /* The credit leg is the bank's income GL for the posting kind: deposit fee
+   * income for an overdraft fee, credit-line interest income for LOC
+   * interest (bank-gl-2026-09). */
   transactions::Transaction tx{};
   tx.source = event.payerKey;
-  tx.target = target;
+  tx.target = entity::gl::incomeAccountFor(event.channel);
   tx.amount = event.amount;
 
   tx.timestamp =
@@ -522,14 +505,11 @@ void ChronoReplayAccumulator::onLiquidityEvent(
           ? event.timestamp + 1
           : event.timestamp;
 
+  /* A system posting has no customer session: the bank's core posts it, so
+   * it carries no device and no IP, never the triggering row's. */
   tx.fraud.flag = 0;
   tx.fraud.ringId.reset();
   tx.session.channel = event.channel;
-
-  if (currentTxn_ != nullptr) {
-    tx.session.deviceId = currentTxn_->session.deviceId;
-    tx.session.ipAddress = currentTxn_->session.ipAddress;
-  }
 
   txns_.push_back(std::move(tx));
 }

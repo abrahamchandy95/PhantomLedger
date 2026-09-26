@@ -3,6 +3,7 @@
 #include "phantomledger/pipeline/data.hpp"
 #include "phantomledger/primitives/time/calendar.hpp"
 #include "phantomledger/primitives/time/window.hpp"
+#include "phantomledger/synth/products/providers.hpp"
 #include "phantomledger/synth/products/random.hpp"
 #include "phantomledger/synth/products/terms/auto_loan.hpp"
 #include "phantomledger/synth/products/terms/insurance.hpp"
@@ -22,6 +23,7 @@ public:
   using StudentLoanTerms = ::PhantomLedger::synth::products::StudentLoanTerms;
   using TaxTerms = ::PhantomLedger::synth::products::TaxTerms;
   using InsuranceTerms = ::PhantomLedger::synth::products::InsuranceTerms;
+  using ProviderMarkets = ::PhantomLedger::synth::products::ProviderMarkets;
 
   ObligationSynthesis() = default;
 
@@ -31,6 +33,10 @@ public:
   ObligationSynthesis &studentLoan(StudentLoanTerms value) noexcept;
   ObligationSynthesis &tax(TaxTerms value) noexcept;
   ObligationSynthesis &insurance(InsuranceTerms value) noexcept;
+  // The provider-market tables (institutional-providers-2026-09). Production
+  // is the default; a gate swaps in ProviderMarkets::singleton() to disarm.
+  // The object must outlive this synthesis and every copy of it.
+  ObligationSynthesis &providerMarkets(const ProviderMarkets &value) noexcept;
 
   [[nodiscard]] std::uint64_t seed() const noexcept { return seed_; }
   [[nodiscard]] const MortgageTerms &mortgage() const noexcept {
@@ -46,6 +52,9 @@ public:
   [[nodiscard]] const InsuranceTerms &insurance() const noexcept {
     return insurance_;
   }
+  [[nodiscard]] const ProviderMarkets &providerMarkets() const noexcept {
+    return *markets_;
+  }
 
   /* Materializes the portfolio terms (loans, insurance) for the whole window
    * and retains obligation EVENTS only for the burden slice
@@ -54,7 +63,11 @@ public:
    * opening-book burden buffer and the spending prep, both keyed to the window
    * start. Both product emitters derive the full window transiently via
    * generateWindow(). The restriction drops at append, AFTER the draw, so the
-   * draw sequence is untouched. */
+   * draw sequence is untouched.
+   *
+   * Last, it registers every provider a contract uses as an external,
+   * ownerless account. That is draw-free and appends after every entity-stage
+   * record, so no existing registry index moves. */
   void synthesize(const People &people, Holdings &holdings,
                   time::Window window) const;
 
@@ -72,13 +85,16 @@ public:
 
 private:
   /* The one emission sequence shared by synthesize() and generateWindow(), so
-   * the materialized stream and the windowed replay cannot drift. */
-  void emitPerson(
-      ::PhantomLedger::entity::PersonId person,
-      ::PhantomLedger::personas::Type persona, time::Window window,
-      ::PhantomLedger::entity::product::LoanTermsLedger &loans,
-      ::PhantomLedger::entity::product::InsuranceLedger &insurance,
-      ::PhantomLedger::entity::product::ObligationStream &obligations) const;
+   * the materialized stream and the windowed replay cannot drift. `used`
+   * collects the providers picked (null in the replay, whose keys the
+   * identical synthesize() pass already registered). */
+  void
+  emitPerson(::PhantomLedger::entity::PersonId person,
+             ::PhantomLedger::personas::Type persona, time::Window window,
+             ::PhantomLedger::entity::product::LoanTermsLedger &loans,
+             ::PhantomLedger::entity::product::InsuranceLedger &insurance,
+             ::PhantomLedger::entity::product::ObligationStream &obligations,
+             ::PhantomLedger::synth::products::UsedProviders *used) const;
 
   std::uint64_t seed_ = ::PhantomLedger::synth::products::kDefaultProductsSeed;
 
@@ -87,6 +103,7 @@ private:
   StudentLoanTerms studentLoan_{};
   TaxTerms tax_{};
   InsuranceTerms insurance_{};
+  const ProviderMarkets *markets_ = &ProviderMarkets::production();
 };
 
 } // namespace PhantomLedger::pipeline::stages::products

@@ -89,15 +89,21 @@ prepareRouting(const market::Market &market, const clearing::Ledger *ledger,
   routing.channelCdf = channels.cdf();
   routing.paymentRules = paymentRules;
 
+  // unknown-counterparty-2026-09: the slot's own mass, read back from the
+  // CDF so a configured externalUnknownP moves the check share with it.
+  routing.unattributedSlotShare =
+      routing.channelCdf[static_cast<std::size_t>(
+          routing::Slot::externalUnknown)] -
+      routing.channelCdf[static_cast<std::size_t>(routing::Slot::p2p)];
+  if (const auto *catalog = market.commerce().catalog(); catalog != nullptr) {
+    routing.remoteMerchants = ::PhantomLedger::synth::counterparties::remote::
+        RemoteMerchantTable::build(*catalog);
+  }
+
   if (ledger != nullptr) {
     resolvePersonPrimaryIdx(market, *ledger, routing.personPrimaryIdx);
     resolveMerchantCounterpartyIdx(market, *ledger,
                                    routing.merchantCounterpartyIdx);
-
-    const entity::Key externalKey =
-        entity::makeKey(entity::Role::merchant, entity::Bank::external, 1u);
-
-    routing.externalUnknownIdx = ledger->findAccount(externalKey);
   }
 
   return routing;

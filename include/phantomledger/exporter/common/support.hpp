@@ -23,6 +23,10 @@ namespace time = ::PhantomLedger::time;
   if (isCard || id.role == entity::Role::card) {
     return "credit";
   }
+  // A bank-owned income ledger (bank-gl-2026-09), not a customer account.
+  if (id.role == entity::Role::ledger) {
+    return "general_ledger";
+  }
   if (id.role == entity::Role::business && id.bank == entity::Bank::internal) {
     return "business_checking";
   }

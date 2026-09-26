@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 
 namespace PhantomLedger::counterparties {
 
@@ -23,33 +24,48 @@ inline constexpr auto kGovernmentAccounts = std::to_array<Government>({
 inline constexpr std::size_t kGovernmentAccountCount =
     kGovernmentAccounts.size();
 
-enum class Insurance : std::uint8_t {
-  autoCarrier = 0,
-  homeCarrier = 1,
-  lifeCarrier = 2,
-};
-
-inline constexpr auto kInsuranceAccounts = std::to_array<Insurance>({
-    Insurance::autoCarrier,
-    Insurance::homeCarrier,
-    Insurance::lifeCarrier,
-});
-
-inline constexpr std::size_t kInsuranceAccountCount = kInsuranceAccounts.size();
-
-enum class Lending : std::uint8_t {
+// The six contract markets whose counterparty is drawn per contract from a
+// national provider pool (institutional-providers-2026-09). Each market is a
+// separate key block (entities/counterparties/providers.hpp), and marketName
+// is also the name of the market's provider-draw RNG lane, so renaming one is
+// a model change.
+enum class Market : std::uint8_t {
   mortgage = 0,
   autoLoan = 1,
-  studentServicer = 2,
+  studentLoan = 2,
+  autoInsurance = 3,
+  homeInsurance = 4,
+  lifeInsurance = 5,
 };
 
-inline constexpr auto kLendingAccounts = std::to_array<Lending>({
-    Lending::mortgage,
-    Lending::autoLoan,
-    Lending::studentServicer,
+inline constexpr auto kMarkets = std::to_array<Market>({
+    Market::mortgage,
+    Market::autoLoan,
+    Market::studentLoan,
+    Market::autoInsurance,
+    Market::homeInsurance,
+    Market::lifeInsurance,
 });
 
-inline constexpr std::size_t kLendingAccountCount = kLendingAccounts.size();
+inline constexpr std::size_t kMarketCount = kMarkets.size();
+
+[[nodiscard]] constexpr std::string_view marketName(Market market) noexcept {
+  switch (market) {
+  case Market::mortgage:
+    return "mortgage";
+  case Market::autoLoan:
+    return "auto_loan";
+  case Market::studentLoan:
+    return "student_loan";
+  case Market::autoInsurance:
+    return "auto_insurance";
+  case Market::homeInsurance:
+    return "home_insurance";
+  case Market::lifeInsurance:
+    return "life_insurance";
+  }
+  return "unknown";
+}
 
 enum class Tax : std::uint8_t {
   irsTreasury = 0,
@@ -62,8 +78,7 @@ inline constexpr auto kTaxAccounts = std::to_array<Tax>({
 inline constexpr std::size_t kTaxAccountCount = kTaxAccounts.size();
 
 static_assert(enumTax::isIndexable(kGovernmentAccounts));
-static_assert(enumTax::isIndexable(kInsuranceAccounts));
-static_assert(enumTax::isIndexable(kLendingAccounts));
+static_assert(enumTax::isIndexable(kMarkets));
 static_assert(enumTax::isIndexable(kTaxAccounts));
 
 } // namespace PhantomLedger::counterparties

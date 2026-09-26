@@ -354,10 +354,15 @@ new global target:
   being mistaken for an external boundary.
 - ATM withdrawals select from population-scaled external processor endpoints
   placed over customer home-area quantiles. Event-time relocation chooses the
-  area, four nearest endpoints form the local choice set, and a draw-free hash
-  gives each customer a stable primary point with occasional nearby use. Thus
-  the raw transaction graph has a distributed cash-access layer rather than a
-  customer or system-wide supernode.
+  area, the customer's own four nearest endpoints form the local choice set,
+  and a draw-free hash gives each customer a stable primary point with
+  occasional nearby use. Thus the raw transaction graph has a distributed
+  cash-access layer rather than a customer or system-wide supernode.
+  (Amended by atm-spread-2026-09: the four were first chosen per area with a
+  pool-index tie-break, so every resident of a city shared its four
+  lowest-numbered points. Ties at the cut are now broken by a per-(person,
+  area, rail) hash window, and worlds with four or fewer points per rail are
+  byte-identical to the previous selection.)
 - Cash deposits, billers, the card issuer, employers, and landlords use
   distinct external roles/pools; none falls back to a roster customer.
 - The retired population selection is still executed and discarded solely as
