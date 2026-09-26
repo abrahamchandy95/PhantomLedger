@@ -415,7 +415,7 @@ and limitations: the institutional-providers-2026-09 amendment below.
 |---|---|---|---|
 | Spousal | 60% separate accounts. **DEFINITION:** the share of couples that ACTIVELY ROUTE inter-spouse transfers between individually-owned accounts — PL models no joint accounts, so this means "at least some money kept separate", NOT fully-separate finances (`family/spouse.cpp separateAccountsP`); 2–6 txns/mo; breadwinner-directional 65%; LN($85, .90) | Bankrate 2026: 62% of coupled adults keep at least some money separate (36% hybrid + 26% fully separate); Census SIPP 2023: 23% hold NO joint account [Certain]. Under the written definition the comparator is 62% | CONFORMS (would be NONCONFORMING under the fully-separate reading — the definition is load-bearing) |
 | Allowances | weekly 70% (else monthly); Pareto($8, 1.8), mean ≈ $18/wk | Greenlight platform data (avg weekly $14.72 in 2023, $13.15 in 2025); Till Financial 2025-26 (avg $17/wk, median $10/wk); AICPA 2019 (~$30/wk self-reported, teen-heavy) [Certain] ⇒ transaction-data averages $13–17/wk | CONFORMS |
-| Tuition | 65% of students; 4–5 installments; LN($7,712, .35) each. **DEFINITION:** funds the student's FULL annual COST OF ATTENDANCE at PUBLISHED (sticker) prices, paid parent→STUDENT account (`family/tuition.cpp`), not a university payment | College Board 2025-26: published tuition+fees public 4yr in-state $11,950 / out-of-state $31,880 / private nonprofit $45,000; NET tuition after aid public $2,300 / private $16,910; total COA public in-state $30,990 / private $65,470 [Certain]. PL's $31–39k/yr sits on public COA; the private-COA tail lives in the lognormal spread | CONFORMS under the written definition |
+| Tuition | 65% of students, ONE PLAN PER RUN: 4–5 installments 30 days apart, from 0–9 days after the first day of the window's first calendar month. The PLAN TOTAL is LN($7,712, .35) in calibration-year dollars, split evenly with 3% noise, so an installment is about $1,540–1,930. **DEFINITION (owner decision 2026-09-26, the tuition-payee-2026-09 amendment):** a SCHOOL PAYMENT PLAN. One parent's local account pays every installment to the student's school: an education catalogue record open on every installment date, in the student's home area first (`family/tuition.cpp`, `family/schools.cpp`) | CFPB, *Tuition Payment Plans in Higher Education* (2023-09-14): a plan spreads tuition and other charges over several payments within one semester or term; nearly 4 million students each term are on a plan with their school; 87% of the about 450 sampled institutions offer plans directly [Certain]. College Board 2025-26: published tuition+fees public 4yr in-state $11,950 / out-of-state $31,880 / private nonprofit $45,000 a year; NET tuition after grant aid public $2,300 / private $16,910 [Certain]. Per term: published $5,975 / $15,940 / $22,500, net $1,150 / $8,455 [Derived] | **Payee CONFORMS** under the definition (one school per student, open for the whole plan; it was one account for the whole population). **Amount RE-OPENED, UNCITED:** the retired CONFORMS compared an annual cost of attendance with a per-installment misreading (see SUPERSEDED CLAIMS). On the corrected axis a plan is one term's bill, and the $7,712 median sits inside the published per-term band and above the public net price; which axis governs (published or net of aid, with or without school-billed housing) is the owner's call. The 65% share and the installment count are UNCITED; one plan per run is REGISTERED |
 | Parental support | 35% of eligible; Pareto(xm=$25, α=2.4)/txn | Fed SHED; AARP — incidence only, no per-transfer distributions exist | UNCITED (expect CHOICE) |
 | Sibling / grandparent / parent gifts | 15% pairs active, 18%/mo, LN($120,.90) · 8%, LN($150,.70) · 12%, Pareto($75,1.6) | — | UNCITED (expect CHOICE) |
 | Inheritance | DEATH-CAUSED estates only (see PART III); size LN($25,000, σ1.0) interim | Fed SCF intergenerational-transfer / net-worth tables | UNCITED — an SCF-anchored re-derivation is REGISTERED |
@@ -673,6 +673,8 @@ corrected row would re-propose the error.
 | Population 900 exercises both solo and ring card spends | The gate's own first run printed `ring 0` in both legs. `buildCompromisePlans` excludes ring participants and victims, so the unauthorized card rail is ring-free BY DESIGN at every population | **Audit the justification you wrote against the gate's own printed output** before calling a round done. The ring counter is retained as a TRIPWIRE, and is documented as one |
 | The TEST-NET attacker-IP claim is stale (grep found nothing) | The defect was written in INTEGER OCTET form: `Ipv4::pack(198, 51, 100, …)` | **Grep the constructor, not the rendered literal**, before calling an audit claim stale |
 | Fee and interest postings pay external business counterparties (the card issuer, fee-collection and OD LOC keys, `Role::business` on `Bank::external`; cash-hub-defect-2026-08 lists the card issuer among the distinct external keys) | Every documented core types the contra as a bank-owned internal income GL (FLEXCUBE internal leaf GL of category Income, Temenos ledger categories with no customer, Fiserv DNA GL majors with the customer number blank), and the card accounts the issuer key charged were themselves `Bank::internal` (bank-gl-2026-09) | **Internal is not the same as customer.** The bank's own ledgers need a role of their own, or every exporter types them as a deposit account or an external party |
+| Tuition is paid parent to STUDENT account: "`tuition.cpp pickPayer` draws a parent, the payee is the student" (the C4 definition, 2026-07-18) | When the definition was written the code already paid an education catalogue merchant, one drawn per run (`fhelp::pickEducationMerchant`, then `EducationPayees::pick` from `c874d15`, May 2026). `pickPayer` names the PAYER; the payee is set elsewhere (tuition-payee-2026-09) | **A definition verified against code must name the line that sets the field it defines.** The payer's picker proves nothing about the payee |
+| Tuition is LN($7,712, .35) EACH installment, about $31–39k a year, and CONFORMS to the public cost of attendance | `buildPlan` draws the lognormal once as the plan TOTAL and divides it over the 4–5 installments, and a student gets one plan per run (tuition-payee-2026-09) | **Per row, per plan, per year.** Read the axis of the draw off the code before comparing it with an annual figure |
 
 ═══════════════════════════════════════════════════════════════════════
 # OPEN ITEMS
@@ -3427,7 +3429,7 @@ own January and February annualize the two card GLs to 1,138,532 against
 
 | The value | The claim about the world | Class | Citation | Status |
 |---|---|---|---|---|
-| Every tuition installment pays one education merchant: `tuition::generate` (`transfers/legit/routines/family/tuition.cpp`) draws the payee once per run with `run.education().pick(rng)` | A population's students attend many schools; the Tuition row of the Family transfers table defines tuition as paid parent to STUDENT account, not a university payment | MEASUREMENT | the Tuition row of the Family transfers table in this document | **NONCONFORMING, REGISTERED, NOT FIXED** (pre-existing; found by this measurement, not moved by the round): 32,398 tuition rows in 2024 at pop 200,000, all on one biller-category merchant, the only flow outside the government payers and the GLs whose every row names one external account. Code and definition disagree, so the fix starts by deciding which is right; a per-student payee must draw on its own lane |
+| Every tuition installment pays one education merchant: `tuition::generate` (`transfers/legit/routines/family/tuition.cpp`) draws the payee once per run with `run.education().pick(rng)` | A population's students attend many schools | MEASUREMENT | the Tuition row of the Family transfers table in this document | **CLOSED by tuition-payee-2026-09** (pre-existing; found by this measurement, not moved by the round): 32,398 tuition rows in 2024 at pop 200,000, all on one biller-category merchant, the only flow outside the government payers and the GLs whose every row names one external account. Code and definition disagreed; the owner chose the code's reading (a school payment plan) and the definition was rewritten. Each student now pays one school open for the whole plan, home area first, on the student's own lane: at the same configuration the family pass spreads 45,571 generated tuition rows over 950 schools, the largest taking 191 (0.42%) |
 | Accounts above 2,048 payments a year rise from 5,602 to 6,443 | Realistic card merchants, ATMs, providers, large employers, SSA and the IRS are hubs at a bank of 200,000 customers | MEASUREMENT | the round research's hub section | **RECORDED**: the round removes the artifacts (the catch-all, the singleton providers, the ATM tie-break, the uniform rosters), not the hubs; the card-merchant growth is the density limitation the outlets-frequency amendment registered |
 
 ## Owner must do
@@ -3596,3 +3598,205 @@ from day 1 on, the fraud rows (the injector draws on the shared stream after
 the session) and the card lifecycle rows' devices and IPs all move, and the
 balances follow. Then re-run `docs/card_fraud_postgres_acceptance.sql` and
 `docs/card_fraud_device_ip_investigate.sql`. `kTableCount = 43` does not move.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: tuition-payee-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**Every tuition installment in a run paid one education-category catalogue
+merchant.** `tuition::generate` drew the payee once, before the student loop,
+with `EducationPayees::pick`, which also ignored liveness, so at pop 200,000
+over 2024 all 32,398 tuition rows named one external account (the registered
+limitation in the hub-realism-2026-09 round close). Each paying student now
+pays a school of their own: an education record open on every installment
+date, in the student's home area when that area has one, else any open
+education record, drawn on the student's own
+`{"family", "tuition-school", PersonId}` lane. The retired per-run draw is
+still spent where it was, so nothing else moves: the shared entity stream,
+every other family row, and every tuition row's source, amount, date, device
+and IP keep their pre-round values, and only the tuition target changes. The
+gate is `tests/test_tuition_payees.cpp`.
+
+## The owner's decision, and why the record could not make it
+
+The code and the Tuition row of the Family transfers table disagreed: the code
+paid an education merchant, while the row defined tuition as a
+parent-to-student transfer funding the full cost of attendance. Neither was an
+owner decision on record. The definition was written in the C4 definition pass
+(commit `bb2bdf9`, 2026-07-18) from the reading "`tuition.cpp pickPayer` draws
+a parent, the payee is the student", and the code already paid an education
+merchant then (`fhelp::pickEducationMerchant` before the `c874d15` refactor in
+May 2026, `EducationPayees::pick` after it). `pickPayer` names the payer. The
+same row misread the amount axis; both errors are in SUPERSEDED CLAIMS.
+
+Two facts favoured the code's reading. The plan's shape, 4 to 5 installments
+30 days apart from a term start, is a school tuition payment plan: CFPB (2023)
+describes plans that spread tuition and other charges over several payments
+within one semester or term, with nearly 4 million students each term on one
+with their school. And the parent-to-student reading would have made tuition
+an internal transfer adding to the student's cash, which the liquidity
+throttle turns into more student spending across the corpus.
+
+The owner decided, 2026-09-26: tuition is a school payment; the school is
+picked in the student's home area first, uniformly among education records
+open for the whole plan, falling back to every open education record; the
+row's amount wording is corrected to the code, and one plan per run is
+registered, not fixed.
+
+## The design
+
+1. **The payee law** (`transfers/legit/routines/family/schools.hpp`,
+   `schools::Directory`). The home area is the student's area on the date of
+   the plan's first installment, resolved with the home carriers the funeral
+   homes read (`remote::homeAreaAt`, so relocation counts). A school is open
+   for the whole plan when its operating interval holds the first and the last
+   installment date; intervals are contiguous, so it holds every date between.
+   The pool is the open education records located in the home area, or, when
+   there is none, every open education record, online ones included. The pick
+   is uniform within the pool and spends one bounded draw, or none when
+   nothing is open.
+2. **Draw discipline.** The retired per-run pick's draw (`uniformInt` over
+   every education record in the catalogue, open or not) is still spent first
+   on `{"family", "tuition"}`, so every coin, parent, amount and date on that
+   lane keeps its value. The school is picked once the plan's rows are drawn,
+   because it needs their dates, on `{"family", "tuition-school", PersonId}`,
+   whose one draw is the only thing on it (merchant-churn-2026-07 rule 2).
+3. **Routing-lane parity.** Every family routine makes its rows through one
+   transaction factory, whose device and IP routing draws on the shared
+   `{"family", "routing"}` lane and advances each payer's sticky device and
+   IP. A plan with no open school is still made, row by row, and then dropped;
+   skipping it would move the session of every family row made after it.
+4. **Carriers.** `EducationPayees` carries the catalogue, the home areas and
+   the relocation schedule; `relatives::makeEducation(plan, sources)` binds
+   them from the blueprint beside the funeral homes. Both engines and both
+   gate harnesses reach the family pass through `generateFamilyTxns(plan, ...)`
+   and nothing else constructs the view, so carrier parity holds by
+   construction.
+5. **Memory.** The directory holds the education records' catalogue indices
+   only (34 at pop 2,000, 1,115 at pop 200,000), is built once per family pass
+   and dropped with it. The per-student lane is transient; no population-sized
+   state is added (docs/ram_derive_dont_store.md).
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Tuition is a school payment plan: one parent's local account pays every installment of a plan to the student's school, an education-category catalogue record | Families pay tuition to the school, commonly on the school's installment plan over a term | CHOICE (definition) | Owner decision 2026-09-26. CFPB, *Tuition Payment Plans in Higher Education* (2023-09-14): nearly 4 million students each term on a plan with their school; 87% of about 450 sampled institutions offer plans directly [Certain] | **CONFORMS** to the definition. Declared deviations: the school is a card-catalogue education record, so it also takes card payments and its weight is card-spend volume, not enrollment; no aid, loan disbursement, 529 or refund flow exists |
+| The school is in the student's home area (on the first installment's date) when an education record there is open for the whole plan; otherwise any open education record | Students attend college close to home, but not all of them | CHOICE | Hillman, TICAS, *How Far Do Students Travel for College?* (October 2023; NPSAS:20, public and private non-profit institutions, exclusively online ones excluded), Table 1: median 17 miles, 57% within 25 miles, 69% within 50 miles [Certain]. NCES Digest Table 309.20 (fall 2022): 1,619,747 of 2,139,884 first-time students enrolled in their home state [Certain], 75.7% [Derived] | **DEVIATES-BY-CHOICE, REGISTERED**: a home area is one of the 71 city rows and a school's location is its centroid, so local means the same city row, and nobody with a local option leaves it. The realized local share is 0.991 of attributed plans at pop 200,000 (8,651 of 8,733) against 0.69 within 50 miles; at pop 2,000 it is 0.582 (53 of 91), because 38 plans live where no school is open. A mobility share would take one more draw on the student's lane; left to the owner |
+| Uniform over the pool | Enrollment is concentrated in large institutions | CHOICE | NCES Digest Table 317.40 (fall 2021): 196 of 3,777 institutions have 20,000 or more students and enroll 7,096,900 of 18,621,073 [Certain]: 5.2% of institutions, 38.1% of students [Derived] | **DEVIATES-BY-CHOICE, REGISTERED**: the catalogue carries no enrollment, and its weight is card-spend volume, so weighting by it would import a spending law into school size. Within an area schools are equally likely; the largest school takes 0.42% of tuition rows at pop 200,000 (950 schools paid of 1,115) |
+| A plan's school is open on every installment date | A merchant receives no payment outside its operating interval | INVARIANT | merchant-churn-2026-07 (the operating interval) | **ENFORCED**: sub-gate B1, 0 rows paying a closed school on both legs. The pop-200,000 leg carries 44 education records that open or close inside the tuition span, and a liveness-blind pick would pay a closed school on 659 attributed plans in expectation; disarmed (liveness ignored), 2,686 rows pay a closed school there. Sub-gates C2 and C3 on a hand-built catalogue |
+| A plan with no open school pays nothing, and its rows are still made | Dropping a row must not move another routine's device or IP | INVARIANT | none needed | **ENFORCED**: sub-gate A6 (every school closed: 0 tuition rows, the other family rows byte-identical); disarmed (such a plan skipped instead of made), A6 lands on the tuition-off digest. The case binds on neither corpus leg: every plan span there has an open education record somewhere |
+| The retired per-run draw is spent verbatim on `{"family", "tuition"}`; the school draws on `{"family", "tuition-school", PersonId}` | Nothing but the tuition target moves | INVARIANT | none needed | **ENFORCED**: sub-gate A, pinned on the pre-round build: the shared entity stream `ddfd735e74a97cd2`, the other 2,613 family rows (`3380fc1f52318eb5`, every field with device and IP) and the 210 tuition rows with the target masked (`c748e4816d8e5467`). Disarmed, the school drawn on the tuition lane leaves 182 tuition rows and moves every later family row's session; the burn skipped leaves 192 |
+| The largest school takes at most 0.25 of tuition rows | No external account takes every tuition row | INVARIANT (anti-hub) | none needed | **ENFORCED**: sub-gate B2 (the family pass, 0.0667 and 0.0042 on the two legs) and D (the settled corpus at the run-golden configuration: 180 rows over 32 schools, 0.0722). The bound clears the busiest home area's share of attributed plans (0.1758 and 0.1631), which a single open school there would take; disarmed (one school for every plan), 1.0 on every leg |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| One plan per run, anchored at the first day of the window's first calendar month | A student is billed every term they are enrolled | MEASUREMENT | CFPB 2023 (a plan covers one semester or term) | **NONCONFORMING, REGISTERED, NOT FIXED** (owner decision 2026-09-26; pre-existing): a one-year run from January pays the spring term only, and a twenty-year run one term in total. The fix adds rows, so it moves the row count and every corpus gate. It must also keep a student's school across plans: the lane is per student, but the pick reads each plan's dates through liveness and the home area, so a later plan could choose another school |
+| `buildPlan` anchors on `monthStart(window.start)` | Tuition rows fall inside the window | INVARIANT | none needed | **REGISTERED, not measured**: a window starting after the 10th of a month can date the first installments before the window start. Every corpus configuration in use starts on the 1st |
+| Few education records at gate-leg populations | A student's home city has schools | CHOICE | the outlets-frequency-2026-09 density limitation | **REGISTERED**: 34 education records at pop 2,000, so 38 of 91 attributed plans take the national fallback (a school in another city); 82 of 8,733 at pop 200,000 |
+| Sub-gate B3 attributes a plan through its payer | Every plan is checked for locality and a single school | CHOICE | none needed | **REGISTERED coverage cost**: a parent paying for two or more students is not attributed (9 of 100 payers at pop 2,000, 1,119 of 9,852 at pop 200,000); B1, B2 and D still read their rows |
+
+## Measured (`test_tuition_payees`)
+
+Every sub-gate passes; the binary runs in about 6 s at about 2.0 GB peak
+resident memory (the pop-200,000 world). The round was measured in an
+isolated export of the staged hub-realism tree (`git checkout-index`, its own
+build), because another round, evolver-lanes-2026-09, was being written in
+the same working tree at the time. It then landed on the committed
+evolver-lanes-2026-09 tree (`9ab2953`) and was re-measured there: sub-gates A
+to C read the same values, because neither the family pass nor the
+income-free world sees the evolver's lanes, and D reads as below.
+
+**A, lane isolation** (the run-golden world: pop 2,000, 60 days from
+2025-01-01, seed 3405691582, income off). Pinned on the pre-round build and
+unchanged on this one: the shared stream's next draw `ddfd735e74a97cd2` (the
+value `test_counterparty_sizes` sub-gate A also pins), 2,613 other family rows
+at `3380fc1f52318eb5`, and 210 tuition rows at `c748e4816d8e5467` with the
+target masked. With the target, the tuition digest moved from
+`496b31f798be1121` to `3801cba73588366e` (A5). Tuition off moves the other
+family rows to `6663293bdc946311` (A4); every school closed leaves them on the
+pin (A6).
+
+**B, the payee domain** on the family pass, as printed:
+
+| | run-golden world | pop 200,000, 2024, seed 42 |
+|---|---:|---:|
+| Education records (opening or closing inside the tuition span) | 34 (0) | 1,115 (44) |
+| Tuition rows, schools paid | 210, 32 | 45,571, 950 |
+| Largest school: rows, share | 14, 0.0667 | 191, 0.0042 |
+| Busiest home area's share of attributed plans | 0.1758 | 0.1631 |
+| Attributed plans: home area, national fallback, misplaced | 53, 38, 0 | 8,651, 82, 0 |
+| Plans a national pick would misplace, in expectation | 48.3 | 8,312.4 |
+| Plans a liveness-blind pick would send to a closed school, in expectation | 0.0 | 659.0 |
+
+The run-golden world has no school turnover inside its 60 days, so its
+liveness check cannot fail; the pop-200,000 leg carries that check.
+
+**C, the pure law** on a hand-built catalogue: the directory counts the 6
+education records and not the grocery; home area 5 splits 2,038 / 1,962 over
+its two open schools; a closing school, an opening school and no home area all
+fall back to the same three schools open throughout (1,377 / 1,332 / 1,291);
+nothing open returns no school and leaves the lane untouched; a pick spends
+exactly one bounded draw.
+
+**D, the settled corpus** at the run-golden configuration (the whole windowed
+engine, family on): 180 of the 210 generated tuition rows settle, over 32
+schools, none off the education catalogue or closed at its date, the largest
+13 (0.0722). On the hub-realism tree the same leg settled 184, the largest 14
+(0.0761); the funding screen moved with the evolver's spending rows.
+
+**Disarms**, each a temporary edit of the production code, each red:
+
+| Disarm | Red on |
+|---|---|
+| The school drawn on the tuition lane | A2, A3 (182 tuition rows) |
+| The retired draw not spent | A2, A3, A6 (192 tuition rows) |
+| Liveness ignored | B1 at pop 200,000 (2,686 rows paying a closed school), A6, C1 to C5 |
+| National pick only | B3 (49 and 8,330 plans misplaced), C1 |
+| A plan with no school skipped instead of made | A6 (it lands on the tuition-off digest `6663293bdc946311`) |
+| One school for every plan | B2 and D (share 1.0), B3, C1, C2 |
+
+**A harness trap, found and fixed in the gate.** `Router` keeps each person's
+sticky device and IP position in mutable state that `make` advances, so a
+second family pass on the same router starts where the first stopped. A6
+failed until each pass took its own copy of the world's pristine family
+router, as production does. A gate that runs the family pass twice on one
+`GateWorld` must copy the router.
+
+## Re-pins
+
+- `test_bank_ledger` and `test_remote_payees` hash every legit row with its
+  target, so both now mask the tuition target beside the fields their own
+  rounds masked. Under the extended masks the build before this round and
+  this build score the same on both trees the round was measured on. On the
+  landing tree (`9ab2953`): `42502a8f4aba68ee` over 174,319 rows, and
+  `e14294a2f362eda3` over 174,278 legit and 7,195 retired rows; the pre-round
+  measurement's build also reproduced that tree's run golden, so it really
+  was the pre-round code. On the staged hub-realism tree: `0188a8c6befb3903`
+  over 155,131 rows, and `8f0b962248053292` over 155,065 and 6,117. Nothing
+  else moved in the settled corpus.
+- `tests/golden_run.b2sum` is re-pinned once, from the evolver-lanes-2026-09
+  pin `9242daa97bd7dab3...` to
+  `b1f59ace045e6c6fdee6f8ef6038bfb801660760457786aba249885de6723e7b` over the
+  same 217,566 rows (on the hub-realism tree the same step read
+  `5b6ec79229b1f7fc...` to `866adb10a8252751...` over the same 183,820). The
+  pin was captured the way `tests/test_run_golden.cpp` documents (the
+  baseline deleted and the test re-run, which reports the capture as a skip),
+  and its domain predicate held. The full non-PostgreSQL suite then passed:
+  69 of 75 tests pass, the five PostgreSQL tests skip with code 77 and
+  `test_scale_soak` skips because it is opt-in (`PL_SOAK`).
+
+## Owner must do
+
+Decide the amount axis of the Tuition row (published or net of aid, with or
+without school-billed housing), and whether a student may leave a home area
+that has a school (the mobility share). Re-pin `tests/golden_tables.md5`,
+`tests/golden_tables_aml.md5` and `tests/golden_tables_card_fraud.md5` against
+PostgreSQL where their tables carry tuition rows, then re-run
+`docs/card_fraud_postgres_acceptance.sql` and
+`docs/card_fraud_device_ip_investigate.sql`; this adds to the re-pin the
+hub-realism-2026-09 round close lists, it does not replace it. The
+mule-temporal corpus regeneration listed there also retires the education hub
+from MulePatternLearner's hub registry. `kTableCount = 43` does not move.

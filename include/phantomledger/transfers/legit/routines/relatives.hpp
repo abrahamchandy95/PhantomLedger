@@ -121,7 +121,8 @@ makeAccounts(const FamilyLedgerSources &sources,
              family_rt::CounterpartyRouting routing) noexcept;
 
 [[nodiscard]] family_rt::EducationPayees
-makeEducation(const FamilyLedgerSources &sources) noexcept;
+makeEducation(const blueprints::LegitBlueprint &plan,
+              const FamilyLedgerSources &sources) noexcept;
 
 [[nodiscard]] family_rt::PostingWindow
 makePosting(const blueprints::LegitBlueprint &plan) noexcept;

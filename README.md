@@ -957,9 +957,9 @@ members carry no modeled deaths — declared).
 
 60% weekly / 40% biweekly. Amount follows Pareto (xm = $15, α = 2.2).
 
-### Tuition (parent → education merchant)
+### Tuition (parent → the student's school)
 
-55% probability per student per scheduling cycle. 4–5 installments; total per semester is lognormal(μ = 8.7, σ = 0.35). Installments every ~30 days with ±5 day jitter.
+A school payment plan. 65% of students get one plan per run, starting 0–9 days after the first day of the window's first calendar month: 4–5 installments 30 days apart, each posted 0–4 days late between 08:00 and 17:59. The plan total is lognormal(μ = 8.95, σ = 0.35), median about $7,712, split evenly with 3% noise per installment. One parent's own account pays every installment to one school: an education merchant open on every installment date, picked uniformly in the student's home city when that city has one, else among every open education merchant, on the student's own random lane (`family/schools.cpp`).
 
 ### Retiree Support (adult child → retired parent)
 

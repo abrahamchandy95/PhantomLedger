@@ -195,8 +195,16 @@ constexpr double kMaxAccountShare = 0.15;
 // routed on their own per-card lanes, below. Both steps only change the
 // session rng's day-shock sequence: see the matching note in
 // test_bank_ledger.
+//
+// RE-PINNED by tuition-payee-2026-09, which moves one field of the tuition
+// rows, their target, and masks it (see rowHash). Under the extended mask the
+// tree before this round and this build score the digest below over the same
+// 174,278 legit and 7,195 retired rows, so nothing else moved; on the staged
+// hub-realism tree the round measured the same equality at 8f0b962248053292
+// over 155,065 and 6,117. The digest under the narrower mask was
+// 60d0fb24bcc79c28.
 constexpr std::uint64_t kSharedStreamNext = 0x9e0a89591a4d861fULL;
-constexpr std::uint64_t kMaskedLegitDigest = 0x60d0fb24bcc79c28ULL;
+constexpr std::uint64_t kMaskedLegitDigest = 0xe14294a2f362eda3ULL;
 constexpr std::size_t kLegitRows = 174'278;
 constexpr std::size_t kRetiredRows = 7'195;
 
@@ -222,12 +230,20 @@ constexpr std::size_t kRetiredRows = 7'195;
          channels::isLiquidity(c);
 }
 
+// tuition-payee-2026-09 moved one field of the tuition rows, their target
+// (the student's school, where every row used to pay one education record),
+// so it is masked the same way.
+[[nodiscard]] bool isTuition(channels::Tag c) {
+  return channels::is(c, channels::Family::tuition);
+}
+
 [[nodiscard]] std::uint64_t rowHash(const Txn &row, bool maskTarget) {
   const bool posting = isBankPosting(row.session.channel);
   const bool maskIp = channels::isLiquidity(row.session.channel);
+  const bool tuition = isTuition(row.session.channel);
   std::uint64_t h = splitmix(keyWord(row.source));
-  h = splitmix(h ^ (maskTarget || posting ? 0x5A5A5A5AULL
-                                          : keyWord(row.target)));
+  h = splitmix(h ^ (maskTarget || posting || tuition ? 0x5A5A5A5AULL
+                                                     : keyWord(row.target)));
   h = splitmix(h ^ std::bit_cast<std::uint64_t>(row.amount));
   h = splitmix(h ^ static_cast<std::uint64_t>(row.timestamp));
   h = splitmix(h ^ row.session.channel.value);

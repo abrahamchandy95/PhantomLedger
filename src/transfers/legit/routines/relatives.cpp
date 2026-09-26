@@ -198,12 +198,16 @@ makeAccounts(const FamilyLedgerSources &sources,
 }
 
 family_rt::EducationPayees
-makeEducation(const FamilyLedgerSources &sources) noexcept {
+makeEducation(const blueprints::LegitBlueprint &plan,
+              const FamilyLedgerSources &sources) noexcept {
   if (sources.educationMerchants == nullptr) {
     return family_rt::EducationPayees{};
   }
 
-  return family_rt::EducationPayees{*sources.educationMerchants};
+  // tuition-payee-2026-09: the same home carriers the funeral homes read.
+  return family_rt::EducationPayees{*sources.educationMerchants,
+                                    plan.counterparties().homeAreas,
+                                    plan.counterparties().relocation};
 }
 
 family_rt::PostingWindow
@@ -255,7 +259,7 @@ generateFamilyTxns(const blueprints::LegitBlueprint &plan,
       makeKinship(plan, graph, std::span<const double>{multipliers}),
       makeAccounts(sources, transferModel->routing), makePosting(plan),
       emission);
-  run.education(makeEducation(sources));
+  run.education(makeEducation(plan, sources));
   run.funeralHomes(family_rt::FuneralHomes{plan.counterparties().homeAreas,
                                            plan.counterparties().relocation});
 

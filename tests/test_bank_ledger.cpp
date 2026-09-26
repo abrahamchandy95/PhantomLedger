@@ -159,8 +159,15 @@ constexpr std::uint64_t kGoldenSeed = 3405691582ULL;
 // before the round and after each step. test_merchant_churn sub-gate G now
 // holds the session rng's position fixed under a biller and favourite
 // stress, so a row move on this leg is a mechanism's size again.
+//
+// RE-PINNED by tuition-payee-2026-09, which moves one field of the tuition
+// rows, their target, and masks it (see maskedRowHash). Under the extended
+// mask the tree before this round and this build score the digest below over
+// the same 174,319 rows, so nothing else moved; on the staged hub-realism
+// tree the round measured the same equality at 0188a8c6befb3903 over 155,131
+// rows. The digest under the narrower mask was 7ff1cbfc35d35b98.
 constexpr std::uint64_t kSharedStreamNext = 0x9e0a89591a4d861fULL;
-constexpr std::uint64_t kMaskedDigest = 0x7ff1cbfc35d35b98ULL;
+constexpr std::uint64_t kMaskedDigest = 0x42502a8f4aba68eeULL;
 constexpr std::size_t kRows = 174'319;
 constexpr std::size_t kCardInterestRows = 1'495;
 constexpr std::size_t kCardFeeRows = 459;
@@ -192,8 +199,13 @@ const Key kRetiredCardIssuer = pl::entity::makeKey(
                   (static_cast<std::uint64_t>(key.bank) << 48U));
 }
 
+// tuition-payee-2026-09 moved one field of the tuition rows, their target
+// (the student's school, where every row used to pay one education record),
+// so it is masked beside the postings' targets.
 [[nodiscard]] std::uint64_t maskedRowHash(const Txn &row) {
-  const bool maskTarget = gl::isPosting(row.session.channel);
+  const bool maskTarget =
+      gl::isPosting(row.session.channel) ||
+      channels::is(row.session.channel, channels::Family::tuition);
   const bool maskSession = channels::isLiquidity(row.session.channel);
   std::uint64_t h = splitmix(keyWord(row.source));
   h = splitmix(h ^ (maskTarget ? 0x5A5A5A5AULL : keyWord(row.target)));

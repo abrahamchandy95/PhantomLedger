@@ -14,7 +14,6 @@
 #include "phantomledger/synth/counterparties/remote_payees.hpp"
 #include "phantomledger/synth/family/pick.hpp"
 #include "phantomledger/synth/personas/timeline.hpp"
-#include "phantomledger/taxonomies/merchants/types.hpp"
 #include "phantomledger/taxonomies/personas/types.hpp"
 #include "phantomledger/transactions/draft.hpp"
 #include "phantomledger/transactions/factory.hpp"
@@ -192,50 +191,39 @@ private:
   CounterpartyRouting routing_{};
 };
 
+/* WHERE a student's tuition is paid (tuition-payee-2026-09): the catalogue's
+ * education records, and the student's home area, resolved from the same
+ * home carriers the funeral homes read. Which school a plan pays is
+ * `schools::Directory`'s law; this view only carries its inputs. A view
+ * without carriers (a hand-built harness with no geography) resolves area 0,
+ * which holds no education record, so every plan falls back to the whole
+ * catalogue. Production always binds both carriers. */
 class EducationPayees {
 public:
   EducationPayees() = default;
 
-  explicit EducationPayees(const entity::merchant::Catalog &catalog) noexcept
-      : catalog_(&catalog) {}
+  EducationPayees(
+      const entity::merchant::Catalog &catalog,
+      std::span<const entity::geography::GeoAreaId> homeAreas,
+      const entity::parties::relocation::Schedule *relocation) noexcept
+      : catalog_(&catalog), homeAreas_(homeAreas), relocation_(relocation) {}
 
   [[nodiscard]] bool ready() const noexcept { return catalog_ != nullptr; }
 
-  [[nodiscard]] std::optional<entity::Key> pick(random::Rng &rng) const {
-    using ::PhantomLedger::merchants::Category;
+  [[nodiscard]] const entity::merchant::Catalog &catalog() const noexcept {
+    return *catalog_;
+  }
 
-    std::size_t educationCount = 0;
-    for (const auto &record : catalog_->records) {
-      if (record.category == Category::education) {
-        ++educationCount;
-      }
-    }
-
-    if (educationCount == 0) {
-      return std::nullopt;
-    }
-
-    const auto target = static_cast<std::size_t>(
-        rng.uniformInt(0, static_cast<std::int64_t>(educationCount)));
-
-    std::size_t seen = 0;
-    for (const auto &record : catalog_->records) {
-      if (record.category != Category::education) {
-        continue;
-      }
-
-      if (seen == target) {
-        return record.counterpartyId;
-      }
-
-      ++seen;
-    }
-
-    return std::nullopt;
+  [[nodiscard]] entity::geography::GeoAreaId
+  homeAreaAt(entity::PersonId student, std::int64_t timestamp) const noexcept {
+    return ::PhantomLedger::synth::counterparties::remote::homeAreaAt(
+        homeAreas_, relocation_, student, timestamp);
   }
 
 private:
   const entity::merchant::Catalog *catalog_ = nullptr;
+  std::span<const entity::geography::GeoAreaId> homeAreas_;
+  const entity::parties::relocation::Schedule *relocation_ = nullptr;
 };
 
 /* WHERE a decedent's funeral is paid (unknown-counterparty-2026-09): a

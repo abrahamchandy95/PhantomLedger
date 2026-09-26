@@ -253,6 +253,7 @@ set(PL_TRANSFERS_LEGIT_SOURCES
     src/transfers/legit/routines/family/siblings.cpp
     src/transfers/legit/routines/family/spouse.cpp
     src/transfers/legit/routines/family/support.cpp
+    src/transfers/legit/routines/family/schools.cpp
     src/transfers/legit/routines/family/tuition.cpp
     src/transfers/legit/routines/internal.cpp
     src/transfers/legit/routines/paychecks.cpp

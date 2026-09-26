@@ -228,6 +228,17 @@ set_tests_properties(test_remote_payees PROPERTIES TIMEOUT 900)
 pl_add_test(test_counterparty_sizes)
 set_tests_properties(test_counterparty_sizes PROPERTIES TIMEOUT 900)
 
+# tuition-payee-2026-09: ONE SCHOOL PER STUDENT. Tuition drew one education
+# merchant per run, so every installment paid one external account. Each
+# student now pays an education record open for the whole plan, in their home
+# area first, on their own lane. The run-golden world pins the shared stream,
+# every other family row and the target-masked tuition rows to the pre-round
+# build; the corpus legs check the payee domain, liveness, locality and the
+# largest school's share; the pure law runs on a hand-built catalogue.
+# MODEL-MOVING: every tuition row's target moves.
+pl_add_test(test_tuition_payees)
+set_tests_properties(test_tuition_payees PROPERTIES TIMEOUT 600)
+
 # bank-gl-2026-09: FEES AND INTEREST POST TO BANK-OWNED INCOME GLs. Card
 # interest, card late fees, overdraft fees and overdraft line-of-credit
 # interest paid three accounts typed as external business deposits. Each now
