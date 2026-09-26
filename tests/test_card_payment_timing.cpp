@@ -103,6 +103,7 @@ runCardSession(entity::card::Autopay autopay,
                                             .cycleDay = 10,
                                             .autopay = autopay,
                                         },
+                                        random::Rng::fromSeed(seed),
                                         random::Rng::fromSeed(seed), emitted);
 
   session.run(
@@ -240,7 +241,7 @@ void testFuturePostingDoesNotTimeTravel() {
           .cycleDay = 10,
           .autopay = entity::card::Autopay::full,
       },
-      random::Rng::fromSeed(909), emitted,
+      random::Rng::fromSeed(909), random::Rng::fromSeed(909), emitted,
       credit_cards::detail::LedgerBinding{
           .ledger = &ledger,
           .cardIdx = 0,
@@ -327,7 +328,7 @@ void testRejectedPaymentDoesNotReduceStatement() {
           .cycleDay = 10,
           .autopay = entity::card::Autopay::full,
       },
-      random::Rng::fromSeed(1'515), emitted,
+      random::Rng::fromSeed(1'515), random::Rng::fromSeed(1'515), emitted,
       credit_cards::detail::LedgerBinding{
           .ledger = &ledger,
           .cardIdx = 0,
@@ -453,7 +454,7 @@ void testAcceptedRefundRestoresLedgerAndStatement() {
           .cycleDay = 10,
           .autopay = entity::card::Autopay::full,
       },
-      random::Rng::fromSeed(1'717), emitted,
+      random::Rng::fromSeed(1'717), random::Rng::fromSeed(1'717), emitted,
       credit_cards::detail::LedgerBinding{
           .ledger = &ledger,
           .cardIdx = 0,
@@ -522,7 +523,7 @@ void testLatePaymentStaysOutOfEarlierStatement() {
           .cycleDay = 10,
           .autopay = entity::card::Autopay::manual,
       },
-      random::Rng::fromSeed(1'111), emitted);
+      random::Rng::fromSeed(1'111), random::Rng::fromSeed(1'111), emitted);
 
   const credit_cards::detail::CardPurchases purchaseView{
       .txns = std::span<const transactions::Transaction>(purchases),
@@ -592,7 +593,7 @@ void testOutOfWindowLateFeeIsNotBackdated() {
           .cycleDay = 10,
           .autopay = entity::card::Autopay::manual,
       },
-      random::Rng::fromSeed(1'313), emitted);
+      random::Rng::fromSeed(1'313), random::Rng::fromSeed(1'313), emitted);
   session.run(
       {
           .txns = std::span<const transactions::Transaction>(purchases),

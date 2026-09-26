@@ -144,7 +144,10 @@ Lifecycle::generate(const time::Window &window,
 
     const KeyText keyText(account->card.number);
     auto rng = rngFactory_.rng({"credit_cards", "lifecycle", keyText.view()});
-    detail::Session session(env, *account, std::move(rng), out);
+    auto routingRng =
+        rngFactory_.rng({"credit_cards", "routing", keyText.view()});
+    detail::Session session(env, *account, std::move(rng),
+                            std::move(routingRng), out);
 
     time::TimePoint priorClose = windowStart;
     for (const auto close : closes) {

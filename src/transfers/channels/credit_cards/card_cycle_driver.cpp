@@ -194,11 +194,12 @@ void CardCycleDriver::ensureSession(const entity::Key &cardKey, PerCard &card) {
 
   const KeyText keyText(account.card.number);
 
-  auto rng = random::RngFactory{rngBase_}.rng(
-      {"credit_cards", "lifecycle", keyText.view()});
+  const random::RngFactory lanes{rngBase_};
+  auto rng = lanes.rng({"credit_cards", "lifecycle", keyText.view()});
+  auto routingRng = lanes.rng({"credit_cards", "routing", keyText.view()});
 
   card.session = std::make_unique<detail::Session>(
-      *env_, account, std::move(rng), emitted_, binding);
+      *env_, account, std::move(rng), std::move(routingRng), emitted_, binding);
 
   card.sessionReady = true;
 }

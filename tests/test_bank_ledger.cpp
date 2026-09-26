@@ -143,13 +143,29 @@ constexpr std::uint64_t kGoldenSeed = 3405691582ULL;
 // so this 60-day leg keeps January and lands February almost anywhere in
 // that range whenever a biller or favourite set changes (registered in
 // docs/fraud_model_audit.md).
+// Values at that round's close: digest 0d570247c6b3bdb4 over 155,131 rows,
+// postings 1,463 / 467 / 251 / 34.
+//
+// RE-PINNED by evolver-lanes-2026-09, which closes that coupling. The shared
+// stream pin holds: both steps run inside the spending session. Per step on
+// this leg: the monthly evolver on its own per-person, per-month lanes,
+// 179,735 rows (d0e908064223de61; postings 1,423 / 470 / 286 / 34, January
+// byte-identical); then the card lifecycle rows routed on their own per-card
+// lanes instead of the session rng, below. Neither step changes a law. Each
+// takes a data-dependent run of draws off the session rng, which then draws
+// a different day-shock sequence (one Gamma(1.3) multiplier per day on every
+// spender), and the row count follows the shock sum: in the run-golden
+// binary, spending rows per unit of summed shock read 2,400 / 2,375 / 2,412
+// before the round and after each step. test_merchant_churn sub-gate G now
+// holds the session rng's position fixed under a biller and favourite
+// stress, so a row move on this leg is a mechanism's size again.
 constexpr std::uint64_t kSharedStreamNext = 0x9e0a89591a4d861fULL;
-constexpr std::uint64_t kMaskedDigest = 0x0d570247c6b3bdb4ULL;
-constexpr std::size_t kRows = 155'131;
-constexpr std::size_t kCardInterestRows = 1'463;
-constexpr std::size_t kCardFeeRows = 467;
-constexpr std::size_t kOverdraftFeeRows = 251;
-constexpr std::size_t kLocInterestRows = 34;
+constexpr std::uint64_t kMaskedDigest = 0x7ff1cbfc35d35b98ULL;
+constexpr std::size_t kRows = 174'319;
+constexpr std::size_t kCardInterestRows = 1'495;
+constexpr std::size_t kCardFeeRows = 459;
+constexpr std::size_t kOverdraftFeeRows = 285;
+constexpr std::size_t kLocInterestRows = 39;
 
 // The three keys the postings paid before this round.
 const Key kRetiredFeeCollection = pl::entity::makeKey(

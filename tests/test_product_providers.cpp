@@ -861,6 +861,9 @@ constexpr std::uint64_t kGoldenSeed = 3405691582ULL;
 // stream is unmoved (test_counterparty_sizes sub-gate A pins it), so the
 // income pass is the only source of the movement below.
 // Pre-round value 498e4bde6c6f83ea.
+// Checked and UNMOVED by evolver-lanes-2026-09: its two steps (the monthly
+// evolver and the card lifecycle rows on their own lanes) run inside the
+// spending session, after the build this pins.
 constexpr std::uint64_t kSharedStreamNext = 0x9e0a89591a4d861fULL;
 
 void runLegB() {

@@ -186,10 +186,19 @@ constexpr double kMaxAccountShare = 0.15;
 // moves no row count: the only legitimate rows it touches are the 109
 // chargeback credits, whose source is the fraud venue (measured: without
 // them the legit digest is identical with and without the venue factor).
+// Values at that round's close: 530f92353c0e0cb7 over 155,065 legit rows and
+// 6,117 retired rows.
+//
+// RE-PINNED by evolver-lanes-2026-09, which closes the evolver's rng
+// coupling; the shared stream pin holds. Per step: the monthly evolver on its
+// own lanes, 179,654 / 7,340 (d2c16e608a7a91f0); then the card lifecycle rows
+// routed on their own per-card lanes, below. Both steps only change the
+// session rng's day-shock sequence: see the matching note in
+// test_bank_ledger.
 constexpr std::uint64_t kSharedStreamNext = 0x9e0a89591a4d861fULL;
-constexpr std::uint64_t kMaskedLegitDigest = 0x530f92353c0e0cb7ULL;
-constexpr std::size_t kLegitRows = 155'065;
-constexpr std::size_t kRetiredRows = 6'117;
+constexpr std::uint64_t kMaskedLegitDigest = 0x60d0fb24bcc79c28ULL;
+constexpr std::size_t kLegitRows = 174'278;
+constexpr std::size_t kRetiredRows = 7'195;
 
 [[nodiscard]] std::uint64_t splitmix(std::uint64_t value) {
   value += 0x9E3779B97F4A7C15ULL;

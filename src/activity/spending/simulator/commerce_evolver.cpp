@@ -26,7 +26,7 @@ namespace {
 CommerceEvolver::CommerceEvolver(math::evolution::Config config)
     : config_(config) {}
 
-void CommerceEvolver::evolveIfNeeded(market::Market &market, random::Rng &rng,
+void CommerceEvolver::evolveIfNeeded(market::Market &market,
                                      std::uint32_t dayIndex) const {
   if (!isMonthBoundary(dayIndex, market.bounds().startDate)) {
     return;
@@ -45,7 +45,8 @@ void CommerceEvolver::evolveIfNeeded(market::Market &market, random::Rng &rng,
   // Draw-free, so the ordering changes no stream position.
   market.populationMutable().refreshHomes(boundary);
 
-  dynamics::monthly::evolveAll(rng, config_, commerce,
+  const random::RngFactory lanes{market.laneSeed()};
+  dynamics::monthly::evolveAll(lanes, config_, commerce,
                                market.population().count(), boundary,
                                market.population().homeAreas());
 }

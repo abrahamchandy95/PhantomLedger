@@ -70,13 +70,25 @@ struct LedgerBinding {
       ::PhantomLedger::clearing::Ledger::invalid;
 };
 
+/* TWO LANES PER CARD (evolver-lanes-2026-09). `rng` is the card's
+ * {"credit_cards", "lifecycle", card} lane and draws the behaviour (dispute
+ * coins, payment amounts and times). `routingRng` is its
+ * {"credit_cards", "routing", card} lane, and every row the session makes
+ * routes its device and IP on it. The routing calls spend a number of draws
+ * that depends on the payer's endpoint pool, and the rows exist only when the
+ * card had purchases, so the draw count depends on catalogue state. It used
+ * to be spent on the Environment's factory rng, which is the spending
+ * session's rng, and moved every later day frame; on the lifecycle lane it
+ * would move the card's own behaviour draws. On its own lane it moves
+ * nothing else. */
 class Session {
 public:
   Session(const Environment &env, Account account, random::Rng rng,
-          std::vector<transactions::Transaction> &out);
+          random::Rng routingRng, std::vector<transactions::Transaction> &out);
 
   Session(const Environment &env, Account account, random::Rng rng,
-          std::vector<transactions::Transaction> &out, LedgerBinding ledger);
+          random::Rng routingRng, std::vector<transactions::Transaction> &out,
+          LedgerBinding ledger);
 
   Session(const Session &) = delete;
   Session &operator=(const Session &) = delete;
@@ -141,12 +153,18 @@ private:
 
   [[nodiscard]] bool postToLedger(const transactions::Transaction &txn);
 
+  // The Environment's factory, routing on this card's own lane.
+  [[nodiscard]] transactions::Factory routedFactory() noexcept {
+    return env_.factory.rebound(routingRng_);
+  }
+
   const Environment &env_;
 
   Account account_;
   State state_{};
 
   random::Rng rng_;
+  random::Rng routingRng_;
 
   std::vector<transactions::Transaction> &out_;
 

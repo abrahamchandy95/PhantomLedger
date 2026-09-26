@@ -4,11 +4,60 @@
 #include "phantomledger/primitives/random/distributions/cdf.hpp"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
+#include <cstdio>
+#include <optional>
+#include <string_view>
 #include <vector>
 
 namespace PhantomLedger::activity::spending::dynamics::monthly {
 
 namespace {
+
+constexpr std::string_view kContactLane = "evolve-contacts";
+constexpr std::string_view kBillerLane = "evolve-billers";
+constexpr std::string_view kFavouriteLane = "evolve-favourites";
+
+/* The evolver's lanes for one month boundary (evolver-lanes-2026-09).
+ *
+ * ONE LANE PER PASS PER PERSON PER MONTH, because each pass's draw count
+ * depends on data: the contact add retries on self and duplicate picks,
+ * `churnBillers` retries up to 8 times per closed biller, and the favourite
+ * add retries on duplicates. On a shared stream each of those would move
+ * everything drawn after it (merchant-churn-2026-07 rule 2); on its own lane
+ * it moves nothing else. The person part is the PersonId (index + 1), the
+ * bootstrap lanes' convention; the month part is the calendar month of the
+ * boundary, so the same person gets the same draws for the same month
+ * whatever the window's start or length. Creating a lane draws nothing, so a
+ * pass that would not draw may skip it. */
+class MonthLanes {
+public:
+  MonthLanes(const random::RngFactory &factory, std::int64_t ts)
+      : factory_(factory) {
+    const auto date = time::toCalendarDate(time::fromEpochSeconds(ts));
+    const int written = std::snprintf(month_.data(), month_.size(), "%04d-%02u",
+                                      date.year, date.month);
+    monthLen_ = written > 0 ? static_cast<std::size_t>(written) : 0;
+  }
+
+  [[nodiscard]] random::Rng lane(std::string_view pass,
+                                 std::uint32_t personIdx) const {
+    std::array<char, 16> idBuf{};
+    const auto [ptr, ec] =
+        std::to_chars(idBuf.data(), idBuf.data() + idBuf.size(),
+                      static_cast<unsigned>(personIdx + 1u));
+    (void)ec;
+    const std::string_view id(idBuf.data(),
+                              static_cast<std::size_t>(ptr - idBuf.data()));
+    return factory_.rng({pass, id, std::string_view(month_.data(), monthLen_)});
+  }
+
+private:
+  const random::RngFactory &factory_;
+  std::array<char, 16> month_{};
+  std::size_t monthLen_ = 0;
+};
 
 /* Rebuild the national popularity CDF over the merchants LIVE at `ts`.
  *
@@ -128,8 +177,11 @@ void rebuildLiveBillerCdf(market::commerce::View &commerce, std::int64_t ts) {
  * closes still leaves the customer needing power, phone or insurance, so the
  * relationship MOVES to another provider rather than disappearing. Dropping
  * without replacing quietly thins every long-run household's recurring-debit
- * count — a realism regression dressed as a bug fix. */
-void churnBillers(random::Rng &rng, market::commerce::View &commerce,
+ * count — a realism regression dressed as a bug fix.
+ *
+ * Draws on the person's "evolve-billers" lane for the month, opened at the
+ * first closed biller: a person whose billers all survived spends nothing. */
+void churnBillers(const MonthLanes &lanes, market::commerce::View &commerce,
                   std::uint32_t personIdx, std::int64_t ts) {
   const auto *catalog = commerce.catalog();
   if (catalog == nullptr) {
@@ -141,6 +193,7 @@ void churnBillers(random::Rng &rng, market::commerce::View &commerce,
     return;
   }
 
+  std::optional<random::Rng> rng;
   auto row = billers.rowOf(personIdx);
   for (std::size_t slot = row.size(); slot-- > 0;) {
     const auto idx = row[slot];
@@ -148,6 +201,9 @@ void churnBillers(random::Rng &rng, market::commerce::View &commerce,
         idx >= catalog->records.size() || !catalog->records[idx].liveAt(ts);
     if (!dead) {
       continue;
+    }
+    if (!rng.has_value()) {
+      rng.emplace(lanes.lane(kBillerLane, personIdx));
     }
 
     /* Draw a live successor, avoiding one this person already bills with.
@@ -157,7 +213,7 @@ void churnBillers(random::Rng &rng, market::commerce::View &commerce,
     std::uint32_t successor = idx;
     for (int attempt = 0; attempt < 8; ++attempt) {
       const auto candidate = static_cast<std::uint32_t>(
-          probability::distributions::sampleIndex(cdf, rng.nextDouble()));
+          probability::distributions::sampleIndex(cdf, rng->nextDouble()));
       const auto current = billers.rowOf(personIdx);
       const bool held =
           std::find(current.begin(), current.end(), candidate) != current.end();
@@ -179,10 +235,13 @@ void churnBillers(random::Rng &rng, market::commerce::View &commerce,
 
 } // namespace
 
-void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
+void evolveAll(const random::RngFactory &laneFactory,
+               const math::evolution::Config &cfg,
                market::commerce::View &commerce, std::uint32_t totalPersons,
                std::int64_t ts,
                std::span<const entity::geography::GeoAreaId> homeAreas) {
+  const MonthLanes lanes(laneFactory, ts);
+
   /* MERCHANT LIVENESS FIRST, and the order is load-bearing: the favourites
    * pass below draws replacements from these laws, so it must see this
    * month's live set. Adding a favourite that closed last month would create
@@ -199,6 +258,10 @@ void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
 
   for (std::uint32_t personIdx = 0; personIdx < totalPersons; ++personIdx) {
     const auto row = contacts.rowOfMutable(personIdx);
+    if (row.empty()) {
+      continue; // evolveContacts returns before its first draw
+    }
+    auto rng = lanes.lane(kContactLane, personIdx);
     math::evolution::evolveContacts(rng, cfg,
                                     math::evolution::ContactRow{
                                         .row = row,
@@ -245,7 +308,7 @@ void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
       commerce.reachCdf().empty() ? commerce.merchCdf() : commerce.reachCdf();
 
   for (std::uint32_t personIdx = 0; personIdx < totalPersons; ++personIdx) {
-    churnBillers(rng, commerce, personIdx, ts);
+    churnBillers(lanes, commerce, personIdx, ts);
 
     /* Home-conditioned per person. `homeArea` comes from the population View,
      * which the relocation refresh re-points BEFORE this pass runs, so a
@@ -289,6 +352,7 @@ void evolveAll(random::Rng &rng, const math::evolution::Config &cfg,
     std::vector<std::uint32_t> working(live.begin(), live.end());
     const auto before = working.size();
 
+    auto rng = lanes.lane(kFavouriteLane, personIdx);
     math::evolution::evolveFavorites(rng, cfg, working, pool);
 
     if (working.size() != before ||

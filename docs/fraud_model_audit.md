@@ -3204,7 +3204,7 @@ the shipped 0.001, a tenfold lower floor moves no category share by more than
 | Online fraud-only merchants in the 1991 overlap leg | At 1991 the legitimate CNP share is 0.010, so an online record born in-window can take card-not-present fraud before any cardholder favours it | CHOICE | none needed | **REGISTERED, pre-existing, surfaced**: seed 7777777 puts 28 of 238 fraud rows (0.1176; 32 before the fraud pool carried the category law) on three online churn births (none an outlet), because the larger base catalogue re-keys the churn cohort; the pre-round world scored 0 at that seed and 0.0143 at the main seed. Printed, not bounded |
 | The gift-card share's "eligible categories carry about 40% of card payments" | Measured 0.569 before the category law and 0.638 after (pop 500,000, 2022), so 500 bp implies about 7.6 cards per person a year against the cited 5 | UNCITED input | `commerce/gift_cards.hpp` | **STALE, REGISTERED**: re-deriving (about 330 bp) moves the $500 precision gates, so it is its own round |
 | A re-presented deposit debit can post after its remote merchant closed | The remote pick reads liveness at emission; the funding replay re-presents an unfunded debit up to two times, at most 108.5 hours later | CHOICE | none needed | **REGISTERED, instrument corrected**: `test_remote_payees` C4 now reads liveness at emission (live at the row, or closed within the retry horizon derived from `ReplayFundingBehavior`); 1 of 85,966 rows posts 37.5 hours after its merchant closed |
-| The run-golden gate world's row count swings widely under any biller or favourite re-randomization | The monthly commerce evolver spends a data-dependent number of draws (`churnBillers` retries, `evolveFavorites` retries) on the session rng that then draws every day frame and population-dynamics multiplier | CHOICE (pre-existing coupling) | none needed | **REGISTERED, pre-existing, found this round**: in the gate harness (pop 2,000, 60 days, 2025) January's daily counts are byte-identical across the biller-lane step and diverge from day 31; two re-randomizations of the biller lane alone give 145,906 and 180,226 rows, and on the shipped tree renaming the biller lane moves the leg from 155,131 to 149,115 rows with January again byte-identical (a probe outside the repo). The production binary does not show it (183,820 rows under three biller lanes, and burning 1 to 3 draws at the month boundary moves rows by at most 0.024%). Fixing it moves every harness pin, so it is its own round |
+| The run-golden gate world's row count swings widely under any biller or favourite re-randomization | The monthly commerce evolver spends a data-dependent number of draws (`churnBillers` retries, `evolveFavorites` retries) on the session rng that then draws every day frame and population-dynamics multiplier | CHOICE (pre-existing coupling) | none needed | **REGISTERED, pre-existing, found this round**: in the gate harness (pop 2,000, 60 days, 2025) January's daily counts are byte-identical across the biller-lane step and diverge from day 31; two re-randomizations of the biller lane alone give 145,906 and 180,226 rows, and on the shipped tree renaming the biller lane moves the leg from 155,131 to 149,115 rows with January again byte-identical (a probe outside the repo). The production binary does not show it (183,820 rows under three biller lanes, and burning 1 to 3 draws at the month boundary moves rows by at most 0.024%). Fixing it moves every harness pin, so it is its own round. **CLOSED by evolver-lanes-2026-09, and the binary sentence is CORRECTED there**: the production windowed engine couples exactly the same way (the evolver spent 10,372 and 10,434 session draws at the February and March boundaries of the run-golden binary, and one extra session draw after the evolver at the February boundary moves it from 183,820 to 180,818 rows). It never flipped under a biller lane because no customer in the production world holds a biller that closes before March (13 and 45 do in the harness world), so `churnBillers` spent no draws there. The 0.024% figure is not reproduced |
 
 ## Where the implementation deviates from the design
 
@@ -3440,3 +3440,159 @@ this round lists what moves), then re-run
 corpus under a new dataset id, load a new TigerGraph snapshot and rebuild
 MulePatternLearner's hub registry, dropping or separating the four GL
 accounts' edges. `kTableCount = 43` does not move.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: evolver-lanes-2026-09
+═══════════════════════════════════════════════════════════════════════
+
+**What changed.** This closes the coupling the outlets-frequency-2026-09
+amendment registered (its limitation row on the run-golden gate world's row
+count). Two steps, each measured on its own.
+
+1. **The monthly evolver on its own lanes.** `dynamics::monthly::evolveAll`
+   (`activity/spending/dynamics/monthly/evolution.cpp`) took the spending
+   session's rng, which `DayDriver::runDay` then used for the day frame
+   (`DaySource::build`: one Gamma(1.3, 1/1.3) shock per day that multiplies
+   every spender's rate) and for the population-dynamics multipliers. All
+   three of its passes retry: the contact add on self and duplicate picks,
+   `churnBillers` up to 8 times per closed biller, and the favourite add on
+   duplicates. Their draw count therefore depends on the contact graph and on
+   the biller and favourite sets, and any change to those moved every later
+   day of the fold. Each pass now draws on a lane of
+   `RngFactory{Market::laneSeed()}`: {"evolve-contacts" | "evolve-billers" |
+   "evolve-favourites", PersonId, "YYYY-MM" of the boundary}.
+   `Market::laneSeed()` is new. It is the base seed `buildMarket` already used
+   for the `payees`, `payee-billers` and `payee-behavior` lanes (the run seed
+   in both engines, `spec.seed` in the gate harness), carried on the market so
+   the harness, which builds its own market through `buildMarket`, gets it
+   without new wiring. `CommerceEvolver::evolveIfNeeded` no longer takes an
+   rng. A lane is opened only when its pass would draw: the biller lane at the
+   person's first closed biller, the contact lane when the row is not empty.
+2. **Card lifecycle rows routed on their own lanes.** Found by the new gate
+   (sub-gate G, below) after step 1. `CardCycleDriver` makes card payment,
+   fee, interest and dispute rows through the spending session's transaction
+   factory, whose rng is the session rng, and `Factory::make` routes every
+   customer-session row's device and IP on it (a switch coin and a choice
+   index that depend on the payer's endpoint pool). The rows exist only when
+   the card had purchases, so this was a second catalogue-dependent run of
+   draws on the session rng, interleaved with the day frames from day 1. Each
+   card session (`transfers/channels/credit_cards/detail/session.hpp`) now
+   routes on its own `{"credit_cards", "routing", card}` lane beside the
+   existing `{"credit_cards", "lifecycle", card}` behaviour lane, in
+   `CardCycleDriver` and in the retained `Lifecycle` alike. The card's
+   behaviour draws are untouched.
+
+After both steps the session rng draws only the day frames and the dynamics
+multipliers, whose counts depend on the population, the window and their own
+draws, not on catalogue state. No law, constant or distribution changed, and
+the shared entity stream is untouched: both steps run inside the spending
+session.
+
+## How the production engine couples (the question the finding left open)
+
+The finding measured the coupling in the gate harness and reported that the
+run-golden binary did not flip at the biller-lane step. The windowed engine
+(`SessionBundle`, then `Session::advance`, then `DayDriver::runDay`) and the
+batch `Simulator` share `DayDriver`, so they couple identically, and a probe
+outside the repository (an environment-gated counter in `runDay`, removed)
+measured it on the binary. The evolver spent 10,372 session draws at the
+2025-02-01 boundary and 10,434 at 2025-03-01 (10,238 and 10,201 in the harness
+world), and one extra session draw right after the evolver at the February
+boundary moved the binary from 183,820 to 180,818 rows (-1.6%) with January
+byte-identical. It did not flip under a biller lane because the production
+world's catalogue is not the harness world's (the shared entity stream
+reaches `buildMerchants` at a different position), and no production customer
+holds a biller that closes before March, against 13 at February and 45 at
+March in the harness world, so `churnBillers` spent nothing there. The
+favourite and contact passes, and the card rows, coupled the binary all along.
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| The monthly evolver draws on {"evolve-contacts" / "evolve-billers" / "evolve-favourites", PersonId, "YYYY-MM"} off `Market::laneSeed()`, never on the session rng | A draw whose count depends on data is last on its own lane (merchant-churn-2026-07) | INVARIANT | none needed | **ENFORCED**: `test_merchant_churn` sub-gate G (the row below) |
+| Card lifecycle rows route device and IP on {"credit_cards", "routing", card}, never on the session factory's rng | The same rule: the routing draw count depends on the payer's endpoint pool, and the rows exist only for cards with purchases | INVARIANT | none needed | **ENFORCED**: sub-gate G runs with the card lifecycle on. With step 1 alone G1 is red (session rng after the window `c31ce07ee3446b94` shipped against `b3198d702fe6d39c` stressed) and green with the card lifecycle switched off (`949f0a7db44bce44` both), which is how the second coupling was located |
+| The session rng's position after the window does not depend on the biller and favourite sets | A row move on a harness leg is a mechanism's size, not a reshuffled day-shock sequence | INVARIANT | none needed | **ENFORCED**: G1 on the run-golden gate world with every customer handed a biller and a favourite that close in January (closed biller slots at 2025-02-01: 13 shipped, 2,000 stressed) reads `949f0a7db44bce44` both ways. G2, non-vacuity: the stressed corpus differs (150,379 against 150,492 session rows) and no customer holds the closed biller or favourite after the window. G3, the disarm (one session draw per closed biller slot at the boundary, the retired shape): `59502f28dd8ebcb6` against `47230c332333d628`, red |
+| The lane key is the calendar month, not the day index | A person gets the same draws for the same month whatever the window's start or length | INVARIANT (prefix identity) | none needed | **ENFORCED**: `test_card_point_in_time` and `test_arch_equivalence` green |
+| One BLAKE2b seed derivation per pass per person per month | The evolver stays O(persons) per month | MEASUREMENT | none needed | **RECORDED**: 283 ns per lane (a probe outside the repository, 2,000,000 lanes), so about 24 million lanes and 7 s serial at pop 500,000 over 24 months, and about 0.7 s of the 198 s run at 50,000 people over 730 days. The card routing lane adds one derivation per card per run |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| A gate leg's row count still rides on one day-shock realization | `DaySource` draws one Gamma(1.3, 1/1.3) shock per day that multiplies every spender's rate, so a 29-day month's mean shock has a standard deviation of 0.877 / sqrt(29) = 0.163 | CHOICE (pre-existing) | none needed | **REGISTERED**: rows now move with the shock sequence only when the session rng's own consumers change, never with catalogue state. Read a row move on a 60-day leg against the shock sum before calling it a mechanism: spending rows per unit of summed shock at the run-golden configuration read 2,400 / 2,375 / 2,412 before the round and after each step |
+
+## Where the implementation deviates from the design
+
+1. **Step 2 was not in the design.** The design moved the evolver alone. Its
+   own gate showed that the goal (a session rng whose draw count does not
+   depend on catalogue state) was not met while the card rows routed on the
+   session rng, and moving them in the same round costs one re-pin instead of
+   two (cash-hub-defect-2026-08, rule 4 of that round).
+2. **The lanes derive from the market, not from a factory bound into the day
+   driver.** The emission's `Threads::rngFactory` carries the same seed, but a
+   carrier bound into the driver is one the gate harness can miss; the market
+   comes from the one function every engine and the harness call.
+3. **Lanes are opened lazily.** Opening one draws nothing, so skipping it for
+   a person whose billers all survived, or whose contact row is empty, changes
+   no value.
+4. **Added:** sub-gate G, with its stress, its non-vacuity checks and its
+   disarm computed in-file.
+
+## Measured
+
+**Per step, `tests/golden_run.b2sum`** (pop 2,000, 60 days from 2025-01-01,
+seed 3405691582): the round starts from `5b6ec792...` over 183,820 rows (502
+fraud); the evolver lanes give
+`0b43b7137f4b2d66ee707e90ee20f713e844e308482e686b9d50debb3a5f1df8` over
+203,933 (+10.9%, 548 fraud); the card routing lanes give
+`9242daa97bd7dab3258e4c8bb5022521475e93b25d986d6565c19716b6f0ac57` over
+217,566 (+6.7%, 576 fraud), re-pinned the way `tests/test_run_golden.cpp`
+documents (the capture reported as a skip, then a pass).
+
+**Both moves are the day-shock realization.** Step 1 leaves January
+byte-identical (shock sum 23.722 over days 0 to 30 and 57,087 spending rows in
+both builds) and changes the shock sequence from 2025-02-01, where the session
+rng no longer hands the evolver its 10,372 draws: February's mean shock goes
+from 0.918 to 1.236 (-0.5 and +1.45 standard deviations). Step 2 changes it
+from day 1, where the first card rows used to route. Over the window the shock
+sum reads 50.333 / 59.562 / 64.058 (expected 60, standard deviation 6.79) and
+spending rows 120,815 / 141,479 / 154,523, a flat 2,400 / 2,375 / 2,412 rows
+per unit of shock (a probe outside the repository, removed). The pre-round pin
+sat on a low draw (-1.42 standard deviations); the new one sits at +0.60.
+
+**The finding, re-measured after the round.** Two re-randomizations of the
+biller lane (a diagnostic lane rename, not shipped) leave `test_bank_ledger`
+leg A at exactly 174,319 rows and leg B at 175,639 (2,278 postings), and the
+binary at exactly 217,566 rows; only the digests move (biller destinations).
+Before the round the same diagnostic moved leg A from 145,906 to 180,226.
+
+**In-test pins.** The shared entity stream pins hold at `9e0a89591a4d861f`
+(`test_bank_ledger` A1, `test_remote_payees` B1, `test_product_providers`
+B5), since both steps run after the build. Re-pinned, with the per-step
+values in their comments: `test_bank_ledger` A2 from 155,131 rows
+(`0d570247c6b3bdb4`; postings 1,463 / 467 / 251 / 34) to 179,735
+(`d0e908064223de61`; 1,423 / 470 / 286 / 34) to 174,319 (`7ff1cbfc35d35b98`;
+1,495 / 459 / 285 / 39); `test_remote_payees` B2 from 155,065 legit and 6,117
+retired rows (`530f92353c0e0cb7`) to 179,654 / 7,340 (`d2c16e608a7a91f0`) to
+174,278 / 7,195 (`60d0fb24bcc79c28`). `test_card_payment_timing` passes the
+new routing argument (its factories have no router, so the lane is never
+drawn).
+
+**Suite.** The full non-PostgreSQL suite passes, 68 of 68 (sub-gate G
+included; `test_arch_equivalence` and `test_card_point_in_time` green). The
+five PostgreSQL tests and the opt-in `test_scale_soak` were not run, and
+nothing connected to PostgreSQL.
+
+**For MulePatternLearner.** No law moved; the corpus is another realization of
+the same model. If the 2024 corpus the hub-realism round asked for has not
+been regenerated yet, regenerate it after this round.
+
+## Owner must do
+
+Re-pin `tests/golden_tables.md5`, `tests/golden_tables_aml.md5` and
+`tests/golden_tables_card_fraud.md5` against PostgreSQL: the spending rows
+from day 1 on, the fraud rows (the injector draws on the shared stream after
+the session) and the card lifecycle rows' devices and IPs all move, and the
+balances follow. Then re-run `docs/card_fraud_postgres_acceptance.sql` and
+`docs/card_fraud_device_ip_investigate.sql`. `kTableCount = 43` does not move.

@@ -28,14 +28,17 @@ inline constexpr int kDaysPerYear = 365;
 } // namespace
 
 Session::Session(const Environment &env, Account account, random::Rng rng,
+                 random::Rng routingRng,
                  std::vector<transactions::Transaction> &out)
-    : env_(env), account_(account), rng_(std::move(rng)), out_(out) {}
+    : env_(env), account_(account), rng_(std::move(rng)),
+      routingRng_(std::move(routingRng)), out_(out) {}
 
 Session::Session(const Environment &env, Account account, random::Rng rng,
+                 random::Rng routingRng,
                  std::vector<transactions::Transaction> &out,
                  LedgerBinding ledger)
-    : env_(env), account_(account), rng_(std::move(rng)), out_(out),
-      ledger_(ledger) {}
+    : env_(env), account_(account), rng_(std::move(rng)),
+      routingRng_(std::move(routingRng)), out_(out), ledger_(ledger) {}
 
 void Session::run(CardPurchases purchases, Cycle cycle) {
   events_.clear();
@@ -93,7 +96,8 @@ void Session::run(CardPurchases purchases, Cycle cycle) {
 
 void Session::collectPurchases(CardPurchases purchases, Cycle cycle) {
   const std::int64_t cycleEndEpoch = time::toEpochSeconds(cycle.endExcl);
-  const DisputeSampler sampler{env_.disputes, env_.factory};
+  const auto routed = routedFactory();
+  const DisputeSampler sampler{env_.disputes, routed};
 
   while (state_.purchaseCursor < purchases.indices.size()) {
     const auto txnIx = purchases.indices[state_.purchaseCursor];
@@ -244,7 +248,7 @@ void Session::postLateFee(time::TimePoint due, time::TimePoint windowEndExcl,
 
 void Session::book(const transactions::Draft &draft,
                    std::optional<LateFeeOnReject> lateFeeOnReject) {
-  const auto txn = env_.factory.make(draft);
+  const auto txn = routedFactory().make(draft);
   if (ledger_.ledger == nullptr) {
     // The retained Lifecycle has no screening ledger. Preserve its declared
     // assumption that generated lifecycle rows post successfully, while the
