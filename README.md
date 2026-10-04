@@ -283,7 +283,7 @@ Anchors: ~20% opt into courtesy (CFPB 2024); ~40% link a savings sweep when offe
 Per LOC account: `dollarSecondsIntegral[idx]`, the running ∫ max(0, -cash) dt updated at each balance-touching event from pre-transfer cash; `apr[idx]` ~ `Normal(0.18, 0.04)` clamped at 0; and `billingDay[idx]` uniform [1, 28], reserved for calendar billing. Billing is a rolling 30-day period (`kBillingPeriodSeconds = 30 × 86400`) from `lastBillingTs`:
 
 $$
-\text{interest} = \frac{\text{integral\_seconds} \times \text{APR}}{365.25 \times 86400}
+\text{interest} = \frac{\text{dollar-seconds integral} \times \text{APR}}{365.25 \times 86400}
 $$
 
 Interest debits cash directly (posting even over limit) as `loc_interest` to `GL00000004`; the integral resets and `lastBillingTs` moves to now. The first sweep (`lastBillingTs = 0`) only starts the clock. A draw is the deposit account going negative within LOC capacity; a separate per-customer Regulation Z credit account is a registered limitation.
@@ -334,7 +334,7 @@ A lognormal with median m uses `mu = ln(m)`: `X ~ exp(Normal(mu, σ²))` has med
 ### Counts: Gamma-Poisson Mixture
 
 $$
-\lambda_{\text{day}} \sim \text{Gamma}(k, \theta = \text{base\_rate}/k), \quad n \sim \text{Poisson}(\lambda_{\text{day}})
+\lambda_{\text{day}} \sim \text{Gamma}(k, \theta = \text{base rate}/k), \quad n \sim \text{Poisson}(\lambda_{\text{day}})
 $$
 
 A negative binomial per account-day (overdispersed, bursty); shape `k = 1.5`, weekend multiplier 0.8.
