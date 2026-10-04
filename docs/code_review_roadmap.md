@@ -8,7 +8,7 @@ on.
 1. One station per sitting (one to three sessions each), in order.
 2. Orient with `graphify query "<station topic>"` and
    `graphify explain "<concept>"`; skim `graphify-out/GRAPH_REPORT.md` once
-   first. The README's architecture sections say the same in prose.
+   first. [simulation.md](simulation.md) says the same in prose.
 3. Read a station's tests last, as the spec of what is load-bearing.
 4. Fix while reading only if byte-neutral: `make test` green, zero movement in
    `golden_run.b2sum`, `golden_tables.md5`, `golden_tables_aml.md5`,
@@ -106,7 +106,7 @@ L-10 anchors) and `recurring/` (rent, growth); `spending/market/` (census,
 paydays, commerce, cards), `spending/spenders/`, `spending/obligations/`,
 `spending/liquidity/`; `spending/dynamics/` (momentum AR(1), dormancy, paycheck
 boost, monthly evolution), `spending/actors/`, `spending/simulator/` (driver,
-day loop, warm start), `spending/routing/`. Check: README "Market Simulator" math and dynamics constants
+day loop, warm start), `spending/routing/`. Check: the [mathematical models](simulation.md#mathematical-models) and dynamics constants
 against code and doc; day loop independent of thread count (partitioned work,
 per-person draw lanes). Gates: `test_spending`, `test_session_vs_simulator`,
 `test_thread_invariance`.
@@ -178,7 +178,7 @@ stays `--usecase --population --days --seed --start`; env stays `PL_PG`,
 
 Re-read `docs/fraud_model_audit.md` end to end with the code fresh, checking
 every table row doc → code; this is where the review pays off. Then check the
-golden baselines and `README.md` for drift.
+golden baselines, `README.md` and `docs/simulation.md` for drift.
 
 ## Pace
 

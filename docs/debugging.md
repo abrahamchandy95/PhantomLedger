@@ -4,6 +4,40 @@
 opt-in through `make`: the determinism harness, runtime logging, and SQL corpus
 probes.
 
+## Build targets and variables
+
+| target | does |
+|---|---|
+| `make build` | configure + build (Release by default) |
+| `make test` | build + run the CTest suite |
+| `make run` | build + run the binary (silent: warnings and errors only) |
+| `make run-help` | build + print `--help` |
+| `make run-fast` | incremental build, then run (skips reconfigure) |
+| `make run-info`, `run-debug`, `run-trace`, `run-mem` | run with diagnostics ([runtime diagnostics](#runtime-diagnostics)) |
+| `make rebuild` | clean + build |
+| `make clean` | remove the build directory |
+
+| variable | default | meaning |
+|---|---|---|
+| `CONFIG` | `Release` | CMake build type (`Debug`, `Release`, `RelWithDebInfo`). |
+| `BUILD_DIR` | `build` | Out-of-tree build directory. |
+| `TESTS` | `ON` | `PL_BUILD_TESTS`: build the C++ tests. |
+| `BIN` | `phantomledger` | Binary name for the `run` targets. |
+| `ARGS` | *(empty)* | CLI arguments for the `run` targets; the only variable that forwards the CLI. |
+| `TOPICS` | `all` | Comma-separated topic filter for the diagnostics targets. |
+
+```sh
+make build CONFIG=Debug
+make test BUILD_DIR=build-debug CONFIG=Debug
+make run ARGS="--usecase standard --days 120 --population 200000"
+```
+
+Layout (LLVM-style): `include/phantomledger/<layer>/…` mirrors
+`src/<layer>/…` (the project prefix appears once), and a module is reviewed
+as the folder pair. Top-level folders are the dependency layers, enforced by
+the configure-time include-layer lint. Configure also fails if a `src/*.cpp`
+is not registered in `CMakeLists.txt`.
+
 ## The determinism harness
 
 `make test` runs the CTest suite. The same `(seed, config)` must give
@@ -77,8 +111,9 @@ PL_LOG_LEVEL=debug PL_LOG_TOPICS=spending,liquidity ./build/phantomledger ...
   fallback `warn`.
 - `PL_LOG_TOPICS`: comma-separated topics or `all`; unset means all.
 - `PL_PG`: PostgreSQL connection; unset or empty uses `dbname=phantomledger`
-  (README Usage).
-- `PL_FILE_ONLY=1`: test infrastructure only (serverless corpus-digest escape).
+  ([README](../README.md#run)).
+- `PL_FILE_ONLY=1`: test infrastructure only (serverless corpus-digest escape;
+  `aml-txn-edges` cannot run this way).
 
 In code:
 
@@ -112,7 +147,7 @@ The streamed ledger, shared by every use case:
 SELECT * FROM transactions ORDER BY row_seq;
 ```
 
-Card-fraud probes; adapt schema and prefix per use case (README Export Formats
+Card-fraud probes; adapt schema and prefix per use case ([exports.md](exports.md)
 has the schema map):
 
 ```sql

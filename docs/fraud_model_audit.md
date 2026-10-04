@@ -645,8 +645,8 @@ ADJUSTs or documented CHOICEs.
    report/chargeback/verdict availability; an executable GSQL temporal
    feature query, training pipeline, temporal splits, baselines and
    evaluation harness. The arc measures separability and stability of an
-   export, not a production detector; the README and online-GNN contract
-   say so.
+   export, not a production detector; `docs/exports.md` and the online-GNN
+   contract say so.
 
 # AMENDMENT: victim-session-2026-07
 
