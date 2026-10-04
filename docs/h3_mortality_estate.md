@@ -1,174 +1,133 @@
 # H3 mortality + estate + replenishment contract (macro-history-v1)
 
-**STATUS (2026-07-26): PART 3c-ii DELIVERED — H3 IS CODE-COMPLETE.
-Owner verification pending: run the U-8 ADDENDUM merge script
-(`merge_authority_h3_membership_2026_07.py`), `make test` (serverless
-44; MODEL-MOVING — delete and recapture all four goldens), and
-`graphify update .`. Everything through part 3b-i was verified in
-prior rounds; 3c-i (U-8 authority + docs) verified 2026-07-25.**
+Status: code-complete 2026-07-26 (part 3c-ii); earlier parts verified by
+2026-07-25; all four goldens recaptured. Authority: U-8 and addendum, now
+[Persona timeline, mortality and membership](fraud_model_audit.md#m-5-persona-timeline-mortality-and-membership).
 
-THE DEFECT THIS ARC CLOSED: nobody died and the population only ever
-grew — retirees seeded 65-99 would have reached 94-128 over the
-canonical window, the inheritance hazard was detached from any death,
-joiners aged as of sim start (the declared JOINER AGE AXIS ERROR),
-membership was joiners-only at a flat 2%/yr, and every account
-persisted forever.
+The defect closed: nobody died and the population only grew. Retirees
+seeded at 65-99 reached 94-128, inheritance ignored death, joiners aged as
+of sim start, membership was joiners-only at a flat 2%/yr, and accounts
+lived forever.
 
-## The lifespan primitive (step 1, VERIFIED)
+## The lifespan primitive (step 1)
 
-`lifespan::derive` — EXACTLY THREE draws per person on the isolated
-`{"mortality", personId}` lane: latent sex (50/50, declared), one
-uniform inverting the annual hazard walk over the EMBEDDED SSA 2023
-period life table (4.C6, log-linear interpolation), and the
-within-year placement. ALIVE-AT-ANCHOR invariant (conditional survival
-from the current age at the person's anchor — sim start for seeds, the
-JOIN date for the 3c-ii join cohort; death strictly after it); deaths
-anchor to BIRTH dates; age-120 cap. Declared: one period table
-era-wide, no SES gradients, uniform within-year timing. The Timeline
-carries `death`/`male` (filled inside timeline::derive — the
-persona-era eight draws are byte-identical), so every H2 consumer
-reads death with zero new threading. Gates: test_lifespan.
+`lifespan::derive` makes three draws per person on `{"mortality",
+personId}`: latent sex (50/50, declared), one uniform inverting the annual
+hazard walk over the embedded SSA 2023 period table (4.C6, log-linear
+interpolation), and within-year placement. Death lands strictly after the
+person's anchor (sim start for seeds, join date for joiners), counted from
+birth, capped at 120. Declared: one table era-wide, no SES gradient,
+uniform within-year timing. The Timeline carries `death` and `male`
+(filled in `timeline::derive`; the eight persona-era draws are unchanged),
+so H2 consumers read death without new threading. Gate: test_lifespan.
 
-## THE BEHAVIORAL/CONTRACTUAL LINE (declared)
+## The behavioral/contractual line (declared)
 
-**BEHAVIORAL flows STOP at death (all VERIFIED through 3b-i):**
+Behavioral flows stop at death:
 
 | Flow | Mechanism |
 |---|---|
-| Salary | active interval ends at min(retirement, death) |
-| SSA / disability | Recipient.end = death (survivor benefits registered) |
-| Revenue | months stop at death (perpetual retiree/HNW plans included) |
-| Spending session | Census::deathDays → the emission loop skips the person-day |
-| ATM | emission-side filter (no draws in the loop — stream byte-identical) |
-| Internal transfers | skip AFTER the source/destination draws burn (stream byte-identical) |
-| Rent | the lease dies with the tenant (declared shared-stream shift) |
-| Family gifts | dropDeadPartyRows — either party dead drops the row (external XF members unmodeled) |
-| Insurance claims | (3c-ii) post-draw filter at DEATH — claim filing is behavioral |
-| Split deposits | CODE-FACT: they consume the payday-inbound stream, which death-clipped income ends |
+| Salary | ends at min(retirement, death) |
+| SSA / disability | `Recipient.end` = death (survivor benefits registered) |
+| Revenue | stops at death, perpetual retiree/HNW plans included |
+| Session | `Census::deathDays`; the loop skips the person-day |
+| ATM | emission-side filter, stream byte-identical |
+| Internal transfers | skip after the draws burn |
+| Rent | lease dies with the tenant (declared shared-stream shift) |
+| Family gifts | `dropDeadPartyRows` drops rows with a dead party (external family unmodeled) |
+| Insurance claims | post-draw filter at death (filing is behavioral) |
+| Split deposits | follow the payday inbound stream, which death ends |
 
-**CONTRACTUAL flows keep posting against the estate until ACCOUNT
-CLOSURE at death + `pii::kSettlementDays` (120d) — DELIVERED 3c-ii:**
+Contractual flows post against the estate until closure at death +
+`pii::kSettlementDays` (120d), always after the site's draws burn:
 
-| Flow | Stop mechanism (all post-draw / lane-isolated) |
+| Flow | Stop |
 |---|---|
-| Subscriptions | emission skip at closeTs (candidates' month draws burn first) — PLUS the H1 CPI DEFECT FIX below |
-| Insurance premiums | emission skip at closeTs AFTER the hour/minute draws |
-| Loan/tax obligations | draft skip at closeTs AFTER draftFor's draws |
-| Card cycles | statement ladder truncates at closeTs − 50d (`kCardSettleTailDays` — grace 25d + late tail 20d + fee morning); per-card lanes keep every other card byte-identical |
+| Subscriptions, insurance premiums | emission skip at closeTs |
+| Loan/tax obligations | draft skip at closeTs |
+| Card cycles | statements end at closeTs - 50d (`kCardSettleTailDays`: grace 25d, late tail 20d, fee morning); per-card lanes |
 
-The 120-day settlement strictly contains the funeral (death+3-11d)
-and the estate distribution (death+30-90d), so every estate row is
-corpus-visible before the accounts close.
+120 days contain the funeral (death+3-11d) and estate (death+30-90d), so
+every estate row is visible before closure.
 
-**H1 WIRING DEFECT FIX (found + fixed at 3c-ii):** production
-subscriptions never scaled — the routines DebitEmitter (the ONLY
-production path, passes::addSubscriptions) drafted raw
-calibration-dollar amounts while the U-6 CPI wiring sat in the
-unreferenced channels emitter; test_econ_wiring's calibration gate
-pins 2019 rows, where scale == 1.0 hides the difference. Fixed:
-screen + draft realize sub.amount × priceScale(debit month). Gate:
-the deflated pair identity in test_membership.
+## H1 subscription defect (found and fixed in 3c-ii)
 
-## Death-caused estates + funerals (part 2b, VERIFIED)
+Production subscriptions never scaled: the routines `DebitEmitter`, the
+only production path (`passes::addSubscriptions`), drafted raw
+calibration dollars, while the U-6 CPI wiring sat in the unreferenced
+channels emitter. test_econ_wiring's calibration gate pins 2019 rows,
+where scale == 1.0 hides the difference. Fix: screen and draft use
+sub.amount × priceScale(debit month). Gate: the deflated pair identity in
+test_membership.
 
-The uncaused hazard (0.15% of retirees per 180-day sweep) is RETIRED.
-Every in-window death produces, in a FIXED per-decedent draw order on
-the `{"family","inheritance"}` lane:
+## Estates and funerals (part 2b)
 
-- **FUNERAL** at death+3-10d: one bill-channel payment from the
-  decedent's account to a funeral home in the decedent's city at the
-  death date (unknown-counterparty-2026-09 amendment in
-  `docs/fraud_model_audit.md`; a dedicated channel stays registered),
-  lognormal median **$6,300
-  calibration dollars** — the NFDA 2019 GPL blend (burial $7,640 /
-  cremation-with-viewing $5,150 at the ~55% 2019 cremation rate),
-  sigma .40, floor $1,000, CPI-realized.
-- **ESTATE** at death+30-90d (probate, declared): the interim
-  lognormal($25k, sigma 1.0) split over the heirs (children, else
-  supporting children; heirless estates undistributed — declared);
-  SCF-anchored size re-derivation = registered.
+The uncaused hazard (0.15% of retirees per 180-day sweep) is retired. Each
+in-window death draws, in fixed order on `{"family","inheritance"}`:
 
-Gates: test_estates (causation, timing windows, exactly one funeral
-per decedent, the dead-party filter over 9k+ gift rows, existence).
+- Funeral at death+3-10d: one bill-channel payment from the decedent's
+  account to a funeral home in their city as of death (unknown-counterparty-2026-09 amendment in
+  `docs/fraud_model_audit.md`; a dedicated channel is registered).
+  Lognormal median $6,300 calibration dollars (NFDA 2019: burial $7,640,
+  cremation with viewing $5,150, about 55% cremation), sigma .40, floor
+  $1,000, CPI-realized.
+- Estate at death+30-90d (probate): interim lognormal($25k, sigma 1.0)
+  split over children, else supporting children; heirless estates stay
+  undistributed. SCF-anchored sizing registered.
 
-## Membership + replenishment (part 3c-ii, DELIVERED)
+Gate: test_estates (causation, timing, one funeral each, the dead-party
+filter over 9k+ gift rows).
 
-**MEMBERSHIP [joinTs, closeTs)** (`pii::Membership`, rewritten; the
-flat-`Growth` model retired): joinTs = window start for seeds, the
-drawn join day for the cohort; closeTs = death + 120d. Constructed
-through THE one path — `join_cohort::membershipOf(pack, window)` — by
-exportAll/exportEntities, the streaming twin (main), and card_fraud.
+## Membership and replenishment (part 3c-ii)
 
-**JOIN COHORT** (`synth/personas/join.hpp`): joinerCount = population
-× Σ over window days of r(year(day)) / 365.2425 (linear, declared),
-r(y) from the EMBEDDED BEA population series (era_data.hpp — no new
-data), RATE-CLAMPED at coverage edges (frozen years read the last
-measured year-over-year rate). Joiners are the LAST K ids (seed
-roster byte-stable — gated); join day = EXACTLY ONE draw per joiner
-on {"join-cohort", personId}, inverse-CDF ∝ r(year(day)).
-`Pack::joinDays` carries the schedule; production fills it via
-`identity.windowDays` (simulate.cpp) and the blueprint fallback pack
-mirrors it.
+- Membership [joinTs, closeTs) (`pii::Membership`, replacing flat
+  `Growth`): joinTs is window start for seeds, else the join day; closeTs
+  is death + 120d. Built only by `join_cohort::membershipOf(pack, window)`
+  (exportAll/exportEntities, the streaming twin, card_fraud).
+- Join cohort (`synth/personas/join.hpp`): joinerCount = population × Σ
+  over window days of r(year(day)) / 365.2425, r from the embedded BEA
+  population series; frozen years reuse the last measured rate. Joiners
+  are the last K ids (seed roster byte-stable, gated), with one join-day
+  draw each on `{"join-cohort", personId}`, inverse-CDF ∝ r. Carried in
+  `Pack::joinDays` (from `identity.windowDays` in simulate.cpp; mirrored
+  by the blueprint fallback).
+- Age axis: joiners' dob, timeline and lifespan anchor at the join date
+  (dob.hpp, `timeline::deriveAll`, `lifespan::derive`), so a 2015 joiner gets 2015 ages and `personaAt(join) == seed`. Joiners
+  still generate from window start; the standard exporter's filter
+  decides visibility.
+- Fraud: each ring carries `participantsAliveEndEpoch`, the earliest death
+  among its fraud and mule participants (rings.hpp). Typology and
+  camouflage windows end 22 days before it (`kRingScheduleGuardDays`;
+  invoice can spill 21 days). Victims and the solo/unauthorized rail are
+  exempt (deceased-account fraud is real).
+- Exporters: standard customer.csv adds `closed_at` (kErCustomer 2 to 3
+  columns) and filters on [joinTs, closeTs). aml/aml_txn_edges Customer
+  status turns closed when the corpus end reaches closeTs
+  (`SharedContext::closedByPerson`). card_fraud Party `created_at` is
+  joinTs. AML corpora stay full-world; AML onboarding dates stay synthetic
+  (declared inconsistency, alignment registered).
 
-**THE AGE-AXIS REPAIR:** joiners' dob, persona timeline, and lifespan
-anchor at their JOIN date (dob.hpp / timeline::deriveAll /
-lifespan::derive share the per-person anchor) — a 2015 joiner draws
-2015-appropriate ages, personaAt(join) == seed, and death lands
-strictly after joining. Generation still emits joiners from window
-start (the pre-existing joiners-generate, exporter-hides model); the
-standard exporter's [joinTs, closeTs) filter is the visibility line.
+Gate: `tests/test_membership.cpp` covers each rule above plus the death
+and closure stops, card truncation, rings never recruiting the dead, and
+the filter (nothing before join, nothing after close).
 
-**FRAUD-SCHEDULING INTERVALS:** each ring plan carries
-`participantsAliveEndEpoch` = min death over its fraud + mule
-participants (rings.hpp, from the timeline carrier threaded through
-InjectorRingView); the injector clamps each ring's typology window
-AND its camouflage window to that horizon minus 22 days
-(`kRingScheduleGuardDays` — invoice's weekly lattice can spill ≤21d
-past its base range; the other typologies' tail paddings already
-contain their bursts). Victims exempt (deceased-account fraud is a
-real typology — declared); solo/unauthorized rail exempt.
+## Rules kept
 
-**EXPORTER LIFECYCLE:** standard customer.csv gains `closed_at`
-(schema kErCustomer 2→3 columns); the visible corpus filters both
-endpoints on [joinTs, closeTs); the AML/aml_txn_edges Customer status
-cell flips active → closed when the corpus end reaches closeTs
-(resolveEndOfWindowPersonas fills SharedContext::closedByPerson); the
-card_fraud Party created_at reports the membership joinTs. AML
-corpora stay FULL-WORLD (no row filter — declared); AML onboarding
-dates remain the synthetic derivation (declared inconsistency,
-alignment registered).
-
-Gates: tests/test_membership.cpp (serverless 44) — join sizing vs the
-BEA index, declining-growth placement skew, seed-roster byte
-stability, joiner ages at join, alive-at-join, interval semantics,
-the AML closure resolution, ATM/internal death stops (strict), the
-subscription/premium/obligation closure stops + estate-servicing
-windows, the claims death stop, card-ladder truncation, ring fraud
-never recruiting the dead, and the membership filter's
-pre-join-hides / zero-post-close invariant.
-
-**Law compliance:** NO new CLI; new randomness ONLY on the
-{"mortality"}, {"family","inheritance"} and {"join-cohort"} lanes;
-the ATM/internal/subscription/premium/obligation stops shift NO
-shared stream; rent's is the one declared shared-stream shift; card
-truncation and ring clamps live on isolated lanes. MODEL-MOVING:
-all four goldens recapture; everything rides the single wind-up
-commit.
+No new CLI. New randomness only on `{"mortality"}`,
+`{"family","inheritance"}` and `{"join-cohort"}`. Rent is the one shared
+stream that shifts; card truncation and ring clamps use isolated lanes.
 
 ## Authority
 
-U-8 (merged 2026-07-25) carries every row verified through 3b-i. The
-U-8 ADDENDUM merge script (`merge_authority_h3_membership_2026_07.py`,
-delivered 3c-ii; owner runs then deletes) appends the membership /
-replenishment / closure / defect-fix / fraud-interval rows. No fresh
-research anchor: the BEA population series is already embedded and
-provenance-pinned (U-4/U-5 lineage).
+U-8 (merged 2026-07-25) covers work through 3b-i. Its addendum script
+(`merge_authority_h3_membership_2026_07.py`, no longer in the repository)
+added membership, replenishment, closure, the defect fix and fraud
+intervals. The BEA series was already embedded (U-4/U-5 lineage).
 
-## Registered upgrades (the H3 ledger)
+## Registered upgrades
 
-Historical-period mortality tables; SES-differential mortality;
-surfacing sex to PII with a measured ratio; survivor benefits;
-SCF-anchored estate sizes; heirless-estate distribution; life-policy
-death benefits (sized together with estates); per-bank
-customer-acquisition series for join sizing; AML onboarding aligned
-to the membership axis; external family-member deaths.
+Historical-period mortality tables; SES-differential mortality; sex in PII
+with a measured ratio; survivor benefits; SCF-anchored estates and heirless
+distribution; life-policy death benefits (sized with estates); per-bank
+acquisition series for join sizing; AML onboarding on the membership axis;
+external family-member deaths.
