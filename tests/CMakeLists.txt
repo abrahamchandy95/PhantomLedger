@@ -258,8 +258,11 @@ set_tests_properties(test_bank_ledger PROPERTIES TIMEOUT 900)
 # the pre-round build, each mule's home ring against the topology and its
 # laundering rows' ring ids, every label clock against the rows, and MPL's
 # reveal guard and label-contract counts replayed before and after the
-# reveal. EXPORTER-ONLY: no golden moves.
+# reveal. It also reads the DDL's Account storage order, which a loading
+# job maps the columns onto. EXPORTER-ONLY: no golden moves.
 pl_add_test(test_mule_temporal_labels)
+target_compile_definitions(test_mule_temporal_labels PRIVATE
+    PL_MULE_TEMPORAL_GSQL="${CMAKE_CURRENT_SOURCE_DIR}/../schemas/mule_temporal.gsql")
 set_tests_properties(test_mule_temporal_labels PROPERTIES TIMEOUT 600)
 
 # macro-history-v1 H3 part 3c-ii (CLOSES H3): MEMBERSHIP

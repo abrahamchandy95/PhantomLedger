@@ -10,9 +10,12 @@ and the Zelle label fields are supervision only, never features.
 
 The Account vertex is MulePatternLearner's (its gsql/schema/schema.gsql):
 is_mule is stored last, while the Account table puts it sixth, in the
-label contract's load order. Load the table with MulePatternLearner's
-load_accounts job (gsql/schema/account_loading.gsql), which maps the
-fifteen columns by name.
+label contract's load order. A job loading the table maps its fifteen
+columns by position onto this order ($0 to $4, $6 to $14, then $5).
+MulePatternLearner's load_accounts (gsql/schema/account_loading.gsql)
+does, reading the columns by position under its own header; the
+tf_gnn_loader_v2 push does once its Account contract takes the fifteen
+columns (docs/mule_temporal.md, "Loading the corpus into TigerGraph").
 
 All association directions use this half-open visibility rule:
   rel.valid_from_seq <= seed_seq
@@ -24,8 +27,8 @@ No whole-history features, split flags, or persisted time encodings.
 
 Known-time fields are deferred, except the supervision labels' availability
 clocks. Valid time cannot exclude a backdated correction learned after a
-historical seed. This file defines no loader, query or model; the Account
-loader is MulePatternLearner's, named above.
+historical seed. This file defines no loader, query or model; the jobs
+that load it are named above.
 */
 
 CREATE GRAPH Mule_Pattern_Learner ()

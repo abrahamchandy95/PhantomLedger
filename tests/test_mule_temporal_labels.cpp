@@ -18,7 +18,9 @@
 //   A  NOTHING ELSE MOVES. Pinned on the pre-round build: the bytes of the
 //      26 other tables, and the Account table cut to its first six columns,
 //      which is byte-identical to the pre-round Account table.
-//   B  THE HEADER is the contract's, column for column.
+//   B  THE HEADER is the contract's, column for column, and the Account
+//      vertex of schemas/mule_temporal.gsql stores those columns at
+//      $0..$4, $6..$14, $5, the positions a loading job must map.
 //   C  THE TRUTH AND THE RING. is_mule is the account's mule flag; a mule's
 //      mule_ring_id is its home ring (the ring whose members hold its owner),
 //      every mule here has one, and every other account has -1. Against the
@@ -52,10 +54,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <format>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
 #include <set>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -182,6 +186,30 @@ std::string projection(std::string_view text, std::size_t columns) {
 
 std::uint64_t number(std::string_view cell) {
   return std::stoull(std::string{cell});
+}
+
+// The Account vertex's attributes in storage order, read from the DDL.
+std::vector<std::string> accountStorageOrder() {
+  std::ifstream in{PL_MULE_TEMPORAL_GSQL};
+  check(in.good(), "B: cannot read schemas/mule_temporal.gsql");
+  std::vector<std::string> names;
+  bool inside = false;
+  for (std::string line; std::getline(in, line);) {
+    if (!inside) {
+      inside = line.find("ADD VERTEX Account (") != line.npos;
+      continue;
+    }
+    if (line.find(") WITH") != line.npos)
+      break;
+    std::istringstream words{line};
+    std::string name;
+    words >> name;
+    if (name == "PRIMARY_ID")
+      words >> name;
+    if (!name.empty())
+      names.push_back(name);
+  }
+  return names;
 }
 
 // The exporter's account pseudonym, restated to find each row's registry
@@ -319,6 +347,26 @@ int main() {
                   "mule_ring_id,mule_label_source",
         "B: the header is not MPL's ACCOUNT_LOAD_COLUMNS");
   check(accountBytes.starts_with(header + "\r\n"), "B: the table's header");
+  // The DDL stores is_mule last, so a loading job reads the table's columns
+  // by position as $0..$4, $6..$14, $5: MPL's load_accounts mapping, and the
+  // one the tf_gnn_loader_v2 Account job needs (docs/mule_temporal.md,
+  // "Loading the corpus into TigerGraph").
+  {
+    const auto columns = mt::schema::kAccount.header;
+    std::vector<std::size_t> positions;
+    for (const auto &name : accountStorageOrder()) {
+      const auto it = std::ranges::find(columns, std::string_view{name});
+      check(it != columns.end(), "B: a DDL Account attribute is no column");
+      positions.push_back(static_cast<std::size_t>(it - columns.begin()));
+    }
+    const std::vector<std::size_t> loadOrder{0, 1,  2,  3,  4,  6,  7, 8,
+                                             9, 10, 11, 12, 13, 14, 5};
+    check(positions == loadOrder,
+          "B: the DDL's Account storage order is not the columns at $0..$4, "
+          "$6..$14, $5");
+    std::printf("  B header is MPL's; the DDL stores the columns at $0..$4, "
+                "$6..$14, $5\n");
+  }
 
   // The registry record behind each exported account id, checked against
   // the exporter's own participation rows first.

@@ -3857,8 +3857,8 @@ preparation checks it, every count is zero.
 | The value | The claim about the world | Class | Citation | Status |
 |---|---|---|---|---|
 | Account rows are written when the export finishes, in first-observation order | Entity metadata is emitted once, at first observation | CHOICE | `docs/mule_temporal.md` | **REGISTERED**: the label clocks are the only Account cells later activity sets; an export of a shorter window that ends before a mule's first laundering payment shows its first observation (checked in the fixture). The memory is one 24-byte entry per exported account |
-| Booleans render `True` and `False` | MPL's labels reference asks for lowercase flags | CHOICE | `docs/mule_temporal.md` (every boolean of this export renders so) | **REGISTERED**: convert the three flags the way the push converts `is_external` |
-| An external account's empty source is NULL in PostgreSQL | `COPY ... FORMAT csv` reads an unquoted empty field as NULL | CHOICE | none needed | **REGISTERED**: the validation script reads it with `coalesce` |
+| Booleans render `True` and `False` | MPL's labels reference asks for lowercase flags | CHOICE | `docs/mule_temporal.md` (every boolean of this export renders so) | **REGISTERED**: the `tf_gnn_loader_v2` push writes its shards with lowercase booleans, as it does for `is_external`; a CSV copied straight from the table for MPL's `load_accounts` needs the three flags lowercased, because TigerGraph's reading of `True` and `False` has not been checked |
+| An external account's empty source is NULL in PostgreSQL | `COPY ... FORMAT csv` reads an unquoted empty field as NULL | CHOICE | none needed | **REGISTERED**: the validation script reads it with `coalesce`; the loader's source audit counts every NULL as a violation, so its changed contract must allow this one column NULL (see the loader section below) |
 | The three new checks in `docs/research/validate_temporal_dataset.sql` and the two profile keys | The staged tables keep the contract | MEASUREMENT | none needed | **NOT RUN**: no PostgreSQL in this round |
 
 ## Measured (`test_mule_temporal_labels`)
@@ -3872,10 +3872,61 @@ code 77 and `test_scale_soak` skips because it is opt-in (`PL_SOAK`);
 serverless run of the binary (`--usecase mule-temporal`, pop 500, 30 days
 from 2019) completes with the topology wired in.
 
+## The loader must change in lockstep, and this round did not change it
+
+**The `tf_gnn_loader_v2` push refuses the fifteen-column Account table.**
+Found by the round's independent verification, after the export change was
+committed. The owner loads the graph with `tf-gnn-load --use-case
+mule-temporal push`, whose contract (`src/tf_gnn_loader/mule/contract.py`)
+still lists the six Account columns. `prepare_snapshot`
+(`src/tf_gnn_loader/mule/postgres.py`) compares every `mule_temporal`
+table's columns with that list and stops on `mt_Account` with `Source
+contract mismatch for mule_temporal."mt_Account"` before it audits, exports
+or loads any of the 27 tables, and its `mt_load_account` job writes the
+default for the nine label fields, so even a forced push would leave every
+ring at -1. The first commit of this round said the other 26 tables load
+"as before"; with this loader they do not load at all until it changes.
+
+The change is specified in `docs/mule_temporal.md`, "Loading the corpus into
+TigerGraph": the Account contract becomes the fifteen columns; its storage
+order (`graph_fields`) moves `is_mule` from sixth to last, so the generated
+job reads `$0` to `$4`, `$6` to `$14`, then `$5`, MPL's `load_accounts`
+mapping; the source audit allows `mule_label_source` NULL (every external
+account's, after the CSV `COPY`); `FORMAT_VERSION` goes from 4 to 5 so an
+export directory written under the six-column contract is refused; and the
+loading jobs are regenerated with `scripts/generate_mule_gsql.py`, with the
+loader's tests, fixture and docs updated to match. The loader's Account
+vertex already has the fifteen attributes in that order, so the graph's
+schema does not change.
+
+The loader is another repository, outside this round's scope, so the change
+was not applied to it. Its contract, audit and format version changes, the
+regenerated jobs and the new expected job in the loader's `tests/test_mule.py`
+were tried on a throwaway copy: the loader's unit tests gave the same result
+as on the unchanged loader (26 run, 16 pass, 10 PostgreSQL fixture tests skip
+without `MULE_TEST_DSN`) and the regenerated GSQL differed only in the Account
+job. Nothing of it has run against PostgreSQL or TigerGraph.
+
+Sub-gate B of `test_mule_temporal_labels` now reads the Account vertex of
+`schemas/mule_temporal.gsql` and requires it to store the table's columns at
+`$0` to `$4`, `$6` to `$14`, then `$5`, the mapping the loader's job and MPL's
+`load_accounts` use. Disarmed (the DDL with `is_mule` moved to sixth), it goes
+red.
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| The `tf_gnn_loader_v2` mule-temporal contract takes the fifteen-column Account table | The push is how the owner loads the graph | INVARIANT | `tf_gnn_loader_v2` `src/tf_gnn_loader/mule/contract.py` and `postgres.py` (`prepare_snapshot`) | **OPEN, OUTSIDE THIS REPOSITORY**: specified and tried on a throwaway copy, not applied. Until it lands, the push of a regenerated corpus stops before it loads anything |
+
 ## Owner must do
 
-Regenerate the mule-temporal corpus, clear the graph, load the Account table
-with MPL's `load_accounts` and the other 26 tables as before, give MPL's run a
-new `scope.id`, and train. Run `docs/research/validate_temporal_dataset.sql`
-and `docs/research/profile_temporal_dataset.sql` on the new corpus. The
-mule-temporal table count (27) does not move.
+1. Change `tf_gnn_loader_v2` as `docs/mule_temporal.md`, "Loading the corpus
+   into TigerGraph", specifies, before the next push.
+2. Regenerate the mule-temporal corpus and run
+   `docs/research/validate_temporal_dataset.sql` and
+   `docs/research/profile_temporal_dataset.sql` on it.
+3. Clear the graph's data, point `MULE_EXPORT_DIR` at a new empty directory
+   (the push resumes any export it finds there), and push. The push
+   reinstalls all 27 loading jobs, the new Account job among them.
+4. Give MPL's run a new `scope.id` and train.
+
+The mule-temporal table count (27) does not move.

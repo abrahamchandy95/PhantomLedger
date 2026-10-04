@@ -258,39 +258,121 @@ clocks, the schema defers known-time fields. Historical backtests on a
 corrected production snapshot require source arrival history or archived
 snapshots before they can claim freedom from that form of leakage.
 
-## Loading the Account table into MulePatternLearner
+## Loading the corpus into TigerGraph
 
 The Account vertex in [`schemas/mule_temporal.gsql`](../schemas/mule_temporal.gsql)
 is MPL's (its `gsql/schema/schema.gsql`), which stores `is_mule` last; the
-table keeps it sixth, in the contract's load order. Load the table with
-MPL's `load_accounts` job, not a positional one:
+table keeps it sixth, in the contract's load order. Any job that loads the
+table must therefore map its fifteen columns by position onto that storage
+order: `$0` to `$4`, then `$6` to `$14`, then `$5` for `is_mule`.
 
-1. Create a fresh graph with MPL's `gsql/schema/schema.gsql`. It is this
-   repository's DDL plus attributes MPL's own queries write on the payment
-   vertices; the Account vertex is identical.
-2. Create the job: `gsql gsql/schema/account_loading.gsql` in MPL. Its
-   `account_header` names the fifteen columns in the table's order and maps
-   each to its attribute by name.
-3. Copy `mule_temporal."mt_Account"` to a CSV with its header, for example
-   `\copy mule_temporal."mt_Account" TO 'Account.csv' WITH (FORMAT csv, HEADER true)`,
-   and run `load_accounts` with it as the `accounts` file. The REST++
-   streaming interface takes the data rows without the header. The table
-   renders booleans `True` and `False`, as it renders `is_external`; MPL's
-   labels reference asks for lowercase `true` and `false`, so convert the
-   three flag columns the way your push converts `is_external` if your
-   loader needs it.
-4. Load the other 26 tables with your existing jobs. They are unchanged.
-5. Run MPL's `mule train`. Its first preparation creates the scope, runs
-   the reveal, which finds no known label and writes the internal labels,
-   then runs `validate_label_contract`, which must report zero violations.
-   Give the run a new `scope.id` after a reload, as MPL's "Set up a graph"
-   guide says, so it prepares a new dataset on the new data.
+### The push needs a loader change first
 
-The owner's run order after a regeneration: regenerate the data, clear the
-graph, reload every table with the Account table through `load_accounts`,
-then prepare and train. A graph loaded before this change carries ring -1
-for every mule and keeps its revealed labels; reloading is what brings the
-rings in.
+The 27 tables reach TigerGraph through the push in `tf_gnn_loader_v2`
+(`tf-gnn-load --use-case mule-temporal push`), which audits the PostgreSQL
+`mule_temporal` schema, exports it to shards and loads them with its own 27
+`mt_load_*` jobs. That loader still expects the six-column Account table:
+
+- `prepare_snapshot` (`src/tf_gnn_loader/mule/postgres.py`) compares the
+  columns of every `mule_temporal` table with its contract
+  (`src/tf_gnn_loader/mule/contract.py`). On the fifteen-column
+  `mt_Account` it stops with `Source contract mismatch for
+  mule_temporal."mt_Account"`, before it audits, exports or loads any table,
+  so the push loads nothing.
+- Its `mt_load_account` job writes `_` (the attribute default) for the nine
+  label fields, so even a forced load would leave every ring at -1.
+
+So the push needs this change in the loader repository, which this
+repository does not change:
+
+1. In `contract.py`, the Account dataset's fields become the fifteen
+   columns, in the table's order and with the graph's types:
+   `id:STRING account_type:STRING is_external:BOOL first_seen_seq:UINT
+   first_seen_ts_ms:UINT is_mule:INT mule_label_known:BOOL
+   is_mule_masked:BOOL pu_label:INT mule_label_effective_seq:UINT
+   mule_label_effective_ts_ms:UINT mule_label_available_seq:UINT
+   mule_label_available_ts_ms:UINT mule_ring_id:INT mule_label_source:STRING`.
+2. In `contract.py`, `Dataset.graph_fields` gives Account's storage order
+   as the same fifteen fields with `is_mule` moved from sixth to last
+   (`self.fields[:5] + self.fields[6:] + self.fields[5:6]`), instead of
+   appending the nine label fields as absent ones. The generated job then
+   reads `VALUES ($0, $1, $2, $3, $4, $6, $7, $8, $9, $10, $11, $12, $13,
+   $14, $5)`, the same mapping as MPL's `load_accounts`.
+3. In `postgres.py`, the audit's "source values" check counts every NULL
+   as a violation. `mule_label_source` is NULL for every external account,
+   because this exporter's `COPY ... (FORMAT csv)` reads an unquoted empty
+   field as NULL, so that one column must be allowed NULL. The shard export
+   already writes NULL as an empty field (`NULL ''`), which TigerGraph
+   loads as the empty string, the attribute's default.
+4. In `contract.py`, `FORMAT_VERSION` goes from 4 to 5, so `load` and
+   `push` refuse an export directory written under the six-column contract
+   instead of feeding its Account shards to the new job.
+5. Regenerate `gsql/mule_temporal/loading_jobs.gsql` with
+   `scripts/generate_mule_gsql.py` (the install step refuses stale
+   generated GSQL; only the Account job changes, and `verify_load.gsql`
+   does not). Then update the loader's own record of the old contract:
+   the expected Account job in `tests/test_mule.py`, the Account fixture in
+   `tests/test_mule_postgres.py` (it fills unlisted columns with `unknown`,
+   which fails the audit's BOOL, INT and UINT checks on the new columns),
+   and the six-column wording in its `gsql/mule_temporal/schema.gsql`
+   header and `docs/mule_temporal.md`.
+
+The loader's Account vertex already holds the fifteen attributes in this
+storage order, so the graph's schema does not change. The loader's shard
+export writes booleans as lowercase `true` and `false`, so the table's
+`True` and `False` need no conversion on this path. Steps 1 to 4, the
+regeneration and the new expected job in `tests/test_mule.py` were tried on
+a throwaway copy of the loader, not on the loader itself: its unit tests
+gave the same result as on the unchanged loader (26 run, 16 pass, and the
+10 PostgreSQL fixture tests skip without `MULE_TEST_DSN`), and the
+regenerated GSQL differed only in the Account job. The fixture, schema
+comment and docs updates were not tried, and nothing of it has run against
+PostgreSQL or TigerGraph.
+
+### The run after a regeneration
+
+1. Regenerate the corpus with `--usecase mule-temporal` and PostgreSQL
+   (`PL_PG`), then run `docs/research/validate_temporal_dataset.sql` and
+   `docs/research/profile_temporal_dataset.sql` on it.
+2. Clear the graph's data. The load refuses a fresh load into a populated
+   graph; the schema stays.
+3. Point `MULE_EXPORT_DIR` at a new, empty directory. The push resumes any
+   export it finds there, so an old directory would load the old corpus
+   (once the format version moves, it refuses that directory instead).
+4. Run the push with the changed loader. Its install step drops and
+   recreates all 27 loading jobs, so the cleared graph gets the new Account
+   job.
+5. Run MPL's `mule train` with a new `scope.id`, as MPL's "Set up a graph"
+   guide says, so it prepares a new dataset on the new data. Its first
+   preparation creates the scope, runs the reveal, which finds no known
+   label and writes the internal labels, then runs
+   `validate_label_contract`, which must report zero violations. Run
+   straight after the load, before the reveal, that query reports one
+   `invalid_unknown` per mule (see
+   [why no label is marked known](#why-no-label-is-marked-known)).
+
+A graph loaded before this change carries ring -1 for every mule and keeps
+its revealed labels; reloading is what brings the rings in.
+
+### MPL's `load_accounts`, for the Account table alone
+
+MPL defines its own Account job, `load_accounts`
+(`gsql/schema/account_loading.gsql`), for an Account CSV with the fifteen
+columns. Its `account_header` names them in the table's order, and with
+`HEADER="true"` and that user-defined header the job skips the file's own
+header row and reads the columns by position under those names. A file
+whose columns are in another order would load into the wrong attributes;
+the table's order is the one the job expects. To use it, copy the table
+with its header, for example
+`\copy mule_temporal."mt_Account" TO 'Account.csv' WITH (FORMAT csv, HEADER true)`,
+and run the job with that file as `accounts` (MPL's labels reference says
+the REST++ streaming interface takes the data rows without the header).
+MPL's reference asks for lowercase `true` and `false`, and whether
+TigerGraph accepts the table's `True` and `False` has not been checked
+here, so lowercase the three flag columns on this path. This job loads the
+Account vertex only; the other 26 tables still come from the push, whose
+column check covers `mt_Account` too, so it needs the loader change above
+either way.
 
 ## DDL and verification
 
@@ -314,7 +396,9 @@ relabeling a P2P payment as laundering moves only the Account cells it
 should. `test_mule_temporal_labels` checks the same contract on a real
 world through the windowed engine (pop 600, 2019, ten rings): the other 26
 tables and the Account table's first six columns pinned on the pre-change
-build, the home ring of every mule against the topology and the ring ids
+build, the Account vertex of `schemas/mule_temporal.gsql` storing the
+columns at `$0` to `$4`, `$6` to `$14` and `$5` (the positions a loading
+job maps), the home ring of every mule against the topology and the ring ids
 of its laundering payments, every clock against an independent reading of
 the rows, and MPL's reveal guard and contract counts replayed before and
 after the reveal. The GSQL still needs execution on the target 4.2.5
