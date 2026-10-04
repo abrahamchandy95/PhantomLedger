@@ -26,7 +26,7 @@ PL_PG='dbname=phantomledger' ./build/phantomledger [options]
 | `--help`, `-h` | | Print usage. |
 
 - `PL_PG` is the PostgreSQL connection string, such as `'host=... port=... dbname=...'` (default `dbname=phantomledger`). With no server answering, the run stops before generating anything.
-- Output goes only to that database, never to files: the raw ledger to the `transactions` table, and each use case's tables to its own PostgreSQL schema (`public` for `standard`, otherwise the use-case name with underscores, such as `card_fraud`). The same seed and options rewrite identical content.
+- Output goes only to that database, never to files: the raw ledger to the `transactions` table, and each use case's tables under its own name (`public` for `standard`, otherwise the use-case name with underscores, such as `card_fraud`). The same seed and options rewrite identical content.
 - `make run ARGS="..."` builds, then runs the binary with those options; `make run-help` prints `--help`.
 
 ## Use cases
