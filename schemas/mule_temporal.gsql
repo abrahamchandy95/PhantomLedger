@@ -13,9 +13,8 @@ is_mule is stored last, while the Account table puts it sixth, in the
 label contract's load order. A job loading the table maps its fifteen
 columns by position onto this order ($0 to $4, $6 to $14, then $5).
 MulePatternLearner's load_accounts (gsql/schema/account_loading.gsql)
-does, reading the columns by position under its own header; the
-tf_gnn_loader_v2 push does once its Account contract takes the fifteen
-columns (docs/mule_temporal.md, "Loading the corpus into TigerGraph").
+does, reading the columns by position under its own header (see
+docs/mule_temporal.md, "Loading the corpus into TigerGraph").
 
 All association directions use this half-open visibility rule:
   rel.valid_from_seq <= seed_seq

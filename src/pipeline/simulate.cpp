@@ -229,7 +229,7 @@ void SimulationPipeline::buildEntities(SimulationResult &result,
    * synthesizeBusinessOwners — the proprietor cohort is the business-owner
    * cohort — and it is DRAW-FREE, so it appends nothing to `rng` and the
    * corpus stream does not move. Exported as `cf_Is_Merchant`, whose emptiness
-   * hard-aborts the downstream tf_gnn_loader_v2 push before any data reaches
+   * hard-aborts the downstream TigerGraph loader before any data reaches
    * TigerGraph. */
   entityStage::assignMerchantOwners(cps.merchants, holdings.accounts.registry);
 }

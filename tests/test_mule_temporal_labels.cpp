@@ -348,9 +348,8 @@ int main() {
         "B: the header is not MPL's ACCOUNT_LOAD_COLUMNS");
   check(accountBytes.starts_with(header + "\r\n"), "B: the table's header");
   // The DDL stores is_mule last, so a loading job reads the table's columns
-  // by position as $0..$4, $6..$14, $5: MPL's load_accounts mapping, and the
-  // one the tf_gnn_loader_v2 Account job needs (docs/mule_temporal.md,
-  // "Loading the corpus into TigerGraph").
+  // by position as $0..$4, $6..$14, $5: MulePatternLearner's load_accounts
+  // mapping (docs/mule_temporal.md, "Loading the corpus into TigerGraph").
   {
     const auto columns = mt::schema::kAccount.header;
     std::vector<std::size_t> positions;

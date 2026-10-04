@@ -18,9 +18,9 @@
   by declaration: most of an acceptance catalog is other banks' merchants and
   corporately owned chains, for which no retail Party is the owner.
 
-  Populating it is not optional downstream: `tf_gnn_loader_v2` aborts the whole
-  push at `sql/postgres/001_validate_sources.sql` when `cf_Is_Merchant` is
-  empty, so an empty table is a hard stop, not a quietly missing feature.
+  Populating it is not optional downstream: the TigerGraph loader aborts the
+  whole push when `cf_Is_Merchant` is empty, so an empty table is a hard
+  stop, not a quietly missing feature.
 
   DO NOT KEY ELIGIBILITY ON `Bank::internal`. It means "acquires through this
   bank" and covers ~2% of core merchants — five merchants at population

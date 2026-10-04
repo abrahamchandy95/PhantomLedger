@@ -189,7 +189,7 @@ inline constexpr Table kPartyHasCard =
 /* The merchant -> PROPRIETOR register, loaded as
  * `Party_Is_Merchant(FROM Party, TO Merchant)` with reverse edge
  * `Merchant_Owned_By_Party`, so the loader's view flips this column order.
- * MUST NOT BE EMPTY: tf_gnn_loader_v2 hard-aborts the whole push on it. */
+ * MUST NOT BE EMPTY: the TigerGraph loader aborts the whole push on it. */
 inline constexpr std::array<std::string_view, 2> kIsMerchantCols{"merchant_id",
                                                                  "party_id"};
 inline constexpr Table kIsMerchant =
@@ -361,7 +361,7 @@ inline constexpr Table kHasId = detail::make("Has_ID.csv", kHasIdCols);
 /* The party -> endpoint associations the institution has ON FILE, filtered
  * by registry coverage (`infra::enrollment`). Whole-window and
  * world-derived; transaction-time endpoint evidence is carried by
- * Transaction_Uses_IP instead. MUST NOT BE EMPTY: tf_gnn_loader_v2
+ * Transaction_Uses_IP instead. MUST NOT BE EMPTY: the TigerGraph loader
  * hard-aborts on it, and Party is the only path to the IP vertex. */
 inline constexpr std::array<std::string_view, 2> kHasIpCols{"party_id",
                                                             "ip_id"};

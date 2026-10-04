@@ -748,7 +748,7 @@ void testCardFraudExport(const pl::pipeline::SimulationResult &result,
   // ALSO INVERTED (merchant-ownership-2026-07). It was header-only
   // because `Role::business` and `Role::merchant` keys were disjoint
   // populations the world never joined — and an empty table hard-aborts
-  // the downstream tf_gnn_loader_v2 push at 001_validate_sources.sql with
+  // the downstream TigerGraph loader with
   // "cf_Is_Merchant is empty; Party_Is_Merchant edges would not load".
   // A validator in another repository is not something this suite can
   // see, which is exactly why the requirement is pinned here now.
@@ -785,7 +785,7 @@ void testCardFraudExport(const pl::pipeline::SimulationResult &result,
   //
   // merchant-coordinates-2026-07. The world has carried area centroids
   // since geo-causal-v1 and used them to drive distance-decay selection,
-  // but no exporter wrote one, so tf_gnn_loader_v2 filled
+  // but no exporter wrote one, so the TigerGraph loader filled
   // Merchant_Location/City/Zipcode lat+lon from schema defaults with
   // has_coordinates=false. What is gated here is not "a coordinate column
   // exists" — it is that the point is the RIGHT point.

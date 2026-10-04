@@ -92,7 +92,7 @@ struct Record {
   // header for that argument in full.
   //
   // EXPORTED as `cf_Is_Merchant`, whose emptiness hard-aborts the
-  // downstream `tf_gnn_loader_v2` push.
+  // downstream TigerGraph load.
   entity::PersonId owner = entity::invalidPerson;
 
   // merchant-churn-2026-07: the operating interval, half-open. Assigned by

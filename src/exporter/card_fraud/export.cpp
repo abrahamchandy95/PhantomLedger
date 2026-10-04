@@ -401,9 +401,9 @@ exportFromArtifacts(const ::PhantomLedger::pipeline::SimulationResult &world,
 
   /* ------------------------------------------------ Is_Merchant
    *
-   * MUST NOT BE EMPTY. `tf_gnn_loader_v2` aborts the entire push at
-   * `sql/postgres/001_validate_sources.sql` with "cf_Is_Merchant is empty;
-   * Party_Is_Merchant edges would not load". The graph schema declares
+   * MUST NOT BE EMPTY. The TigerGraph loader aborts the entire push with
+   * "cf_Is_Merchant is empty; Party_Is_Merchant edges would not load".
+   * The graph schema declares
    * `Party_Is_Merchant(FROM Party, TO Merchant)` with reverse edge
    * `Merchant_Owned_By_Party`, so the semantics is ownership.
    *

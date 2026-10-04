@@ -13,7 +13,7 @@
   so owner-edge presence cannot correlate with footprint, size or
   geography, and the table stays RESTRICTED TO VIEW-OBSERVED MERCHANTS
   because the Merchant vertex set is stream-derived. An empty table
-  hard-aborts the downstream tf_gnn_loader_v2 push.
+  hard-aborts the downstream TigerGraph load.
 
   Has_Device and Has_IP come from the world's usage records filtered by
   registry coverage (`infra::enrollment`) — NEVER from the stream, because
