@@ -1,460 +1,265 @@
-# Victimization: who gets defrauded, and how PhantomLedger should decide
+# Victimization: who gets defrauded, and how PhantomLedger decides
 
-**Status: DELIVERED (V1, V2, V4, V3), with ROUND 6/7 supersession notes.
-Authority rows: docs/fraud_model_audit.md U-11 (v1/v2) and U-12 (v3).
-Parts 1–5 below are the ORIGINAL research and plan, retained as the
-record of what was decided and why; explicit supersession notes mark
-claims that later lifecycle/session work changed. The DELIVERED sections
-at the end record what actually shipped, including the places the
-shipped model departs from this plan.**
+Status: delivered (V1, V2, V4, V3). Authority: `docs/fraud_model_audit.md`
+rows U-11 (V1, V2) and U-12 (V3). The audit, research, design and plan are the
+original record; round 6 and 7 notes and the delivered sections record what
+changed and what shipped.
 
-Origin: the owner's observation that a 500-person, 30-year corpus
-producing zero fraud victims is not realistic — "someone in another
-country can social-engineer them into paying $1,500 for a sick relative;
-this does not depend on the number of fraudulent people in the
-dataset." That is correct, and the audit below both confirms it and
-narrows the defect to something much smaller than first feared.
+Origin: a 500-person, 30-year corpus had zero fraud victims, yet a scammer
+abroad can talk anyone into paying $1,500 for a "sick relative" however many
+fraudsters the roster holds.
 
----
+## Audit (the code when this arc began)
 
-## Part 1 — AUDIT (what the code did when this arc began)
+Line numbers in `src/transfers/fraud/injector.cpp` are as audited.
 
-### F1. The blocking defect was one line
+- F1. One line blocked everything: `injector.cpp:577` returned `{}` when
+  `rings_.topology->rings.empty()`. Ring count
+  `round(lognormal(6.0, 0.4) × population/10000)` has no floor
+  (`rings.hpp:38`), so below about population 833 there are no rings, and
+  camouflage, ring laundering, card fraud, gift-card scams and ATO all
+  vanished. No rings is realistic at that size; rings silencing scams is a
+  defect.
+- F2. The unauthorized/scam rail already uses exogenous attackers (only the
+  AML ring typologies derive victims from fraudsters). `buildCompromisePlans`
+  (`:348`) draws victims via `rng.choiceIndex(personLimit)` over the whole
+  roster, excluding ring participants and ring victims (`:374`). Source: the
+  victim's own account; destination: a merchant (card-fraud-realism-v2 b-2);
+  IP: random. Round 7: every card-fraud positive therefore looks like a
+  derived debit card. Moving it onto the victim's issued credit card was
+  reverted: fraud is planned after `CardCycleDriver` closes statements and
+  generates payments and interest, so the swap created unserviced debt. This
+  needs lifecycle reordering and is open.
+- F3. The budget is window-scaled:
+  `txnFraudBudget = targetTxnFraudP × (realizedBaseCount + camouflage + illicit)`,
+  and `realizedBaseCount` grows with the window. Ring victim count is
+  window-invariant (sampled once in `make()`) but feeds only AML typologies.
+- F4. The level is about right. Population 500, 30 years, without F1:
+  0.0012 × 4.2M rows ≈ 5,000 fraud rows; ÷ U{5..14} events per case
+  (mean ≈ 9) ≈ 550 cases; 500 × (1 − e^−1.1) ≈ 333 distinct victims (67%).
+  Real world: about 69% victimized at least once in 29 years at a 4%/year
+  hazard. This justified decoupling visibility from ring count; it is not a
+  calibration. Card/scam prevalence and CNP share against a named issuer
+  series remain open benchmark gates.
+- F5. Victim selection was uniform (`rng.choiceIndex(personLimit)`), so every
+  victim-side feature was noise and a GNN had nothing to learn there.
 
-`src/transfers/fraud/injector.cpp:577`
+## Research: the two families run in opposite directions
 
-```cpp
-if (rings_.topology->rings.empty()) {
-  return {};        // the ENTIRE fraud stage
-}
-```
+| | Authorized scams | Unauthorized card fraud |
+|---|---|---|
+| What | victim deceived into paying (imposter, family-emergency, tech support, romance, job); the owner's example | third-party misuse of an existing account |
+| Incidence | skews younger: FTC Consumer Sentinel shows people in their 20s and 30s reporting a loss more often than 70+ | about 1 in 10 aged 16+ per year (BJS NCVS Identity Theft Supplement); existing credit-card misuse is the largest category |
+| Age and driver | severity skews older: median loss highest at 70-79 and 80+; elder typologies (grandparent, tech support) per FinCEN advisories and CFPB elder-exploitation SAR analyses | exposure: cards held, volume, e-commerce, income (higher-income households report more); mild age gradient peaking in prime working years, lower for 65+ |
+| Payment method | gift cards and wires skew older; P2P and crypto younger, crypto with the largest losses | |
+| Reimbursed | no: the victim authorized it | yes (Reg E / Reg Z), already modelled by the p=.85 report-and-reimburse layer (scam-fraud-2026-07) |
 
-Ring count is `round(lognormal(6.0, 0.4) × population/10000)` with no
-floor (`rings.hpp:38`), so it is **0 below roughly population 833**. At
-population 500 the whole fraud stage — camouflage, ring laundering,
-unauthorized card fraud, gift-card scams, ATO — returns empty.
+So retirees are low-exposure for card fraud and high-severity for scams; one
+"vulnerability" knob would model this backwards.
 
-This is a DEFECT, not a design. Ring absence at small population is
-realistic; ring absence silencing *scams* is not.
+Anchoring discipline:
 
-### F2. The unauthorized/scam rail is ALREADY exogenous-attacker
+- Measurement (defensible): the directions above and order-of-magnitude
+  prevalence (single-digit percent per cardholder-year; about 1 in 10 for
+  identity theft), robust across FTC, BJS, FinCEN and CFPB.
+- Choice (declared): every per-persona and per-age-band multiplier. Sources
+  give form and sign, not values.
+- A multiplier counts as measurement only after the owner verifies the FTC
+  Consumer Sentinel age-band loss table and the BJS ITS
+  victimization-by-income table. Until then each ships as a choice with a
+  named comparator, like `kCardNotPresentShare = 0.70`.
 
-This corrects an earlier claim in this arc that "victims are derived
-from fraudsters." That is true only for the AML ring typologies.
+Proposed persona mapping (directions defensible, magnitudes a choice):
 
-`buildCompromisePlans` (injector.cpp:348) draws victims with
-`rng.choiceIndex(personLimit)` over the **whole roster**, and explicitly
-EXCLUDES ring participants and ring victims (line 374). The compromise's
-source is the victim's own account, the destination is a merchant
-(card-fraud-realism-v2 b-2), and the IP is a random address. **No roster
-criminal participates in a card compromise or a scam.** The
-architecture the owner asked for is the architecture that exists — it is
-just gated behind F1.
-
-**ROUND 7 UPDATE:** “the source is the victim's own account” remains
-true and makes every card-fraud positive look like a derived debit card.
-A first-pass switch to the victim's issued credit-card liability was
-reverted after the full path was traced: fraud is planned only after
-`CardCycleDriver` has closed statements and generated payments/interest,
-so the late key swap created unserviced debt. Honest issued-card fraud
-requires lifecycle reordering and remains open. The exogenous-attacker
-conclusion is unchanged.
-
-### F3. Its budget is window-scaled, not window-invariant
-
-`txnFraudBudget = targetTxnFraudP × (realizedBaseCount + camouflage +
-illicit)`, and `realizedBaseCount` grows with the window. Compromise
-count therefore scales with corpus size. (Ring VICTIM count is
-window-invariant — sampled once in `make()` — but that population is
-separate and feeds only the AML typologies.)
-
-### F4. The rail's victimization level is already about right
-
-At population 500 over 30 years, had F1 not fired:
-
-```
-txnFraudBudget      ≈ 0.0012 × 4.2M corpus rows      ≈ 5,000 fraud rows
-÷ events per case   U{5..14}, mean ≈ 9               ≈   550 compromise cases
-distinct victims    500 × (1 − e^−1.1)               ≈   333  = 67% of people
-```
-
-Against a real-world ~69% victimized at least once over 29 years at a
-4%/year hazard. The LEVEL needs no repair. What needs repair is F1, and
-then WHO gets selected.
-
-**CURRENT CALIBRATION NOTE:** the calculation above justified decoupling
-fraud visibility from ring count; it did not calibrate a benchmark level
-against a named issuer series. Absolute card/scam prevalence and CNP
-share remain open benchmark gates.
-
-### F5. Victim selection was UNIFORM — and that was the realism gap
-
-`rng.choiceIndex(personLimit)` gives every customer identical hazard.
-Real victimization is strongly differentiated, and for a GNN a uniform
-draw is worse than unrealistic: it means there is **no learnable
-victim-side signal at all**. Every victim-side feature is noise by
-construction.
-
----
-
-## Part 2 — RESEARCH (who actually gets defrauded)
-
-### The central finding: the two families run in OPPOSITE directions
-
-This is the result that shapes the whole design, and it is why the owner
-is right that this deserves its own fraud type.
-
-**A. Authorized scams** (victim is deceived into paying — imposter,
-family-emergency, tech support, romance, job scams). The owner's
-example is exactly this class.
-
-- **Incidence skews YOUNGER.** FTC Consumer Sentinel Network reporting
-  consistently shows younger adults (20s–30s) reporting a *loss* to
-  fraud at a higher rate than adults 70+.
-- **Severity skews sharply OLDER.** Median loss per victim rises with
-  age and is highest in the 70–79 and 80+ bands.
-- Elder-specific typologies concentrate: the family-emergency
-  ("grandparent") scam and tech-support scam — the subject of FinCEN
-  elder-financial-exploitation advisories and CFPB analyses of
-  elder-exploitation SAR filings.
-- **Payment method is age-graded**: gift cards and wire transfers skew
-  older; peer-to-peer apps and cryptocurrency skew younger, with crypto
-  carrying the largest dollar losses.
-- **Not reimbursed** — the victim authorized the payment.
-
-**B. Unauthorized card fraud** (third-party misuse of an existing
-account).
-
-- BJS National Crime Victimization Survey, Identity Theft Supplement:
-  on the order of 1 in 10 persons aged 16+ per year experience identity
-  theft, with **misuse of an existing credit-card account the largest
-  single category**.
-- Victimization is **EXPOSURE-driven**: it rises with number of cards
-  held, transaction volume, e-commerce activity and income. Higher-income
-  households report higher rates.
-- Age gradient is mild and peaks in prime working years; **LOWER for
-  65+** — fewer cards, less online commerce.
-- **Reimbursed** (Reg E / Reg Z zero-liability), which PhantomLedger
-  already models via the p=.85 report-and-reimburse layer
-  (scam-fraud-2026-07).
-
-**So retirees are LOW-exposure for unauthorized card fraud and
-HIGH-severity for authorized scams.** One "vulnerability" knob would
-model this backwards.
-
-### ANCHORING DISCIPLINE — what is defensible and what is a choice
-
-Per this repository's convention:
-
-- **MEASUREMENT (defensible now):** the *directions* above, and the
-  order of magnitude of overall prevalence (single-digit percent per
-  cardholder-year; ~1 in 10 for identity theft broadly). These are
-  robust across FTC/BJS/FinCEN/CFPB publications.
-- **CHOICE (must be declared, not claimed):** every per-persona and
-  per-age-band multiplier below. I can supply the functional FORM and
-  the SIGN from published findings; the exact table values are not
-  something to reconstruct from memory into a constant.
-- **OWNER VERIFICATION REQUIRED** before any multiplier is treated as
-  MEASUREMENT: the specific FTC Consumer Sentinel age-band loss table
-  and the BJS ITS victimization-by-income table. Until then each row
-  ships as a CHOICE with a named comparator, exactly as
-  `kCardNotPresentShare = 0.70` did.
-
-### Proposed persona mapping (DIRECTION defensible; magnitudes CHOICE)
-
-| Persona | Unauthorized card exposure | Scam incidence | Scam severity |
+| Persona | Card exposure | Scam incidence | Scam severity |
 |---|---|---|---|
-| `student` | LOW — thin file, few cards | HIGH — job, fake-check, online-shopping scams | LOW |
-| `salaried` | HIGH — most cards, most e-commerce | baseline | baseline |
-| `freelancer` | MODERATE-HIGH | ELEVATED — invoice and job scams | MODERATE |
-| `smallBusiness` | HIGH — business card plus volume | ELEVATED — BEC-adjacent | HIGH |
-| `highNetWorth` | HIGHEST — card count, volume, ticket size | MODERATE | HIGHEST |
-| `retiree` | **LOW** — fewer cards, less online | MODERATE | **HIGHEST** |
+| `student` | low: thin file, few cards | high: job, fake-check, online-shopping | low |
+| `salaried` | high: most cards and e-commerce | baseline | baseline |
+| `freelancer` | moderate-high | elevated: invoice, job | moderate |
+| `smallBusiness` | high: business card, volume | elevated: BEC-adjacent | high |
+| `highNetWorth` | highest: card count, volume, ticket size | moderate | highest |
+| `retiree` | low: fewer cards, less online | moderate | highest |
 
----
+## Design
 
-## Part 3 — THE DESIGN
+- D1. Weight unauthorized victims by realized card activity, not a persona
+  table. Exposure already exists per person (persona spending, H4 era volume,
+  card ownership), so this follows derive-don't-store, needs no new anchors,
+  and the persona gradient emerges (a retiree has fewer card rows). The
+  injector got only the scalar `realizedBaseCount`, so exposure needs a
+  carrier (D-Q1).
+- D2. Authorized scams get their own fraud type. `Rail::giftCardScam` /
+  `FraudType::scamGiftCard` is one payment method of the class,
+  authorized-push-payment fraud. Proposed, append-only per the
+  designated-initializer law:
+  - `FraudType::scamImpostor = 6`: deceived wire, P2P or bank transfer;
+    `scamGiftCard = 5` stays as the family's gift-card method;
+  - hazard `persona-at-date × age-at-date`, normalized so total prevalence is
+    unchanged (the budget law `F = pL/(1−p)` still sets volume), as the
+    registered Bettencourt b′ tilt does;
+  - amount scaled by age band on top of CPI realization;
+  - method mix age-graded: gift card and wire older, P2P younger;
+  - no reimbursement (the card rail has p=.85): a real, learnable asymmetry.
+- D3. Anti-shortcut condition. A tilt makes persona and age correlate with the
+  label, which is realistic and is how this arc's original defect happened.
+  As in `test_card_baselines`, persona-only and age-only classifiers must stay
+  below a stated recall at precision ≥ 0.90. If a tilt clears it, fix the
+  exponent, not the gate. The gate ships in the same round as the tilt.
 
-### D1. Unauthorized rail: weight by EXPOSURE, not by a persona table
-
-The unauthorized gradient is mechanical — it is transaction exposure —
-and PhantomLedger already generates exposure per person (persona
-spending profiles, H4 era volume, card ownership). So weight victim
-selection by **realized card activity** rather than inventing a persona
-multiplier table.
-
-This follows the repository's DERIVE DON'T STORE law, needs no new
-anchors, and the persona gradient in the table above emerges as a
-consequence rather than being asserted. A retiree ends up
-low-exposure because the model already gives them fewer card rows.
-
-*Implementation cost:* the injector currently receives only the scalar
-`realizedBaseCount`. Per-person exposure needs a carrier. Two options
-for the owner (D-Q1 below): a per-person card-row count computed in the
-legit stage and carried in, or a cheaper proxy — credit-card ownership
-(already in `holdings.creditCards`) crossed with persona-at-date.
-
-### D2. Authorized scams: a NEW fraud type with its own hazard
-
-Today the only authorized-scam rail is `Rail::giftCardScam` /
-`FraudType::scamGiftCard` — gift card is one *payment method*, not the
-class. The class is authorized-push-payment fraud.
-
-Proposal, APPEND-ONLY per the designated-initializer law:
-
-- `FraudType::scamImpostor = 6` — victim-authorized transfer under
-  deception via wire / P2P / bank transfer. `scamGiftCard = 5` stays as
-  the gift-card payment method of the same family.
-- Selection hazard: `persona-at-date × age-at-date` susceptibility,
-  normalized so **total prevalence is unchanged** — the budget law
-  `F = pL/(1−p)` still owns how much fraud exists. This is the same
-  normalization technique the registered Bettencourt b′ tilt uses, and
-  it keeps this round orthogonal to prevalence calibration.
-- Severity: amount scales with age band (the steep part of the real
-  data), on top of the existing CPI realization.
-- Payment-method mix age-graded: gift card / wire older, P2P younger.
-- No reimbursement (contrast with the card rail's p=.85), which is a
-  real, learnable asymmetry the corpus already half-models.
-
-### D3. THE ANTI-SHORTCUT CONDITION (non-negotiable)
-
-Adding a persona and age tilt makes those attributes correlate with the
-label. That is realistic — and it is exactly how this arc's original
-defect happened. So, mirroring `test_card_baselines`:
-
-**A persona-only classifier and an age-only classifier must not solve
-the task.** Same metric: recall at precision ≥ 0.90 below a stated
-bound. If a tilt ever clears it, the exponent is wrong — not the gate.
-
-This gate ships in the SAME round as the tilt, never after.
-
----
-
-## Part 4 — ROUND PLAN
+## Round plan
 
 | Round | Content | Golden impact |
 |---|---|---|
-| **V1** | The F1 guard: replace the blanket `rings.empty()` return with per-family guards, so the unauthorized/scam family runs independently of ring topology. Plus a low-population fraud-visibility gate (the coverage hole that hid this). | **Likely ZERO** — for any config with ≥1 ring, behaviour is bit-identical. If a golden moves, that config had no rings and the golden was pinning the bug. |
-| **V2** | Exposure-weighted unauthorized victim selection (D1). Named lane. | MODEL-MOVING, four goldens |
-| **V3** | `scamImpostor` type + persona/age scam hazard + age-graded severity + payment-method mix (D2). | MODEL-MOVING, four goldens |
-| **V4** | Persona-only and age-only baselines (D3) + prevalence-suite extension covering victim-side distribution by persona. | ZERO |
+| V1 | per-family guards replace the blanket `rings.empty()` return; low-population fraud-visibility gate (the coverage hole that hid F1) | likely zero: configs with ≥1 ring are bit-identical, so a moved golden was pinning the bug |
+| V2 | exposure-weighted unauthorized victims (D1); named lane | model-moving, four goldens |
+| V3 | `scamImpostor`, persona/age scam hazard, age-graded severity, method mix (D2) | model-moving, four goldens |
+| V4 | persona-only and age-only baselines (D3); prevalence suite covers victim-side distribution by persona | zero |
 
-V1 is independently valuable and should land first regardless of what
-the owner decides about V2–V4.
+V1 lands first regardless. V4's harness ships with V3 and measures the
+pre-tilt world, or the tilt has no gate (the ordering error the Bettencourt b′
+plan records).
 
-Sequencing note: V4's baselines must exist before V3 lands, or the tilt
-has no gate — the same ordering error the Bettencourt b′ plan already
-records. Practically that means V4's harness ships WITH V3, measuring
-the pre-tilt world in the same round.
+## Owner decisions requested
 
----
+- D-Q1. Exposure carrier: per-person realized card-row count through the legit
+  stage (truer), or `holdings.creditCards` × persona-at-date (cheaper)?
+- D-Q2. V3 methods: wire/P2P beside gift cards, or also the bank-visible
+  `crypto_ramp_out` boundary? That rail must not imply native-token or wallet
+  semantics, which do not exist.
+- D-Q3. Multipliers as declared choices now (faster), or after verifying the
+  FTC/BJS tables (stronger; the audit convention prefers it for load-bearing
+  values)?
+- D-Q4. Own BEC/check-fraud typologies for `smallBusiness`, or consumer rails
+  for now? (Registered either way.)
 
-## Part 5 — OWNER DECISIONS REQUESTED
+## V3 delivered (victimization-2026-07b)
 
-- **D-Q1.** Exposure carrier for D1: per-person realized card-row count
-  (truer, needs a new carrier through the legit stage) or the cheaper
-  credit-card-ownership × persona-at-date proxy?
-- **D-Q2.** Scope of V3's payment methods: keep it to wire/P2P added to
-  the existing gift-card rail, or extend it to the legitimate bank-visible
-  `crypto_ramp_out` boundary now present in the model? Native-token/wallet
-  transfer semantics still do not exist and must not be implied by that rail.
-- **D-Q3.** Do the per-persona multipliers ship as declared CHOICEs now,
-  or do you want the FTC/BJS tables verified first so they can ship as
-  MEASUREMENT? The former is faster; the latter is stronger and is what
-  the audit convention prefers for anything this load-bearing.
-- **D-Q4.** Does `smallBusiness` get BEC/check-fraud typologies of its
-  own, or stay on the consumer rails for now? (Registered either way.)
+Authority: U-12.
 
-## V3 — DELIVERED (victimization-2026-07b)
+1. `FraudType::scamImpostor = 6` (`scam_impostor`) appended; no value moves.
+2. `Rail::scamImpostor`: the victim authorizes a push to the attacker's payee,
+   50/50 a wire-shaped `externalUnknown` transfer or a `p2p` push. Both carry
+   heavy legitimate volume, so the channel cannot label the row. Crypto stayed
+   out. The old reason (era lock ending 2020) is retired, since coverage
+   reaches 2024 and a bank-visible USD crypto-ramp boundary exists; adding it
+   needs an explicit prevalence, severity and labelling decision.
+3. Per-rail picker: card/ATO keep the V2 exposure CDF (date-independent,
+   built once); authorized rails use persona × age susceptibility rebuilt at
+   the case date; ATO drops and impostor payees (attacker accounts) draw
+   uniformly.
+4. The case date is drawn before the victim, so a scam finds whoever is
+   susceptible then. Persona and age change over life; the old order could
+   not express that.
+5. Incidence falls with age; severity rises about 3x. `scamWireAmount`
+   (median $900, sigma 1.3, clamped [$50, $50k]) applies era scale and age
+   severity to median and clamps alike, so only the level moves.
+6. Membership at the case date: joined for every rail, alive for scam rails.
+   Round 7 tightens this to `[joinTs, closeTs)`; card/ATO keep the
+   deceased-account exemption only in the 120-day estate-settlement tail.
+7. No reimbursement on either authorized rail (Reg E covers unauthorized
+   transfers; the UK code postdates the window). Gated, not assumed.
+8. `tests/test_card_scam_rail.cpp`: a pure layer (model shape) and a world
+   layer (the fold exercises it), with an exact, sampling-free per-band
+   hazard measurement over the real population at both window ends.
 
-The authorized-scam rail landed as what was then the last round on this
-arc's critical path. Authority: docs/fraud_model_audit.md U-12.
+### Departure: severity does not touch the gift-card rail
 
-What shipped:
+The plan had severity buy more gift cards (a rack caps one at $500). That put
+an 80-year-old at up to 13 × $500 = $6,500 within four hours from retail
+checking; most rows were unfundable and discarded, leaving a burst of declines
+no FTC spotlight describes. It was removed in the same round. Severity applies
+only to the impostor amount; the gift-card rail keeps the fixed-nominal
+denomination lattice (U-6) and a plain U{2..6} `targetSpan` (reasoning beside
+the constant in `injector.cpp`).
 
-1. `FraudType::scamImpostor = 6` (`scam_impostor`), appended — no
-   existing enum value moves.
-2. `Rail::scamImpostor` on the unauthorized family: the victim
-   AUTHORIZES a push to the attacker's payee account, 50/50 over a
-   wire-shaped `externalUnknown` transfer and a `p2p` app push. Both
-   channels carry heavy legitimate volume, so the rail cannot label the
-   row. Crypto stayed out of this delivered fraud round. The old rationale
-   that the era lock ended in 2020 is retired: coverage now reaches 2024, and
-   the legitimate model has a bank-visible USD crypto-ramp boundary. Adding it
-   to the scam method mix still requires an explicit prevalence/severity and
-   labeling decision; it is not a side effect of the legitimate module.
-3. THE PICKER IS PER RAIL. card/ato keep the v2 exposure CDF
-   (date-independent, built once); the two authorized rails draw on a
-   persona x age susceptibility hazard rebuilt AT THE CASE DATE; ATO
-   drops and impostor payees draw UNIFORMLY, because those accounts are
-   the attacker's and neither hazard bears on being one.
-4. THE DRAW ORDER REVERSED: the case date is drawn before the victim, so
-   a scam happens at a time and then finds someone susceptible at that
-   time. Persona and age are not person constants in this model, and the
-   old order could not express a life course.
-5. TWO OPPOSITE GRADIENTS, both asserted: incidence falls with age,
-   severity rises ~3x. `scamWireAmount` (median $900, sigma 1.3, clamped
-   [$50, $50k]) takes the era scale AND the age severity, both applied to
-   median and clamps so only the level moves.
-6. MEMBERSHIP AT THE CASE DATE: this round required joined for every
-   rail and ALIVE for the scam rails only. **ROUND 7 tightens it to the
-   full `[joinTs, closeTs)` interval:** card/ato retain the
-   deceased-account-fraud exemption only during the 120-day
-   estate-settlement tail, never after account closure.
-7. NO REIMBURSEMENT on either authorized rail (Reg E covers unauthorized
-   transfers; the UK code postdates the window) — gated, not assumed.
-8. `tests/test_card_scam_rail.cpp`: a pure layer (the model's shape) and
-   a world layer (the fold actually exercises it), including an
-   exact — sampling-free — per-band hazard measurement over the real
-   population at both ends of the window.
+### Exposed by V3: the arch-equivalence world-shape trap
 
-### DEPARTURE FROM THE PLAN: severity does NOT touch the gift-card rail
+V3 was the first corpus-path reader of `Pack::joinDays`, which surfaced a
+world-shape mismatch as a `test_arch_equivalence` failure.
+`SimulationPipeline::buildEntities()` sizes the join cohort to its window
+(`simulate.cpp` sets `identity.windowDays`; four joiners at population 300 /
+730 days), but the GateWorld harness defaulted `windowDays` to 0, an H3 3c-ii
+choice to keep gate worlds byte-identical. The failure posed as a "SEMANTIC
+divergence" in the innocent settlement path. `test_production_windowed` (both
+legs cohort-shaped) stayed green and is what proves the engines agree. First
+fix: a `withJoinCohort` option on the equivalence leg, with joiner counts
+pinned on both legs before comparison.
 
-Part 3 D2 and an earlier draft of this record both said severity buys
-MORE CARDS on the gift-card rail, since a rack caps a single card at
-$500. **That was implemented and then removed in the same round, and the
-plan is wrong, not just the code.**
+The join-cohort round (U-13) then fixed the four gates still measuring a
+joinerless world (`test_card_baselines`, `test_card_prevalence`,
+`test_card_merchant_overlap`, `test_econ_wiring`):
 
-Grading the card COUNT by the victim's severity multiplier put an
-80-year-old at up to 13 × $500 = $6,500 of gift cards inside four hours,
-out of a retail checking account. Most of those rows are unfundable, so
-the ledger discards them: the visible effect is not a larger loss but a
-burst of declines that no FTC spotlight describes. The research supports
-LOSS rising with age, and the impostor rail already carries that with a
-continuous amount.
+- `withJoinCohort` defaults true in `WorldSpec` and `LegOptions`; `false` is
+  only a bisect knob (world-shape move versus model move).
+- All four pin `leg.joiners > 0`; `checkLegMatches` reports WORLD SHAPE
+  MISMATCH before any corpus diagnostic.
+- BEA-sized cohorts at N=300: 8 joiners (730 days from 1991), 15 (1,461
+  days), 2 (730 days from 2019), so `test_econ_wiring`'s legs differ by
+  design and both counts print.
 
-So severity applies to the **impostor amount alone**. The gift-card rail
-is ungraded in both denomination and count — the denomination lattice
-stays fixed-nominal per authority U-6, and `targetSpan` is a plain
-U{2..6} for that rail (`injector.cpp`, where the reasoning is recorded
-next to the constant).
+No band was widened or re-centred; one was removed as mis-specified. The first
+run passed 56 of 57: `test_card_prevalence`'s deflated-fraud-amount sub-gate
+read 2.69x against 2.50x, with the nominal-spread discriminator at 2.47x.
+Moving together means amount mix, not CPI wiring (deflated/nominal = 1.0883 =
+priceScale(1994)/priceScale(1991)). The sub-gate had always been wrong:
 
-### WHAT LANDING V3 EXPOSED: the arch-equivalence world-shape trap
+- `unauthorized.cpp` applies `priceScale` only to continuous samplers, while
+  `cardTestCharge` and `giftCardScamAmount` are fixed-nominal under the
+  owner-approved U-6 lattice choice, so a flat deflated combined mean
+  contradicts U-6 (`test_econ_wiring` already excluded the rail for this).
+- Per-year means of 42-92 lognormal(σ=1.2) draws carry 19-28% sampling error,
+  so a four-year 2.50x max/min envelope was under-powered and the earlier
+  1.79x was luck.
 
-V3 is the first thing on the corpus path to read `Pack::joinDays`, via
-the case-date membership gate. That turned a latent, silent asymmetry
-into a hard `test_arch_equivalence` failure:
+The statistic is now printed and decomposed (lattice versus CPI-scaled,
+nominal and deflated, per year, plus a class-F clamp-ceiling ratio). Other
+bands absorbed the re-roll; the yearly rate spread (the budget-law gate) moved
+1.12x → 1.85x against 4.00x. Before/after tables are in each gate's header.
 
-- `SimulationPipeline::buildEntities()` ALWAYS sizes the join cohort
-  against its window (`simulate.cpp` sets `identity.windowDays`), so the
-  monolithic reference leg had FOUR joiners at population 300 / 730 days;
-- the GateWorld harness DEFAULTED `windowDays` to 0 — no joiners — a
-  deliberate H3 3c-ii choice to keep existing gate worlds byte-identical.
+### Replacement gate: `tests/test_card_class_f.cpp`
 
-The two legs were therefore comparing **different worlds**, and the
-failure presented as a "SEMANTIC divergence" pointing at the settlement
-path, which was innocent. `test_production_windowed` (production
-monolith vs production windowed, both cohort-shaped) stayed green
-throughout — that pairing is what proves the two ENGINES agree.
+Restores coverage of the declared law "U-6 class F reaches the card rail". Two
+era legs at N=900 (1991/1461d, 2019/730d) compare the 75th percentile of
+non-lattice card-fraud amounts, each deflated by its own year's `priceScale`.
 
-Fixed by giving the harness a `withJoinCohort` option, setting it on the
-equivalence leg, and PINNING the resulting joiner count on both legs
-before any corpus comparison runs, so a world-shape mismatch can never
-again be reported as an architecture divergence.
+- Gift-card rows are excluded by `FraudType`. Card-test probes share their
+  spend's type and cannot be filtered, but sit at ≤ $5 nominal, below
+  p = 0.75 (a scale family's quantile scales exactly with the scale); the gate
+  asserts their share stays below it.
+- Cross-era (about a 1.8x effect), not within-era flatness (a null effect
+  against heavy-tailed noise).
+- Band: ±3σ of the realized two-leg quantile standard error (analytic
+  CV = 1.635/√n).
+- It fails as UNDER-POWERED unless the band excludes the fixed-nominal null
+  (≈0.55) and the double-scaled null (≈1.81). Fix with a larger leg, never a
+  tighter band.
 
-**CLOSED by the join-cohort round (authority U-13).** The equivalence fix
-above repaired the ORACLE half of the defect and left the MEASUREMENT
-half standing: the four behavioural gates on the same harness
-(`test_card_baselines`, `test_card_prevalence`,
-`test_card_merchant_overlap`, `test_econ_wiring`) went on reporting bands
-against a joinerless population production never generates. The harness
-default is now INVERTED — `withJoinCohort` defaults TRUE in both
-`WorldSpec` and `LegOptions`, so every gate world is the production
-shape and there is nothing left to opt into; `false` survives only as a
-bisect knob for separating a world-shape move from a model move. All four
-gates now PIN `leg.joiners > 0` before reading a row, and
-`checkLegMatches` reports a WORLD SHAPE MISMATCH ahead of any corpus
-diagnostic. BEA-sized cohorts at N=300: 8 joiners over 730 days from
-1991, 15 over 1,461 days, 2 over 730 days from 2019 — so
-`test_econ_wiring`'s two legs are perturbed UNEQUALLY, by design, and
-both counts are printed.
+### Rounds 6 and 7: session and membership closure
 
-**NO BAND WAS WIDENED OR RE-CENTRED, and one was REMOVED as
-mis-specified.** On the first measured run the world shape moved every
-statistic and 56 of 57 tests passed; `test_card_prevalence`'s
-deflated-fraud-amount sub-gate went red at 2.69x against its 2.50x
-bound, and the nominal-spread discriminator shipped alongside it read
-2.47x — the two moving TOGETHER, which is the "amount-MIX" verdict, not
-the "CPI-wiring" one. (Exactly: deflated/nominal = 1.0883 =
-priceScale(1994)/priceScale(1991), so the deflation was working
-correctly.) Reading the amount model then showed the sub-gate had been
-wrong since it was written: `unauthorized.cpp` applies `priceScale` only
-to the CONTINUOUS samplers, while `cardTestCharge` and
-`giftCardScamAmount` are FIXED-NOMINAL by the owner-approved U-6 lattice
-CHOICE — so deflating the card view's *combined* mean and asserting
-flatness asserts the opposite of U-6, and `test_econ_wiring` had already
-excluded that same rail for that same reason. Independently, the per-year
-mean of 42–92 draws from lognormal(σ=1.2) carries 19–28% sampling error,
-so a 2.50x max/min envelope over four years was under-powered anyway and
-the old 1.79x reading was luck. The statistic is now PRINTED and
-DECOMPOSED (lattice vs CPI-scaled, nominal and deflated, per year, plus a
-class-F clamp-ceiling ratio). Every other band on the four gates absorbed
-the re-roll untouched; the yearly RATE spread — the gate that actually
-carries the budget law — moved 1.12x → 1.85x against a 4.00x bound.
-Per-band before/after tables live in each gate's header.
+Round 6: `transactions::Factory` already routed the victim's own device/IP for
+authorized rows, but `unauthorized.cpp` overwrote it with the attacker's. The
+overwrite now stops on gift-card and impostor rails (no new randomness,
+carrier or slot-0 device pattern); card/ATO keep the attacker session. An
+earlier "carried forward" design had overstated this fix.
 
-### THE REPLACEMENT, LANDED: `tests/test_card_class_f.cpp`
+Round 7:
 
-Withdrawing that sub-gate left the suite with **zero** coverage of "U-6
-class F reaches the CARD rail", which is a declared law — so the gap was
-closed in the following round rather than carried. Two era legs at N=900
-(1991/1461d, 2019/730d) compare the **75th percentile** of non-lattice
-card-fraud amounts, each row deflated by its own year's `priceScale`.
+- every fraud rail requires membership in `[joinTs, death + 120d)`; authorized
+  scams also need the victim alive, and the full case span must fit before
+  the earliest victim/payee boundary rather than be truncated into a burst;
+- unauthorized card rows stay derived-debit; a gate rejects the late
+  credit-liability swap until fraud planning joins card-cycle servicing;
+- legitimate credit-card keys join router ownership, so their purchases carry
+  the owner's device/IP session;
+- every device owner type renders in one opaque fixed-width `D` namespace, not
+  role-revealing `FD`/person/shared layouts;
+- the card graph emits timestamped transaction→device/IP edges and makes every
+  observed endpoint a vertex. (Round 7 left `Has_Device`/`Has_IP` header-only
+  so Party adjacency could not reveal attacker role; attacker-infra-2026-07
+  populated both and removed the asymmetry in the generator, leaving a
+  2.9x-lift residual.)
 
-The design is shaped entirely by how the previous attempt failed:
-
-- The two fixed-nominal contaminants are handled DIFFERENTLY because
-  only one can be. Gift-card rows are resolvable by `FraudType` and are
-  EXCLUDED. Card-test probes carry the same type as the spend they
-  precede — there is no filter to write.
-- So the STATISTIC dodges what cannot be filtered. A quantile of a scale
-  family scales exactly with the scale, and the probes are bounded at $5
-  nominal, i.e. the bottom of the axis. `p = 0.75` never sees them, and
-  the gate ASSERTS the probe share stays below it rather than assuming.
-- The comparison is CROSS-ERA (a ~1.8x effect) instead of within-era
-  flatness (a null effect against the same heavy-tailed noise).
-- The band is not hand-picked: ±3σ of the REALIZED two-leg quantile
-  standard error, from the analytic CV = 1.635/√n.
-- **The gate checks its own power** — it fails as UNDER-POWERED unless
-  that band excludes both the fixed-nominal null (≈0.55) and the
-  double-scaled null (≈1.81). The repair for that is a larger leg, never
-  a tighter band.
-
-### ROUND 6/7 SUPERSESSION — session and membership closure
-
-The “carried forward” design above was re-read and found to overstate the
-fix. `transactions::Factory` had already routed the victim's normal
-device/IP for authorized rows; `unauthorized.cpp` then overwrote that
-correct session with the attacker's. ROUND 6 simply stopped the
-overwrite on gift-card/impostor rails. It consumes no new randomness,
-does not add a carrier, and does not introduce a special slot-0 device
-pattern. Card/ATO rows correctly retain the attacker session.
-
-ROUND 7 then closed the downstream structural shortcuts:
-
-- every fraud rail requires membership inside `[joinTs, death + 120d)`;
-  authorized scams additionally require the victim to be alive, and the
-  full sampled case span must fit before the earliest victim/payee
-  boundary rather than being truncated into an artificial burst;
-- unauthorized card rows remain derived-debit backed; a gate rejects the
-  false late-injected credit-liability swap until fraud planning is
-  integrated into card-cycle servicing;
-- legitimate credit-card keys participate in router ownership, so
-  ordinary credit-card purchases receive their owner's device/IP
-  session;
-- all device owner types render through one opaque fixed-width `D`
-  namespace rather than role-revealing `FD`/person/shared layouts;
-- the card graph emits timestamped transaction→device/IP edges and
-  materializes every observed endpoint as a vertex. (The
-  `Has_Device`/`Has_IP` clause here — header-only so missing Party
-  adjacency cannot reveal attacker role — is **SUPERSEDED by
-  attacker-infra-2026-07**: both tables are populated, the asymmetry that
-  made adjacency a role bit was removed in the generator rather than
-  hidden by the exporter, and the residual is sized at 2.9x lift.)
-
-These repairs make the victim/operator/session semantics internally
-consistent and make the instrument limitation explicit. They do not
-close issued-card fraud servicing, effective card expiry/reissue
-histories, era-varying attacker behavior, delayed labels, real-modality
-calibration, or the external GSQL/training/evaluation pipeline; those
-remain benchmark work, not victimization-model claims.
+Still open, as benchmark work rather than victimization claims: issued-card
+fraud servicing, effective card expiry/reissue histories, era-varying attacker
+behaviour, delayed labels, real-modality calibration, and the external
+GSQL/training/evaluation pipeline.
