@@ -7,10 +7,13 @@
 #include "test_support.hpp"
 
 #include <algorithm>
+#include <initializer_list>
 #include <limits>
 #include <map>
 #include <set>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace pl = PhantomLedger;
@@ -66,6 +69,7 @@ struct Fixture {
   pl::synth::infra::ips::Output ips;
   pl::entity::parties::relocation::Schedule relocation;
   pl::synth::pii::Membership membership;
+  pl::entity::person::Topology topology;
   std::vector<pl::transactions::Transaction> txns;
 
   Fixture() {
@@ -74,6 +78,21 @@ struct Fixture {
         {b, 2, 0},
         {external, 0,
          pl::entity::account::bit(pl::entity::account::Flag::external)}};
+    // Person 1 (account a) was recruited into ring 1, its home ring, and
+    // later also taken on as a mule by ring 0, which lists it first.
+    topology.memberStore = {2, 1, 3};
+    topology.fraudStore = {2, 3};
+    topology.muleStore = {1, 1};
+    topology.rings = {{.id = 0,
+                       .members = {0, 1},
+                       .frauds = {0, 1},
+                       .mules = {0, 1},
+                       .victims = {0, 0}},
+                      {.id = 1,
+                       .members = {1, 2},
+                       .frauds = {1, 1},
+                       .mules = {1, 1},
+                       .victims = {0, 0}}};
     pii.records.resize(2);
     membership = {
         window,
@@ -134,7 +153,8 @@ struct Fixture {
             .membership = membership,
             .window = w,
             .seed = 1,
-            .capture = &capture};
+            .capture = &capture,
+            .topology = &topology};
   }
 };
 
@@ -267,6 +287,182 @@ void checkZellePolicy() {
   PL_CHECK(excluded.read("Zelle_Transfer").empty());
 }
 
+// mule-label-contract-2026-10: the Account table carries the fifteen columns
+// of MulePatternLearner's label contract, in its load order. Indices below
+// are positions in that order.
+constexpr std::size_t kFirstSeq = 3, kFirstMs = 4, kIsMule = 5, kKnown = 6,
+                      kMasked = 7, kPu = 8, kEffSeq = 9, kEffMs = 10,
+                      kAvailSeq = 11, kAvailMs = 12, kRing = 13, kSource = 14;
+
+void run(const mt::StreamingMuleTemporalExport::Config &cfg,
+         std::span<const pl::transactions::Transaction> txns) {
+  mt::StreamingMuleTemporalExport sink{cfg};
+  sink.append(txns);
+  sink.finish();
+}
+
+template <class Pred> Row only(const std::vector<Row> &rows, Pred pred) {
+  const auto n = std::ranges::count_if(rows, pred);
+  PL_CHECK_EQ(n, 1);
+  return *std::ranges::find_if(rows, pred);
+}
+
+bool isMuleRow(const Row &r) { return r[kIsMule] == "1"; }
+bool isExternalRow(const Row &r) { return r[2] == "True"; }
+bool isOtherRow(const Row &r) { return r[2] == "False" && r[kIsMule] == "0"; }
+
+// Two exports of one fixture agree on every table but Account, and on every
+// Account cell but those at `moved` of the row matching `pred`.
+template <class Pred>
+void onlyAccountCellsMove(const Capture &x, const Capture &y, Pred pred,
+                          std::initializer_list<std::size_t> moved) {
+  PL_CHECK_EQ(x.tables.size(), y.tables.size());
+  for (const auto &[name, bytes] : x.tables)
+    if (name != "Account")
+      PL_CHECK(bytes == y.tables.at(name));
+  const auto xs = x.read("Account"), ys = y.read("Account");
+  PL_CHECK_EQ(xs.size(), ys.size());
+  for (std::size_t i = 0; i < xs.size(); ++i)
+    for (std::size_t c = 0; c < xs[i].size(); ++c) {
+      const bool free =
+          pred(xs[i]) && std::ranges::find(moved, c) != moved.end();
+      if (!free)
+        PL_CHECK(xs[i][c] == ys[i][c]);
+    }
+}
+
+void checkMuleLabels() {
+  const std::vector<std::string_view> contract{"id",
+                                               "account_type",
+                                               "is_external",
+                                               "first_seen_seq",
+                                               "first_seen_ts_ms",
+                                               "is_mule",
+                                               "mule_label_known",
+                                               "is_mule_masked",
+                                               "pu_label",
+                                               "mule_label_effective_seq",
+                                               "mule_label_effective_ts_ms",
+                                               "mule_label_available_seq",
+                                               "mule_label_available_ts_ms",
+                                               "mule_ring_id",
+                                               "mule_label_source"};
+  PL_CHECK(std::ranges::equal(mt::schema::kAccount.header, contract));
+
+  Fixture f;
+  Capture plain;
+  run(f.config(plain), f.txns);
+  std::string header;
+  for (const auto column : contract)
+    header += (header.empty() ? "" : ",") + std::string{column};
+  PL_CHECK(plain.tables.at("Account").starts_with(header + "\r\n"));
+
+  // Every row: the label is not marked known and is masked, with pu_label 0
+  // (MPL's one-time reveal writes those, and does nothing on a graph that
+  // already has a known label); the clocks never precede the account's
+  // first observation and availability equals effectiveness; a ring only
+  // on a mule.
+  const auto rows = plain.read("Account");
+  PL_CHECK_EQ(rows.size(), 3U);
+  for (const auto &r : rows) {
+    PL_CHECK_EQ(r.size(), contract.size());
+    PL_CHECK_EQ(r[kKnown], "False");
+    PL_CHECK_EQ(r[kMasked], "True");
+    PL_CHECK_EQ(r[kPu], "0");
+    PL_CHECK(r[kAvailSeq] == r[kEffSeq] && r[kAvailMs] == r[kEffMs]);
+    PL_CHECK((r[kRing] != "-1") == (r[kIsMule] == "1"));
+  }
+  // Internal accounts carry the simulator's role from their first
+  // observation; with no laundering payment in this fixture, the mule's
+  // clocks are that too. Its ring is its home ring 1, not ring 0, which
+  // lists it first among its mules.
+  for (const auto &r : {only(rows, isMuleRow), only(rows, isOtherRow)}) {
+    PL_CHECK(r[kEffSeq] == r[kFirstSeq] && r[kEffMs] == r[kFirstMs]);
+    PL_CHECK_EQ(r[kSource], "phantomledger_role");
+  }
+  PL_CHECK_EQ(only(rows, isMuleRow)[kRing], "1");
+  PL_CHECK_EQ(only(rows, isOtherRow)[kRing], "-1");
+  // The external account's mule role is not generated: unknown, with zero
+  // clocks and no source.
+  const auto ext = only(rows, isExternalRow);
+  PL_CHECK_EQ(ext[kIsMule], "0");
+  PL_CHECK(ext[kEffSeq] == "0" && ext[kEffMs] == "0");
+  PL_CHECK_EQ(ext[kSource], "");
+
+  // The effective clock is the mule's first laundering payment. Two of its
+  // p2p payments become ring laundering payments; both channels are
+  // electronic P2P purposes, so no rail, event, edge or other cell moves.
+  auto laundering = f.txns;
+  for (const std::size_t i : {5U, 9U})
+    laundering[i].session.channel =
+        pl::channels::tag(pl::channels::Fraud::muleForward);
+  Capture washed;
+  run(f.config(washed), laundering);
+  onlyAccountCellsMove(plain, washed, isMuleRow,
+                       {kEffSeq, kEffMs, kAvailSeq, kAvailMs});
+  const auto mule = only(washed.read("Account"), isMuleRow);
+  const auto first = events(washed).at("T000000000006");
+  PL_CHECK_EQ(std::stoull(mule[kEffSeq]), first.seq);
+  PL_CHECK_EQ(std::stoull(mule[kEffMs]), first.ms);
+  PL_CHECK(std::stoull(mule[kEffSeq]) > std::stoull(mule[kFirstSeq]));
+  PL_CHECK(mule[kAvailSeq] == mule[kEffSeq] && mule[kAvailMs] == mule[kEffMs]);
+
+  // The fraud verdict and ring id on the rows are never read: flipping them
+  // moves no Account cell (the Zelle verdict alone moves).
+  auto flipped = laundering;
+  for (auto &tx : flipped) {
+    tx.fraud.flag = tx.fraud.flag == 0 ? 1 : 0;
+    tx.fraud.ringId = 7;
+  }
+  Capture verdicts;
+  run(f.config(verdicts), flipped);
+  PL_CHECK(verdicts.tables.at("Account") == washed.tables.at("Account"));
+
+  // The ring follows the topology and moves nothing else. Ring 0 is a ring.
+  Fixture rehomed;
+  rehomed.topology.memberStore = {1, 2, 3};
+  Capture ringZero;
+  run(rehomed.config(ringZero), rehomed.txns);
+  onlyAccountCellsMove(plain, ringZero, isMuleRow, {kRing});
+  PL_CHECK_EQ(only(ringZero.read("Account"), isMuleRow)[kRing], "0");
+  // A mule in no ring keeps its truth with ring -1.
+  Fixture solo;
+  solo.topology.rings.clear();
+  Capture noRing;
+  run(solo.config(noRing), solo.txns);
+  onlyAccountCellsMove(plain, noRing, isMuleRow, {kRing});
+  const auto soloMule = only(noRing.read("Account"), isMuleRow);
+  PL_CHECK_EQ(soloMule[kRing], "-1");
+  // The topology is required, so production cannot drop the rings unseen.
+  Capture missing;
+  auto cfg = f.config(missing);
+  cfg.topology = nullptr;
+  PL_CHECK_THROWS(mt::StreamingMuleTemporalExport{cfg});
+
+  // The label clocks are the only Account cells later activity can set. A
+  // prefix that ends before the mule's first laundering payment shows its
+  // first observation; the full export shows the payment.
+  auto late = f.txns;
+  late[22].session.channel =
+      pl::channels::tag(pl::channels::Fraud::muleForward);
+  Capture lateFull, latePrefix;
+  run(f.config(lateFull), late);
+  run(f.config(latePrefix, 1), std::span{late}.first(20));
+  const auto fullRows = lateFull.read("Account");
+  const auto prefixRows = latePrefix.read("Account");
+  PL_CHECK(!prefixRows.empty());
+  for (const auto &p : prefixRows) {
+    const auto r = only(fullRows, [&](const Row &x) { return x[0] == p[0]; });
+    for (std::size_t c = 0; c < p.size(); ++c)
+      if (!isMuleRow(p) || c < kEffSeq || c > kAvailMs)
+        PL_CHECK(p[c] == r[c]);
+  }
+  const auto prefixMule = only(prefixRows, isMuleRow);
+  PL_CHECK_EQ(prefixMule[kEffSeq], prefixMule[kFirstSeq]);
+  PL_CHECK_EQ(std::stoull(only(fullRows, isMuleRow)[kEffSeq]),
+              events(lateFull).at("T000000000023").seq);
+}
+
 // bank-gl-2026-09: the bank's income GLs are internal, ownerless accounts of
 // their own type. Each fee and interest posting is an ordinary payment on the
 // internal/bank rail whose recipient is the GL of its kind, with no session.
@@ -330,6 +526,7 @@ void checkBankLedgerAccounts() {
 int main() {
   checkZellePolicy();
   checkBankLedgerAccounts();
+  checkMuleLabels();
   PL_CHECK(pl::app::parseUseCase("mule-temporal") ==
            pl::app::UseCase::muleTemporal);
   PL_CHECK(pl::app::name(pl::app::UseCase::muleTemporal) == "mule-temporal");
@@ -508,6 +705,7 @@ int main() {
     positives += r[5] == "1";
     if (r[2] == "True")
       PL_CHECK_EQ(r[5], "0");
+    PL_CHECK((r[kRing] == "-1") == (r[5] == "0"));
   }
   PL_CHECK_EQ(positives, 1U);
   Capture changedRole;
@@ -527,6 +725,14 @@ int main() {
                         labeledAccounts[i].begin() + 5,
                         roleAccounts[i].begin()));
     PL_CHECK_EQ(roleAccounts[i][5], "0");
+    // The label fields follow the role: with no laundering payment, a mule's
+    // clocks are its first observation, as a non-mule's are, so only the
+    // ring goes with the role.
+    PL_CHECK(std::equal(labeledAccounts[i].begin() + kKnown,
+                        labeledAccounts[i].begin() + kRing,
+                        roleAccounts[i].begin() + kKnown));
+    PL_CHECK_EQ(roleAccounts[i][kRing], "-1");
+    PL_CHECK_EQ(roleAccounts[i][kSource], labeledAccounts[i][kSource]);
   }
   fixture.registry.records[0].flags =
       pl::entity::account::bit(pl::entity::account::Flag::mule);

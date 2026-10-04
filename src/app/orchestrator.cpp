@@ -144,6 +144,7 @@ void StreamOrchestrator::bindStreams() {
             .window = window_,
             .seed = opts_.seed,
             .pgMirror = isPgUp() ? &mirrors_.mtMirror : nullptr,
+            .topology = &world_.people.roster.topology,
         });
     break;
 

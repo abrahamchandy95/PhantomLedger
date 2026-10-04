@@ -3800,3 +3800,82 @@ PostgreSQL where their tables carry tuition rows, then re-run
 hub-realism-2026-09 round close lists, it does not replace it. The
 mule-temporal corpus regeneration listed there also retires the education hub
 from MulePatternLearner's hub registry. `kTableCount = 43` does not move.
+
+═══════════════════════════════════════════════════════════════════════
+# AMENDMENT: mule-label-contract-2026-10
+═══════════════════════════════════════════════════════════════════════
+
+**The mule-temporal Account table lacked nine of the fifteen fields of
+MulePatternLearner's (MPL's) Account label contract,** so a graph loaded from
+it left them at their defaults, and every mule's `mule_ring_id` stayed -1
+although the generator puts every mule in a ring. The table now carries all
+fifteen in MPL's load order (`load_accounts`, `ACCOUNT_LOAD_COLUMNS`): the six
+columns it had, unchanged, then `mule_label_known`, `is_mule_masked`,
+`pu_label`, the effective and availability clocks, `mule_ring_id` and
+`mule_label_source`, appended. The change is exporter-only: no draw, event,
+edge, rail, identifier or other table moves, and no golden moves. The
+contract and the reasons for each value are in `docs/mule_temporal.md`,
+"Account-level mule supervision"; the gates are `tests/test_mule_temporal.cpp`
+(`checkMuleLabels`, on a hand-built fixture) and
+`tests/test_mule_temporal_labels.cpp` (a real world through the windowed
+engine).
+
+## The reveal guard decides `mule_label_known`
+
+MPL turns a PhantomLedger load into training labels with its one-time reveal,
+`reveal_mule_labels`. Which mules it reveals depends on `is_mule`,
+`is_external`, each mule's `first_seen_ts_ms` and `first_seen_seq`, the Zelle
+fraud verdicts and their clocks, the payments between mules and the scope's
+partitions. It reads none of the new clocks, the ring or the source, so
+those cannot change its choice. It does read `mule_label_known` and
+`pu_label`: with any internal account known or revealed it answers
+`already_revealed` and writes nothing unless forced, and MPL's preparation
+does not force it. MPL's loading guidance (supply known labels, with explicit
+0 for generated non-mules) would therefore have left every mule masked and
+training without a positive. The export marks no label known, keeps every
+label masked with `pu_label` 0, and carries the truth, the clocks, the ring
+and the source; the reveal then writes the internal labels and keeps the
+rings. The price is that `validate_label_contract` straight after the load
+counts one `invalid_unknown` per mule; after the reveal, when MPL's
+preparation checks it, every count is zero.
+
+## The authority rows
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| `mule_label_known` False for every account | MPL's reveal is what makes a PhantomLedger label known, and it runs only on a graph with no known label | CHOICE | MPL `gsql/queries/label_reveal.gsql` (the `already_revealed` guard) and `src/mule_pattern_learner/tigergraph/reveal.py` (called with `apply` and without `force`) | **DEVIATES-BY-CHOICE, REGISTERED** from MPL's loading guidance in `docs/reference/labels.md`, "Loading accounts". Sub-gate E replays the guard and the contract counts: as loaded, `invalid_unknown` 27 (one per mule) and every other count 0; after the reveal's writes, all 0. Disarmed (internal labels known), red in both gates. If MPL's guard ever tells a source label from a revealed one, True for internal accounts is the only change needed |
+| `is_mule_masked` True and `pu_label` 0 for every account | The export reveals nothing; the reveal chooses the positives | INVARIANT | MPL `docs/reference/labels.md` (`pu_label` 1 exactly when known, a mule and unmasked) | **ENFORCED**: both gates |
+| A mule's effective clock is the first exported payment it sends or receives on a ring laundering channel (the `Fraud` channel group); its first observation when the export holds none | The contract asks for the first simulated mule activity | CHOICE | MPL `docs/reference/labels.md`, "Loading accounts" | **ENFORCED**: sub-gate D locates the payment independently from the rows and the event tables (27 of 27 mules have one); the fixture covers the fallback and the payment. Reads the channel only: flipping every fraud verdict and ring id moves no Account byte. Disarmed (the verdict read instead of the channel), the fixture goes red; the world leg stays green because there every mule's first flagged row is its first laundering row |
+| Any other internal account's clocks are its first observation | A known synthetic non-mule may use the account's creation as both clocks | CHOICE | MPL `docs/reference/labels.md`, "Loading accounts" | **ENFORCED**: both gates |
+| Availability equals effectiveness | The simulator's truth is complete the moment it holds, as the Zelle oracle's is at its payment | CHOICE | `docs/mule_temporal.md` (the Zelle oracle) | **REGISTERED**: MPL's reveal replaces a mule's availability with its simulated discovery, and every internal effective clock with the first observation |
+| `mule_ring_id` is a mule's home ring, the ring whose members hold its owner; -1 for every other account | The schema holds one ring per account; a mule another ring later took on was recruited by its home ring | CHOICE | MPL `docs/reference/labels.md` ("The schema holds one ring per account"); `synth/people/rings.hpp` (`injectMultiRingMules` adds extra rings' mule entries, never members) | **ENFORCED**: sub-gate C, every mule against the topology and against the ring ids of its laundering rows (a one-ring mule's rows carry its ring). 1 of 27 mules is in two rings. Disarmed (the first ring listing the mule), red in both gates |
+| An external account's label is unknown: `is_mule` 0, zero clocks, empty source | PhantomLedger generates no external mule role | INVARIANT | `docs/mule_temporal.md` (closed-world role definition) | **ENFORCED**: both gates, 1,649 external accounts in the world leg |
+| The other 26 tables and the Account table's first six columns are unchanged | The label columns are exporter-only supervision | INVARIANT | none needed | **ENFORCED**: sub-gate A pins all of them on the pre-round build (HEAD `dac2d64`): the 26 tables byte for byte and the six columns equal to the whole pre-round Account table (`954256dfa302dbf7`, 277,088 bytes). The fixture checks that moving the ring, relabeling a P2P payment as laundering or changing the role moves only the Account cells it should |
+
+## Registered limitations
+
+| The value | The claim about the world | Class | Citation | Status |
+|---|---|---|---|---|
+| Account rows are written when the export finishes, in first-observation order | Entity metadata is emitted once, at first observation | CHOICE | `docs/mule_temporal.md` | **REGISTERED**: the label clocks are the only Account cells later activity sets; an export of a shorter window that ends before a mule's first laundering payment shows its first observation (checked in the fixture). The memory is one 24-byte entry per exported account |
+| Booleans render `True` and `False` | MPL's labels reference asks for lowercase flags | CHOICE | `docs/mule_temporal.md` (every boolean of this export renders so) | **REGISTERED**: convert the three flags the way the push converts `is_external` |
+| An external account's empty source is NULL in PostgreSQL | `COPY ... FORMAT csv` reads an unquoted empty field as NULL | CHOICE | none needed | **REGISTERED**: the validation script reads it with `coalesce` |
+| The three new checks in `docs/research/validate_temporal_dataset.sql` and the two profile keys | The staged tables keep the contract | MEASUREMENT | none needed | **NOT RUN**: no PostgreSQL in this round |
+
+## Measured (`test_mule_temporal_labels`)
+
+Pop 600, 2019 (365 days), seed 20261004, the scaled fraud profile: 304,259
+payments, 10 rings, 27 mules with 10 distinct home rings, 1 mule in two rings,
+27 with a laundering payment, 1,649 external accounts. The full non-PostgreSQL
+suite then passed: 70 of 76 tests pass, the five PostgreSQL tests skip with
+code 77 and `test_scale_soak` skips because it is opt-in (`PL_SOAK`);
+`test_run_golden` passes against the unmoved `tests/golden_run.b2sum`. A
+serverless run of the binary (`--usecase mule-temporal`, pop 500, 30 days
+from 2019) completes with the topology wired in.
+
+## Owner must do
+
+Regenerate the mule-temporal corpus, clear the graph, load the Account table
+with MPL's `load_accounts` and the other 26 tables as before, give MPL's run a
+new `scope.id`, and train. Run `docs/research/validate_temporal_dataset.sql`
+and `docs/research/profile_temporal_dataset.sql` on the new corpus. The
+mule-temporal table count (27) does not move.

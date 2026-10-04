@@ -119,6 +119,25 @@ struct Change {
   Ref association;
 };
 
+// An Account vertex observed at (seq, ms). Its row is written by finish(),
+// in observation order, because a mule's label clocks are its first
+// laundering payment, which can come after the account is first observed.
+struct AccountRow {
+  Ref node;
+  std::uint64_t seq;
+  std::uint64_t ms;
+};
+
+// The supervision of an account that carries the simulator's mule role.
+struct MuleLabel {
+  std::int64_t ring = -1;      // home ring; -1 when the owner is in no ring
+  std::uint64_t activeSeq = 0; // first laundering payment; 0 until one
+  std::uint64_t activeMs = 0;
+};
+
+// mule_label_source of every account whose role the simulator states.
+constexpr std::string_view kRoleSource = "phantomledger_role";
+
 } // namespace
 
 struct StreamingMuleTemporalExport::Impl {
@@ -143,15 +162,17 @@ struct StreamingMuleTemporalExport::Impl {
   std::multimap<std::int64_t, Ref> tokenClosures;
   std::map<std::string, zelle::SendingWindow> sendWindows;
   Ref nextChange = 0;
+  std::vector<AccountRow> accountRows;
+  std::map<Ref, MuleLabel> mules;
 
   explicit Impl(Config c)
       : config(std::move(c)), start(time::toEpochSeconds(config.window.start)),
         end(time::toEpochSeconds(config.window.endExcl())), lastEpoch(start) {
     if (!config.registry || !config.pii || !config.devices || !config.ips ||
-        config.window.days <= 0 || end <= start)
+        !config.topology || config.window.days <= 0 || end <= start)
       throw std::invalid_argument(
-          "mule-temporal: registry, PII, infrastructure and a positive window "
-          "are required");
+          "mule-temporal: registry, PII, ring topology, infrastructure and a "
+          "positive window are required");
     if (time::toCalendarDate(config.window.start).year <
             zelle::kFirstSupportedYear)
       throw std::invalid_argument(
@@ -215,7 +236,7 @@ struct StreamingMuleTemporalExport::Impl {
       w.writeRow(n.id, n.type, atSeq, millis(epoch));
       break;
     case Kind::account:
-      w.writeRow(n.id, n.type, n.external, atSeq, millis(epoch), n.isMule);
+      accountRows.push_back({ref, atSeq, millis(epoch)});
       break;
     case Kind::token:
       w.writeRow(n.id, atSeq, millis(epoch), "synthetic_handle", "zelle");
@@ -246,6 +267,17 @@ struct StreamingMuleTemporalExport::Impl {
   }
 
   void plan() {
+    // A mule's home ring is the ring it was recruited into, the one whose
+    // members hold it; a mule in several rings is also listed among the
+    // mules of the rings that later took it on (synth/people/rings.hpp).
+    // Ring ids are the topology's, the ids every exporter's ring_id carries.
+    std::map<entity::PersonId, std::uint32_t> homeRing;
+    const auto &topology = *config.topology;
+    for (const auto &ring : topology.rings)
+      for (std::uint32_t i = 0; i < ring.members.size; ++i)
+        homeRing.emplace(topology.memberStore.at(ring.members.offset + i),
+                         ring.id);
+
     for (const auto &record : config.registry->records) {
       const auto key = record.id;
       if (!entity::valid(key) || accounts.contains(key))
@@ -271,6 +303,12 @@ struct StreamingMuleTemporalExport::Impl {
           entity::account::hasFlag(record.flags, entity::account::Flag::mule)
               ? 1
               : 0;
+      if (nodes[a].isMule == 1) {
+        const auto home = homeRing.find(record.owner);
+        mules[a].ring = home == homeRing.end()
+                            ? -1
+                            : static_cast<std::int64_t>(home->second);
+      }
       accounts.emplace(key, a);
       if (!entity::valid(record.owner))
         continue;
@@ -512,6 +550,17 @@ struct StreamingMuleTemporalExport::Impl {
       }
       const auto at = tick();
       const auto ms = millis(tx.timestamp);
+      // A mule's first simulated mule activity: the first payment it sends
+      // or receives on a ring laundering channel. Supervision only; it reads
+      // the row's typology, never its fraud verdict, and changes nothing
+      // but the mule's label clocks.
+      if (channels::isFraud(tx.session.channel))
+        for (const auto key : {tx.source, tx.target})
+          if (const auto it = mules.find(accounts.at(key));
+              it != mules.end() && it->second.activeSeq == 0) {
+            it->second.activeSeq = at;
+            it->second.activeMs = ms;
+          }
       const auto eventId = std::format("T{:012}", ++rows);
       const bool present = std::isfinite(tx.amount);
       const double amount = present ? tx.amount : 0.0;
@@ -553,6 +602,41 @@ struct StreamingMuleTemporalExport::Impl {
     }
   }
 
+  // MulePatternLearner's Account label contract (docs/mule_temporal.md,
+  // "Account-level mule supervision"). The simulator states the role of
+  // every internal account; it generates no external mule role, so an
+  // external account's label is unknown: zero clocks and no source. No row
+  // is marked known, and every one is masked with pu_label 0: MPL's one-time
+  // reveal (reveal_mule_labels) is what makes the internal labels known, and
+  // it does nothing on a graph that already has a known label, which would
+  // leave training without a revealed positive.
+  void writeAccount(const AccountRow &row) {
+    const auto &n = nodes[row.node];
+    std::uint64_t seq = 0;
+    std::uint64_t ms = 0;
+    std::int64_t ring = -1;
+    if (!n.external) {
+      // The account's first observation: a non-mule's creation, and a mule's
+      // clock when the export holds none of its laundering payments.
+      seq = row.seq;
+      ms = row.ms;
+    }
+    if (const auto it = mules.find(row.node); it != mules.end()) {
+      ring = it->second.ring;
+      if (it->second.activeSeq != 0) {
+        seq = it->second.activeSeq;
+        ms = it->second.activeMs;
+      }
+    }
+    // The simulator's truth is complete the moment it holds, so a label is
+    // available when it becomes effective, as the Zelle oracle's is at its
+    // payment. MPL's reveal replaces a mule's availability with its
+    // simulated discovery.
+    writer("Account").writeRow(n.id, n.type, n.external, row.seq, row.ms,
+                               n.isMule, false, true, 0, seq, ms, seq, ms, ring,
+                               n.external ? std::string_view{} : kRoleSource);
+  }
+
   void finish() {
     if (finished)
       return;
@@ -563,6 +647,8 @@ struct StreamingMuleTemporalExport::Impl {
     for (auto &a : tokenAssociations)
       if (!a.emitted)
         emitAssociation(a, 0);
+    for (const auto &row : accountRows)
+      writeAccount(row);
     for (auto &[name, table] : tables)
       table.close(); // propagate COPY failures
     finished = true;

@@ -31,6 +31,8 @@ SELECT jsonb_pretty(jsonb_build_object(
    (SELECT is_mule,count(*) AS n FROM mule_temporal."mt_Account" GROUP BY 1) labels),
  'mule_accounts_with_zelle',(SELECT count(*) FROM mule_temporal."mt_Account" a
    WHERE a.is_mule='1' AND a.id IN (SELECT sender FROM z UNION SELECT recipient FROM z)),
+ 'mule_home_rings',(SELECT count(DISTINCT mule_ring_id) FROM mule_temporal."mt_Account" WHERE is_mule='1'),
+ 'mules_without_ring',(SELECT count(*) FROM mule_temporal."mt_Account" WHERE is_mule='1' AND mule_ring_id='-1'),
  'total_payments',(SELECT count(*) FROM transactions),'zelle_payments',(SELECT count(*) FROM z),
  'first_payment_time',least((SELECT min(first_time) FROM rails),(SELECT min(event_time) FROM z)),
  'last_payment_time',greatest((SELECT max(last_time) FROM rails),(SELECT max(event_time) FROM z)),

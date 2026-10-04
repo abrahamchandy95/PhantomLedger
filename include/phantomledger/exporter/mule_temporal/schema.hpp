@@ -8,12 +8,24 @@ inline constexpr std::string_view kPartyHeader[]{
     "id", "party_type", "first_seen_seq", "first_seen_ts_ms"};
 inline constexpr exporter::schema::Table kParty{"Party.csv", kPartyHeader};
 
+// The fifteen columns of MulePatternLearner's Account label contract, in its
+// load order (load_accounts, ACCOUNT_LOAD_COLUMNS): the six columns this
+// table always had, then the nine supervision fields, appended.
 inline constexpr std::string_view kAccountHeader[]{"id",
                                                    "account_type",
                                                    "is_external",
                                                    "first_seen_seq",
                                                    "first_seen_ts_ms",
-                                                   "is_mule"};
+                                                   "is_mule",
+                                                   "mule_label_known",
+                                                   "is_mule_masked",
+                                                   "pu_label",
+                                                   "mule_label_effective_seq",
+                                                   "mule_label_effective_ts_ms",
+                                                   "mule_label_available_seq",
+                                                   "mule_label_available_ts_ms",
+                                                   "mule_ring_id",
+                                                   "mule_label_source"};
 inline constexpr exporter::schema::Table kAccount{"Account.csv",
                                                   kAccountHeader};
 

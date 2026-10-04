@@ -1,6 +1,7 @@
 #pragma once
 
 #include "phantomledger/entities/holdings/accounts.hpp"
+#include "phantomledger/entities/parties/people.hpp"
 #include "phantomledger/entities/parties/pii.hpp"
 #include "phantomledger/entities/parties/relocation.hpp"
 #include "phantomledger/exporter/common/table.hpp"
@@ -35,6 +36,8 @@ public:
     std::uint64_t seed = 42;
     const sinks::PgMirror *pgMirror = nullptr;
     common::TableCapture *capture = nullptr;
+    // The fraud rings, for each mule's mule_ring_id. Required.
+    const entity::person::Topology *topology = nullptr;
   };
 
   explicit StreamingMuleTemporalExport(Config config);

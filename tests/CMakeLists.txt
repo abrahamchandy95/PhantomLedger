@@ -251,6 +251,17 @@ set_tests_properties(test_tuition_payees PROPERTIES TIMEOUT 600)
 pl_add_test(test_bank_ledger)
 set_tests_properties(test_bank_ledger PROPERTIES TIMEOUT 900)
 
+# mule-label-contract-2026-10: THE MULE-TEMPORAL ACCOUNT TABLE CARRIES
+# MulePatternLearner's fifteen-column Account label contract, so a loaded
+# graph has each mule's ring. On a real world through the windowed engine:
+# the other 26 tables and the Account table's first six columns pinned on
+# the pre-round build, each mule's home ring against the topology and its
+# laundering rows' ring ids, every label clock against the rows, and MPL's
+# reveal guard and label-contract counts replayed before and after the
+# reveal. EXPORTER-ONLY: no golden moves.
+pl_add_test(test_mule_temporal_labels)
+set_tests_properties(test_mule_temporal_labels PROPERTIES TIMEOUT 600)
+
 # macro-history-v1 H3 part 3c-ii (CLOSES H3): MEMBERSHIP
 # [joinTs, closeTs) — the BEA-sized join cohort on the isolated
 # {"join-cohort", personId} lane, the joiner AGE-AXIS repair (ages

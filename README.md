@@ -1152,7 +1152,7 @@ The Zelle scenario uses [Federal Reserve survey estimates and published bank lim
 automatically. Output uses the `mule_temporal` schema inside the existing
 `phantomledger` database. Entity metadata is immutable;
 labels, source fraud typologies and whole-history aggregates are excluded
-from features. `Account.is_mule` supplies integer account-role supervision (1 mule, 0 other synthetic account); Zelle `fraud_label` remains a separate payment target.
+from features. The Account table carries MulePatternLearner's fifteen-column Account label contract: integer account-role supervision in `is_mule` (1 mule, 0 other synthetic account), then the label's mask, PU label, effective and availability clocks, ring (`mule_ring_id`, the mule's home ring) and source, with every label masked and none marked known so that MulePatternLearner's one-time reveal runs. Zelle `fraud_label` remains a separate payment target.
 See [the temporal contract](docs/mule_temporal.md) for mappings, chronological
 sampling rules, supervision boundaries and current modeling limitations.
 

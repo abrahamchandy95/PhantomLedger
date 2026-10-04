@@ -5,7 +5,14 @@ Fresh-graph DDL only; do not run against an existing populated graph.
 One Zelle_Transfer vertex represents one payment. Other rails use
 Payment_Transaction; never duplicate a payment across these event types.
 Entity IDs are opaque; metadata is immutable after first observation.
-Account.is_mule and Zelle label fields are supervision only, not features.
+Account mule truth (is_mule), its mask, PU label, clocks, ring and source,
+and the Zelle label fields are supervision only, never features.
+
+The Account vertex is MulePatternLearner's (its gsql/schema/schema.gsql):
+is_mule is stored last, while the Account table puts it sixth, in the
+label contract's load order. Load the table with MulePatternLearner's
+load_accounts job (gsql/schema/account_loading.gsql), which maps the
+fifteen columns by name.
 
 All association directions use this half-open visibility rule:
   rel.valid_from_seq <= seed_seq
@@ -15,8 +22,10 @@ DISCRIMINATOR(valid_from_seq) preserves repeated tenures.
 Historical point events use event_seq < seed_seq.
 No whole-history features, split flags, or persisted time encodings.
 
-Known-time fields are deferred. Valid time cannot exclude a backdated
-correction learned after a historical seed. No loader, query, or model.
+Known-time fields are deferred, except the supervision labels' availability
+clocks. Valid time cannot exclude a backdated correction learned after a
+historical seed. This file defines no loader, query or model; the Account
+loader is MulePatternLearner's, named above.
 */
 
 CREATE GRAPH Mule_Pattern_Learner ()
@@ -38,7 +47,16 @@ FOR GRAPH Mule_Pattern_Learner {
     is_external BOOL DEFAULT "false",
     first_seen_seq UINT,
     first_seen_ts_ms UINT,
-    is_mule INT DEFAULT -1
+    mule_label_known BOOL DEFAULT "false",
+    is_mule_masked BOOL DEFAULT "true",
+    pu_label INT DEFAULT 0,
+    mule_label_effective_seq UINT DEFAULT 0,
+    mule_label_effective_ts_ms UINT DEFAULT 0,
+    mule_label_available_seq UINT DEFAULT 0,
+    mule_label_available_ts_ms UINT DEFAULT 0,
+    mule_ring_id INT DEFAULT -1,
+    mule_label_source STRING DEFAULT "",
+    is_mule INT DEFAULT 0
   ) WITH PRIMARY_ID_AS_ATTRIBUTE="true", STATS="OUTDEGREE_BY_EDGETYPE";
 
   ADD VERTEX Token (
