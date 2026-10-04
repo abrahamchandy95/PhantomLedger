@@ -74,7 +74,7 @@ using Cells = std::vector<std::string_view>;
 constexpr std::uint64_t kSeed = 20261004;
 constexpr std::int32_t kPopulation = 600;
 
-// A. Measured on the pre-round build (HEAD dac2d64, the same world and rows).
+// A. Measured on the pre-round build (HEAD 012ccd4, the same world and rows).
 struct Pin {
   std::string_view table;
   std::uint64_t digest;

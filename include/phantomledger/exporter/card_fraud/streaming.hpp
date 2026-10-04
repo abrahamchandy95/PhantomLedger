@@ -182,7 +182,7 @@ public:
      * it from `PostedLedgerReplay::declined`, the windowed one from
      * `WindowedConfig::declinedOut`.
      *
-     * BOTH SITES MUST FILL IT. Shipping it on one only is what 6de9c95 backed
+     * BOTH SITES MUST FILL IT. Shipping it on one only is what 43b369d backed
      * out: the batch path wrote declines, the binary read an empty vector and
      * wrote none, and nothing failed. `test_production_windowed` now compares
      * the two populations for exactly that reason.

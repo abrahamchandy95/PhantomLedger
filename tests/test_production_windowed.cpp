@@ -47,7 +47,7 @@ struct MonolithicResult {
 
   /* THE FUNDING DECLINES. They are the one product of the fold that never
    * reaches the row stream, so the digest above cannot see them — which is
-   * exactly how 6de9c95's asymmetry shipped: the monolithic path exported
+   * exactly how 43b369d's asymmetry shipped: the monolithic path exported
    * declines, the windowed path exported none, and every check here stayed
    * green because both agreed on the SETTLED rows. */
   std::vector<Declined> declined;
@@ -296,7 +296,7 @@ int main() {
    *
    * A pointer wired to a path that never fills it reads as an empty vector on
    * both sides, and an equality check alone would call that a match — the
-   * precise failure mode of 6de9c95, where the binary exported zero declines
+   * precise failure mode of 43b369d, where the binary exported zero declines
    * and nothing went red. So the floor comes first: the fold must decide at
    * least one funding decline at this leg, and both engines must agree on the
    * whole population field-wise, in order. */

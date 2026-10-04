@@ -199,7 +199,7 @@ struct WindowedConfig {
    * the export identically. A card-fraud sink captures the same address in its
    * own Config at construction and reads it from `finish()`; shipping this
    * pointer on one path only is exactly the silent asymmetry backed out in
-   * 6de9c95, where the batch path wrote declines and the binary wrote none.
+   * 43b369d, where the batch path wrote declines and the binary wrote none.
    *
    * Null means the caller does not want them and the take is skipped, leaving
    * the attempts to die with the accumulator. */

@@ -61,7 +61,7 @@ struct Summary {
    *
    * Reported at all because the acceptance script counts the payment table
    * whole, so a decline population that silently went to zero would look like
-   * an ordinary corpus drift. That is not hypothetical: 6de9c95 shipped
+   * an ordinary corpus drift. That is not hypothetical: 43b369d shipped
    * exactly that, and it was caught by a prediction rather than by an
    * instrument. This is the instrument. */
   std::uint64_t declinedRows = 0;

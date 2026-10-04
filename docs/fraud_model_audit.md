@@ -571,7 +571,7 @@ law; a reader with only the corrected row would re-propose the error.
 | Population 900 exercises solo and ring card spends | The gate's first run printed `ring 0` in both legs: `buildCompromisePlans` excludes ring participants and victims, so the rail is ring-free by design | Audit the justification against the gate's printed output; the ring counter stays as a documented tripwire |
 | The TEST-NET attacker-IP claim is stale (grep found nothing) | The defect was written as integer octets: `Ipv4::pack(198, 51, 100, …)` | Grep the constructor, not the rendered literal |
 | Fee and interest postings pay external business counterparties (card issuer, fee-collection and OD LOC keys, `Role::business` on `Bank::external`) | Every documented core types the contra as a bank-owned internal income GL (FLEXCUBE internal leaf GL of category Income, Temenos ledger categories with no customer, Fiserv DNA GL majors with blank customer number), and the card accounts the issuer key charged were themselves `Bank::internal` (bank-gl-2026-09) | Internal is not customer; the bank's own ledgers need their own role |
-| Tuition is paid parent to student: "`tuition.cpp pickPayer` draws a parent, the payee is the student" (C4 definition, 2026-07-18) | The code already paid an education catalogue merchant, one per run (`fhelp::pickEducationMerchant`, then `EducationPayees::pick` from `c874d15`, May 2026); `pickPayer` names the payer (tuition-payee-2026-09) | A definition verified against code must name the line that sets the field |
+| Tuition is paid parent to student: "`tuition.cpp pickPayer` draws a parent, the payee is the student" (C4 definition, 2026-07-18) | The code already paid an education catalogue merchant, one per run (`fhelp::pickEducationMerchant`, then `EducationPayees::pick` from `7c39489`, May 2026); `pickPayer` names the payer (tuition-payee-2026-09) | A definition verified against code must name the line that sets the field |
 | Tuition is LN($7,712, .35) per installment, ~$31-39k a year, and CONFORMS to public cost of attendance | `buildPlan` draws the lognormal once as the plan total over 4-5 installments, one plan per student per run (tuition-payee-2026-09) | Per row, per plan, per year: read the draw's axis off the code first |
 
 # Open items
@@ -1474,7 +1474,7 @@ FSOC, Big Wheels).
 | SSA, disability, IRS one account each | Single ACH originators: "SOC SEC", "TAX REF", company "IRS TREAS 310" | MEASUREMENT | Bureau of the Fiscal Service Green Book; Treasury refund direct-deposit FAQ [P] | CONFORMS |
 | Pools: mortgage 300, auto loan 200, student 15, auto 100, home 150, life 125 | Real markets have thousands (most banks and credit unions service their own; CFPB small-servicer exemption) | CHOICE | Butler Snow summary [S] | DEVIATES-BY-CHOICE: no tail provider nears a hub (smallest last share 0.2%); each market is a 99,999-serial block |
 | Tail past named ranks is 1/rank to residual mass | Research reports HHI independently | CHOICE | research HHI (FSOC, NAIC) | CONFORMS as a shape: auto 1,012 vs ~1,000, home 631 vs 620, life 302 vs 300, mortgage 351 vs 350; A0 within 10% |
-| One uniform per contract at issuance on `{"product-provider", market, person}`; portfolio stream, shared stream, `makeCatalog` untouched | At most one contract per market per person | INVARIANT | - | ENFORCED: A1 vs draw-free singleton tables at pop 200,000 (0 field diffs over 2,947,290 events, 232,651 loans, 181,290 holders; alone it only shows no draw depends on the table). A7 pins a digest of every key-free product value to the pre-round build (`da72a2306ca4622e` on HEAD 843f447 and this build) with a domain predicate. B5 pins the next shared u64 after the build at the run-golden config (`498e4bde6c6f83ea` both; covers `makeCatalog`). Disarms: one portfolio draw on half the providers moves 3.67M fields (A1); one extra draw per mortgage passes A1, reds A7; one extra shared draw in `buildLandlords` reds B5 |
+| One uniform per contract at issuance on `{"product-provider", market, person}`; portfolio stream, shared stream, `makeCatalog` untouched | At most one contract per market per person | INVARIANT | - | ENFORCED: A1 vs draw-free singleton tables at pop 200,000 (0 field diffs over 2,947,290 events, 232,651 loans, 181,290 holders; alone it only shows no draw depends on the table). A7 pins a digest of every key-free product value to the pre-round build (`da72a2306ca4622e` on HEAD d3542b5 and this build) with a domain predicate. B5 pins the next shared u64 after the build at the run-golden config (`498e4bde6c6f83ea` both; covers `makeCatalog`). Disarms: one portfolio draw on half the providers moves 3.67M fields (A1); one extra draw per mortgage passes A1, reds A7; one extra shared draw in `buildLandlords` reds B5 |
 | Only used providers registered, external, ownerless, in (market, ordinal) order after the entity stage | Small populations must not export unpaid providers | INVARIANT | - | ENFORCED: A5 (set = re-picked set; no index moves); leg B 682 providers from record 9,246 at pop 2,000 |
 | Camouflage P2P excludes providers | A cover transfer to a servicer or insurer is a label shortcut | TYPOLOGY | - | ENFORCED: B3, 0 rows; without the filter 15 of 440 |
 | Mortgages and student loans never share a servicer | Bug A predicate | INVARIANT | - | CLOSED: A2 0 cross-market events; every event, policy, premium and claim on its market (A2, B1) |
@@ -2703,11 +2703,11 @@ still spent, so only the tuition target moves. Gate
 
 ## The owner's decision, and why the record could not make it
 
-Code paid a merchant; the L-9 row (C4 definition pass, commit `bb2bdf9`,
+Code paid a merchant; the L-9 row (C4 definition pass, commit `08ece34`,
 2026-07-18) defined a parent-to-student transfer, from the misreading
 "`tuition.cpp pickPayer` draws a parent, the payee is the student" (the
 code already paid `fhelp::pickEducationMerchant`, then
-`EducationPayees::pick` after `c874d15`, May 2026). Neither was an owner
+`EducationPayees::pick` after `7c39489`, May 2026). Neither was an owner
 decision. For the code's reading: the shape (4-5 installments 30 days apart
 from a term start) is a school plan (CFPB 2023), and a student-cash
 transfer would feed the liquidity throttle into more student spending.
@@ -2762,7 +2762,7 @@ wording follows the code; one plan per run registered.
 All sub-gates pass, ~6 s at ~2.0 GB peak (pop 200,000). Measured on an
 isolated export of the staged hub-realism tree (`git checkout-index`) while
 evolver-lanes-2026-09 was written, then on the committed evolver-lanes tree
-(`9ab2953`): A-C identical (the family pass and income-free world do not see
+(`d194a84`): A-C identical (the family pass and income-free world do not see
 evolver lanes); D below.
 
 A (run-golden world, income off): pins as above; with the target the
@@ -2807,7 +2807,7 @@ production does.
 ## Re-pins
 
 - `test_bank_ledger` and `test_remote_payees` also mask the tuition target;
-  pre-round and this build agree on both trees. Landing tree (`9ab2953`):
+  pre-round and this build agree on both trees. Landing tree (`d194a84`):
   `42502a8f4aba68ee` over 174,319 rows; `e14294a2f362eda3` over 174,278
   legit / 7,195 retired (the pre-round build reproduced that tree's run
   golden). Hub-realism tree: `0188a8c6befb3903` over 155,131;
@@ -2867,7 +2867,7 @@ load, zero after the reveal.
 | Availability = effectiveness | Simulator truth is complete at once, like the Zelle oracle | CHOICE | `docs/mule_temporal.md` (Zelle oracle) | REGISTERED: the reveal replaces availability with discovery and internal effective clocks with first observation |
 | `mule_ring_id` = home ring (whose members hold the owner); -1 otherwise | One ring per account; a later ring's mule was recruited by its home ring | CHOICE | MPL `docs/reference/labels.md`; `synth/people/rings.hpp` (`injectMultiRingMules` adds entries, never members) | ENFORCED: C vs topology and laundering rows; 1 of 27 mules in two rings; first-ring disarm red |
 | External accounts unknown: `is_mule` 0, zero clocks, empty source | No external mule role | INVARIANT | `docs/mule_temporal.md` | ENFORCED: 1,649 external accounts |
-| Other 26 tables and the first six Account columns unchanged | Exporter-only supervision | INVARIANT | - | ENFORCED: A vs pre-round HEAD `dac2d64` (26 tables byte for byte; six columns = the old table, `954256dfa302dbf7`, 277,088 bytes); fixture checks targeted cell moves |
+| Other 26 tables and the first six Account columns unchanged | Exporter-only supervision | INVARIANT | - | ENFORCED: A vs pre-round HEAD `012ccd4` (26 tables byte for byte; six columns = the old table, `954256dfa302dbf7`, 277,088 bytes); fixture checks targeted cell moves |
 | A loader must map all fifteen Account columns, with MPL's label contract as the reference | Loading is how the owner gets the graph | INVARIANT | MPL's Account label contract | OPEN, outside this repository: the TigerGraph loader still takes six columns and refuses the fifteen-column table, so a regenerated corpus does not load until it changes |
 
 ## Registered limitations

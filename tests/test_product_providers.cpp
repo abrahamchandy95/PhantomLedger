@@ -704,7 +704,7 @@ void gateA6Parity(const ProductsWorld &world) {
 // A7. A1 compares two worlds built by the SAME binary, so a draw both of its
 // legs make passes it with 0 diffs: a pick that read the portfolio stream
 // outside the pool-size branch, or any emitter change. This pins the
-// key-free products to the pre-round build instead: HEAD 843f447, one lender
+// key-free products to the pre-round build instead: HEAD d3542b5, one lender
 // and one insurer per product, measured by a probe running this digest
 // verbatim. This round's build gives the same value. A round that moves the
 // product stream on purpose re-measures it.
@@ -848,7 +848,7 @@ constexpr std::uint64_t kGoldenSeed = 3405691582ULL;
 // re-pinned in the same round this code lands, so a draw added to it would be
 // absorbed into the new pin. This is the next u64 the gate world's shared Rng
 // hands out once the build (entities, products, infra, blueprint, opening
-// book, income, market and obligation prep) is done. Measured on HEAD 843f447
+// book, income, market and obligation prep) is done. Measured on HEAD d3542b5
 // and on this round's build; the two agree.
 // RE-PINNED by counterparty-sizes-2026-09 (employer and landlord sizes). At
 // this configuration the payroll roster went from 5 employers to 1,453, so

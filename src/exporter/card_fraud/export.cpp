@@ -763,7 +763,7 @@ Summary exportAll(const ::PhantomLedger::pipeline::SimulationResult &result,
        * engine's construction of the sink the windowed engine also builds
        * (src/app/orchestrator.cpp), and leaving either null makes it export a
        * table the binary does not write — the exact silent asymmetry backed
-       * out in 6de9c95 and then found twice more in test harnesses. */
+       * out in 43b369d and then found twice more in test harnesses. */
       .declined = &result.transfers.ledger.posted.declined,
       .attackers = &result.infra.attackers,
   });

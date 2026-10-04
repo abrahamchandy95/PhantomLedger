@@ -28,24 +28,24 @@ Dated snapshot. Line numbers cite the audited tree and have drifted;
 
 | doc | last touched | rounds behind | verdict | why |
 |---|---|---|---|---|
-| `card_fraud_online_gnn.md` | 08-05 `466951e`* | 4 → 2 | major rewrite | Primary TGN doc; cites gates that never run; omits what reaches TigerGraph |
-| `card_fraud_feature_contract.md` | 08-05 `466951e` | 4 | major rewrite | Most valuable for TGN features, untouched by the fix pass; two central rulings falsified; status stops 07-27 (`:3`) |
-| `fraud_model_audit.md` | 08-05 `ce42282`* | 4 (Part I), 5 (Part II) | major rewrite | Part IV (`:565-610`) wrong on loader contract, table count, anti-shortcut levels; amendments stop at `:1346` (07-30) |
-| `card_fraud_v2_roadmap.md` | 08-05 `466951e`* | 8 | retire or archive | Rounds 1-8 narrative; live-sounding status (`:3`, 07-27) competes with CLAUDE.md. Lift rulings 2, 6 (`:33`, `:39`) and the parity trap (`:608`) first |
-| `card_fraud_victimization.md` | 08-05 `466951e` | 4 | keep with edits | Anchors F1/F2/D1/D2/D3 bind 13 code sites; status, code pointers, era argument (`:281`) stale |
-| `card_fraud_postgres_acceptance.sql` | 08-05 `466951e` | 1 | keep with edits | Header 39 tables (`:35`), asserts 43 (`:96`, `:177`); covers 2 of the loader's 7 empty-table aborts |
-| `card_fraud_device_ip_investigate.sql` | 08-05 `466951e` | 1 | keep with edits | Dead `load_devices` branch whose guard contradicts its message (`:170`); trigger (`:321`) never fires |
-| `tf_gnn_prep_session_endpoints.sql` | 08-05 `466951e` | 1 | major rewrite | Repair needed, but `attacker-infra-2026-07` inverted its justification (`:10-22`, `:34`, `:296`): it says to skip it |
-| `tf_gnn_prep_ddl.sql` (repo root) | 08-05 `466951e` | 3 | retire or archive | `pg_dump` behind the live schema and the loader; restoring it reverts the session-endpoint repair and drops the coordinate and party-geography datasets. Re-dump or banner it |
-| `README.md` | 08-05 `5957c67`* | 6 | major rewrite | Merchants `:250`, spending `:795-798`, LOC `:1022`, favourites `:714` describe closed defects |
-| `ram_derive_dont_store.md` | 07-20 `d541d0e`* | 2 | keep with edits | Baselines (`:15-23`) stop at 20k × 730d; "banked" R2.4 (`:32`) judged at 1/8 the target's fold cost |
-| `debugging.md` | 07-26 `137f581`* | 3 | keep with edits | Soak knobs missing (`:52`); `is_fraud` probe (`:186`) invites use on always-0 columns |
-| `code_review_roadmap.md` | 07-20 `61674c6` | 8 | major rewrite | 14 stations, 230 lines, no `card_fraud`, `TGN` or `GNN` |
-| `era_data_provenance.md` | 07-26 `137f581`* | 2 | keep with edits | Rules at `:21-45`, `:98-102` correct and load-bearing; "UNREAD BY GENERATION" (`:16`) false |
-| `h1_nominal_scale_wiring.md` | 07-26 `137f581` | 2 | keep with edits | Gate text superseded by H4 (`:160-165`); smoke figures dead (`:169-179`) |
-| `h2_persona_timeline.md` | 07-26 `137f581` | 2 | keep with edits | Stale pending banner (`:3-12`); `:27` is the arc's most reusable lesson |
-| `h3_mortality_estate.md` | 07-26 `137f581` | 2 | keep with edits | Same banner (`:3-8`), naming a nonexistent merge script; `:63-69` load-bearing |
-| `h4_macro_modulation.md` | 07-26 `137f581` | 3 | keep with edits | 3 of 4 headline readings superseded (`:15`-`:17`); EIP deferral reason (`:131`) expires in a modern window |
+| `card_fraud_online_gnn.md` | 08-05 `9a3017a`* | 4 → 2 | major rewrite | Primary TGN doc; cites gates that never run; omits what reaches TigerGraph |
+| `card_fraud_feature_contract.md` | 08-05 `9a3017a` | 4 | major rewrite | Most valuable for TGN features, untouched by the fix pass; two central rulings falsified; status stops 07-27 (`:3`) |
+| `fraud_model_audit.md` | 08-05 `f8b6c6c`* | 4 (Part I), 5 (Part II) | major rewrite | Part IV (`:565-610`) wrong on loader contract, table count, anti-shortcut levels; amendments stop at `:1346` (07-30) |
+| `card_fraud_v2_roadmap.md` | 08-05 `9a3017a`* | 8 | retire or archive | Rounds 1-8 narrative; live-sounding status (`:3`, 07-27) competes with CLAUDE.md. Lift rulings 2, 6 (`:33`, `:39`) and the parity trap (`:608`) first |
+| `card_fraud_victimization.md` | 08-05 `9a3017a` | 4 | keep with edits | Anchors F1/F2/D1/D2/D3 bind 13 code sites; status, code pointers, era argument (`:281`) stale |
+| `card_fraud_postgres_acceptance.sql` | 08-05 `9a3017a` | 1 | keep with edits | Header 39 tables (`:35`), asserts 43 (`:96`, `:177`); covers 2 of the loader's 7 empty-table aborts |
+| `card_fraud_device_ip_investigate.sql` | 08-05 `9a3017a` | 1 | keep with edits | Dead `load_devices` branch whose guard contradicts its message (`:170`); trigger (`:321`) never fires |
+| `tf_gnn_prep_session_endpoints.sql` | 08-05 `9a3017a` | 1 | major rewrite | Repair needed, but `attacker-infra-2026-07` inverted its justification (`:10-22`, `:34`, `:296`): it says to skip it |
+| `tf_gnn_prep_ddl.sql` (repo root) | 08-05 `9a3017a` | 3 | retire or archive | `pg_dump` behind the live schema and the loader; restoring it reverts the session-endpoint repair and drops the coordinate and party-geography datasets. Re-dump or banner it |
+| `README.md` | 08-05 `74ac110`* | 6 | major rewrite | Merchants `:250`, spending `:795-798`, LOC `:1022`, favourites `:714` describe closed defects |
+| `ram_derive_dont_store.md` | 07-20 `3b51af7`* | 2 | keep with edits | Baselines (`:15-23`) stop at 20k × 730d; "banked" R2.4 (`:32`) judged at 1/8 the target's fold cost |
+| `debugging.md` | 07-26 `9c8df5e`* | 3 | keep with edits | Soak knobs missing (`:52`); `is_fraud` probe (`:186`) invites use on always-0 columns |
+| `code_review_roadmap.md` | 07-20 `9c63d89` | 8 | major rewrite | 14 stations, 230 lines, no `card_fraud`, `TGN` or `GNN` |
+| `era_data_provenance.md` | 07-26 `9c8df5e`* | 2 | keep with edits | Rules at `:21-45`, `:98-102` correct and load-bearing; "UNREAD BY GENERATION" (`:16`) false |
+| `h1_nominal_scale_wiring.md` | 07-26 `9c8df5e` | 2 | keep with edits | Gate text superseded by H4 (`:160-165`); smoke figures dead (`:169-179`) |
+| `h2_persona_timeline.md` | 07-26 `9c8df5e` | 2 | keep with edits | Stale pending banner (`:3-12`); `:27` is the arc's most reusable lesson |
+| `h3_mortality_estate.md` | 07-26 `9c8df5e` | 2 | keep with edits | Same banner (`:3-8`), naming a nonexistent merge script; `:63-69` load-bearing |
+| `h4_macro_modulation.md` | 07-26 `9c8df5e` | 3 | keep with edits | 3 of 4 headline readings superseded (`:15`-`:17`); EIP deferral reason (`:131`) expires in a modern window |
 
 ## TabFormer / IBM inventory
 
@@ -229,7 +229,7 @@ Stale at `fraud_model_audit.md:112` and `card_fraud_victimization.md:281`
 2020-01-01), `tests/test_card_class_f.cpp:156-157` (ends 2021-01-01).
 `src/app/cli.cpp:184-195` locks card-fraud to the macro series, which covers
 1990-2024 (`include/phantomledger/synth/econ/era_data.hpp:101-136`) since
-`macro-history-v1` (`137f581`, 2026-07-26). Three prohibitions rest on the
+`macro-history-v1` (`9c8df5e`, 2026-07-26). Three prohibitions rest on the
 expired reason: the crypto-rail decline, the EIP deferral, the short modern leg
 of `test_card_class_f`.
 
@@ -420,7 +420,7 @@ horizon has run here; the only ≥ 100k point, a pre-R2 run at 200,000 (14.6 GB,
 `ram_derive_dont_store.md:19`), is not comparable.
 
 Options are under B1. R2.5, which `ram_derive_dont_store.md:88-94` names the
-prerequisite, is not done; R2.5a (`137f581`, `base_run_set.hpp:5`,
+prerequisite, is not done; R2.5a (`9c8df5e`, `base_run_set.hpp:5`,
 `stages/transfers/windowed_run.cpp:211`) bounds only replay-view staging, and
 the RAM doc omits it.
 
